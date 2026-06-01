@@ -1,45 +1,4 @@
-# 🌸 XiaoHong Ancient Chinese QA System (小紅古典文學問答系統)
-
-XiaoHong is a specialized Question-Answering system for Classical Chinese Literature (with a focus on *Dream of the Red Chamber*) and general Sinology. It implements a **Retrieval-Augmented Double Instruction Tuning (RADIT)** architecture to bridge the gap between vernacular questions and classical Chinese knowledge.
-
-## 🏗️ Architecture Overview
-
-The system is split into three main layers:
-
-1.  **Frontend (Next.js):** A modern chat interface supporting streaming responses, thinking process visualization (CoT), and interactive citation cards.
-2.  **Backend (FastAPI):** A microservice that orchestrates the RAG pipeline and manages LLM inference via Hugging Face Endpoints.
-3.  **Core RAG Service (Python):** A hybrid retrieval engine combining:
-    *   **Dense Search:** FAISS index with `Qwen3-Embedding-0.6B`.
-    *   **Sparse Search:** `rank-bm25` optimized for classical Chinese (custom $k_1$ and $b$ parameters).
-    *   **Fusion:** Reciprocal Rank Fusion (RRF) and Cross-Encoder Reranking.
-    *   **Gatekeeper:** A two-layer intelligent routing system using `Qwen3.5-0.8B` (via DeepInfra) for Out-of-Domain (OOD) detection and Rerank score thresholding for fallback refusal.
-    *   **Safeguards:** Prompt injection sanitization and "Refusal to Answer" for hallucination prevention.
-
-## 🚀 Key Technologies
-
-*   **LLM:** `XiaoHong-v1` (Fine-tuned `Qwen3-8B` via QLoRA 4-bit).
-*   **Frontend:** Next.js 15+, React 19, Ant Design, Zustand (State), Dexie (IndexedDB), Framer Motion.
-*   **Backend:** FastAPI, Pydantic, OpenAI SDK (Async).
-*   **Search/Data:** FAISS, rank-bm25, Jieba (Tokenization), Transformers.
-
-## 📂 Directory Structure
-
-```text
-XiaoHong_RedChamber_QA_System/
-├── backend/               # FastAPI Server (main.py, requirements.txt)
-├── frontend/              # Next.js Application (src/, package.json)
-│   ├── src/app/           # Next.js App Router (API routes & Pages)
-│   ├── src/services/      # API communication & stream parsing
-│   ├── src/store/         # Zustand stores (Chat, Conversation)
-│   └── src/database/      # Dexie schema & repositories
-├── src/main/python/       # Core Logic
-│   └── services/          # RAG pipeline, BM25 Search, Prompt templates
-├── docs/                  # Detailed documentation & Training details
-├── data/rag/              # (Manual setup required) FAISS/BM25 indices
-└── .env.example           # Unified environment template
-```
-
-## 🛠️ Building and Running
+# 🛠️ Building and Running
 
 ### 1. Environment Setup
 Create a `.env` file in the **root directory** by copying `.env.example`.

@@ -96,7 +96,7 @@ export function ThinkingPanel({
         message.error('複製失敗');
       }
     }
-  }, [content]);
+  }, [content, message]);
 
   const toggleExpanded = useCallback(() => {
     setIsExpanded((prev) => !prev);

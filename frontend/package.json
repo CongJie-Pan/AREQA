@@ -1,12 +1,12 @@
 {
-  "name": "xiao_hong_qa",
+  "name": "areqa",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "predev": "node -e \"const fs=require('fs'); const src=['../.env.local', '../.env'].find(f=>fs.existsSync(f)); if(src) { fs.copyFileSync(src, '.env.local'); console.log('Copied ' + src + ' to frontend/.env.local'); }\"",
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "prebuild": "node -e \"const fs=require('fs'); const src=['../.env.local', '../.env'].find(f=>fs.existsSync(f)); if(src) { fs.copyFileSync(src, '.env.local'); console.log('Copied ' + src + ' to frontend/.env.local'); }\"",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

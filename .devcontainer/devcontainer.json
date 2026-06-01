@@ -1,4 +1,5 @@
 {
+  "name": "AREQR Dev",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
@@ -10,12 +11,18 @@
     },
     "ghcr.io/devcontainers/features/git-lfs:1": {}
   },
+  "remoteEnv": {
+    "PYTHONUNBUFFERED": "1",
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+    "NPM_CONFIG_UPDATE_NOTIFIER": "false"
+  },
   "postCreateCommand": "bash .devcontainer/setup.sh",
-  "postAttachCommand": "if [ ! -d '.drift' ]; then drift init -y; fi && drift scan",
+  "postAttachCommand": "bash .devcontainer/on-attach.sh",
   "customizations": {
     "vscode": {
       "settings": {
-        "terminal.integrated.defaultProfile.linux": "bash"
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/backend/.venv/bin/python"
       },
       "extensions": [
         "ms-python.python",
