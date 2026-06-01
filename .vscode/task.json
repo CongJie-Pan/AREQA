@@ -1,0 +1,14 @@
+{
+  "label": "Watch Drift AI Brain",
+  "type": "shell",
+  "command": "drift scan --watch",
+  "isBackground": true,
+  "runOptions": {
+    "runOn": "folderOpen"
+  },
+  "presentation": {
+    "reveal": "never",
+    "panel": "shared",
+    "showReuseMessage": false
+  }
+}

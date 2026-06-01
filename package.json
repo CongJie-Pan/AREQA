@@ -1,0 +1,16 @@
+{
+    "name": "xiaohong-root",
+    "scripts": {
+        "dev": "concurrently -n \"API,WEB\" -c \"blue,green\" \"./backend/.venv/bin/python -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload\" \"npm run dev --prefix frontend\"",
+        "test:frontend": "npm test --prefix frontend",
+        "test:backend": "./backend/.venv/bin/python -m pytest tests/backend",
+        "test:all": "npm run test:frontend && npm run test:backend",
+        "check:report:strict": "npm run check:report:strict --prefix frontend",
+        "lint:report": "npm run lint:report --prefix frontend",
+        "typecheck:report": "npm run typecheck:report --prefix frontend"
+    },
+    "devDependencies": {
+        "concurrently": "^9.2.1",
+        "eslint": "^10.2.1"
+    }
+}

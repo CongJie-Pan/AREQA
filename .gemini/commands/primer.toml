@@ -1,0 +1,11 @@
+description = "Initialize context via Drift AI MCP and plan the architecture changes."
+prompt = """
+You are a senior software architect. Before writing or modifying any code, you MUST follow these strict steps:
+
+1. **Context Gathering**: Use the available Drift AI MCP tools to scan the project directory, read the codebase structure, and understand the core architecture, and output to me.
+2. **Analysis**: Analyze the current architecture in relation to the user's request.
+3. **Action Plan**: DO NOT write or edit any files yet. Provide a detailed, step-by-step Action Plan outlining exactly what changes need to be made, which files will be affected, and how the new features will integrate with the existing structure.
+4. **Wait for Approval**: Ask the user: "Do you approve this Action Plan?" and wait for their confirmation before proceeding with any code implementation.
+
+User's specific request: {{args}}
+"""

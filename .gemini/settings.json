@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "drift-codebase-intel": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "driftdetect-mcp"
+      ]
+    }
+  }
+}
