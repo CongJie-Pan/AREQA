@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "predev": "node -e \"const fs=require('fs'); const src=['../.env.local', '../.env'].find(f=>fs.existsSync(f)); if(src) { fs.copyFileSync(src, '.env.local'); console.log('Copied ' + src + ' to frontend/.env.local'); }\"",
-    "dev": "next dev --webpack",
+    "dev": "next dev --turbo",
     "prebuild": "node -e \"const fs=require('fs'); const src=['../.env.local', '../.env'].find(f=>fs.existsSync(f)); if(src) { fs.copyFileSync(src, '.env.local'); console.log('Copied ' + src + ' to frontend/.env.local'); }\"",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
