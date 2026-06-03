@@ -411,29 +411,29 @@ export const MessageItem = memo(function MessageItem({
         <div className={styles.assistantMessageWrapper}>
           {/* Bubble Wrapper */}
           <div className={cx(styles.bubbleWrapper, 'bubbleWrapper')}>
+            {/* RAG Status Panel - Should be at the top and only visible before thinking starts */}
+            {ragInfo && ragInfo.status !== 'idle' && !thinking?.isThinking && !thinking?.content && !message.reasoning && (
+              <RAGStatusPanel ragInfo={ragInfo} />
+            )}
+
+            {/* Thinking Panel */}
+            {(thinking?.isThinking || message.reasoning) && (
+              <div className={styles.thinkingPanelWrapper}>
+                <ThinkingPanel
+                  content={thinking?.content || message.reasoning?.content}
+                  duration={thinking?.duration || message.reasoning?.duration}
+                  isThinking={thinking?.isThinking}
+                  defaultExpanded={thinking?.isThinking}
+                />
+              </div>
+            )}
+
             {/* Message Bubble */}
             <div 
               ref={setBubbleRef}
               className={cx(styles.bubble, styles.assistantBubble)}
               data-role="assistant-bubble"
             >
-              {/* RAG Status Panel - Should be at the top and only visible before thinking starts */}
-              {ragInfo && ragInfo.status !== 'idle' && !thinking?.isThinking && !thinking?.content && !message.reasoning && (
-                <RAGStatusPanel ragInfo={ragInfo} />
-              )}
-
-              {/* Thinking Panel */}
-              {(thinking?.isThinking || message.reasoning) && (
-                <div className={styles.thinkingPanelWrapper}>
-                  <ThinkingPanel
-                    content={thinking?.content || message.reasoning?.content}
-                    duration={thinking?.duration || message.reasoning?.duration}
-                    isThinking={thinking?.isThinking}
-                    defaultExpanded={thinking?.isThinking}
-                  />
-                </div>
-              )}
-
               {/* Message Content */}
               <div className={styles.content}>
                 <ReactMarkdown
@@ -461,15 +461,16 @@ export const MessageItem = memo(function MessageItem({
                 </div>
               )}
 
-              {/* Suggested Questions - Only for last assistant message */}
-              {isLast && !isUser && message.suggestions && message.suggestions.length > 0 && !isStreaming && (
-                <SuggestedQuestions 
-                  suggestions={message.suggestions} 
-                  onSelect={(q) => onSelectSuggestion?.(q)}
-                  disabled={isStreaming}
-                />
-              )}
             </div>
+
+            {/* Suggested Questions - Only for last assistant message */}
+            {isLast && !isUser && message.suggestions && message.suggestions.length > 0 && !isStreaming && (
+              <SuggestedQuestions 
+                suggestions={message.suggestions} 
+                onSelect={(q) => onSelectSuggestion?.(q)}
+                disabled={isStreaming}
+              />
+            )}
 
             {/* Action Buttons */}
             <div className={styles.actionButtons}>

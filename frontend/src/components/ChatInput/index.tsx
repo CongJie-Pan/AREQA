@@ -129,6 +129,9 @@ export function ChatInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Ignore if user is composing text (e.g. using IME for Chinese)
+      if (e.nativeEvent.isComposing) return;
+
       // Enter to send, Shift+Enter for new line
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
