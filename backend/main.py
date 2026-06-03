@@ -1,7 +1,7 @@
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
@@ -118,7 +118,7 @@ try:
         reranker_model_path="api", # Added this back to enable high-quality reranking via API
         top_k=5,
         rrf_k=60,
-        score_threshold=0.3,
+        score_threshold=0.35,
         max_context_tokens=4000,
     )
     router_service = RouterService()
@@ -319,19 +319,26 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             yield f"event: metadata\ndata: {json.dumps(metadata)}\n\n"
             
             # 2. Token generation stream phase
-            if not HF_ENDPOINT_URL or not HF_TOKEN:
-                chunk_data = {"choices": [{"delta": {"content": "[System Error] HF_ENDPOINT_URL or HF_TOKEN is missing in the global .env file."}, "index": 0, "finish_reason": None}]}
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                chunk_data = {"choices": [{"delta": {"content": "[System Error] OPENROUTER_API_KEY is missing in the global .env file."}, "index": 0, "finish_reason": None}]}
                 yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
             else:
                 try:
-                    # Enforce /v1/ suffix as done in chat_app.py
-                    hf_base_url = HF_ENDPOINT_URL.strip()
-                    if not hf_base_url.strip("/").endswith("v1"):
-                        hf_base_url = hf_base_url.rstrip("/") + "/v1/"
-                        
+                    # [Commented Out] Original Hugging Face Endpoint client initialization
+                    # hf_base_url = HF_ENDPOINT_URL.strip()
+                    # if not hf_base_url.strip("/").endswith("v1"):
+                    #     hf_base_url = hf_base_url.rstrip("/") + "/v1/"
+                    # client = AsyncOpenAI(
+                    #     base_url=hf_base_url, 
+                    #     api_key=HF_TOKEN, 
+                    #     timeout=120.0
+                    # )
+                    
+                    # Upgraded client: Connect to OpenRouter
                     client = AsyncOpenAI(
-                        base_url=hf_base_url, 
-                        api_key=HF_TOKEN, 
+                        base_url="https://openrouter.ai/api/v1",
+                        api_key=api_key,
                         timeout=120.0
                     )
                     
@@ -456,94 +463,156 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                         # Insert at the beginning of the messages list
                         chat_req.messages.insert(0, {"role": "system", "content": sys_prompt_text})
                     
-                    # 1. Use local tokenizer to apply chat template to bypass vLLM server padding issues
-                    if _tokenizer is not None:
-                        prompt = _tokenizer.apply_chat_template(
-                            chat_req.messages, 
-                            tokenize=False, 
-                            add_generation_prompt=True
-                        )
-                    else:
-                        # Fallback naive template just in case tokenizer fails
-                        prompt = ""
-                        for m in chat_req.messages:
-                            prompt += f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n"
-                        prompt += "<|im_start|>assistant\n"
-                    
-                    if chat_req.force_think:
-                        prompt += "<think>\n"
-                        # Artificially yield the initial think tag so the strict frontend parser can catch it!
-                        # NOTE: Do NOT include trailing \n here — the parser strips the <think> tag
-                        # and any remaining \n would appear as a blank first line in the thinking panel.
-                        chunk_data = {
-                            "choices": [
-                                {
-                                    "delta": {"content": "<think>"},
-                                    "index": 0,
-                                    "finish_reason": None,
-                                }
-                            ]
-                        }
-                        yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
-
-                    # 2. Use completions API (not chat) to maintain absolute control over the payload
-                    # This prevents vLLM from stripping <think> tags natively
-                    
                     # Apply dynamic max_tokens based on RAG mode
                     effective_max_tokens = chat_req.max_tokens
                     if chat_req.use_rag and chat_req.max_tokens == 2048:
                         effective_max_tokens = 2500
 
-                    # Dynamically resolve model name identically to chat_app.py resolve_model_name()
-                    try:
-                        # Since `models.list()` throws an error on some instances or behaves weirdly, 
-                        # we prioritize HF_REPO_ID provided via .env.local if present, to bypass 404 error!
-                        if HF_REPO_ID and HF_REPO_ID != "/repository":
-                            target_model_name = HF_REPO_ID
-                        else:
-                            models_resp = await client.models.list()
-                            target_model_name = models_resp.data[0].id
-                    except Exception:
-                        target_model_name = "/repository"
-                            
-                    response = await client.completions.create(
+                    # [Commented Out] Original Hugging Face completions creation logic
+                    # try:
+                    #     if HF_REPO_ID and HF_REPO_ID != "/repository":
+                    #         target_model_name = HF_REPO_ID
+                    #     else:
+                    #         models_resp = await client.models.list()
+                    #         target_model_name = models_resp.data[0].id
+                    # except Exception:
+                    #     target_model_name = "/repository"
+                    # 
+                    # response = await client.completions.create(
+                    #     model=target_model_name,
+                    #     prompt=prompt,
+                    #     stream=True,
+                    #     max_tokens=effective_max_tokens,
+                    #     temperature=chat_req.temperature if chat_req.temperature > 0 else 0.001,
+                    #     top_p=chat_req.top_p,
+                    #     extra_body={
+                    #         "repetition_penalty": chat_req.repetition_penalty,
+                    #         "skip_special_tokens": False
+                    #     },
+                    #     stop=["<|im_end|>", "<|endoftext|>"]
+                    # )
+
+                    # 1. Using OpenRouter Qwen3.5 397B A17B
+                    target_model_name = "qwen/qwen3.5-397b-a17b"
+                    
+                    extra_body = {
+                        "repetition_penalty": chat_req.repetition_penalty
+                    }
+                    if chat_req.force_think:
+                        extra_body["chat_template_kwargs"] = {
+                            "enable_thinking": True
+                        }
+
+                    response = await client.chat.completions.create(
                         model=target_model_name,
-                        prompt=prompt,
+                        messages=chat_req.messages,
                         stream=True,
                         max_tokens=effective_max_tokens,
                         temperature=chat_req.temperature if chat_req.temperature > 0 else 0.001,
                         top_p=chat_req.top_p,
-                        extra_body={
-                            "repetition_penalty": chat_req.repetition_penalty,
-                            "skip_special_tokens": False
-                        },
-                        stop=["<|im_end|>", "<|endoftext|>"]
+                        extra_body=extra_body,
                     )
                     
                     answer_content_accumulator = ""
+                    inside_reasoning = False
+                    
                     async for chunk in response:
                         if await request.is_disconnected():
                             break
                         
-                        # Forward the text payload but repackage it as OpenAI Chat Schema 'delta.content' 
-                        # so that our rigid Next.js client parser doesn't break!
-                        text_chunk = chunk.choices[0].text if chunk.choices and chunk.choices[0].text else ""
-                        if text_chunk:
-                            answer_content_accumulator += text_chunk
+                        if not chunk.choices:
+                            continue
+                            
+                        delta = chunk.choices[0].delta
+                        
+                        # Extract reasoning tokens
+                        reasoning_text = ""
+                        if hasattr(delta, 'reasoning') and delta.reasoning:
+                            reasoning_text = delta.reasoning
+                        elif hasattr(delta, 'reasoning_details') and delta.reasoning_details:
+                            if isinstance(delta.reasoning_details, str):
+                                reasoning_text = delta.reasoning_details
+                            elif isinstance(delta.reasoning_details, list):
+                                for part in delta.reasoning_details:
+                                    if isinstance(part, dict) and "text" in part:
+                                        reasoning_text += part["text"]
+                                    elif hasattr(part, "text") and part.text:
+                                        reasoning_text += part.text
+
+                        # Extract content tokens
+                        content_text = delta.content if (hasattr(delta, 'content') and delta.content) else ""
+
+                        # If reasoning is streaming
+                        if reasoning_text:
+                            if not inside_reasoning:
+                                inside_reasoning = True
+                                # Yield <think> start tag to client
+                                chunk_data = {
+                                    "choices": [
+                                        {
+                                            "delta": {"content": "<think>"},
+                                            "index": 0,
+                                            "finish_reason": None,
+                                        }
+                                    ]
+                                }
+                                yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+                            
+                            # Stream the reasoning content
                             chunk_data = {
                                 "choices": [
                                     {
-                                        "delta": {"content": text_chunk},
+                                        "delta": {"content": reasoning_text},
                                         "index": 0,
                                         "finish_reason": None,
                                     }
                                 ]
                             }
-                            # NOTE: Structured sources are already sent via `event: sources` SSE.
-                            # Do NOT attach context_citations here — they are non-URL strings
-                            # that would cause the frontend Citations component to show "Invalid URL".
                             yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+
+                        # If content is streaming
+                        if content_text:
+                            if inside_reasoning:
+                                inside_reasoning = False
+                                # Yield </think> end tag to client
+                                chunk_data = {
+                                    "choices": [
+                                        {
+                                            "delta": {"content": "</think>"},
+                                            "index": 0,
+                                            "finish_reason": None,
+                                        }
+                                    ]
+                                }
+                                yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+
+                            answer_content_accumulator += content_text
+                            chunk_data = {
+                                "choices": [
+                                    {
+                                        "delta": {"content": content_text},
+                                        "index": 0,
+                                        "finish_reason": None,
+                                    }
+                                ]
+                            }
+                            yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+
                         await asyncio.sleep(0)
+
+                    # Post-loop safety check for closing think tag
+                    if inside_reasoning:
+                        inside_reasoning = False
+                        chunk_data = {
+                            "choices": [
+                                    {
+                                        "delta": {"content": "</think>"},
+                                        "index": 0,
+                                        "finish_reason": None,
+                                    }
+                                ]
+                            }
+                        yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
                     
                     # 2.5. Generate Suggestions (Suggested Questions)
                     # Triggered after main generation is complete, reusing RAG contexts

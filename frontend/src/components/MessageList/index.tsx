@@ -134,10 +134,10 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
     return (
       <div className={cx(styles.container, styles.empty, className)}>
         <h1 className={styles.emptyTitle}>
-          &nbsp;嗨！我是小紅，您的紅樓夢知識問答助手 😊
+          &nbsp;嗨！我是 AREQA，您的國學與紅樓夢知識問答助手 😊
         </h1>
         <p className={styles.emptyDescription}>
-          有什麼今天我可以幫你的嗎？
+          今天有什麼我可以幫忙的嗎？
         </p>
       </div>
     );

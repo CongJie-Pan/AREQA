@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: '小紅 XiaoHong - 您的紅樓夢專業問答助手',
-  description: '結合思考過程視覺化的 AI 問答助手',
+  title: 'AREQA - 您的國學與紅樓夢專業問答助手',
+  description: '結合思考過程視覺化的 Adaptive RAG 教育問答系統',
   icons: {
     icon: '/logo/favicon.ico',
   },
