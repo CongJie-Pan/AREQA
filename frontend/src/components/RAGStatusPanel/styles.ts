@@ -29,7 +29,8 @@ export const useStyles = createStyles(({ token, css }) => ({
   header: css`
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 12px;
     width: 100%;
     height: 32px;
   `,
@@ -38,7 +39,6 @@ export const useStyles = createStyles(({ token, css }) => ({
     display: flex;
     align-items: center;
     gap: 12px;
-    flex: 1;
     margin-left: 14px;
   `,
 

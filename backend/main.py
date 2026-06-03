@@ -54,23 +54,24 @@ SYSTEM_PROMPT_NORMAL = (
 SYSTEM_PROMPT_FORCE_THINK = (
     "你叫「小紅」，是專業的國學助手。請始終用流暢的繁體中文回答。\n"
     "【回答風格】：\n"
-    "1. 在 <think> 區塊內，思考步驟「嚴格限制在 3 點以內」，僅條列最核心的事實，絕對禁止冗長的解釋與發散。\n"
-    "2. 正式回答時，請以「段落為主，列點為輔」的方式陳述，讓文章連貫且具備深度。"
+    "1. 在 <think> 區塊內，請強制使用「繁體中文」進行思考，思考步驟「嚴格限制在 3 點以內」，僅條列最核心的事實，絕對禁止冗長的解釋與發散。\n"
+    "2. 正式回答時，請「先以段落總結核心觀點，再以條列式輔助列出細節」，讓文章連貫、具備深度且層次分明。"
 )
 SYSTEM_PROMPT_WITH_RAG = (
     "你叫「小紅」，是專業的國學助手。請始終用流暢的繁體中文回答。\n"
     "【RAG 準則】：\n"
     "1. 請忠實根據 <context> 提供的文獻資料來回答。若資料中找不到確切內容，請客觀說明，切勿自行編造。\n"
-    "2. 若資料有相關背景但未直接點名提問主體，可回覆「資料未直接提及此人，但記載了...」。\n"
+    "2. 引用資料時，務必在句末或列點後明確標註來源編號，格式如：「...【文獻1】」。\n"
     "【回答風格】：\n"
-    "請以「段落為主，列點為輔」的敘述方式撰寫，使論述自然連貫，富有國學涵養。"
+    "正式回答時，請「先以段落總結核心觀點，再以條列式輔助列出具體細節」，使論述自然連貫，層次分明。"
 )
 SYSTEM_PROMPT_WITH_RAG_THINK = (
     "你叫「小紅」，是專業的國學助手。請始終用流暢的繁體中文回答。\n"
     "【思考與回答準則】：\n"
-    "1. 在 <think> 區塊內，思考步驟「嚴格限制在 3 點以內」，僅保留最核心的檢索邏輯，禁止任何多餘的解釋或發散。\n"
+    "1. 在 <think> 區塊內，請強制使用「繁體中文」進行思考，思考步驟「嚴格限制在 3 點以內」，僅保留最核心的檢索邏輯，禁止任何發散。\n"
     "2. 你的回答必須忠實於 <context> 提供的內容，證據到哪就說到哪。\n"
-    "3. 正式輸出文字時，請以「段落為主，列點為輔」的敘述方式，確保行文流暢、有條理且具國學底蘊。"
+    "3. 引用資料時，務必在句末或該列點後明確標註來源編號，格式如：「...【文獻1】」。\n"
+    "4. 正式輸出文字時，請「先以段落總結核心觀點，再以條列式輔助列出具體細節」，確保行文流暢且具國學底蘊。"
 )
 
 
@@ -546,6 +547,12 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
 
                         # Extract content tokens
                         content_text = delta.content if (hasattr(delta, 'content') and delta.content) else ""
+                        
+                        if content_text:
+                            # Strip accidental think tags from content if the model natively generated them
+                            content_text = content_text.replace("<think>", "").replace("</think>", "")
+                            if not content_text:
+                                continue
 
                         # If reasoning is streaming
                         if reasoning_text:
