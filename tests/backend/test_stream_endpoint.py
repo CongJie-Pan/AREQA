@@ -50,8 +50,9 @@ async def test_sse_streaming_sequence_with_rag():
         # We also need to patch AsyncOpenAI so it doesn't try to call HF endpoint
         with patch('backend.main.AsyncOpenAI') as mock_openai:
             mock_client = MagicMock()
-            mock_client.completions = MagicMock()
-            mock_client.completions.create = AsyncMock()
+            mock_client.chat = MagicMock()
+            mock_client.chat.completions = MagicMock()
+            mock_client.chat.completions.create = AsyncMock()
 
             # Setup fake streaming completion
             class FakeAsyncIterator:
@@ -60,12 +61,7 @@ async def test_sse_streaming_sequence_with_rag():
                 async def __anext__(self):
                     raise StopAsyncIteration
 
-            mock_client.completions.create.return_value = FakeAsyncIterator()
-
-            # Mock models.list to return a dummy model
-            mock_client.models.list = MagicMock()
-            mock_client.models.list.return_value = asyncio.Future()
-            mock_client.models.list.return_value.set_result(MagicMock(data=[MagicMock(id="test-model")]))
+            mock_client.chat.completions.create.return_value = FakeAsyncIterator()
             
             mock_openai.return_value = mock_client
             

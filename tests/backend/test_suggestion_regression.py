@@ -33,8 +33,9 @@ async def test_stream_endpoint_emits_suggestions_and_done():
         # Patch AsyncOpenAI for the main text generation
         with patch('backend.main.AsyncOpenAI') as mock_openai:
             mock_client = MagicMock()
-            mock_client.completions = MagicMock()
-            mock_client.completions.create = AsyncMock()
+            mock_client.chat = MagicMock()
+            mock_client.chat.completions = MagicMock()
+            mock_client.chat.completions.create = AsyncMock()
 
             # Generate dummy text chunk
             class FakeAsyncIterator:
@@ -46,11 +47,11 @@ async def test_stream_endpoint_emits_suggestions_and_done():
                     if not self.yielded:
                         self.yielded = True
                         chunk = MagicMock()
-                        chunk.choices = [MagicMock(text="這是一個回答")]
+                        chunk.choices = [MagicMock(delta=MagicMock(content="這是一個回答", reasoning=None, reasoning_details=None))]
                         return chunk
                     raise StopAsyncIteration
 
-            mock_client.completions.create.return_value = FakeAsyncIterator()
+            mock_client.chat.completions.create.return_value = FakeAsyncIterator()
 
             # Mock models.list
             mock_client.models.list = MagicMock()
