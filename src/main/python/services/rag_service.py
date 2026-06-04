@@ -221,7 +221,6 @@ class RAGService:
         max_context_tokens: int = 4000,
         device: str = "auto",
         use_reranker: bool = True,
-        use_hyde: bool = True,
     ):
         """Initialise the RAG service by loading all required resources.
 
@@ -237,7 +236,6 @@ class RAGService:
             max_context_tokens: Token budget for RAG context.
             device: PyTorch device ('auto', 'cuda', 'cpu').
             use_reranker: Whether to use ranking fusion.
-            use_hyde: Whether to expand user query using OpenRouter HyDE.
         """
         self._faiss_index_path = Path(faiss_index_path)
         self._faiss_metadata_path = Path(faiss_metadata_path)
@@ -246,7 +244,6 @@ class RAGService:
         self._reranker_model_path = Path(reranker_model_path) if reranker_model_path else None
         
         self.use_reranker = use_reranker
-        self.use_hyde = use_hyde
         
         # s2twp: Simplified Chinese to Traditional Chinese (Taiwan Standard)
         self.converter = opencc.OpenCC('s2twp')
@@ -302,7 +299,7 @@ class RAGService:
             if not api_key:
                 raise ValueError("OPENROUTER_API_KEY env var missing for Embedding API mode")
             
-            logger.info("Initializing OpenRouter Embedding API client...")
+            logger.info("[RAG Init] Initializing OpenRouter Embedding API client (Model: qwen-embedding API or equivalent)...")
             self._embedding_api_client = OpenAI(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=api_key,
@@ -337,7 +334,7 @@ class RAGService:
             torch_dtype=precision,
         ).to(self._device)
         self._encoder.eval()
-        logger.info("Embedding model loaded (%s, %s).", self._device, precision)
+        logger.info("[RAG Init] Embedding model loaded (%s, %s). Local model: %s", self._device, precision, self._embedding_model_path)
 
     def _load_reranker_model(self):
         """Load Qwen3-Reranker cross-encoder model."""
@@ -358,7 +355,7 @@ class RAGService:
                 if not deepinfra_api_key:
                     raise ValueError("DEEPINFRA_API_KEY env var missing for DeepInfra Reranker API mode")
                 
-                logger.info("Initializing DeepInfra Reranker API client...")
+                logger.info("[RAG Init] Initializing DeepInfra Reranker API client (Model: Qwen/Qwen3-Reranker-8B)...")
                 self._reranker_api_client = OpenAI(
                     base_url="https://api.deepinfra.com/v1/openai",
                     api_key=deepinfra_api_key,
@@ -389,7 +386,7 @@ class RAGService:
                                 "queries": [query] * len(documents),
                                 "documents": documents
                             }
-                            resp = requests.post(url, headers=headers, json=payload)
+                            resp = requests.post(url, headers=headers, json=payload, timeout=10)
                             
                             if resp.status_code == 200:
                                 data = resp.json()
@@ -782,55 +779,6 @@ class RAGService:
         # Sort by RRF score descending
         fused = sorted(scores.values(), key=lambda x: x["rrf_score"], reverse=True)
         return fused
-        
-    def _expand_query_with_hyde(self, query: str) -> str:
-        """Perform text expansion (HyDE) via OpenRouter to improve retrieval."""
-        import requests
-        import os
-        from dotenv import load_dotenv
-        
-        load_dotenv()
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        if not api_key:
-            logger.warning("No OPENROUTER_API_KEY found. Skipping HyDE expansion.")
-            return query
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-
-        # Perform standard HyDE (Hypothetical Document Embeddings)
-        prompt = f"""請針對以下關於古文或國學常識的問題，撰寫一段假想的「詳細解答文本」（約100字內）。
-請盡量包含相關的原文關鍵字、專有名詞或主旨，這將用於作為語義檢索的文本擴寫特徵。
-
-問題：{query}
-直接輸出擴寫文本，不要任何解釋或多餘的開頭："""
-
-        payload = {
-            "model": "qwen/qwen3-30b-a3b-instruct-2507",
-            "messages": [
-                {"role": "system", "content": "你是一個優化語義檢索的國學領域專家。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2,
-            "max_tokens": 150,
-        }
-
-        try:
-            response = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers, timeout=15)
-            if response.ok:
-                data = response.json()
-                expanded_text = data["choices"][0]["message"]["content"].strip()
-                if expanded_text:
-                    # Apply OpenCC conversion as a failsafe
-                    expanded_text = self.converter.convert(expanded_text)
-                    logger.info("HyDE Expansion successful.")
-                    return f"{query}\n[擴寫特徵]: {expanded_text}"
-        except Exception as e:
-            logger.error(f"Failed to expand query '{query}': {e}")
-            
-        return query
 
     def retrieve(
         self,
@@ -875,7 +823,7 @@ class RAGService:
 
     def retrieve_with_events(
         self,
-        query: str,
+        query,
         tokenizer=None,
     ):
         """Execute retrieval and yield progress events before returning final results.
@@ -883,44 +831,57 @@ class RAGService:
         Yields:
             Dict containing event type ('status' or 'results') and data.
         """
-        debug_info = RetrievalDebugInfo(query=query)
+        queries = query if isinstance(query, list) else [query]
+        primary_query = queries[0] if queries else ""
+
+        debug_info = RetrievalDebugInfo(query=primary_query)
 
         if not self._available:
             logger.warning("RAGService unavailable — returning empty results.")
             return debug_info
 
-        if not query or not query.strip():
+        if not queries or not primary_query.strip():
             yield {"type": "results", "data": debug_info}
             return
 
         yield {"type": "status", "status": "searching_dense", "message": "📖 翻閱古籍索引..."}
         
-        # Step 0: HyDE Text Expansion (if enabled)
-        search_query = query
-        if getattr(self, 'use_hyde', False) and len(query) > 10:
-            search_query = self._expand_query_with_hyde(query)
-
-        # Step 1: Encode query (with instruction prefix)
-        query_embedding = self.encode_query(search_query)
-
-        # Step 2: Dense + Sparse retrieval
-        dense_results = self._faiss_search(query_embedding, depth=100)
-        debug_info.dense_results = dense_results
+        all_dense = []
+        all_sparse = []
+        
+        for q in queries:
+            if not q.strip(): continue
+            query_embedding = self.encode_query(q)
+            all_dense.extend(self._faiss_search(query_embedding, depth=100))
+            all_sparse.extend(self._bm25_search(q, depth=100))
+            
+        def deduplicate(results):
+            best = {}
+            for r in results:
+                cid = r["chunk_id"]
+                if cid not in best or r["score"] > best[cid]["score"]:
+                    best[cid] = r
+            return list(best.values())
+            
+        dense_results = deduplicate(all_dense)
+        dense_results.sort(key=lambda x: x["score"], reverse=True)
+        debug_info.dense_results = dense_results[:100]
         
         yield {"type": "status", "status": "searching_sparse", "message": "🔤 查考字詞出處..."}
-        sparse_results = self._bm25_search(search_query, depth=100)
-        debug_info.sparse_results = sparse_results
+        sparse_results = deduplicate(all_sparse)
+        sparse_results.sort(key=lambda x: x["score"], reverse=True)
+        debug_info.sparse_results = sparse_results[:100]
 
         yield {"type": "status", "status": "reranking", "message": "⚖️ 比較文獻相關性..."}
         # Step 3: RRF Fusion
-        fused = self._rrf_fusion(dense_results, sparse_results)
+        fused = self._rrf_fusion(debug_info.dense_results, debug_info.sparse_results)
         
         # Step 3.5: Reranker (if enabled and available)
         if getattr(self, 'use_reranker', False) and hasattr(self, '_reranker') and self._reranker is not None:
             # Only rerank top 50 candidates to save time
             candidates = fused[:50]
             if candidates:
-                pairs = [[query, item["text"]] for item in candidates]
+                pairs = [[primary_query, item["text"]] for item in candidates]
                 import torch
                 # Process in smaller batches to avoid OOM
                 # We check if it's the MockReranker (API) or the local model
@@ -939,18 +900,7 @@ class RAGService:
                 candidates = sorted(candidates, key=lambda x: x["reranker_score"], reverse=True)
                 fused = candidates + fused[50:]
                 
-        # Step 3.6: Diversity Filter (同源 Chunk 去重)
-        seen_sources = set()
-        diverse_fused = []
-        for item in fused:
-            chunk_id = item.get("chunk_id", "")
-            source_prefix = chunk_id.split('_')[0] if chunk_id else ""
-            if source_prefix and source_prefix in seen_sources:
-                continue
-            if source_prefix:
-                seen_sources.add(source_prefix)
-            diverse_fused.append(item)
-        fused = diverse_fused
+        # (Diversity Filter Removed to allow multiple relevant chunks from the same source)
                 
         debug_info.fused_results = fused
 

@@ -10,7 +10,16 @@ from pydantic import BaseModel
 from openai import AsyncOpenAI
 import opencc
 import os
+import hashlib
 from dotenv import load_dotenv
+
+# 在 main.py 最上層加入全域快取字典
+_rag_cache: dict = {}
+RAG_CACHE_SIZE = 200  # 最多快取 200 組查詢結果
+
+def get_query_fingerprint(query: str) -> str:
+    """把查詢字串轉成固定長度的雜湊，作為快取 key"""
+    return hashlib.md5(query.strip().lower().encode()).hexdigest()
 
 # Try to import transformers for local chat template
 try:
@@ -44,69 +53,47 @@ _converter = opencc.OpenCC('s2twp')
 # Cache to store the dynamically resolved model name so we don't spam models.list() APIs
 _resolved_model_name = None
 
-# --- System Prompts (優化版：控制思考長度與回答風格) ---
-SYSTEM_PROMPT_NORMAL = (
-    "你叫「AREQA」，是一位專業知識問答助手。"
-    "你的回答風格不是客服式安撫，也不是機械式條列，而是像一位熟悉中華文化文本、經學與中文文本分析的教師或評論者，"
-    "以流暢、凝練、帶有文學素養的繁體中文作答。\n"
-    "【整體風格】\n"
-    "1. 先立論、後申說：回答開頭先用1至2句指出問題核心或判斷重點，再展開分析。都以繁體中文輸出為主。\n"
-    "2. 以段落為主、列點為輔：正式回答以完整段落作為主體，只有在需要整理層次、步驟、對照關係時才使用條列。\n"
-    "3. 偏重文本分析：回答古典文學、紅學、詩詞、章法、人物題時，優先從「文本細讀、典故來源、修辭作用、敘事功能、人物命運、互文關係、伏筆照應」等角度分析。\n"
-    "4. 常用評論句式：可自然使用「關鍵在於」「可見」「表面上……實則……」「與其說……不如說……」等句法，使回答更像文學講評，而非百科摘要。\n"
-    "5. 不空泛、不濫情：可以溫和，但不要過度安撫；可以有文采，但不要堆砌辭藻。重點是判斷清楚、層次分明、語氣自然。\n"
-    "6. 資料不足時要誠實：若題目要求根據參考資料回答，而資料不足、無關或無法支持結論，請直接明說「根據目前提供的資料，無法充分回答此題」，不要編造。\n"
-    "7. 若題目明確要求蘇格拉底式引導，回答結尾可補上一句引導性反問；若題目未要求，則不要刻意反問。\n"
-    "8. 可適度使用「這是個好問題」「關鍵在於」「可見」「簡言之」「表面上……實則……」等評論句式，"
-    "但須自然，不要每題重複同一套模板。\n"
+# --- System Prompts (極簡優化版：支援列點排版) ---
+BASE_PERSONA = (
+    "你叫「AREQA」，是一位專精中華文化與古典文學的評論型問答助手。請一律使用繁體中文。\n"
+    "【回答結構與風格】\n"
+    "1. 破題立論：首段用1-2句話直擊問題核心，給出明確判斷。\n"
+    "2. 混合排版（段落+列點）：分析主體請先用「連貫段落」闡述概念；當需要羅列證據、步驟、或多重觀點時，允許使用「清晰的條列式」整理，讓畫面易讀。\n"
+    "3. 評論腔調：自然使用「關鍵在於」「表面上...實則...」「由此可見」等詞彙，展現文學講評的深度。不空泛、不機械。\n"
+    "4. 資料邊界：若參考資料不足，請直接回答「根據目前資料無法充分解答」，絕不編造。\n"
 )
 
-SYSTEM_PROMPT_FORCE_THINK = (
-    "你叫「AREQA」，是一位專業知識問答助手。"
-    "你的回答風格不是客服式安撫，也不是機械式條列，而是像一位熟悉中華文化文本、經學與中文文本分析的教師或評論者，"
-    "以流暢、凝練、帶有文學素養的繁體中文作答。\n"
-    "【整體風格】\n"
-    "1. 先立論、後申說：回答開頭先用1至2句指出問題核心或判斷重點，再展開分析。都以繁體中文輸出為主。\n"
-    "2. 以段落為主、列點為輔：正式回答以完整段落作為主體，只有在需要整理層次、步驟、對照關係時才使用條列。\n"
-    "3. 偏重文本分析：回答古典文學、紅學、詩詞、章法、人物題時，優先從「文本細讀、典故來源、修辭作用、敘事功能、人物命運、互文關係、伏筆照應」等角度分析。\n"
-    "4. 常用評論句式：可自然使用「關鍵在於」「可見」「表面上……實則……」「與其說……不如說……」等句法，使回答更像文學講評，而非百科摘要。\n"
-    "5. 不空泛、不濫情：可以溫和，但不要過度安撫；可以有文采，但不要堆砌辭藻。重點是判斷清楚、層次分明、語氣自然。\n"
-    "6. 資料不足時要誠實：若題目要求根據參考資料回答，而資料不足、無關或無法支持結論，請直接明說「根據目前提供的資料，無法充分回答此題」，不要編造。\n"
-    "7. 若題目明確要求蘇格拉底式引導，回答結尾可補上一句引導性反問；若題目未要求，則不要刻意反問。\n"
-    "8. 可適度使用「這是個好問題」「關鍵在於」「可見」「簡言之」「表面上……實則……」等評論句式，"
-    "但須自然，不要每題重複同一套模板。\n"
+# 1. 普通模式
+SYSTEM_PROMPT_NORMAL = BASE_PERSONA + (
+    "5. 若使用者提出蘇格拉底式的探討，結尾可帶一句引導性反問。\n"
+    "【重要格式限制】\n"
+    "6. 本次對話沒有提供任何 <context> 參考資料。\n"
+    "   請勿在回答中輸出任何【文獻N】標記，即使歷史紀錄中曾出現過此格式。\n"
+    "   歷史對話中的引用標記僅屬於當時那一輪，不代表現在有相同文獻可引用。\n"
 )
 
-SYSTEM_PROMPT_WITH_RAG = (
-    "你叫「AREQA」，是一位專業知識問答助手。"
-    "你的回答風格不是客服式安撫，也不是機械式條列，而是像一位熟悉中華文化文本、經學與中文文本分析的教師或評論者，"
-    "以流暢、凝練、帶有文學素養的繁體中文作答。\n"
-    "【整體風格】\n"
-    "1. 先立論、後申說：回答開頭先用1至2句指出問題核心或判斷重點，再展開分析。都以繁體中文輸出為主。\n"
-    "2. 以段落為主、列點為輔：正式回答以完整段落作為主體，只有在需要整理層次、步驟、對照關係時才使用條列。\n"
-    "3. 偏重文本分析：回答古典文學、紅學、詩詞、章法、人物題時，優先從「文本細讀、典故來源、修辭作用、敘事功能、人物命運、互文關係、伏筆照應」等角度分析。\n"
-    "4. 常用評論句式：可自然使用「關鍵在於」「可見」「表面上……實則……」「與其說……不如說……」等句法，使回答更像文學講評，而非百科摘要。\n"
-    "5. 不空泛、不濫情：可以溫和，但不要過度安撫；可以有文采，但不要堆砌辭藻。重點是判斷清楚、層次分明、語氣自然。\n"
-    "6. 資料不足時要誠實：若題目要求根據參考資料回答，而資料不足、無關或無法支持結論，請直接明說「根據目前提供的資料，無法充分回答此題」，不要編造。精確引用：每次引用資料，務必在句末或列點後明確標註來源（格式如：「...【文獻1】」\n"
-    "7. 若題目明確要求蘇格拉底式引導，回答結尾可補上一句引導性反問；若題目未要求，則不要刻意反問。\n"
-    "8. 可適度使用「這是個好問題」「關鍵在於」「可見」「簡言之」「表面上……實則……」等評論句式，"
-    "但須自然，不要每題重複同一套模板。\n"
+# 2. 強制思考模式 (嚴格限制 think 長度，內容放進正式回答)
+SYSTEM_PROMPT_FORCE_THINK = BASE_PERSONA + (
+    "【思考區塊限制】\n"
+    "必須全程用繁體中文。只能條列最多3點核心關鍵詞，絕不在思考時長篇大論或自我修正。\n"
+    "所有精采的文本分析與列點整理，請全部放到正式回答中展現。\n"
+    "【重要格式限制】\n"
+    "本次對話沒有提供任何 <context> 參考資料。\n"
+    "請勿在回答中輸出任何【文獻N】標記，即使歷史紀錄中曾出現過此格式。\n"
 )
 
-SYSTEM_PROMPT_WITH_RAG_THINK = (
-    "你叫「AREQA」，是一位專業知識問答助手。"
-    "你的回答風格不是客服式安撫，也不是機械式條列，而是像一位熟悉中華文化文本、經學與中文文本分析的教師或評論者，"
-    "以流暢、凝練、帶有文學素養的繁體中文作答。\n"
-    "【整體風格】\n"
-    "1. 先立論、後申說：回答開頭先用1至2句指出問題核心或判斷重點，再展開分析。都以繁體中文輸出為主。\n"
-    "2. 以段落為主、列點為輔：正式回答以完整段落作為主體，只有在需要整理層次、步驟、對照關係時才使用條列。\n"
-    "3. 偏重文本分析：回答古典文學、紅學、詩詞、章法、人物題時，優先從「文本細讀、典故來源、修辭作用、敘事功能、人物命運、互文關係、伏筆照應」等角度分析。\n"
-    "4. 常用評論句式：可自然使用「關鍵在於」「可見」「表面上……實則……」「與其說……不如說……」等句法，使回答更像文學講評，而非百科摘要。\n"
-    "5. 不空泛、不濫情：可以溫和，但不要過度安撫；可以有文采，但不要堆砌辭藻。重點是判斷清楚、層次分明、語氣自然。\n"
-    "6. 資料不足時要誠實：若題目要求根據參考資料回答，而資料不足、無關或無法支持結論，請直接明說「根據目前提供的資料，無法充分回答此題」，不要編造。精確引用：每次引用資料，務必在句末或列點後明確標註來源（格式如：「...【文獻1】」\n"
-    "7. 若題目明確要求蘇格拉底式引導，回答結尾可補上一句引導性反問；若題目未要求，則不要刻意反問。\n"
-    "8. 可適度使用「這是個好問題」「關鍵在於」「可見」「簡言之」「表面上……實則……」等評論句式，"
-    "但須自然，不要每題重複同一套模板。\n"
+# 3. RAG 檢索模式 (嚴格標註來源)
+SYSTEM_PROMPT_WITH_RAG = BASE_PERSONA + (
+    "【檢索引用限制】\n"
+    "必須嚴格基於提供的 <context> 回答。每次引用或轉述資料時，務必在句末或列點後明確標註來源（如：【文獻1】）。"
+)
+
+# 4. RAG + 強制思考模式 (兩者疊加)
+SYSTEM_PROMPT_WITH_RAG_THINK = BASE_PERSONA + (
+    "【思考與檢索引用限制】\n"
+    "1. 必須全程用繁體中文。只能條列最多3點核心關鍵詞，絕不在思考時長篇大論或自我修正。\n"
+    "2. 所有精采的文本分析與列點整理，請全部放到正式回答中展現。"
+    "3. 正式回答必須嚴格基於 <context>，並在句末或列點後標註來源（如：【文獻1】）。"
 )
 
 # Initialize the global thread pool for CPU bounds tasks (Tokenizer, FAISS, BM25)
@@ -265,6 +252,45 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
         }
     )
 
+async def expand_query_for_rag(query: str, client: AsyncOpenAI) -> List[str]:
+    prompt = f"""你是一個《紅樓夢》文獻檢索專家。請將使用者的問題轉換成 3 個適合在古典文學文獻庫中進行向量檢索的查詢語句。
+要求：
+去除所有題幹指令語（如「最適當的是」、「請問」、「_處」等）。
+第一、第二句（Multi-Query）：針對具體情節，提取不同的核心古文概念與關鍵字組合。
+第三句（Step-Back）：將問題抽象化為宏觀的文學主題、時代背景或人物關係探討。
+請直接輸出 3 行，每行一個查詢，不要有任何前綴、數字或多餘的解釋。
+
+問題：{query}"""
+    
+    queries = [query]
+    import time
+    start_time = time.time()
+    try:
+        response = await client.chat.completions.create(
+            model="qwen/qwen-2.5-7b-instruct",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=150,
+        )
+        if response.choices and response.choices[0].message.content:
+            content = response.choices[0].message.content.strip()
+            import re
+            for line in content.split('\n'):
+                # clean up prefix numbers or hyphens
+                clean_line = re.sub(r'^[\d\.\-\*\s]+', '', line).strip()
+                if clean_line:
+                    queries.append(clean_line)
+    except Exception as e:
+        print(f"[RAG API] Query expansion error: {e}")
+        
+    elapsed = time.time() - start_time
+    print(f"[RAG API] Query Expansion (Multi-Query + Step-Back) took {elapsed:.2f}s")
+        
+    # original + up to 3 expanded queries
+    return queries[:4]
+
 @app.get("/api/v1/retrieve")
 async def retrieve_endpoint(query: str, top_k: int = 20, offset: int = 0, limit: int = 10):
     """
@@ -388,27 +414,41 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                         last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
                         if last_user_msg:
                             try:
-                                context_results_obj = None
-                                # Loop through generator to yield SSE progress events!
-                                # Use an executor to avoid blocking the event loop with synchronous RAG operations
-                                gen = rag_service.retrieve_with_events(last_user_msg)
-                                while True:
-                                    # Use a task to run the executor while occasionally yielding a heartbeat
-                                    rag_task = asyncio.get_running_loop().run_in_executor(_thread_pool, next, gen, None)
+                                fingerprint = get_query_fingerprint(last_user_msg)
+                                if fingerprint in _rag_cache:
+                                    context_results_obj = _rag_cache[fingerprint]
+                                else:
+                                    context_results_obj = None
+                                    # Expand query for Multi-Query Retrieval and Step-Back Prompting
+                                    rag_queries = await expand_query_for_rag(last_user_msg, client)
+                                    print(f"DEBUG RAG Queries: {rag_queries}")
                                     
-                                    while not rag_task.done():
-                                        done, pending = await asyncio.wait([rag_task], timeout=5.0)
-                                        if not done:
-                                            yield f": heartbeat\n\n"
-                                    
-                                    event = await rag_task
-                                    if event is None:
-                                        break
-                                    if event["type"] == "status":
-                                        status_payload = {"status": event["status"], "message": event["message"]}
-                                        yield f"event: status\ndata: {json.dumps(status_payload, ensure_ascii=False)}\n\n"
-                                    elif event["type"] == "results":
-                                        context_results_obj = event["data"]
+                                    # Loop through generator to yield SSE progress events!
+                                    # Use an executor to avoid blocking the event loop with synchronous RAG operations
+                                    gen = rag_service.retrieve_with_events(rag_queries)
+                                    while True:
+                                        # Use a task to run the executor while occasionally yielding a heartbeat
+                                        rag_task = asyncio.get_running_loop().run_in_executor(_thread_pool, next, gen, None)
+                                        
+                                        while not rag_task.done():
+                                            done, pending = await asyncio.wait([rag_task], timeout=5.0)
+                                            if not done:
+                                                yield f": heartbeat\n\n"
+                                        
+                                        event = await rag_task
+                                        if event is None:
+                                            break
+                                        if event["type"] == "status":
+                                            status_payload = {"status": event["status"], "message": event["message"]}
+                                            yield f"event: status\ndata: {json.dumps(status_payload, ensure_ascii=False)}\n\n"
+                                        elif event["type"] == "results":
+                                            context_results_obj = event["data"]
+                                            
+                                    if context_results_obj:
+                                        if len(_rag_cache) >= RAG_CACHE_SIZE:
+                                            oldest_key = next(iter(_rag_cache))
+                                            del _rag_cache[oldest_key]
+                                        _rag_cache[fingerprint] = context_results_obj
                                         
                                 if context_results_obj:
                                     # Layer 2: Rerank Score Fallback (Guardrail)
@@ -420,7 +460,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                         is_reranked = hasattr(first_res, 'reranker_score') or (isinstance(first_res, dict) and 'reranker_score' in first_res)
                                     
                                     # Use a much lower threshold for RRF scores (max ~0.033) vs Reranker scores (0.0-1.0)
-                                    effective_threshold = rag_service.score_threshold if is_reranked else 0.005
+                                    effective_threshold = rag_service.score_threshold if is_reranked else 0.02
                                     
                                     # If RAG is enabled but no document score exceeds the threshold, trigger refusal
                                     if context_results_obj.highest_score < effective_threshold:
@@ -444,6 +484,48 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                     
                                     # Filter out results with empty or whitespace-only text
                                     valid_results = [r for r in context_results_obj.final_results if r.text and r.text.strip()]
+                                    
+                                    # 1. 取得最高分作為基準
+                                    highest_score = context_results_obj.highest_score
+
+                                    # 2. 階梯式分數差值過濾 (Delta Score Filtering)
+                                    MAX_DOCS = 7
+                                    SCORE_DROP_TOLERANCE = 0.40  # 允許與第一名的最大分數差距
+                                    ABSOLUTE_MIN_SCORE = 0.35    # 絕對最低及格線
+
+                                    dynamic_results = []
+                                    for doc in valid_results:
+                                        # 條件A：數量不能超過 7 篇
+                                        if len(dynamic_results) >= MAX_DOCS:
+                                            break
+                                        
+                                        # 條件B：分數不能低於絕對及格線
+                                        if doc.score < ABSOLUTE_MIN_SCORE:
+                                            continue
+                                            
+                                        # 條件C：分數不能比第一名掉超過 0.40（斷崖式下跌攔截）
+                                        if (highest_score - doc.score) > SCORE_DROP_TOLERANCE:
+                                            continue
+                                            
+                                        dynamic_results.append(doc)
+
+                                    valid_results = dynamic_results
+
+                                    # 3. 解決 Lost in the Middle：注意力重排序 (Best-First & Second-Last)
+                                    def reorder_for_attention(results):
+                                        if len(results) <= 2:
+                                            return results
+                                        top = [results[0]]           
+                                        bottom = [results[-1]]       
+                                        middle = results[1:-1]       
+                                        return top + middle + bottom
+
+                                    valid_results = reorder_for_attention(valid_results)
+
+                                    # 4. DEBUG 觀察輸出
+                                    print(f"DEBUG RAG: highest={highest_score:.4f}, final count={len(valid_results)}")
+                                    for i, r in enumerate(valid_results):
+                                        print(f"  Doc {i+1}: score={r.score:.4f}")
                                     
                                     for idx, chunk in enumerate(valid_results, 1):
                                         # Try multiple attributes to get a meaningful source title
@@ -490,16 +572,27 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                 print(f"RAG retrieval failed: {e}")
                                 yield f"event: error\ndata: {json.dumps({'detail': f'RAG Error: {e}'}, ensure_ascii=False)}\n\n"
 
+                    # 0.4. History Sanitization (防止 Context Bleeding)
+                    import re
+                    if not chat_req.use_rag:
+                        for msg in chat_req.messages:
+                            if msg.get("role") == "assistant" and msg.get("content"):
+                                msg["content"] = re.sub(r'【文獻\d+】', '', msg["content"])
+
                     # 0.5. Inject System Prompt logic mimicking chat_app.py
                     if not has_system:
                         # Determine which prompt to use based on RAG and force_think flags
                         if chat_req.use_rag:
                             sys_prompt_text = SYSTEM_PROMPT_WITH_RAG_THINK if chat_req.force_think else SYSTEM_PROMPT_WITH_RAG
+                            rag_status_note = "\n【本回合狀態】：已注入 <context> 參考資料，請嚴格依文獻回答並標註來源。"
                         else:
                             sys_prompt_text = SYSTEM_PROMPT_FORCE_THINK if chat_req.force_think else SYSTEM_PROMPT_NORMAL
-                            
+                            rag_status_note = "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
+                        
+                        final_system_prompt = sys_prompt_text + rag_status_note
+                        
                         # Insert at the beginning of the messages list
-                        chat_req.messages.insert(0, {"role": "system", "content": sys_prompt_text})
+                        chat_req.messages.insert(0, {"role": "system", "content": final_system_prompt})
                     
                     # Apply dynamic max_tokens based on RAG mode
                     effective_max_tokens = chat_req.max_tokens
@@ -530,17 +623,17 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     #     stop=["<|im_end|>", "<|endoftext|>"]
                     # )
 
-                    # 1. Using OpenRouter Qwen3-235B-A22B-Thinking-2507
-                    target_model_name = "qwen/qwen3-235b-a22b-thinking-2507"
+                    # 1. Using OpenRouter Qwen3 dynamic model routing
+                    if chat_req.force_think:
+                        # 使用者點擊了「思考」，調用 Thinking-Only 旗艦模型
+                        target_model_name = "qwen/qwen3-235b-a22b-thinking-2507"
+                    else:
+                        # 使用者需要「即時回答」，切換到不會思考的 Instruct 模型 (依據 OpenRouter 文件，ID 為 qwen/qwen3-235b-a22b-2507)
+                        target_model_name = "qwen/qwen3-235b-a22b-2507"
                     
                     extra_body = {
                         "repetition_penalty": chat_req.repetition_penalty
                     }
-                    if chat_req.force_think:
-                        chat_req.messages.append({
-                            "role": "assistant",
-                            "content": "<think>\n1. 核心邏輯梳理："
-                        })
 
                     response = await client.chat.completions.create(
                         model=target_model_name,
@@ -554,6 +647,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     
                     answer_content_accumulator = ""
                     inside_reasoning = False
+                    import re
                     
                     async for chunk in response:
                         if await request.is_disconnected():
@@ -583,7 +677,8 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                         
                         if content_text:
                             # Strip accidental think tags from content if the model natively generated them
-                            content_text = content_text.replace("<think>", "").replace("</think>", "")
+                            # Use regex to handle spaces within the tags (e.g. < think >)
+                            content_text = re.sub(r'<\s*/?\s*think\s*>', '', content_text)
                             if not content_text:
                                 continue
 

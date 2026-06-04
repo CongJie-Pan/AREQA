@@ -171,6 +171,77 @@ content: css`
       margin-bottom: 0;
     }
   }
+
+  code {
+    padding: 2px 6px;
+    background: ${token.colorFillTertiary};
+    border-radius: ${token.borderRadiusSM}px;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 13px;
+  }
+
+  pre {
+    padding: 12px;
+    background: ${token.colorFillQuaternary};
+    border-radius: ${token.borderRadius}px;
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      background: transparent;
+    }
+  }
+
+  ul, ol {
+    margin: 8px 0;
+    padding-left: 20px;
+  }
+
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+  }
+
+  li {
+    margin: 4px 0;
+  }
+
+  a {
+    color: ${token.colorLink};
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    font-size: 14px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  th, td {
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 10px 12px;
+    text-align: left;
+  }
+
+  th {
+    background: rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+  }
+
+  tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.03);
+  }
 `,
 
 quoteBlock: css`
@@ -221,52 +292,7 @@ quoteBlockContent: css`
   }
 `,
 
-code: css`...
-      padding: 2px 6px;
-      background: ${token.colorFillTertiary};
-      border-radius: ${token.borderRadiusSM}px;
-      font-family: 'Monaco', 'Menlo', monospace;
-      font-size: 13px;
-    }
 
-    pre {
-      padding: 12px;
-      background: ${token.colorFillQuaternary};
-      border-radius: ${token.borderRadius}px;
-      overflow-x: auto;
-
-      code {
-        padding: 0;
-        background: transparent;
-      }
-    }
-
-    ul, ol {
-      margin: 8px 0;
-      padding-left: 20px;
-    }
-
-    ul {
-      list-style-type: disc;
-    }
-
-    ol {
-      list-style-type: decimal;
-    }
-
-    li {
-      margin: 4px 0;
-    }
-
-    a {
-      color: ${token.colorLink};
-      text-decoration: none;
-
-      &:hover {
-        text-decoration: underline;
-      }
-    }
-  `,
 
   streamingCursor: css`
     display: inline-block;

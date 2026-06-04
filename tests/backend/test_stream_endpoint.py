@@ -35,9 +35,11 @@ async def test_sse_streaming_sequence_with_rag():
     with patch('backend.main.rag_service') as mock_rag, \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service') as mock_suggestion, \
+         patch('backend.main.expand_query_for_rag') as mock_expand, \
          patch('backend.main.HF_ENDPOINT_URL', 'http://mock-url'), \
          patch('backend.main.HF_TOKEN', 'mock-token'):
         
+        mock_expand.return_value = ["賈寶玉是誰？"]
         mock_rag.retrieve_with_events.side_effect = mock_retrieve_with_events
         mock_rag.score_threshold = 0.3
         
@@ -118,3 +120,62 @@ async def test_gatekeeper_rejection():
             # Ensure no Metadata events were sent after rejection
             assert "event: metadata" not in content
             assert "data: [DONE]" in content
+
+@pytest.mark.asyncio
+async def test_force_think_strips_think_tags_with_spaces():
+    # Scenario: The streaming endpoint correctly strips <think> tags even with spaces
+    # and doesn't inject pre-filled assistant message for native reasoning models.
+    with patch('backend.main.rag_service', None), \
+         patch('backend.main.router_service') as mock_router, \
+         patch('backend.main.suggestion_service', None), \
+         patch.dict('os.environ', {'OPENROUTER_API_KEY': 'mock-token'}):
+        
+        # Mock Router to ALLOW
+        mock_router.check_query_intent = AsyncMock(return_value={"action": "ALLOW", "domain": None, "refusal_message": None})
+        
+        with patch('backend.main.AsyncOpenAI') as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat = MagicMock()
+            mock_client.chat.completions = MagicMock()
+            mock_client.chat.completions.create = AsyncMock()
+
+            class FakeAsyncIterator:
+                def __aiter__(self):
+                    self.yielded = False
+                    return self
+                async def __anext__(self):
+                    if not self.yielded:
+                        self.yielded = True
+                        chunk = MagicMock()
+                        chunk.choices = [MagicMock()]
+                        chunk.choices[0].delta = MagicMock()
+                        chunk.choices[0].delta.content = "這裡有< think >被包含的思考文字< /think >還有正式文字"
+                        chunk.choices[0].delta.reasoning = None
+                        chunk.choices[0].delta.reasoning_details = None
+                        return chunk
+                    raise StopAsyncIteration
+
+            mock_client.chat.completions.create.return_value = FakeAsyncIterator()
+            mock_openai.return_value = mock_client
+            
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                req_data = {
+                    "messages": [{"role": "user", "content": "測試一下"}],
+                    "use_rag": False,
+                    "force_think": True
+                }
+                response = await ac.post("/api/v1/stream", json=req_data)
+                
+                assert response.status_code == 200
+                content = response.text
+                
+                # 確保帶有空格的標籤被過濾
+                assert "< think >" not in content
+                assert "< /think >" not in content
+                assert "這裡有被包含的思考文字還有正式文字" in content
+                
+                # 確保 backend 不再對 force_think 進行 assistant role 預填
+                call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+                messages = call_kwargs['messages']
+                has_prefill = any(msg.get("role") == "assistant" for msg in messages)
+                assert not has_prefill
