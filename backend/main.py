@@ -252,6 +252,18 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
         }
     )
 
+def reorder_for_attention(results):
+    """
+    解決 Lost in the Middle：注意力重排序 (Best-First & Second-Last)
+    把最高分的放第一，次高分的放最後，其餘夾中間。
+    """
+    if len(results) <= 2:
+        return results
+    top = [results[0]]           
+    bottom = [results[1]]       
+    middle = results[2:]       
+    return top + middle + bottom
+
 async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dict[str, str]]:
     prompt = f"""你是一個「古典文學檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」，同時判斷這個檢索詞的類型。
 
@@ -539,13 +551,8 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                     valid_results = dynamic_results
 
                                     # 3. 解決 Lost in the Middle：注意力重排序 (Best-First & Second-Last)
-                                    def reorder_for_attention(results):
-                                        if len(results) <= 2:
-                                            return results
-                                        top = [results[0]]           
-                                        bottom = [results[-1]]       
-                                        middle = results[1:-1]       
-                                        return top + middle + bottom
+                                    # 3. 解決 Lost in the Middle：注意力重排序 (Best-First & Second-Last)
+
 
                                     valid_results = reorder_for_attention(valid_results)
 
