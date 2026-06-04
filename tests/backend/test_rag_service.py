@@ -76,3 +76,52 @@ def test_retrieve_with_events_list_of_queries(mock_rag_service):
     c1_dense = next((x for x in debug_info.dense_results if x["chunk_id"] == "c1"), None)
     assert c1_dense is not None
     assert c1_dense["score"] == 0.95
+
+def test_retrieve_with_events_multi_hop_quota(mock_rag_service):
+    """
+    Test that Multi-Hop Iterative Retrieval enforces the sub_k quota
+    and properly deduplicates the global pool.
+    """
+    # 2 sub-queries -> sub_k = max(20 // 2, 5) = 10 (since default top_k is 20)
+    mock_rag_service.top_k = 20
+    
+    # Query 1
+    dense_res_1 = [{"chunk_id": "c1", "score": 0.9, "text": "A", "metadata": {}}]
+    sparse_res_1 = [{"chunk_id": "c2", "score": 10.0, "text": "B", "metadata": {}}]
+    
+    # Query 2
+    dense_res_2 = [{"chunk_id": "c1", "score": 0.95, "text": "A", "metadata": {}}] 
+    sparse_res_2 = [{"chunk_id": "c3", "score": 5.0, "text": "C", "metadata": {}}]
+    
+    mock_rag_service._faiss_search.side_effect = [dense_res_1, dense_res_2]
+    mock_rag_service._bm25_search.side_effect = [sparse_res_1, sparse_res_2]
+    
+    # Mock RRF Fusion to return more than sub_k results for the first query to test quota
+    # sub_k will be 10. We will return 12 items for query 1, and 3 items for query 2
+    q1_rrf_results = [{"chunk_id": f"q1_c{i}", "rrf_score": 1.0/i, "text": f"Q1_{i}"} for i in range(1, 13)]
+    q2_rrf_results = [{"chunk_id": f"q2_c{i}", "rrf_score": 1.0/i, "text": f"Q2_{i}"} for i in range(1, 4)]
+    
+    # Add a duplicate chunk in q2 that was in q1 to test global deduplication
+    q2_rrf_results.append({"chunk_id": "q1_c1", "rrf_score": 2.0, "text": "Q1_1_updated"})
+    
+    mock_rag_service._rrf_fusion = MagicMock(side_effect=[q1_rrf_results, q2_rrf_results])
+    
+    queries = ["SubQuery 1", "SubQuery 2"]
+    events = list(mock_rag_service.retrieve_with_events(queries))
+    
+    result_event = next((e for e in events if e["type"] == "results"), None)
+    debug_info = result_event["data"]
+    
+    # Assert _rrf_fusion was called twice (once per query)
+    assert mock_rag_service._rrf_fusion.call_count == 2
+    
+    # Assert that fused results are deduplicated and limited by sub_k
+    # Q1 should contribute exactly 10 items (sub_k).
+    # Q2 should contribute its 4 items.
+    # Total before deduplication = 14 items.
+    # q1_c1 is in both, so deduplication keeps 13 items.
+    assert len(debug_info.fused_results) == 13
+    
+    # Verify deduplication kept the higher rrf_score for q1_c1
+    c1_final = next(item for item in debug_info.fused_results if item["chunk_id"] == "q1_c1")
+    assert c1_final["rrf_score"] == 2.0

@@ -844,47 +844,67 @@ class RAGService:
             yield {"type": "results", "data": debug_info}
             return
 
-        yield {"type": "status", "status": "searching_dense", "message": "📖 翻閱古籍索引..."}
+        yield {"type": "status", "status": "searching_dense", "message": "📖 正在多管齊下幫您尋找資料..."}
         
-        all_dense = []
-        all_sparse = []
+        valid_queries = [q for q in queries if q.strip()]
         
-        for q in queries:
-            if not q.strip(): continue
+        # 1. 實作「獨立管線與保障配額 (Dedicated Quota)」
+        # 確保每個子查詢都能從檢索池中帶回獨立保障名額的文獻
+        sub_k = max(self.top_k // len(valid_queries), 5) if valid_queries else self.top_k
+        global_pool = []
+        
+        all_dense_debug = []
+        all_sparse_debug = []
+        
+        for q in valid_queries:
             query_embedding = self.encode_query(q)
-            all_dense.extend(self._faiss_search(query_embedding, depth=100))
-            all_sparse.extend(self._bm25_search(q, depth=100))
             
-        def deduplicate(results):
+            # 對這個子查詢執行獨立檢索
+            dense_res = self._faiss_search(query_embedding, depth=100)
+            sparse_res = self._bm25_search(q, depth=100)
+            
+            all_dense_debug.extend(dense_res)
+            all_sparse_debug.extend(sparse_res)
+            
+            # 對這個子查詢獨立進行 RRF 融合
+            sub_fused = self._rrf_fusion(dense_res, sparse_res)
+            
+            # 從每個子查詢的 RRF 結果中，提取前 sub_k 篇文獻加入全域池子
+            global_pool.extend(sub_fused[:sub_k])
+            
+        yield {"type": "status", "status": "searching_sparse", "message": "🔤 正在彙整並過濾重複的內容..."}
+        
+        # 2. 全域聯集與去重 (Global Union & Deduplication)
+        def deduplicate(results, score_key="rrf_score"):
             best = {}
             for r in results:
                 cid = r["chunk_id"]
-                if cid not in best or r["score"] > best[cid]["score"]:
+                current_score = r.get(score_key, 0)
+                # 如果有多個子查詢命中同一個 chunk，保留最高的分數
+                if cid not in best or current_score > best[cid].get(score_key, 0):
                     best[cid] = r
             return list(best.values())
             
-        dense_results = deduplicate(all_dense)
-        dense_results.sort(key=lambda x: x["score"], reverse=True)
-        debug_info.dense_results = dense_results[:100]
+        global_pool = deduplicate(global_pool, score_key="rrf_score")
+        global_pool.sort(key=lambda x: x.get("rrf_score", 0), reverse=True)
         
-        yield {"type": "status", "status": "searching_sparse", "message": "🔤 查考字詞出處..."}
-        sparse_results = deduplicate(all_sparse)
-        sparse_results.sort(key=lambda x: x["score"], reverse=True)
-        debug_info.sparse_results = sparse_results[:100]
+        # 更新 Debug 資訊 (截斷前 100 筆避免記憶體與 UI 過載)
+        all_dense_debug.sort(key=lambda x: x["score"], reverse=True)
+        all_sparse_debug.sort(key=lambda x: x["score"], reverse=True)
+        debug_info.dense_results = deduplicate(all_dense_debug, score_key="score")[:100]
+        debug_info.sparse_results = deduplicate(all_sparse_debug, score_key="score")[:100]
 
-        yield {"type": "status", "status": "reranking", "message": "⚖️ 比較文獻相關性..."}
-        # Step 3: RRF Fusion
-        fused = self._rrf_fusion(debug_info.dense_results, debug_info.sparse_results)
+        yield {"type": "status", "status": "reranking", "message": "⚖️ 正在為您挑選出最精華的片段..."}
         
-        # Step 3.5: Reranker (if enabled and available)
+        # 3. 最終全域重排 (Global Reranking)
+        fused = global_pool
         if getattr(self, 'use_reranker', False) and hasattr(self, '_reranker') and self._reranker is not None:
-            # Only rerank top 50 candidates to save time
-            candidates = fused[:50]
+            # 針對去重後的全局候選池統一進行 Rerank
+            candidates = fused
             if candidates:
+                # 這裡一律對齊 primary_query (原始提問)，讓 Reranker 根據最終問題目標評估文本關聯性
                 pairs = [[primary_query, item["text"]] for item in candidates]
                 import torch
-                # Process in smaller batches to avoid OOM
-                # We check if it's the MockReranker (API) or the local model
                 is_api = hasattr(self._reranker, 'model_id')
                 
                 if is_api:
@@ -893,12 +913,10 @@ class RAGService:
                     with torch.no_grad():
                         scores = self._reranker.predict(pairs, batch_size=2)
                     
-                # Store reranker scores and re-sort
                 for item, score in zip(candidates, scores):
                     item["reranker_score"] = float(score)
                     
-                candidates = sorted(candidates, key=lambda x: x["reranker_score"], reverse=True)
-                fused = candidates + fused[50:]
+                fused = sorted(candidates, key=lambda x: x["reranker_score"], reverse=True)
                 
         # (Diversity Filter Removed to allow multiple relevant chunks from the same source)
                 
