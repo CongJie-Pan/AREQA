@@ -707,11 +707,13 @@ class RAGService:
         self,
         dense_results: List[Dict[str, Any]],
         sparse_results: List[Dict[str, Any]],
+        alpha: float = 0.5,
+        beta: float = 0.5
     ) -> List[Dict[str, Any]]:
         """Reciprocal Rank Fusion of dense and sparse results.
 
         Formula: RRF(d) = α / (k + rank_dense) + β / (k + rank_sparse)
-        Default weights: α=0.6 (dense), β=0.4 (sparse).
+        Default weights: α=0.5 (dense), β=0.5 (sparse).
 
         Why RRF? It is the most robust zero-shot fusion method for
         combining heterogeneous retrieval signals (dense semantic vs.
@@ -721,12 +723,13 @@ class RAGService:
         Args:
             dense_results: FAISS results (ranked by cosine similarity).
             sparse_results: BM25 results (ranked by BM25 score).
+            alpha: Weight for dense results.
+            beta: Weight for sparse results.
 
         Returns:
             Fused results sorted by RRF score (descending).
         """
         k = self.rrf_k
-        alpha, beta = 0.5, 0.5  # Equal weight works best with missing rank penalty
 
         scores: Dict[str, Dict[str, Any]] = {}
         
@@ -832,7 +835,16 @@ class RAGService:
             Dict containing event type ('status' or 'results') and data.
         """
         queries = query if isinstance(query, list) else [query]
-        primary_query = queries[0] if queries else ""
+        # 支援純字串或 Dict 格式的子查詢
+        normalized_queries = []
+        for q in queries:
+            if isinstance(q, str) and q.strip():
+                normalized_queries.append({"query": q.strip(), "type": "unknown"})
+            elif isinstance(q, dict) and q.get("query", "").strip():
+                normalized_queries.append(q)
+                
+        valid_queries = normalized_queries
+        primary_query = valid_queries[0]["query"] if valid_queries else ""
 
         debug_info = RetrievalDebugInfo(query=primary_query)
 
@@ -840,13 +852,11 @@ class RAGService:
             logger.warning("RAGService unavailable — returning empty results.")
             return debug_info
 
-        if not queries or not primary_query.strip():
+        if not valid_queries:
             yield {"type": "results", "data": debug_info}
             return
 
         yield {"type": "status", "status": "searching_dense", "message": "📖 正在多管齊下幫您尋找資料..."}
-        
-        valid_queries = [q for q in queries if q.strip()]
         
         # 1. 實作「獨立管線與保障配額 (Dedicated Quota)」
         # 確保每個子查詢都能從檢索池中帶回獨立保障名額的文獻
@@ -856,18 +866,30 @@ class RAGService:
         all_dense_debug = []
         all_sparse_debug = []
         
-        for q in valid_queries:
-            query_embedding = self.encode_query(q)
+        for q_obj in valid_queries:
+            q_text = q_obj["query"]
+            q_type = q_obj.get("type", "unknown")
+            
+            query_embedding = self.encode_query(q_text)
             
             # 對這個子查詢執行獨立檢索
             dense_res = self._faiss_search(query_embedding, depth=100)
-            sparse_res = self._bm25_search(q, depth=100)
+            sparse_res = self._bm25_search(q_text, depth=100)
             
             all_dense_debug.extend(dense_res)
             all_sparse_debug.extend(sparse_res)
             
-            # 對這個子查詢獨立進行 RRF 融合
-            sub_fused = self._rrf_fusion(dense_res, sparse_res)
+            # 動態路由與非對稱權重
+            alpha, beta = 0.5, 0.5
+            if q_type == "exact_entity":
+                # 專有名詞/實體: BM25 霸王條款
+                alpha, beta = 0.1, 0.9
+            elif q_type == "abstract_concept":
+                # 抽象概念: FAISS 主導模式
+                alpha, beta = 0.8, 0.2
+            
+            # 對這個子查詢獨立進行 RRF 融合，並傳入動態權重
+            sub_fused = self._rrf_fusion(dense_res, sparse_res, alpha=alpha, beta=beta)
             
             # 從每個子查詢的 RRF 結果中，提取前 sub_k 篇文獻加入全域池子
             global_pool.extend(sub_fused[:sub_k])

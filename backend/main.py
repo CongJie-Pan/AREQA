@@ -252,14 +252,22 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
         }
     )
 
-async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[str]:
-    prompt = f"""你是一個「古典文學檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」。
+async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dict[str, str]]:
+    prompt = f"""你是一個「古典文學檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」，同時判斷這個檢索詞的類型。
+
 要求：
-1. 判斷並去除所有冗言贅字與題幹指令語（如「請問」、「最適當的是」、「下列何者」、「哪一項」等）。
-2. 若問題包含多個實體或複雜比較（例如「王熙鳳與賈探春的治家策略」），必須將其拆解為多個獨立的子查詢（例如「王熙鳳 治家策略」、「賈探春 治家策略」）。
-3. 輸出必須完全拋棄現代白話文連接詞（如「的」、「與」、「和」），僅保留核心名詞與動詞組合。
-4. 若為單一簡單問題，只需輸出一個最純粹的檢索詞。
-請直接輸出拆解後的檢索詞，每行一個，不要有任何前綴、數字、或多餘的解釋。
+1. 去除所有冗言贅字與題幹指令語（如「請問」、「最適當的是」、「下列何者」、「哪一項」等）。
+2. 若問題包含多個實體或複雜比較，必須將其拆解為多個獨立的子查詢。拋棄現代白話文連接詞（如「的」、「與」、「和」）。
+3. 判斷每一個子查詢的類型 (type)，限定為以下兩種：
+   - "exact_entity": 專有名詞、具體物品、人名、書名（例如：冷香丸、薛寶釵、紅樓夢）
+   - "abstract_concept": 抽象意境、情感、事件脈絡、賞析（例如：命運悲劇、悲憫古今之幽思）
+
+請嚴格以 JSON 陣列 (Array of Objects) 的格式輸出，每個物件包含 "query" 與 "type" 兩個欄位。
+範例輸出格式：
+[
+    {{"query": "冷香丸", "type": "exact_entity"}},
+    {{"query": "薛寶釵 命運", "type": "abstract_concept"}}
+]
 
 問題：{query}"""
     
@@ -270,20 +278,34 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[str
         response = await client.chat.completions.create(
             model="qwen/qwen-2.5-7b-instruct",
             messages=[
-                {"role": "system", "content": "你是一個古典文學檢索分析師。"},
+                {"role": "system", "content": "你是一個古典文學檢索分析師。請嚴格輸出 JSON 格式。"},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1,
-            max_tokens=150,
+            max_tokens=200,
+            # If supported by OpenRouter/Qwen, we could use response_format={"type": "json_object"}
+            # but since we're outputting an array, we'll parse the string.
         )
         if response.choices and response.choices[0].message.content:
             content = response.choices[0].message.content.strip()
+            
+            # Clean markdown code blocks if the LLM wrapped it in ```json ... ```
             import re
-            for line in content.split('\n'):
-                # clean up prefix numbers or hyphens
-                clean_line = re.sub(r'^[\d\.\-\*\s]+', '', line).strip()
-                if clean_line:
-                    queries.append(clean_line)
+            content = re.sub(r'^```json\s*', '', content)
+            content = re.sub(r'^```\s*', '', content)
+            content = re.sub(r'\s*```$', '', content)
+            content = content.strip()
+            
+            try:
+                parsed_json = json.loads(content)
+                if isinstance(parsed_json, list):
+                    for item in parsed_json:
+                        if isinstance(item, dict) and "query" in item and "type" in item:
+                            if item["type"] not in ["exact_entity", "abstract_concept"]:
+                                item["type"] = "abstract_concept" # fallback
+                            queries.append(item)
+            except json.JSONDecodeError as je:
+                print(f"[RAG API] JSON parsing failed, raw content: {content}, error: {je}")
     except Exception as e:
         print(f"[RAG API] Intent Parsing error: {e}")
         
@@ -292,7 +314,7 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[str
     
     # 如果 LLM 解析失敗或回傳空，退回使用原始 query
     if not queries:
-        queries = [query]
+        queries = [{"query": query, "type": "abstract_concept"}]
         
     return queries
 

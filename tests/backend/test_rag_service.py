@@ -125,3 +125,46 @@ def test_retrieve_with_events_multi_hop_quota(mock_rag_service):
     # Verify deduplication kept the higher rrf_score for q1_c1
     c1_final = next(item for item in debug_info.fused_results if item["chunk_id"] == "q1_c1")
     assert c1_final["rrf_score"] == 2.0
+
+def test_retrieve_with_events_dynamic_routing(mock_rag_service):
+    """
+    Test that dynamic routing applies correct alpha and beta weights
+    based on the query type (exact_entity vs abstract_concept).
+    """
+    mock_rag_service.top_k = 20
+    
+    # 2 sub-queries with different types
+    queries = [
+        {"query": "冷香丸", "type": "exact_entity"},
+        {"query": "命運悲劇", "type": "abstract_concept"}
+    ]
+    
+    dense_res_1 = [{"chunk_id": "c1", "score": 0.9, "text": "A", "metadata": {}}]
+    sparse_res_1 = [{"chunk_id": "c2", "score": 10.0, "text": "B", "metadata": {}}]
+    
+    dense_res_2 = [{"chunk_id": "c3", "score": 0.95, "text": "C", "metadata": {}}] 
+    sparse_res_2 = [{"chunk_id": "c4", "score": 5.0, "text": "D", "metadata": {}}]
+    
+    mock_rag_service._faiss_search.side_effect = [dense_res_1, dense_res_2]
+    mock_rag_service._bm25_search.side_effect = [sparse_res_1, sparse_res_2]
+    
+    # Mock _rrf_fusion to just return empty lists, we only care about call arguments
+    mock_rag_service._rrf_fusion = MagicMock(return_value=[])
+    
+    events = list(mock_rag_service.retrieve_with_events(queries))
+    
+    assert mock_rag_service._rrf_fusion.call_count == 2
+    
+    # Call 1: exact_entity -> BM25 heavy (alpha=0.1, beta=0.9)
+    call_1_args, call_1_kwargs = mock_rag_service._rrf_fusion.call_args_list[0]
+    assert call_1_args[0] == dense_res_1
+    assert call_1_args[1] == sparse_res_1
+    assert call_1_kwargs.get("alpha") == 0.1
+    assert call_1_kwargs.get("beta") == 0.9
+    
+    # Call 2: abstract_concept -> Dense heavy (alpha=0.8, beta=0.2)
+    call_2_args, call_2_kwargs = mock_rag_service._rrf_fusion.call_args_list[1]
+    assert call_2_args[0] == dense_res_2
+    assert call_2_args[1] == sparse_res_2
+    assert call_2_kwargs.get("alpha") == 0.8
+    assert call_2_kwargs.get("beta") == 0.2
