@@ -1,8 +1,4 @@
-這是一份為你量身打造的**「小紅」問答系統架構優化實作計畫**。
-
-綜合我們今天討論的「路由器被欺騙」、「轉圈圈延遲太高」，我將計畫分為，依序執行。
-
-***
+# 一、路由器問題
 
 ## 🚀 Phase 1：立即止血與防護（預計工時：1 小時）
 **目標**：不改動核心架構，僅透過加入幾行程式碼，立即擋下路由欺騙、解決上下文幻覺。
@@ -60,131 +56,102 @@
 
 ---
 
-針對該問題 還是有限
-為何愈單純的問題 rag 就愈精準 而內容量愈多複雜的問題 就會像醉了一樣? 像以下兩個問題
+## 二、優化後 RAG 架構問題
 
-pplx :
+- 還是一樣，複雜與多樣化知識的問題反倒迷失? 甚至沒有返回文獻，有好幾個是這樣的，並且還是簡單問題的。
+以下是LOG紀錄 : 
 
-從你的兩組 log 資料，我可以直接看穿問題的根源，不需要再猜測。讓我逐一拆解：
-
-***
-
-## 第一題為何只拿到 1 篇（`highest=0.4749`）？
-
-你貼出的 Multi-Query 展開結果是：
-
-```
-1. 絳珠仙草：指林黛玉的前身...
-2. 冷香丸：形容薛寶釵的冷靜...
-3. 秋海棠：比喻探春...
-```
-
-**問題非常清楚：這三個「展開查詢」根本不是在查文獻庫，而是在解釋名詞。** 你的 LLM（`qwen-2.5-7b-instruct`）沒有正確執行 Multi-Query 任務，它把整個問題誤讀為「請解釋這些詞」，然後直接開始回答，而不是把問題轉換成「適合向量檢索的索引詞條」。
-
-更根本的問題是：**這一題的原始 Query 太長太複雜了**（超過 600 字，包含完整的選擇題題幹、選項 A/B/C/D、加上使用者自己追問的子問題），小模型（7B）根本沒有足夠的指令遵循能力（Instruction Following）來正確理解你要它做什麼。這在學術上稱為「**長輸入上下文理解失敗（Long-Context Instruction Drift）**」。 
-
-***
-
-## 第二題為何可以拿到 3 篇（`highest=0.9339`）？
-
-```
-展開後：
-1. 王熙鳳與賈探春在處理賈府危機時分別採取了哪些策略？（原句）
-2. 王熙鳳處理賈府危機策略
-3. 賈探春處理賈府危機策略
-4. 管理改革與危機處理比較
-```
-
-這一題成功的原因是：**原始問題本來就是一個乾淨的知識問句，只有 20 個字**。小模型接收到的信號非常清晰，所以能正確拆解成三個精準的子查詢，最終命中率高（0.9339、0.9225）。
-
-***
-
-## 根本原因：Query 在進入 LLM 擴展前，沒有做「長度截斷與結構分離」
-
-目前的 `expand_query_for_rag` 函數接收的是 `last_user_msg` 的**完整內容**，包含：
-- 選擇題題幹（400 字以上的古文語段）
-- 四個選項 A/B/C/D
-- 使用者追加的子問題「請解釋這些詞意思」
-
-這三個完全不同的任務被混在一起，丟給一個 7B 小模型，它當然醉了。
-
-***
-
-## 解法：「查詢預處理 + 結構感知的擴展」
-
-### 策略一：在送進 Query Expansion 前，先截斷 Query（最快）
-
-在 `main.py` 的 `expand_query_for_rag` 被呼叫之前，加一道預處理，只取 `last_user_msg` 的**前 150 個字**作為擴展的依據：
-
-```python
-def extract_core_query(raw_query: str, max_chars: int = 150) -> str:
-    """
-    從原始（可能很長的）使用者輸入中，只取最前面的核心意圖部分。
-    後半段的選項、解釋、追問通常是雜訊，不適合用來驅動向量檢索。
-    """
-    # 去除換行
-    single_line = raw_query.replace("\n", " ").strip()
-    
-    # 如果發現是選擇題（含有「(A)」或「選項」），只取題幹的前半段
-    if "(A)" in single_line or "（A）" in single_line:
-        # 只截到選項出現之前
-        cut_point = min(
-            single_line.find("(A)") if "(A)" in single_line else 999,
-            single_line.find("（A）") if "（A）" in single_line else 999
-        )
-        single_line = single_line[:cut_point].strip()
-    
-    # 最終只取前 150 字
-    return single_line[:max_chars]
-
-# 在呼叫 expand_query_for_rag 之前：
-core_query = extract_core_query(last_user_msg)
-rag_queries = await expand_query_for_rag(core_query, client)
-```
-
-這樣一來，你的第一題進入 Query Expansion 時，只會拿到：`《石頭記》一書，大旨談情，然其微言大義，實不可僅作風月艷情觀。觀其設譬引類，黛玉乃絳珠仙草，寶釵作冷香丸` ——這才是真正能對到文獻庫的核心信號。
-
-***
-
-### 策略二：升級 Query Expansion 用的模型（治本）
-
-7B 模型在長指令理解上先天不足。只要把 `expand_query_for_rag` 內的模型從 `qwen/qwen-2.5-7b-instruct` 升級到 `qwen/qwen-2.5-72b-instruct`，它對複雜題型的指令遵循能力會大幅提升，也不容易「誤讀任務目的」。代價是這一步的延遲會從 **1-2 秒增加到 3-5 秒**，但還是比現在的 `6.22s`（因為 7B 多次嘗試才產出正確格式）更可靠。 
-
-***
-
-### 貼給 AI 助手的實作指令
-
-把以下內容直接複製給 Cursor / Claude 等工具：
-
-***
-
-**請在 `backend/main.py` 中，對 `stream_endpoint` 內呼叫 `expand_query_for_rag` 的部分，做以下兩個修改：**
-
-**修改 1：新增 `extract_core_query` 前處理函數，並在呼叫 Query Expansion 前先使用它**
-
-```python
-def extract_core_query(raw_query: str, max_chars: int = 150) -> str:
-    """僅保留原始查詢的核心意圖部分，去除選項、追問等雜訊。"""
-    single_line = raw_query.replace("\n", " ").strip()
-    # 偵測選擇題，截到選項出現之前
-    for marker in ["(A)", "（A）", "(A）", "（A)"]:
-        if marker in single_line:
-            single_line = single_line[:single_line.find(marker)].strip()
-            break
-    return single_line[:max_chars]
-```
-
-然後將原本的：
-```python
-rag_queries = await expand_query_for_rag(last_user_msg, client)
-```
-改成：
-```python
-core_query = extract_core_query(last_user_msg)
-rag_queries = await expand_query_for_rag(core_query, client)
-# 但仍以原始完整 last_user_msg 組裝 context_prompt，確保模型回答時看得到完整問題
-```
-
-**修改 2：將 `expand_query_for_rag` 內的模型從 `qwen/qwen-2.5-7b-instruct` 改為 `qwen/qwen-2.5-14b-instruct`**（在速度與品質之間取一個合理的平衡點）。
-
-**請確保以上修改不影響後續的 Delta Score Filtering 與 Reorder For Attention 邏輯。**
+[API] INFO:     127.0.0.1:45968 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 王熙鳳與賈探春在處理賈府危機時分別採取了哪些策略？...
+[API] DEBUG: RouterService API call took 5.21s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] [RAG API] Intent Parsing & Query Decomposition took 3.42s
+[API] DEBUG RAG Queries (Decomposed): [{'query': '王熙鳳', 'type': 'exact_entity'}, {'query': '賈探春', 'type': 'exact_entity'}, {'query': '處理', 'type': 'abstract_concept'}, {'query': '賈府危機', 'type': 'abstract_concept'}, {'query': '策略', 'type': 'abstract_concept'}]
+[API] Building prefix dict from the default dictionary ...
+[API] Dumping model to file cache /tmp/jieba.cache
+[API] Loading model cost 0.864 seconds.
+[API] Prefix dict has been built successfully.
+[API] DEBUG RAG: highest=0.1610, final count=0
+[API] RAG retrieval failed: cannot access local variable 'context_texts' where it is not associated with a value
+[WEB] {"timestamp":"2026-06-04T13:54:18.850Z","level":"info","message":"Forwarding title request to internal backend: http://127.0.0.1:8000/api/v1/generate-title"}
+[API] INFO:     127.0.0.1:45968 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
+[WEB] {"timestamp":"2026-06-04T13:54:31.878Z","level":"info","message":"Forwarding chat request to internal backend: http://127.0.0.1:8000/api/v1/stream"}
+[API] INFO:     127.0.0.1:46208 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 下文 ___ 處，若要填入使文意前後連貫的文句，最適當的是：
+[API] 
+[API] 《石頭記》一書，大旨談情，然其微言大...
+[API] DEBUG: RouterService API call took 3.43s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] [RAG API] Intent Parsing & Query Decomposition took 7.21s
+[API] DEBUG RAG Queries (Decomposed): [{'query': '绛珠仙草', 'type': 'exact_entity'}, {'query': '冷香丸', 'type': 'exact_entity'}, {'query': '秋海棠', 'type': 'exact_entity'}, {'query': '曹侯', 'type': 'exact_entity'}, {'query': '甄贾相生', 'type': 'abstract_concept'}, {'query': '楚辞香草美人', 'type': 'exact_entity'}, {'query': '唐诗宋词之正统', 'type': 'abstract_concept'}]
+[API] DEBUG RAG: highest=0.0219, final count=0
+[API] RAG retrieval failed: cannot access local variable 'context_texts' where it is not associated with a value
+[API] DEBUG: Stream cancelled by client (asyncio.CancelledError)
+[WEB] {"timestamp":"2026-06-04T13:55:57.452Z","level":"info","message":"Forwarding title request to internal backend: http://127.0.0.1:8000/api/v1/generate-title"}
+[API] INFO:     127.0.0.1:60338 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
+[WEB] {"timestamp":"2026-06-04T13:56:07.353Z","level":"info","message":"Forwarding chat request to internal backend: http://127.0.0.1:8000/api/v1/stream"}
+[API] INFO:     127.0.0.1:48166 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 薛寶釵在《紅樓夢》中居住於蘅蕪苑的時期，其居所環境的描寫體現了何種人物特質？並且在抄檢大觀園後的其居...
+[API] DEBUG: RouterService API call took 1.00s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] [RAG API] Intent Parsing & Query Decomposition took 3.62s
+[API] DEBUG RAG Queries (Decomposed): [{'query': '蘅蕪苑', 'type': 'exact_entity'}, {'query': '薛寶釵 居所 環境 描寫', 'type': 'abstract_concept'}, {'query': '人物 特質', 'type': 'abstract_concept'}, {'query': '抄檢 大觀園', 'type': 'exact_entity'}, {'query': '居所 变化', 'type': 'abstract_concept'}]
+[API] DEBUG RAG: highest=0.9882, final count=5
+[API]   Doc 1: score=0.9882
+[API]   Doc 2: score=0.8936
+[API]   Doc 3: score=0.8867
+[API]   Doc 4: score=0.8774
+[API]   Doc 5: score=0.9763
+[WEB] {"timestamp":"2026-06-04T13:57:09.922Z","level":"info","message":"Forwarding title request to internal backend: http://127.0.0.1:8000/api/v1/generate-title"}
+[API] INFO:     127.0.0.1:48166 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
+[WEB] {"timestamp":"2026-06-04T13:57:43.320Z","level":"info","message":"Forwarding chat request to internal backend: http://127.0.0.1:8000/api/v1/stream"}
+[API] INFO:     127.0.0.1:45874 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 董仲舒的五行理論如何應用在經學中?...
+[API] DEBUG: RouterService API call took 0.92s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] DEBUG: Stream cancelled by client (asyncio.CancelledError)
+[WEB] {"timestamp":"2026-06-04T13:58:34.777Z","level":"info","message":"Forwarding chat request to internal backend: http://127.0.0.1:8000/api/v1/stream"}
+[API] INFO:     127.0.0.1:54652 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 董仲舒的五行理論如何應用在經學中??...
+[API] DEBUG: RouterService API call took 1.17s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] [RAG API] Intent Parsing & Query Decomposition took 6.48s
+[API] DEBUG RAG Queries (Decomposed): [{'query': '董仲舒', 'type': 'exact_entity'}, {'query': '五行理論', 'type': 'abstract_concept'}, {'query': '經學', 'type': 'abstract_concept'}]
+[API] DEBUG RAG: highest=0.1702, final count=0
+[API] RAG retrieval failed: cannot access local variable 'context_texts' where it is not associated with a value
+[WEB] {"timestamp":"2026-06-04T13:59:21.198Z","level":"info","message":"Forwarding title request to internal backend: http://127.0.0.1:8000/api/v1/generate-title"}
+[API] INFO:     127.0.0.1:54652 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
+[WEB] {"timestamp":"2026-06-04T14:00:03.680Z","level":"info","message":"Forwarding chat request to internal backend: http://127.0.0.1:8000/api/v1/stream"}
+[API] INFO:     127.0.0.1:59814 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 薛寶釵 的儒家禮節具體體現在哪裡? 和林黛玉相比又如何體現 ? 寶釵和黛玉分別體現哪種哲學意象 ?...
+[API] DEBUG: RouterService API call took 1.19s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] [RAG API] Intent Parsing & Query Decomposition took 5.74s
+[API] DEBUG RAG Queries (Decomposed): [{'query': '薛宝钗', 'type': 'exact_entity'}, {'query': '儒家礼节', 'type': 'abstract_concept'}, {'query': '林黛玉', 'type': 'exact_entity'}, {'query': '宝钗', 'type': 'exact_entity'}, {'query': '黛玉', 'type': 'exact_entity'}, {'query': '哲学意象', 'type': 'abstract_concept'}]
+[API] DEBUG RAG: highest=0.9975, final count=4
+[API]   Doc 1: score=0.9975
+[API]   Doc 2: score=0.9068
+[API]   Doc 3: score=0.8450
+[API]   Doc 4: score=0.9943
+[WEB] {"timestamp":"2026-06-04T14:01:01.607Z","level":"info","message":"Forwarding title request to internal backend: http://127.0.0.1:8000/api/v1/generate-title"}
+[API] INFO:     127.0.0.1:59814 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
+[WEB] {"timestamp":"2026-06-04T14:01:47.388Z","level":"info","message":"Forwarding chat request to internal backend: http://127.0.0.1:8000/api/v1/stream"}
+[API] INFO:     127.0.0.1:37952 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 寶釵與黛玉在葬花場景中的詩詞有何不同？...
+[API] DEBUG: RouterService API call took 1.51s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] [RAG API] Intent Parsing & Query Decomposition took 1.35s
+[API] DEBUG RAG Queries (Decomposed): [{'query': '寶釵', 'type': 'exact_entity'}, {'query': '黛玉', 'type': 'exact_entity'}, {'query': '葬花', 'type': 'abstract_concept'}, {'query': '詩詞', 'type': 'abstract_concept'}]
+[API] DEBUG RAG: highest=0.2638, final count=0
+[API] RAG retrieval failed: cannot access local variable 'context_texts' where it is not associated with a value
+[WEB] {"timestamp":"2026-06-04T14:02:12.995Z","level":"info","message":"Forwarding title request to internal backend: http://127.0.0.1:8000/api/v1/generate-title"}
+[API] INFO:     127.0.0.1:37952 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
+[WEB] {"timestamp":"2026-06-04T14:02:49.105Z","level":"info","message":"Forwarding chat request to internal backend: http://127.0.0.1:8000/api/v1/stream"}
+[API] INFO:     127.0.0.1:41374 - "POST /api/v1/stream HTTP/1.1" 200 OK
+[API] DEBUG: RouterService checking intent for: 寶釵和黛玉的詩風有何不同？...
+[API] DEBUG: RouterService API call took 3.94s
+[API] DEBUG: RouterService result parsed: ALLOW
+[API] [RAG API] Intent Parsing & Query Decomposition took 2.05s
+[API] DEBUG RAG Queries (Decomposed): [{'query': '寶釵', 'type': 'exact_entity'}, {'query': '黛玉', 'type': 'exact_entity'}, {'query': '詩風', 'type': 'abstract_concept'}]
+[API] DEBUG RAG: highest=0.6242, final count=1
+[API]   Doc 1: score=0.6242
