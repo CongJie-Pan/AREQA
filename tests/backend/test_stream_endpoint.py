@@ -35,7 +35,7 @@ async def test_sse_streaming_sequence_with_rag():
     with patch('backend.main.rag_service') as mock_rag, \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service') as mock_suggestion, \
-         patch('backend.main.expand_query_for_rag') as mock_expand, \
+         patch('backend.main.parse_and_decompose_query') as mock_expand, \
          patch('backend.main.HF_ENDPOINT_URL', 'http://mock-url'), \
          patch('backend.main.HF_TOKEN', 'mock-token'):
         

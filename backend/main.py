@@ -252,26 +252,28 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
         }
     )
 
-async def expand_query_for_rag(query: str, client: AsyncOpenAI) -> List[str]:
-    prompt = f"""你是一個《紅樓夢》文獻檢索專家。請將使用者的問題轉換成 3 個適合在古典文學文獻庫中進行向量檢索的查詢語句。
+async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[str]:
+    prompt = f"""你是一個「古典文學檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」。
 要求：
-去除所有題幹指令語（如「最適當的是」、「請問」、「_處」等）。
-第一、第二句（Multi-Query）：針對具體情節，提取不同的核心古文概念與關鍵字組合。
-第三句（Step-Back）：將問題抽象化為宏觀的文學主題、時代背景或人物關係探討。
-請直接輸出 3 行，每行一個查詢，不要有任何前綴、數字或多餘的解釋。
+1. 判斷並去除所有冗言贅字與題幹指令語（如「請問」、「最適當的是」、「下列何者」、「哪一項」等）。
+2. 若問題包含多個實體或複雜比較（例如「王熙鳳與賈探春的治家策略」），必須將其拆解為多個獨立的子查詢（例如「王熙鳳 治家策略」、「賈探春 治家策略」）。
+3. 輸出必須完全拋棄現代白話文連接詞（如「的」、「與」、「和」），僅保留核心名詞與動詞組合。
+4. 若為單一簡單問題，只需輸出一個最純粹的檢索詞。
+請直接輸出拆解後的檢索詞，每行一個，不要有任何前綴、數字、或多餘的解釋。
 
 問題：{query}"""
     
-    queries = [query]
+    queries = []
     import time
     start_time = time.time()
     try:
         response = await client.chat.completions.create(
             model="qwen/qwen-2.5-7b-instruct",
             messages=[
+                {"role": "system", "content": "你是一個古典文學檢索分析師。"},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,
+            temperature=0.1,
             max_tokens=150,
         )
         if response.choices and response.choices[0].message.content:
@@ -283,13 +285,16 @@ async def expand_query_for_rag(query: str, client: AsyncOpenAI) -> List[str]:
                 if clean_line:
                     queries.append(clean_line)
     except Exception as e:
-        print(f"[RAG API] Query expansion error: {e}")
+        print(f"[RAG API] Intent Parsing error: {e}")
         
     elapsed = time.time() - start_time
-    print(f"[RAG API] Query Expansion (Multi-Query + Step-Back) took {elapsed:.2f}s")
+    print(f"[RAG API] Intent Parsing & Query Decomposition took {elapsed:.2f}s")
+    
+    # 如果 LLM 解析失敗或回傳空，退回使用原始 query
+    if not queries:
+        queries = [query]
         
-    # original + up to 3 expanded queries
-    return queries[:4]
+    return queries
 
 @app.get("/api/v1/retrieve")
 async def retrieve_endpoint(query: str, top_k: int = 20, offset: int = 0, limit: int = 10):
@@ -419,9 +424,9 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                     context_results_obj = _rag_cache[fingerprint]
                                 else:
                                     context_results_obj = None
-                                    # Expand query for Multi-Query Retrieval and Step-Back Prompting
-                                    rag_queries = await expand_query_for_rag(last_user_msg, client)
-                                    print(f"DEBUG RAG Queries: {rag_queries}")
+                                    # Parse and Decompose Query for targeted BM25/FAISS retrieval
+                                    rag_queries = await parse_and_decompose_query(last_user_msg, client)
+                                    print(f"DEBUG RAG Queries (Decomposed): {rag_queries}")
                                     
                                     # Loop through generator to yield SSE progress events!
                                     # Use an executor to avoid blocking the event loop with synchronous RAG operations
