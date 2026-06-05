@@ -220,7 +220,7 @@ async def test_rag_score_threshold_refusal():
                 content = response.text
                 
                 # Check that it returned the exact RAG refusal message
-                assert "小紅查閱了相關古籍文獻，暫時沒能找到與您問題直接相關的內容" in content
+                assert "AREQA查閱了相關古籍文獻，暫時沒能找到與您問題直接相關的內容" in content
                 
                 # OpenAI generation should NOT be called
                 assert not mock_openai.return_value.chat.completions.create.called

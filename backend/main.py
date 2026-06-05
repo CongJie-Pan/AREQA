@@ -637,7 +637,17 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     effective_max_tokens = chat_req.max_tokens
                     if chat_req.use_rag and chat_req.max_tokens == 2048:
                         effective_max_tokens = 2500
-
+                    
+                    if chat_req.force_think:
+                        # 思考模型需要非常大的 token 預算，否則會把正式回答截斷
+                        effective_max_tokens = 3200
+                        
+                        # 補充 System Prompt，強制要求簡短思考
+                        think_control_prompt = "\n【重要指令】你的思考過程請務必簡明扼要（盡量控制在 500 字以內），不要把時間浪費在複述上下文，請把所有詳細的分析與長篇論述都放在 </think> 之後的正式回答中！"
+                        if chat_req.messages and chat_req.messages[0]["role"] == "system":
+                            chat_req.messages[0]["content"] += think_control_prompt
+                        else:
+                            chat_req.messages.insert(0, {"role": "system", "content": think_control_prompt})
                     # [Commented Out] Original Hugging Face completions creation logic
                     # try:
                     #     if HF_REPO_ID and HF_REPO_ID != "/repository":
@@ -673,6 +683,10 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     extra_body = {
                         "repetition_penalty": chat_req.repetition_penalty
                     }
+                    if chat_req.force_think:
+                        # [核心設定]：強制思考過程最多只能用 512 個 token，逼它立刻進入正式回答
+                        extra_body["provider"] = {"require_parameters": True}
+                        extra_body["reasoning"] = {"max_tokens": 512}
 
                     response = await client.chat.completions.create(
                         model=target_model_name,
