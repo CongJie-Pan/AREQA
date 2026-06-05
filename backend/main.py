@@ -143,7 +143,7 @@ try:
         reranker_model_path="api", # Added this back to enable high-quality reranking via API
         top_k=5,
         rrf_k=60,
-        score_threshold=0.35,
+        score_threshold=0.0,
         max_context_tokens=4000,
     )
     router_service = RouterService()
@@ -376,6 +376,11 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
     """
     async def generate():
         try:
+            # ✅ 在函數頂端初始化所有 RAG 相關變數，避免 UnboundLocalError
+            context_texts = []
+            context_citations = []
+            sources_payload = []
+            context_prompt = ""
             # 0. Gatekeeper / Smart Routing phase (Absolute First Layer)
             # Yield an initial status to trigger the loading spinner (message is empty to avoid text display)
             yield f"event: status\ndata: {json.dumps({'status': 'routing', 'message': ''}, ensure_ascii=False)}\n\n"
@@ -499,7 +504,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                         is_reranked = hasattr(first_res, 'reranker_score') or (isinstance(first_res, dict) and 'reranker_score' in first_res)
                                     
                                     # Use a much lower threshold for RRF scores (max ~0.033) vs Reranker scores (0.0-1.0)
-                                    effective_threshold = rag_service.score_threshold if is_reranked else 0.02
+                                    effective_threshold = 0.35 if is_reranked else 0.005
                                     
                                     # If RAG is enabled but no document score exceeds the threshold, trigger refusal
                                     if context_results_obj.highest_score < effective_threshold:
@@ -529,8 +534,8 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
 
                                     # 2. 階梯式分數差值過濾 (Delta Score Filtering)
                                     MAX_DOCS = 7
-                                    SCORE_DROP_TOLERANCE = 0.40  # 允許與第一名的最大分數差距
-                                    ABSOLUTE_MIN_SCORE = 0.35    # 絕對最低及格線
+                                    SCORE_DROP_TOLERANCE = 0.60  # 允許與第一名的最大分數差距
+                                    ABSOLUTE_MIN_SCORE = 0.005    # 絕對最低及格線
 
                                     dynamic_results = []
                                     for doc in valid_results:

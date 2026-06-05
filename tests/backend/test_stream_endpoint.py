@@ -179,3 +179,48 @@ async def test_force_think_strips_think_tags_with_spaces():
                 messages = call_kwargs['messages']
                 has_prefill = any(msg.get("role") == "assistant" for msg in messages)
                 assert not has_prefill
+
+@pytest.mark.asyncio
+async def test_rag_score_threshold_refusal():
+    # Test that the system refuses to answer when RAG highest_score is below effective_threshold
+    class LowScoreMockRagResults:
+        def __init__(self):
+            # is_reranked will be False, so effective_threshold is 0.005
+            self.final_results = [
+                MockRagChunk("Irrelevant document", 0.001, "test_doc_02")
+            ]
+            self.highest_score = 0.001
+
+    def mock_retrieve_with_events(query):
+        yield {"type": "results", "data": LowScoreMockRagResults()}
+    
+    with patch('backend.main.rag_service') as mock_rag, \
+         patch('backend.main.router_service') as mock_router, \
+         patch('backend.main.suggestion_service', None), \
+         patch('backend.main.parse_and_decompose_query') as mock_expand, \
+         patch('backend.main.HF_ENDPOINT_URL', 'http://mock-url'), \
+         patch('backend.main.HF_TOKEN', 'mock-token'):
+        
+        mock_expand.return_value = [{"query": "無關", "type": "abstract_concept"}]
+        mock_rag.retrieve_with_events.side_effect = mock_retrieve_with_events
+        mock_rag.score_threshold = 0.0
+        
+        mock_router.check_query_intent = AsyncMock(return_value={"action": "ALLOW", "domain": None, "refusal_message": None})
+        
+        # We don't even need to mock OpenAI because it shouldn't be called for generation!
+        with patch('backend.main.AsyncOpenAI') as mock_openai:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                req_data = {
+                    "messages": [{"role": "user", "content": "無關緊要的問題"}],
+                    "use_rag": True
+                }
+                response = await ac.post("/api/v1/stream", json=req_data)
+                
+                assert response.status_code == 200
+                content = response.text
+                
+                # Check that it returned the exact RAG refusal message
+                assert "小紅查閱了相關古籍文獻，暫時沒能找到與您問題直接相關的內容" in content
+                
+                # OpenAI generation should NOT be called
+                assert not mock_openai.return_value.chat.completions.create.called
