@@ -1,0 +1,21 @@
+# Async & File IO
+aiofiles>=23.2.1
+aiohttp>=3.9.0
+
+# LLM & Machine Learning
+torch>=2.0.0
+transformers>=4.36.0
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+
+# Text Processing  
+langchain-text-splitters>=0.2.0
+
+# HTTP & Environment
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Utils & UI
+rich>=13.0.0
+tqdm>=4.66.0
+numpy>=1.24.0
