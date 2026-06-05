@@ -380,6 +380,10 @@ class RAGService:
                         query = pairs[0][0] # All pairs share same query
                         documents = [p[1] for p in pairs]
                         
+                        import math
+                        def sigmoid(x: float) -> float:
+                            return 1.0 / (1.0 + math.exp(-x))
+                        
                         try:
                             # Send batch request
                             payload = {
@@ -391,9 +395,9 @@ class RAGService:
                             if resp.status_code == 200:
                                 data = resp.json()
                                 # Sort original inputs with the returned scores 
-                                # (usually returned as `scores` array parallel to `documents`)
                                 if "scores" in data:
-                                    scores = data["scores"]
+                                    raw_scores = data["scores"]
+                                    scores = [sigmoid(s) for s in raw_scores]
                                     return scores
                                 elif "results" in data:
                                      # Sometimes format like: { "results": [{"index":0, "document":{"text":...}, "relevance_score": 0.8}] }
@@ -464,6 +468,23 @@ class RAGService:
             with open(self._faiss_metadata_path, "r", encoding="utf-8") as f:
                 self._faiss_metadata = json.load(f)
             logger.info("Loaded FAISS metadata: %d entries", len(self._faiss_metadata))
+            
+            # Create chunk_id -> text map for fast lookup by BM25
+            self._chunk_id_to_text = {}
+            self._chunk_id_to_source = {}
+            for idx, meta in enumerate(self._faiss_metadata):
+                cid = meta.get("chunk_id")
+                if not cid and "metadata" in meta:
+                    cid = meta["metadata"].get("chunk_id")
+                if not cid:
+                    cid = str(idx)
+                    
+                self._chunk_id_to_text[cid] = meta.get("page_content", meta.get("text", ""))
+                
+                source = meta.get("source", "")
+                if not source and "metadata" in meta:
+                    source = meta["metadata"].get("source", "")
+                self._chunk_id_to_source[cid] = source
         else:
             logger.warning(
                 "FAISS metadata file not found: %s — "
@@ -652,11 +673,11 @@ class RAGService:
                     source = meta["metadata"].get("source", "")
 
             results.append({
-                "id": idx,
+                "id": chunk_id,  # Use chunk_id for proper RRF fusion
                 "score": float(score),
                 "text": text,
                 "chunk_id": chunk_id,
-                "source": meta.get("source", ""),
+                "source": source,
             })
         return results
 
@@ -694,10 +715,17 @@ class RAGService:
                 if not source:
                     source = r.metadata.get("source", "")
 
+            text = r.metadata.get("page_content", r.text) if r.metadata else r.text
+            if not text and hasattr(self, '_chunk_id_to_text'):
+                text = self._chunk_id_to_text.get(chunk_id, "")
+                
+            if not source and hasattr(self, '_chunk_id_to_source'):
+                source = self._chunk_id_to_source.get(chunk_id, "")
+
             results.append({
-                "id": r.id,
+                "id": chunk_id,  # Use chunk_id for proper RRF fusion
                 "score": float(r.score),
-                "text": r.metadata.get("page_content", r.text) if r.metadata else r.text,
+                "text": text,
                 "chunk_id": chunk_id,
                 "source": source,
             })
@@ -987,6 +1015,7 @@ class RAGService:
 
         # Only keep results whose text survived truncation
         final = sanitized[: len(truncated_texts)]
+        print(f"DEBUG RAG: len(top_results)={len(top_results)}, len(sanitized)={len(sanitized)}, len(truncated)={len(truncated_texts)}")
         debug_info.final_results = final
         debug_info.context = self.format_context(final)
         debug_info.sanitized_count = sanitized_count

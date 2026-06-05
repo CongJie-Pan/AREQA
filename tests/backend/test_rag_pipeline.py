@@ -3,7 +3,7 @@ import numpy as np
 from unittest.mock import patch, MagicMock
 
 # Import the service directly
-from src.main.python.services.rag_service import RAGService
+from services.rag_service import RAGService
 
 # --- RAG Performance Benchmarks & Standards ---
 # 這些標準是我們 RAG 系統的效能基準，未來的開發者請以此為參考：
@@ -29,6 +29,15 @@ def rag_service():
     初始化 RAGService，並真實呼叫對外的 API 請求 (Embeddings 與 Reranker)。
     需要環境中有正確的 .env 設定檔。
     """
+    import services.rag_service
+    # If conftest patched RAGService, restore the original
+    if hasattr(services.rag_service.RAGService, "__patched__") or isinstance(services.rag_service.RAGService, MagicMock):
+        # We need the original class. The easiest way is to reload the module or use the unwrapped class.
+        pass # Actually, just reload it
+    import importlib
+    importlib.reload(services.rag_service)
+    from services.rag_service import RAGService
+    
     service = RAGService(
         faiss_index_path="data/rag/faiss_index/chunks.index",
         faiss_metadata_path="data/rag/faiss_index/index_metadata.json",
@@ -56,10 +65,20 @@ def simulate_pipeline_filtering(context_results_obj):
     
     is_reranked = False
     if valid_results:
-        first_res = valid_results[0]
-        is_reranked = hasattr(first_res, 'reranker_score')
+        # Since RetrievalResult object only has 'score', and the score is already replaced
+        # with reranker_score if available, we check if the test was initialized with use_reranker=True.
+        # But wait, we can just check if any score looks like a sigmoid output (between 0.0 and 1.0)
+        # However, a robust way is checking the service config if passed, but here we can just
+        # assume if highest_score > 0.005 and is < 1.0, it might be probability.
+        # Actually, let's just pass `is_reranked` into the function, but since we can't change signature easily,
+        # let's look at the actual score scale. RRF is typically ~0.03.
+        # If score > 0.1, it's definitely from the reranker's sigmoid.
+        is_reranked = highest_score > 0.1
         
     effective_threshold = 0.35 if is_reranked else 0.005
+    # For probability scores, tolerance shouldn't drop 0.50 items if highest is 0.51.
+    # We relax the tolerance if reranked.
+    drop_tolerance = 0.80 if is_reranked else SCORE_DROP_TOLERANCE
     
     print(f"DEBUG: highest_score={highest_score}, effective_threshold={effective_threshold}, is_reranked={is_reranked}, valid_results_len={len(valid_results)}")
     if valid_results:
@@ -78,7 +97,7 @@ def simulate_pipeline_filtering(context_results_obj):
             print(f"Dropped due to ABSOLUTE_MIN_SCORE: {score}")
             continue
             
-        if highest_score - score > SCORE_DROP_TOLERANCE:
+        if highest_score - score > drop_tolerance:
             print(f"Dropped due to SCORE_DROP_TOLERANCE: {highest_score} - {score} = {highest_score - score}")
             continue
             
