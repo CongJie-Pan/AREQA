@@ -229,23 +229,6 @@ class gum:
 
     async def _process_batch(self, batched_observations):
         """Process a batch of observations together to reduce API calls."""
-        
-        # Combine all observations into a single content for analysis
-        combined_content = []
-        observation_ids = []
-        
-        for obs in batched_observations:
-            combined_content.append(f"[{obs['observer_name']}] {obs['content']}")
-            observation_ids.append(obs['id'])
-            
-        combined_text = "\n\n".join(combined_content)
-        
-        # Create a combined update
-        combined_update = Update(
-            content=combined_text,
-            content_type="input_text"
-        )
-        
         try:
             async with self._session() as session:
                 # Create observations in database
@@ -261,8 +244,8 @@ class gum:
                 
                 await session.flush()
                 
-                # Process the combined content
-                pool = await self._generate_and_search(session, combined_update)
+                # Process the batched observations directly to support multimodality
+                pool = await self._generate_and_search(session, batched_observations)
                 identical, similar, different = await self._filter_propositions(pool)
 
                 self.logger.info("Applying proposition updates for batch...")
@@ -289,24 +272,47 @@ class gum:
                 for obs in batched_observations:
                     self.batcher.push(obs['observer_name'], obs['content'], obs['content_type'])
 
-    async def _construct_propositions(self, update: Update) -> list[PropositionItem]:
-        """Generate propositions from an update.
+    async def _construct_propositions(self, batched_observations: list[dict]) -> list[PropositionItem]:
+        """Generate propositions from batched observations, supporting multimodal inputs.
         
         Args:
-            update (Update): The update to generate propositions from.
+            batched_observations (list[dict]): The batched observations.
             
         Returns:
             list[PropositionItem]: List of generated propositions.
         """
-        prompt = (
+        # Build text part of the prompt
+        text_contents = []
+        image_contents = []
+        for obs in batched_observations:
+            if obs['content_type'] == 'input_image':
+                # Base64 image
+                image_contents.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": obs['content']
+                    }
+                })
+            else:
+                text_contents.append(f"[{obs['observer_name']}] {obs['content']}")
+                
+        combined_text = "\n\n".join(text_contents)
+        
+        prompt_text = (
             self.propose_prompt.replace("{user_name}", self.user_name)
-            .replace("{inputs}", update.content)
+            .replace("{inputs}", combined_text)
         )
+        
+        if image_contents:
+            prompt_text += "\n\nPlease analyze the attached screen capture images to infer what the user is currently doing."
+            message_content = [{"type": "text", "text": prompt_text}] + image_contents
+        else:
+            message_content = prompt_text
 
         schema = PropositionSchema.model_json_schema()
         rsp = await self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": message_content}],
             response_format=get_schema(schema),
         )
 
@@ -427,10 +433,10 @@ class gum:
         return json.loads(rsp.choices[0].message.content)["propositions"]
 
     async def _generate_and_search(
-        self, session: AsyncSession, update: Update
+        self, session: AsyncSession, batched_observations: list[dict]
     ) -> list[Proposition]:
 
-        drafts_raw = await self._construct_propositions(update)
+        drafts_raw = await self._construct_propositions(batched_observations)
         drafts: list[Proposition] = []
         pool: dict[int, Proposition] = {}
 

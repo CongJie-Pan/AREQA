@@ -16,63 +16,43 @@ from gum.models import Proposition, Observation
 # Global GUM instance and background task references
 gum_instance: Optional[gum] = None
 recording_task: Optional[asyncio.Task] = None
-mock_observer: Optional['MockObserver'] = None
-
-class MockObserver(Observer):
-    """
-    Mock observer for Linux environments that periodically generates simulated user
-    activities and posts them as Update observations to GUM.
-    """
-    def __init__(self, name: str = "MockObserver", interval: float = 8.0):
-        self.interval = interval
-        super().__init__(name=name)
-
-    async def _worker(self) -> None:
-        mock_activities = [
-            "User is browsing GitHub, searching for how to build a FastAPI application.",
-            "User is writing code in VS Code, specifically editing a React component with Tailwind CSS.",
-            "User is searching on Google for 'Zustand vs Redux Toolkit performance'.",
-            "User is messaging a colleague on Slack: 'I will submit the pull request soon for Gumbo app.'",
-            "User is checking their calendar, there's a meeting in 15 minutes about AI agents.",
-            "User is reading a research paper: 'Creating General User Models from Computer Use'.",
-            "User is working on a presentation titled 'AI General User Models' in Google Slides.",
-            "User is writing a design document on Notion about user privacy auditing.",
-            "User is struggling with writing a unit test for state management in Vite."
-        ]
-        while self._running:
-            # Randomly select a simulated user activity
-            activity = random.choice(mock_activities)
-            update_obj = Update(content=activity, content_type="input_text")
-            
-            # Put the update into the GUM queue
-            await self.update_queue.put(update_obj)
-            
-            # Sleep for the configured interval
-            await asyncio.sleep(self.interval)
 
 async def init_gum(user_name: str, model_name: str, api_key: str) -> gum:
     """
     Initialize the GUM instance.
     """
-    global gum_instance, mock_observer
+    global gum_instance
     
     # Store settings in environment variables if needed
     os.environ["OPENAI_API_KEY"] = api_key
     
-    mock_observer = MockObserver(interval=10.0)
-    
     gum_instance = gum(
         user_name,
         model_name,
-        mock_observer,
+        # No built-in mock observers anymore, we rely on push_observation
         api_key=api_key,
         audit_enabled=True,
-        min_batch_size=1,  # Set low batch size for quick testing
+        min_batch_size=1,  # Set low batch size for quick processing of screenshots
         max_batch_size=3
     )
     
     await gum_instance.connect_db()
     return gum_instance
+
+async def push_observation(content: str, content_type: str = "input_image"):
+    """
+    Push a real observation (like a screenshot) into the GUM batcher.
+    """
+    global gum_instance
+    if not gum_instance:
+        return False
+        
+    gum_instance.batcher.push(
+        observer_name="ScreenCapture",
+        content=content,
+        content_type=content_type
+    )
+    return True
 
 async def run_gum_loop(user_name: str, model_name: str, api_key: str):
     """
@@ -101,7 +81,7 @@ async def stop_recording():
     """
     Stop the GUM background task.
     """
-    global recording_task, gum_instance, mock_observer
+    global recording_task, gum_instance
     if recording_task:
         recording_task.cancel()
         try:
@@ -110,10 +90,6 @@ async def stop_recording():
             pass
         recording_task = None
     
-    if mock_observer:
-        await mock_observer.stop()
-        mock_observer = None
-        
     gum_instance = None
 
 async def get_all_propositions() -> List[dict]:

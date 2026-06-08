@@ -63,7 +63,8 @@ export const useStore = create<GumboState>((set) => ({
       set({
         isRecording: res.data.is_recording,
         userName: res.data.user_name || 'default_user',
-        modelName: res.data.model_name || 'gpt-4o-mini'
+        modelName: res.data.model_name || 'gpt-4o-mini',
+        enableScreenCapture: res.data.enable_screen_capture || false
       });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {

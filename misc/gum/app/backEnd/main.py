@@ -109,6 +109,29 @@ async def stop_recording():
     await gum_manager.stop_recording()
     return {"status": "success", "message": "Recording stopped."}
 
+class ObservationPayload(BaseModel):
+    type: str = "input_image"
+    content: str  # Base64 string or text
+
+@app.post("/api/recording/observation")
+async def receive_observation(payload: ObservationPayload):
+    """
+    Receive real observation data (e.g. screenshot base64) from the frontend.
+    """
+    if not gum_manager.gum_instance:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GUM is not running. Please start recording first."
+        )
+    
+    success = await gum_manager.push_observation(
+        content=payload.content,
+        content_type=payload.type
+    )
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to queue observation")
+    return {"status": "success"}
+
 @app.get("/api/recording/status")
 async def get_recording_status():
     """
@@ -119,7 +142,8 @@ async def get_recording_status():
     return {
         "is_recording": is_active,
         "user_name": settings_store["user_name"],
-        "model_name": settings_store["model_name"]
+        "model_name": settings_store["model_name"],
+        "enable_screen_capture": settings_store["enable_screen_capture"]
     }
 
 @app.get("/api/memory")

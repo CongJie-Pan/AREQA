@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import TourGuide from './components/TourGuide';
+import ScreenObserver from './components/ScreenObserver';
 import Suggestions from './pages/Suggestions';
 import Memory from './pages/Memory';
 import SettingsPage from './pages/Settings';
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen bg-[#121212] text-white font-sans overflow-hidden antialiased">
       <TourGuide />
+      <ScreenObserver />
       {/* Left Sidebar Navigation */}
       <Sidebar />
 
