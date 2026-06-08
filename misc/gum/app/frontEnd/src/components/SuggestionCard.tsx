@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Suggestion, useStore } from '../store/useStore';
+import { type Suggestion, useStore } from '../store/useStore';
 import { ThumbsUp, ThumbsDown, Play, CheckCircle } from 'lucide-react';
 
 interface SuggestionCardProps {

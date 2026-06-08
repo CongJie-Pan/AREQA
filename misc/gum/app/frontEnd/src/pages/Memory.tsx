@@ -9,7 +9,7 @@ const Memory: React.FC = () => {
 
   useEffect(() => {
     fetchMemory();
-  }, []);
+  }, [fetchMemory]);
 
   const handleRefresh = () => {
     fetchMemory();

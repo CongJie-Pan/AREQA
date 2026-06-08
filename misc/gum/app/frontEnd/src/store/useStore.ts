@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 export interface Proposition {
   id: number;
@@ -43,12 +43,12 @@ interface GumboState {
   saveSettings: (userName: string, llmApiKey: string, enableScreenCapture: boolean, modelName: string) => Promise<void>;
 }
 
-export const useStore = create<GumboState>((set, get) => ({
+export const useStore = create<GumboState>((set) => ({
   isRecording: false,
   propositions: [],
   suggestions: [],
   userName: 'default_user',
-  modelName: 'gpt-4o-mini',
+  modelName: 'qwen/qwen3-235b-a22b-2507',
   llmApiKey: '',
   enableScreenCapture: false,
   currentPage: 'suggestions',
@@ -65,6 +65,7 @@ export const useStore = create<GumboState>((set, get) => ({
         userName: res.data.user_name || 'default_user',
         modelName: res.data.model_name || 'gpt-4o-mini'
       });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('Failed to fetch status:', err);
     }
@@ -75,6 +76,7 @@ export const useStore = create<GumboState>((set, get) => ({
     try {
       await axios.post(`${API_BASE}/recording/start`);
       set({ isRecording: true, loading: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to start recording', loading: false });
     }
@@ -85,6 +87,7 @@ export const useStore = create<GumboState>((set, get) => ({
     try {
       await axios.post(`${API_BASE}/recording/stop`);
       set({ isRecording: false, loading: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to stop recording', loading: false });
     }
@@ -95,6 +98,7 @@ export const useStore = create<GumboState>((set, get) => ({
     try {
       const res = await axios.get(`${API_BASE}/memory`);
       set({ propositions: res.data.propositions || [], loading: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to fetch memory', loading: false });
     }
@@ -110,6 +114,7 @@ export const useStore = create<GumboState>((set, get) => ({
         ),
         loading: false,
       }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to update proposition', loading: false });
     }
@@ -123,6 +128,7 @@ export const useStore = create<GumboState>((set, get) => ({
         propositions: state.propositions.filter((p) => p.id !== id),
         loading: false,
       }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to delete proposition', loading: false });
     }
@@ -133,6 +139,7 @@ export const useStore = create<GumboState>((set, get) => ({
     try {
       const res = await axios.get(`${API_BASE}/suggestions`);
       set({ suggestions: res.data.suggestions || [], loading: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to fetch suggestions', loading: false });
     }
@@ -145,6 +152,7 @@ export const useStore = create<GumboState>((set, get) => ({
         is_positive: isPositive,
         text_feedback: textFeedback
       });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('Failed to submit feedback:', err);
     }
@@ -166,6 +174,7 @@ export const useStore = create<GumboState>((set, get) => ({
         modelName,
         loading: false
       });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to save settings', loading: false });
       throw err;

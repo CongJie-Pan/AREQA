@@ -24,7 +24,7 @@ const Sidebar: React.FC = () => {
 
   useEffect(() => {
     fetchStatus();
-  }, []);
+  }, [fetchStatus]);
 
   const handleRecordingToggle = () => {
     if (isRecording) {
@@ -35,11 +35,11 @@ const Sidebar: React.FC = () => {
   };
 
   const navItems = [
-    { id: 'suggestions' as const, label: 'Suggestions', icon: Lightbulb },
+    { id: 'suggestions' as const, label: 'Suggestions', icon: Lightbulb, htmlId: 'tour-step-suggestions' },
     { id: 'projects' as const, label: 'Projects', icon: Folder, disabled: true },
-    { id: 'memory' as const, label: 'Memory', icon: Brain },
+    { id: 'memory' as const, label: 'Memory', icon: Brain, htmlId: 'tour-step-memory' },
     { id: 'agent' as const, label: 'Customize Agent', icon: Cpu, disabled: true },
-    { id: 'settings' as const, label: 'Settings', icon: Settings },
+    { id: 'settings' as const, label: 'Settings', icon: Settings, htmlId: 'tour-step-settings' },
   ];
 
   return (
@@ -64,7 +64,9 @@ const Sidebar: React.FC = () => {
             return (
               <button
                 key={item.id}
+                id={item.htmlId}
                 disabled={item.disabled}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => !item.disabled && setCurrentPage(item.id as any)}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                   item.disabled
@@ -113,6 +115,7 @@ const Sidebar: React.FC = () => {
       {/* Footer Controls */}
       <div className="space-y-2 pt-4 border-t border-[#2d2d2d]">
         <button
+          id="tour-step-record"
           onClick={handleRecordingToggle}
           className={`w-full flex items-center justify-center space-x-2 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md ${
             isRecording

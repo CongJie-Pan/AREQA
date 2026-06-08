@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Proposition, useStore } from '../store/useStore';
+import { type Proposition, useStore } from '../store/useStore';
 import { Edit2, Trash2, Check, X, ShieldAlert } from 'lucide-react';
 
 interface MemoryTableProps {

@@ -280,9 +280,14 @@ class gum:
             if batched_observations:
                 self.logger.error(f"First observation type: {type(batched_observations[0])}")
                 self.logger.error(f"First observation: {batched_observations[0]}")
-            # Put failed items back in queue for retry
-            for obs in batched_observations:
-                self.batcher.push(obs['observer_name'], obs['content'], obs['content_type'])
+            
+            import openai
+            if isinstance(e, openai.AuthenticationError):
+                self.logger.error("Authentication Error encountered! Discarding batch to prevent infinite loop.")
+            else:
+                # Put failed items back in queue for retry
+                for obs in batched_observations:
+                    self.batcher.push(obs['observer_name'], obs['content'], obs['content_type'])
 
     async def _construct_propositions(self, update: Update) -> list[PropositionItem]:
         """Generate propositions from an update.

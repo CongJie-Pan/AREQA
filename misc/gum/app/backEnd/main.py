@@ -4,6 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import logging
+from dotenv import load_dotenv, set_key
+
+# Load environment variables
+env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.env"))
+load_dotenv(env_path)
 
 from core import gum_manager
 
@@ -23,7 +28,7 @@ class SettingsPayload(BaseModel):
     user_name: str = "default_user"
     llm_api_key: str
     enable_screen_capture: bool = False
-    model_name: str = "gpt-4o-mini"
+    model_name: str = "qwen/qwen3-235b-a22b-2507"
 
 class PropositionUpdate(BaseModel):
     text: str
@@ -37,20 +42,26 @@ class FeedbackPayload(BaseModel):
 # Global configs cache (in-memory for simple settings management)
 settings_store = {
     "user_name": "default_user",
-    "llm_api_key": os.getenv("OPENAI_API_KEY", ""),
+    "llm_api_key": os.getenv("OPENROUTER_API_KEY", os.getenv("OPENAI_API_KEY", "")),
     "enable_screen_capture": False,
-    "model_name": "gpt-4o-mini"
+    "model_name": "qwen/qwen3-235b-a22b-2507"
 }
 
 @app.post("/api/settings")
 async def update_settings(payload: SettingsPayload):
     """
-    Save settings and initialize or re-initialize GUM.
+    Save settings to .env and initialize or re-initialize GUM.
     """
     settings_store["user_name"] = payload.user_name
     settings_store["llm_api_key"] = payload.llm_api_key
     settings_store["enable_screen_capture"] = payload.enable_screen_capture
     settings_store["model_name"] = payload.model_name
+    
+    # Save to .env
+    set_key(env_path, "OPENROUTER_API_KEY", payload.llm_api_key)
+    set_key(env_path, "GUM_LM_API_BASE", "https://openrouter.ai/api/v1")
+    os.environ["OPENROUTER_API_KEY"] = payload.llm_api_key
+    os.environ["GUM_LM_API_BASE"] = "https://openrouter.ai/api/v1"
     
     # Initialize GUM instance with the provided settings
     try:
@@ -76,6 +87,11 @@ async def start_recording():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="API Key is not configured. Please save your API Key in Settings first."
+        )
+    if not api_key.startswith("sk-"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid API Key format. OpenRouter API keys must start with 'sk-'. Please check your Settings."
         )
     
     gum_manager.start_recording(
@@ -201,7 +217,7 @@ async def submit_feedback(payload: FeedbackPayload):
         # Feed the feedback back as an observation
         from gum.schemas import Update
         update_obj = Update(content=feedback_str, content_type="input_text")
-        await gum_manager.gum_instance.batcher.add_observation(
+        gum_manager.gum_instance.batcher.push(
             observer_name="UserFeedback",
             content=update_obj.content,
             content_type=update_obj.content_type
@@ -212,6 +228,29 @@ async def submit_feedback(payload: FeedbackPayload):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit feedback: {str(e)}"
         )
+
+# Mount frontend dist directory to serve the React SPA
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+dist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontEnd/dist"))
+if os.path.exists(dist_dir):
+    # Mount the /assets specifically to avoid catching everything
+    assets_dir = os.path.join(dist_dir, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    # Serve index.html for root and any non-api path (SPA fallback)
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API Route not found")
+        # Try to serve a specific file if it exists (like vite.svg)
+        file_path = os.path.join(dist_dir, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        # Fallback to index.html
+        return FileResponse(os.path.join(dist_dir, "index.html"))
 
 if __name__ == "__main__":
     import uvicorn

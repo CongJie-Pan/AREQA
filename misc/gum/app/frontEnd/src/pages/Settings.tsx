@@ -21,10 +21,12 @@ const SettingsPage: React.FC = () => {
 
   // Sync state if store updates (e.g. on load)
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLocalUser(userName);
     setLocalApiKey(llmApiKey);
     setLocalModel(modelName);
     setLocalScreenCap(enableScreenCapture);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [userName, modelName, llmApiKey, enableScreenCapture]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -92,10 +94,10 @@ const SettingsPage: React.FC = () => {
                 onChange={(e) => setLocalModel(e.target.value)}
                 className="w-full bg-[#151515] border border-[#2d2d2d] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
               >
-                <option value="gpt-4o-mini">gpt-4o-mini (Default)</option>
+                <option value="qwen/qwen3-235b-a22b-2507">Qwen3 235B (Instruct)</option>
+                <option value="qwen/qwen3-vl-235b-a22b-instruct">Qwen3 VL 235B (Vision)</option>
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
                 <option value="gpt-4o">gpt-4o</option>
-                <option value="o1-mini">o1-mini</option>
-                <option value="o1-preview">o1-preview</option>
               </select>
             </div>
           </div>
@@ -109,14 +111,14 @@ const SettingsPage: React.FC = () => {
           </h3>
 
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">OpenAI API Key</label>
+            <label className="block text-xs font-medium text-gray-400 mb-1.5">OpenRouter API Key</label>
             <input
               type="password"
               value={localApiKey}
               onChange={(e) => setLocalApiKey(e.target.value)}
               required
               className="w-full bg-[#151515] border border-[#2d2d2d] rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50 font-mono"
-              placeholder="sk-..."
+              placeholder="sk-or-v1-..."
             />
             <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">
               Required for reasoning and proposition generation. Stored locally in backend memory.

@@ -10,7 +10,7 @@ const Suggestions: React.FC = () => {
 
   useEffect(() => {
     fetchSuggestions();
-  }, []);
+  }, [fetchSuggestions]);
 
   const handleRefresh = () => {
     fetchSuggestions();
