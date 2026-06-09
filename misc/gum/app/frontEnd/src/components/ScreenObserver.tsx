@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useStore } from '../store/useStore';
 
@@ -15,51 +15,7 @@ const ScreenObserver: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    // If not recording or screen capture disabled, clean up and exit
-    if (!isRecording || !enableScreenCapture) {
-      stopCapture();
-      return;
-    }
-
-    // Start capturing
-    startCapture();
-
-    return () => {
-      stopCapture();
-    };
-  }, [isRecording, enableScreenCapture]);
-
-  const startCapture = async () => {
-    try {
-      if (!streamRef.current) {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            displaySurface: 'monitor',
-          },
-          audio: false,
-        });
-        streamRef.current = stream;
-
-        // Listen for stream stop from browser UI
-        stream.getVideoTracks()[0].onended = () => {
-          stopCapture();
-          // Ideally update store if permission revoked, but simple cleanup for now
-        };
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      }
-
-      // 6-second interval per user request
-      intervalRef.current = window.setInterval(captureAndSendFrame, 6000);
-    } catch (err) {
-      console.error('Failed to start screen capture:', err);
-    }
-  };
-
-  const stopCapture = () => {
+  const stopCapture = useCallback(() => {
     if (intervalRef.current !== null) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -71,9 +27,9 @@ const ScreenObserver: React.FC = () => {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  };
+  }, []);
 
-  const captureAndSendFrame = async () => {
+  const captureAndSendFrame = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !streamRef.current) return;
@@ -115,7 +71,51 @@ const ScreenObserver: React.FC = () => {
     } catch (err) {
       console.error('Failed to send observation:', err);
     }
-  };
+  }, []);
+
+  const startCapture = useCallback(async () => {
+    try {
+      if (!streamRef.current) {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: 'monitor',
+          },
+          audio: false,
+        });
+        streamRef.current = stream;
+
+        // Listen for stream stop from browser UI
+        stream.getVideoTracks()[0].onended = () => {
+          stopCapture();
+          // Ideally update store if permission revoked, but simple cleanup for now
+        };
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }
+
+      // 6-second interval per user request
+      intervalRef.current = window.setInterval(captureAndSendFrame, 6000);
+    } catch (err) {
+      console.error('Failed to start screen capture:', err);
+    }
+  }, [captureAndSendFrame, stopCapture]);
+
+  useEffect(() => {
+    // If not recording or screen capture disabled, clean up and exit
+    if (!isRecording || !enableScreenCapture) {
+      stopCapture();
+      return;
+    }
+
+    // Start capturing
+    startCapture();
+
+    return () => {
+      stopCapture();
+    };
+  }, [isRecording, enableScreenCapture, startCapture, stopCapture]);
 
   return (
     <div style={{ display: 'none' }}>

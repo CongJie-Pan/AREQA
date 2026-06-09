@@ -184,6 +184,19 @@ async def update_memory(prop_id: int, payload: PropositionUpdate):
         )
     return {"status": "success", "message": "Proposition updated successfully."}
 
+@app.delete("/api/memory")
+async def delete_all_memory():
+    """
+    Delete all propositions.
+    """
+    success = await gum_manager.delete_all_props()
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to delete all propositions. Is GUM initialized?"
+        )
+    return {"status": "success", "message": "All propositions deleted successfully."}
+
 @app.delete("/api/memory/{prop_id}")
 async def delete_memory(prop_id: int):
     """

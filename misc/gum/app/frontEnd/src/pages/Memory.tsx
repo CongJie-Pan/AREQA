@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import MemoryTable from '../components/MemoryTable';
-import { Search, RefreshCw, BrainCircuit } from 'lucide-react';
+import { Search, RefreshCw, BrainCircuit, Trash2 } from 'lucide-react';
 
 const Memory: React.FC = () => {
-  const { propositions, fetchMemory, loading } = useStore();
+  const { propositions, fetchMemory, deleteAllMemory, loading } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -13,6 +13,12 @@ const Memory: React.FC = () => {
 
   const handleRefresh = () => {
     fetchMemory();
+  };
+
+  const handleDeleteAll = async () => {
+    if (window.confirm('Are you sure you want to delete ALL memory propositions? This cannot be undone.')) {
+      await deleteAllMemory();
+    }
   };
 
   const filteredPropositions = propositions.filter((p) =>
@@ -33,14 +39,25 @@ const Memory: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleRefresh}
-          disabled={loading}
-          className="flex items-center space-x-2 px-3 py-1.5 bg-[#1e1e1e] border border-[#2d2d2d] rounded-lg text-xs font-semibold text-gray-300 hover:bg-[#252525] hover:text-white transition-all"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          <span>Refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDeleteAll}
+            disabled={loading || propositions.length === 0}
+            className="flex items-center space-x-2 px-3 py-1.5 bg-red-900/20 border border-red-900/50 rounded-lg text-xs font-semibold text-red-400 hover:bg-red-900/40 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            <Trash2 size={14} />
+            <span>Delete All</span>
+          </button>
+          
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex items-center space-x-2 px-3 py-1.5 bg-[#1e1e1e] border border-[#2d2d2d] rounded-lg text-xs font-semibold text-gray-300 hover:bg-[#252525] hover:text-white transition-all"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Search Input */}

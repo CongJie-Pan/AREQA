@@ -91,7 +91,7 @@ Assign high confidence scores (e.g., 8-10) only when the transcriptions provide 
 
 Generate propositions across the scale to get a wide range of inferences about {user_name}.  
 
-Return your results in this exact JSON format:
+Return your results in this exact JSON format (Ensure that all output text in 'proposition' and 'reasoning' fields are written in Traditional Chinese / 繁體中文):
 
 {
   "propositions": [
@@ -169,7 +169,7 @@ Score: **1 (short-lived)** to **10 (long-term relevance or behavioral pattern)**
 
 Assign high confidence scores (e.g., 8-10) only when the transcriptions provide explicit, direct evidence that {user_name} is actively engaging with the content in a meaningful way. Keep in mind that that the input is what the {user_name} is viewing. It may not be what the {user_name} is actively doing, so practice caution when assigning confidence.
 
-Return **only** JSON in the following format:
+Return **only** JSON in the following format (Ensure that all output text in 'proposition' and 'reasoning' fields are written in Traditional Chinese / 繁體中文):
 
 {
   "propositions": [

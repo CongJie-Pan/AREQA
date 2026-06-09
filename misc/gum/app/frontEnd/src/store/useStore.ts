@@ -38,6 +38,7 @@ interface GumboState {
   fetchMemory: () => Promise<void>;
   updateMemory: (id: number, text: string, confidence: number) => Promise<void>;
   deleteMemory: (id: number) => Promise<void>;
+  deleteAllMemory: () => Promise<void>;
   fetchSuggestions: () => Promise<void>;
   submitFeedback: (suggestionId: string, isPositive: boolean, textFeedback?: string) => Promise<void>;
   saveSettings: (userName: string, llmApiKey: string, enableScreenCapture: boolean, modelName: string) => Promise<void>;
@@ -132,6 +133,17 @@ export const useStore = create<GumboState>((set) => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to delete proposition', loading: false });
+    }
+  },
+
+  deleteAllMemory: async () => {
+    set({ loading: true, error: null });
+    try {
+      await axios.delete(`${API_BASE}/memory`);
+      set({ propositions: [], loading: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Failed to delete all propositions', loading: false });
     }
   },
 

@@ -108,6 +108,23 @@ async def test_delete_memory():
         gum_manager.delete_prop = original_delete
 
 @pytest.mark.asyncio
+async def test_delete_all_memory():
+    settings_store["llm_api_key"] = "fake"
+    
+    original_delete_all = gum_manager.delete_all_props
+    async def mock_delete_all(*args): return True
+    gum_manager.delete_all_props = mock_delete_all
+    
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.delete("/api/memory")
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+        assert "All propositions deleted successfully" in response.json()["message"]
+    finally:
+        gum_manager.delete_all_props = original_delete_all
+
+@pytest.mark.asyncio
 async def test_get_suggestions():
     settings_store["llm_api_key"] = "fake"
     
@@ -187,3 +204,38 @@ async def test_update_settings_with_openrouter_qwen_models():
         # Verify environment variables were set for GUM internal usage
         assert os.environ.get("OPENROUTER_API_KEY") == "sk-or-v1-fake-test-key"
         assert os.environ.get("GUM_LM_API_BASE") == "https://openrouter.ai/api/v1"
+
+@pytest.mark.asyncio
+async def test_receive_observation_when_not_recording():
+    # Ensure gum_instance is None
+    await gum_manager.stop_recording()
+    
+    payload = {"type": "input_image", "content": "base64_fake_data"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post("/api/recording/observation", json=payload)
+    
+    assert response.status_code == 400
+    assert "GUM is not running" in response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_receive_observation_success():
+    # Initialize GUM to simulate active recording
+    await gum_manager.init_gum("test", "gpt-4o-mini", "fake")
+    payload = {"type": "input_image", "content": "base64_fake_data"}
+    
+    original_push = gum_manager.push_observation
+    async def mock_push(content, content_type):
+        assert content == "base64_fake_data"
+        assert content_type == "input_image"
+        return True
+    gum_manager.push_observation = mock_push
+    
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post("/api/recording/observation", json=payload)
+        
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+    finally:
+        gum_manager.push_observation = original_push
+        await gum_manager.stop_recording()

@@ -15,7 +15,7 @@ import traceback
 
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert
+from sqlalchemy import insert, update, func
 
 from .db_utils import (
     get_related_observations,
@@ -606,7 +606,11 @@ class gum:
             .prefix_with("OR IGNORE")
             .values(observation_id=obs.id, proposition_id=prop.id)
         )
-        prop.updated_at = datetime.now(timezone.utc)
+        await session.execute(
+            update(Proposition)
+            .where(Proposition.id == prop.id)
+            .values(updated_at=func.now())
+        )
 
     def add_observer(self, observer: Observer):
         """Add an observer to track user behavior.

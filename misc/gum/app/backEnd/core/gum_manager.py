@@ -145,6 +145,18 @@ async def delete_prop(prop_id: int) -> bool:
         )
     return True
 
+async def delete_all_props() -> bool:
+    """
+    Delete all propositions from GUM database.
+    """
+    global gum_instance
+    if not gum_instance:
+        return False
+        
+    async with gum_instance._session() as session:
+        await session.execute(delete(Proposition))
+    return True
+
 async def generate_suggestions() -> List[dict]:
     """
     Generate proactive suggestions based on current propositions using LLM.
@@ -159,8 +171,8 @@ async def generate_suggestions() -> List[dict]:
         return [
             {
                 "id": "s1",
-                "title": "Start recording your computer activities",
-                "description": "Gumbo needs observations of your daily work to formulate propositions and suggestions. Enable recording to start.",
+                "title": "開始記錄您的電腦活動",
+                "description": "Gumbo 需要觀察您的日常工作來建立命題與建議。請啟用錄製以開始。",
                 "benefit": 9,
                 "confidence": 10
             }
@@ -170,6 +182,7 @@ async def generate_suggestions() -> List[dict]:
     prompt = f"""
 You are the AI assistant Gumbo. Based on the user's current behavioral propositions below, generate a JSON object containing a list of 3-5 concrete, personalized, and actionable suggestions.
 If the propositions indicate the user is struggling, suggest a solution. If they show a pattern of interest, suggest related content or action.
+Ensure that ALL text fields in your response are written in Traditional Chinese / 繁體中文.
 
 User Propositions:
 {props_text}
