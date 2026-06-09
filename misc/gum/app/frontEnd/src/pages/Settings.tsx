@@ -94,7 +94,7 @@ const SettingsPage: React.FC = () => {
                 onChange={(e) => setLocalModel(e.target.value)}
                 className="w-full bg-[#151515] border border-[#2d2d2d] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
               >
-                <option value="qwen/qwen3-235b-a22b-2507">Qwen3 235B (Instruct)</option>
+                <option value="openai/gpt-4o-mini">GPT-4o Mini (Vision + JSON Schema)</option>
                 <option value="qwen/qwen3-vl-235b-a22b-instruct">Qwen3 VL 235B (Vision)</option>
                 <option value="gpt-4o-mini">gpt-4o-mini</option>
                 <option value="gpt-4o">gpt-4o</option>
@@ -141,9 +141,9 @@ const SettingsPage: React.FC = () => {
               className="mt-1 bg-[#151515] border-[#2d2d2d] text-amber-600 rounded focus:ring-amber-500/30"
             />
             <div>
-              <label htmlFor="screenCap" className="block text-sm font-semibold text-white">Enable Screen Capture (OSX only)</label>
+              <label htmlFor="screenCap" className="block text-sm font-semibold text-white">Enable Screen Capture</label>
               <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                If checked, GUM will attempt to hook into macOS window server APIs. On Linux, this settings triggers the simulated MockObserver instead to prevent runtime system errors.
+                If checked, GUM will ask for browser permission to capture your screen. This is REQUIRED for Gumbo to see your activities. Mock tracking has been completely removed.
               </p>
             </div>
           </div>

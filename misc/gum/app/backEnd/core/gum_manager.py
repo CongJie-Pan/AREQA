@@ -26,6 +26,11 @@ async def init_gum(user_name: str, model_name: str, api_key: str) -> gum:
     # Store settings in environment variables if needed
     os.environ["OPENAI_API_KEY"] = api_key
     
+    kwargs = {}
+    if "GUM_TEST_DATA_DIR" in os.environ:
+        kwargs["data_directory"] = os.environ["GUM_TEST_DATA_DIR"]
+        kwargs["db_name"] = os.path.join(os.environ["GUM_TEST_DATA_DIR"], "gum.db")
+        
     gum_instance = gum(
         user_name,
         model_name,
@@ -33,7 +38,8 @@ async def init_gum(user_name: str, model_name: str, api_key: str) -> gum:
         api_key=api_key,
         audit_enabled=True,
         min_batch_size=1,  # Set low batch size for quick processing of screenshots
-        max_batch_size=3
+        max_batch_size=3,
+        **kwargs
     )
     
     await gum_instance.connect_db()
@@ -46,6 +52,9 @@ async def push_observation(content: str, content_type: str = "input_image"):
     global gum_instance
     if not gum_instance:
         return False
+        
+    logging.info(f"Received real observation via push_observation! content_type: {content_type}, length: {len(content)}")
+        
         
     gum_instance.batcher.push(
         observer_name="ScreenCapture",

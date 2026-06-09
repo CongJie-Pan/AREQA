@@ -55,3 +55,33 @@ async def test_process_batch_avoids_stale_data_error(tmp_path):
         props = (await session.execute(select(Proposition))).scalars().all()
         assert len(props) > 0
 
+
+@pytest.mark.asyncio
+async def test_update_loop_no_observers_avoids_value_error(tmp_path):
+    """
+    Regression test for ValueError: Set of Tasks/Futures is empty.
+    Ensures that if gum is initialized with 0 observers, _update_loop gracefully
+    waits instead of crashing.
+    """
+    g = gum(
+        user_name="test_user",
+        model="gpt-4o-mini",
+        data_directory=str(tmp_path)
+    )
+    
+    # We run _update_loop in a background task
+    task = asyncio.create_task(g._update_loop())
+    
+    # Give it a moment to run and potentially crash
+    await asyncio.sleep(0.1)
+    
+    # It should not be done (it should be awaiting Future indefinitely)
+    # If the bug was present, it would have raised a ValueError and finished
+    assert not task.done(), "_update_loop crashed or returned unexpectedly"
+    
+    # Cleanup
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass

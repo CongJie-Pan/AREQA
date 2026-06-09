@@ -18,7 +18,7 @@ async def test_full_user_journey():
     # 1. User configures settings
     payload = {
         "user_name": "E2E_User",
-        "llm_api_key": "fake-e2e-key",
+        "llm_api_key": "sk-fake-e2e-key",
         "enable_screen_capture": False,
         "model_name": "gpt-4o-mini"
     }

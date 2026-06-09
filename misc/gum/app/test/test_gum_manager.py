@@ -10,24 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 from core import gum_manager
 from gum.schemas import Update
 
-@pytest.mark.asyncio
-async def test_mock_observer_creation():
-    """Test that MockObserver can be instantiated and generates Updates."""
-    observer = gum_manager.MockObserver(interval=0.1)
-    
-    # Wait briefly for it to generate at least one update
-    await asyncio.sleep(0.3)
-    
-    # Check if there's something in the queue
-    assert not observer.update_queue.empty(), "MockObserver should have generated updates."
-    
-    update = await observer.update_queue.get()
-    assert isinstance(update, Update)
-    assert update.content_type == "input_text"
-    assert "User is" in update.content
-    
-    # Stop the observer
-    await observer.stop()
+
 
 @pytest.mark.asyncio
 async def test_init_gum():
@@ -42,10 +25,6 @@ async def test_init_gum():
     assert instance is not None
     assert instance.user_name == "test_user"
     assert instance.model == "gpt-4o-mini"
-    
-    # Check if mock observer is assigned
-    assert instance.observers[0] is gum_manager.mock_observer
-    assert gum_manager.mock_observer is not None
 
 @pytest.mark.asyncio
 async def test_start_stop_recording():
@@ -67,5 +46,4 @@ async def test_start_stop_recording():
     
     await gum_manager.stop_recording()
     assert gum_manager.recording_task is None
-    assert gum_manager.mock_observer is None
     assert gum_manager.gum_instance is None

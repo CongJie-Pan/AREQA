@@ -27,6 +27,9 @@ async def test_recording_status():
     data = response.json()
     assert "is_recording" in data
     assert data["is_recording"] is False
+    assert "llm_api_key" in data
+    assert "enable_screen_capture" in data
+    assert data["enable_screen_capture"] is True
 
 @pytest.mark.asyncio
 async def test_update_settings():
@@ -67,7 +70,7 @@ async def test_start_stop_recording_api():
 @pytest.mark.asyncio
 async def test_get_memory_api():
     # Need to be initialized
-    settings_store["llm_api_key"] = "fake"
+    settings_store["llm_api_key"] = "sk-fake"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/memory")
     assert response.status_code == 200
@@ -75,7 +78,7 @@ async def test_get_memory_api():
 
 @pytest.mark.asyncio
 async def test_put_memory():
-    settings_store["llm_api_key"] = "fake"
+    settings_store["llm_api_key"] = "sk-fake"
     payload = {"text": "Updated prop", "confidence": 9}
     
     # We mock gum_manager.update_prop for this api test to isolate failure
@@ -93,7 +96,7 @@ async def test_put_memory():
 
 @pytest.mark.asyncio
 async def test_delete_memory():
-    settings_store["llm_api_key"] = "fake"
+    settings_store["llm_api_key"] = "sk-fake"
     
     original_delete = gum_manager.delete_prop
     async def mock_delete(*args): return True
@@ -109,7 +112,7 @@ async def test_delete_memory():
 
 @pytest.mark.asyncio
 async def test_delete_all_memory():
-    settings_store["llm_api_key"] = "fake"
+    settings_store["llm_api_key"] = "sk-fake"
     
     original_delete_all = gum_manager.delete_all_props
     async def mock_delete_all(*args): return True
@@ -126,7 +129,7 @@ async def test_delete_all_memory():
 
 @pytest.mark.asyncio
 async def test_get_suggestions():
-    settings_store["llm_api_key"] = "fake"
+    settings_store["llm_api_key"] = "sk-fake"
     
     original_gen = gum_manager.generate_suggestions
     async def mock_gen():
@@ -144,7 +147,7 @@ async def test_get_suggestions():
 
 @pytest.mark.asyncio
 async def test_post_feedback():
-    settings_store["llm_api_key"] = "fake"
+    settings_store["llm_api_key"] = "sk-fake"
     payload = {
         "suggestion_id": "s1",
         "is_positive": False,
@@ -152,7 +155,7 @@ async def test_post_feedback():
     }
     
     # init gum to prevent 400 error
-    await gum_manager.init_gum("test", "gpt-4o-mini", "fake")
+    await gum_manager.init_gum("test", "gpt-4o-mini", "sk-fake")
     
     # Mock push to prevent real validation failing
     original_push = gum_manager.gum_instance.batcher.push
@@ -220,7 +223,7 @@ async def test_receive_observation_when_not_recording():
 @pytest.mark.asyncio
 async def test_receive_observation_success():
     # Initialize GUM to simulate active recording
-    await gum_manager.init_gum("test", "gpt-4o-mini", "fake")
+    await gum_manager.init_gum("test", "gpt-4o-mini", "sk-fake")
     payload = {"type": "input_image", "content": "base64_fake_data"}
     
     original_push = gum_manager.push_observation

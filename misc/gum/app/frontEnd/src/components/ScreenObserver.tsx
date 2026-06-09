@@ -54,6 +54,9 @@ const ScreenObserver: React.FC = () => {
     canvas.width = width;
     canvas.height = height;
 
+    // Ensure the video has enough data to render a frame
+    if (video.readyState < 2) return;
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -92,6 +95,7 @@ const ScreenObserver: React.FC = () => {
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(e => console.error("Play error:", e));
         }
       }
 
@@ -118,7 +122,7 @@ const ScreenObserver: React.FC = () => {
   }, [isRecording, enableScreenCapture, startCapture, stopCapture]);
 
   return (
-    <div style={{ display: 'none' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '1px', height: '1px', opacity: 0.01, pointerEvents: 'none', zIndex: -9999 }}>
       <video
         ref={videoRef}
         autoPlay

@@ -49,9 +49,9 @@ export const useStore = create<GumboState>((set) => ({
   propositions: [],
   suggestions: [],
   userName: 'default_user',
-  modelName: 'qwen/qwen3-235b-a22b-2507',
+  modelName: 'qwen/qwen3-vl-235b-a22b-instruct',
   llmApiKey: '',
-  enableScreenCapture: false,
+  enableScreenCapture: true,
   currentPage: 'suggestions',
   loading: false,
   error: null,
@@ -65,7 +65,8 @@ export const useStore = create<GumboState>((set) => ({
         isRecording: res.data.is_recording,
         userName: res.data.user_name || 'default_user',
         modelName: res.data.model_name || 'gpt-4o-mini',
-        enableScreenCapture: res.data.enable_screen_capture || false
+        enableScreenCapture: res.data.enable_screen_capture ?? true,
+        llmApiKey: res.data.llm_api_key || ''
       });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {

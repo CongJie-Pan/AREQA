@@ -198,6 +198,12 @@ class gum:
         This method continuously monitors all observers for updates and processes them
         through the semaphore-guarded handler.
         """
+        if not self.observers:
+            # If no native observers, sleep forever. 
+            # External updates will be pushed directly to the batcher.
+            await asyncio.Future()
+            return
+            
         while True:
             gets = {
                 asyncio.create_task(obs.update_queue.get()): obs
@@ -224,7 +230,8 @@ class gum:
             # Use lock to ensure batch processing runs synchronously
             async with self._batch_processing_lock:
                 batch = self.batcher.pop_batch()
-                self.logger.info(f"Processing batch of {len(batch)} observations")
+                observer_names = [obs.get('observer_name', 'Unknown') for obs in batch]
+                self.logger.info(f"Processing batch of {len(batch)} observations from observers: {', '.join(observer_names)}")
                 await self._process_batch(batch)
 
     async def _process_batch(self, batched_observations):
@@ -286,6 +293,12 @@ class gum:
         image_contents = []
         for obs in batched_observations:
             if obs['content_type'] == 'input_image':
+                self.logger.info(f"[Image Debug] Got image observation. String length: {len(obs['content'])}")
+                self.logger.info(f"[Image Debug] Image preview (first 100 chars): {obs['content'][:100]}")
+                # Check if it has lots of AAAAA which indicates empty image
+                a_count = obs['content'].count('A')
+                self.logger.info(f"[Image Debug] 'A' character count in string: {a_count} ({(a_count/len(obs['content'])*100):.1f}% of total). High percentage means blank image.")
+                
                 # Base64 image
                 image_contents.append({
                     "type": "image_url",

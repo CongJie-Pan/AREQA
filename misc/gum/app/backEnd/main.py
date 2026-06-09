@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import logging
 from dotenv import load_dotenv, set_key
+import base64
 
 # Load environment variables
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.env"))
@@ -27,7 +28,7 @@ app.add_middleware(
 class SettingsPayload(BaseModel):
     user_name: str = "default_user"
     llm_api_key: str
-    enable_screen_capture: bool = False
+    enable_screen_capture: bool = True
     model_name: str = "qwen/qwen3-235b-a22b-2507"
 
 class PropositionUpdate(BaseModel):
@@ -42,9 +43,9 @@ class FeedbackPayload(BaseModel):
 # Global configs cache (in-memory for simple settings management)
 settings_store = {
     "user_name": "default_user",
-    "llm_api_key": os.getenv("OPENROUTER_API_KEY", os.getenv("OPENAI_API_KEY", "")),
-    "enable_screen_capture": False,
-    "model_name": "qwen/qwen3-235b-a22b-2507"
+    "llm_api_key": os.getenv("OPENROUTER_API_KEY", os.getenv("OPENAI_API_KEY", "")).strip("'").strip('"'),
+    "enable_screen_capture": True,
+    "model_name": "qwen/qwen3-vl-235b-a22b-instruct"
 }
 
 @app.post("/api/settings")
@@ -58,8 +59,8 @@ async def update_settings(payload: SettingsPayload):
     settings_store["model_name"] = payload.model_name
     
     # Save to .env
-    set_key(env_path, "OPENROUTER_API_KEY", payload.llm_api_key)
-    set_key(env_path, "GUM_LM_API_BASE", "https://openrouter.ai/api/v1")
+    set_key(env_path, "OPENROUTER_API_KEY", payload.llm_api_key, quote_mode="never")
+    set_key(env_path, "GUM_LM_API_BASE", "https://openrouter.ai/api/v1", quote_mode="never")
     os.environ["OPENROUTER_API_KEY"] = payload.llm_api_key
     os.environ["GUM_LM_API_BASE"] = "https://openrouter.ai/api/v1"
     
@@ -143,7 +144,8 @@ async def get_recording_status():
         "is_recording": is_active,
         "user_name": settings_store["user_name"],
         "model_name": settings_store["model_name"],
-        "enable_screen_capture": settings_store["enable_screen_capture"]
+        "enable_screen_capture": settings_store["enable_screen_capture"],
+        "llm_api_key": settings_store["llm_api_key"]
     }
 
 @app.get("/api/memory")
