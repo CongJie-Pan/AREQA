@@ -13,6 +13,8 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
+from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions
+
 # 在 main.py 最上層加入全域快取字典
 _rag_cache: dict = {}
 RAG_CACHE_SIZE = 200  # 最多快取 200 組查詢結果
@@ -163,6 +165,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    await init_gum_instance()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await stop_gum_instance()
+
+@app.get("/api/v1/memory")
+async def fetch_memory():
+    props = await get_all_memory()
+    return {"propositions": props}
+
+@app.get("/api/v1/suggestions")
+async def fetch_suggestions_endpoint():
+    sugs = await get_suggestions()
+    return {"suggestions": sugs}
 
 class RetrieveRequest(BaseModel):
     query: str
@@ -387,6 +407,9 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
 
             # Detect if the query is Out-of-Domain (OOD) before any other processing
             last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
+            if last_user_msg:
+                asyncio.create_task(push_observation(f"User asked: {last_user_msg}"))
+                
             if last_user_msg and router_service:
                 # Use a task to run the router while occasionally yielding a heartbeat if it takes too long
                 router_task = asyncio.create_task(router_service.check_query_intent(last_user_msg))

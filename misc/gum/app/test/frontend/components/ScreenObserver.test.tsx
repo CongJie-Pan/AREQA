@@ -33,6 +33,19 @@ describe('ScreenObserver', () => {
     window.HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
   });
 
+  it('should not use display: none on the wrapper div to prevent Chromium black screen bug', () => {
+    const { container } = render(<ScreenObserver />);
+    const wrapperDiv = container.firstChild as HTMLDivElement;
+    
+    // Check that it does not use display: none
+    expect(wrapperDiv.style.display).not.toBe('none');
+    
+    // Verify it uses the off-screen/invisible trick instead
+    expect(wrapperDiv.style.position).toBe('fixed');
+    expect(wrapperDiv.style.opacity).toBe('0.01');
+    expect(wrapperDiv.style.pointerEvents).toBe('none');
+  });
+
   it('should not capture frame if video readyState is less than 2 (HAVE_CURRENT_DATA)', async () => {
     // Setup canvas mock
     const mockDrawImage = vi.fn();

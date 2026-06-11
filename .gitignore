@@ -70,3 +70,4 @@ frontend/node_modules
 .antigravitycli
 # Output
 /output/
+data/gum_data/

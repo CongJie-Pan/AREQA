@@ -246,4 +246,35 @@ export const useStyles = createStyles(({ css }) => ({
     color: rgba(255, 255, 255, 0.4);
     line-height: 1.6;
   `,
+
+  divider: css`
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 4px 0;
+  `,
+
+  gumButton: css`
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    
+    &:hover {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: #f59e0b;
+    }
+    
+    svg {
+      color: #f59e0b;
+    }
+  `,
 }));

@@ -15,6 +15,7 @@ import { ConversationList } from '@/components/ConversationList';
 import { MessageList } from '@/components/MessageList';
 import { ChatInput } from '@/components/ChatInput';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
+import { GumPanel } from '@/components/GumPanel';
 import { useStyles } from './styles';
 
 /**
@@ -70,6 +71,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [gumPanelType, setGumPanelType] = useState<'memory' | 'suggestions' | null>(null);
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
@@ -158,6 +160,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   // Handle conversation selection
   const handleConversationSelect = useCallback(() => {
     setSidebarOpen(false);
+    setGumPanelType(null); // Return to chat view
   }, []);
 
   // Handle new conversation
@@ -167,6 +170,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     useChatStore.getState().clearMessages();
     useChatStore.getState().resetStreamingState();
     setSidebarOpen(false);
+    setGumPanelType(null); // Return to chat view
   }, []);
 
   // Toggle sidebar
@@ -222,6 +226,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
           onSelect={handleConversationSelect}
           onNew={handleNewConversation}
           onToggleSidebar={toggleSidebar}
+          onSelectGumPanel={(type) => {
+            setGumPanelType(type);
+            setSidebarOpen(false); // Close sidebar on mobile when opening panel
+          }}
         />
       </div>
 
@@ -257,36 +265,47 @@ export function ChatContainer({ className }: ChatContainerProps) {
         )}
 
         {/* Content Area */}
-        <div className={cx(styles.content, isEmpty && styles.contentEmpty)}>
-          {/* Message List */}
-          <div className={styles.messageArea}>
-            <MessageList 
-              onRegenerate={handleRegenerate} 
-              onEdit={handleEdit} 
-              onSelectSuggestion={handleSend}
+        <div className={cx(styles.content, isEmpty && !gumPanelType && styles.contentEmpty)}>
+          {gumPanelType ? (
+            <GumPanel
+              open={true}
+              type={gumPanelType}
+              onClose={() => setGumPanelType(null)}
             />
-          </div>
+          ) : (
+            <>
+              {/* Message List */}
+              <div className={styles.messageArea}>
+                <MessageList 
+                  onRegenerate={handleRegenerate} 
+                  onEdit={handleEdit} 
+                  onSelectSuggestion={handleSend}
+                />
+              </div>
 
-          {/* Chat Input */}
-          <div className={styles.inputArea}>
-            <ChatInput
-              key={activeConversationId ?? 'new'}
-              onSend={handleSend}
-              disabled={isStreaming}
-              placeholder={
-                isStreaming
-                  ? '正在努力思考...'
-                  : '歡迎問我問題...'
-              }
-              isStreaming={isStreaming}
-              onStop={handleStop}
-            />
-          </div>
+              {/* Chat Input */}
+              <div className={styles.inputArea}>
+                <ChatInput
+                  key={activeConversationId ?? 'new'}
+                  onSend={handleSend}
+                  disabled={isStreaming}
+                  placeholder={
+                    isStreaming
+                      ? '正在努力思考...'
+                      : '歡迎問我問題...'
+                  }
+                  isStreaming={isStreaming}
+                  onStop={handleStop}
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Text Selection Toolbar */}
       <TextSelectionToolbar />
+
     </div>
   );
 }

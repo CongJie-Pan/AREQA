@@ -8,7 +8,7 @@
 import React, { useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import { Spin } from 'antd';
-import { Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, BrainCircuit, Sparkles } from 'lucide-react';
 import { useConversationStore } from '@/store/conversation';
 import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
 import { useStyles } from './styles';
@@ -22,6 +22,8 @@ export interface ConversationListProps {
   onDelete?: (conversationId: string) => void;
   /** Callback to toggle sidebar visibility */
   onToggleSidebar?: () => void;
+  /** Callback to open GUM panel */
+  onSelectGumPanel?: (type: 'memory' | 'suggestions') => void;
   /** Class name for styling */
   className?: string;
 }
@@ -34,6 +36,7 @@ export function ConversationList({
   onNew,
   onDelete,
   onToggleSidebar,
+  onSelectGumPanel,
   className,
 }: ConversationListProps) {
   const { styles, cx } = useStyles();
@@ -123,6 +126,15 @@ export function ConversationList({
           <Plus size={18} />
           <span>新對話</span>
         </button>
+        <div className={styles.divider} />
+        <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('memory')}>
+          <BrainCircuit size={18} />
+          <span>瀏覽記憶</span>
+        </button>
+        <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('suggestions')}>
+          <Sparkles size={18} />
+          <span>您可能想知道？</span>
+        </button>
       </div>
 
       {/* List Area */}
@@ -175,6 +187,7 @@ export function ConversationList({
           ))
         )}
       </div>
+
     </div>
   );
 }
