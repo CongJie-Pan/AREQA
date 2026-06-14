@@ -46,7 +46,8 @@ def mock_gum_instance():
 
 @pytest.mark.asyncio
 async def test_init_and_stop_gum_instance():
-    with patch("backend.gum_integration.gum") as mock_gum:
+    with patch("backend.gum_integration.gum") as mock_gum, \
+         patch("backend.gum_integration.asyncio.create_task") as mock_create_task:
         mock_instance = MagicMock()
         mock_instance.connect_db = AsyncMock()
         mock_instance.stop_update_loop = AsyncMock()
@@ -54,21 +55,42 @@ async def test_init_and_stop_gum_instance():
         mock_instance.batcher.stop = AsyncMock()
         mock_gum.return_value = mock_instance
         
+        mock_task = MagicMock()
+        mock_create_task.return_value = mock_task
+        
         instance = await init_gum_instance()
         
         assert instance is mock_instance
         mock_instance.connect_db.assert_called_once()
         mock_instance.start_update_loop.assert_called_once()
+        assert mock_create_task.call_count >= 1
         
         await stop_gum_instance()
         mock_instance.stop_update_loop.assert_called_once()
+        mock_task.cancel.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_push_observation():
+    # Test pushing when gum_instance is None
+    backend.gum_integration.gum_instance = None
     with patch("backend.gum_integration.text_observer") as mock_text_observer:
         mock_text_observer.push_text = AsyncMock()
         await push_observation("test observation text")
+        # Since gum_instance is None, it should return early and NOT call push_text
+        mock_text_observer.push_text.assert_not_called()
+        
+    # Test pushing when gum_instance is present but no neighbors
+    mock_gum = MagicMock()
+    mock_gum.query = AsyncMock(return_value=[])
+    backend.gum_integration.gum_instance = mock_gum
+    
+    with patch("backend.gum_integration.text_observer") as mock_text_observer:
+        mock_text_observer.push_text = AsyncMock()
+        await push_observation("test observation text")
+        mock_gum.query.assert_called_once_with("test observation text", limit=5)
         mock_text_observer.push_text.assert_called_once_with("test observation text")
+        
+    backend.gum_integration.gum_instance = None
 
 @pytest.mark.asyncio
 async def test_get_all_memory(mock_gum_instance):

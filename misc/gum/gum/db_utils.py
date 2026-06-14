@@ -135,12 +135,14 @@ async def search_propositions_bm25(
         stmt = (
             select(Proposition, best_scores.c.bm25)
             .join(best_scores, best_scores.c.pid == Proposition.id)
+            .where(Proposition.status == 'active')
             .order_by(best_scores.c.bm25.asc())          # smallest→best
         )
     else:
         # --- 1-b  No user query ------------------------------
         stmt = (
             select(Proposition, literal_column("0.0").label("bm25"))
+            .where(Proposition.status == 'active')
             .order_by(Proposition.created_at.desc())
         )
 
@@ -277,6 +279,7 @@ async def get_recent_propositions(
 
     stmt = (
         select(Proposition)
+        .where(Proposition.status == 'active')
         .where(Proposition.created_at <= end_time)
         .order_by(Proposition.created_at.desc())
         .limit(limit)

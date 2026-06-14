@@ -78,6 +78,7 @@ class Observation(Base):
     observer_name: Mapped[str]   = mapped_column(String(100), nullable=False)
     content:       Mapped[str]   = mapped_column(Text,        nullable=False)
     content_type:  Mapped[str]   = mapped_column(String(50),  nullable=False)
+    status:        Mapped[str]   = mapped_column(String(50),  server_default="active", nullable=False)
 
     created_at:    Mapped[str]   = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -133,6 +134,7 @@ class Proposition(Base):
     reasoning:  Mapped[str]           = mapped_column(Text, nullable=False)
     confidence: Mapped[Optional[int]]
     decay:      Mapped[Optional[int]]
+    status:     Mapped[str]           = mapped_column(String(50), server_default="active", nullable=False)
 
     created_at: Mapped[str]           = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -714,3 +714,22 @@ class gum:
                 start_time=start_time,
                 end_time=end_time,
             )
+
+    async def update_status(self, proposition_id: int, status: str):
+        """Update the status of a proposition (e.g. active, superseded, archived)."""
+        async with self._session() as session:
+            await session.execute(
+                update(Proposition)
+                .where(Proposition.id == proposition_id)
+                .values(status=status, updated_at=func.now())
+            )
+
+    async def update_observation_status(self, observation_id: int, status: str):
+        """Update the status of an observation."""
+        async with self._session() as session:
+            await session.execute(
+                update(Observation)
+                .where(Observation.id == observation_id)
+                .values(status=status, updated_at=func.now())
+            )
+

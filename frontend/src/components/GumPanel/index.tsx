@@ -11,7 +11,7 @@ interface GumPanelProps {
 }
 
 export function GumPanel({ open, type, onClose }: GumPanelProps) {
-  const { styles, cx } = useStyles();
+  const { styles } = useStyles();
   const { propositions, suggestions, loading, fetchMemory, fetchSuggestions } = useGumStore();
 
   useEffect(() => {

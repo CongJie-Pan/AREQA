@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 import asyncio
 import os
+from datetime import datetime
 
 # Add misc/gum to sys.path
 project_root = Path(__file__).resolve().parents[1]
@@ -59,20 +60,122 @@ async def init_gum_instance():
     gum_instance.start_update_loop()
     if gum_instance.batcher:
         await gum_instance.batcher.start()
+        
+    global reflection_task
+    reflection_task = asyncio.create_task(run_reflection_loop())
     
     print("GUM instance initialized successfully.")
     return gum_instance
 
 async def stop_gum_instance():
-    global gum_instance
+    global gum_instance, reflection_task
+    if reflection_task:
+        reflection_task.cancel()
     if gum_instance:
         await gum_instance.stop_update_loop()
         if gum_instance.batcher:
             await gum_instance.batcher.stop()
 
+importance_sum = 0
+interaction_count = 0
+last_interaction_time = None
+
+async def run_reflection():
+    global importance_sum, interaction_count
+    if not gum_instance:
+        return
+    try:
+        obs = await gum_instance.recent_observations(limit=20)
+        if not obs:
+            return
+            
+        context = "\n".join([o.content for o in obs])
+        prompt = f"Summarize the following recent interactions into high-level insights:\n{context}\nOutput the insights."
+        
+        from pydantic import BaseModel
+        from gum.schemas import get_schema
+        class ReflectionSchema(BaseModel):
+            insights: list[str]
+            
+        rsp = await gum_instance.client.chat.completions.create(
+            model=gum_instance.model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format=get_schema(ReflectionSchema.model_json_schema()),
+        )
+        import json
+        data = json.loads(rsp.choices[0].message.content)
+        
+        for insight in data.get("insights", []):
+            if text_observer:
+                await text_observer.push_text(f"[REFLECTION] {insight}")
+                
+        # Archive old observations
+        for o in obs:
+            await gum_instance.update_observation_status(o.id, "archived")
+            
+        importance_sum = 0
+        interaction_count = 0
+    except Exception as e:
+        print(f"Error in reflection: {e}")
+
 async def push_observation(text: str):
-    if text_observer:
-        await text_observer.push_text(text)
+    global importance_sum, interaction_count, last_interaction_time
+    last_interaction_time = datetime.now()
+    
+    if not gum_instance or not text_observer:
+        return
+        
+    try:
+        neighbors = await gum_instance.query(text, limit=5)
+        if neighbors:
+            neighbor_ctx = "\n".join([f"ID: {p.id}, Text: {p.text}" for p, _ in neighbors])
+            prompt = f"Analyze new observation against existing memories.\nNew: {text}\nExisting:\n{neighbor_ctx}\nDetermine if new observation supersedes old ones. Rate importance 1-10."
+            
+            from pydantic import BaseModel
+            from gum.schemas import get_schema
+            class EvolutionSchema(BaseModel):
+                should_evolve: bool
+                actions: list[str]
+                target_ids: list[int]
+                importance_score: int
+                
+            rsp = await gum_instance.client.chat.completions.create(
+                model=gum_instance.model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format=get_schema(EvolutionSchema.model_json_schema()),
+            )
+            import json
+            decision = json.loads(rsp.choices[0].message.content)
+            
+            importance_sum += decision.get("importance_score", 5)
+            
+            if decision.get("should_evolve") and "prune" in decision.get("actions", []):
+                for t_id in decision.get("target_ids", []):
+                    await gum_instance.update_status(t_id, "superseded")
+    except Exception as e:
+        print(f"Error in evolution interceptor: {e}")
+        importance_sum += 5
+
+    await text_observer.push_text(text)
+    interaction_count += 1
+    
+    if importance_sum >= 100 or interaction_count >= 20:
+        asyncio.create_task(run_reflection())
+
+async def run_reflection_loop():
+    """Background task to run reflection if user is idle for 30 minutes."""
+    global last_interaction_time
+    while True:
+        await asyncio.sleep(300)  # Check every 5 minutes
+        if not gum_instance or last_interaction_time is None:
+            continue
+        
+        idle_time = datetime.now() - last_interaction_time
+        if idle_time.total_seconds() > 1800 and interaction_count > 0:
+            print("Idle for 30 minutes, triggering session boundary reflection.")
+            await run_reflection()
+
+reflection_task = None
 
 async def get_all_memory():
     if not gum_instance:

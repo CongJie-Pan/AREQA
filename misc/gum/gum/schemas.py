@@ -27,6 +27,10 @@ class PropositionItem(BaseModel):
         ...,
         description="Decay score from 1 (low) to 10 (high)"
     )
+    status: str = Field(
+        "active",
+        description="Status of the proposition (active, superseded, archived)"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
