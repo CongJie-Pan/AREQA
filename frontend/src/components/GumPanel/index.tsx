@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Check, X as XIcon } from 'lucide-react';
+import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { useGumStore } from '@/store/gum';
 import { useStyles } from './styles';
 import { Spin, Checkbox, Input, message, Button, Space, Popconfirm } from 'antd';
@@ -18,12 +19,19 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
 
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
+      setSelectedIds(new Set());
+      setEditingId(null);
+    }
+  }
+
   useEffect(() => {
     if (open) {
       if (type === 'memory') {
         fetchMemory();
-        setSelectedIds(new Set());
-        setEditingId(null);
       } else if (type === 'suggestions') {
         fetchSuggestions();
       }
@@ -44,7 +52,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
     setSelectedIds(newSelected);
   };
 
-  const handleSelectAll = (e: any) => {
+  const handleSelectAll = (e: CheckboxChangeEvent) => {
     if (e.target.checked) {
       setSelectedIds(new Set(propositions.map(p => p.id)));
     } else {
@@ -59,7 +67,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
       await Promise.all(ids.map(id => deleteMemory(id)));
       message.success(`成功刪除 ${ids.length} 筆記憶`);
       setSelectedIds(new Set());
-    } catch (err) {
+    } catch {
       message.error('刪除記憶失敗');
     }
   };
@@ -73,7 +81,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
       await editMemory(id, editText);
       message.success('記憶更新成功');
       setEditingId(null);
-    } catch (err) {
+    } catch {
       message.error('記憶更新失敗');
     }
   };
