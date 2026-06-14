@@ -30,9 +30,11 @@
 * **參考論文與開源碼：**
   * *Generative Agents: Interactive Simulacra of Human Behavior* (Stanford, 2023)
     * GitHub: [joonspk-research/generative_agents](https://github.com/joonspk-research/generative_agents)
+    * docs/paper/memory_work/Generative Agents_Interactive Simulacra of Human Behavior.pdf
     * misc/generative_agents/generative_agents
   * *A-MEM: Agentic Memory for LLM Agents* (Rutgers, 2025)
     * GitHub: [WujiangXu/A-mem-sys](https://github.com/WujiangXu/A-mem-sys)
+    * docs/paper/memory_work/A-MEM_Agentic Memory for LLM Agents.pdf
     * misc/A-MEM/A-mem-sys
 
 ### 解方 B：情境意圖過濾 (Contextual Intent Filtering)
