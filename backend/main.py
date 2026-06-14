@@ -184,6 +184,23 @@ async def fetch_suggestions_endpoint():
     sugs = await get_suggestions()
     return {"suggestions": sugs}
 
+class EditMemoryRequest(BaseModel):
+    text: str
+
+@app.delete("/api/v1/memory/{mem_id}")
+async def delete_memory_endpoint(mem_id: int):
+    from gum_integration import gum_instance
+    if gum_instance:
+        await gum_instance.update_status(mem_id, "deleted")
+    return {"status": "success"}
+
+@app.put("/api/v1/memory/{mem_id}")
+async def edit_memory_endpoint(mem_id: int, req: EditMemoryRequest):
+    from gum_integration import gum_instance
+    if gum_instance:
+        await gum_instance.update_text(mem_id, req.text)
+    return {"status": "success"}
+
 class RetrieveRequest(BaseModel):
     query: str
     top_k: int = 5

@@ -724,6 +724,15 @@ class gum:
                 .values(status=status, updated_at=func.now())
             )
 
+    async def update_text(self, proposition_id: int, new_text: str):
+        """Update the text of a proposition."""
+        async with self._session() as session:
+            await session.execute(
+                update(Proposition)
+                .where(Proposition.id == proposition_id)
+                .values(text=new_text, updated_at=func.now())
+            )
+
     async def update_observation_status(self, observation_id: int, status: str):
         """Update the status of an observation."""
         async with self._session() as session:

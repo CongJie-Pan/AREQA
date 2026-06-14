@@ -13,6 +13,8 @@ export interface GumState {
   loading: boolean;
   fetchMemory: () => Promise<void>;
   fetchSuggestions: () => Promise<void>;
+  deleteMemory: (id: number) => Promise<void>;
+  editMemory: (id: number, text: string) => Promise<void>;
 }
 
 export const useGumStore = create<GumState>((set) => ({
@@ -47,6 +49,32 @@ export const useGumStore = create<GumState>((set) => ({
       console.error('Failed to fetch suggestions:', error);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  deleteMemory: async (id: number) => {
+    try {
+      await fetch(`http://localhost:8000/api/v1/memory/${id}`, { method: 'DELETE' });
+      // Remove from local state
+      set((state) => ({ propositions: state.propositions.filter(p => p.id !== id) }));
+    } catch (error) {
+      console.error('Failed to delete memory:', error);
+    }
+  },
+
+  editMemory: async (id: number, text: string) => {
+    try {
+      await fetch(`http://localhost:8000/api/v1/memory/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      // Update local state
+      set((state) => ({
+        propositions: state.propositions.map(p => p.id === id ? { ...p, text } : p)
+      }));
+    } catch (error) {
+      console.error('Failed to edit memory:', error);
     }
   },
 }));
