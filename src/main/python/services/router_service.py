@@ -102,7 +102,12 @@ class RouterService:
                 print(f"DEBUG: RouterService error - empty response. Message: {message}")
                 return {"action": "ALLOW", "domain": None, "refusal_message": None}
 
-            result = json.loads(result_str)
+            content = result_str.strip()
+            if content.startswith("```json"):
+                content = content[7:-3].strip()
+            elif content.startswith("```"):
+                content = content[3:-3].strip()
+            result = json.loads(content)
             print(f"DEBUG: RouterService result parsed: {result.get('action')}")
             
             # Post-processing: Traditional Chinese enforcement for refusal message

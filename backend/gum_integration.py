@@ -127,6 +127,11 @@ async def push_observation(text: str):
         
     try:
         neighbors = await gum_instance.query(text, limit=5)
+        if not neighbors:
+            # Fallback to recent memory since BM25 fails on CJK strings without spaces
+            recent_props = await gum_instance.recent(limit=5)
+            neighbors = [(p, 1.0) for p in recent_props]
+
         if neighbors:
             neighbor_ctx = "\n".join([f"ID: {p.id}, Text: {p.text}" for p, _ in neighbors])
             prompt = f"Analyze new observation against existing memories.\nNew: {text}\nExisting:\n{neighbor_ctx}\nDetermine if new observation supersedes old ones. Rate importance 1-10."
@@ -145,13 +150,21 @@ async def push_observation(text: str):
                 response_format=get_schema(EvolutionSchema.model_json_schema()),
             )
             import json
-            decision = json.loads(rsp.choices[0].message.content)
+            content = rsp.choices[0].message.content.strip()
+            if content.startswith("```json"):
+                content = content[7:-3].strip()
+            elif content.startswith("```"):
+                content = content[3:-3].strip()
+            decision = json.loads(content)
             
             importance_sum += decision.get("importance_score", 5)
             
             if decision.get("should_evolve") and "prune" in decision.get("actions", []):
                 for t_id in decision.get("target_ids", []):
                     await gum_instance.update_status(t_id, "superseded")
+        else:
+            # If still no neighbors (e.g. very first message), default to 5
+            importance_sum += 5
     except Exception as e:
         print(f"Error in evolution interceptor: {e}")
         importance_sum += 5

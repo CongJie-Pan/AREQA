@@ -100,3 +100,24 @@ async def test_router_language_conversion():
         
         # Expected Traditional Chinese
         assert "這是數學領域的問題呢，小紅只熟悉《紅樓夢》與國學知識。" in result["refusal_message"]
+
+@pytest.mark.asyncio
+async def test_router_service_markdown_json_stripping():
+    # Test that Markdown wrapped JSON string is properly stripped and parsed
+    with patch('src.main.python.services.router_service.AsyncOpenAI') as mock_openai:
+        mock_client = mock_openai.return_value
+        mock_client.chat.completions.create = AsyncMock()
+        
+        # Mock markdown JSON response
+        markdown_json = "```json\n{\"action\": \"DENY\", \"domain\": \"物理\", \"refusal_message\": \"不會物理\"}\n```"
+        mock_response = AsyncMock()
+        mock_response.choices = [
+            AsyncMock(message=AsyncMock(content=markdown_json))
+        ]
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        service = RouterService(api_key="test_key")
+        result = await service.check_query_intent("相對論是什麼？")
+        
+        assert result["action"] == "DENY"
+        assert result["domain"] == "物理"

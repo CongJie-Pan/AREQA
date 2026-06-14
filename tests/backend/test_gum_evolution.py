@@ -53,3 +53,40 @@ async def test_memory_evolution_prune(mock_gum_instance):
         mock_text_observer.push_text.assert_called_once_with("Student has mastered loops")
         
     backend.gum_integration.gum_instance = None
+
+@pytest.mark.asyncio
+async def test_memory_evolution_bm25_fallback_and_markdown(mock_gum_instance):
+    # Setup BM25 to fail (return empty)
+    mock_gum_instance.query = AsyncMock(return_value=[])
+    
+    # Setup fallback recent memory
+    old_mem = MockProposition(2, "Old memory", 0.9)
+    mock_gum_instance.recent = AsyncMock(return_value=[old_mem])
+    
+    # Setup Markdown JSON response
+    markdown_json = "```json\n{\"should_evolve\": true, \"actions\": [\"prune\"], \"target_ids\": [2], \"importance_score\": 8}\n```"
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content=markdown_json))
+    ]
+    mock_gum_instance.client.chat.completions.create = AsyncMock(return_value=mock_response)
+    
+    backend.gum_integration.gum_instance = mock_gum_instance
+    backend.gum_integration.importance_sum = 0
+    
+    with patch("backend.gum_integration.text_observer") as mock_text_observer:
+        mock_text_observer.push_text = AsyncMock()
+        
+        await push_observation("New observation")
+        
+        # Verify fallback was triggered
+        mock_gum_instance.query.assert_called_once_with("New observation", limit=5)
+        mock_gum_instance.recent.assert_called_once_with(limit=5)
+        
+        # Verify markdown parsing and pruning
+        mock_gum_instance.update_status.assert_called_once_with(2, "superseded")
+        
+        # Verify importance sum updated correctly
+        assert backend.gum_integration.importance_sum == 8
+        
+    backend.gum_integration.gum_instance = None
