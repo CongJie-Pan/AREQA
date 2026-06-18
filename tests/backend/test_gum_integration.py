@@ -87,8 +87,72 @@ async def test_push_observation():
     with patch("backend.gum_integration.text_observer") as mock_text_observer:
         mock_text_observer.push_text = AsyncMock()
         await push_observation("test observation text")
-        mock_gum.query.assert_called_once_with("test observation text", limit=5)
+        mock_gum.query.assert_called_once_with("test observation text", limit=20)
         mock_text_observer.push_text.assert_called_once_with("test observation text")
+        
+    backend.gum_integration.gum_instance = None
+
+@pytest.mark.asyncio
+async def test_push_observation_with_evolution():
+    # Test pushing when gum_instance is present and has neighbors
+    mock_gum = MagicMock()
+    mock_gum.query = AsyncMock(return_value=[
+        (MockProposition(1, "User hates apples", 0.9), 1.0)
+    ])
+    
+    # Mock the LLM decision to supersede ID 1
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='{"should_evolve": true, "actions": ["prune"], "target_ids": [1], "importance_score": 8}'))
+    ]
+    mock_gum.client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_gum.update_status = AsyncMock()
+    
+    backend.gum_integration.gum_instance = mock_gum
+    
+    with patch("backend.gum_integration.text_observer") as mock_text_observer:
+        mock_text_observer.push_text = AsyncMock()
+        await push_observation("User loves apples now")
+        
+        mock_gum.query.assert_called_once_with("User loves apples now", limit=20)
+        # Should call LLM for evolution
+        mock_gum.client.chat.completions.create.assert_called_once()
+        # Should update status of ID 1 to superseded
+        mock_gum.update_status.assert_called_once_with(1, "superseded")
+        # Should push the new text
+        mock_text_observer.push_text.assert_called_once_with("User loves apples now")
+        
+    backend.gum_integration.gum_instance = None
+
+@pytest.mark.asyncio
+async def test_push_observation_with_evolution_no_prune():
+    # Test pushing when gum_instance has neighbors but new topic is unrelated
+    mock_gum = MagicMock()
+    mock_gum.query = AsyncMock(return_value=[
+        (MockProposition(1, "User loves apples", 0.9), 1.0)
+    ])
+    
+    # Mock the LLM decision to NOT supersede (different topic)
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='{"should_evolve": false, "actions": [], "target_ids": [], "importance_score": 4}'))
+    ]
+    mock_gum.client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_gum.update_status = AsyncMock()
+    
+    backend.gum_integration.gum_instance = mock_gum
+    
+    with patch("backend.gum_integration.text_observer") as mock_text_observer:
+        mock_text_observer.push_text = AsyncMock()
+        await push_observation("User asks about the weather")
+        
+        mock_gum.query.assert_called_once_with("User asks about the weather", limit=20)
+        # Should call LLM for evolution
+        mock_gum.client.chat.completions.create.assert_called_once()
+        # Should NOT update status since should_evolve is false
+        mock_gum.update_status.assert_not_called()
+        # Should push the new text
+        mock_text_observer.push_text.assert_called_once_with("User asks about the weather")
         
     backend.gum_integration.gum_instance = None
 

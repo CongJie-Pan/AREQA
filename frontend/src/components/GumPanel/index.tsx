@@ -13,7 +13,7 @@ interface GumPanelProps {
 
 export function GumPanel({ open, type, onClose }: GumPanelProps) {
   const { styles } = useStyles();
-  const { propositions, suggestions, loading, fetchMemory, fetchSuggestions, deleteMemory, editMemory } = useGumStore();
+  const { propositions, suggestions, loading, fetchMemory, fetchSuggestions, deleteMemory, deleteMemories, editMemory } = useGumStore();
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -64,7 +64,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
     if (selectedIds.size === 0) return;
     try {
       const ids = Array.from(selectedIds);
-      await Promise.all(ids.map(id => deleteMemory(id)));
+      await deleteMemories(ids);
       message.success(`成功刪除 ${ids.length} 筆記憶`);
       setSelectedIds(new Set());
     } catch {
@@ -152,49 +152,47 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
               </div>
             ) : (
               propositions.map((p) => (
-                <div key={p.id} className={styles.card} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  <Checkbox 
-                    checked={selectedIds.has(p.id)} 
-                    onChange={() => handleToggleSelect(p.id)} 
-                    style={{ marginTop: 4 }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {editingId === p.id ? (
+                <div key={p.id} className={`${styles.card} ${selectedIds.has(p.id) ? 'selected' : ''}`} style={{ position: 'relative' }}>
+                  {editingId === p.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       <Input.TextArea 
                         value={editText}
                         onChange={e => setEditText(e.target.value)}
                         autoSize={{ minRows: 2, maxRows: 6 }}
-                        style={{ marginBottom: 8 }}
                       />
-                    ) : (
-                      <div className={styles.cardText}>{p.text}</div>
-                    )}
-                    <div className={styles.cardMeta} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Space>
-                        <span className={styles.confidenceBadge}>
-                          信心指數: {p.confidence.toFixed(2)}
-                        </span>
-                        <span>
-                          {p.updated_at ? new Date(p.updated_at).toLocaleString() : '最近更新'}
-                        </span>
-                      </Space>
-                      <Space>
-                        {editingId === p.id ? (
-                          <>
-                            <Button size="small" type="primary" icon={<Check size={14} />} onClick={() => handleSaveEdit(p.id)}>儲存</Button>
-                            <Button size="small" icon={<XIcon size={14} />} onClick={() => setEditingId(null)}>取消</Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} title="編輯記憶" />
-                            <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>
-                              <Button size="small" type="text" danger icon={<Trash2 size={14} />} title="刪除記憶" />
-                            </Popconfirm>
-                          </>
-                        )}
+                      <Space style={{ alignSelf: 'flex-end' }}>
+                        <Button size="small" icon={<XIcon size={14} />} onClick={() => setEditingId(null)}>取消</Button>
+                        <Button size="small" type="primary" icon={<Check size={14} />} onClick={() => handleSaveEdit(p.id)}>儲存</Button>
                       </Space>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <Checkbox 
+                          checked={selectedIds.has(p.id)} 
+                          onChange={() => handleToggleSelect(p.id)} 
+                          style={{ marginTop: 2 }}
+                        />
+                        <div className={styles.cardText} style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
+                          {p.text}
+                        </div>
+                        <div style={{ opacity: 1, display: 'flex', gap: 4, marginTop: -4, alignItems: 'center' }}>
+                          <span className={styles.confidenceBadge} style={{ marginRight: 8 }}>
+                            信心指數: {p.confidence.toFixed(2)}
+                          </span>
+                          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} title="編輯記憶" style={{ color: '#aaa' }} />
+                          <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>
+                            <Button size="small" type="text" danger icon={<Trash2 size={14} />} title="刪除記憶" />
+                          </Popconfirm>
+                        </div>
+                      </div>
+                      <div className={styles.cardMeta} style={{ marginTop: 8, paddingLeft: 28 }}>
+                        <span style={{ marginLeft: 'auto' }}>
+                          {p.updated_at ? new Date(p.updated_at).toLocaleString() : '最近更新'}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))
             )

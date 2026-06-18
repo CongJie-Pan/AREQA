@@ -194,6 +194,17 @@ async def delete_memory_endpoint(mem_id: int):
         await gum_instance.update_status(mem_id, "deleted")
     return {"status": "success"}
 
+class DeleteBatchRequest(BaseModel):
+    ids: List[int]
+
+@app.post("/api/v1/memory/batch-delete")
+async def batch_delete_memory_endpoint(req: DeleteBatchRequest):
+    from gum_integration import gum_instance
+    if gum_instance:
+        for mem_id in req.ids:
+            await gum_instance.update_status(mem_id, "deleted")
+    return {"status": "success", "deleted_count": len(req.ids)}
+
 @app.put("/api/v1/memory/{mem_id}")
 async def edit_memory_endpoint(mem_id: int, req: EditMemoryRequest):
     from gum_integration import gum_instance

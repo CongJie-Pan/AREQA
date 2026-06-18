@@ -33,22 +33,22 @@ Example output format:
 }"""
 
 
-PROPOSE_PROMPT = """You are a helpful assistant tasked with analyzing user behavior based on transcribed activity.
+PROPOSE_PROMPT = """You are a helpful assistant tasked with analyzing a user's memory and knowledge state based on their recent conversational interactions.
 
 # Analysis
 
-Using a transcription of {user_name}'s activity, analyze {user_name}'s current activities, behavior, and preferences. Draw insightful, concrete conclusions.
+Using the transcription of {user_name}'s recent interactions, analyze {user_name}'s current knowledge state, goals, preferences, and explicitly stated facts about themselves. Draw insightful, concrete conclusions.
 
-To support effective information retrieval (e.g., using BM25), your analysis must **explicitly identify and refer to specific named entities** mentioned in the transcript. This includes applications, websites, documents, people, organizations, tools, and any other proper nouns. Avoid general summaries—**use exact names** wherever possible, even if only briefly referenced.
+To support effective information retrieval (e.g., using BM25), your analysis must **explicitly identify and refer to specific named entities** mentioned in the interactions. This includes people, characters, books, concepts, tools, and any other proper nouns. Avoid general summaries—**use exact names** wherever possible.
 
 Consider these points in your analysis:
 
-- What specific tasks or goals is {user_name} actively working towards, as evidenced by named files, apps, platforms, or individuals?
-- What applications, documents, or content does {user_name} clearly prefer engaging with? Identify them by name.
-- What does {user_name} choose to ignore or deprioritize, and what might this imply about their focus or intentions?
-- What are the strengths or weaknesses in {user_name}’s behavior or tools? Cite relevant named entities or resources.
+- What specific concepts, domains, or topics does {user_name} explicitly state they know or do not know?
+- What are {user_name}'s current learning goals or questions?
+- What preferences or personality traits does {user_name} reveal through their conversational style or explicit requests?
+- Identify any explicit background context or constraints {user_name} has provided.
 
-Provide detailed, concrete explanations for each inference. **Support every claim with specific references to named entities in the transcript.**
+Provide detailed, concrete explanations for each inference. **Support every claim with specific references to the user's explicit statements in the transcript.**
 
 ## Evaluation Criteria
 
@@ -58,24 +58,24 @@ For each proposition you generate, evaluate its strength using two scales:
 
 Rate your confidence based on how clearly the evidence supports your claim. Consider:
 
-- **Direct Evidence**: Is there direct interaction with a specific, named entity (e.g., opened “Notion,” responded to “Slack” from “Alex”)?
+- **Direct Evidence**: Did {user_name} explicitly state this fact (e.g., "I have never read X", "I want to learn about Y")?
 - **Relevance**: Is the evidence clearly tied to the proposition?
 - **Engagement Level**: Was the interaction meaningful or sustained?
 
-Score: **1 (weak support)** to **10 (explicit, strong support)**. High scores require specific named references.
+Score: **1 (weak support/guess)** to **10 (explicit, strong support)**. High scores require direct statements from the user.
 
 ### 2. Decay Scale
 
 Rate how long the proposition is likely to stay relevant. Consider:
 
-- **Urgency**: Does the task or interest have clear time pressure?
-- **Durability**: Will this matter 24 hours later or more?
+- **Urgency**: Is this just a transient question for the current session?
+- **Durability**: Is this a long-term fact about the user (e.g., their background, reading history, or persistent preferences)?
 
 Score: **1 (short-lived)** to **10 (long-lasting insight or pattern)**.
 
 # Input
 
-Below is a set of transcribed actions and interactions that {user_name} has performed:
+Below is a set of interactions that {user_name} has performed:
 
 ## User Activity Transcriptions
 
@@ -83,13 +83,9 @@ Below is a set of transcribed actions and interactions that {user_name} has perf
 
 # Task
 
-Generate **at least 5 distinct, well-supported propositions** about {user_name}, each grounded in the transcript. 
+Generate **at least 3 distinct, well-supported propositions** about {user_name}, each grounded in the transcript. 
 
-Be conservative in your confidence estimates. Just because an application appears on {user_name}'s screen does not mean they have deeply engaged with it. They may have only glanced at it for a second, making it difficult to draw strong conclusions. 
-
-Assign high confidence scores (e.g., 8-10) only when the transcriptions provide explicit, direct evidence that {user_name} is actively engaging with the content in a meaningful way. Keep in mind that that the content on the screen is what the user is viewing. It may not be what the user is actively doing, so practice caution when assigning confidence.
-
-Generate propositions across the scale to get a wide range of inferences about {user_name}.  
+Be sure to capture explicit statements of "not knowing" or "never having done" something, as these are critical pieces of user context.
 
 Return your results in this exact JSON format (Ensure that all output text in 'proposition' and 'reasoning' fields are written in Traditional Chinese / 繁體中文):
 
@@ -109,7 +105,7 @@ REVISE_PROMPT = """You are an expert analyst. A cluster of similar propositions 
 
 Your job is to produce a **final set** of propositions that is clear, non-redundant, and captures everything about the user, {user_name}.
 
-To support information retrieval (e.g., with BM25), you must **explicitly identify and preserve all named entities** from the input wherever possible. These may include applications, websites, documents, people, organizations, tools, or any other specific proper nouns mentioned in the original propositions or their evidence.
+To support information retrieval (e.g., with BM25), you must **explicitly identify and preserve all named entities** from the input wherever possible. These may include books, characters, concepts, topics, or any other specific proper nouns mentioned in the original propositions or their evidence.
 
 You MAY:
 
@@ -145,10 +141,9 @@ For each proposition you revise, evaluate its strength using two scales:
 
 Rate your confidence in the proposition based on how directly and clearly it is supported by the evidence. Consider:
 
-- **Direct Evidence**: Is the claim directly supported by clear, named interactions in the observations?
+- **Direct Evidence**: Is the claim directly supported by explicit statements in the observations?
 - **Relevance**: Is the evidence closely tied to the proposition?
 - **Completeness**: Are key details present and unambiguous?
-- **Engagement Level**: Does the user interact meaningfully with the named content?
 
 Score: **1 (weak/assumed)** to **10 (explicitly demonstrated)**. High scores require direct and strong evidence from the observations.
 
@@ -167,7 +162,7 @@ Score: **1 (short-lived)** to **10 (long-term relevance or behavioral pattern)**
 
 # Output
 
-Assign high confidence scores (e.g., 8-10) only when the transcriptions provide explicit, direct evidence that {user_name} is actively engaging with the content in a meaningful way. Keep in mind that that the input is what the {user_name} is viewing. It may not be what the {user_name} is actively doing, so practice caution when assigning confidence.
+Assign high confidence scores (e.g., 8-10) only when the transcriptions provide explicit, direct evidence that {user_name} clearly stated or demonstrated the fact. Practice caution when assigning confidence for inferred or assumed characteristics.
 
 Return **only** JSON in the following format (Ensure that all output text in 'proposition' and 'reasoning' fields are written in Traditional Chinese / 繁體中文):
 

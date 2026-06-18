@@ -14,6 +14,7 @@ export interface GumState {
   fetchMemory: () => Promise<void>;
   fetchSuggestions: () => Promise<void>;
   deleteMemory: (id: number) => Promise<void>;
+  deleteMemories: (ids: number[]) => Promise<void>;
   editMemory: (id: number, text: string) => Promise<void>;
 }
 
@@ -25,7 +26,13 @@ export const useGumStore = create<GumState>((set) => ({
   fetchMemory: async () => {
     set({ loading: true });
     try {
-      const res = await fetch('http://localhost:8000/api/v1/memory');
+      const res = await fetch(`http://localhost:8000/api/v1/memory?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       const data = await res.json();
       if (data.propositions) {
         set({ propositions: data.propositions });
@@ -40,7 +47,13 @@ export const useGumStore = create<GumState>((set) => ({
   fetchSuggestions: async () => {
     set({ loading: true });
     try {
-      const res = await fetch('http://localhost:8000/api/v1/suggestions');
+      const res = await fetch(`http://localhost:8000/api/v1/suggestions?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       const data = await res.json();
       if (data.suggestions) {
         set({ suggestions: data.suggestions });
@@ -49,6 +62,20 @@ export const useGumStore = create<GumState>((set) => ({
       console.error('Failed to fetch suggestions:', error);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  deleteMemories: async (ids: number[]) => {
+    try {
+      await fetch(`http://localhost:8000/api/v1/memory/batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      // Remove from local state
+      set((state) => ({ propositions: state.propositions.filter(p => !ids.includes(p.id)) }));
+    } catch (error) {
+      console.error('Failed to batch delete memories:', error);
     }
   },
 

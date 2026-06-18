@@ -105,7 +105,10 @@ async def run_reflection():
         import json
         data = json.loads(rsp.choices[0].message.content)
         
-        for insight in data.get("insights", []):
+        insights = data.get("insights", [])
+        print(f"[GUM Reflection] Reflection triggered! Generated {len(insights)} insights:")
+        for insight in insights:
+            print(f"  - {insight}")
             if text_observer:
                 await text_observer.push_text(f"[REFLECTION] {insight}")
                 
@@ -113,6 +116,7 @@ async def run_reflection():
         for o in obs:
             await gum_instance.update_observation_status(o.id, "archived")
             
+        print(f"[GUM Reflection] Archived {len(obs)} old observations. Resetting counters.")
         importance_sum = 0
         interaction_count = 0
     except Exception as e:
@@ -126,15 +130,24 @@ async def push_observation(text: str):
         return
         
     try:
-        neighbors = await gum_instance.query(text, limit=5)
+        neighbors = await gum_instance.query(text, limit=20)
         if not neighbors:
             # Fallback to recent memory since BM25 fails on CJK strings without spaces
-            recent_props = await gum_instance.recent(limit=5)
+            recent_props = await gum_instance.recent(limit=20)
             neighbors = [(p, 1.0) for p in recent_props]
 
         if neighbors:
             neighbor_ctx = "\n".join([f"ID: {p.id}, Text: {p.text}" for p, _ in neighbors])
-            prompt = f"Analyze new observation against existing memories.\nNew: {text}\nExisting:\n{neighbor_ctx}\nDetermine if new observation supersedes old ones. Rate importance 1-10."
+            prompt = f"""Analyze the new observation against existing memories.
+New observation: {text}
+Existing memories:
+{neighbor_ctx}
+
+Task: Determine if the new observation logically CONTRADICTS or explicitly UPDATES any of the existing memories.
+- ONLY supersede an old memory if the new observation proves it is now factually incorrect or outdated (e.g., user previously said "I don't know X", but now says "I understand X").
+- DO NOT supersede old memories just because the user changed the topic to something else. A user can have multiple independent memories at the same time.
+- If it supersedes, set should_evolve=true, add 'prune' to actions, and put ONLY the strictly contradicted IDs in target_ids. Otherwise, set should_evolve=false.
+Rate importance 1-10."""
             
             from pydantic import BaseModel
             from gum.schemas import get_schema
@@ -150,17 +163,21 @@ async def push_observation(text: str):
                 response_format=get_schema(EvolutionSchema.model_json_schema()),
             )
             import json
+            import re
             content = rsp.choices[0].message.content.strip()
-            if content.startswith("```json"):
-                content = content[7:-3].strip()
-            elif content.startswith("```"):
-                content = content[3:-3].strip()
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            if match:
+                content = match.group(0)
             decision = json.loads(content)
+            
+            print(f"[GUM Evolution] LLM decision: {decision}")
             
             importance_sum += decision.get("importance_score", 5)
             
             if decision.get("should_evolve") and "prune" in decision.get("actions", []):
-                for t_id in decision.get("target_ids", []):
+                target_ids = decision.get("target_ids", [])
+                print(f"[GUM Evolution] Superseding old memory IDs: {target_ids}")
+                for t_id in target_ids:
                     await gum_instance.update_status(t_id, "superseded")
         else:
             # If still no neighbors (e.g. very first message), default to 5

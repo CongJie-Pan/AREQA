@@ -437,7 +437,7 @@ class gum:
             list[dict]: List of revised propositions.
         """
         body = await self._build_revision_body(similar_cluster, related_obs)
-        prompt = self.revise_prompt.replace("{body}", body)
+        prompt = self.revise_prompt.replace("{body}", body).replace("{user_name}", self.user_name)
         rsp = await self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
@@ -723,6 +723,7 @@ class gum:
                 .where(Proposition.id == proposition_id)
                 .values(status=status, updated_at=func.now())
             )
+            await session.commit()
 
     async def update_text(self, proposition_id: int, new_text: str):
         """Update the text of a proposition."""
@@ -732,6 +733,7 @@ class gum:
                 .where(Proposition.id == proposition_id)
                 .values(text=new_text, updated_at=func.now())
             )
+            await session.commit()
 
     async def update_observation_status(self, observation_id: int, status: str):
         """Update the status of an observation."""

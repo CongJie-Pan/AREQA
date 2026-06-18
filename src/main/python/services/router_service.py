@@ -102,11 +102,11 @@ class RouterService:
                 print(f"DEBUG: RouterService error - empty response. Message: {message}")
                 return {"action": "ALLOW", "domain": None, "refusal_message": None}
 
+            import re
             content = result_str.strip()
-            if content.startswith("```json"):
-                content = content[7:-3].strip()
-            elif content.startswith("```"):
-                content = content[3:-3].strip()
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            if match:
+                content = match.group(0)
             result = json.loads(content)
             print(f"DEBUG: RouterService result parsed: {result.get('action')}")
             
