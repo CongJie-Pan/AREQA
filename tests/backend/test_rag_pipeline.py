@@ -37,11 +37,14 @@ def rag_service():
     import importlib
     importlib.reload(services.rag_service)
     from services.rag_service import RAGService
+    from pathlib import Path
+    
+    project_root = Path(__file__).resolve().parent.parent.parent
     
     service = RAGService(
-        faiss_index_path="data/rag/faiss_index/chunks.index",
-        faiss_metadata_path="data/rag/faiss_index/index_metadata.json",
-        bm25_index_dir="data/rag/bm25_index",
+        faiss_index_path=str(project_root / "data/rag/faiss_index/chunks.index"),
+        faiss_metadata_path=str(project_root / "data/rag/faiss_index/index_metadata.json"),
+        bm25_index_dir=str(project_root / "data/rag/bm25_index"),
         embedding_model_path="api",
         reranker_model_path="api",
         top_k=5,

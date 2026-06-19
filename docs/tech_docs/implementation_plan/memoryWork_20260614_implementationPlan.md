@@ -22,7 +22,7 @@
 
 我們將融合四篇頂尖學術論文的機制來解決上述問題：
 
-### 解方 A：記憶反思與動態演化 (Reflection & Evolution)
+### [OK] 解方 A：記憶反思與動態演化 (Reflection & Evolution)
 * **針對問題：** 記憶存太多、充滿過期衝突資訊。
 * **實作機制：** 
   1. **反思壓縮：** 設定背景排程（如每 20 輪對話），讓 LLM 將近期的短期對話萃取成高階的「核心事實 (Insights)」，並封存原始對話。
@@ -37,7 +37,7 @@
     * docs/paper/memory_work/A-MEM_Agentic Memory for LLM Agents.pdf
     * misc/A-MEM/A-mem-sys
 
-### 解方 B：情境意圖過濾 (Contextual Intent Filtering)
+### [OK] 解方 B：情境意圖過濾 (Contextual Intent Filtering)
 * **針對問題：** 檢索不精準、字面相似導致撈錯記憶。
 * **實作機制：** 
   1. 在記憶寫入時，強制 LLM 以 JSON 格式標註三個 Metadata：`Thematic Scope (主題範圍)`、`Event Type (事件類型)`、`Key Entity (關鍵實體)`。
@@ -48,13 +48,17 @@
     * misc/STITCH/contextual-intent
 
 ### 解方 C：代理式工具調用 (Agentic Tool-use Retrieval)
-* **針對問題：** 缺乏自主性、Token 浪費。
+* **針對問題：** 如何靈活的存取記憶、缺乏自主性、Token 浪費。
 * **實作機制：** 
   不再強制硬塞記憶。我們將檢索功能包裝成 Function Calling（例如 `search_long_term_memory(query)`）。LLM 就像作業系統在調度虛擬記憶體 (Virtual Memory) 一樣，只有在覺得自己缺乏使用者背景知識時，才會主動發起檢索。
 * **參考論文與開源碼：**
   * *MemGPT: Towards LLMs as Operating Systems* (UC Berkeley, 2024)
     * GitHub: [cpacker/MemGPT](https://github.com/cpacker/MemGPT) 或 [research.memgpt.ai](https://research.memgpt.ai)
     * misc/letta_MemGPT/MemGPT
+
+解方c補充 :
+
+
 
 ---
 

@@ -39,17 +39,21 @@ ROUTER_SYSTEM_PROMPT = """你是「小紅問答系統」的輸入守門人。
 
 class RouterService:
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("DEEPINFRA_API_KEY") or os.environ.get("DEEPINFRA_TOKEN")
+        # Use OpenRouter API key (same as main LLM client)
+        self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         if not self.api_key:
-            logger.warning("DEEPINFRA_TOKEN not found. RouterService will be disabled.")
+            logger.warning("OPENROUTER_API_KEY not found. RouterService will be disabled.")
             self.client = None
         else:
             self.client = AsyncOpenAI(
                 api_key=self.api_key,
-                base_url="https://api.deepinfra.com/v1/openai",
-                timeout=10.0
+                base_url="https://openrouter.ai/api/v1",
+                timeout=15.0  # OpenRouter is more stable; 15s is sufficient
             )
-        self.model = "Qwen/Qwen3.5-0.8B"
+        # qwen/qwen3-vl-8b-instruct: Standard Instruct model (NOT Hybrid Thinking).
+        # It does NOT auto-activate thinking mode, so no enable_thinking workaround needed.
+        # Avg latency: 0.52s (Alibaba Cloud provider), fast and reliable.
+        self.model = "qwen/qwen3-vl-8b-instruct"
         # s2twp: Simplified Chinese to Traditional Chinese (Taiwan Standard)
         self.converter = opencc.OpenCC('s2twp')
 
@@ -77,7 +81,7 @@ class RouterService:
                 temperature=0.1,
                 max_tokens=256,
                 extra_body={
-                    "top_k": 20, # Recommended for Qwen3.5 series to improve output quality
+                    "top_k": 20,  # Limits token choices; helps keep JSON output clean
                 }
             )
             
@@ -87,27 +91,40 @@ class RouterService:
             message = response.choices[0].message
             result_str = message.content
             
-            # DeepInfra/Qwen3.5 workaround: JSON is sometimes placed in reasoning_content 
-            # even in non-thinking mode when response_format={"type": "json_object"} is used.
-            # We check multiple possible locations for the data.
+            # Defensive fallback: some providers may place JSON in reasoning_content.
+            # _extract_json_str also strips <think> tags for safety.
+            def _extract_json_str(raw: str) -> str:
+                """Strip <think>...</think> blocks, then extract the first {...} JSON object."""
+                import re
+                if not raw:
+                    return ""
+                # Remove <think>...</think> blocks produced by Qwen3.5 thinking mode
+                cleaned = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+                match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+                return match.group(0) if match else ""
+
+            candidates = [result_str]
             if not result_str or not result_str.strip():
                 # Priority 1: reasoning_content attribute
                 if hasattr(message, "reasoning_content") and message.reasoning_content:
-                    result_str = message.reasoning_content
+                    candidates = [message.reasoning_content]
                 # Priority 2: model_extra['reasoning_content'] (OpenAI SDK internal storage)
                 elif hasattr(message, "model_extra") and message.model_extra and "reasoning_content" in message.model_extra:
-                    result_str = message.model_extra["reasoning_content"]
+                    candidates = [message.model_extra["reasoning_content"]]
+                else:
+                    candidates = []
 
-            if not result_str or not result_str.strip():
-                print(f"DEBUG: RouterService error - empty response. Message: {message}")
+            json_str = ""
+            for raw in candidates:
+                json_str = _extract_json_str(raw)
+                if json_str:
+                    break
+
+            if not json_str:
+                print(f"DEBUG: RouterService error - could not extract JSON from any candidate. Message: {message}")
                 return {"action": "ALLOW", "domain": None, "refusal_message": None}
 
-            import re
-            content = result_str.strip()
-            match = re.search(r'\{.*\}', content, re.DOTALL)
-            if match:
-                content = match.group(0)
-            result = json.loads(content)
+            result = json.loads(json_str)
             print(f"DEBUG: RouterService result parsed: {result.get('action')}")
             
             # Post-processing: Traditional Chinese enforcement for refusal message

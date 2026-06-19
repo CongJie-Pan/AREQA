@@ -80,8 +80,8 @@ async def test_memory_evolution_bm25_fallback_and_markdown(mock_gum_instance):
         await push_observation("New observation")
         
         # Verify fallback was triggered
-        mock_gum_instance.query.assert_called_once_with("New observation", limit=5)
-        mock_gum_instance.recent.assert_called_once_with(limit=5)
+        mock_gum_instance.query.assert_called_once_with("New observation", limit=20)
+        mock_gum_instance.recent.assert_called_once_with(limit=20)
         
         # Verify markdown parsing and pruning
         mock_gum_instance.update_status.assert_called_once_with(2, "superseded")

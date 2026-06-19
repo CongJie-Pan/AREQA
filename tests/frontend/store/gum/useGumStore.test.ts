@@ -11,7 +11,6 @@ describe('useGumStore', () => {
       propositions: [],
       suggestions: [],
       loading: false,
-      error: null,
     });
   });
 
@@ -22,8 +21,17 @@ describe('useGumStore', () => {
     expect(state.loading).toBe(false);
   });
 
-  it('fetchMemory should fetch memory from API and update state', async () => {
-    const mockMemory = [{ content: 'test memory' }];
+  it('fetchMemory should fetch memory from API and update state including STITCH tags', async () => {
+    const mockMemory = [{ 
+      id: 1,
+      text: 'test memory', 
+      confidence: 0.9,
+      updated_at: null,
+      context_scope: "Fruit",
+      event_types: ["like"],
+      target: "apple",
+      functional_type_seeds: ["food"]
+    }];
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => ({ propositions: mockMemory }),
@@ -33,7 +41,10 @@ describe('useGumStore', () => {
 
     const state = useGumStore.getState();
     expect(state.propositions).toEqual(mockMemory);
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/api/v1/memory');
+    
+    // Check if the URL matches the timestamped pattern
+    const fetchCall = (global.fetch as any).mock.calls[0][0];
+    expect(fetchCall).toContain('http://localhost:8000/api/v1/memory?t=');
   });
 
   it('fetchSuggestions should fetch suggestions from API and update state', async () => {
@@ -47,6 +58,9 @@ describe('useGumStore', () => {
 
     const state = useGumStore.getState();
     expect(state.suggestions).toEqual(mockSuggestions);
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/api/v1/suggestions');
+    
+    // Check if the URL matches the timestamped pattern
+    const fetchCall = (global.fetch as any).mock.calls[0][0];
+    expect(fetchCall).toContain('http://localhost:8000/api/v1/suggestions?t=');
   });
 });

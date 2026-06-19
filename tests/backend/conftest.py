@@ -1,14 +1,16 @@
 import pytest
 import sys
+import os
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-# Patch RAGService before any backend modules are imported
-patcher = patch('services.rag_service.RAGService', autospec=True)
-MockRAGService = patcher.start()
+# Add project root, src/main/python, and backend to sys.path so modules can be found
+project_root = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / 'src' / 'main' / 'python'))
+sys.path.insert(0, str(project_root / 'backend'))
 
-# We also need to patch the RouterService and SuggestionService if they do heavy lifting
-patch('services.router_service.RouterService', autospec=True).start()
-patch('services.suggestion_service.SuggestionService', autospec=True).start()
+# We remove the global patching here so that unit tests can test the actual classes.
+# Integration tests should patch these individually as needed.
 
-def pytest_unconfigure(config):
-    patch.stopall()
+# No global patches here.

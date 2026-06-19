@@ -58,6 +58,10 @@ frontend/node_modules
 /temp
 /PLANNING.md
 /TASK.md
+data/rag/gum_local.db
+misc/gum/gum.db
+backend/gum.db
+
 
 
 # Python

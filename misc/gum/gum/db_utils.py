@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
+import logging
 from datetime import datetime, timezone
 from typing import List
 
@@ -34,9 +36,21 @@ K_DECAY = 2.0      # decay rate for recency adjustment
 LAMBDA = 0.5       # trade-off for MMR
 
 def build_fts_query(raw: str, mode: str = "OR") -> str:
-    tokens = re.findall(r"\w+", raw.lower())
+    import jieba
+    
+    # Use jieba to properly tokenize Chinese strings, 
+    # and keep only tokens containing word characters (alphanumeric or Chinese)
+    # to avoid syntax errors from punctuation in FTS MATCH query.
+    words = jieba.lcut(raw.lower())
+    tokens = [w for w in words if re.search(r'\w', w)]
+    
+    if not tokens:
+        # Fallback to simple regex if jieba fails or returns nothing
+        tokens = re.findall(r"\w+", raw.lower())
+        
     if not tokens:
         return ""
+        
     if mode == "PHRASE":
         return f'"{" ".join(tokens)}"'
     elif mode == "OR":
@@ -51,6 +65,7 @@ async def search_propositions_bm25(
     session: AsyncSession,
     user_query: str,
     *,
+    selected_labels: dict | None = None,
     limit: int = 3,
     mode: str = "OR",
     start_time: datetime | None = None,
@@ -58,6 +73,7 @@ async def search_propositions_bm25(
     include_observations: bool = True,
     enable_decay: bool = True,
     enable_mmr: bool = True,
+    include_deleted: bool = False,
 ) -> list[tuple["Proposition", float]]:
 
     q = build_fts_query(user_query, mode)
@@ -135,16 +151,22 @@ async def search_propositions_bm25(
         stmt = (
             select(Proposition, best_scores.c.bm25)
             .join(best_scores, best_scores.c.pid == Proposition.id)
-            .where(Proposition.status == 'active')
-            .order_by(best_scores.c.bm25.asc())          # smallest→best
         )
+        if not include_deleted:
+            stmt = stmt.where(Proposition.status == 'active')
+        else:
+            stmt = stmt.where(Proposition.status.in_(['active', 'deleted']))
+        stmt = stmt.order_by(best_scores.c.bm25.asc())          # smallest→best
     else:
         # --- 1-b  No user query ------------------------------
         stmt = (
             select(Proposition, literal_column("0.0").label("bm25"))
-            .where(Proposition.status == 'active')
-            .order_by(Proposition.created_at.desc())
         )
+        if not include_deleted:
+            stmt = stmt.where(Proposition.status == 'active')
+        else:
+            stmt = stmt.where(Proposition.status.in_(['active', 'deleted']))
+        stmt = stmt.order_by(Proposition.created_at.desc())
 
     # --------------------------------------------------------
     # 2  Time filtering & eager-load
@@ -165,7 +187,7 @@ async def search_propositions_bm25(
 
     stmt = stmt.limit(candidate_pool)
 
-   # --------------------------------------------------------
+    # --------------------------------------------------------
     # 3  Execute & score
     # --------------------------------------------------------
     bind = {"q": q} if has_query else {}
@@ -173,10 +195,71 @@ async def search_propositions_bm25(
     if not rows:
         return []
 
+    # STITCH Label Density Ranking Filter
+    logger = logging.getLogger("gum")
+    filtered_rows = []
+    if selected_labels:
+        sel_scopes = selected_labels.get("selected_context_scopes", [])
+        sel_events = selected_labels.get("selected_event_types", [])
+        sel_targets = selected_labels.get("selected_targets", [])
+        sel_func = selected_labels.get("selected_functional_type_seeds", [])
+        
+        has_scope = bool(sel_scopes)
+        has_target = bool(sel_targets)
+        
+        # 3-Tier Gate Logic for STITCH Fallback
+        DOMAIN_SCOPES = ["《紅樓夢》", "中國古典文學", "古典詩詞", "四大名著", "《紅樓夢》人物分析", "《紅樓夢》情節", "《紅樓夢》文學細節"]
+        
+        trigger_stitch = False
+        if has_scope and has_target:
+            trigger_stitch = True  # Gate 1: Both exist -> High confidence STITCH
+        elif has_scope and not has_target:
+            # Gate 2: Only scope exists -> Check if it's in domain
+            trigger_stitch = any(any(domain in scope for domain in DOMAIN_SCOPES) for scope in sel_scopes)
+            
+        if not trigger_stitch:
+            # Gate 3: Neither exist (or scope out of domain) -> Fallback to pure BM25
+            logger.info("[STITCH] No substantial entities/scopes selected. Fallback to pure BM25 search.")
+            filtered_rows = [(prop, raw_score, 0) for prop, raw_score in rows]
+        else:
+            logger.info(f"[STITCH] Filtering {len(rows)} candidates using Label Density Ranking...")
+            for prop, raw_score in rows:
+                num_matches = 0
+                
+                # Count label matches
+                if prop.context_scope and prop.context_scope in sel_scopes:
+                    num_matches += 1
+                if prop.event_types:
+                    try:
+                        et_list = json.loads(prop.event_types)
+                        if any(et in sel_events for et in et_list):
+                            num_matches += 1
+                    except Exception: pass
+                if prop.target and prop.target in sel_targets:
+                    num_matches += 1
+                if prop.functional_type_seeds:
+                    try:
+                        ft_list = json.loads(prop.functional_type_seeds)
+                        if any(ft in sel_func for ft in ft_list):
+                            num_matches += 1
+                    except Exception: pass
+                
+                # STITCH logic: Only keep memory if num_matches > 0
+                if num_matches > 0:
+                    filtered_rows.append((prop, raw_score, num_matches))
+                    
+            logger.info(f"[STITCH] Filtered down to {len(filtered_rows)} candidates.")
+            # Strict STITCH mode: if LLM selected labels but nothing matched, we return []
+            if not filtered_rows:
+                logger.warning("[STITCH] Strict mode: No candidates matched the predicted labels. Returning empty results.")
+                return []
+    else:
+        filtered_rows = [(prop, raw_score, 0) for prop, raw_score in rows]
+
     # --- 3-a. Calculate initial scores ---
     initial_scores: list[float] = []
     now = datetime.now(timezone.utc)
-    for prop, raw_score in rows:
+    for prop, raw_score, num_matches in filtered_rows:
         relevance_score = -raw_score if has_query else 0.0
         gamma = 0.0
         if enable_decay:
@@ -186,6 +269,11 @@ async def search_propositions_bm25(
             gamma = -alpha * K_DECAY * age_days
 
         score = relevance_score * math.exp(gamma)
+        
+        # Apply Label Density boost (primary ranking factor)
+        if selected_labels:
+            score += num_matches * 50.0
+            
         initial_scores.append(score)
 
     final_scores_np = np.array(initial_scores)
@@ -199,9 +287,9 @@ async def search_propositions_bm25(
 
     final_scores = final_scores_np.tolist()
 
-    if enable_mmr and len(rows) > 1:
+    if enable_mmr and len(filtered_rows) > 1:
         docs: list[str] = []
-        for p, _ in rows:
+        for p, _, _ in filtered_rows:
             doc_parts = [p.text, p.reasoning]
             if include_observations and p.observations:
                 obs_concat = " ".join(o.content for o in list(p.observations)[:10])
@@ -213,7 +301,7 @@ async def search_propositions_bm25(
         selected_idxs = []
         mmr_scores = np.array(final_scores)
 
-        while len(selected_idxs) < min(limit, len(rows)):
+        while len(selected_idxs) < min(limit, len(filtered_rows)):
             if not selected_idxs:
                 idx = int(np.argmax(mmr_scores))
             else:
@@ -227,7 +315,7 @@ async def search_propositions_bm25(
         idxs = np.argsort(final_scores)[::-1][:limit]
         selected_idxs = idxs.tolist()
 
-    result = [(rows[i][0], final_scores[i]) for i in selected_idxs]    
+    result = [(filtered_rows[i][0], final_scores[i]) for i in selected_idxs]    
     return result
 
 async def get_related_observations(

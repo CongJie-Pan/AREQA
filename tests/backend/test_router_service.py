@@ -4,7 +4,7 @@ from src.main.python.services.router_service import RouterService
 
 @pytest.mark.asyncio
 async def test_router_service_allow():
-    # Mock the AsyncOpenAI client
+    # Test that the service correctly routes to OpenRouter with qwen/qwen3-vl-8b-instruct
     with patch('src.main.python.services.router_service.AsyncOpenAI') as mock_openai:
         mock_client = mock_openai.return_value
         mock_client.chat.completions.create = AsyncMock()
@@ -17,6 +17,10 @@ async def test_router_service_allow():
         mock_client.chat.completions.create.return_value = mock_response
         
         service = RouterService(api_key="test_key")
+        
+        # Verify model is updated to qwen/qwen3-vl-8b-instruct (not old Qwen3.5)
+        assert service.model == "qwen/qwen3-vl-8b-instruct"
+        
         result = await service.check_query_intent("賈寶玉是誰？")
         
         assert result["action"] == "ALLOW"
@@ -56,8 +60,10 @@ async def test_router_service_fail_safe():
         assert result["action"] == "ALLOW"
 
 @pytest.mark.asyncio
-async def test_router_service_reasoning_content():
-    # Test fallback to reasoning_content (DeepInfra behavior)
+async def test_router_service_reasoning_content_fallback():
+    # Defensive test: ensure _extract_json_str handles reasoning_content fallback.
+    # Though qwen/qwen3-vl-8b-instruct is a standard Instruct model (no auto-thinking),
+    # this fallback keeps the service robust against unexpected provider behavior.
     with patch('src.main.python.services.router_service.AsyncOpenAI') as mock_openai:
         mock_client = mock_openai.return_value
         mock_client.chat.completions.create = AsyncMock()

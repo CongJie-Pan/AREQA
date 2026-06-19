@@ -122,6 +122,34 @@ async def run_reflection():
     except Exception as e:
         print(f"Error in reflection: {e}")
 
+async def query_memory_for_context(user_query: str, limit: int = 8) -> str:
+    """
+    Query GUM memory and return a formatted string for System Prompt injection.
+
+    This is the critical bridge between STITCH-filtered memory and the LLM prompt.
+    Without this, the STITCH subsystem correctly retrieves memories but never passes
+    them to the main LLM, making memory invisible to the AI.
+
+    Args:
+        user_query: The user's current message to use as the search query.
+        limit: Maximum number of memory propositions to inject.
+
+    Returns:
+        A formatted <memory> block string for system prompt injection, or "" if no memory.
+    """
+    if not gum_instance:
+        return ""
+    try:
+        results = await gum_instance.query(user_query, limit=limit)
+        if not results:
+            return ""
+        lines = [p.text for p, _ in results]
+        memory_block = "\n".join(f"- {line}" for line in lines)
+        return f"\n<memory>\n以下是關於使用者的已知記憶，請根據這些記憶來個人化你的回答：\n{memory_block}\n</memory>"
+    except Exception as e:
+        print(f"[GUM] Error querying memory for context: {e}")
+        return ""
+
 async def push_observation(text: str):
     global importance_sum, interaction_count, last_interaction_time
     last_interaction_time = datetime.now()
@@ -211,13 +239,18 @@ async def get_all_memory():
     if not gum_instance:
         return []
     try:
+        import json
         props = await gum_instance.recent(limit=100)
         return [
             {
                 "id": p.id, 
                 "text": p.text, 
                 "confidence": p.confidence, 
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                "context_scope": p.context_scope,
+                "event_types": json.loads(p.event_types) if p.event_types else [],
+                "target": p.target,
+                "functional_type_seeds": json.loads(p.functional_type_seeds) if p.functional_type_seeds else []
             } 
             for p in props
         ]

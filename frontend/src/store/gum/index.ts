@@ -5,6 +5,10 @@ export interface Proposition {
   text: string;
   confidence: number;
   updated_at: string | null;
+  context_scope?: string;
+  event_types?: string[];
+  target?: string;
+  functional_type_seeds?: string[];
 }
 
 export interface GumState {

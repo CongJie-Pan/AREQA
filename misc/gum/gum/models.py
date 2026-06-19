@@ -132,6 +132,13 @@ class Proposition(Base):
     id:         Mapped[int]           = mapped_column(primary_key=True)
     text:       Mapped[str]           = mapped_column(Text, nullable=False)
     reasoning:  Mapped[str]           = mapped_column(Text, nullable=False)
+    
+    # Contextual Intent Filters (STITCH)
+    context_scope: Mapped[Optional[str]] = mapped_column(String(255))
+    event_types:   Mapped[Optional[str]] = mapped_column(Text) # JSON list
+    target:        Mapped[Optional[str]] = mapped_column(String(255))
+    functional_type_seeds: Mapped[Optional[str]] = mapped_column(Text) # JSON list
+    
     confidence: Mapped[Optional[int]]
     decay:      Mapped[Optional[int]]
     status:     Mapped[str]           = mapped_column(String(50), server_default="active", nullable=False)

@@ -457,6 +457,10 @@ class gum:
             draft = Proposition(
                 text=itm["proposition"],
                 reasoning=itm["reasoning"],
+                context_scope=itm.get("context_scope"),
+                event_types=json.dumps(itm.get("event_types", [])) if itm.get("event_types") else None,
+                target=itm.get("target"),
+                functional_type_seeds=json.dumps(itm.get("functional_type_seeds", [])) if itm.get("functional_type_seeds") else None,
                 confidence=itm.get("confidence"),
                 decay=itm.get("decay"),
                 revision_group=str(uuid4()),
@@ -470,7 +474,8 @@ class gum:
                     session, f"{draft.text}\n{draft.reasoning}", mode="OR",
                     include_observations=False,
                     enable_mmr=False,
-                    enable_decay=True
+                    enable_decay=True,
+                    include_deleted=True
                 )
                 
             for prop, _score in hits:
@@ -487,7 +492,29 @@ class gum:
     async def _handle_identical(
         self, session, identical: list[Proposition], observations: list[Observation]
     ) -> None:
+        from datetime import datetime, timezone, timedelta
         for p in identical:
+            if p.status == 'deleted':
+                try:
+                    if isinstance(p.updated_at, str):
+                        try:
+                            dt = datetime.fromisoformat(p.updated_at.replace('Z', '+00:00'))
+                        except ValueError:
+                            dt = datetime.strptime(p.updated_at, "%Y-%m-%d %H:%M:%S")
+                            dt = dt.replace(tzinfo=timezone.utc)
+                    elif isinstance(p.updated_at, datetime):
+                        dt = p.updated_at
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                    else:
+                        dt = datetime.min.replace(tzinfo=timezone.utc)
+                        
+                    if (datetime.now(timezone.utc) - dt) > timedelta(minutes=5):
+                        p.status = 'active'
+                except Exception as e:
+                    self.logger.warning(f"Could not parse updated_at {p.updated_at}: {e}")
+                    p.status = 'active'
+                    
             for obs in observations:
                 await self._attach_obs_if_missing(p, obs, session)
 
@@ -523,6 +550,10 @@ class gum:
             new_prop = Proposition(
                 text=item["proposition"],
                 reasoning=item["reasoning"],
+                context_scope=item.get("context_scope"),
+                event_types=json.dumps(item.get("event_types", [])) if item.get("event_types") else None,
+                target=item.get("target"),
+                functional_type_seeds=json.dumps(item.get("functional_type_seeds", [])) if item.get("functional_type_seeds") else None,
                 confidence=item.get("confidence"),
                 decay=item.get("decay"),
                 version=1,  # Start fresh with version 1
@@ -671,10 +702,89 @@ class gum:
         Returns:
             list[tuple[Proposition, float]]: List of tuples containing propositions and their relevance scores.
         """
+        from sqlalchemy import select
+        from .schemas import IntentPredictionSchema
+        from gum.prompts.gum import INTENT_SELECTION_PROMPT
+
         async with self._session() as session:
+            # 1. Collect unique label candidates from existing propositions
+            stmt = select(
+                Proposition.context_scope, 
+                Proposition.event_types, 
+                Proposition.target, 
+                Proposition.functional_type_seeds
+            ).where(Proposition.status == 'active').order_by(Proposition.created_at.desc()).limit(200)
+            
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+            
+            context_scopes = set()
+            event_types = set()
+            targets = set()
+            functional_type_seeds = set()
+            
+            for row in rows:
+                if row.context_scope: context_scopes.add(row.context_scope)
+                if row.target: targets.add(row.target)
+                if row.event_types:
+                    try:
+                        for et in json.loads(row.event_types):
+                            event_types.add(et)
+                    except Exception: pass
+                if row.functional_type_seeds:
+                    try:
+                        for ft in json.loads(row.functional_type_seeds):
+                            functional_type_seeds.add(ft)
+                    except Exception: pass
+
+            # 2. Call LLM for intent prediction if we have candidates
+            selected_labels = None
+            if any([context_scopes, event_types, targets, functional_type_seeds]):
+                if not hasattr(self, '_intent_cache'):
+                    from collections import OrderedDict
+                    class SimpleLRU:
+                        def __init__(self, size=100):
+                            self.cache = OrderedDict()
+                            self.size = size
+                        def get(self, key):
+                            if key in self.cache:
+                                self.cache.move_to_end(key)
+                                return self.cache[key]
+                            return None
+                        def put(self, key, val):
+                            self.cache[key] = val
+                            self.cache.move_to_end(key)
+                            if len(self.cache) > self.size:
+                                self.cache.popitem(last=False)
+                    self._intent_cache = SimpleLRU()
+
+                selected_labels = self._intent_cache.get(user_query)
+                if selected_labels is None:
+                    self.logger.info("[STITCH] Intent Cache Miss. Querying LLM for intent prediction...")
+                    prompt = INTENT_SELECTION_PROMPT.format(
+                        user_query=user_query,
+                        context_scope_candidates=json.dumps(list(context_scopes)[:50], ensure_ascii=False),
+                        event_type_candidates=json.dumps(list(event_types)[:50], ensure_ascii=False),
+                        target_candidates=json.dumps(list(targets)[:50], ensure_ascii=False),
+                        functional_type_seeds_candidates=json.dumps(list(functional_type_seeds)[:50], ensure_ascii=False)
+                    )
+                    
+                    rsp = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        response_format=get_schema(IntentPredictionSchema.model_json_schema()),
+                    )
+                    selected_labels = json.loads(rsp.choices[0].message.content)
+                    self._intent_cache.put(user_query, selected_labels)
+                    self.logger.info(f"[STITCH] Predicted Labels: {json.dumps(selected_labels, ensure_ascii=False)}")
+                else:
+                    self.logger.info(f"[STITCH] Intent Cache Hit. Using cached labels for query: '{user_query}'")
+
+            # 3. Perform BM25 search with Density Ranking
             return await search_propositions_bm25(
                 session,
                 user_query,
+                selected_labels=selected_labels,
                 limit=limit,
                 mode=mode,
                 start_time=start_time,

@@ -3,7 +3,7 @@ import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Check, X as XIcon 
 import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { useGumStore } from '@/store/gum';
 import { useStyles } from './styles';
-import { Spin, Checkbox, Input, message, Button, Space, Popconfirm } from 'antd';
+import { Spin, Checkbox, Input, message, Button, Space, Popconfirm, Tag } from 'antd';
 
 interface GumPanelProps {
   open: boolean;
@@ -174,7 +174,17 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                           style={{ marginTop: 2 }}
                         />
                         <div className={styles.cardText} style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
-                          {p.text}
+                          <div style={{ marginBottom: 4 }}>{p.text}</div>
+                          
+                          {/* STITCH Tags */}
+                          {(p.context_scope || p.target || (p.event_types && p.event_types.length > 0) || (p.functional_type_seeds && p.functional_type_seeds.length > 0)) && (
+                            <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                              {p.context_scope && <Tag color="blue" bordered={false} style={{ margin: 0 }}>Scope: {p.context_scope}</Tag>}
+                              {p.target && <Tag color="purple" bordered={false} style={{ margin: 0 }}>Target: {p.target}</Tag>}
+                              {p.event_types?.map(e => <Tag key={`evt-${e}`} color="cyan" bordered={false} style={{ margin: 0 }}>{e}</Tag>)}
+                              {p.functional_type_seeds?.map(f => <Tag key={`func-${f}`} color="green" bordered={false} style={{ margin: 0 }}>{f}</Tag>)}
+                            </div>
+                          )}
                         </div>
                         <div style={{ opacity: 1, display: 'flex', gap: 4, marginTop: -4, alignItems: 'center' }}>
                           <span className={styles.confidenceBadge} style={{ marginRight: 8 }}>

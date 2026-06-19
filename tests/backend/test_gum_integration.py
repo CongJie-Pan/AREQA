@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import json
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
@@ -13,19 +14,30 @@ from backend.gum_integration import (
 )
 import backend.gum_integration
 
+# STITCH imports
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy import insert, select
+from gum.models import Base, Proposition, create_fts_table, create_observations_fts
+from gum.gum import gum
+
 # Mock proposition class
 class MockProposition:
-    def __init__(self, id, text, confidence):
+    def __init__(self, id, text, confidence, context_scope=None, event_types=None, target=None, functional_type_seeds=None):
         self.id = id
         self.text = text
         self.confidence = confidence
         self.updated_at = datetime.now()
+        self.context_scope = context_scope
+        self.event_types = event_types
+        self.target = target
+        self.functional_type_seeds = functional_type_seeds
 
 @pytest.fixture
 def mock_gum_instance():
     instance = MagicMock()
     instance.recent = AsyncMock(return_value=[
-        MockProposition(1, "test user likes apples", 0.9),
+        MockProposition(1, "test user likes apples", 0.9, context_scope="Fruit", event_types='["like"]', target="apple", functional_type_seeds='["food"]'),
         MockProposition(2, "test user hates oranges", 0.8),
     ])
     
@@ -89,6 +101,31 @@ async def test_push_observation():
         await push_observation("test observation text")
         mock_gum.query.assert_called_once_with("test observation text", limit=20)
         mock_text_observer.push_text.assert_called_once_with("test observation text")
+        
+@pytest.mark.asyncio
+async def test_get_all_memory_with_stitch_tags(mock_gum_instance):
+    backend.gum_integration.gum_instance = mock_gum_instance
+    memories = await get_all_memory()
+    
+    assert len(memories) == 2
+    
+    # Check the first memory with STITCH tags
+    m1 = memories[0]
+    assert m1["id"] == 1
+    assert m1["text"] == "test user likes apples"
+    assert m1["context_scope"] == "Fruit"
+    assert m1["event_types"] == ["like"]
+    assert m1["target"] == "apple"
+    assert m1["functional_type_seeds"] == ["food"]
+    
+    # Check the second memory without STITCH tags
+    m2 = memories[1]
+    assert m2["id"] == 2
+    assert m2["text"] == "test user hates oranges"
+    assert m2["context_scope"] is None
+    assert m2["event_types"] == []
+    assert m2["target"] is None
+    assert m2["functional_type_seeds"] == []
         
     backend.gum_integration.gum_instance = None
 
@@ -197,3 +234,173 @@ async def test_get_suggestions_no_instance():
     backend.gum_integration.gum_instance = None
     suggestions = await get_suggestions()
     assert suggestions == []
+
+# --- STITCH Contextual Intent Filtering Integration Tests ---
+
+@pytest_asyncio.fixture
+async def real_gum_instance():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(create_fts_table)
+        await conn.run_sync(create_observations_fts)
+    
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    
+    # Initialize Gum with this engine
+    gum_instance = gum(user_name="test_user", model="test_model")
+    gum_instance.engine = engine
+    gum_instance.Session = session_maker
+    
+    yield gum_instance
+    
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_query_with_stitch_intent(real_gum_instance):
+    async with real_gum_instance._session() as session:
+        await session.execute(
+            insert(Proposition).values(
+                text="User is learning Python.", reasoning="test", status="active",
+                context_scope="Python Programming", target="Python",
+                revision_group="test"
+            )
+        )
+        await session.commit()
+
+    with patch.object(real_gum_instance.client.chat.completions, 'create', new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(content=json.dumps({
+                "selected_context_scopes": ["Python Programming"],
+                "selected_event_types": [],
+                "selected_targets": ["Python"],
+                "selected_functional_type_seeds": []
+            })))]
+        )
+        
+        results = await real_gum_instance.query("tell me about python")
+        assert len(results) == 1
+        mock_llm.assert_called_once()
+        assert results[0][0].context_scope == "Python Programming"
+
+@pytest.mark.asyncio
+async def test_query_intent_cache_hit(real_gum_instance):
+    async with real_gum_instance._session() as session:
+        await session.execute(
+            insert(Proposition).values(
+                text="User is learning Python.", reasoning="test", status="active",
+                context_scope="Python Programming", target="Python",
+                revision_group="test"
+            )
+        )
+        await session.commit()
+
+    with patch.object(real_gum_instance.client.chat.completions, 'create', new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(content=json.dumps({
+                "selected_context_scopes": ["Python Programming"],
+                "selected_event_types": [],
+                "selected_targets": ["Python"],
+                "selected_functional_type_seeds": []
+            })))]
+        )
+        
+        await real_gum_instance.query("tell me about python")
+        await real_gum_instance.query("tell me about python") # exactly same query
+        
+        assert mock_llm.call_count == 1
+
+@pytest.mark.asyncio
+async def test_query_intent_cache_miss_on_different_query(real_gum_instance):
+    async with real_gum_instance._session() as session:
+        await session.execute(
+            insert(Proposition).values(
+                text="User is learning Python.", reasoning="test", status="active",
+                context_scope="Python Programming", target="Python",
+                revision_group="test"
+            )
+        )
+        await session.commit()
+
+    with patch.object(real_gum_instance.client.chat.completions, 'create', new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(content=json.dumps({
+                "selected_context_scopes": ["Python Programming"],
+                "selected_event_types": [],
+                "selected_targets": ["Python"],
+                "selected_functional_type_seeds": []
+            })))]
+        )
+        
+        await real_gum_instance.query("query 1")
+        await real_gum_instance.query("query 2")
+        
+        assert mock_llm.call_count == 2
+
+@pytest.mark.asyncio
+async def test_query_no_labels_in_db_skips_intent(real_gum_instance):
+    async with real_gum_instance._session() as session:
+        await session.execute(
+            insert(Proposition).values(
+                text="hello! Just a text without labels.", reasoning="test", status="active",
+                revision_group="test"
+            )
+        )
+        await session.commit()
+
+    with patch.object(real_gum_instance.client.chat.completions, 'create', new_callable=AsyncMock) as mock_llm:
+        results = await real_gum_instance.query("hello")
+        assert len(results) == 1
+        mock_llm.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_query_stitch_fallback_empty_db(real_gum_instance):
+    with patch.object(real_gum_instance.client.chat.completions, 'create', new_callable=AsyncMock) as mock_llm:
+        results = await real_gum_instance.query("hello")
+        assert len(results) == 0
+        mock_llm.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_push_observation_stitch_metadata_preserved(real_gum_instance):
+    mock_llm_propose = MagicMock(
+        choices=[MagicMock(message=MagicMock(content=json.dumps({
+            "propositions": [
+                {
+                    "proposition": "User is testing STITCH.",
+                    "reasoning": "Because they wrote a test.",
+                    "context_scope": "Testing",
+                    "event_types": ["Validation"],
+                    "target": "STITCH",
+                    "functional_type_seeds": ["Testing action"],
+                    "confidence": 9,
+                    "decay": 5
+                }
+            ]
+        })))]
+    )
+    
+    real_gum_instance._filter_propositions = AsyncMock(return_value=([], [], []))
+    
+    with patch.object(real_gum_instance.client.chat.completions, 'create', new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = mock_llm_propose
+        
+        batch = [{
+            "observer_name": "TestObserver",
+            "content": "I am writing a test for STITCH",
+            "content_type": "input_text"
+        }]
+        
+        await real_gum_instance._process_batch(batch)
+        
+        async with real_gum_instance._session() as session:
+            result = await session.execute(select(Proposition))
+            prop = result.scalars().first()
+            
+            assert prop is not None
+            assert prop.text == "User is testing STITCH."
+            assert prop.context_scope == "Testing"
+            assert prop.target == "STITCH"
+            assert "Validation" in prop.event_types
+            assert "Testing action" in prop.functional_type_seeds

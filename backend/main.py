@@ -13,7 +13,7 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
-from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions
+from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions, query_memory_for_context
 
 # 在 main.py 最上層加入全域快取字典
 _rag_cache: dict = {}
@@ -443,10 +443,11 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                 router_task = asyncio.create_task(router_service.check_query_intent(last_user_msg))
                 
                 while not router_task.done():
-                    # Wait for a bit, or until task finishes
-                    done, pending = await asyncio.wait([router_task], timeout=5.0)
+                    # Wait briefly, then send a heartbeat to keep the SSE connection alive.
+                    # Interval is short (1.5s) to prevent frontend from timing out on slow DeepInfra responses.
+                    done, pending = await asyncio.wait([router_task], timeout=1.5)
                     if not done:
-                        # Task still running after 5s, send heartbeat to keep connection alive
+                        # Task still running, send heartbeat to keep connection alive
                         yield f": heartbeat\n\n"
                 
                 intent_result = await router_task
@@ -559,7 +560,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                     
                                     # If RAG is enabled but no document score exceeds the threshold, trigger refusal
                                     if context_results_obj.highest_score < effective_threshold:
-                                        refusal = "小紅查閱了相關古籍文獻，暫時沒能找到與您問題直接相關的內容。為了保證回答的準確性，小紅建議您換個方式提問，或是詢問關於《紅樓夢》與國學的其他問題喔！ 😊"
+                                        refusal = "AREQA查閱了相關古籍文獻，暫時沒能找到與您問題直接相關的內容。為了保證回答的準確性，AREQA建議您換個方式提問，或是詢問關於《紅樓夢》與國學的其他問題喔！ 😊"
                                         chunk_data = {
                                             "choices": [
                                                 {
@@ -680,6 +681,15 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                             rag_status_note = "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
                         
                         final_system_prompt = sys_prompt_text + rag_status_note
+                        
+                        # Inject GUM memory context into System Prompt
+                        # This is the critical step that makes STITCH-retrieved memories
+                        # visible to the main LLM. Without this injection, STITCH correctly
+                        # retrieves memories but the AI never sees them.
+                        memory_ctx = await query_memory_for_context(last_user_msg, limit=8)
+                        if memory_ctx:
+                            final_system_prompt = final_system_prompt + memory_ctx
+                            print(f"[GUM] Injected {memory_ctx.count(chr(10) + '- ')} memory propositions into system prompt.")
                         
                         # Insert at the beginning of the messages list
                         chat_req.messages.insert(0, {"role": "system", "content": final_system_prompt})

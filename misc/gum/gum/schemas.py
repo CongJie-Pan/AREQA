@@ -19,6 +19,13 @@ class AuditSchema(BaseModel):
 class PropositionItem(BaseModel):
     reasoning: str = Field(..., description="The reasoning for the proposition")
     proposition: str = Field(..., description="The proposition string")
+    
+    # Contextual Intent Filters (STITCH)
+    context_scope: Optional[str] = Field(None, description="The overarching topic or subject area (e.g., 'Python Programming', 'History')")
+    event_types: Optional[List[str]] = Field(default_factory=list, description="The action or nature of the observation (e.g., 'Questioning', 'Clarification', 'Learning')")
+    target: Optional[str] = Field(None, description="The main entity involved (e.g., 'for loop', 'Napoleon')")
+    functional_type_seeds: Optional[List[str]] = Field(default_factory=list, description="Functional or pragmatic types covering details driving the utterance")
+    
     confidence: Optional[int] = Field(
         ...,
         description="Confidence score from 1 (low) to 10 (high)"
@@ -27,11 +34,16 @@ class PropositionItem(BaseModel):
         ...,
         description="Decay score from 1 (low) to 10 (high)"
     )
-    status: str = Field(
-        "active",
-        description="Status of the proposition (active, superseded, archived)"
-    )
 
+    model_config = ConfigDict(extra="forbid")
+
+class IntentPredictionSchema(BaseModel):
+    """Schema for predicting user intent to filter memory context."""
+    selected_context_scopes: List[str] = Field(..., description="Selected context scopes for the query")
+    selected_event_types: List[str] = Field(..., description="Selected event types for the query")
+    selected_targets: List[str] = Field(..., description="Selected targets for the query")
+    selected_functional_type_seeds: List[str] = Field(..., description="Selected functional types for the query")
+    
     model_config = ConfigDict(extra="forbid")
 
 class PropositionSchema(BaseModel):

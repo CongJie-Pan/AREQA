@@ -94,6 +94,10 @@ Return your results in this exact JSON format (Ensure that all output text in 'p
     {
       "proposition": "[Insert your proposition here]",
       "reasoning": "[Provide detailed evidence from specific parts of the transcriptions to clearly justify this proposition. Refer explicitly to named entities where applicable.]",
+      "context_scope": "[The overarching topic or subject area (e.g., 'Python Programming', 'History')]",
+      "event_types": ["[The action or nature of the observation (e.g., 'Questioning', 'Clarification', 'Learning')]"],
+      "target": "[The main entity involved (e.g., 'for loop', 'Napoleon')]",
+      "functional_type_seeds": ["[Functional or pragmatic types covering details driving the utterance]"],
       "confidence": "[Confidence score (1–10)]",
       "decay": "[Decay score (1–10)]"
     },
@@ -171,6 +175,10 @@ Return **only** JSON in the following format (Ensure that all output text in 'pr
     {
       "proposition": "<rewritten / merged / new proposition>",
       "reasoning":   "<revised reasoning including any named entities where applicable>",
+      "context_scope": "<The overarching topic or subject area>",
+      "event_types": ["<action or nature of observation>"],
+      "target": "<main entity involved>",
+      "functional_type_seeds": ["<Functional or pragmatic types>"],
       "confidence":  <integer 1-10>,
       "decay":       <integer 1-10>
     },
@@ -206,3 +214,36 @@ Return **only** JSON in the following format:
     // one object per judgement, go through ALL propositions in the input.
   ]
 }"""
+
+INTENT_SELECTION_PROMPT = """You are an intent prediction assistant. Given a user query and a list of available candidate labels from memory, your task is to select the most appropriate labels that can help filter conversation turns to answer the query.
+
+【Strict Field Definitions】
+- Context Scopes (selected_context_scopes):
+  ✅ Put "broad thematic scopes or categories of the conversation" here.
+  ✅ Examples: "《紅樓夢》人物分析", "中國古典文學", "情感主題討論".
+  ❌ NEVER put specific character names or book chapters here.
+
+- Targets (selected_targets):
+  ✅ ONLY put specific entities, characters, or chapters explicitly mentioned or targeted by the user here.
+  ✅ Examples: "林黛玉", "薛寶釵", "《葬花吟》".
+  ❌ NEVER put broad book titles, scopes, or series names (like "《紅樓夢》") here. If the user doesn't name a specific entity, this must be empty [].
+  
+  【Principle】: Ask yourself "Is the user explicitly asking about this specific entity?" If yes -> targets. If it's a general topic -> context_scopes.
+
+User Query: {user_query}
+
+Available Candidates:
+- Context Scopes: {context_scope_candidates}
+- Event Types: {event_type_candidates}
+- Targets: {target_candidates}
+- Functional Type Seeds: {functional_type_seeds_candidates}
+
+Your task is to read the query and candidate labels, judge if a label is useful to find relevant memory, and select an appropriate number of useful labels (can be 0 or multiple).
+
+Return exactly in this JSON format:
+{{
+  "selected_context_scopes": ["label1", ...],
+  "selected_event_types": ["label1", ...],
+  "selected_targets": ["label1", ...],
+  "selected_functional_type_seeds": ["label1", ...]
+}}"""
