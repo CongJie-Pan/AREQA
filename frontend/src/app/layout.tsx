@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'AREQA - 您的國學與紅樓夢專業問答助手',
+  title: 'AREQA',
   description: '結合思考過程視覺化的 Adaptive RAG 教育問答系統',
   icons: {
     icon: '/logo/favicon.ico',

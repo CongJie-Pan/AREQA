@@ -47,7 +47,7 @@
     * 專案網站: [contextual-intent.github.io](https://contextual-intent.github.io/)
     * misc/STITCH/contextual-intent
 
-### 解方 C：代理式工具調用 (Agentic Tool-use Retrieval)
+### [OK] 解方 C：代理式工具調用 (Agentic Tool-use Retrieval)
 * **針對問題：** 如何靈活的存取記憶、缺乏自主性、Token 浪費。
 * **實作機制：** 
   不再強制硬塞記憶。我們將檢索功能包裝成 Function Calling（例如 `search_long_term_memory(query)`）。LLM 就像作業系統在調度虛擬記憶體 (Virtual Memory) 一樣，只有在覺得自己缺乏使用者背景知識時，才會主動發起檢索。
