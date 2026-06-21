@@ -15,8 +15,8 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
   const { styles } = useStyles();
   const { propositions, suggestions, loading, fetchMemory, fetchSuggestions, deleteMemory, deleteMemories, editMemory } = useGumStore();
 
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
+  const [editingId, setEditingId] = useState<number | string | null>(null);
   const [editText, setEditText] = useState('');
 
   const [prevOpen, setPrevOpen] = useState(open);
@@ -42,7 +42,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
 
   const isMemory = type === 'memory';
 
-  const handleToggleSelect = (id: number) => {
+  const handleToggleSelect = (id: number | string) => {
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -72,7 +72,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
     }
   };
 
-  const handleSaveEdit = async (id: number) => {
+  const handleSaveEdit = async (id: string | number) => {
     if (!editText.trim()) {
       message.warning('記憶內容不能為空');
       return;
@@ -188,7 +188,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                         </div>
                         <div style={{ opacity: 1, display: 'flex', gap: 4, marginTop: -4, alignItems: 'center' }}>
                           <span className={styles.confidenceBadge} style={{ marginRight: 8 }}>
-                            信心指數: {p.confidence.toFixed(2)}
+                            信心指數: {p.confidence != null && !isNaN(p.confidence) ? Number(p.confidence).toFixed(2) : 'NaN'}
                           </span>
                           <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} title="編輯記憶" style={{ color: '#aaa' }} />
                           <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>

@@ -272,8 +272,20 @@ class gum:
                 self.logger.error(f"First observation: {batched_observations[0]}")
             
             import openai
+            import sqlite3
+            import sqlalchemy.exc
+            
+            err_msg_lower = str(e).lower()
             if isinstance(e, openai.AuthenticationError):
                 self.logger.error("Authentication Error encountered! Discarding batch to prevent infinite loop.")
+            elif isinstance(e, (sqlite3.OperationalError, sqlalchemy.exc.OperationalError)) and ("disk i/o error" in err_msg_lower or "i/o error" in err_msg_lower):
+                self.logger.error("Caught Disk I/O Error in background loop. Disposing engine and DROPPING batch to prevent infinite loop...")
+                try:
+                    if hasattr(self, "engine") and self.engine:
+                        await self.engine.dispose()
+                except Exception as ex:
+                    self.logger.error(f"Failed to dispose engine: {ex}")
+                # We DO NOT requeue here! We drop it to break the loop.
             else:
                 # Put failed items back in queue for retry
                 for obs in batched_observations:

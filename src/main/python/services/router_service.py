@@ -53,7 +53,7 @@ class RouterService:
         # qwen/qwen3-vl-8b-instruct: Standard Instruct model (NOT Hybrid Thinking).
         # It does NOT auto-activate thinking mode, so no enable_thinking workaround needed.
         # Avg latency: 0.52s (Alibaba Cloud provider), fast and reliable.
-        self.model = "qwen/qwen3-vl-8b-instruct"
+        self.model = "qwen/qwen3-30b-a3b-instruct-2507"
         # s2twp: Simplified Chinese to Traditional Chinese (Taiwan Standard)
         self.converter = opencc.OpenCC('s2twp')
 
@@ -63,6 +63,9 @@ class RouterService:
         Returns:
             Dict with 'action' (ALLOW/DENY) and 'refusal_message'.
         """
+        # User requested to disable the router temporarily
+        return {"action": "ALLOW", "domain": None, "refusal_message": None}
+
         if not self.client:
             return {"action": "ALLOW", "domain": None, "refusal_message": None}
 

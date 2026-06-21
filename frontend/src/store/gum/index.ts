@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export interface Proposition {
-  id: number;
+  id: string | number;
   text: string;
   confidence: number;
   updated_at: string | null;
@@ -17,9 +17,9 @@ export interface GumState {
   loading: boolean;
   fetchMemory: () => Promise<void>;
   fetchSuggestions: () => Promise<void>;
-  deleteMemory: (id: number) => Promise<void>;
-  deleteMemories: (ids: number[]) => Promise<void>;
-  editMemory: (id: number, text: string) => Promise<void>;
+  deleteMemory: (id: string | number) => Promise<void>;
+  deleteMemories: (ids: (string | number)[]) => Promise<void>;
+  editMemory: (id: string | number, text: string) => Promise<void>;
 }
 
 export const useGumStore = create<GumState>((set) => ({
@@ -69,7 +69,7 @@ export const useGumStore = create<GumState>((set) => ({
     }
   },
 
-  deleteMemories: async (ids: number[]) => {
+  deleteMemories: async (ids: (string | number)[]) => {
     try {
       await fetch(`http://localhost:8000/api/v1/memory/batch-delete`, {
         method: 'POST',
@@ -83,7 +83,7 @@ export const useGumStore = create<GumState>((set) => ({
     }
   },
 
-  deleteMemory: async (id: number) => {
+  deleteMemory: async (id: string | number) => {
     try {
       await fetch(`http://localhost:8000/api/v1/memory/${id}`, { method: 'DELETE' });
       // Remove from local state
@@ -93,7 +93,7 @@ export const useGumStore = create<GumState>((set) => ({
     }
   },
 
-  editMemory: async (id: number, text: string) => {
+  editMemory: async (id: string | number, text: string) => {
     try {
       await fetch(`http://localhost:8000/api/v1/memory/${id}`, {
         method: 'PUT',

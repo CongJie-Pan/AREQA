@@ -328,6 +328,16 @@ async def init_db(
         },
         poolclass=None,
     )
+    
+    import sqlite3
+    from sqlalchemy import event
+    
+    @event.listens_for(engine.sync_engine, "handle_error")
+    def handle_db_error(exception_context):
+        if isinstance(exception_context.original_exception, sqlite3.OperationalError):
+            err_msg = str(exception_context.original_exception).lower()
+            if "disk i/o error" in err_msg or "i/o error" in err_msg:
+                exception_context.connection.invalidate()
 
     async with engine.begin() as conn:
         await conn.execute(sql_text("PRAGMA journal_mode=WAL"))

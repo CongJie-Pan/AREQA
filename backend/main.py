@@ -1,3 +1,8 @@
+import sys
+import pysqlite3
+sys.modules['sqlite3'] = pysqlite3
+sys.modules['sqlite3.dbapi2'] = pysqlite3.dbapi2
+
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -13,7 +18,7 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
-from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions, query_memory_for_context
+from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context
 
 # 在 main.py 最上層加入全域快取字典
 _rag_cache: dict = {}
@@ -157,6 +162,57 @@ except Exception as e:
 
 app = FastAPI(title="XiaoHong Ancient Chinese QA - RAG Backend API")
 
+import sqlite3
+import sqlalchemy.exc
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+@app.middleware("http")
+async def db_error_recovery_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except sqlalchemy.exc.OperationalError as e:
+        err_msg = str(e).lower()
+        if "disk i/o error" in err_msg or "i/o error" in err_msg:
+            print("MIDDLEWARE CAUGHT DISK I/O ERROR. Attempting emergency engine reset...")
+            from gum_integration import gum_instance
+            if gum_instance and hasattr(gum_instance, "engine"):
+                await gum_instance.engine.dispose()
+                # Attempt to reconnect
+                try:
+                    await gum_instance.connect_db()
+                except Exception as ex:
+                    print(f"Emergency reconnect failed: {ex}")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Database connection reset due to I/O error. Please retry your request.",
+                    "error_type": "db_io_recovery"
+                }
+            )
+        raise
+    except sqlite3.OperationalError as e:
+        err_msg = str(e).lower()
+        if "disk i/o error" in err_msg or "i/o error" in err_msg:
+            print("MIDDLEWARE CAUGHT DISK I/O ERROR. Attempting emergency engine reset...")
+            from gum_integration import gum_instance
+            if gum_instance and hasattr(gum_instance, "engine"):
+                await gum_instance.engine.dispose()
+                # Attempt to reconnect
+                try:
+                    await gum_instance.connect_db()
+                except Exception as ex:
+                    print(f"Emergency reconnect failed: {ex}")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Database connection reset due to I/O error. Please retry your request.",
+                    "error_type": "db_io_recovery"
+                }
+            )
+        raise
+
 # Strict CORS: Only allow connections from the Next.js local server
 app.add_middleware(
     CORSMiddleware,
@@ -168,6 +224,14 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
+    from memory_store import init_global_store
+    
+    # Init store
+    hot_path = project_root / "data" / "gum_data" / "hot_memory.json"
+    profile_path = project_root / "data" / "gum_data" / "user_profile.json"
+    init_global_store(str(hot_path), str(profile_path))
+    print("Memory Store initialized successfully.")
+    
     await init_gum_instance()
 
 @app.on_event("shutdown")
@@ -188,28 +252,84 @@ class EditMemoryRequest(BaseModel):
     text: str
 
 @app.delete("/api/v1/memory/{mem_id}")
-async def delete_memory_endpoint(mem_id: int):
+async def delete_memory_endpoint(mem_id: str):
     from gum_integration import gum_instance
-    if gum_instance:
-        await gum_instance.update_status(mem_id, "deleted")
+    from memory_store import get_global_store
+    
+    if mem_id.startswith("profile:"):
+        store = get_global_store()
+        key = mem_id.split("profile:")[1]
+        profile = store.get_user_profile()
+        if key in profile:
+            del profile[key]
+            store._atomic_write(store.user_profile_path, profile)
+    elif mem_id.startswith("hot:"):
+        store = get_global_store()
+        key = mem_id.split("hot:")[1]
+        hot_mem = store.get_hot_memory()
+        if key in hot_mem:
+            del hot_mem[key]
+            store._atomic_write(store.hot_memory_path, hot_mem)
+    else:
+        if gum_instance:
+            await gum_instance.update_status(int(mem_id), "deleted")
     return {"status": "success"}
 
 class DeleteBatchRequest(BaseModel):
-    ids: List[int]
+    ids: List[str]
 
 @app.post("/api/v1/memory/batch-delete")
 async def batch_delete_memory_endpoint(req: DeleteBatchRequest):
-    from gum_integration import gum_instance
-    if gum_instance:
-        for mem_id in req.ids:
-            await gum_instance.update_status(mem_id, "deleted")
+    for mem_id in req.ids:
+        await delete_memory_endpoint(mem_id)
     return {"status": "success", "deleted_count": len(req.ids)}
 
 @app.put("/api/v1/memory/{mem_id}")
-async def edit_memory_endpoint(mem_id: int, req: EditMemoryRequest):
+async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest):
     from gum_integration import gum_instance
-    if gum_instance:
-        await gum_instance.update_text(mem_id, req.text)
+    from memory_store import get_global_store
+    
+    if mem_id.startswith("profile:"):
+        store = get_global_store()
+        key = mem_id.split("profile:")[1]
+        profile = store.get_user_profile()
+        if key in profile:
+            profile[key] = req.text
+            store._atomic_write(store.user_profile_path, profile)
+    elif mem_id.startswith("hot:"):
+        store = get_global_store()
+        key = mem_id.split("hot:")[1]
+        hot_mem = store.get_hot_memory()
+        if key in hot_mem:
+            if isinstance(hot_mem[key], dict):
+                hot_mem[key]["text"] = req.text
+            else:
+                hot_mem[key] = req.text
+            store._atomic_write(store.hot_memory_path, hot_mem)
+    else:
+        if gum_instance:
+            await gum_instance.update_text(int(mem_id), req.text)
+            
+            # Update cold memory search indexes (FTS & Vector)
+            try:
+                from cold_memory import ColdMemoryRetriever
+                import os
+                from pathlib import Path
+                db_path = str(Path(__file__).resolve().parent.parent / "data" / "gum_data" / "gum.db")
+                api_key = os.environ.get("OPENROUTER_API_KEY", "")
+                if api_key:
+                    cold_retriever = ColdMemoryRetriever(db_path, api_key)
+                    embed = await cold_retriever.get_embedding(req.text)
+                    if embed:
+                        import struct
+                        embed_bytes = struct.pack(f'{len(embed)}f', *embed)
+                        with cold_retriever._get_conn() as conn:
+                            conn.execute("UPDATE propositions_fts SET text = ? WHERE rowid = ?", (req.text, int(mem_id)))
+                            conn.execute("UPDATE vec_memory SET embedding = ? WHERE id = ?", (embed_bytes, int(mem_id)))
+                            conn.commit()
+            except Exception as e:
+                print(f"Failed to update cold memory indexes for edit: {e}")
+            
     return {"status": "success"}
 
 class RetrieveRequest(BaseModel):
@@ -681,15 +801,29 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                             rag_status_note = "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
                         
                         final_system_prompt = sys_prompt_text + rag_status_note
+                        # CRITICAL: Prevent tool-only responses that leave users without an answer
+                        final_system_prompt += "\n\n【工具使用規則】你必須先用繁體中文完整回答使用者的問題，再選擇性地呼叫工具（如 update_memory）。嚴禁只呼叫工具而不輸出任何文字回應。"
+                        final_system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
                         
                         # Inject GUM memory context into System Prompt
-                        # This is the critical step that makes STITCH-retrieved memories
-                        # visible to the main LLM. Without this injection, STITCH correctly
-                        # retrieves memories but the AI never sees them.
-                        memory_ctx = await query_memory_for_context(last_user_msg, limit=8)
+                        
+                        # 1. Inject Hot Memory (working_memory)
+                        hot_snapshot = get_hot_memory_snapshot()
+                        if hot_snapshot:
+                            final_system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
+                            print(f"\n{'='*40}\n[MEMORY LOG] Injected Hot Memory / User Profile:\n{hot_snapshot}\n{'='*40}")
+                            
+                        # 2. Inject Cold Memory via Hybrid Search (retrieved_memory)
+                        cold_memory_ctx = await query_cold_memory_for_context(last_user_msg, top_k=5)
+                        if cold_memory_ctx:
+                            final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
+                            print(f"\n{'='*40}\n[MEMORY LOG] Injected Cold Memory (from gum.db):\n{cold_memory_ctx}\n{'='*40}")
+                            
+                        # 3. Fallback/Legacy context (just in case)
+                        memory_ctx = await query_memory_for_context(last_user_msg, limit=3)
                         if memory_ctx:
-                            final_system_prompt = final_system_prompt + memory_ctx
-                            print(f"[GUM] Injected {memory_ctx.count(chr(10) + '- ')} memory propositions into system prompt.")
+                            final_system_prompt += memory_ctx
+                            print(f"[GUM] Injected {memory_ctx.count(chr(10) + '- ')} legacy memory propositions into system prompt.")
                         
                         # Insert at the beginning of the messages list
                         chat_req.messages.insert(0, {"role": "system", "content": final_system_prompt})
@@ -749,6 +883,29 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                         extra_body["provider"] = {"require_parameters": True}
                         extra_body["reasoning"] = {"max_tokens": 512}
 
+                    tools = [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "update_memory",
+                                # Clarify this is supplementary — model MUST answer first in text
+                                "description": (
+                                    "[SUPPLEMENTARY ONLY] After answering the user in text, you MUST call this tool if the user reveals ANY facts about their identity, "
+                                    "preferences (e.g., favorite books, characters, food), or long-term interests. "
+                                    "This saves it to their permanent user profile. Always answer in text first, then call this tool."
+                                ),
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "key": {"type": "string", "description": "The attribute key (e.g., 'user_profile_favorite_character')"},
+                                        "value": {"type": "string", "description": "The attribute value"}
+                                    },
+                                    "required": ["key", "value"]
+                                }
+                            }
+                        }
+                    ]
+
                     response = await client.chat.completions.create(
                         model=target_model_name,
                         messages=chat_req.messages,
@@ -757,10 +914,15 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                         temperature=chat_req.temperature if chat_req.temperature > 0 else 0.001,
                         top_p=chat_req.top_p,
                         extra_body=extra_body,
+                        tools=tools,
+                        # 'auto' lets model choose; combined with system prompt this prevents tool-only responses
+                        tool_choice="auto"
                     )
                     
                     answer_content_accumulator = ""
                     inside_reasoning = False
+                    tool_call_name = ""
+                    tool_call_args = ""
                     import re
                     
                     async for chunk in response:
@@ -772,6 +934,15 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                             
                         delta = chunk.choices[0].delta
                         
+                        if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                            tc = delta.tool_calls[0]
+                            if hasattr(tc, 'function') and tc.function:
+                                if getattr(tc.function, 'name', None):
+                                    tool_call_name = tc.function.name
+                                if getattr(tc.function, 'arguments', None):
+                                    tool_call_args += tc.function.arguments
+                            continue
+                            
                         # Extract reasoning tokens
                         reasoning_text = ""
                         if hasattr(delta, 'reasoning') and delta.reasoning:
@@ -867,6 +1038,21 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                                 ]
                             }
                         yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+                    
+                    # Execute Tool Call if Present
+                    if tool_call_name == "update_memory" and tool_call_args:
+                        try:
+                            args = json.loads(tool_call_args)
+                            from memory_store import get_global_store
+                            store = get_global_store()
+                            if store:
+                                store.update_user_profile(args["key"], args["value"])
+                                # Log only to server terminal — do NOT yield to frontend status bar
+                                # (the RAG status bar is for retrieval/generation stages only)
+                                print(f"[TOOL] update_memory success: {args}")
+                        except Exception as e:
+                            print(f"[TOOL] update_memory error: {e}")
+
                     
                     # 2.5. Generate Suggestions (Suggested Questions)
                     # Triggered after main generation is complete, reusing RAG contexts
