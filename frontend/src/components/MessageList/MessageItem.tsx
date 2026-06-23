@@ -37,11 +37,6 @@ function isSafeUrl(url: string | undefined): boolean {
   }
 }
 
-/**
- * Custom ReactMarkdown components for XSS protection and custom styling
- */
-type Styles = Record<string, string>;
-type Cx = (...classNames: Array<string | false | null | undefined>) => string;
 type WindowWithFind = Window & {
   find?: (
     searchString: string,
@@ -54,38 +49,7 @@ type WindowWithFind = Window & {
   ) => boolean;
 };
 
-const createMarkdownComponents = (
-  styles: Styles,
-  cx: Cx,
-  onQuoteClick: (text: string) => void
-): Components => ({
-  // Custom blockquote for citations
-  blockquote: ({ children }) => {
-    // Extract text content from children to find it in the DOM
-    const extractText = (node: React.ReactNode): string => {
-      if (typeof node === 'string') return node;
-      if (Array.isArray(node)) return node.map(extractText).join('');
-      if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
-        return extractText(node.props.children);
-      }
-      return '';
-    };
-    const textContent = extractText(children).trim();
-
-    return (
-      <blockquote 
-        className={cx(styles.quoteBlock, 'interactive-quote')} 
-        onClick={() => onQuoteClick(textContent)}
-        style={{ cursor: 'pointer' }}
-        title="點擊以在文中反白此段落"
-      >
-        <CornerDownRight size={14} className={styles.quoteBlockArrow} />
-        <div className={styles.quoteBlockContent}>
-          {children}
-        </div>
-      </blockquote>
-    );
-  },
+const createMarkdownComponents = (): Components => ({
   // Sanitize links - only allow safe protocols
   a: ({ href, children, ...props }) => {
     if (!isSafeUrl(href)) {
@@ -225,8 +189,8 @@ export const MessageItem = memo(function MessageItem({
   }, [bubbleEl]);
 
   const markdownComponents = React.useMemo(
-    () => createMarkdownComponents(styles, cx, handleQuoteClick),
-    [styles, cx, handleQuoteClick]
+    () => createMarkdownComponents(),
+    []
   );
 
   // Edit mode state

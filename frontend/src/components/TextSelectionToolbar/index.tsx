@@ -74,9 +74,9 @@ export function TextSelectionToolbar() {
       
       <div className={styles.divider} />
       
-      <button className={styles.button} onClick={handleQuote} aria-label="問小紅">
+      <button className={styles.button} onClick={handleQuote} aria-label="問AREQA(引用)">
         <Quote size={14} />
-        <span className={styles.label}>問小紅(引用)</span>
+        <span className={styles.label}>問AREQA(引用)</span>
       </button>
 
       <div className={styles.divider} />

@@ -10,14 +10,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     height: 100vh;
     overflow: hidden;
-    background: #1a1a1a;
+    background: #130f18;
   `,
 
   sidebar: css`
     width: 280px;
     flex-shrink: 0;
     transition: all 0.2s ${token.motionEaseOut};
-    background: #2d2d2d;
+    background: #1b1622;
     border-right: 1px solid rgba(255, 255, 255, 0.05);
     overflow: hidden;
 
@@ -60,7 +60,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     min-width: 0;
     overflow: hidden;
-    background: #1a1a1a;
+    background: #130f18;
   `,
 
   header: css`
@@ -69,7 +69,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     justify-content: space-between;
     padding: 12px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    background: #1a1a1a;
+    background: #130f18;
   `,
 
   headerLeft: css`

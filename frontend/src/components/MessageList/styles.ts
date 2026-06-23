@@ -142,7 +142,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   userBubble: css`
-    background: #2a2a2a;
+    background: #1f1b2b;
     color: #ffffff;
     align-self: flex-end;
     padding: 12px 18px;
@@ -168,6 +168,17 @@ content: css`
     margin: 0 0 8px 0;
 
     &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  blockquote {
+    margin: 12px 0;
+    padding: 2px 0 2px 16px;
+    border-left: 3px solid rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 0.6);
+    
+    p {
       margin-bottom: 0;
     }
   }
@@ -325,7 +336,7 @@ quoteBlockContent: css`
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: #8B1E1E;
+    background: #6f2f45;
     color: #ffffff;
     border: none;
     cursor: pointer;
@@ -337,7 +348,7 @@ quoteBlockContent: css`
     z-index: 10;
 
     &:hover {
-      background: #A82222;
+      background: #853752;
       transform: translateX(-50%) scale(1.1);
     }
 
@@ -431,7 +442,7 @@ quoteBlockContent: css`
     color: #ffffff;
 
     &:focus {
-      border-color: #8B1E1E;
+      border-color: #d8a25c;
     }
 
     &::placeholder {
@@ -458,11 +469,11 @@ quoteBlockContent: css`
 
   // Save button
   editSaveButton: css`
-    background: #8B1E1E;
+    background: #d8a25c;
     color: #ffffff;
 
     &:hover {
-      background: #A82222;
+      background: #e2b478;
     }
 
     &:disabled {

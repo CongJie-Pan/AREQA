@@ -16,7 +16,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     gap: 0;
     padding: 12px 20px 10px;
-    background: #2a2a2a;
+    background: #1e1826;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
     max-width: 800px;
@@ -26,8 +26,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     transition: all 0.2s ease;
 
     &:focus-within {
-      border-color: #ff4d4f;
-      box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
+      border-color: #d8a25c;
+      box-shadow: 0 0 0 2px rgba(216, 162, 92, 0.2);
     }
   `,
 
@@ -52,7 +52,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   quoteArrow: css`
-    color: #ff4d4f;
+    color: #d8a25c;
     flex-shrink: 0;
     width: 16px;
     height: 16px;
@@ -209,14 +209,14 @@ export const useStyles = createStyles(({ css, token }) => ({
 
 toggleButtonActive: css`
 color: #ffffff;
-border-color: #ff4d4f;
-background: rgba(255, 77, 79, 0.2);
+border-color: #d8a25c;
+background: rgba(216, 162, 92, 0.15);
 font-weight: 500;
 
 &:hover {
-  background: rgba(255, 77, 79, 0.3) !important;
+  background: rgba(216, 162, 92, 0.25) !important;
   color: #ffffff !important;
-  border-color: #ff7875 !important;
+  border-color: #e2b478 !important;
 }
 `,
 

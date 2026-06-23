@@ -92,9 +92,9 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
         <div className={styles.header}>
           <div className={styles.titleWrapper}>
             {isMemory ? (
-              <BrainCircuit size={28} className="text-amber-500" style={{ color: '#f59e0b' }} />
+              <BrainCircuit size={28} className="text-amber-500" style={{ color: '#d8a25c' }} />
             ) : (
-              <Sparkles size={28} className="text-amber-500" style={{ color: '#f59e0b' }} />
+              <Sparkles size={28} className="text-amber-500" style={{ color: '#d8a25c' }} />
             )}
             <div>
               <h2>{isMemory ? '瀏覽記憶 (Memory)' : '您可能想知道？ (Suggestions)'}</h2>

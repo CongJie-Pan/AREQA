@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0d0d0d;
+  --background: #130f18;
   --foreground: #f0f0f0;
 }
 
@@ -28,22 +28,22 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d0d0d;
+  background: #130f18;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #c76f6f !important; /* Force color to stay consistent */
+  background-color: #d8a25c !important; /* Force color to stay consistent */
   border-radius: 10px;
-  border: 2px solid #0d0d0d;
+  border: 2px solid #130f18;
 }
 
 ::-webkit-scrollbar-thumb:hover,
 ::-webkit-scrollbar-thumb:active {
-  background-color: #c76f6f !important; /* Explicitly prevent change on hover/click */
+  background-color: #d8a25c !important; /* Explicitly prevent change on hover/click */
 }
 
 /* For Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #c76f6f #0d0d0d;
+  scrollbar-color: #d8a25c #130f18;
 }

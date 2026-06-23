@@ -39,12 +39,12 @@ export default function RootLayout({
               theme={{
                 algorithm: theme.darkAlgorithm,
                 token: {
-                  colorPrimary: '#8B1E1E',
-                  colorInfo: '#8B1E1E',
-                  colorBgBase: '#0d0d0d',
-                  colorBgContainer: '#262626',
-                  colorBgElevated: '#262626',
-                  colorBgLayout: '#0d0d0d',
+                  colorPrimary: '#d8a25c',
+                  colorInfo: '#d8a25c',
+                  colorBgBase: '#130f18',
+                  colorBgContainer: '#1e1826',
+                  colorBgElevated: '#1e1826',
+                  colorBgLayout: '#130f18',
                   colorTextBase: '#f0f0f0',
                 },
               }}

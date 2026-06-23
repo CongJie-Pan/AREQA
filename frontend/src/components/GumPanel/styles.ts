@@ -7,7 +7,7 @@ export const useStyles = createStyles(({ css }) => ({
     display: flex;
     flex-direction: column;
     animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    background: linear-gradient(145deg, #111 0%, #1a1a1a 100%);
+    background: #130f18;
   `,
   header: css`
     display: flex;
@@ -15,7 +15,7 @@ export const useStyles = createStyles(({ css }) => ({
     align-items: center;
     padding: 24px 32px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(20, 20, 20, 0.6);
+    background: rgba(19, 15, 24, 0.6);
     backdrop-filter: blur(12px);
     z-index: 10;
   `,
@@ -79,7 +79,7 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
   card: css`
-    background: rgba(35, 35, 35, 0.4);
+    background: rgba(30, 24, 38, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 16px;
     padding: 20px;
@@ -104,17 +104,17 @@ export const useStyles = createStyles(({ css }) => ({
     }
 
     &:hover {
-      background: rgba(45, 45, 45, 0.6);
+      background: rgba(40, 33, 51, 0.6);
       border-color: rgba(255, 255, 255, 0.15);
       transform: translateY(-2px);
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
     }
     
     &.selected {
-      background: rgba(245, 158, 11, 0.05);
-      border-color: rgba(245, 158, 11, 0.3);
+      background: rgba(216, 162, 92, 0.05);
+      border-color: rgba(216, 162, 92, 0.3);
       &::before {
-        background: #f59e0b;
+        background: #d8a25c;
       }
     }
   `,
@@ -136,14 +136,14 @@ export const useStyles = createStyles(({ css }) => ({
   `,
   confidenceBadge: css`
     display: inline-block;
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+    background: rgba(216, 162, 92, 0.15);
+    color: #d8a25c;
     padding: 4px 10px;
     border-radius: 12px;
     font-weight: 600;
     font-size: 0.75rem;
     letter-spacing: 0.5px;
-    border: 1px solid rgba(245, 158, 11, 0.2);
+    border: 1px solid rgba(216, 162, 92, 0.2);
   `,
   suggestionTitle: css`
     color: #fff;
@@ -159,7 +159,7 @@ export const useStyles = createStyles(({ css }) => ({
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #f59e0b;
+      background: #d8a25c;
     }
   `,
   refreshBtn: css`

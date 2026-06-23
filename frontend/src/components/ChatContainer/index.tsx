@@ -246,7 +246,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
               <Menu size={20} />
             </button>
             <h1 className={styles.headerTitle}>
-              {activeConversation?.title || ''}
+              {gumPanelType ? '' : (activeConversation?.title || '')}
             </h1>
           </div>
         </div>

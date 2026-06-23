@@ -20,7 +20,7 @@ export const useStyles = createStyles(({ css }) => ({
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: #2d2d2d;
+    background: #1b1622;
     color: #f0f0f0;
   `,
 
@@ -48,7 +48,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   logo: css`
-    width: 210px;
+    width: 160px;
     height: auto;
     object-fit: contain;
     flex-shrink: 0;
@@ -104,7 +104,7 @@ export const useStyles = createStyles(({ css }) => ({
     }
 
     svg {
-      color: #FF4D4D;
+      color: #d8a25c;
     }
   `,
 
@@ -154,7 +154,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   itemActive: css`
-    background: rgba(168, 34, 34, 0.25) !important;
+    background: rgba(111, 47, 69, 0.35) !important;
     
     &::before {
       content: '';
@@ -163,7 +163,7 @@ export const useStyles = createStyles(({ css }) => ({
       top: 20%;
       height: 60%;
       width: 3px;
-      background: #A82222;
+      background: #6f2f45;
       border-radius: 0 2px 2px 0;
     }
 
@@ -198,7 +198,7 @@ export const useStyles = createStyles(({ css }) => ({
     display: inline-block;
     width: 2px;
     height: 14px;
-    background: #A82222;
+    background: #d8a25c;
     margin-left: 2px;
     vertical-align: middle;
     animation: ${cursorBlink} 1s step-end infinite;
@@ -268,13 +268,13 @@ export const useStyles = createStyles(({ css }) => ({
     transition: all 0.2s;
     
     &:hover {
-      background: rgba(245, 158, 11, 0.1);
-      border-color: rgba(245, 158, 11, 0.3);
-      color: #f59e0b;
+      background: rgba(216, 162, 92, 0.1);
+      border-color: rgba(216, 162, 92, 0.3);
+      color: #d8a25c;
     }
     
     svg {
-      color: #f59e0b;
+      color: #d8a25c;
     }
   `,
 }));

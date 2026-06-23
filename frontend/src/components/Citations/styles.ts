@@ -118,14 +118,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     gap: 10px;
     padding: 14px;
-    background: #1e1e1e;
+    background: #1e1826;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: ${token.borderRadiusLG}px;
     transition: all 0.2s;
     cursor: pointer;
 
     &:hover {
-      background: #262626;
+      background: #282133;
       border-color: rgba(255, 255, 255, 0.2);
     }
     `,
