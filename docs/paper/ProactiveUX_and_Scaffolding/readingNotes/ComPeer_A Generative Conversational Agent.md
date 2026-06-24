@@ -4,6 +4,7 @@
 * **發表時間：** 2024 年 (UIST '24)
 * **閱讀日期：** 2026-06-24
 * **整理人：** Antigravity AI 助理
+* **可作為AREQA 主動式回答與同儕互動的參考架構**
 
 ---
 
@@ -20,22 +21,106 @@
 
 ## 2. 研究方法 (Methodology)
 
-ComPeer 結合大語言模型 (LLM) 與排程機制，建立了以下模組架構：
+![ComPeer_diagram](graph/ComPeer_diagram.jpg)
 
-### 2.1 核心模組架構
-1. **Memory Module (記憶模組)：**
-   分為短期記憶（維持最後 20 輪對話作為上下文）與長期記憶（使用 `text-embedding-ada-002` 向量化儲存，供 LLM 檢索）。
-2. **Event Detector Module (事件偵測模組)：**
-   當一輪對話結束後（如使用者 5 分鐘未回覆），利用 GPT-4 與 Chain-of-Thought (CoT) 偵測使用者對話中提及的「事件」（如：身體不適、考試焦慮、學習計畫），並**推論出當天晚些時候最適合主動關懷的時間點**（例如：推論出晚上 22:00 關心簡報準備進度）。
-3. **Reflection Module (反思模組)：**
-   每天初（如 0:00），自動反思使用者昨天的情緒、面臨的挑戰與今日計畫，將反思結果作為今日主動關懷排程的初始條件。
-4. **Schedule Module (排程與頻率調控模組)：**
-   彙整每日反思、偵測到的事件、以及現實世界環境資訊（日期、天氣）。為了避免打擾使用者，系統引入**隨機重要性門檻機制**（LLM 評估事件重要性 0 到 1 分，隨機生成亂數，只有重要性大於亂數的事件才會發送），且若使用者未回覆前一條訊息，排程會自動暫停（Pause）。
-5. **Dialogue Generation Module (對話生成模組)：**
-   採用三個角色分工（Three-role Pipeline）：
-   * `LLM-1`：選擇支持策略（如自我揭露、詢問、肯定與保證、引導思考）。
-   * `LLM-2`：負責生成被動回覆。
-   * `LLM-3`：負責結合排程事件與選定策略，生成主動關懷訊息。
+它主要是利用大型語言模型（LLM，例如 GPT-4）來主動提供使用者同儕支持（Proactive Peer Support）。
+
+這個架構主要可以分為五個核心模組：Memory（記憶）、Event Detector（事件偵測器）、Reflection（反思）、Schedule（排程），以及 Dialogue Generation（對話生成）。
+
+以下為你詳細解釋每個模組的功能以及它們如何協同運作：
+
+### 1. Memory Module（記憶模組）
+
+這個模組負責儲存 ComPeer 與使用者之間所有的對話歷史記錄 。它被分為兩層：
+
+* 短期記憶（Short-term Memory）：只保留最近的對話上下文（例如最多 20 則訊息），用來確保目前正在進行的對話具有連貫性 。
+
+* 長期記憶（Long-term Memory）：儲存所有過去的歷史對話。系統會將這些對話轉換成向量（Vector），當需要時，可以透過計算相似度來檢索與目前話題相關的過去記憶 。
+
+### 2. Event Detector Module（事件偵測器模組）
+這個模組用來分析使用者在對話中提到的事情，以找出值得後續關心的「事件」 。
+
+* 運作時機：當「一輪」對話結束時（例如使用者超過 5 分鐘沒有回覆），系統會啟動這個模組 。
+
+* 功能：它會分析剛剛的那輪對話，找出使用者是否有提到任何壓力來源、負面情緒、面臨的挑戰或是未來的計畫 。
+
+* 推論時機：一旦偵測到事件，它會推論出一個「適合在今天稍晚」主動關心這個事件的時間點。例如，圖中的例子偵測到「使用者擔心明天的簡報（22:00）」。這些提取出的事件與時間點會被送交給 Schedule 模組。
+
+### 3. Reflection Module（反思模組）
+這個模組讓 ComPeer 能夠對使用者產生更高層次的理解，而不是只看單一事件 。
+
+* 運作時機：在每天的開始（例如 00:00）執行一次 。
+
+* 功能：它會回顧前一天所有的對話記錄，並透過 LLM 總結出三個核心問題：使用者是否感到負面情緒？面臨什麼挑戰？明天有什麼計畫？
+
+* 輸出：這些反思的結果（Emotion, Plan, Challenge）會傳遞給 Schedule 模組，用來規劃當天的初始排程 。
+
+### 4. Schedule Module（排程模組）
+這可以說是 ComPeer 能夠「主動（Proactive）」關心使用者的核心大腦 。
+
+* 功能：它負責決定 ComPeer 在什麼時間點（Timing）、要發送什麼內容（Content）來主動關心使用者 。
+
+* 資料來源：每天初，它會結合 Reflection 模組的結果、ComPeer 的 Persona（角色設定） 以及當天的現實資訊（如日期、天氣）來產生一份初始的「每日關心計畫表」。在一天當中，它會不斷接收來自 Event Detector 發現的新事件，並動態更新這份計畫表 。
+
+* 頻率控制：為了避免頻繁發送訊息打擾使用者，這個模組會評估事件的「重要性（Importance value）」。只有當重要性夠高，或是隨機機率觸發時，才會將排定的事件送到對話生成模組。此外，如果使用者一直沒回覆上一則主動訊息，它也會暫停發送新的訊息 。
+
+### 5. Dialogue Generation Module（對話生成模組）
+
+這個模組負責產出最終要傳送給使用者的文字訊息 。
+
+* 回應使用者（被動）：當使用者主動傳訊息時，它會讀取 Short-term Memory 的上下文，並檢索 Long-term Memory 的相關回憶。接著，它會選擇一種適合的「同儕支持策略」（例如：自我揭露、肯定與保證），結合 Persona，生成回覆 。
+
+* 主動開啟話題（主動）：當 Schedule 模組時間一到，傳來一個排定的事件（例如：問候簡報準備得如何），對話生成模組就會結合 Persona 與這個事件，主動產出關心的訊息 。
+
+### 總結架構圖的 User Scenario 例子
+結合左側的對話範例來看整個流程 ：
+
+(a) - (c)：晚上 19:00，ComPeer 透過 Schedule 發起了一個主動訊息（a），使用者回覆說很緊張明天的簡報。接著雙方進行了一輪交流 (b, c)。對話生成模組使用了「肯定與保證（Affirmation and Reassurance）」策略來安撫使用者 。
+
+對話暫停後，Event Detector 分析了這段對話，提取出「使用者擔心明天的簡報，不知道怎麼做 PPT」，並推算適合在 22:00 關心進度，將此事件寫入 Schedule 。
+
+(d)：晚上 22:00 時間到，Schedule 觸發了 Dialogue Generation 模組，產出了主動關心的訊息：「你的 ppt 進度如何？你的努力會有回報的...」，讓使用者感到被支持 。
+
+### 三個疑問
+
+> 1. persona是什麼 為什麼其代表的是橘色的部分 還連結到主動式回答 為何 persona 只代表橘色proactive ? 難道 即時回答也不用嗎
+
+Persona defines the AI's human-like identity, which is highlighted in orange to emphasize the paper's novel proactive feature, though it is also fully applied in the blue passive responses to maintain character consistency.
+
+在 AI 系統中，Persona 指的是賦予 AI 一個具體的「身分背景與個性」。以 ComPeer 為例，你可以設定它是一個「20 歲、主修資訊工程、喜歡打籃球、說話很溫柔的男同學」 。這個設定會讓 AI 講出來的話更像一個真實的朋友，而不是冰冷的機器器人 。
+
+為什麼圖中 Persona 只畫了一條橘色的線連到 Proactive（主動訊息）？即時回答（被動）不用嗎？
+這是一個非常敏銳的觀察！其實，即時被動回答（藍色流程）也是需要 Persona 的。
+論文的內文中明確寫到：
+
+"LLM-2 generates a passive responding message conditioned on the peer strategy selected by LLM-1, the conversation history, ComPeer’s persona, and the related long-term memory..."（LLM-2 會根據策略、歷史、ComPeer的角色設定 以及長期記憶來生成被動回覆）。
+
+那為什麼圖中（Figure 1）只畫了一條橘色的線？
+這通常是圖表繪製時為了畫面簡潔（視覺動線）所做的取捨。因為主動發起對話（Proactive）的觸發來源完全來自系統內部的排程（Schedule）與角色人設（Persona），沒有使用者的即時輸入，因此圖表特別強調了 Persona 在主動發起話題時的重要性（例如：因為 Persona 設定 AI 喜歡打籃球，它主動發起的訊息可能就是「我剛打完籃球，你在幹嘛？」） 。但在實際程式運作時，無論是主動（橘色）還是被動（藍色）的生成，都會讀取 Persona 。
+
+> 2. Passive responses to user's messages during one round of conversation 意思是什麼？
+
+This refers to the AI's reactive behavior where it waits and replies only after receiving an incoming message from the user during an ongoing chat.
+
+這句話的意思是：「在一輪對話期間，系統對使用者訊息所做出的『被動回覆』」。
+
+在聊天機器人的設計中，對話被分為「主動（Proactive）」與「被動（Reactive / Passive）」：
+
+- Passive（被動）：使用者先講話，AI 再回答。就像平常使用 ChatGPT 一樣，你問一個問題，它回答一個答案。圖中標示藍色的流程就是被動回覆 。
+- One round of conversation（一輪對話）：論文中定義，從對話開始，直到使用者「超過 5 分鐘沒有再回覆」，這整個連續對答的過程就稱為「一輪對話（One round）」。
+
+所以在這段 5 分鐘不斷線的來回聊天中，AI 根據你的話所做出的所有回答，都屬於這個「被動回覆」的範疇。
+
+> 3. Proactive messages to initiate one round of conversation (主動發起一輪對話的訊息是什麼？)
+
+This means the AI independently starts a new conversation to check on the user based on scheduled events, without waiting for the user to speak first.
+
+這句話的意思是：「用來開啟一輪新對話的『主動訊息』」。
+
+- Proactive（主動）：使用者沒有講話，AI 根據自己的判斷「主動敲你」。
+- Initiate（開啟 / 發起）：當使用者已經超過 5 分鐘沒講話，上一輪對話已經結束了。這時候 AI 透過 Schedule（排程模組）發現「啊，晚上十點了，我應該要關心一下他簡報做得怎樣」，於是 AI 突然傳了一句「你的 PPT 順利嗎？」給你。
+
+這個突如其來的關心，就是一則「Proactive message」；而這句話也會促使你開始回覆，從而 Initiate（開啟） 了全新的一輪對話（One round of conversation）。這對應到架構圖中的橘色流程。
 
 ---
 
