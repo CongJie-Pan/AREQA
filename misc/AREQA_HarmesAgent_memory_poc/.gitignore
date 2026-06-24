@@ -1,0 +1,16 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual Environments
+.venv/
+app/.venv/
+
+# Environment Variables & Configuration
+app/.env
+
+# App-specific caches
+app/__pycache__/
+app/tests/__pycache__/
