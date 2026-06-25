@@ -172,7 +172,7 @@ async def proactive_scheduler_loop():
             
             # Check for frustration signs (like continuous scrolling) if not in cooldown
             from time import time
-            last_time = last_interaction_time.get("default_user", 0)
+            last_time = last_interaction_time.get("default_user", time())
             if user_flag.get("default_user", True) and (time() - last_time > 120):
                 from memory_store import get_global_store
                 store = get_global_store()
@@ -184,7 +184,7 @@ async def proactive_scheduler_loop():
                         if k.startswith("obs_") and "Type: scroll" in str(v):
                             scroll_count += 1
                     
-                    if scroll_count >= 3:
+                    if scroll_count >= 6:
                         print("[EDF-LOG] Detected high scroll activity! Setting PROBE_UNDERSTANDING.")
                         
                         # Set alert directly in hot_mem dictionary before writing

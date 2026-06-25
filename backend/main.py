@@ -928,7 +928,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     # Apply dynamic max_tokens based on RAG mode and Policy
                     effective_max_tokens = chat_req.max_tokens
                     if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
-                        effective_max_tokens = 800
+                        effective_max_tokens = 1500
                     elif chat_req.use_rag and chat_req.max_tokens == 2048:
                         effective_max_tokens = 2500
                     

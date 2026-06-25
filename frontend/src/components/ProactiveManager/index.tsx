@@ -60,22 +60,6 @@ export function ProactiveManager() {
             notification.destroy(key); // Close the notification
             const { activeConversationId } = useConversationStore.getState();
             if (activeConversationId) {
-              // Manually insert it as an assistant message into the chat UI
-              const { useChatStore } = await import('@/store/chat');
-              const { databaseService } = await import('@/services/database');
-              
-              const messageId = useChatStore.getState().addAssistantMessage(activeConversationId);
-              useChatStore.getState().updateAssistantMessage(messageId, {
-                content: data.content,
-                isStreaming: false
-              });
-              
-              // Persist it so it stays in the conversation history
-              await databaseService.message.add(activeConversationId, {
-                role: 'assistant',
-                content: data.content,
-              });
-
               // Also automatically send a user message asking for help
               const { sendMessage } = await import('@/services/chat');
               sendMessage('好，我需要協助，請根據我們目前的討論幫我梳理一下。', activeConversationId);
