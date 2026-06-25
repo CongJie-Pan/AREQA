@@ -27,3 +27,5 @@ pillow
 mss
 pynput
 shapely
+aiohttp
+ics
