@@ -232,7 +232,8 @@ async def startup_event():
     # Init store
     hot_path = project_root / "data" / "gum_data" / "hot_memory.json"
     profile_path = project_root / "data" / "gum_data" / "user_profile.json"
-    init_global_store(str(hot_path), str(profile_path))
+    store = init_global_store(str(hot_path), str(profile_path))
+    store.clear_all_pending_alerts()
     print("Memory Store initialized successfully.")
     
     await init_gum_instance()
@@ -374,7 +375,7 @@ class TitleRequest(BaseModel):
 @app.post("/api/v1/generate-title")
 async def generate_title_endpoint(request: Request, title_req: TitleRequest):
     """
-    Generate a conversation title using OpenRouter (qwen/qwen-2.5-7b-instruct).
+    Generate a conversation title using OpenRouter (qwen/qwen3-30b-a3b-instruct-2507).
     Returns a stream of the generated title.
     """
     async def generate():
@@ -391,7 +392,14 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
             timeout=30.0
         )
 
-        system_prompt = "你是一個助理，請根據以下對話內容，總結出一個簡短的繁體中文對話標題（不超過 10 個字，不要加引號或其他標點符號）。"
+        system_prompt = (
+            "你是一個標題生成器。請根據對話內容，為這個對話命名一個極簡的繁體中文標題。\n"
+            "規則：\n"
+            "1. 必須小於 10 個字。\n"
+            "2. 絕不包含引號、句號或其他標點符號。\n"
+            "3. 直接輸出標題文字，不加任何解釋說明（例如不可以說「標題是：...」）。\n"
+            "4. 直接萃取對話中最核心的關鍵字即可。"
+        )
 
         # We only need the first user message and assistant reply to generate a title
         # Filter messages to ensure we don't send too much context
@@ -403,11 +411,11 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
 
         try:
             response = await client.chat.completions.create(
-                model="qwen/qwen-2.5-7b-instruct",
+                model="qwen/qwen3-30b-a3b-instruct-2507",
                 messages=full_messages,
                 stream=True,
-                max_tokens=64,
-                temperature=0.7,
+                max_tokens=15,
+                temperature=0.3,
                 top_p=0.9,
             )
 
@@ -476,7 +484,7 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dic
     start_time = time.time()
     try:
         response = await client.chat.completions.create(
-            model="qwen/qwen-2.5-7b-instruct",
+            model="qwen/qwen3-30b-a3b-instruct-2507",
             messages=[
                 {"role": "system", "content": "你是一個古典文學檢索分析師。請嚴格輸出 JSON 格式。"},
                 {"role": "user", "content": prompt}
@@ -581,7 +589,19 @@ async def log_action(req: ActionLogRequest):
     """
     obs_text = f"[User Action] Type: {req.action_type}, Context: {req.context}"
     print(f"[EDF-LOG] log_action endpoint received: {obs_text}")
-    asyncio.create_task(push_observation(obs_text))
+    
+    if req.action_type == "scroll":
+        # Pure UI telemetry like scrolling doesn't need to go to GUM's cold memory evolution
+        # Just write it directly to hot memory for the compeer scheduler to evaluate
+        from memory_store import get_global_store
+        import time
+        store = get_global_store()
+        if store:
+            asyncio.create_task(store.update_hot_memory_async(f"obs_{time.time()}", obs_text))
+    else:
+        # Meaningful interactions go to GUM to become semantic propositions
+        asyncio.create_task(push_observation(obs_text))
+        
     return {"status": "ok"}
 
 @app.get("/api/v1/proactive-check")
@@ -629,11 +649,13 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
             if last_user_msg:
                 print(f"[EDF-LOG] streaming endpoint received message, evaluating student state asynchronously...")
-                from services.compeer_scheduler import user_flag
+                from services.compeer_scheduler import user_flag, last_interaction_time
+                import time
                 user_flag["default_user"] = True # Reset cooldown flag
+                last_interaction_time["default_user"] = time.time()
                 asyncio.create_task(push_observation(f"User asked: {last_user_msg}"))
                 if client:
-                    asyncio.create_task(async_evaluate_and_update_state(client, "qwen/qwen-2.5-7b-instruct", chat_req.messages))
+                    asyncio.create_task(async_evaluate_and_update_state(client, "qwen/qwen3-30b-a3b-instruct-2507", chat_req.messages))
 
             if last_user_msg and router_service:
                 # Use a task to run the router while occasionally yielding a heartbeat if it takes too long
@@ -687,7 +709,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     context_citations = []
                     
                     # Create policy classification task (Parallelized)
-                    target_model_name = "qwen/qwen-2.5-7b-instruct"
+                    target_model_name = "qwen/qwen3-30b-a3b-instruct-2507"
                     last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
                     policy_task = None
                     if last_user_msg:
@@ -906,7 +928,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     # Apply dynamic max_tokens based on RAG mode and Policy
                     effective_max_tokens = chat_req.max_tokens
                     if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
-                        effective_max_tokens = 150
+                        effective_max_tokens = 800
                     elif chat_req.use_rag and chat_req.max_tokens == 2048:
                         effective_max_tokens = 2500
                     

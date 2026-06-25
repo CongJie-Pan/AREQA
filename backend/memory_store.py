@@ -115,6 +115,15 @@ class MemoryStore:
             self._atomic_write(self.hot_memory_path, hot_memory)
         return content
 
+    def clear_all_pending_alerts(self):
+        hot_memory = self.get_hot_memory()
+        keys_to_delete = [k for k in hot_memory.keys() if k.startswith("pending_alert_")]
+        if keys_to_delete:
+            for k in keys_to_delete:
+                del hot_memory[k]
+            self._atomic_write(self.hot_memory_path, hot_memory)
+            print(f"[EDF-LOG] Cleared {len(keys_to_delete)} ghost pending alerts on startup.")
+
 _global_store = None
 
 def init_global_store(hot_memory_path: str, user_profile_path: str, budget_limit: int = 1000):

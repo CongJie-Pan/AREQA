@@ -364,7 +364,7 @@ async def get_all_memory():
                 "target": p.target,
                 "functional_type_seeds": json.loads(p.functional_type_seeds) if p.functional_type_seeds else []
             } 
-            for p in props
+            for p in props if getattr(p, "status", "") not in ["deleted", "superseded"]
         ]
         
         # Add Hot Memory and User Profile as virtual items

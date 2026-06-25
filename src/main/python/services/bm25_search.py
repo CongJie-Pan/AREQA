@@ -133,6 +133,12 @@ class BM25Search:
         # Chunk ID mapping (for string IDs like "chapter_001")
         self.chunk_id_mapping: Dict[int, str] = {}
 
+        # Eagerly initialize jieba to prevent blocking the first user query
+        # This will load the dictionary into memory during startup
+        if self.tokenizer == self._default_tokenizer:
+            logger.info("Eagerly initializing jieba dictionary...")
+            jieba.initialize()
+
         logger.info(f"Initialized BM25Search with k1={k1}, b={b}")
 
     def _default_tokenizer(self, text: str) -> List[str]:

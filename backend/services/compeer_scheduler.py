@@ -7,6 +7,7 @@ from pathlib import Path
 
 # Global flag for user cooldown (True = can send, False = cooldown)
 user_flag = {}
+last_interaction_time = {}
 
 async def evaluate_importance_gate(event: dict) -> bool:
     """
@@ -168,7 +169,38 @@ async def proactive_scheduler_loop():
         try:
             # We assume a default user "default_user" for this example
             await tick_proactive_schedule("default_user")
-            await asyncio.sleep(60)
+            
+            # Check for frustration signs (like continuous scrolling) if not in cooldown
+            from time import time
+            last_time = last_interaction_time.get("default_user", 0)
+            if user_flag.get("default_user", True) and (time() - last_time > 120):
+                from memory_store import get_global_store
+                store = get_global_store()
+                if store:
+                    # `get_hot_memory()` returns a sync dictionary snapshot
+                    hot_mem = store.get_hot_memory()
+                    scroll_count = 0
+                    for k, v in hot_mem.items():
+                        if k.startswith("obs_") and "Type: scroll" in str(v):
+                            scroll_count += 1
+                    
+                    if scroll_count >= 3:
+                        print("[EDF-LOG] Detected high scroll activity! Setting PROBE_UNDERSTANDING.")
+                        
+                        # Set alert directly in hot_mem dictionary before writing
+                        hot_mem[f"pending_alert_default_user"] = "AREQA發現你好像來回看了幾遍，有哪邊覺得不太清楚，需要我幫忙梳理嗎？"
+                        user_flag["default_user"] = False # Put into cooldown
+                        
+                        # Clean up those scrolls to avoid re-triggering immediately
+                        keys_to_delete = [k for k, v in hot_mem.items() if k.startswith("obs_") and "Type: scroll" in str(v)]
+                        for k in keys_to_delete:
+                            del hot_mem[k]
+                            
+                        # Write back once with both the alert added and the scrolls deleted
+                        store._atomic_write(store.hot_memory_path, hot_mem)
+                        print(f"[EDF-LOG] set_pending_alert: setting alert for user 'default_user' and cleared {len(keys_to_delete)} scrolls.")
+                                
+            await asyncio.sleep(10) # Check every 10 seconds for real-time responsiveness
         except Exception as e:
             print(f"[EDF-LOG] proactive_scheduler_loop error: {e}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(10)

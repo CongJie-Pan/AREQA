@@ -84,10 +84,17 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
 {latest_dialogue}
 
 請判斷目前的學習者狀態，並建議適合的教學策略。
+狀態定義參考：
+- STARTING: 剛開始接觸，需要基礎背景與名詞解釋。
+- TINKERING: 正在嘗試理解、提出問題並建構概念。
+- RUN_REPEAT: 陷入盲目重複、鬼打牆，需要切換視角打破迴圈。
+- GIVING_UP: 因認知負荷過高、看不懂而感到挫折與放棄，需要情感安撫與降維打擊。
+- MASTERY: 展現高度理解、批判性思考、或對文本提出深刻質疑與挑戰（即使語氣帶有否定或辯論），需要學術辯論或魔鬼代言人策略。
+
 請嚴格以 JSON 格式回傳，格式如下：
 {{
-  "learner_state": "STARTING" | "TINKERING" | "RUN_REPEAT" | "GIVING_UP",
-  "pedagogical_strategy": "建議的教學鷹架策略描述（如：提供底層原理、引導反思、提供具體步驟、安撫情緒）",
+  "learner_state": "STARTING" | "TINKERING" | "RUN_REPEAT" | "GIVING_UP" | "MASTERY",
+  "pedagogical_strategy": "建議的教學鷹架策略描述（如：提供底層原理、引導反思、提供具體步驟、安撫情緒、學術辯論）",
   "trigger_proactive": true 或 false (如果學生展現出氣餒、沮喪、或是需要鼓勵，設為 true)
 }}
 """
