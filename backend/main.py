@@ -233,6 +233,13 @@ async def startup_event():
     print("Memory Store initialized successfully.")
     
     await init_gum_instance()
+    
+    # Start ComPeer Scheduler
+    import sys
+    sys.path.append(str(project_root / "backend" / "services"))
+    from services.compeer_scheduler import proactive_scheduler_loop, daily_scheduler_loop
+    asyncio.create_task(proactive_scheduler_loop())
+    asyncio.create_task(daily_scheduler_loop())
 
 @app.on_event("shutdown")
 async def shutdown_event():

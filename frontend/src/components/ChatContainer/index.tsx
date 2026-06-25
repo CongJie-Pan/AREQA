@@ -16,6 +16,7 @@ import { MessageList } from '@/components/MessageList';
 import { ChatInput } from '@/components/ChatInput';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
+import { ProactiveManager } from '@/components/ProactiveManager';
 import { useStyles } from './styles';
 
 /**
@@ -306,6 +307,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
       {/* Text Selection Toolbar */}
       <TextSelectionToolbar />
 
+      {/* Proactive Polling & Telemetry */}
+      <ProactiveManager />
     </div>
   );
 }
