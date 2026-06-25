@@ -16,10 +16,11 @@ export function ProactiveManager() {
         const data = await res.json();
         if (data.has_alert && data.content) {
           notification.info({
-            message: '小紅關心您',
+            title: 'AREQA關心您',
+            message: 'AREQA關心您',
             description: data.content,
             icon: <BulbOutlined style={{ color: '#d8a25c' }} />,
-            duration: null, // Don't auto close
+            duration: 0, // 0 means don't auto close in antd
             onClick: () => {
               const activeConversationId = useConversationStore.getState().activeConversationId;
               sendMessage(data.content, activeConversationId || undefined);
@@ -36,7 +37,7 @@ export function ProactiveManager() {
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {
-    const logAction = async (action: string, context: Record<string, any>) => {
+    const logAction = async (action: string, context: Record<string, unknown>) => {
       try {
         await fetch('http://localhost:8000/api/v1/log_action', {
           method: 'POST',
@@ -47,7 +48,9 @@ export function ProactiveManager() {
             context
           }),
         });
-      } catch (err) {}
+      } catch {
+        // Ignored
+      }
     };
 
     const handleScroll = () => {

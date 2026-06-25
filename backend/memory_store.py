@@ -65,15 +65,29 @@ class MemoryStore:
         hot_memory = self.get_hot_memory()
         hot_memory[key] = value
         
-        # We remove _check_budget here so the newest item is ALWAYS added.
-        # run_compaction() will automatically trim the oldest items afterward.
+        # Enforce cap at 50 for observations to prevent unbounded growth before compaction
+        obs_keys = [k for k in hot_memory.keys() if k.startswith("obs_")]
+        if len(obs_keys) > 50:
+            obs_keys.sort()
+            for k in obs_keys[:-50]:
+                del hot_memory[k]
+                
         self._atomic_write(self.hot_memory_path, hot_memory)
 
     async def update_hot_memory_async(self, key: str, value: Any):
         """Thread-safe async version — 使用 asyncio.Lock 防止並發競態。"""
         async with _store_lock:
+            print(f"[EDF-LOG] update_hot_memory_async: updating key '{key}'")
             hot_memory = self.get_hot_memory()
             hot_memory[key] = value
+            
+            # Enforce cap at 50 for observations to prevent unbounded growth before compaction
+            obs_keys = [k for k in hot_memory.keys() if k.startswith("obs_")]
+            if len(obs_keys) > 50:
+                obs_keys.sort()
+                for k in obs_keys[:-50]:
+                    del hot_memory[k]
+                    
             self._atomic_write(self.hot_memory_path, hot_memory)
         
     def update_user_profile(self, key: str, value: Any):
@@ -85,6 +99,7 @@ class MemoryStore:
     def set_pending_alert(self, user_id: str, content: str):
         # We can store pending alerts in hot_memory or a separate alerts dict.
         # For simplicity, store in hot memory with a specific key.
+        print(f"[EDF-LOG] set_pending_alert: setting alert for user '{user_id}': '{content}'")
         alert_key = f"pending_alert_{user_id}"
         hot_memory = self.get_hot_memory()
         hot_memory[alert_key] = content
@@ -95,6 +110,7 @@ class MemoryStore:
         hot_memory = self.get_hot_memory()
         content = hot_memory.get(alert_key, "")
         if content:
+            print(f"[EDF-LOG] get_and_clear_pending_alert: retrieved and clearing alert for '{user_id}': '{content}'")
             del hot_memory[alert_key]
             self._atomic_write(self.hot_memory_path, hot_memory)
         return content

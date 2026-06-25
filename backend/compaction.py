@@ -74,7 +74,6 @@ async def generate_stitch_tags(llm_client, model: str, memory_content: str) -> D
             "entities": [],
             "temporal_context": ""
         }
-        }
 
 async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) -> Dict[str, Any]:
     """
@@ -111,7 +110,9 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
         match = re.search(r'\{.*\}', content, re.DOTALL)
         if match:
             content = match.group(0)
-        return json.loads(content)
+        state_dict = json.loads(content)
+        print(f"[EDF-LOG] evaluate_student_state: LLM returned state: {state_dict.get('learner_state')}, strategy: {state_dict.get('pedagogical_strategy')}, trigger_proactive: {state_dict.get('trigger_proactive')}")
+        return state_dict
     except Exception as e:
         print(f"[Student Evaluation] Failed: {e}")
         return {

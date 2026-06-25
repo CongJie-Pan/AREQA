@@ -161,68 +161,67 @@ async def batch_process_observations(items: list[str]):
     global importance_sum, interaction_count, last_interaction_time
     last_interaction_time = datetime.now()
     
-    if not gum_instance or not text_observer:
-        return
-        
-    combined_text = " | ".join(items)
+    if gum_instance and text_observer:
+        combined_text = " | ".join(items)
+        try:
+            neighbors = await gum_instance.query(combined_text, limit=20)
+            if not neighbors:
+                recent_props = await gum_instance.recent(limit=20)
+                neighbors = [(p, 1.0) for p in recent_props]
     
-    try:
-        neighbors = await gum_instance.query(combined_text, limit=20)
-        if not neighbors:
-            recent_props = await gum_instance.recent(limit=20)
-            neighbors = [(p, 1.0) for p in recent_props]
-
-        if neighbors:
-            neighbor_ctx = "\n".join([f"ID: {p.id}, Text: {p.text}" for p, _ in neighbors])
-            prompt = f"""Analyze the new observation against existing memories.
-New observation: {combined_text}
-Existing memories:
-{neighbor_ctx}
-
-Task: Determine if the new observation logically CONTRADICTS or explicitly UPDATES any of the existing memories.
-- ONLY supersede an old memory if the new observation proves it is now factually incorrect or outdated.
-- DO NOT supersede old memories just because the user changed the topic to something else.
-- If it supersedes, set should_evolve=true, add 'prune' to actions, and put ONLY the strictly contradicted IDs in target_ids. Otherwise, set should_evolve=false.
-Rate importance 1-10."""
-            
-            from pydantic import BaseModel
-            from gum.schemas import get_schema
-            class EvolutionSchema(BaseModel):
-                should_evolve: bool
-                actions: list[str]
-                target_ids: list[int]
-                importance_score: int
+            if neighbors:
+                neighbor_ctx = "\\n".join([f"ID: {p.id}, Text: {p.text}" for p, _ in neighbors])
+                prompt = f"""Analyze the new observation against existing memories.
+    New observation: {combined_text}
+    Existing memories:
+    {neighbor_ctx}
+    
+    Task: Determine if the new observation logically CONTRADICTS or explicitly UPDATES any of the existing memories.
+    - ONLY supersede an old memory if the new observation proves it is now factually incorrect or outdated.
+    - DO NOT supersede old memories just because the user changed the topic to something else.
+    - If it supersedes, set should_evolve=true, add 'prune' to actions, and put ONLY the strictly contradicted IDs in target_ids. Otherwise, set should_evolve=false.
+    Rate importance 1-10."""
                 
-            rsp = await gum_instance.client.chat.completions.create(
-                model=gum_instance.model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format=get_schema(EvolutionSchema.model_json_schema()),
-            )
-            import json
-            import re
-            content = rsp.choices[0].message.content.strip()
-            match = re.search(r'\{.*\}', content, re.DOTALL)
-            if match:
-                content = match.group(0)
-            decision = json.loads(content)
-            
-            print(f"[GUM Evolution] LLM decision: {decision}")
-            
-            importance_sum += decision.get("importance_score", 5)
-            
-            if decision.get("should_evolve") and "prune" in decision.get("actions", []):
-                target_ids = decision.get("target_ids", [])
-                for t_id in target_ids:
-                    await gum_instance.update_status(t_id, "superseded")
-        else:
+                from pydantic import BaseModel
+                from gum.schemas import get_schema
+                class EvolutionSchema(BaseModel):
+                    should_evolve: bool
+                    actions: list[str]
+                    target_ids: list[int]
+                    importance_score: int
+                    
+                rsp = await gum_instance.client.chat.completions.create(
+                    model=gum_instance.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format=get_schema(EvolutionSchema.model_json_schema()),
+                )
+                import json
+                import re
+                content = rsp.choices[0].message.content.strip()
+                match = re.search(r'\\{.*\\}', content, re.DOTALL)
+                if match:
+                    content = match.group(0)
+                decision = json.loads(content)
+                
+                print(f"[GUM Evolution] LLM decision: {decision}")
+                
+                importance_sum += decision.get("importance_score", 5)
+                
+                if decision.get("should_evolve") and "prune" in decision.get("actions", []):
+                    target_ids = decision.get("target_ids", [])
+                    for t_id in target_ids:
+                        await gum_instance.update_status(t_id, "superseded")
+            else:
+                importance_sum += 5
+        except Exception as e:
+            print(f"Error in evolution interceptor: {e}")
             importance_sum += 5
-    except Exception as e:
-        print(f"Error in evolution interceptor: {e}")
-        importance_sum += 5
-
-    await text_observer.push_text(combined_text)
-    interaction_count += len(items)
     
+        await text_observer.push_text(combined_text)
+        interaction_count += len(items)
+    else:
+        combined_text = " | ".join(items)
+        
     # Sync to Hot Memory (MemoryStore)
     try:
         from memory_store import get_global_store
@@ -248,7 +247,7 @@ async def run_compaction():
     from pathlib import Path
     
     store = get_global_store()
-    if not store: return
+    if not store or not gum_instance: return
     
     hot_mem = store.get_hot_memory()
     serialized = json.dumps(hot_mem, ensure_ascii=False)

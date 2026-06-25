@@ -29,13 +29,13 @@ def get_query_fingerprint(query: str) -> str:
     return hashlib.md5(query.strip().lower().encode()).hexdigest()
 
 # Try to import transformers for local chat template
-try:
-    from transformers import AutoTokenizer
-    # Initialize tokenizer globally
-    _tokenizer = AutoTokenizer.from_pretrained("CongJ-Pan/XiaoHong-v1")
-except Exception as e:
-    _tokenizer = None
-    print(f"Warning: Could not load tokenizer. Ensure transformers is installed. {e}")
+# try:
+#     from transformers import AutoTokenizer
+#     # Initialize tokenizer globally
+#     # _tokenizer = AutoTokenizer.from_pretrained("CongJ-Pan/XiaoHong-v1")
+# except Exception as e:
+#     _tokenizer = None
+#     print(f"Warning: Could not load tokenizer. Ensure transformers is installed. {e}")
 
 from pathlib import Path
 import os
@@ -142,6 +142,7 @@ try:
         latest_faiss_idx = "dummy_not_found.index"  # Prevent Path("") resolving to '.'
         print("Warning: No FAISS index found in data/rag/faiss_index. RAG will not work locally.")
     
+    print("DEBUG: Before RAGService")
     rag_service = RAGService(
         faiss_index_path=latest_faiss_idx,
         faiss_metadata_path=latest_faiss_meta,
@@ -153,7 +154,9 @@ try:
         score_threshold=0.0,
         max_context_tokens=4000,
     )
+    print("DEBUG: After RAGService")
     router_service = RouterService()
+    print("DEBUG: After RouterService")
     suggestion_service = SuggestionService()
     print("RAG, Router, and Suggestion Services initialized successfully.")
 except Exception as e:
@@ -238,12 +241,16 @@ async def startup_event():
     import sys
     sys.path.append(str(project_root / "backend" / "services"))
     from services.compeer_scheduler import proactive_scheduler_loop, daily_scheduler_loop
-    asyncio.create_task(proactive_scheduler_loop())
-    asyncio.create_task(daily_scheduler_loop())
+    app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
+    app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await stop_gum_instance()
+    if hasattr(app.state, 'proactive_task'):
+        app.state.proactive_task.cancel()
+    if hasattr(app.state, 'daily_task'):
+        app.state.daily_task.cancel()
 
 @app.get("/api/v1/memory")
 async def fetch_memory():
@@ -573,15 +580,18 @@ async def log_action(req: ActionLogRequest):
     接收前端事件 (如點擊燈泡、UI 互動、語音打斷)
     """
     obs_text = f"[User Action] Type: {req.action_type}, Context: {req.context}"
+    print(f"[EDF-LOG] log_action endpoint received: {obs_text}")
     asyncio.create_task(push_observation(obs_text))
     return {"status": "ok"}
 
 @app.get("/api/v1/proactive-check")
 async def proactive_check_endpoint(user_id: str = "default_user"):
+    from memory_store import get_global_store
     store = get_global_store()
     if store:
         alert_content = store.get_and_clear_pending_alert(user_id)
         if alert_content:
+            print(f"[EDF-LOG] proactive-check endpoint returning alert: {alert_content}")
             return {"has_alert": True, "content": alert_content}
     return {"has_alert": False}
 
@@ -594,8 +604,19 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
        2) ongoing chunk data events from vLLM
     """
     async def generate():
-        try:
-            # ✅ 在函數頂端初始化所有 RAG 相關變數，避免 UnboundLocalError
+        import json
+        last_user_msg = ""
+        try:  # ✅ 在函數頂端初始化所有 RAG 相關變數，避免 UnboundLocalError
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            client = None
+            full_content = ""
+            if api_key:
+                client = AsyncOpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=api_key,
+                    timeout=120.0
+                )
+                
             context_texts = []
             context_citations = []
             sources_payload = []
@@ -607,8 +628,12 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             # Detect if the query is Out-of-Domain (OOD) before any other processing
             last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
             if last_user_msg:
+                print(f"[EDF-LOG] streaming endpoint received message, evaluating student state asynchronously...")
+                from services.compeer_scheduler import user_flag
+                user_flag["default_user"] = True # Reset cooldown flag
                 asyncio.create_task(push_observation(f"User asked: {last_user_msg}"))
-                asyncio.create_task(async_evaluate_and_update_state(client, "qwen/qwen-2.5-7b-instruct", chat_req.messages))
+                if client:
+                    asyncio.create_task(async_evaluate_and_update_state(client, "qwen/qwen-2.5-7b-instruct", chat_req.messages))
 
             if last_user_msg and router_service:
                 # Use a task to run the router while occasionally yielding a heartbeat if it takes too long
@@ -651,29 +676,12 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             yield f"event: metadata\ndata: {json.dumps(metadata)}\n\n"
             
             # 2. Token generation stream phase
-            api_key = os.environ.get("OPENROUTER_API_KEY")
-            if not api_key:
+            api_key_check = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key_check:
                 chunk_data = {"choices": [{"delta": {"content": "[System Error] OPENROUTER_API_KEY is missing in the global .env file."}, "index": 0, "finish_reason": None}]}
                 yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
             else:
                 try:
-                    # [Commented Out] Original Hugging Face Endpoint client initialization
-                    # hf_base_url = HF_ENDPOINT_URL.strip()
-                    # if not hf_base_url.strip("/").endswith("v1"):
-                    #     hf_base_url = hf_base_url.rstrip("/") + "/v1/"
-                    # client = AsyncOpenAI(
-                    #     base_url=hf_base_url, 
-                    #     api_key=HF_TOKEN, 
-                    #     timeout=120.0
-                    # )
-                    
-                    # Upgraded client: Connect to OpenRouter
-                    client = AsyncOpenAI(
-                        base_url="https://openrouter.ai/api/v1",
-                        api_key=api_key,
-                        timeout=120.0
-                    )
-                    
                     # 0. RAG Retrieval phase
                     has_system = len(chat_req.messages) > 0 and chat_req.messages[0]["role"] == "system"
                     context_citations = []
@@ -1157,7 +1165,6 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             
             # Append chat to JSONL
             try:
-                import json
                 from pathlib import Path
                 log_path = Path(__file__).resolve().parents[1] / "data" / "gum_data" / "reflection_log_default_user.jsonl"
                 

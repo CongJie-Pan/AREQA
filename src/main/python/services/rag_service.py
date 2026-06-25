@@ -265,10 +265,13 @@ class RAGService:
 
         # Load all components synchronously (can take a moment)
         try:
+            print("DEBUG: Loading embedding model...")
             self._load_embedding_model()
             if self.use_reranker and self._reranker_model_path:
                 self._load_reranker_model()
+            print("DEBUG: Loading FAISS...")
             self._load_faiss_index()
+            print("DEBUG: Loading BM25...")
             self._load_bm25_index()
             self._available = True
             logger.info(
@@ -280,6 +283,7 @@ class RAGService:
                 self.rrf_k,
             )
         except Exception as exc:
+            print(f"DEBUG: RAGService init Exception: {exc}")
             logger.error("RAGService init failed (degraded mode): %s", exc)
             self._available = False
 
@@ -344,9 +348,6 @@ class RAGService:
             return
             
         try:
-            from sentence_transformers import CrossEncoder
-            import torch
-            
             # check API key or load model
             deepinfra_api_key = os.environ.get("DEEPINFRA_API_KEY")
             if "api" in str(self._reranker_model_path).lower() or deepinfra_api_key:
@@ -420,6 +421,8 @@ class RAGService:
             else:
                 logger.info("Initializing Reranker model...")
             if not getattr(self, '_reranker_api_client', None):
+                from sentence_transformers import CrossEncoder
+                import torch
                 precision = torch.float16 if self._device != "cpu" else torch.float32
                 self._reranker = CrossEncoder(
                     str(self._reranker_model_path),

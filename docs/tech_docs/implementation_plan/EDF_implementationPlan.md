@@ -429,3 +429,99 @@ sequenceDiagram
 * **F-5: 統一的 `user_id` Session 管理**
   - **實作位置**：全域狀態管理 (Zustand) 與 localStorage。
   - **說明**：確保 `/api/v1/proactive-check` 及 `/api/v1/log_action` API 呼叫時，皆能取得並帶入一致且唯一的 `user_id`，以維持多用戶狀態的正確隔離。
+
+---
+
+## 9. 人工實測與驗證指南 (Manual Testing & Verification Guide)
+
+後端 API 已開發並通過自動化測試後，我們進入「實機手動驗證階段」。以下提供如何自行透過工具（例如 `curl`, Postman 或 Swagger UI）進行全域流程的人工驗證，以確保 EDF 理論機制在真實環境中如預期運作。
+
+### 9.1 驗證一：學習狀態追蹤與更新 (Student State Tracking)
+* **目的**：驗證當使用者產生連續動作或對話時，系統是否能正確評估並改變 `current_learner_state`。
+* **操作步驟**：
+  1. 確保 FastAPI 伺服器正在運行 (`python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload`)。
+  2. 模擬學生行為：連續發送 2~3 次閱讀/滾動行為至 `/api/v1/log_action`。
+     ```bash
+     curl -X POST "http://localhost:8000/api/v1/log_action" \
+     -H "Content-Type: application/json" \
+     -d '{"action_type": "scroll", "timestamp": 1700000000, "context": {}}'
+     ```
+  3. 模擬學生發問：發送聊天請求至 `/api/v1/stream`。
+     ```bash
+     curl -X POST "http://localhost:8000/api/v1/stream" \
+     -H "Content-Type: application/json" \
+     -d '{"messages": [{"role": "user", "content": "Help me with this question."}], "stream": true}'
+     ```
+* **預期輸出**：
+  - 觀察終端機 (Terminal) 的 `[EDF-LOG]` 標籤。
+  - 你應會看到類似：`[EDF-LOG] evaluate_student_state: LLM returned state: TINKERING, strategy: PROBE_UNDERSTANDING`。
+  - 檢查 `data/gum_data/hot_memory_default_user.json` 檔案，`current_learner_state` 應從 `STARTING` 變成 `TINKERING` 或其他經 LLM 判斷的狀態。
+
+### 9.2 驗證二：ComPeer 主動陪伴排程觸發 (Proactive Schedule)
+* **目的**：驗證背景的主動陪伴（主動關懷提醒）是否能在約定時間點被正確生成，並且能被前端輪詢取得。
+* **操作步驟**：
+  1. 先製造一段對話紀錄（呼叫 `/api/v1/stream`），讓系統將對話寫入 `reflection_log_default_user.jsonl`。
+  2. 等待背景排程或手動呼叫觸發 `initialize_daily_schedule("default_user")`（後端預設每天執行，或為了測試可暫時改為短時間執行）。
+  3. 觀察 `data/gum_data/schedule_default_user.json` 是否被生成，裡面應包含帶有具體 `Timing` 的事件陣列。
+  4. 當系統時間到達或經過該事件的 `Timing` 時（預設有 2 分鐘的寬限窗），系統背景會標記該事件為已觸發 (`fired: true`)。
+  5. 模擬前端輪詢，呼叫 `/api/v1/proactive-check`：
+     ```bash
+     curl -X GET "http://localhost:8000/api/v1/proactive-check?user_id=default_user"
+     ```
+* **預期輸出**：
+  - 第一輪詢回傳：`{"has_alert": true, "content": "嗨！我看你對這個概念看了一陣子，需要我幫忙梳理一下嗎？"}`
+  - 終端機 (Terminal) 會印出 `[EDF-LOG] get_and_clear_pending_alert: retrieved and clearing alert...`
+  - 緊接著發送**第二次輪詢**，預期回傳：`{"has_alert": false}`（因為通知已被讀取並清除）。
+
+### 9.3 驗證三：鷹架淡出機制的觸發 (Scaffolding Fading)
+* **目的**：確認隨著學習者的熟練度提升，給予的教學提示深度會自動調整（ZPD 遷移）。
+* **操作步驟**：
+  1. 利用多次成功解題的對話，或是直接修改 `data/gum_data/hot_memory_default_user.json` 中的狀態為 `MASTERED`（精熟）。
+  2. 再次發送相同的發問請求至 `/api/v1/stream`。
+* **預期輸出**：
+  - 終端機 (Terminal) 會印出 `[EDF Policy] Evaluated pedagogical policy: FADE_SCAFFOLDING`（或類似的淡出策略）。
+  - LLM 串流回傳的回答文字應比之前更為簡略、更具啟發性，不再是手把手的基礎教學。
+
+### 9.4 驗證四：觀察記錄防爆機制 (Memory Cap Verification)
+* **目的**：驗證 `log_action` API 是否嚴格遵守最近 50 筆紀錄的上限，避免無效資料癱瘓系統效能。
+* **操作步驟**：
+  1. 撰寫一個簡單的迴圈腳本（或連續執行 curl 55 次）送出 55 筆 `log_action` 請求。
+     ```bash
+     for i in {1..55}; do curl -s -X POST "http://localhost:8000/api/v1/log_action" -H "Content-Type: application/json" -d "{\"action_type\": \"test_$i\", \"timestamp\": 1700000000, \"context\": {}}"; done
+     ```
+  2. 檢查 `data/gum_data/hot_memory_default_user.json` 檔案。
+* **預期輸出**：
+  - 檔案內包含 `"obs_"` 開頭的 Key 數量應「剛好為 50 筆」，最早輸入的 `test_1` 到 `test_5` 應已被系統自動剔除 (Evicted)。
+
+### 9.5 驗證五：串流中斷與例外處理 (Graceful Degradation for SSE Stream)
+* **目的**：模擬遇到大流量或第三方 API Key 遺失時，前端應用程式是否能優雅地接住錯誤，而不是無限轉圈卡死。
+* **操作步驟**：
+  1. 暫時將 `.env` 檔案中的 `OPENROUTER_API_KEY` 移除或改名。
+  2. 重新啟動 FastAPI 伺服器，發送對話串流請求至 `/api/v1/stream`。
+* **預期輸出**：
+  - 不會拋出 `500 Internal Server Error`，而會立刻回傳 Server-Sent Events (SSE) 格式的錯誤訊息：
+  - `data: {"choices": [{"delta": {"content": "[System Error] OPENROUTER_API_KEY is missing..."}, "index": 0, "finish_reason": null}]}`
+  - 最後確保以 `data: [DONE]` 優雅作結。
+
+### 9.6 驗證六：背景反思紀錄正確追加 (Reflection Log Append Check)
+* **目的**：確認每次對話的上下文都有被完整紀錄到專屬的 JSONL，作為 ComPeer 隔日反思的基底素材。
+* **操作步驟**：
+  1. 刪除或清空舊的 `data/gum_data/reflection_log_default_user.jsonl`。
+  2. 對 `/api/v1/stream` 進行一次完整的提問與回答。
+* **預期輸出**：
+  - `reflection_log_default_user.jsonl` 中應精準增加 **2 行** JSON 資料：
+    1. `{"role": "user", "content": "..."}`
+    2. `{"role": "assistant", "content": "..."}`
+  - 若系統產生例外 (Fallback)，也應將殘缺或系統預設回覆寫入 Assistant 的 content 中，確保對話紀錄不中斷。
+
+### 9.7 驗證七：ComPeer 冷卻期與防打擾機制 (Proactive Cooldown Mechanism)
+* **目的**：驗證當主動提示已經被觸發過（或者學生剛問過問題），系統的冷卻標記是否能成功阻擋排程系統發出新的彈跳通知。
+* **操作步驟**：
+  1. 製造一份符合當前時間的主動陪伴排程 (`schedule_default_user.json`)。
+  2. 確保後端或記憶體中的 `user_flag["default_user"]` 設為 `False` (模擬剛被打擾或剛關閉提醒)。
+  3. 觸發 `tick_proactive_schedule` 輪詢。
+* **預期輸出**：
+  - 終端機 (Terminal) 會印出 `[EDF-LOG] tick_proactive_schedule: User flag is False. Skipping alert.`。
+  - 前端呼叫 `/api/v1/proactive-check` 依然回傳 `{"has_alert": false}`，證明防打擾機制成功攔截了過度頻繁的教學提示。
+
+完成這七項全方位的實測驗證後，即可保證系統在效能、穩定度、容錯性以及教學理論上皆達到正式上線級別 (Production-ready)。

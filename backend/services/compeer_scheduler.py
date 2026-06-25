@@ -13,7 +13,9 @@ async def evaluate_importance_gate(event: dict) -> bool:
     Evaluate if the event passes the random importance gate.
     """
     importance = float(event.get("importance", 0.5))
-    return random.random() < importance
+    passed = random.random() < importance
+    print(f"[EDF-LOG] evaluate_importance_gate: event='{event.get('Content')}', importance={importance}, passed={passed}")
+    return passed
 
 async def tick_proactive_schedule(user_id: str):
     """
@@ -57,7 +59,9 @@ async def tick_proactive_schedule(user_id: str):
                     from memory_store import get_global_store
                     store = get_global_store()
                     if store:
-                        store.set_pending_alert(user_id, event.get("Content", "學習狀況還好嗎？"))
+                        content = event.get("Content", "學習狀況還好嗎？")
+                        print(f"[EDF-LOG] tick_proactive_schedule: firing alert for {user_id} with content: {content}")
+                        store.set_pending_alert(user_id, content)
                     user_flag[user_id] = False
                 
             event["fired"] = True
@@ -70,8 +74,11 @@ async def tick_proactive_schedule(user_id: str):
 async def initialize_daily_schedule(user_id: str, reflection_outputs: list):
     try:
         from gum_integration import gum_instance
+        print(f"DEBUG: initialize_daily_schedule called. gum_instance={gum_instance}")
         if not gum_instance:
+            print("DEBUG: gum_instance is falsy, returning early")
             return
+        print("DEBUG: Calling mock gum_instance...")
         
         prompt = f"""基於以下昨日的學習反思，請為學生規劃今日的主動關懷排程 (包含關心學習進度、挫折安撫等)。
 反思紀錄:
@@ -98,6 +105,7 @@ async def initialize_daily_schedule(user_id: str, reflection_outputs: list):
         )
         import re
         content = rsp.choices[0].message.content.strip()
+        print(f"[EDF-LOG] initialize_daily_schedule for {user_id} generated:\n{content}")
         match = re.search(r'\{.*\}', content, re.DOTALL)
         if match:
             content = match.group(0)
@@ -117,7 +125,9 @@ async def run_reflection_and_initialization(user_id: str):
     log_path = project_root / "data" / "gum_data" / f"reflection_log_{user_id}.jsonl"
     
     if not os.path.exists(log_path):
+        print(f"DEBUG: log_path does not exist: {log_path}")
         return
+    print(f"DEBUG: Found log_path: {log_path}")
         
     chat_logs = []
     with open(log_path, "r", encoding="utf-8") as f:
@@ -129,6 +139,7 @@ async def run_reflection_and_initialization(user_id: str):
                     pass
                     
     if not chat_logs:
+        print(f"DEBUG: chat_logs is empty for {log_path}")
         return
         
     reflection_outputs = [f"User had {len(chat_logs)} interactions yesterday."]
@@ -138,15 +149,26 @@ async def run_reflection_and_initialization(user_id: str):
     open(log_path, "w").close()
 
 async def daily_scheduler_loop():
+    print("[EDF-LOG] Starting daily_scheduler_loop background task.")
     while True:
-        now = datetime.now()
-        if now.hour == 23 and now.minute == 59:
-            await run_reflection_and_initialization("default_user")
-            await asyncio.sleep(60) # Wait a minute to avoid retriggering
-        else:
-            await asyncio.sleep(30)
+        try:
+            now = datetime.now()
+            if now.hour == 23 and now.minute == 59:
+                await run_reflection_and_initialization("default_user")
+                await asyncio.sleep(60) # Wait a minute to avoid retriggering
+            else:
+                await asyncio.sleep(30)
+        except Exception as e:
+            print(f"[EDF-LOG] daily_scheduler_loop error: {e}")
+            await asyncio.sleep(60)
 
 async def proactive_scheduler_loop():
+    print("[EDF-LOG] Starting proactive_scheduler_loop background task.")
     while True:
-        await asyncio.sleep(60)
-        await tick_proactive_schedule("default_user")
+        try:
+            # We assume a default user "default_user" for this example
+            await tick_proactive_schedule("default_user")
+            await asyncio.sleep(60)
+        except Exception as e:
+            print(f"[EDF-LOG] proactive_scheduler_loop error: {e}")
+            await asyncio.sleep(60)
