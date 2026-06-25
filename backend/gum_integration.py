@@ -506,8 +506,30 @@ def get_hot_memory_snapshot() -> str:
         
     return "\n\n".join(parts)
 
+async def generate_zpd_query_via_llm(client, model, original_query, learner_state):
+    prompt = f"""You are an educational AI converting a student's question into a ZPD-aligned search query.
+Student's current learning state: {learner_state}
+Original query: {original_query}
+
+If the state is "TINKERING" or "RUN_REPEAT", focus on underlying concepts rather than the exact syntax.
+If the state is "STARTING", focus on fundamental definitions.
+Otherwise, refine the query to be pedagogical.
+Return ONLY the refined query string without any quotes or explanations."""
+    try:
+        rsp = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,
+            temperature=0.3
+        )
+        return rsp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[ZPD Query Gen] Error: {e}")
+        return original_query
+
 async def query_cold_memory_for_context(query: str, top_k: int = 5) -> str:
     from cold_memory import ColdMemoryRetriever
+    from memory_store import get_global_store
     import os
     from pathlib import Path
     
@@ -517,8 +539,13 @@ async def query_cold_memory_for_context(query: str, top_k: int = 5) -> str:
         return ""
         
     try:
+        store = get_global_store()
+        learner_state = store.get_learner_state() if store else "STARTING"
+        
+        zpd_query = await generate_zpd_query_via_llm(gum_instance.client, gum_instance.model, query, learner_state)
+        
         cold_retriever = ColdMemoryRetriever(db_path, api_key)
-        results = await cold_retriever.search(query, top_k)
+        results = await cold_retriever.search(zpd_query, top_k)
         if not results:
             return ""
             

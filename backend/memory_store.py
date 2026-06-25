@@ -1,7 +1,10 @@
 import json
 import os
 import tempfile
+import asyncio
 from typing import Dict, Any
+
+_store_lock = asyncio.Lock()
 
 class MemoryBudgetExceeded(Exception):
     pass
@@ -40,6 +43,14 @@ class MemoryStore:
     def get_hot_memory(self) -> Dict[str, Any]:
         return self._read_json(self.hot_memory_path)
         
+    def get_learner_state(self) -> str:
+        hot_mem = self.get_hot_memory()
+        return hot_mem.get("current_learner_state", "STARTING")
+
+    def get_current_strategy(self) -> str:
+        hot_mem = self.get_hot_memory()
+        return hot_mem.get("current_strategy", "None")
+        
     def get_user_profile(self) -> Dict[str, Any]:
         return self._read_json(self.user_profile_path)
         
@@ -57,6 +68,13 @@ class MemoryStore:
         # We remove _check_budget here so the newest item is ALWAYS added.
         # run_compaction() will automatically trim the oldest items afterward.
         self._atomic_write(self.hot_memory_path, hot_memory)
+
+    async def update_hot_memory_async(self, key: str, value: Any):
+        """Thread-safe async version — 使用 asyncio.Lock 防止並發競態。"""
+        async with _store_lock:
+            hot_memory = self.get_hot_memory()
+            hot_memory[key] = value
+            self._atomic_write(self.hot_memory_path, hot_memory)
         
     def update_user_profile(self, key: str, value: Any):
         """Update user profile. This is not subject to budget checking."""

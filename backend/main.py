@@ -534,6 +534,26 @@ async def retrieve_endpoint(query: str, top_k: int = 20, offset: int = 0, limit:
         print(f"Retrieve endpoint error: {e}")
         return {"results": [], "error": str(e)}
 
+async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: str, chat_history: list) -> str:
+    prompt = f"""Analyze the user's message and determine the pedagogical dialogue policy.
+User message: {user_msg}
+Select one of: PROBE_UNDERSTANDING, SUGGEST_ACTION, PUSH_LIMIT, NORMAL.
+Return ONLY the policy name."""
+    try:
+        rsp = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=20,
+            temperature=0.1
+        )
+        policy = rsp.choices[0].message.content.strip()
+        if policy not in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION", "PUSH_LIMIT", "NORMAL"]:
+            return "NORMAL"
+        return policy
+    except Exception as e:
+        print(f"[Policy Classifier] Error: {e}")
+        return "NORMAL"
+
 @app.post("/api/v1/stream")
 async def stream_endpoint(request: Request, chat_req: ChatRequest):
     """
@@ -625,6 +645,15 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     # 0. RAG Retrieval phase
                     has_system = len(chat_req.messages) > 0 and chat_req.messages[0]["role"] == "system"
                     context_citations = []
+                    
+                    # Create policy classification task (Parallelized)
+                    target_model_name = "qwen/qwen-2.5-7b-instruct"
+                    last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
+                    policy_task = None
+                    if last_user_msg:
+                        policy_task = asyncio.create_task(
+                            classify_dialogue_policy(client, target_model_name, last_user_msg, chat_req.messages)
+                        )
                     
                     if chat_req.use_rag and rag_service:
                         last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
@@ -828,9 +857,17 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                         # Insert at the beginning of the messages list
                         chat_req.messages.insert(0, {"role": "system", "content": final_system_prompt})
                     
-                    # Apply dynamic max_tokens based on RAG mode
+                    # Wait for Policy Classification
+                    policy = "NORMAL"
+                    if policy_task:
+                        policy = await policy_task
+                        print(f"[EDF Policy] Evaluated pedagogical policy: {policy}")
+                    
+                    # Apply dynamic max_tokens based on RAG mode and Policy
                     effective_max_tokens = chat_req.max_tokens
-                    if chat_req.use_rag and chat_req.max_tokens == 2048:
+                    if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
+                        effective_max_tokens = 150
+                    elif chat_req.use_rag and chat_req.max_tokens == 2048:
                         effective_max_tokens = 2500
                     
                     if chat_req.force_think:
