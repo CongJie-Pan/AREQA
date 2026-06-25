@@ -29,7 +29,4 @@ services:
         value: 20.11.0
       # 自動從後端服務取得網址，綁定給前端使用
       - key: NEXT_PUBLIC_BACKEND_URL
-        fromService:
-          type: web
-          name: areqa-backend
-          envVarKey: RENDER_EXTERNAL_URL
+        value: https://areqa-backend.onrender.com
