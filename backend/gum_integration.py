@@ -557,3 +557,18 @@ async def query_cold_memory_for_context(query: str, top_k: int = 5) -> str:
     except Exception as e:
         print(f"[GUM] Error querying cold memory: {e}")
         return ""
+
+async def async_evaluate_and_update_state(client, model, chat_history):
+    from compaction import evaluate_student_state
+    from memory_store import get_global_store
+    
+    state_res = await evaluate_student_state(client, model, chat_history)
+    store = get_global_store()
+    if store:
+        await store.update_hot_memory_async("current_learner_state", state_res.get("learner_state", "STARTING"))
+        await store.update_hot_memory_async("current_strategy", state_res.get("pedagogical_strategy", "NORMAL"))
+        if state_res.get("trigger_proactive"):
+            # We flag this for ComPeer to pick up or log it
+            print(f"[ComPeer] Proactive trigger needed: {state_res}")
+            await store.update_hot_memory_async("trigger_proactive", True)
+

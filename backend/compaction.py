@@ -74,4 +74,48 @@ async def generate_stitch_tags(llm_client, model: str, memory_content: str) -> D
             "entities": [],
             "temporal_context": ""
         }
+        }
 
+async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) -> Dict[str, Any]:
+    """
+    Evaluate the student's learning state and pedagogical strategy based on the recent dialogue.
+    Returns a dict containing 'learner_state', 'pedagogical_strategy', and 'trigger_proactive'.
+    """
+    prompt = f"""請以教育心理學與 EDF (Evidence-Decision-Feedback) 視角分析以下對話紀錄：
+{latest_dialogue}
+
+請判斷目前的學習者狀態，並建議適合的教學策略。
+請嚴格以 JSON 格式回傳，格式如下：
+{{
+  "learner_state": "STARTING" | "TINKERING" | "RUN_REPEAT" | "GIVING_UP",
+  "pedagogical_strategy": "建議的教學鷹架策略描述（如：提供底層原理、引導反思、提供具體步驟、安撫情緒）",
+  "trigger_proactive": true 或 false (如果學生展現出氣餒、沮喪、或是需要鼓勵，設為 true)
+}}
+"""
+    try:
+        from pydantic import BaseModel
+        class StudentStateSchema(BaseModel):
+            learner_state: str
+            pedagogical_strategy: str
+            trigger_proactive: bool
+
+        rsp = await llm_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_schema", "json_schema": {"name": "student_state_schema", "schema": StudentStateSchema.model_json_schema()}},
+            temperature=0.2
+        )
+        import json
+        import re
+        content = rsp.choices[0].message.content.strip()
+        match = re.search(r'\{.*\}', content, re.DOTALL)
+        if match:
+            content = match.group(0)
+        return json.loads(content)
+    except Exception as e:
+        print(f"[Student Evaluation] Failed: {e}")
+        return {
+            "learner_state": "STARTING",
+            "pedagogical_strategy": "提供基礎引導",
+            "trigger_proactive": False
+        }

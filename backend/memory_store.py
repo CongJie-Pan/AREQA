@@ -78,11 +78,26 @@ class MemoryStore:
         
     def update_user_profile(self, key: str, value: Any):
         """Update user profile. This is not subject to budget checking."""
-        user_profile = self.get_user_profile()
-        user_profile[key] = value
+        profile = self.get_user_profile()
+        profile[key] = value
+        self._atomic_write(self.user_profile_path, profile)
+
+    def set_pending_alert(self, user_id: str, content: str):
+        # We can store pending alerts in hot_memory or a separate alerts dict.
+        # For simplicity, store in hot memory with a specific key.
+        alert_key = f"pending_alert_{user_id}"
+        hot_memory = self.get_hot_memory()
+        hot_memory[alert_key] = content
+        self._atomic_write(self.hot_memory_path, hot_memory)
         
-        
-        self._atomic_write(self.user_profile_path, user_profile)
+    def get_and_clear_pending_alert(self, user_id: str) -> str:
+        alert_key = f"pending_alert_{user_id}"
+        hot_memory = self.get_hot_memory()
+        content = hot_memory.get(alert_key, "")
+        if content:
+            del hot_memory[alert_key]
+            self._atomic_write(self.hot_memory_path, hot_memory)
+        return content
 
 _global_store = None
 

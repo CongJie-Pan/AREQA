@@ -18,7 +18,7 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
-from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context
+from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state
 
 # 在 main.py 最上層加入全域快取字典
 _rag_cache: dict = {}
@@ -332,7 +332,13 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest):
             
     return {"status": "success"}
 
-class RetrieveRequest(BaseModel):
+class ActionLogRequest(BaseModel):
+    user_id: str = "default"
+    action_type: str
+    timestamp: int
+    context: Dict[str, Any] = {}
+
+class MemoryQueryRequest(BaseModel):
     query: str
     top_k: int = 5
 
@@ -554,6 +560,24 @@ Return ONLY the policy name."""
         print(f"[Policy Classifier] Error: {e}")
         return "NORMAL"
 
+@app.post("/api/v1/log_action")
+async def log_action(req: ActionLogRequest):
+    """
+    接收前端事件 (如點擊燈泡、UI 互動、語音打斷)
+    """
+    obs_text = f"[User Action] Type: {req.action_type}, Context: {req.context}"
+    asyncio.create_task(push_observation(obs_text))
+    return {"status": "ok"}
+
+@app.get("/api/v1/proactive-check")
+async def proactive_check_endpoint(user_id: str = "default_user"):
+    store = get_global_store()
+    if store:
+        alert_content = store.get_and_clear_pending_alert(user_id)
+        if alert_content:
+            return {"has_alert": True, "content": alert_content}
+    return {"has_alert": False}
+
 @app.post("/api/v1/stream")
 async def stream_endpoint(request: Request, chat_req: ChatRequest):
     """
@@ -577,7 +601,8 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             last_user_msg = next((m["content"] for m in reversed(chat_req.messages) if m["role"] == "user"), "")
             if last_user_msg:
                 asyncio.create_task(push_observation(f"User asked: {last_user_msg}"))
-                
+                asyncio.create_task(async_evaluate_and_update_state(client, "qwen/qwen-2.5-7b-instruct", chat_req.messages))
+
             if last_user_msg and router_service:
                 # Use a task to run the router while occasionally yielding a heartbeat if it takes too long
                 router_task = asyncio.create_task(router_service.check_query_intent(last_user_msg))
@@ -1123,6 +1148,20 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     chunk_data = {"choices": [{"delta": {"content": error_output}, "index": 0}]}
                     yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
             
+            # Append chat to JSONL
+            try:
+                import json
+                from pathlib import Path
+                log_path = Path(__file__).resolve().parents[1] / "data" / "gum_data" / "reflection_log_default_user.jsonl"
+                
+                with open(log_path, "a", encoding="utf-8") as f:
+                    if last_user_msg:
+                        f.write(json.dumps({"role": "user", "content": last_user_msg}, ensure_ascii=False) + "\n")
+                    if full_content:
+                        f.write(json.dumps({"role": "assistant", "content": full_content}, ensure_ascii=False) + "\n")
+            except Exception as e:
+                print(f"[Log Action] Failed to write JSONL: {e}")
+
             # 3. Stream End signal
             yield "data: [DONE]\n\n"
             
