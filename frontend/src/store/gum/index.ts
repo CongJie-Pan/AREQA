@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
 export interface Proposition {
   id: string | number;
   text: string;
@@ -30,7 +32,7 @@ export const useGumStore = create<GumState>((set) => ({
   fetchMemory: async () => {
     set({ loading: true });
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/memory?t=${Date.now()}`, {
+      const res = await fetch(`${backendUrl}/api/v1/memory?t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
@@ -51,7 +53,7 @@ export const useGumStore = create<GumState>((set) => ({
   fetchSuggestions: async () => {
     set({ loading: true });
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/suggestions?t=${Date.now()}`, {
+      const res = await fetch(`${backendUrl}/api/v1/suggestions?t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
@@ -71,7 +73,7 @@ export const useGumStore = create<GumState>((set) => ({
 
   deleteMemories: async (ids: (string | number)[]) => {
     try {
-      await fetch(`http://localhost:8000/api/v1/memory/batch-delete`, {
+      await fetch(`${backendUrl}/api/v1/memory/batch-delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
@@ -85,7 +87,7 @@ export const useGumStore = create<GumState>((set) => ({
 
   deleteMemory: async (id: string | number) => {
     try {
-      await fetch(`http://localhost:8000/api/v1/memory/${id}`, { method: 'DELETE' });
+      await fetch(`${backendUrl}/api/v1/memory/${id}`, { method: 'DELETE' });
       // Remove from local state
       set((state) => ({ propositions: state.propositions.filter(p => p.id !== id) }));
     } catch (error) {
@@ -95,7 +97,7 @@ export const useGumStore = create<GumState>((set) => ({
 
   editMemory: async (id: string | number, text: string) => {
     try {
-      await fetch(`http://localhost:8000/api/v1/memory/${id}`, {
+      await fetch(`${backendUrl}/api/v1/memory/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),

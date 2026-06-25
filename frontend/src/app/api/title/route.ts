@@ -91,7 +91,8 @@ export async function POST(request: NextRequest) {
     }
 
     // FASTAPI TARGET
-    const fastApiUrl = 'http://127.0.0.1:8000/api/v1/generate-title';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+    const fastApiUrl = `${backendUrl}/api/v1/generate-title`;
 
     logger.info(`Forwarding title request to internal backend: ${fastApiUrl}`);
 

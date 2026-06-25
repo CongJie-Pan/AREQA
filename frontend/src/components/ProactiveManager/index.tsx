@@ -51,7 +51,8 @@ export function ProactiveManager() {
   useEffect(() => {
     const timer = setInterval(async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/v1/proactive-check?user_id=default_user');
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const res = await fetch(`${backendUrl}/api/v1/proactive-check?user_id=default_user`);
         const data = await res.json();
         if (data.has_alert && data.content) {
           const key = `proactive-${Date.now()}`;
@@ -100,7 +101,8 @@ export function ProactiveManager() {
   useEffect(() => {
     const logAction = async (action: string, context: Record<string, unknown>) => {
       try {
-        await fetch('http://localhost:8000/api/v1/log_action', {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        await fetch(`${backendUrl}/api/v1/log_action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

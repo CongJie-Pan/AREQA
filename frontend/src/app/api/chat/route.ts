@@ -106,7 +106,8 @@ export async function POST(request: NextRequest) {
 
     // FASTAPI TARGET
     // Replace the external perplexity endpoint with the internal FastAPI microservice
-    const fastApiUrl = 'http://127.0.0.1:8000/api/v1/stream';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+    const fastApiUrl = `${backendUrl}/api/v1/stream`;
 
     logger.info(`Forwarding chat request to internal backend: ${fastApiUrl}`);
 

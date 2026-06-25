@@ -48,8 +48,7 @@ next-env.d.ts
 /lintAndTypeError_Check
 
 # others
-data/rag/bm25_index
-data/rag/faiss_index
+
 backend/.venv
 frontend/node_modules
 /.drift

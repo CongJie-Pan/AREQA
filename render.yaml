@@ -1,0 +1,33 @@
+services:
+  # 後端 FastAPI 服務
+  - type: web
+    name: areqa-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      # 以下為需要你在 Render 後台手動填寫的安全金鑰
+      - key: HF_TOKEN
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+  # 前端 Next.js 服務
+  - type: web
+    name: areqa-frontend
+    env: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
+      # 自動從後端服務取得網址，綁定給前端使用
+      - key: NEXT_PUBLIC_BACKEND_URL
+        fromService:
+          type: web
+          name: areqa-backend
+          envVarKey: RENDER_EXTERNAL_URL
