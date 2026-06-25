@@ -26,7 +26,7 @@ services:
     startCommand: npm run start
     envVars:
       - key: NODE_VERSION
-        value: 18.17.0
+        value: 20.11.0
       # 自動從後端服務取得網址，綁定給前端使用
       - key: NEXT_PUBLIC_BACKEND_URL
         fromService:
