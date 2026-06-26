@@ -922,6 +922,10 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                     # Wait for Policy Classification
                     policy = "NORMAL"
                     if policy_task:
+                        while not policy_task.done():
+                            done, pending = await asyncio.wait([policy_task], timeout=5.0)
+                            if not done:
+                                yield ": heartbeat\n\n"
                         policy = await policy_task
                         print(f"[EDF Policy] Evaluated pedagogical policy: {policy}")
                     
@@ -1005,18 +1009,27 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
                         }
                     ]
 
-                    response = await client.chat.completions.create(
-                        model=target_model_name,
-                        messages=chat_req.messages,
-                        stream=True,
-                        max_tokens=effective_max_tokens,
-                        temperature=chat_req.temperature if chat_req.temperature > 0 else 0.001,
-                        top_p=chat_req.top_p,
-                        extra_body=extra_body,
-                        tools=tools,
-                        # 'auto' lets model choose; combined with system prompt this prevents tool-only responses
-                        tool_choice="auto"
+                    gen_task = asyncio.create_task(
+                        client.chat.completions.create(
+                            model=target_model_name,
+                            messages=chat_req.messages,
+                            stream=True,
+                            max_tokens=effective_max_tokens,
+                            temperature=chat_req.temperature if chat_req.temperature > 0 else 0.001,
+                            top_p=chat_req.top_p,
+                            extra_body=extra_body,
+                            tools=tools,
+                            # 'auto' lets model choose; combined with system prompt this prevents tool-only responses
+                            tool_choice="auto"
+                        )
                     )
+                    
+                    while not gen_task.done():
+                        done, pending = await asyncio.wait([gen_task], timeout=5.0)
+                        if not done:
+                            yield ": heartbeat\n\n"
+                            
+                    response = await gen_task
                     
                     answer_content_accumulator = ""
                     inside_reasoning = False

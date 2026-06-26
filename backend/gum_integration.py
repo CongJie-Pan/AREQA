@@ -53,6 +53,7 @@ async def init_gum_instance():
         data_directory=data_dir,
         db_name="gum.db",
         api_key=api_key,
+        api_base="https://openrouter.ai/api/v1",
         min_batch_size=1, # Setting to 1 to see immediate results for QA
         max_batch_size=10,
     )
