@@ -214,8 +214,8 @@ class OrchestrationService:
             
         # Fast intent check to quickly reject out-of-domain queries (like math)
         # without triggering RAG or EDF.
-        prompt = f"""請判斷以下使用者的提問是否屬於「古典文學」、「國學知識」或「紅樓夢」的範疇。
-如果是，回覆 "YES"。如果完全無關（例如純數學計算、寫程式、現代科技、閒聊等），回覆 "NO"。
+        prompt = f"""請判斷以下使用者的提問是否屬於「古典文學」、「國學知識」、「紅樓夢」的範疇，或是「一般性的對話/請求協助」（例如：好、我需要協助、請幫我整理、繼續等）。
+如果是以上任一情況，請回覆 "YES"。如果明顯且完全無關（例如純數學計算、寫程式、物理化學、現代科技等專業無關領域），才回覆 "NO"。
 使用者的提問：{query}"""
         try:
             start = time.time()
