@@ -592,15 +592,15 @@ git commit -m "feat: replace in-memory _rag_cache dict with Redis RagCacheServic
 
 | Gate | 說明 | AI 測試 | UI 驗證 | Commit | 狀態 |
 |---|---|---|---|---|---|
-| 0A | 建立 `config.py` | ⬜ | — | ⬜ | ⏳ 待開始 |
-| 0B | 提升 `PROJECT_ROOT` | ⬜ | — | ⬜ | 🔒 |
-| 1A | OrchestrationService 骨架 | ⬜ | ⬜ | ⬜ | 🔒 |
-| 1B | 接線 `stream_endpoint` | ⬜ | ⬜ | ⬜ | 🔒 |
-| 2A | ConnectionManager + WS | ⬜ | — | ⬜ | 🔒 |
-| 2B | Scheduler 整合廣播 | ⬜ | — | ⬜ | 🔒 |
-| 2C | `useProactiveWebSocket` | ⬜ | — | ⬜ | 🔒 |
-| 2D | 切換 ProactiveManager | ⬜ | ⬜ | ⬜ | 🔒 |
-| 3A | Redis Cache Service | ⬜ | ⬜（選做）| ⬜ | 🔒 |
+| 0A | 建立 `config.py` | ✅ | — | ✅ | ✅ 完成 |
+| 0B | 提升 `PROJECT_ROOT` | ✅ | — | ✅ | ✅ 完成 |
+| 1A | OrchestrationService 骨架 | ✅ | ✅ | ✅ | ✅ 完成 |
+| 1B | 接線 `stream_endpoint` | ✅ | ✅ | ✅ | ✅ 完成 |
+| 2A | ConnectionManager + WS | ✅ | — | ✅ | ✅ 完成 |
+| 2B | Scheduler 整合廣播 | ✅ | — | ✅ | ✅ 完成 |
+| 2C | `useProactiveWebSocket` | ✅ | — | ✅ | ✅ 完成 |
+| 2D | 切換 ProactiveManager | ✅ | ✅ | ✅ | ✅ 完成 |
+| 3A | Redis Cache Service | ✅ | ✅（選做）| ✅ | ✅ 完成 |
 
 > **圖例**：✅ 完成 ｜ ❌ 失敗 ｜ ⬜ 待執行 ｜ 🔒 前置 Gate 未完成 ｜ — 不需要
 
