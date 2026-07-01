@@ -619,7 +619,7 @@ async def proactive_check_endpoint(user_id: str = "default_user"):
             return {"has_alert": True, "content": alert_content}
     return {"has_alert": False}
 
-from backend.services.connection_manager import ws_manager
+from services.connection_manager import ws_manager
 
 @app.websocket("/api/v1/ws/notifications")
 async def ws_notifications(websocket: WebSocket, user_id: str = "default_user"):

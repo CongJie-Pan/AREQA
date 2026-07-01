@@ -135,7 +135,7 @@ class OrchestrationService:
             
         if last_user_msg:
             print(f"[EDF-LOG] streaming endpoint received message, evaluating student state asynchronously...")
-            from backend.services.compeer_scheduler import user_flag, last_interaction_time
+            from services.compeer_scheduler import user_flag, last_interaction_time
             user_flag["default_user"] = True
             last_interaction_time["default_user"] = time.time()
             asyncio.create_task(push_observation(f"User asked: {last_user_msg}"))
@@ -153,7 +153,7 @@ class OrchestrationService:
 
         rag_queries = []
         if use_rag and self.rag and last_user_msg:
-            from backend.main import get_query_fingerprint, _rag_cache
+            from main import get_query_fingerprint, _rag_cache
             fingerprint = get_query_fingerprint(last_user_msg)
             if fingerprint not in _rag_cache:
                 rag_queries = await parse_and_decompose_query(last_user_msg, self.client)
@@ -237,7 +237,7 @@ class OrchestrationService:
 
 
     async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
-        from backend.main import get_query_fingerprint, _rag_cache, RAG_CACHE_SIZE, _thread_pool
+        from main import get_query_fingerprint, _rag_cache, RAG_CACHE_SIZE, _thread_pool
         fingerprint = get_query_fingerprint(last_user_msg)
         context_results_obj = None
         
