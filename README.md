@@ -8,13 +8,20 @@
 
 ## 當前系統架構圖
 
+> **最後更新**：2026-07-01（系統架構重構完成，涵蓋 Gate 0A → 3A 全部改動）
+
 ### 路徑 A：對話生成路徑 (Chat Path)
 > 實際端點：`POST /api/v1/stream`
 
 ```mermaid
 flowchart TD
     subgraph FE_A ["🖥️ Frontend"]
-        UI_Chat["Chat UI\nChatContainer / MessageList / ChatInput"]
+        UI_Chat["Chat UI\nChatContainer / MessageList / ChatInput\nThinkingPanel / Citations / SuggestedQuestions"]
+    end
+
+    subgraph INFRA ["🏗️ Infrastructure"]
+        Config["config.py\n集中式設定\n模型名稱 / RAG 參數 / Redis URL"]
+        RedisCache["RagCacheService\ncache_service.py\nRedis TTL=1hr"]
     end
 
     subgraph MEM ["📦 Memory 模塊（共用）"]
@@ -24,25 +31,30 @@ flowchart TD
     end
 
     subgraph API_A ["⚡ POST /api/v1/stream  ·  main.py"]
-        Step1["① Router LLM\n域外問題過濾\nrouter_service.py"]
-        Step2["② HyDE 查詢分解 LLM\nparse_and_decompose_query"]
-        Step3["③ Policy Classifier LLM\nclassify_dialogue_policy"]
-        Step4["④ System Prompt 組裝\n注入 working_memory + retrieved_memory"]
-        Step5["⑤ 主 LLM 生成\nqwen3-235b / OpenRouter"]
-        Step1 --> Step2 --> Step3 --> Step4 --> Step5
+        Orchestrator["OrchestrationService\norchestration_service.py"]
+
+        subgraph ORCH_NODES ["7個節點 (Nodes)"]
+            N1["① Fast Domain Check LLM\n快速域外過濾 (< 1s)"]
+            N2["② HyDE 查詢分解 LLM\nparse_and_decompose_query"]
+            N3["③ Policy Classifier LLM\nclassify_dialogue_policy\n(EDF 教學策略)"]
+            N4["④ RAG Retrieval\nFAISS + BM25 + RRF\n+ Reranker + 注意力重排"]
+            N5["⑤ System Prompt 組裝\n注入 working_memory\n+ retrieved_memory + context"]
+            N6["⑥ 主 LLM 串流生成\nqwen3-235b / OpenRouter"]
+            N7["⑦ Post-generation\nSuggestion / EDF 狀態更新"]
+            N1 --> N2 --> N3 --> N4 --> N5 --> N6 --> N7
+        end
     end
 
-    subgraph RAG_A ["RAG 模塊"]
-        RAG_S["RAG Service\nFAISS + BM25\nrag_service.py"]
-    end
-
-    UI_Chat -->|"發送提問"| Step1
-    Step2 -->|"use_rag=true"| RAG_S
-    RAG_S -->|"注入 context"| Step4
-    HotMem -->|"讀取 working_memory"| Step4
-    ColdMem -->|"語義搜尋 retrieved_memory"| Step4
-    Step5 -->|"串流回傳 SSE"| UI_Chat
-    Step5 -.->|"對話結束後寫入"| ColdMem
+    UI_Chat -->|"① 發送提問"| Orchestrator
+    Orchestrator --- ORCH_NODES
+    N2 -->|"cache miss: 呼叫 RAG"| RedisCache
+    RedisCache -->|"cache hit: 直接返回"| N5
+    N4 -->|"寫入快取"| RedisCache
+    HotMem -->|"讀取 working_memory"| N5
+    ColdMem -->|"語義搜尋 retrieved_memory"| N5
+    N6 -->|"串流回傳 SSE"| UI_Chat
+    N7 -.->|"對話結束後寫入"| ColdMem
+    Config -.->|"提供模型名稱 / RAG 閾值"| ORCH_NODES
 ```
 
 ---
@@ -55,22 +67,23 @@ flowchart TD
         direction LR
         Tracker["Behavior Tracker\nScroll ✅ 已實作 / Dwell ⏳ 待實作"]
         State["Zustand / Dexie\nstore/chat/store.ts + database/db.ts"]
-        UI_Hint["Proactive UI\n主動關懷小燈泡"]
+        WSHook["useProactiveWebSocket Hook\nhooks/useProactiveWebSocket.ts\n指數退避自動重連"]
+        UI_Hint["Proactive UI\n主動關懷小燈泡\n(AutoReject 20s)"]
     end
 
     subgraph MEM_B ["📦 Memory 模塊（共用）"]
         direction LR
-        HotMem_B["短期熱記憶\nhot_memory.json\nmemory_store.py\n（scroll 日誌 + pending_alert）"]
-        ColdMem_B["長期冷記憶\ngum.db\ngum_integration.py\n（非 scroll 互動語義化）"]
+        HotMem_B["短期熱記憶\nhot_memory.json\nmemory_store.py\n(scroll 日誌 + pending_alert)"]
+        ColdMem_B["長期冷記憶\ngum.db\ngum_integration.py\n(非 scroll 互動語義化)"]
     end
 
     subgraph API_B ["⚡ FastAPI · main.py"]
         LogAPI["POST /api/v1/log_action\nscroll → HotMem\n其他互動 → ColdMem"]
-        ProactiveAPI["GET /api/v1/proactive-check\n讀取並清除 pending_alert"]
+        WSEndpoint["WebSocket /api/v1/ws/notifications\nConnectionManager\nconnection_manager.py"]
     end
 
     subgraph COMPEER ["ComPeer 模塊 · compeer_scheduler.py"]
-        ProLoop["proactive_scheduler_loop\n每 10 秒\nscroll ≥ 6 → 寫入 Alert"]
+        ProLoop["proactive_scheduler_loop\n每 10 秒\nscroll ≥ 6 + 閒置 60s → 觸發"]
         DailyLoop["daily_scheduler_loop\n每日 23:59\n反思 → 生成隔日排程"]
     end
 
@@ -78,9 +91,10 @@ flowchart TD
     LogAPI -->|"scroll 寫入"| HotMem_B
     LogAPI -->|"其他互動寫入"| ColdMem_B
     HotMem_B -.->|"② 監聽 scroll 累積"| ProLoop
-    ProLoop -->|"③ scroll ≥ 6 → 寫入 Alert"| HotMem_B
+    ProLoop -->|"③ 條件滿足 → 寫入 Alert"| HotMem_B
+    ProLoop -->|"④ 即時 WebSocket 推播"| WSEndpoint
     DailyLoop -->|"反思後寫入排程"| HotMem_B
-    State -->|"④ 每 30 秒輪詢"| ProactiveAPI
-    ProactiveAPI -->|"⑤ 讀取並清除 Alert"| HotMem_B
-    ProactiveAPI -->|"⑥ 觸發顯示"| UI_Hint
+    State -->|"頁面載入時建立連線"| WSHook
+    WSHook <-->|"⑤ 持久 WS 連線 (101)"| WSEndpoint
+    WSEndpoint -->|"⑥ 收到推播 → 觸發顯示"| UI_Hint
 ```
