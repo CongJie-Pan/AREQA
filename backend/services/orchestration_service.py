@@ -209,9 +209,31 @@ class OrchestrationService:
 
 
     async def _node_intent_routing(self, query: str) -> AsyncGenerator[str, None]:
-        # User requested to bypass the LLM router function
-        return
-        yield
+        if not query or not self.client:
+            return
+            
+        # Fast intent check to quickly reject out-of-domain queries (like math)
+        # without triggering RAG or EDF.
+        prompt = f"""請判斷以下使用者的提問是否屬於「古典文學」、「國學知識」或「紅樓夢」的範疇。
+如果是，回覆 "YES"。如果完全無關（例如純數學計算、寫程式、現代科技、閒聊等），回覆 "NO"。
+使用者的提問：{query}"""
+        try:
+            start = time.time()
+            rsp = await self.client.chat.completions.create(
+                model="qwen/qwen3-30b-a3b-instruct-2507",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=5,
+                temperature=0.1
+            )
+            ans = rsp.choices[0].message.content.strip().upper()
+            print(f"[Router API] Fast domain check took {time.time() - start:.2f}s, result: {ans}")
+            if "NO" in ans:
+                refusal = "這是與古典文學無關的領域呢，小紅只熟悉《紅樓夢》與國學知識，不在我的範疇內。歡迎詢問古典文學相關問題 😊"
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': refusal}, 'index': 0, 'finish_reason': 'stop'}]}, ensure_ascii=False)}\n\n"
+                yield "event: REFUSED\n\n"
+        except Exception as e:
+            print(f"[Router API] Error: {e}")
+            pass
 
 
     async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
