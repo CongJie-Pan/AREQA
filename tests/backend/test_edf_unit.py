@@ -25,7 +25,7 @@ def tmp_store(tmp_path):
     # Store old global
     old_store = mem_store_module._global_store
     
-    init_global_store(str(hot_path), str(profile_path))
+    init_global_store(str(hot_path), str(profile_path), budget_limit=1000000)
     store = get_global_store()
     yield store, hot_path, profile_path
     

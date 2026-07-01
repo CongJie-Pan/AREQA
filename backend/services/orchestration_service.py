@@ -209,23 +209,9 @@ class OrchestrationService:
 
 
     async def _node_intent_routing(self, query: str) -> AsyncGenerator[str, None]:
-        if not query or not self.router:
-            return
-            
-        yield f"event: status\ndata: {json.dumps({'status': 'routing', 'message': ''}, ensure_ascii=False)}\n\n"
-        
-        router_task = asyncio.create_task(self.router.check_query_intent(query))
-        while not router_task.done():
-            done, pending = await asyncio.wait([router_task], timeout=1.5)
-            if not done:
-                yield ": heartbeat\n\n"
-        
-        intent_result = await router_task
-        if intent_result.get("action") == "DENY":
-            yield f"event: status\ndata: {json.dumps({'status': 'refused', 'message': '❌ 非相關領域問題'}, ensure_ascii=False)}\n\n"
-            refusal = intent_result.get("refusal_message") or "小紅目前僅能回答關於《紅樓夢》與國學相關的問題，請換個問題試試看喔！"
-            yield f"data: {json.dumps({'choices': [{'delta': {'content': refusal}, 'index': 0, 'finish_reason': 'stop'}]}, ensure_ascii=False)}\n\n"
-            yield "event: REFUSED\n\n"
+        # User requested to bypass the LLM router function
+        return
+        yield
 
 
     async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
@@ -334,7 +320,7 @@ class OrchestrationService:
             if hot_snapshot:
                 final_system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
                 
-            cold_memory_ctx = await query_cold_memory_for_context(last_user_msg, top_k=5)
+            cold_memory_ctx = await query_cold_memory_for_context(last_user_msg, top_k=5, client=self.client, model="qwen/qwen3-30b-a3b-instruct-2507")
             if cold_memory_ctx:
                 final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
                 
@@ -378,32 +364,33 @@ class OrchestrationService:
             }
         }]
         
-        gen_task = asyncio.create_task(
-            self.client.chat.completions.create(
-                model=target_model_name,
-                messages=messages,
-                stream=True,
-                max_tokens=max_tokens,
-                temperature=temperature if temperature > 0 else 0.001,
-                top_p=top_p,
-                extra_body=extra_body,
-                tools=tools,
-                tool_choice="auto"
-            )
-        )
-        
-        while not gen_task.done():
-            done, pending = await asyncio.wait([gen_task], timeout=5.0)
-            if not done:
-                yield ": heartbeat\n\n"
-                
-        response = await gen_task
         answer_content_accumulator = ""
         inside_reasoning = False
         tool_call_name = ""
         tool_call_args = ""
         
         try:
+            gen_task = asyncio.create_task(
+                self.client.chat.completions.create(
+                    model=target_model_name,
+                    messages=messages,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    temperature=temperature if temperature > 0 else 0.001,
+                    top_p=top_p,
+                    extra_body=extra_body,
+                    tools=tools,
+                    tool_choice="auto"
+                )
+            )
+            
+            while not gen_task.done():
+                done, pending = await asyncio.wait([gen_task], timeout=5.0)
+                if not done:
+                    yield ": heartbeat\n\n"
+                    
+            response = await gen_task
+            
             async for chunk in response:
                 if await request.is_disconnected():
                     break

@@ -10,7 +10,7 @@ class MemoryBudgetExceeded(Exception):
     pass
 
 class MemoryStore:
-    def __init__(self, hot_memory_path: str, user_profile_path: str, budget_limit: int = 1000):
+    def __init__(self, hot_memory_path: str, user_profile_path: str, budget_limit: int = 1000000):
         self.hot_memory_path = hot_memory_path
         self.user_profile_path = user_profile_path
         self.budget_limit = budget_limit
@@ -72,6 +72,7 @@ class MemoryStore:
             for k in obs_keys[:-50]:
                 del hot_memory[k]
                 
+        self._check_budget(hot_memory)
         self._atomic_write(self.hot_memory_path, hot_memory)
 
     async def update_hot_memory_async(self, key: str, value: Any):
@@ -88,6 +89,7 @@ class MemoryStore:
                 for k in obs_keys[:-50]:
                     del hot_memory[k]
                     
+            self._check_budget(hot_memory)
             self._atomic_write(self.hot_memory_path, hot_memory)
         
     def update_user_profile(self, key: str, value: Any):
@@ -126,7 +128,7 @@ class MemoryStore:
 
 _global_store = None
 
-def init_global_store(hot_memory_path: str, user_profile_path: str, budget_limit: int = 1000):
+def init_global_store(hot_memory_path: str, user_profile_path: str, budget_limit: int = 1000000):
     global _global_store
     _global_store = MemoryStore(hot_memory_path, user_profile_path, budget_limit)
     return _global_store

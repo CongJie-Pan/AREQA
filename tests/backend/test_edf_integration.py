@@ -137,7 +137,7 @@ async def test_stream_missing_api_key_graceful_degradation(tmp_store):
         del os.environ["OPENROUTER_API_KEY"]
         
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        async with ac.stream("POST", "/api/v1/stream", json={"messages": [{"role": "user", "content": "Help"}], "stream": True}) as response:
+        async with ac.stream("POST", "/api/v1/stream", json={"messages": [{"role": "user", "content": "王熙鳳是誰"}], "stream": True}) as response:
             assert response.status_code == 200
             content = await response.aread()
             content_str = content.decode("utf-8")
@@ -152,11 +152,13 @@ async def test_stream_graceful_fallback_without_unbound_full_content(mock_openai
     os.environ["OPENROUTER_API_KEY"] = "dummy"
     mock_client = MagicMock()
     # Mock chat completion to raise an exception
-    mock_client.chat.completions.create.side_effect = Exception("Mocked API Timeout Error")
+    async def side_effect(*args, **kwargs):
+        raise Exception("Mocked API Timeout Error")
+    mock_client.chat.completions.create = AsyncMock(side_effect=side_effect)
     mock_openai.return_value = mock_client
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        async with ac.stream("POST", "/api/v1/stream", json={"messages": [{"role": "user", "content": "Hello"}], "stream": True}) as response:
+        async with ac.stream("POST", "/api/v1/stream", json={"messages": [{"role": "user", "content": "王熙鳳是誰"}], "stream": True}) as response:
             assert response.status_code == 200
             content = await response.aread()
             content_str = content.decode("utf-8")
@@ -173,14 +175,28 @@ async def test_user_flag_reset_on_message(mock_openai, tmp_store):
     compeer.user_flag["default_user"] = False
     
     mock_client = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.choices = [MagicMock()]
-    mock_resp.choices[0].delta.content = "Test stream chunk"
-    mock_client.chat.completions.create.return_value = [mock_resp]
+    
+    async def side_effect(*args, **kwargs):
+        if kwargs.get("stream"):
+            # Return async generator for stream
+            mock_resp = MagicMock()
+            mock_resp.choices = [MagicMock()]
+            mock_resp.choices[0].delta.content = "Test stream chunk"
+            async def mock_stream():
+                yield mock_resp
+            return mock_stream()
+        else:
+            # Return normal mock response
+            mock_resp = MagicMock()
+            mock_resp.choices = [MagicMock()]
+            mock_resp.choices[0].message.content = "{\"state\": \"test\"}"
+            return mock_resp
+            
+    mock_client.chat.completions.create = AsyncMock(side_effect=side_effect)
     mock_openai.return_value = mock_client
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        async with ac.stream("POST", "/api/v1/stream", json={"messages": [{"role": "user", "content": "Hello"}], "stream": True}) as response:
+        async with ac.stream("POST", "/api/v1/stream", json={"messages": [{"role": "user", "content": "王熙鳳是誰"}], "stream": True}) as response:
             assert response.status_code == 200
             
     # Allow background tasks to run briefly so the flag is updated

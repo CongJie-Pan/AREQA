@@ -218,7 +218,7 @@ async def test_sqlite_vec_pipeline(tmp_path, monkeypatch):
     
     # Create tables and insert mock data
     with retriever._get_conn() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS propositions (id INTEGER PRIMARY KEY, text TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS propositions (id INTEGER PRIMARY KEY, text TEXT, status TEXT DEFAULT 'active')")
         conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS propositions_fts USING fts5(text, content='propositions', content_rowid='id')")
         
         conn.execute("INSERT INTO propositions (id, text) VALUES (1, '王熙鳳的判詞是凡鳥偏從末世來')")
@@ -244,7 +244,7 @@ async def test_sqlite_vec_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(retriever, 'get_embedding', mock_get_embedding_fail)
     
     with retriever._get_conn() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS propositions (id INTEGER PRIMARY KEY, text TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS propositions (id INTEGER PRIMARY KEY, text TEXT, status TEXT DEFAULT 'active')")
         conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS propositions_fts USING fts5(text, content='propositions', content_rowid='id')")
         
         conn.execute("INSERT INTO propositions (id, text) VALUES (1, '王熙鳳 判詞 凡鳥')")

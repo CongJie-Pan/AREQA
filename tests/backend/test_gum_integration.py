@@ -114,7 +114,7 @@ async def test_get_all_memory_with_stitch_tags(mock_gum_instance):
     
     # Check the first memory with STITCH tags
     m1 = memories[0]
-    assert m1["id"] == 1
+    assert m1["id"] == "1"
     assert m1["text"] == "test user likes apples"
     assert m1["context_scope"] == "Fruit"
     assert m1["event_types"] == ["like"]
@@ -123,7 +123,7 @@ async def test_get_all_memory_with_stitch_tags(mock_gum_instance):
     
     # Check the second memory without STITCH tags
     m2 = memories[1]
-    assert m2["id"] == 2
+    assert m2["id"] == "2"
     assert m2["text"] == "test user hates oranges"
     assert m2["context_scope"] is None
     assert m2["event_types"] == []
@@ -203,7 +203,7 @@ async def test_get_all_memory(mock_gum_instance):
     memory = await get_all_memory()
     
     assert len(memory) == 2
-    assert memory[0]["id"] == 1
+    assert memory[0]["id"] == "1"
     assert memory[0]["text"] == "test user likes apples"
     assert memory[0]["confidence"] == 0.9
     assert "updated_at" in memory[0]

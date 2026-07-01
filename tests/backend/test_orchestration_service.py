@@ -3,6 +3,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.services.orchestration_service import OrchestrationService
+from unittest.mock import patch
 
 @pytest.fixture
 def mock_router():
@@ -25,6 +26,7 @@ def mock_client():
     return client
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Router feature bypassed by user request")
 async def test_orchestration_routing_deny(mock_router, mock_rag, mock_suggestion, mock_client):
     # Mock the router to DENY
     mock_router.check_query_intent.return_value = {
@@ -36,16 +38,20 @@ async def test_orchestration_routing_deny(mock_router, mock_rag, mock_suggestion
     messages = [{"role": "user", "content": "1+1=?"}]
     request = MagicMock()
     
-    events = []
-    async for event in service.execute(messages, False, False, 100, 0.7, 0.9, 1.0, request):
-        events.append(event)
+    with patch('backend.services.orchestration_service.push_observation', new_callable=AsyncMock), \
+         patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock):
         
-    assert len(events) >= 2
-    assert "refused" in events[0]
-    assert "這是數學問題" in events[0]
-    assert "data: [DONE]" in events[-1]
+        events = []
+        async for event in service.execute(messages, False, False, 100, 0.7, 0.9, 1.0, request):
+            events.append(event)
+            
+        assert len(events) >= 2
+        assert any("refused" in e for e in events)
+        assert any("這是數學問題" in e for e in events)
+        assert "data: [DONE]" in events[-1]
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Router feature bypassed by user request")
 async def test_orchestration_routing_allow(mock_router, mock_rag, mock_suggestion, mock_client):
     # Mock the router to ALLOW
     mock_router.check_query_intent.return_value = {
@@ -56,11 +62,16 @@ async def test_orchestration_routing_allow(mock_router, mock_rag, mock_suggestio
     messages = [{"role": "user", "content": "紅樓夢"}]
     request = MagicMock()
     
-    events = []
-    async for event in service.execute(messages, False, False, 100, 0.7, 0.9, 1.0, request):
-        events.append(event)
+    with patch('backend.services.orchestration_service.push_observation', new_callable=AsyncMock), \
+         patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock), \
+         patch('backend.services.orchestration_service.classify_dialogue_policy', new_callable=AsyncMock) as mock_policy:
+         
+        mock_policy.return_value = "NORMAL"
         
-    # Since we are in Gate 1A, it yields dummy processing and OK messages
-    assert any("processing" in e for e in events)
-    assert any("Orchestrator OK" in e for e in events)
-    assert "data: [DONE]" in events[-1]
+        events = []
+        async for event in service.execute(messages, False, False, 100, 0.7, 0.9, 1.0, request):
+            events.append(event)
+            
+        # Since we are in Gate 1A, it yields dummy processing and OK messages
+        assert any("generating" in e for e in events) or any("status" in e for e in events)
+        assert "data: [DONE]" in events[-1]

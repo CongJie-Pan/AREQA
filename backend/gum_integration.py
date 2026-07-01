@@ -199,7 +199,7 @@ async def batch_process_observations(items: list[str]):
                 import json
                 import re
                 content = rsp.choices[0].message.content.strip()
-                match = re.search(r'\\{.*\\}', content, re.DOTALL)
+                match = re.search(r'\{.*\}', content, re.DOTALL)
                 if match:
                     content = match.group(0)
                 decision = json.loads(content)
@@ -228,9 +228,11 @@ async def batch_process_observations(items: list[str]):
         from memory_store import get_global_store
         store = get_global_store()
         if store:
+            import uuid
             for item in items:
-                # Add to hot memory with timestamp
-                store.update_hot_memory(f"obs_{datetime.now().timestamp()}", {"text": item, "confidence": 8.0, "decay": 5.0, "timestamp": datetime.now().timestamp()})
+                # Add to hot memory with timestamp and uuid to prevent overwriting
+                key = f"obs_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
+                store.update_hot_memory(key, {"text": item, "confidence": 8.0, "decay": 5.0, "timestamp": datetime.now().timestamp()})
     except Exception as e:
         # Expected if budget exceeded, handled below
         pass
@@ -527,7 +529,7 @@ Return ONLY the refined query string without any quotes or explanations."""
         print(f"[ZPD Query Gen] Error: {e}")
         return original_query
 
-async def query_cold_memory_for_context(query: str, top_k: int = 5) -> str:
+async def query_cold_memory_for_context(query: str, top_k: int = 5, client=None, model=None) -> str:
     from cold_memory import ColdMemoryRetriever
     from memory_store import get_global_store
     import os
@@ -542,7 +544,13 @@ async def query_cold_memory_for_context(query: str, top_k: int = 5) -> str:
         store = get_global_store()
         learner_state = store.get_learner_state() if store else "STARTING"
         
-        zpd_query = await generate_zpd_query_via_llm(gum_instance.client, gum_instance.model, query, learner_state)
+        c = client if client else (gum_instance.client if gum_instance else None)
+        m = model if model else (gum_instance.model if gum_instance else "qwen/qwen-turbo")
+        if not c:
+            from openai import AsyncOpenAI
+            c = AsyncOpenAI(api_key=api_key)
+            
+        zpd_query = await generate_zpd_query_via_llm(c, m, query, learner_state)
         
         cold_retriever = ColdMemoryRetriever(db_path, api_key)
         results = await cold_retriever.search(zpd_query, top_k)

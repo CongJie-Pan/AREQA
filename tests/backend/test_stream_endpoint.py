@@ -91,6 +91,7 @@ async def test_sse_streaming_sequence_with_rag():
                 assert "data: [DONE]" in content
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Router feature bypassed by user request")
 async def test_gatekeeper_rejection():
     # Test that the Gatekeeper correctly rejects OOD queries in the stream endpoint
     with patch('backend.main.router_service') as mock_router, \

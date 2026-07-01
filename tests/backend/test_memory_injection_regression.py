@@ -127,7 +127,9 @@ class TestQueryColdMemoryForContext:
         ]
 
         import backend.gum_integration as gi
-        with patch("cold_memory.ColdMemoryRetriever") as MockCRM:
+        gi.gum_instance = MagicMock()
+        with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
+             patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="王熙鳳的判詞是什麼？"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(return_value=mock_results)
             result = await gi.query_cold_memory_for_context("王熙鳳的判詞是什麼？", top_k=3)
@@ -135,32 +137,39 @@ class TestQueryColdMemoryForContext:
         assert "長尾記憶" in result
         assert "王熙鳳" in result
         assert "凡鳥偏從末世來" in result
+        gi.gum_instance = None
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_cold_memory_miss(self, monkeypatch):
-        """When search returns no results, must return '' (not a header with no content)."""
+        """Returns empty string when no search results found."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-dummy")
 
         import backend.gum_integration as gi
-        with patch("cold_memory.ColdMemoryRetriever") as MockCRM:
+        gi.gum_instance = MagicMock()
+        with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
+             patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="林黛玉"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(return_value=[])
-            result = await gi.query_cold_memory_for_context("完全不存在的問題")
+            result = await gi.query_cold_memory_for_context("林黛玉是誰", top_k=3)
 
         assert result == ""
+        gi.gum_instance = None
 
     @pytest.mark.asyncio
     async def test_graceful_degradation_on_retriever_error(self, monkeypatch):
-        """If retriever raises exception, must return '' — never crash the chat API."""
+        """If ColdMemoryRetriever throws an exception, system degrades gracefully."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-dummy")
 
         import backend.gum_integration as gi
-        with patch("cold_memory.ColdMemoryRetriever") as MockCRM:
+        gi.gum_instance = MagicMock()
+        with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
+             patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="Error query"):
             mock_instance = MockCRM.return_value
-            mock_instance.search = AsyncMock(side_effect=ConnectionError("sqlite-vec unavailable"))
-            result = await gi.query_cold_memory_for_context("任何問題")
+            mock_instance.search = AsyncMock(side_effect=Exception("Database locked"))
+            result = await gi.query_cold_memory_for_context("引發錯誤的查詢")
 
         assert result == ""
+        gi.gum_instance = None
 
 
 # ---------------------------------------------------------------------------
