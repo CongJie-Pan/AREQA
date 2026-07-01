@@ -41,6 +41,8 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 # Try loading from the unified global .env file in the project root
 # Support both .env and .env.local
 for env_name in [".env", ".env.local"]:
@@ -112,10 +114,9 @@ try:
     from pathlib import Path
     
     # In the new structure, backend/main.py is one level down from project root
-    project_root = Path(__file__).resolve().parents[1]
     
     # Add the src/main/python folder to sys.path to resolve internal service imports
-    src_python_dir = project_root / "src" / "main" / "python"
+    src_python_dir = PROJECT_ROOT / "src" / "main" / "python"
     if str(src_python_dir) not in sys.path:
         sys.path.insert(0, str(src_python_dir))
         
@@ -123,8 +124,8 @@ try:
     from services.router_service import RouterService
     from services.suggestion_service import SuggestionService
     
-    faiss_dir = project_root / "data" / "rag" / "faiss_index"
-    bm25_dir = project_root / "data" / "rag" / "bm25_index"
+    faiss_dir = PROJECT_ROOT / "data" / "rag" / "faiss_index"
+    bm25_dir = PROJECT_ROOT / "data" / "rag" / "bm25_index"
     
     def get_latest_file(directory: Path, pattern: str) -> str:
         if not directory.exists():
@@ -230,8 +231,8 @@ async def startup_event():
     from memory_store import init_global_store
     
     # Init store
-    hot_path = project_root / "data" / "gum_data" / "hot_memory.json"
-    profile_path = project_root / "data" / "gum_data" / "user_profile.json"
+    hot_path = PROJECT_ROOT / "data" / "gum_data" / "hot_memory.json"
+    profile_path = PROJECT_ROOT / "data" / "gum_data" / "user_profile.json"
     store = init_global_store(str(hot_path), str(profile_path))
     store.clear_all_pending_alerts()
     print("Memory Store initialized successfully.")
@@ -240,7 +241,7 @@ async def startup_event():
     
     # Start ComPeer Scheduler
     import sys
-    sys.path.append(str(project_root / "backend" / "services"))
+    sys.path.append(str(PROJECT_ROOT / "backend" / "services"))
     from services.compeer_scheduler import proactive_scheduler_loop, daily_scheduler_loop
     app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
     app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
@@ -1200,8 +1201,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             
             # Append chat to JSONL
             try:
-                from pathlib import Path
-                log_path = Path(__file__).resolve().parents[1] / "data" / "gum_data" / "reflection_log_default_user.jsonl"
+                log_path = PROJECT_ROOT / "data" / "gum_data" / "reflection_log_default_user.jsonl"
                 
                 with open(log_path, "a", encoding="utf-8") as f:
                     if last_user_msg:
