@@ -35,7 +35,9 @@ async def test_sse_streaming_sequence_with_rag():
     with patch('backend.main.rag_service') as mock_rag, \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service') as mock_suggestion, \
-         patch('backend.main.parse_and_decompose_query') as mock_expand, \
+         patch('backend.services.orchestration_service.parse_and_decompose_query', new_callable=AsyncMock) as mock_expand, \
+         patch('backend.services.orchestration_service.classify_dialogue_policy', new_callable=AsyncMock) as mock_policy, \
+         patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock) as mock_eval, \
          patch('backend.main.HF_ENDPOINT_URL', 'http://mock-url'), \
          patch('backend.main.HF_TOKEN', 'mock-token'):
         
@@ -91,7 +93,9 @@ async def test_sse_streaming_sequence_with_rag():
 @pytest.mark.asyncio
 async def test_gatekeeper_rejection():
     # Test that the Gatekeeper correctly rejects OOD queries in the stream endpoint
-    with patch('backend.main.router_service') as mock_router:
+    with patch('backend.main.router_service') as mock_router, \
+         patch('backend.services.orchestration_service.classify_dialogue_policy', new_callable=AsyncMock) as mock_policy, \
+         patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock) as mock_eval:
         refusal_msg = "這是數學領域的問題呢..."
         mock_router.check_query_intent = AsyncMock(return_value={
             "action": "DENY", 
@@ -128,7 +132,11 @@ async def test_force_think_strips_think_tags_with_spaces():
     with patch('backend.main.rag_service', None), \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service', None), \
+         patch('backend.services.orchestration_service.classify_dialogue_policy', new_callable=AsyncMock) as mock_policy, \
+         patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock) as mock_eval, \
          patch.dict('os.environ', {'OPENROUTER_API_KEY': 'mock-token'}):
+        
+        mock_policy.return_value = "NORMAL"
         
         # Mock Router to ALLOW
         mock_router.check_query_intent = AsyncMock(return_value={"action": "ALLOW", "domain": None, "refusal_message": None})
@@ -150,6 +158,7 @@ async def test_force_think_strips_think_tags_with_spaces():
                         chunk.choices = [MagicMock()]
                         chunk.choices[0].delta = MagicMock()
                         chunk.choices[0].delta.content = "這裡有< think >被包含的思考文字< /think >還有正式文字"
+                        chunk.choices[0].delta.tool_calls = None
                         chunk.choices[0].delta.reasoning = None
                         chunk.choices[0].delta.reasoning_details = None
                         return chunk
@@ -193,15 +202,18 @@ async def test_rag_score_threshold_refusal():
 
     def mock_retrieve_with_events(query):
         yield {"type": "results", "data": LowScoreMockRagResults()}
-    
+
     with patch('backend.main.rag_service') as mock_rag, \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service', None), \
-         patch('backend.main.parse_and_decompose_query') as mock_expand, \
+         patch('backend.services.orchestration_service.parse_and_decompose_query', new_callable=AsyncMock) as mock_expand, \
+         patch('backend.services.orchestration_service.classify_dialogue_policy', new_callable=AsyncMock) as mock_policy, \
+         patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock) as mock_eval, \
          patch('backend.main.HF_ENDPOINT_URL', 'http://mock-url'), \
          patch('backend.main.HF_TOKEN', 'mock-token'):
         
         mock_expand.return_value = [{"query": "無關", "type": "abstract_concept"}]
+        mock_policy.return_value = "NORMAL"
         mock_rag.retrieve_with_events.side_effect = mock_retrieve_with_events
         mock_rag.score_threshold = 0.0
         
