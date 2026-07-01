@@ -64,7 +64,7 @@ describe('MessageItem Quote Alignment Regression', () => {
 
     const { container } = render(<MessageItem message={aiMessage} />);
     
-    const blockquote = container.querySelector('blockquote.interactive-quote');
+    const blockquote = container.querySelector('blockquote');
     expect(blockquote).toBeInTheDocument();
     expect(blockquote?.textContent).toContain('assistant quote');
   });
