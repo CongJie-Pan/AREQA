@@ -198,6 +198,13 @@ async def proactive_scheduler_loop():
                             
                         # Write back once with both the alert added and the scrolls deleted
                         store._atomic_write(store.hot_memory_path, hot_mem)
+                        
+                        from backend.services.connection_manager import ws_manager
+                        import asyncio
+                        asyncio.create_task(
+                            ws_manager.broadcast_alert("default_user", hot_mem["pending_alert_default_user"])
+                        )
+                        
                         print(f"[EDF-LOG] set_pending_alert: setting alert for user 'default_user' and cleared {len(keys_to_delete)} scrolls.")
                                 
             await asyncio.sleep(10) # Check every 10 seconds for real-time responsiveness

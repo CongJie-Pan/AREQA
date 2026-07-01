@@ -8,7 +8,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -618,6 +618,23 @@ async def proactive_check_endpoint(user_id: str = "default_user"):
             print(f"[EDF-LOG] proactive-check endpoint returning alert: {alert_content}")
             return {"has_alert": True, "content": alert_content}
     return {"has_alert": False}
+
+from backend.services.connection_manager import ws_manager
+
+@app.websocket("/api/v1/ws/notifications")
+async def ws_notifications(websocket: WebSocket, user_id: str = "default_user"):
+    # 手動驗證 Origin（CORSMiddleware 不覆蓋 WebSocket）
+    origin = websocket.headers.get("origin", "")
+    allowed = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    if origin not in allowed:
+        await websocket.close(code=1008)  # Policy Violation
+        return
+    await ws_manager.connect(user_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # 維持連線存活
+    except Exception:
+        ws_manager.disconnect(user_id)
 
 @app.post("/api/v1/stream")
 async def stream_endpoint(request: Request, chat_req: ChatRequest):
