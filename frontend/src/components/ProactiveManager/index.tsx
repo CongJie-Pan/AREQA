@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
 import { App, Button } from 'antd';
 import { BulbOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { useConversationStore } from '@/store/conversation';
@@ -48,54 +49,44 @@ export function ProactiveManager() {
   const lastScrollY = useRef(-1);
 
   // 1. Polling proactive-check
-  useEffect(() => {
-    const timer = setInterval(async () => {
-      try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-        const res = await fetch(`${backendUrl}/api/v1/proactive-check?user_id=default_user`);
-        const data = await res.json();
-        if (data.has_alert && data.content) {
-          const key = `proactive-${Date.now()}`;
+  const handleAlert = useCallback((content: string) => {
+    const key = `proactive-${Date.now()}`;
 
-          const handleAccept = async () => {
-            notification.destroy(key); // Close the notification
-            const { activeConversationId } = useConversationStore.getState();
-            if (activeConversationId) {
-              // Also automatically send a user message asking for help
-              const { sendMessage } = await import('@/services/chat');
-              sendMessage('好，我需要協助，請根據我們目前的討論幫我梳理一下。', activeConversationId);
-            }
-          };
-
-          const handleReject = () => {
-            notification.destroy(key);
-          };
-
-          notification.info({
-            key,
-            title: 'AREQA',
-            message: 'AREQA',
-            description: data.content,
-            icon: <BulbOutlined style={{ color: '#d8a25c' }} />,
-            placement: 'top',
-            duration: 0, // Auto close handled by AutoRejectButton
-            btn: (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <AutoRejectButton onReject={handleReject} durationMs={20000} />
-                <Button type="primary" icon={<CheckOutlined />} onClick={handleAccept}>
-                  需要協助
-                </Button>
-              </div>
-            ),
-          });
-        }
-      } catch (err) {
-        console.error('Proactive check failed:', err);
+    const handleAccept = async () => {
+      notification.destroy(key); // Close the notification
+      const { activeConversationId } = useConversationStore.getState();
+      if (activeConversationId) {
+        // Also automatically send a user message asking for help
+        const { sendMessage } = await import('@/services/chat');
+        sendMessage('好，我需要協助，請根據我們目前的討論幫我梳理一下。', activeConversationId);
       }
-    }, 30000); // 30 seconds
+    };
 
-    return () => clearInterval(timer);
+    const handleReject = () => {
+      notification.destroy(key);
+    };
+
+    notification.info({
+      key,
+      title: 'AREQA',
+      message: 'AREQA',
+      description: content,
+      icon: <BulbOutlined style={{ color: '#d8a25c' }} />,
+      placement: 'top',
+      duration: 0, // Auto close handled by AutoRejectButton
+      btn: (
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <AutoRejectButton onReject={handleReject} durationMs={20000} />
+          <Button type="primary" icon={<CheckOutlined />} onClick={handleAccept}>
+            需要協助
+          </Button>
+        </div>
+      ),
+    });
   }, [notification]);
+
+  // 以 hook 取代 setInterval
+  useProactiveWebSocket(handleAlert);
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {

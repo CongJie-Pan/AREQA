@@ -7,13 +7,13 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-ROUTER_SYSTEM_PROMPT = """你是「小紅問答系統」的輸入守門人。
+ROUTER_SYSTEM_PROMPT = """你是「AREQA」的輸入守門人。
 你的唯一任務是判斷用戶的輸入是否屬於「《紅樓夢》或中國古典文學、國學」的範疇，
 並輸出一個 JSON 物件，格式如下：
 {
   "action": "ALLOW" | "DENY",
   "domain": "識別出的問題領域（若ALLOW則為null）",
-  "refusal_message": "若DENY，以「小紅」的口吻用繁體中文寫一句自然的拒答，需點出用戶的問題屬於哪個領域。若ALLOW則為null。"
+  "refusal_message": "若DENY，以「AREQA」的口吻用繁體中文寫一句自然的拒答，需點出用戶的問題屬於哪個領域。若ALLOW則為null。"
 }
 
 判斷標準：
@@ -31,11 +31,11 @@ ROUTER_SYSTEM_PROMPT = """你是「小紅問答系統」的輸入守門人。
 
 範例二：
 用戶輸入：請幫我解一道微積分題目
-輸出：{"action": "DENY", "domain": "數學/微積分", "refusal_message": "這是數學領域的問題呢，小紅只熟悉《紅樓夢》與國學知識，不在我的範疇內。歡迎詢問古典文學相關問題 😊"}
+輸出：{"action": "DENY", "domain": "數學/微積分", "refusal_message": "這是數學領域的問題呢，AREQA只熟悉《紅樓夢》與國學知識，不在我的範疇內。歡迎詢問古典文學相關問題 😊"}
 
 範例三：
 用戶輸入：00000
-輸出：{"action": "DENY", "domain": "無意義輸入", "refusal_message": "小紅看不明白這些內容呢，可以換個方式，問一個關於古典文學的問題嗎？"}"""
+輸出：{"action": "DENY", "domain": "無意義輸入", "refusal_message": "AREQA看不明白這些內容呢，可以換個方式，問一個關於古典文學的問題嗎？"}"""
 
 class RouterService:
     def __init__(self, api_key: Optional[str] = None):

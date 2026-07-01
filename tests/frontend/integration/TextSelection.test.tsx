@@ -53,13 +53,13 @@ describe('Text Selection Integration', () => {
     (window as any).triggerSelection('紅樓夢', { top: 100, left: 100, width: 50, height: 20 });
 
     // 2. Verify toolbar appears with correct label
-    expect(await screen.findByText('問小紅(引用)')).toBeDefined();
+    expect(await screen.findByText('問AREQA(引用)')).toBeDefined();
 
     // 3. Click "Ask XiaoHong" (Quote)
-    fireEvent.click(screen.getByText('問小紅(引用)'));
+    fireEvent.click(screen.getByText('問AREQA(引用)'));
 
     // 4. Verify toolbar disappears and quote appears in input
-    expect(screen.queryByText('問小紅(引用)')).toBeNull();
+    expect(screen.queryByText('問AREQA(引用)')).toBeNull();
     expect(screen.getByText('紅樓夢')).toBeDefined();
 
     // 5. Type question and send

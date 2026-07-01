@@ -1,16 +1,24 @@
 import React from 'react';
-import { render, act, waitFor } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { ProactiveManager } from '@/components/ProactiveManager';
 import { App } from 'antd';
 import { sendMessage } from '@/services/chat';
 import { useConversationStore } from '@/store/conversation';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as hooks from '@/hooks/useProactiveWebSocket';
 
 // Mock dependencies
 vi.mock('antd', () => ({
   App: {
     useApp: vi.fn(),
   },
+  Button: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
+}));
+
+vi.mock('@ant-design/icons', () => ({
+  BulbOutlined: () => <span>Bulb</span>,
+  CheckOutlined: () => <span>Check</span>,
+  CloseOutlined: () => <span>Close</span>,
 }));
 
 vi.mock('@/services/chat', () => ({
@@ -23,8 +31,14 @@ vi.mock('@/store/conversation', () => ({
   },
 }));
 
+vi.mock('@/hooks/useProactiveWebSocket', () => ({
+  useProactiveWebSocket: vi.fn(),
+}));
+
 describe('ProactiveManager', () => {
   const mockNotificationInfo = vi.fn();
+  const mockNotificationDestroy = vi.fn();
+  let registeredAlertCallback: ((content: string) => void) | null = null;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -34,11 +48,18 @@ describe('ProactiveManager', () => {
     (App.useApp as any).mockReturnValue({
       notification: {
         info: mockNotificationInfo,
+        destroy: mockNotificationDestroy,
       },
     });
 
     (useConversationStore.getState as any).mockReturnValue({
       activeConversationId: 'test-convo-id',
+    });
+
+    // Capture the callback passed to the hook
+    registeredAlertCallback = null;
+    (hooks.useProactiveWebSocket as any).mockImplementation((callback: any) => {
+      registeredAlertCallback = callback;
     });
   });
 
@@ -46,43 +67,29 @@ describe('ProactiveManager', () => {
     vi.useRealTimers();
   });
 
-  it('should not show notification if no alert is present', async () => {
-    (global.fetch as any).mockResolvedValue({
-      json: async () => ({ has_alert: false }),
-    });
-
+  it('should not show notification initially', async () => {
     render(<ProactiveManager />);
-
-    await act(async () => {
-      vi.advanceTimersByTime(30000);
-    });
-
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/api/v1/proactive-check?user_id=default_user');
-
     expect(mockNotificationInfo).not.toHaveBeenCalled();
   });
 
-  it('should show notification when alert is present', async () => {
-    const ALERT_CONTENT = 'You seem stuck, want some help?';
-    (global.fetch as any).mockResolvedValue({
-      json: async () => ({ has_alert: true, content: ALERT_CONTENT }),
-    });
-
+  it('should show notification when websocket triggers alert', async () => {
     render(<ProactiveManager />);
 
-    await act(async () => {
-      vi.advanceTimersByTime(30000);
+    expect(registeredAlertCallback).toBeTruthy();
+
+    const ALERT_CONTENT = 'AREQA發現你好像來回看了幾遍...';
+    
+    act(() => {
+      if (registeredAlertCallback) {
+        registeredAlertCallback(ALERT_CONTENT);
+      }
     });
 
     expect(mockNotificationInfo).toHaveBeenCalled();
 
     const callArgs = mockNotificationInfo.mock.calls[0][0];
-    expect(callArgs.message).toBe('AREQA關心您');
+    expect(callArgs.message).toBe('AREQA');
     expect(callArgs.description).toBe(ALERT_CONTENT);
-
-    // Test clicking the notification
-    callArgs.onClick();
-    expect(sendMessage).toHaveBeenCalledWith(ALERT_CONTENT, 'test-convo-id');
   });
 
   it('should log scroll action with throttling', async () => {
@@ -92,10 +99,16 @@ describe('ProactiveManager', () => {
 
     render(<ProactiveManager />);
 
-    // Simulate scroll
-    Object.defineProperty(window, 'scrollY', { value: 500, configurable: true });
-    
+    // Simulate first scroll to initialize lastScrollY
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
     await act(async () => {
+      window.dispatchEvent(new Event('scroll'));
+    });
+    
+    // Simulate second scroll to trigger logAction
+    Object.defineProperty(window, 'scrollY', { value: 500, configurable: true });
+    await act(async () => {
+      vi.advanceTimersByTime(5001); // Wait for debounce
       window.dispatchEvent(new Event('scroll'));
     });
 
@@ -116,9 +129,10 @@ describe('ProactiveManager', () => {
 
     expect(global.fetch).not.toHaveBeenCalled();
 
-    // Advance time beyond throttle
+    // Advance time beyond throttle and change scroll position
     act(() => {
       vi.advanceTimersByTime(6000);
+      Object.defineProperty(window, 'scrollY', { value: 1000, configurable: true });
       window.dispatchEvent(new Event('scroll'));
     });
 

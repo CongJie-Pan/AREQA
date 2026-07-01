@@ -94,7 +94,7 @@ async def test_router_language_conversion():
         mock_client.chat.completions.create = AsyncMock()
         
         # Simplified Chinese refusal
-        sc_refusal = "这是数学领域的问题呢，小红只熟悉《红楼梦》与国学知识。"
+        sc_refusal = "这是数学领域的问题呢，AREQA只熟悉《红楼梦》与国学知识。"
         mock_response = AsyncMock()
         mock_response.choices = [
             AsyncMock(message=AsyncMock(content=f'{{"action": "DENY", "domain": "数学", "refusal_message": "{sc_refusal}"}}'))
@@ -105,7 +105,7 @@ async def test_router_language_conversion():
         result = await service.check_query_intent("解方程")
         
         # Expected Traditional Chinese
-        assert "這是數學領域的問題呢，小紅只熟悉《紅樓夢》與國學知識。" in result["refusal_message"]
+        assert "這是數學領域的問題呢，AREQA只熟悉《紅樓夢》與國學知識。" in result["refusal_message"]
 
 @pytest.mark.asyncio
 async def test_router_service_markdown_json_stripping():

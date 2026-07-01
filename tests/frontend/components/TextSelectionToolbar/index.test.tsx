@@ -90,7 +90,7 @@ describe('TextSelectionToolbar (Integration with AntD)', () => {
   it('should render when text is selected', () => {
     renderWithContext(<TextSelectionToolbar />);
     expect(screen.getByRole('button', { name: /複製/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /問小紅/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /問AREQA/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /幫我解釋/i })).toBeDefined();
   });
 
@@ -111,7 +111,7 @@ describe('TextSelectionToolbar (Integration with AntD)', () => {
 
   it('should call setQuotedText on quote click', () => {
     renderWithContext(<TextSelectionToolbar />);
-    const quoteBtn = screen.getByRole('button', { name: /問小紅/i });
+    const quoteBtn = screen.getByRole('button', { name: /問AREQA\(引用\)/i });
     
     fireEvent.click(quoteBtn);
     
