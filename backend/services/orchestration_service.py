@@ -152,10 +152,14 @@ class OrchestrationService:
             )
 
         rag_queries = []
+        cached_results = None
         if use_rag and self.rag and last_user_msg:
-            from main import get_query_fingerprint, _rag_cache
+            from main import get_query_fingerprint, rag_cache
             fingerprint = get_query_fingerprint(last_user_msg)
-            if fingerprint not in _rag_cache:
+            if rag_cache:
+                cached_results = await rag_cache.get(fingerprint)
+                
+            if not cached_results:
                 rag_queries = await parse_and_decompose_query(last_user_msg, self.client)
             else:
                 rag_queries = None
@@ -163,7 +167,7 @@ class OrchestrationService:
         # Node 4: RAG Retrieval
         context_results_obj = None
         if use_rag and self.rag and last_user_msg:
-            async for event in self._node_rag_retrieval(last_user_msg, rag_queries):
+            async for event in self._node_rag_retrieval(last_user_msg, rag_queries, cached_results):
                 if event.startswith("event: results_obj"):
                     context_results_obj = getattr(self, "_temp_rag_obj", None)
                     continue
@@ -236,14 +240,12 @@ class OrchestrationService:
             pass
 
 
-    async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
-        from main import get_query_fingerprint, _rag_cache, RAG_CACHE_SIZE, _thread_pool
+    async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]], cached_results=None) -> AsyncGenerator[str, None]:
+        from main import get_query_fingerprint, rag_cache, _thread_pool
         fingerprint = get_query_fingerprint(last_user_msg)
-        context_results_obj = None
+        context_results_obj = cached_results
         
-        if rag_queries is None: # Cache hit
-            context_results_obj = _rag_cache[fingerprint]
-        else:
+        if not context_results_obj and rag_queries is not None:
             gen = self.rag.retrieve_with_events(rag_queries)
             while True:
                 rag_task = asyncio.get_running_loop().run_in_executor(_thread_pool, next, gen, None)
@@ -259,10 +261,8 @@ class OrchestrationService:
                 elif event["type"] == "results":
                     context_results_obj = event["data"]
                     
-            if context_results_obj:
-                if len(_rag_cache) >= RAG_CACHE_SIZE:
-                    del _rag_cache[next(iter(_rag_cache))]
-                _rag_cache[fingerprint] = context_results_obj
+            if context_results_obj and rag_cache:
+                await rag_cache.set(fingerprint, context_results_obj)
                 
         if context_results_obj:
             is_reranked = False

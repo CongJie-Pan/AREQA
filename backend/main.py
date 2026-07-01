@@ -20,9 +20,8 @@ from dotenv import load_dotenv
 
 from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state
 
-# 在 main.py 最上層加入全域快取字典
-_rag_cache: dict = {}
-RAG_CACHE_SIZE = 200  # 最多快取 200 組查詢結果
+# 在 main.py 最上層加入全域快取服務變數
+rag_cache = None
 
 def get_query_fingerprint(query: str) -> str:
     """把查詢字串轉成固定長度的雜湊，作為快取 key"""
@@ -239,6 +238,12 @@ async def startup_event():
     print("Memory Store initialized successfully.")
     
     await init_gum_instance()
+    
+    global rag_cache
+    from services.cache_service import RagCacheService
+    rag_cache = RagCacheService("redis://localhost:6379")
+    await rag_cache.connect()
+    print("Redis RAG Cache initialized successfully.")
     
     # Start ComPeer Scheduler
     import sys
