@@ -172,8 +172,13 @@ async def proactive_scheduler_loop():
             
             # Check for frustration signs (like continuous scrolling) if not in cooldown
             from time import time
-            last_time = last_interaction_time.get("default_user", time())
-            if user_flag.get("default_user", True) and (time() - last_time > 120):
+            # Initialize if not present so it doesn't keep shifting
+            if "default_user" not in last_interaction_time:
+                last_interaction_time["default_user"] = time()
+                
+            last_time = last_interaction_time["default_user"]
+            
+            if user_flag.get("default_user", True) and (time() - last_time > 60):
                 from memory_store import get_global_store
                 store = get_global_store()
                 if store:
