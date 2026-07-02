@@ -138,4 +138,36 @@ describe('ProactiveManager', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('should trigger handleReject when AutoRejectButton triggers onReject', async () => {
+    (global.fetch as any).mockResolvedValue({
+      json: async () => ({ status: 'ok' }),
+    });
+
+    render(<ProactiveManager />);
+
+    act(() => {
+      if (registeredAlertCallback) {
+        registeredAlertCallback('Test message');
+      }
+    });
+
+    const callArgs = mockNotificationInfo.mock.calls[0][0];
+    const btnContent = callArgs.btn;
+    // btnContent is the div with AutoRejectButton and Button
+    // We can extract the onReject prop from AutoRejectButton which is the first child
+    const autoRejectBtn = btnContent.props.children[0];
+    
+    await act(async () => {
+      autoRejectBtn.props.onReject();
+    });
+
+    expect(mockNotificationDestroy).toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://localhost:8000/api/v1/log_action',
+      expect.objectContaining({
+        body: expect.stringContaining('"action_type":"compeer_rejected"')
+      })
+    );
+  });
 });

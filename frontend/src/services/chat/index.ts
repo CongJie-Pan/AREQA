@@ -91,10 +91,11 @@ function validateMessageContent(content: string): void {
  * try {
  *   await sendMessage('What is the weather like?');
  * } catch (error) {
+ *   const normalizedError = normalizeError(error);
  *   if (error instanceof ValidationError) {
  *     console.log('Invalid input:', error.message);
  *   } else {
- *     console.log('Stream error:', error.message);
+ *     console.error('Stream error:', normalizedError);
  *   }
  * }
  * ```
@@ -315,6 +316,52 @@ export async function sendMessage(
     chatStore.setError(err);
     chatStore.endStreaming();
     throw err;
+  }
+}
+
+/**
+ * Directly insert a completed assistant message into the chat history.
+ * Useful for proactive AI messages that should be visible in the chat.
+ * 
+ * @param content - The message content
+ * @param conversationId - Target conversation ID
+ */
+export async function insertAssistantMessage(
+  content: string,
+  conversationId?: string
+): Promise<void> {
+  const sanitizedContent = content.trim();
+  if (!sanitizedContent) return;
+
+  const chatStore = useChatStore.getState();
+  const conversationStore = useConversationStore.getState();
+
+  // Create or use existing conversation
+  let activeConversationId = conversationId ?? conversationStore.activeConversationId;
+  let isNewConversation = false;
+
+  if (!activeConversationId) {
+    isNewConversation = true;
+    const conversation = await databaseService.conversation.create();
+    activeConversationId = conversation.id;
+    useConversationStore.setState((state) => ({
+      conversations: [conversation, ...state.conversations],
+    }));
+  }
+
+  // Add assistant message to store
+  const messageId = chatStore.addAssistantMessage(activeConversationId);
+  chatStore.updateAssistantMessage(messageId, { content: sanitizedContent });
+  chatStore.endStreaming();
+
+  // Save to database
+  await databaseService.message.add(activeConversationId, {
+    role: 'assistant',
+    content: sanitizedContent,
+  });
+
+  if (isNewConversation) {
+    conversationStore.selectConversation(activeConversationId);
   }
 }
 

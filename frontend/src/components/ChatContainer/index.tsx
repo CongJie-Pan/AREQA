@@ -6,8 +6,9 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Menu, X, AlertCircle } from 'lucide-react';
-import { App } from 'antd';
+import { Menu, X, AlertCircle, MoreVertical, FileText, FileImage, FileCode } from 'lucide-react';
+import { App, Dropdown } from 'antd';
+import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
 import { sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage } from '@/services/chat';
@@ -250,6 +251,49 @@ export function ChatContainer({ className }: ChatContainerProps) {
               {gumPanelType ? '' : (activeConversation?.title || '')}
             </h1>
           </div>
+          
+          <div className={styles.headerRight}>
+            {!gumPanelType && !isEmpty && (
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'md', label: '下載為 Markdown (.md)', icon: <FileCode size={16} color="white" /> },
+                    { key: 'pdf', label: '下載為 PDF (.pdf)', icon: <FileImage size={16} color="white" /> },
+                    { key: 'docx', label: '下載為 Word (.docx)', icon: <FileText size={16} color="white" /> },
+                  ],
+                  onClick: async (info) => {
+                    try {
+                      if (info.key === 'md') {
+                        exportToMarkdown(messages);
+                      } else if (info.key === 'pdf') {
+                        const hide = antMessageApi.loading('正在產生 PDF，請稍候...', 0);
+                        await exportToPdf();
+                        hide();
+                      } else if (info.key === 'docx') {
+                        const hide = antMessageApi.loading('正在產生 Word 文件，請稍候...', 0);
+                        await exportToDocx(messages);
+                        hide();
+                      }
+                      antMessageApi.success('下載成功！');
+                    } catch (err) {
+                      antMessageApi.error('下載失敗，請稍後再試');
+                      console.error('Export failed:', err);
+                    }
+                  }
+                }}
+                trigger={['click']}
+                placement="bottomRight"
+              >
+                <button
+                  className={styles.menuButton}
+                  style={{ display: 'flex', opacity: 1, pointerEvents: 'auto', visibility: 'visible', color: 'rgba(255, 255, 255, 0.65)' }}
+                  aria-label="匯出對話"
+                >
+                  <MoreVertical size={20} />
+                </button>
+              </Dropdown>
+            )}
+          </div>
         </div>
 
         {/* Error Banner */}
@@ -276,7 +320,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
           ) : (
             <>
               {/* Message List */}
-              <div className={styles.messageArea}>
+              <div id="export-chat-container" className={styles.messageArea}>
                 <MessageList 
                   onRegenerate={handleRegenerate} 
                   onEdit={handleEdit} 

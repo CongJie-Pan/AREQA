@@ -78,6 +78,11 @@ export const useStyles = createStyles(({ css, token }) => ({
     gap: 12px;
   `,
 
+  headerRight: css`
+    display: flex;
+    align-items: center;
+  `,
+
   menuButton: css`
     display: none;
     align-items: center;

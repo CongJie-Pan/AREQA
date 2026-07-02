@@ -1,50 +1,49 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
-import { App, Button } from 'antd';
-import { BulbOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { App, Button, Input } from 'antd';
+import { BulbOutlined, CheckOutlined, CloseOutlined, SendOutlined } from '@ant-design/icons';
 import { useConversationStore } from '@/store/conversation';
 
-const AutoRejectButton = ({ onReject, durationMs = 20000 }: { onReject: () => void, durationMs?: number }) => {
-  const [progress, setProgress] = useState(100);
-
-  useEffect(() => {
-    const startTime = Date.now();
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, 100 - (elapsed / durationMs) * 100);
-      setProgress(remaining);
-      if (elapsed >= durationMs) {
-        clearInterval(interval);
-        onReject();
-      }
-    }, 50);
-    return () => clearInterval(interval);
-  }, [onReject, durationMs]);
-
+const AutoRejectButton = ({ onReject }: { onReject: () => void }) => {
   return (
     <Button 
       onClick={onReject} 
       icon={<CloseOutlined />} 
-      style={{ position: 'relative', overflow: 'hidden' }}
     >
-      <div 
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          height: '3px',
-          backgroundColor: '#ff4d4f',
-          width: `${progress}%`,
-          transition: 'width 50ms linear'
-        }}
-      />
-      不需要
+      不需要協助
     </Button>
   );
 };
 
-export function ProactiveManager() {
-  const { notification } = App.useApp();
+const QuickReplyPanel = ({ content, onReject, onAccept, onSend }: { content: string, onReject: () => void, onAccept: () => void, onSend: (text: string) => void }) => {
+  const [text, setText] = useState('');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
+      <div style={{ fontSize: '14px', lineHeight: '1.5' }}>{content}</div>
+      <Input
+        placeholder="或直接輸入您的想法..."
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onPressEnter={() => text.trim() && onSend(text)}
+      />
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+        <AutoRejectButton onReject={onReject} />
+        {!text.trim() ? (
+          <Button type="primary" icon={<CheckOutlined />} onClick={onAccept}>
+            請繼續
+          </Button>
+        ) : (
+          <Button type="primary" icon={<SendOutlined />} onClick={() => onSend(text)}>
+            傳送回覆
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const ProactiveManager: React.FC = () => {
+  const { notification, message } = App.useApp();
   const lastScrollTime = useRef(0);
   const lastScrollY = useRef(-1);
 
@@ -52,38 +51,73 @@ export function ProactiveManager() {
   const handleAlert = useCallback((content: string) => {
     const key = `proactive-${Date.now()}`;
 
-    const handleAccept = async () => {
-      notification.destroy(key); // Close the notification
-      const { activeConversationId } = useConversationStore.getState();
-      if (activeConversationId) {
-        // Also automatically send a user message asking for help
-        const { sendMessage } = await import('@/services/chat');
-        sendMessage('好，我需要協助，請根據我們目前的討論幫我梳理一下。', activeConversationId);
+    const waitForStreamAndSend = async (textToUser: string) => {
+      notification.destroy(key);
+      const { useChatStore } = await import('@/store/chat');
+      
+      let isPending = false;
+      let hideMessage = () => {};
+      
+      // Wait while system is streaming
+      while (useChatStore.getState().isStreaming) {
+        if (!isPending) {
+          isPending = true;
+          hideMessage = message.loading('等待系統回覆完畢後，將自動為您送出...', 0);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
+      
+      if (isPending) {
+        hideMessage();
+        message.success('已送出！');
+      }
+
+      const { activeConversationId } = useConversationStore.getState();
+      const { sendMessage, insertAssistantMessage } = await import('@/services/chat');
+      await insertAssistantMessage(content, activeConversationId || undefined);
+      sendMessage(textToUser, activeConversationId || undefined);
     };
 
-    const handleReject = () => {
+    const handleAccept = async () => {
+      await waitForStreamAndSend('好，請繼續幫我梳理一下。');
+    };
+
+    const handleSend = async (text: string) => {
+      await waitForStreamAndSend(text);
+    };
+
+    const handleReject = async () => {
       notification.destroy(key);
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        await fetch(`${backendUrl}/api/v1/log_action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_type: 'compeer_rejected', timestamp: Date.now(), context: {} }),
+        });
+      } catch {
+        // Silently fail — rejection should always close the notification regardless
+      }
     };
 
     notification.info({
       key,
       title: 'AREQA',
       message: 'AREQA',
-      description: content,
+      description: (
+        <QuickReplyPanel 
+          content={content} 
+          onReject={handleReject} 
+          onAccept={handleAccept} 
+          onSend={handleSend} 
+        />
+      ),
       icon: <BulbOutlined style={{ color: '#d8a25c' }} />,
       placement: 'top',
       duration: 0, // Auto close handled by AutoRejectButton
-      btn: (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <AutoRejectButton onReject={handleReject} durationMs={20000} />
-          <Button type="primary" icon={<CheckOutlined />} onClick={handleAccept}>
-            需要協助
-          </Button>
-        </div>
-      ),
+      btn: <span />, // Hide default btn section because we rendered buttons in QuickReplyPanel
     });
-  }, [notification]);
+  }, [notification, message]);
 
   // 以 hook 取代 setInterval
   useProactiveWebSocket(handleAlert);

@@ -1,0 +1,111 @@
+// @ts-expect-error - file-saver types might be missing in some environments
+import { saveAs } from 'file-saver';
+import { Document, Paragraph, TextRun, Packer } from 'docx';
+import type { DisplayMessage } from '@/store/chat';
+
+export const exportToMarkdown = (messages: DisplayMessage[]) => {
+  let content = '# AREQA 對話紀錄\n\n';
+  
+  messages.forEach(msg => {
+    const roleName = msg.role === 'user' ? '👤 您' : '🤖 AREQA';
+    content += `### ${roleName}\n${msg.content}\n\n---\n\n`;
+  });
+
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  saveAs(blob, `areqa-chat-${new Date().toISOString().slice(0, 10)}.md`);
+};
+
+export const exportToDocx = async (messages: DisplayMessage[]) => {
+  const children: Paragraph[] = [
+    new Paragraph({
+      children: [
+        new TextRun({ text: 'AREQA 對話紀錄', bold: true, size: 32 }),
+      ],
+      spacing: { after: 400 }
+    })
+  ];
+
+  messages.forEach(msg => {
+    const roleName = msg.role === 'user' ? '👤 您' : '🤖 AREQA';
+    
+    // Add Role Header
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: roleName, bold: true, size: 28, color: msg.role === 'user' ? '2B579A' : 'd8a25c' })
+        ],
+        spacing: { before: 200, after: 100 }
+      })
+    );
+
+    // Process content line by line to support basic line breaks
+    const lines = msg.content.split('\n');
+    lines.forEach(line => {
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: line, size: 24 })
+          ],
+          spacing: { after: 100 }
+        })
+      );
+    });
+
+    // Add separator
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: '----------------------------------------', color: 'CCCCCC' })
+        ],
+        spacing: { before: 200, after: 200 }
+      })
+    );
+  });
+
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: children
+    }]
+  });
+
+  const blob = await Packer.toBlob(doc);
+  saveAs(blob, `areqa-chat-${new Date().toISOString().slice(0, 10)}.docx`);
+};
+
+export const exportToPdf = async () => {
+  // Using dynamic import because html2pdf needs window
+  const html2pdf = (await import('html2pdf.js')).default;
+  
+  // Find the message list container
+  const element = document.querySelector('#export-chat-container');
+  if (!element) {
+    throw new Error('找不到對話內容');
+  }
+
+  // Clone it to manipulate styles without affecting the UI
+  const clonedElement = element.cloneNode(true) as HTMLElement;
+  clonedElement.style.height = 'auto';
+  clonedElement.style.overflow = 'visible';
+  clonedElement.style.padding = '20px';
+  clonedElement.style.color = '#000'; // Make text dark for PDF readability
+  clonedElement.style.backgroundColor = '#fff';
+
+  // Add a title
+  const title = document.createElement('h1');
+  title.innerText = 'AREQA 對話紀錄';
+  title.style.textAlign = 'center';
+  title.style.marginBottom = '20px';
+  title.style.color = '#000';
+  clonedElement.insertBefore(title, clonedElement.firstChild);
+
+  const opt = {
+    margin:       10,
+    filename:     `areqa-chat-${new Date().toISOString().slice(0, 10)}.pdf`,
+    image:        { type: 'jpeg' as const, quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+  };
+
+  html2pdf().set(opt).from(clonedElement).save();
+};
