@@ -86,17 +86,17 @@ importance_sum = 0
 interaction_count = 0
 last_interaction_time = None
 
-async def run_reflection():
+async def run_reflection() -> list[str]:
     global importance_sum, interaction_count
     if not gum_instance:
-        return
+        return []
     try:
         obs = await gum_instance.recent_observations(limit=20)
         if not obs:
-            return
+            return []
             
         context = "\n".join([o.content for o in obs])
-        prompt = f"Summarize the following recent interactions into high-level insights:\n{context}\nOutput the insights."
+        prompt = f"請將以下最近的互動紀錄總結為高層次的學習洞察（insights）：\n{context}\n請輸出這些學習洞察。"
         
         from pydantic import BaseModel
         from gum.schemas import get_schema
@@ -125,8 +125,10 @@ async def run_reflection():
         print(f"[GUM Reflection] Archived {len(obs)} old observations. Resetting counters.")
         importance_sum = 0
         interaction_count = 0
+        return insights
     except Exception as e:
         print(f"Error in reflection: {e}")
+        return []
 
 async def query_memory_for_context(user_query: str, limit: int = 8) -> str:
     """
@@ -147,10 +149,27 @@ async def query_memory_for_context(user_query: str, limit: int = 8) -> str:
         return ""
     try:
         results = await gum_instance.query(user_query, limit=limit)
-        if not results:
+        memory_lines = []
+        from memory_store import get_global_store
+        store = get_global_store()
+        if store:
+            profile = store.get_user_profile()
+            prefs = profile.get("explicit_memories", [])
+            if prefs:
+                memory_lines.append("【USER PROFILE (長期)】\n  - " + "\n  - ".join(prefs))
+            
+            hot = store.get_hot_memory()
+            hot_memories = hot.get("explicit_memories", [])
+            if hot_memories:
+                memory_lines.append("【MEMORY (目前脈絡)】\n  - " + "\n  - ".join(hot_memories))
+        
+        if results:
+            memory_lines.extend([p.text for p, _ in results])
+            
+        if not memory_lines:
             return ""
-        lines = [p.text for p, _ in results]
-        memory_block = "\n".join(f"- {line}" for line in lines)
+            
+        memory_block = "\n".join(f"- {line}" for line in memory_lines)
         return f"\n<memory>\n以下是關於使用者的已知記憶，請根據這些記憶來個人化你的回答：\n{memory_block}\n</memory>"
     except Exception as e:
         print(f"[GUM] Error querying memory for context: {e}")
@@ -177,19 +196,23 @@ async def batch_process_observations(items: list[str]):
     Existing memories:
     {neighbor_ctx}
     
-    Task: Determine if the new observation logically CONTRADICTS or explicitly UPDATES any of the existing memories.
-    - ONLY supersede an old memory if the new observation proves it is now factually incorrect or outdated.
-    - DO NOT supersede old memories just because the user changed the topic to something else.
-    - If it supersedes, set should_evolve=true, add 'prune' to actions, and put ONLY the strictly contradicted IDs in target_ids. Otherwise, set should_evolve=false.
-    Rate importance 1-10."""
+    Task: 
+    1. Determine if the new observation logically CONTRADICTS, UPDATES, or is highly REDUNDANT with any existing memories.
+    2. If it is redundant or updates old memories, set should_evolve=true, add 'prune' to actions, and put the old memory IDs to be pruned in target_ids. 
+    3. Provide a 'revised_proposition' that merges the new observation and the pruned memories into a single concise, updated statement.
+    4. Generate a 'decay_score' (1-10) for this proposition. Transient or temporary actions (e.g. debugging a specific bug) decay fast (score=8-10). Stable facts (e.g. user is a PhD student) decay slowly (score=1-3).
+    5. Rate importance 1-10."""
                 
-                from pydantic import BaseModel
+                from pydantic import BaseModel, Field
                 from gum.schemas import get_schema
+                from typing import Optional
                 class EvolutionSchema(BaseModel):
                     should_evolve: bool
                     actions: list[str]
                     target_ids: list[int]
                     importance_score: int
+                    revised_proposition: Optional[str] = Field(None, description="The merged and updated proposition")
+                    decay_score: int = Field(5, description="1-10 score of how fast this memory should decay")
                     
                 rsp = await gum_instance.client.chat.completions.create(
                     model=gum_instance.model,
@@ -212,11 +235,18 @@ async def batch_process_observations(items: list[str]):
                     target_ids = decision.get("target_ids", [])
                     for t_id in target_ids:
                         await gum_instance.update_status(t_id, "superseded")
+                
+                final_text = decision.get("revised_proposition") if decision.get("should_evolve") and decision.get("revised_proposition") else combined_text
+                final_decay = decision.get("decay_score", 5.0)
             else:
                 importance_sum += 5
+                final_text = combined_text
+                final_decay = 5.0
         except Exception as e:
             print(f"Error in evolution interceptor: {e}")
             importance_sum += 5
+            final_text = combined_text
+            final_decay = 5.0
     
         await text_observer.push_text(combined_text)
         interaction_count += len(items)
@@ -229,10 +259,14 @@ async def batch_process_observations(items: list[str]):
         store = get_global_store()
         if store:
             import uuid
-            for item in items:
-                # Add to hot memory with timestamp and uuid to prevent overwriting
-                key = f"obs_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
-                store.update_hot_memory(key, {"text": item, "confidence": 8.0, "decay": 5.0, "timestamp": datetime.now().timestamp()})
+            # Add to hot memory with timestamp and uuid to prevent overwriting
+            key = f"obs_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
+            store.update_hot_memory(key, {
+                "text": final_text, 
+                "confidence": 8.0, 
+                "decay": float(final_decay), 
+                "timestamp": datetime.now().timestamp()
+            })
     except Exception as e:
         # Expected if budget exceeded, handled below
         pass
@@ -502,9 +536,16 @@ def get_hot_memory_snapshot() -> str:
     if profile:
         parts.append("【使用者畫像 (User Profile)】\n" + json.dumps(profile, ensure_ascii=False, indent=2))
     if hot_mem:
+        # Filter out scroll noise and internal states
+        meaningful_hot = {
+            k: v for k, v in hot_mem.items()
+            if not (isinstance(v, dict) and "User Action: scroll" in v.get("text", ""))
+            and k not in ("user_cooldown_until", "trigger_proactive", "current_learner_state", "current_strategy", "last_compeer_message")
+        }
         # Extract just the text from hot memory items
-        hot_texts = [v["text"] if isinstance(v, dict) and "text" in v else str(v) for v in hot_mem.values()]
-        parts.append("【近期記憶 (Hot Memory)】\n- " + "\n- ".join(hot_texts))
+        hot_texts = [v["text"] if isinstance(v, dict) and "text" in v else str(v) for v in meaningful_hot.values()]
+        if hot_texts:
+            parts.append("【近期記憶 (Hot Memory)】\n- " + "\n- ".join(hot_texts))
         
     return "\n\n".join(parts)
 
@@ -579,4 +620,117 @@ async def async_evaluate_and_update_state(client, model, chat_history):
             # We flag this for ComPeer to pick up or log it
             print(f"[ComPeer] Proactive trigger needed: {state_res}")
             await store.update_hot_memory_async("trigger_proactive", True)
+            
+        ops = state_res.get("memory_operations", [])
+        if ops:
+            for op in ops:
+                target = op.get("target")
+                action = op.get("action")
+                content = op.get("content")
+                old_text = op.get("old_text", "")
+                if target in ["user", "memory"] and action in ["add", "replace", "remove"] and content:
+                    store.perform_memory_operation(target, action, content, old_text)
+                    print(f"[EDF-LOG] Executed memory operation: {op}")
 
+
+async def detect_proactive_event_via_llm(hot_memory_snapshot: str) -> dict:
+    """
+    Analyze hot memory snapshot to determine if a proactive intervention is warranted.
+    """
+    if not gum_instance:
+        return {"has_event": False, "event_summary": "", "importance": 0.0}
+
+    from pydantic import BaseModel
+    from gum.schemas import get_schema
+
+    class EventDetectSchema(BaseModel):
+        has_event: bool
+        event_summary: str
+        importance: float
+
+    prompt = f"""你是一個學習行為分析師。以下是用戶最近的行為與對話快照：
+{hot_memory_snapshot}
+
+請判斷：
+1. 用戶是否正在面臨「具體的學習挑戰」或「負面情緒（如挫折、困惑、反覆卡住）」？
+2. 如果是，給出事件摘要與重要性（0.0–1.0）。
+3. 如果只是正常瀏覽或學習進展順暢，請回傳 has_event=false，重要性設為 0。
+
+請嚴格以 JSON 格式回傳。"""
+
+    try:
+        rsp = await gum_instance.client.chat.completions.create(
+            model="qwen/qwen3-30b-a3b-instruct-2507",
+            messages=[{"role": "user", "content": prompt}],
+            response_format=get_schema(EventDetectSchema.model_json_schema()),
+            temperature=0.1
+        )
+        import json as _json
+        return _json.loads(rsp.choices[0].message.content)
+    except Exception as e:
+        print(f"[ComPeer] detect_proactive_event_via_llm failed: {e}")
+        return {"has_event": False, "event_summary": "", "importance": 0.0}
+
+
+async def generate_scaffolding_message_via_llm(
+    hot_memory_snapshot: str,
+    cold_memory_context: str,
+    learner_state: str,
+    edf_policy: str,
+    event_summary: str = "",
+    last_compeer_message: str = ""
+) -> str:
+    """
+    Generate a personalized scaffolding message for proactive ComPeer intervention.
+    """
+    if not gum_instance:
+        return "你學習狀況還好嗎？有任何問題都可以問我。"
+
+    strategy_hints = {
+        "GIVING_UP":   "語氣溫柔、帶情感支持，先安撫再提問。",
+        "RUN_REPEAT":  "提供一個新的切入角度或比喻，引導跳出迴圈。",
+        "TINKERING":   "提出一個具體的蘇格拉底式問題，促進深化思考。",
+        "MASTERY":     "挑戰性地提出一個反例或更深層的問題。",
+        "STARTING":    "提供一個簡短的背景知識錨點，降低門檻。",
+    }
+    hint = strategy_hints.get(learner_state, "自然地詢問用戶的學習進展。")
+
+    tone_constraint = ""
+    if learner_state == "STARTING":
+        tone_constraint = "\n【動態表達限制：STARTING 階段】\n注意：使用者目前為初學者（STARTING）。你必須「嚴格降低詞彙難度」，絕對禁止使用未經解釋的進階專有名詞。請用最白話、最生活化的比喻來引導，一次只講一個重點，避免造成認知負荷超載。"
+    elif learner_state == "TINKERING":
+        tone_constraint = "\n【動態表達限制：TINKERING 階段】\n注意：使用者正在摸索與建構概念（TINKERING）。你可以適度引入專有名詞，但必須伴隨具體例證與解釋。鼓勵思辨，但避免過度拋出艱澀的哲學大哉問而讓使用者不知所措。"
+
+    last_msg_hint = f"\n【禁止重複】上一次已經問過：「{last_compeer_message}」，本次訊息不得與此主題重複。" if last_compeer_message else ""
+
+    prompt = f"""你是 AREQA，一個溫暖且專業的古典文學學習夥伴。
+現在你需要主動關心用戶，根據以下資訊生成一句**精準的**主動關懷訊息。
+
+【當前學習行為（Hot Memory）- 用戶正在面臨的狀況】
+{hot_memory_snapshot}
+
+【歷史學習背景（Cold Memory）- 僅供參考，若與當前狀況無關請忽略】
+{cold_memory_context}
+
+【當前學習者狀態】{learner_state}
+【偵測到的挑戰摘要】{event_summary if event_summary else "（無特定事件，基於狀態主動關懷）"}
+【建議策略】{hint}{tone_constraint}{last_msg_hint}
+
+要求：
+1. **必須絕對聚焦於「當前學習行為（Hot Memory）」與「挑戰摘要」**，針對用戶**現在**正在閱讀或提問的具體知識點給出提示。
+2. 歷史學習背景（Cold Memory）僅用於了解用戶程度或過去喜好，**絕不可強行將過去的無關話題（如其他角色）插入當前關懷中**，以免造成上下文斷裂。
+3. **對話必須以「引導式詢問」為主，用一個簡單的問題邀請用戶互動。絕對避免單向陳述或自顧自地說教（例如不要說「別擔心，寶玉就像個不想長大的小孩...」這種直接給答案的句子）。**
+4. 繁體中文，語氣自然，像真人助教，不要像機器人。
+5. 長度控制在 60 字以內，直接輸出訊息本身，不要加任何前綴說明。"""
+
+    try:
+        rsp = await gum_instance.client.chat.completions.create(
+            model="qwen/qwen3-235b-a22b-2507",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=120,
+            temperature=0.6
+        )
+        return rsp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[ComPeer] generate_scaffolding_message_via_llm failed: {e}")
+        return "你學習狀況還好嗎？有任何問題都可以問我。"

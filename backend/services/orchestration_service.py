@@ -121,26 +121,28 @@ class OrchestrationService:
         
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         
-        # Node 1: Intent Routing
+        # Node 1: Intent Routing (DISABLED BY USER REQUEST)
         denied = False
-        async for event in self._node_intent_routing(last_user_msg):
-            if event == "event: REFUSED\n\n":
-                denied = True
-                continue
-            yield event
+        # async for event in self._node_intent_routing(last_user_msg):
+        #     if event == "event: REFUSED\n\n":
+        #         denied = True
+        #         continue
+        #     yield event
                 
-        if denied:
-            yield "data: [DONE]\n\n"
-            return
+        # if denied:
+        #     yield "data: [DONE]\n\n"
+        #     return
+
             
         if last_user_msg:
             print(f"[EDF-LOG] streaming endpoint received message, evaluating student state asynchronously...")
-            from services.compeer_scheduler import user_flag, last_interaction_time
-            user_flag["default_user"] = True
+            from services.compeer_scheduler import last_interaction_time
             last_interaction_time["default_user"] = time.time()
             asyncio.create_task(push_observation(f"User asked: {last_user_msg}"))
             if self.client:
-                asyncio.create_task(async_evaluate_and_update_state(self.client, "qwen/qwen3-30b-a3b-instruct-2507", messages))
+                RECENT_WINDOW = 10
+                recent_messages = messages[-RECENT_WINDOW:]
+                asyncio.create_task(async_evaluate_and_update_state(self.client, "qwen/qwen3-30b-a3b-instruct-2507", recent_messages))
 
         yield f"event: metadata\ndata: {json.dumps({'promptTokens': 1024, 'completionTokens': 0, 'totalTokens': 1024})}\n\n"
 
@@ -232,7 +234,7 @@ class OrchestrationService:
             ans = rsp.choices[0].message.content.strip().upper()
             print(f"[Router API] Fast domain check took {time.time() - start:.2f}s, result: {ans}")
             if "NO" in ans:
-                refusal = "這是與古典文學無關的領域呢，小紅只熟悉《紅樓夢》與國學知識，不在我的範疇內。歡迎詢問古典文學相關問題 😊"
+                refusal = "這是與古典文學無關的領域呢，AREQA只熟悉《紅樓夢》與國學知識，不在我的範疇內。歡迎詢問古典文學相關問題 😊"
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': refusal}, 'index': 0, 'finish_reason': 'stop'}]}, ensure_ascii=False)}\n\n"
                 yield "event: REFUSED\n\n"
         except Exception as e:
@@ -341,6 +343,16 @@ class OrchestrationService:
             hot_snapshot = get_hot_memory_snapshot()
             if hot_snapshot:
                 final_system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
+                
+                # Dynamic Tone/Vocabulary Adaptation based on Learner State
+                from backend.memory_store import get_global_store
+                store = get_global_store()
+                if store:
+                    learner_state = store.get_hot_memory().get("current_learner_state", "")
+                    if learner_state == "STARTING":
+                        final_system_prompt += "\n\n【動態表達限制：STARTING 階段】\n注意：使用者目前為初學者（STARTING）。你必須「嚴格降低詞彙難度」，絕對禁止使用未經解釋的進階專有名詞。請用最白話、最生活化的比喻來引導，一次只講一個重點，避免造成認知負荷超載。"
+                    elif learner_state == "TINKERING":
+                        final_system_prompt += "\n\n【動態表達限制：TINKERING 階段】\n注意：使用者正在摸索與建構概念（TINKERING）。你可以適度引入專有名詞，但必須伴隨具體例證與解釋。鼓勵思辨，但避免過度拋出艱澀的哲學大哉問而讓使用者不知所措。"
                 
             cold_memory_ctx = await query_cold_memory_for_context(last_user_msg, top_k=5, client=self.client, model="qwen/qwen3-30b-a3b-instruct-2507")
             if cold_memory_ctx:
@@ -495,12 +507,7 @@ class OrchestrationService:
                 yield f"event: done\ndata: {json.dumps({'suggestions': []}, ensure_ascii=False)}\n\n"
                 
         try:
-            from backend.main import PROJECT_ROOT
-            log_path = PROJECT_ROOT / "data" / "gum_data" / "reflection_log_default_user.jsonl"
-            with open(log_path, "a", encoding="utf-8") as f:
-                if last_user_msg:
-                    f.write(json.dumps({"role": "user", "content": last_user_msg}, ensure_ascii=False) + "\n")
-                if answer_content_accumulator:
-                    f.write(json.dumps({"role": "assistant", "content": answer_content_accumulator}, ensure_ascii=False) + "\n")
+            if answer_content_accumulator:
+                asyncio.create_task(push_observation(f"Assistant answered: {answer_content_accumulator[:300]}"))
         except Exception:
             pass

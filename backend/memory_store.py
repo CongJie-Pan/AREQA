@@ -54,6 +54,11 @@ class MemoryStore:
     def get_user_profile(self) -> Dict[str, Any]:
         return self._read_json(self.user_profile_path)
         
+    def update_user_profile(self, key: str, value: Any):
+        profile = self.get_user_profile()
+        profile[key] = value
+        self._atomic_write(self.user_profile_path, profile)
+        
     def _check_budget(self, data: Dict[str, Any]):
         """Check if serialized hot memory exceeds the budget."""
         serialized = json.dumps(data, ensure_ascii=False)
@@ -97,6 +102,32 @@ class MemoryStore:
         profile = self.get_user_profile()
         profile[key] = value
         self._atomic_write(self.user_profile_path, profile)
+
+    def perform_memory_operation(self, target: str, action: str, content: str, old_text: str = ""):
+        if target == "user":
+            data = self.get_user_profile()
+            entries = data.get("explicit_memories", [])
+        else:
+            data = self.get_hot_memory()
+            entries = data.get("explicit_memories", [])
+
+        if action == "add":
+            if content not in entries:
+                entries.append(content)
+        elif action == "replace":
+            for i, e in enumerate(entries):
+                if old_text in e:
+                    entries[i] = content
+                    break
+        elif action == "remove":
+            entries = [e for e in entries if old_text not in e]
+
+        if target == "user":
+            data["explicit_memories"] = entries
+            self._atomic_write(self.user_profile_path, data)
+        else:
+            data["explicit_memories"] = entries
+            self._atomic_write(self.hot_memory_path, data)
 
     def set_pending_alert(self, user_id: str, content: str):
         # We can store pending alerts in hot_memory or a separate alerts dict.
