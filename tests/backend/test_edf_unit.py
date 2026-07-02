@@ -17,8 +17,12 @@ import backend.services.compeer_scheduler as compeer
 
 @pytest.fixture
 def tmp_store(tmp_path):
-    hot_path = tmp_path / "hot_memory.json"
-    profile_path = tmp_path / "user_profile.json"
+    # We will point it to a subfolder in tmp_path so it creates data/gum_data/hot_memory.json there.
+    dummy_root = tmp_path / "dummy_root"
+    gum_data = dummy_root / "data" / "gum_data"
+    gum_data.mkdir(parents=True, exist_ok=True)
+    hot_path = gum_data / "hot_memory.json"
+    profile_path = gum_data / "user_profile.json"
     hot_path.write_text("{}")
     profile_path.write_text("{}")
     
@@ -27,7 +31,10 @@ def tmp_store(tmp_path):
     
     init_global_store(str(hot_path), str(profile_path), budget_limit=1000000)
     store = get_global_store()
-    yield store, hot_path, profile_path
+    
+    # Patch PROJECT_ROOT in main to prevent startup event from overwriting the real store path
+    with patch("backend.main.PROJECT_ROOT", dummy_root):
+        yield store, hot_path, profile_path
     
     # Restore
     mem_store_module._global_store = old_store
@@ -188,7 +195,7 @@ async def test_tick_schedule_fires_within_window(mock_schedule_path, tmp_store):
         "fired": False
     }]))
     
-    compeer.user_flag["default_user"] = True
+    
     await compeer.tick_proactive_schedule("default_user")
     
     assert store.get_and_clear_pending_alert("default_user") == "Test Alert"
@@ -205,7 +212,7 @@ async def test_tick_schedule_skips_outside_window(mock_schedule_path, tmp_store)
         "fired": False
     }]))
     
-    compeer.user_flag["default_user"] = True
+    
     await compeer.tick_proactive_schedule("default_user")
     assert store.get_and_clear_pending_alert("default_user") == ""
 
@@ -220,7 +227,7 @@ async def test_tick_schedule_no_duplicate_fire(mock_schedule_path, tmp_store):
         "fired": True
     }]))
     
-    compeer.user_flag["default_user"] = True
+    
     await compeer.tick_proactive_schedule("default_user")
     assert store.get_and_clear_pending_alert("default_user") == ""
 
@@ -235,7 +242,7 @@ async def test_tick_schedule_cooldown_blocks_send(mock_schedule_path, tmp_store)
         "fired": False
     }]))
     
-    compeer.user_flag["default_user"] = False
+    compeer.set_cooldown("default_user", state="default")
     await compeer.tick_proactive_schedule("default_user")
     assert store.get_and_clear_pending_alert("default_user") == ""
 

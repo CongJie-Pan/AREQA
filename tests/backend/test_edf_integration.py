@@ -98,13 +98,24 @@ async def test_compeer_daily_schedule_e2e(mock_path, tmp_path, tmp_store):
     
     # Mock LLM calls inside compeer via gum_instance
     with patch("gum_integration.gum_instance") as mock_gum:
-        mock_resp = MagicMock()
-        mock_resp.choices = [MagicMock()]
+        mock_resp_insights = MagicMock()
+        mock_resp_insights.choices = [MagicMock()]
+        mock_resp_insights.choices[0].message.content = '{"insights": ["dummy insight"]}'
+            
+        mock_resp_events = MagicMock()
+        mock_resp_events.choices = [MagicMock()]
         now = datetime.datetime.now()
         timing = now.strftime("%H:%M")
-        mock_resp.choices[0].message.content = '{"events": [{"Timing": "' + timing + '", "Content": "Test", "importance": 1.0}]}'
-        mock_gum.client.chat.completions.create = AsyncMock(return_value=mock_resp)
+        mock_resp_events.choices[0].message.content = '{"events": [{"Timing": "' + timing + '", "Content": "Test", "importance": 1.0}]}'
+            
+        mock_gum.client.chat.completions.create = AsyncMock(side_effect=[mock_resp_insights, mock_resp_events])
         mock_gum.model = "test-model"
+        
+        mock_gum.update_propositions = AsyncMock()
+        mock_gum.run_reflection_cycle = AsyncMock(return_value="mock_insights")
+        obs_mock = MagicMock()
+        obs_mock.content = "mocked observation content"
+        mock_gum.recent_observations = AsyncMock(return_value=[obs_mock])
         
         # 2. 每日初始化
         await compeer.run_reflection_and_initialization("default_user")
@@ -172,7 +183,7 @@ async def test_user_flag_reset_on_message(mock_openai, tmp_store):
     os.environ["OPENROUTER_API_KEY"] = "dummy"
     # First, simulate the scheduler putting the user into cooldown mode
     import services.compeer_scheduler as compeer
-    compeer.user_flag["default_user"] = False
+    compeer.set_cooldown("default_user", state="default")
     
     mock_client = MagicMock()
     
@@ -202,5 +213,5 @@ async def test_user_flag_reset_on_message(mock_openai, tmp_store):
     # Allow background tasks to run briefly so the flag is updated
     await asyncio.sleep(0.1)
             
-    # Assert that the cooldown flag was reset to True
-    assert compeer.user_flag.get("default_user") is True
+    # Assert that the cooldown was cleared
+    assert compeer.is_in_cooldown("default_user") == False

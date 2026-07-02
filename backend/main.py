@@ -596,16 +596,22 @@ async def log_action(req: ActionLogRequest):
     obs_text = f"[User Action] Type: {req.action_type}, Context: {req.context}"
     print(f"[EDF-LOG] log_action endpoint received: {obs_text}")
     
+    from memory_store import get_global_store
+    import time
+    store = get_global_store()
+    if store:
+        import uuid
+        key = f"obs_{time.time()}_{uuid.uuid4().hex[:8]}"
+        asyncio.create_task(store.update_hot_memory_async(key, obs_text))
+        
     if req.action_type == "scroll":
         # Pure UI telemetry like scrolling doesn't need to go to GUM's cold memory evolution
-        # Just write it directly to hot memory for the compeer scheduler to evaluate
-        from memory_store import get_global_store
-        import time
-        store = get_global_store()
-        if store:
-            import uuid
-            key = f"obs_{time.time()}_{uuid.uuid4().hex[:8]}"
-            asyncio.create_task(store.update_hot_memory_async(key, obs_text))
+        pass
+    elif req.action_type == "compeer_rejected":
+        import services.compeer_scheduler as compeer
+        target_user = req.user_id if req.user_id != "default" else "default_user"
+        compeer.set_cooldown(target_user, state=store.get_learner_state() if store else "default")
+        print(f"[ComPeer] User '{target_user}' rejected popup, entering 30-minute cooldown.")
     else:
         # Meaningful interactions go to GUM to become semantic propositions
         asyncio.create_task(push_observation(obs_text))
@@ -628,9 +634,9 @@ from services.connection_manager import ws_manager
 @app.websocket("/api/v1/ws/notifications")
 async def ws_notifications(websocket: WebSocket, user_id: str = "default_user"):
     # 手動驗證 Origin（CORSMiddleware 不覆蓋 WebSocket）
-    origin = websocket.headers.get("origin", "")
-    allowed = ["http://localhost:3000", "http://127.0.0.1:3000"]
-    if origin not in allowed:
+    origin = websocket.headers.get("origin")
+    allowed = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+    if origin and origin not in allowed:
         await websocket.close(code=1008)  # Policy Violation
         return
     await ws_manager.connect(user_id, websocket)
@@ -646,7 +652,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
     Core streaming endpoint for textual generation using OrchestrationService.
     """
     import services.compeer_scheduler as compeer
-    compeer.user_flag["default_user"] = True
+    compeer.user_cooldown_until.pop("default_user", None)
     
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:

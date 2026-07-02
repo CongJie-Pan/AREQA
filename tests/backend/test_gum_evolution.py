@@ -25,7 +25,7 @@ def mock_gum_instance():
     # Mock LLM evolution response (prune old memory)
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content='{"should_evolve": true, "actions": ["prune"], "target_ids": [1], "importance_score": 10}'))
+        MagicMock(message=MagicMock(content='{"should_evolve": true, "actions": ["prune"], "target_ids": [1], "importance_score": 10, "revised_proposition": "Student has mastered loops", "decay_score": 8}'))
     ]
     instance.client.chat.completions.create = AsyncMock(return_value=mock_response)
     
@@ -64,7 +64,7 @@ async def test_memory_evolution_bm25_fallback_and_markdown(mock_gum_instance):
     mock_gum_instance.recent = AsyncMock(return_value=[old_mem])
     
     # Setup Markdown JSON response
-    markdown_json = "```json\n{\"should_evolve\": true, \"actions\": [\"prune\"], \"target_ids\": [2], \"importance_score\": 8}\n```"
+    markdown_json = "```json\n{\"should_evolve\": true, \"actions\": [\"prune\"], \"target_ids\": [2], \"importance_score\": 8, \"revised_proposition\": \"Revised memory\", \"decay_score\": 3}\n```"
     mock_response = MagicMock()
     mock_response.choices = [
         MagicMock(message=MagicMock(content=markdown_json))
