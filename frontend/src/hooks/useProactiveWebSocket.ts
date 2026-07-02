@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export function useProactiveWebSocket(onAlert: (content: string) => void) {
+export function useProactiveWebSocket(onAlert: (content: string, senderName?: string) => void) {
   const wsRef = useRef<WebSocket | null>(null);
   const retryDelayRef = useRef(1000); // Initial backoff 1 second
 
@@ -15,7 +15,7 @@ export function useProactiveWebSocket(onAlert: (content: string) => void) {
       wsRef.current.onmessage = (e) => {
         const data = JSON.parse(e.data);
         if (data.has_alert && data.content) {
-          onAlert(data.content);
+          onAlert(data.content, data.sender_name);
         }
       };
       

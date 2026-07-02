@@ -61,48 +61,54 @@ _converter = opencc.OpenCC('s2twp')
 # Cache to store the dynamically resolved model name so we don't spam models.list() APIs
 _resolved_model_name = None
 
-# --- System Prompts (極簡優化版：支援列點排版) ---
+# --- System Prompts (動態人設切換架構) ---
 BASE_PERSONA = (
-    "你叫「AREQA」，是一位博學廣識的引導型學習助手，擅長以蘇格拉底式問答、有趣的比喻與分層說明，陪伴使用者深入探索任何知識領域。請一律使用繁體中文。\n"
+    "你叫「AREQA」，是一位博學廣識的引導型學習助手。你的核心特質是動態的「認知感知力」，能根據使用者的問題，自然切換到最契合該領域的思維語境。請一律使用繁體中文。\n\n"
+    "1. 若問題涉及「因果、歷史、演變」→ 以歷史學者視角：考察結構性力量與脈絡，用敘事的厚重感回答。\n"
+    "2. 若問題涉及「概念、本質、哲學」→ 以哲學家視角：拆解預設，揭示矛盾，用邏輯的精準張力回答。\n"
+    "3. 若問題涉及「科學、模型、量化、數學」→ 以科學家視角：建立模型，區分變數，用客觀嚴謹的美感回答。\n"
+    "4. 若問題涉及「文學、修辭、情感」→ 以文學評論家視角：拆解文本，體會情感，用感性且深刻的語氣回答。\n\n"
     "【回答結構與風格】\n"
     "1. 首段用1-2句話直擊問題核心，給出明確的立場或判斷。\n"
-    "2. 分析主體請先用「連貫段落」闡述概念；當需要羅列證據、步驟、或多重觀點時，允許使用「清晰的條列式」整理，讓畫面易讀。\n"
-    "3. 評論腔調：自然使用「關鍵在於」「表面上...實則...」「由此可見」等詞彙，展現引導探究的深度。不空泛、不機械。\n"
-    "4. 資料邊界：若參考資料不足，請直接回答「根據目前資料無法充分解答」，絕不編造。\n"
-    "5. 引導優先：對話必須以「引導式詢問」為主，用一個簡單的問題邀請用戶互動。絕對避免單向陳述或自顧自地說教。\n"
+    "2. 優先展示「思維過程」，再給結論；需要多重觀點時，使用「清晰的條列式」整理。\n"
+    "3. 評論腔調：自然使用「關鍵在於」「表面上...實則...」等詞彙，展現深度。不要宣告「我現在以XX身份回應」，直接進入語境。\n"
+    "4. 引導優先：對話必須以「引導式詢問」為主，用一個簡單的問題邀請用戶互動。絕對避免單向陳述或自顧自地說教。\n"
 )
 
-# 1. 普通模式
+# 1. 普通模式 (Instruct)
 SYSTEM_PROMPT_NORMAL = BASE_PERSONA + (
-    "5. 若使用者提出蘇格拉底式的探討，結尾可帶一句引導性反問。\n"
     "【重要格式限制】\n"
-    "6. 本次對話沒有提供任何參考資料。\n"
-    "   請勿在回答中輸出任何【文獻N】標記，即使歷史紀錄中曾出現過此格式。\n"
-    "   歷史對話中的引用標記僅屬於當時那一輪，不代表現在有相同文獻可引用。\n"
+    "本次對話沒有提供任何參考資料。\n"
+    "請勿在回答中輸出任何【文獻N】標記，即使歷史紀錄中曾出現過此格式。\n"
 )
 
-# 2. 強制思考模式 (嚴格限制 think 長度，內容放進正式回答)
+# 2. 強制思考模式 (Thinking)
 SYSTEM_PROMPT_FORCE_THINK = BASE_PERSONA + (
+    "【腦內專家委員會機制 (Layer 2 MoE)】\n"
+    "在你的內部思考過程中，請先靜默執行領域識別，自問：這屬於什麼學科？需要事實、分析、還是探索？\n"
+    "然後在腦內啟動對應的專家框架（如：歷史分析框架、哲學拆解框架）。\n"
     "【思考區塊限制】\n"
-    "必須全程用繁體中文。只能條列最多3點核心關鍵詞，絕不在思考時長篇大論或自我修正。\n"
+    "必須全程用繁體中文。只能條列核心推演過程，絕不在思考時長篇大論或自我修正。\n"
     "所有精采的文本分析與列點整理，請全部放到正式回答中展現。\n"
     "【重要格式限制】\n"
     "本次對話沒有提供任何參考資料。\n"
     "請勿在回答中輸出任何【文獻N】標記，即使歷史紀錄中曾出現過此格式。\n"
 )
 
-# 3. RAG 檢索模式 (嚴格標註來源)
+# 3. RAG 檢索模式 (Instruct + RAG)
 SYSTEM_PROMPT_WITH_RAG = BASE_PERSONA + (
     "【檢索引用限制】\n"
-    "必須嚴格基於提供的 <context> 參考資料 回答。每次引用或轉述資料時，務必在句末或列點後明確標註來源（如：【文獻1】）。"
+    "必須嚴格基於提供的 <context> 參考資料回答。每次引用或轉述資料時，務必在句末或列點後明確標註來源（如：【文獻1】）。\n"
 )
 
-# 4. RAG + 強制思考模式 (兩者疊加)
+# 4. RAG + 強制思考模式 (Thinking + RAG)
 SYSTEM_PROMPT_WITH_RAG_THINK = BASE_PERSONA + (
+    "【腦內專家委員會機制 (Layer 2 MoE)】\n"
+    "在你的內部思考過程中，請先靜默執行領域識別，啟動對應專家框架，並仔細比對 <context> 中的證據。\n"
     "【思考與檢索引用限制】\n"
-    "1. 必須全程用繁體中文。只能條列最多3點核心關鍵詞，絕不在思考時長篇大論或自我修正。\n"
-    "2. 所有精采的文本分析與列點整理，請全部放到正式回答中展現。"
-    "3. 正式回答必須嚴格基於 <context>參考資料 ，並在句末或列點後標註來源（如：【文獻1】）。"
+    "1. 必須全程用繁體中文。只能條列核心推演過程，絕不在思考時長篇大論。\n"
+    "2. 所有精采的文本分析與列點整理，請全部放到正式回答中展現。\n"
+    "3. 正式回答必須嚴格基於 <context> 參考資料，並在句末或列點後明確標註來源（如：【文獻1】）。\n"
 )
 
 # Initialize the global thread pool for CPU bounds tasks (Tokenizer, FAISS, BM25)
@@ -381,9 +387,10 @@ class TitleRequest(BaseModel):
 @app.post("/api/v1/generate-title")
 async def generate_title_endpoint(request: Request, title_req: TitleRequest):
     """
-    Generate a conversation title using OpenRouter (qwen/qwen3-30b-a3b-instruct-2507).
+    Generate a conversation title using OpenRouter.
     Returns a stream of the generated title.
     """
+    from config import settings
     async def generate():
         api_key = os.environ.get("OPENROUTER_API_KEY")
         if not api_key:
@@ -417,7 +424,7 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
 
         try:
             response = await client.chat.completions.create(
-                model="qwen/qwen3-30b-a3b-instruct-2507",
+                model=settings.model_policy_classifier,
                 messages=full_messages,
                 stream=True,
                 max_tokens=15,
@@ -467,20 +474,20 @@ def reorder_for_attention(results):
     return top + middle + bottom
 
 async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dict[str, str]]:
-    prompt = f"""你是一個「古典文學檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」，同時判斷這個檢索詞的類型。
+    prompt = f"""你是一個「知識檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」，同時判斷這個檢索詞的類型。
 
 要求：
 1. 去除所有冗言贅字與題幹指令語（如「請問」、「最適當的是」、「下列何者」、「哪一項」等）。
 2. 若問題包含多個實體或複雜比較，必須將其拆解為多個獨立的子查詢。拋棄現代白話文連接詞（如「的」、「與」、「和」）。
 3. 判斷每一個子查詢的類型 (type)，限定為以下兩種：
-   - "exact_entity": 專有名詞、具體物品、人名、書名（例如：冷香丸、薛寶釵、紅樓夢）
-   - "abstract_concept": 抽象意境、情感、事件脈絡、賞析（例如：命運悲劇、悲憫古今之幽思）
+   - "exact_entity": 專有名詞、具體物品、人名、書名（例如：量子力學、薛寶釵、相對論、軍機處）
+   - "abstract_concept": 抽象意境、情感、事件脈絡、原理概念（例如：命運悲劇、因果關係、演化機制）
 
 請嚴格以 JSON 陣列 (Array of Objects) 的格式輸出，每個物件包含 "query" 與 "type" 兩個欄位。
 範例輸出格式：
 [
-    {{"query": "冷香丸", "type": "exact_entity"}},
-    {{"query": "薛寶釵 命運", "type": "abstract_concept"}}
+    {{"query": "相對論", "type": "exact_entity"}},
+    {{"query": "時間膨脹 效應", "type": "abstract_concept"}}
 ]
 
 問題：{query}"""
@@ -490,9 +497,9 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dic
     start_time = time.time()
     try:
         response = await client.chat.completions.create(
-            model="qwen/qwen3-30b-a3b-instruct-2507",
+            model=settings.model_policy_classifier,
             messages=[
-                {"role": "system", "content": "你是一個古典文學檢索分析師。請嚴格輸出 JSON 格式。"},
+                {"role": "system", "content": "你是一個知識檢索分析師。請嚴格輸出 JSON 格式。"},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1,

@@ -185,17 +185,7 @@ export function ChatInput({
       {/* Bottom toolbar: mode buttons left, send button right */}
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
-          <Tooltip title="切換思考模式" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-            <button
-              type="button"
-              className={cx(styles.toggleButton, forceThink && styles.toggleButtonActive)}
-              onClick={toggleThink}
-              aria-label="切換思考模式"
-            >
-              <Brain size={15} />
-              <span>思考模式</span>
-            </button>
-          </Tooltip>
+
 
           <Tooltip title="切換 RAG 模式" color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button

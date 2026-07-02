@@ -27,7 +27,7 @@ const initialState = {
   error: null as Error | null,
   tokenUsage: null as { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null,
   useRag: false,
-  forceThink: false,
+  forceThink: true,
   ragStatus: 'idle' as 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done',
   ragMessage: '',
   ragSources: [] as CitationSource[],

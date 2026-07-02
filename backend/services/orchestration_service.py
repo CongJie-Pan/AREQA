@@ -34,14 +34,14 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dic
 1. 去除所有冗言贅字與題幹指令語（如「請問」、「最適當的是」、「下列何者」、「哪一項」等）。
 2. 若問題包含多個實體或複雜比較，必須將其拆解為多個獨立的子查詢。拋棄現代白話文連接詞（如「的」、「與」、「和」）。
 3. 判斷每一個子查詢的類型 (type)，限定為以下兩種：
-   - "exact_entity": 專有名詞、具體物品、人名、書名（例如：冷香丸、薛寶釵、紅樓夢）
-   - "abstract_concept": 抽象意境、情感、事件脈絡、賞析（例如：命運悲劇、悲憫古今之幽思）
+   - "exact_entity": 專有名詞、具體物品、人名、書名
+   - "abstract_concept": 抽象意境、情感、事件脈絡、賞析
 
 請嚴格以 JSON 陣列 (Array of Objects) 的格式輸出，每個物件包含 "query" 與 "type" 兩個欄位。
 範例輸出格式：
 [
-    {{"query": "冷香丸", "type": "exact_entity"}},
-    {{"query": "薛寶釵 命運", "type": "abstract_concept"}}
+    {{"query": "水杯", "type": "exact_entity"}},
+    {{"query": "水杯 裝水的器皿", "type": "abstract_concept"}}
 ]
 
 問題：{query}"""
@@ -49,10 +49,11 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dic
     queries = []
     start_time = time.time()
     try:
+        from config import settings
         response = await client.chat.completions.create(
-            model="qwen/qwen3-30b-a3b-instruct-2507",
+            model=settings.model_policy_classifier,
             messages=[
-                {"role": "system", "content": "你是一個古典文學檢索分析師。請嚴格輸出 JSON 格式。"},
+                {"role": "system", "content": "你是一個檢索分析師。請嚴格輸出 JSON 格式。"},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1,
@@ -142,15 +143,17 @@ class OrchestrationService:
             if self.client:
                 RECENT_WINDOW = 10
                 recent_messages = messages[-RECENT_WINDOW:]
-                asyncio.create_task(async_evaluate_and_update_state(self.client, "qwen/qwen3-30b-a3b-instruct-2507", recent_messages))
+                from config import settings
+                asyncio.create_task(async_evaluate_and_update_state(self.client, settings.model_policy_classifier, recent_messages))
 
         yield f"event: metadata\ndata: {json.dumps({'promptTokens': 1024, 'completionTokens': 0, 'totalTokens': 1024})}\n\n"
 
         # Node 2 & 3: Parallel Tasks (HyDE & Policy)
         policy_task = None
         if last_user_msg and self.client:
+            from config import settings
             policy_task = asyncio.create_task(
-                classify_dialogue_policy(self.client, "qwen/qwen3-30b-a3b-instruct-2507", last_user_msg, messages)
+                classify_dialogue_policy(self.client, settings.model_policy_classifier, last_user_msg, messages)
             )
 
         rag_queries = []
@@ -336,8 +339,13 @@ class OrchestrationService:
                         final_system_prompt += "\n\n【動態表達限制：STARTING 階段】\n注意：使用者目前為初學者（STARTING）。你必須「嚴格降低詞彙難度」，絕對禁止使用未經解釋的進階專有名詞。請用最白話、最生活化的比喻來引導，一次只講一個重點，避免造成認知負荷超載。"
                     elif learner_state == "TINKERING":
                         final_system_prompt += "\n\n【動態表達限制：TINKERING 階段】\n注意：使用者正在摸索與建構概念（TINKERING）。你可以適度引入專有名詞，但必須伴隨具體例證與解釋。鼓勵思辨，但避免過度拋出艱澀的哲學大哉問而讓使用者不知所措。"
+                    
+                    active_avatar = store.get_hot_memory().get("active_avatar")
+                    if active_avatar:
+                        final_system_prompt += f"\n\n【特殊語境：英靈附體】\n注意：你現在已被召喚為「{active_avatar}」。請全程以第一人稱與用戶對話，語氣必須極度符合{active_avatar}的歷史定位、思維模式與經典口吻，直到話題轉移或用戶要求停止。"
                 
-            cold_memory_ctx = await query_cold_memory_for_context(last_user_msg, top_k=5, client=self.client, model="qwen/qwen3-30b-a3b-instruct-2507")
+            from config import settings
+            cold_memory_ctx = await query_cold_memory_for_context(last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
             if cold_memory_ctx:
                 final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
                 
@@ -359,11 +367,11 @@ class OrchestrationService:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             return
             
-        target_model_name = "qwen/qwen3-235b-a22b-thinking-2507" if force_think else "qwen/qwen3-235b-a22b-2507"
+        from config import settings
+        target_model_name = settings.model_main_thinking if force_think else settings.model_main_instruct
         extra_body = {"repetition_penalty": repetition_penalty}
         if force_think:
-            extra_body["provider"] = {"require_parameters": True}
-            extra_body["reasoning"] = {"max_tokens": 512}
+            extra_body["reasoning"] = {"enabled": True, "max_tokens": 512}
             
         tools = [{
             "type": "function",
@@ -436,9 +444,6 @@ class OrchestrationService:
                                 reasoning_text += part.text
                                 
                 content_text = delta.content if (hasattr(delta, 'content') and delta.content) else ""
-                if content_text:
-                    content_text = re.sub(r'<\s*/?\s*think\s*>', '', content_text)
-                    if not content_text: continue
                     
                 if reasoning_text:
                     if not inside_reasoning:

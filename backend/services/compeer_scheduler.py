@@ -215,11 +215,14 @@ async def proactive_scheduler_loop():
                     learner_state = "STARTING"
                     async with _flag_lock:
                         hot_mem = store.get_hot_memory()
-                        if hot_mem.get("trigger_proactive"):
+                        if hot_mem.get("trigger_proactive") or hot_mem.get("avatar_summon_pending"):
                             trigger_proactive = True
                             learner_state = hot_mem.get("current_learner_state", "STARTING")
                             # 消費信號，防止重複觸發
-                            del hot_mem["trigger_proactive"]
+                            if "trigger_proactive" in hot_mem:
+                                del hot_mem["trigger_proactive"]
+                            if "avatar_summon_pending" in hot_mem:
+                                del hot_mem["avatar_summon_pending"]
                             store._atomic_write(store.hot_memory_path, hot_mem)
 
                     if trigger_proactive:
@@ -240,13 +243,14 @@ async def proactive_scheduler_loop():
                             learner_state=learner_state,
                             edf_policy=edf_policy,
                             event_summary=event_summary,
-                            last_compeer_message=hot_mem.get("last_compeer_message", "")
+                            last_compeer_message=hot_mem.get("last_compeer_message", ""),
+                            active_avatar=hot_mem.get("active_avatar")
                         )
 
                         await store.update_hot_memory_async("last_compeer_message", message)
 
                         from services.connection_manager import ws_manager
-                        asyncio.create_task(ws_manager.broadcast_alert(user_id, message))
+                        asyncio.create_task(ws_manager.broadcast_alert(user_id, message, sender_name=hot_mem.get("active_avatar")))
                         set_cooldown(user_id, state=learner_state)
 
             # --- 原有路徑：定時排程事件 ---

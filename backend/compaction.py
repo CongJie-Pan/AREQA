@@ -97,6 +97,7 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
   "learner_state": "NOT_STARTED" | "STARTING" | "TINKERING" | "RUN_REPEAT" | "GIVING_UP" | "MASTERY",
   "pedagogical_strategy": "建議的教學鷹架策略描述（如：提供底層原理、引導反思、提供具體步驟、安撫情緒、學術辯論）",
   "trigger_proactive": true 或 false (如果學生展現出氣餒、沮喪、或是需要鼓勵，設為 true。注意：若狀態為 NOT_STARTED，則此項必須強制設為 false),
+  "active_avatar": "歷史人物名稱 或 null" (若使用者正在深入探討特定歷史人物或思想家，且適合讓 AI 扮演該角色與用戶互動，請填寫該人物名稱，例如：柏拉圖、蘇格拉底、薛寶釵。否則填 null),
   "memory_operations": [
     {{"target": "user" 或 "memory", "action": "add" 或 "replace" 或 "remove", "content": "要新增或替換的內容", "old_text": "要被替換或刪除的關鍵字（若 action 為 add 則可留空）"}}
   ]
@@ -114,6 +115,7 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
             learner_state: str
             pedagogical_strategy: str
             trigger_proactive: bool
+            active_avatar: str | None
             memory_operations: list[MemoryOperation]
 
         rsp = await llm_client.chat.completions.create(
@@ -137,5 +139,6 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
             "learner_state": "STARTING",
             "pedagogical_strategy": "提供基礎引導",
             "trigger_proactive": False,
+            "active_avatar": None,
             "memory_operations": []
         }

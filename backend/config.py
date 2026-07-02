@@ -2,11 +2,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # LLM Model Names
-    model_policy_classifier: str = "qwen/qwen3-30b-a3b-instruct-2507"
-    model_hyde_decomposer: str = "qwen/qwen3-30b-a3b-instruct-2507"
-    model_main_instruct: str = "qwen/qwen3-235b-a22b-2507"
-    model_main_thinking: str = "qwen/qwen3-235b-a22b-thinking-2507"
-    model_gum: str = "qwen/qwen3-235b-a22b-2507"
+    model_policy_classifier: str = "google/gemini-3.1-flash-lite"
+    model_hyde_decomposer: str = "google/gemini-3.1-flash-lite"
+    model_main_instruct: str = "google/gemini-3.1-flash-lite"
+    model_main_thinking: str = "google/gemini-3.1-flash-lite"
+    model_gum: str = "google/gemini-3.1-flash-lite"
 
     # RAG Parameters
     rag_max_docs: int = 7

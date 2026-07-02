@@ -45,10 +45,11 @@ async def init_gum_instance():
     os.makedirs(data_dir, exist_ok=True)
     
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    from config import settings
     
     gum_instance = gum(
         "default_user",
-        "qwen/qwen3-235b-a22b-2507",
+        settings.model_gum,
         text_observer,
         data_directory=data_dir,
         db_name="gum.db",
@@ -617,6 +618,12 @@ async def async_evaluate_and_update_state(client, model, chat_history):
     if store:
         await store.update_hot_memory_async("current_learner_state", state_res.get("learner_state", "STARTING"))
         await store.update_hot_memory_async("current_strategy", state_res.get("pedagogical_strategy", "NORMAL"))
+        if state_res.get("active_avatar"):
+            current_avatar = store.get_hot_memory().get("active_avatar")
+            if state_res["active_avatar"] != current_avatar:
+                print(f"[ComPeer] NEW Active Avatar detected: {state_res['active_avatar']}")
+                await store.update_hot_memory_async("active_avatar", state_res["active_avatar"])
+                await store.update_hot_memory_async("avatar_summon_pending", True)
         if state_res.get("trigger_proactive"):
             # We flag this for ComPeer to pick up or log it
             print(f"[ComPeer] Proactive trigger needed: {state_res}")
@@ -660,8 +667,9 @@ async def detect_proactive_event_via_llm(hot_memory_snapshot: str) -> dict:
 請嚴格以 JSON 格式回傳。"""
 
     try:
+        from config import settings
         rsp = await gum_instance.client.chat.completions.create(
-            model="qwen/qwen3-30b-a3b-instruct-2507",
+            model=settings.model_policy_classifier,
             messages=[{"role": "user", "content": prompt}],
             response_format=get_schema(EventDetectSchema.model_json_schema()),
             temperature=0.1
@@ -679,7 +687,8 @@ async def generate_scaffolding_message_via_llm(
     learner_state: str,
     edf_policy: str,
     event_summary: str = "",
-    last_compeer_message: str = ""
+    last_compeer_message: str = "",
+    active_avatar: str = None
 ) -> str:
     """
     Generate a personalized scaffolding message for proactive ComPeer intervention.
@@ -704,8 +713,12 @@ async def generate_scaffolding_message_via_llm(
 
     last_msg_hint = f"\n【禁止重複】上一次已經問過：「{last_compeer_message}」，本次訊息不得與此主題重複。" if last_compeer_message else ""
 
-    prompt = f"""你是 AREQA，一個溫暖且專業的古典文學學習夥伴。
-現在你需要主動關心用戶，根據以下資訊生成一句**精準的**主動關懷訊息。
+    if active_avatar:
+        roleplay_instruction = f"你現在已被召喚為歷史人物/思想家：「{active_avatar}」。用戶正在學習或探討你的思想。\n請完全沉浸在這個角色中，用{active_avatar}特有的語氣（例如第一人稱、特有的哲學比喻或經典口吻），主動發一句話打斷用戶，丟出一個符合你身份的靈魂拷問或啟發式提問。"
+    else:
+        roleplay_instruction = "你是 AREQA，一個溫暖且專業的古典文學學習夥伴。\n現在你需要主動關心用戶，根據以下資訊生成一句**精準的**主動關懷訊息。"
+
+    prompt = f"""{roleplay_instruction}
 
 【當前學習行為（Hot Memory）- 用戶正在面臨的狀況】
 {hot_memory_snapshot}
@@ -720,13 +733,14 @@ async def generate_scaffolding_message_via_llm(
 要求：
 1. **必須絕對聚焦於「當前學習行為（Hot Memory）」與「挑戰摘要」**，針對用戶**現在**正在閱讀或提問的具體知識點給出提示。
 2. 歷史學習背景（Cold Memory）僅用於了解用戶程度或過去喜好，**絕不可強行將過去的無關話題（如其他角色）插入當前關懷中**，以免造成上下文斷裂。
-3. **對話必須以「引導式詢問」為主，用一個簡單的問題邀請用戶互動。絕對避免單向陳述或自顧自地說教（例如不要說「別擔心，寶玉就像個不想長大的小孩...」這種直接給答案的句子）。**
-4. 繁體中文，語氣自然，像真人助教，不要像機器人。
+3. **對話必須以「引導式詢問」為主，用一個簡單的問題邀請用戶互動。絕對避免單向陳述或自顧自地說教。**
+4. 繁體中文，語氣自然，如果扮演角色，請展現強烈的角色魅力，不要像機器人。
 5. 長度控制在 60 字以內，直接輸出訊息本身，不要加任何前綴說明。"""
 
     try:
+        from config import settings
         rsp = await gum_instance.client.chat.completions.create(
-            model="qwen/qwen3-235b-a22b-2507",
+            model=settings.model_gum,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=120,
             temperature=0.6

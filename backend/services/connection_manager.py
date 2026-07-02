@@ -17,11 +17,14 @@ class ConnectionManager:
             self.active.pop(user_id, None)
             logger.info(f"WebSocket disconnected for user: {user_id}")
 
-    async def broadcast_alert(self, user_id: str, content: str):
+    async def broadcast_alert(self, user_id: str, content: str, sender_name: str = None):
         ws = self.active.get(user_id)
         if ws:
             try:
-                await ws.send_json({"has_alert": True, "content": content})
+                payload = {"has_alert": True, "content": content}
+                if sender_name:
+                    payload["sender_name"] = sender_name
+                await ws.send_json(payload)
                 logger.debug(f"Broadcasted alert to user {user_id}: {content}")
             except Exception as e:
                 logger.error(f"Error broadcasting to user {user_id}: {e}")

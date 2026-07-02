@@ -48,7 +48,7 @@ export const ProactiveManager: React.FC = () => {
   const lastScrollY = useRef(-1);
 
   // 1. Polling proactive-check
-  const handleAlert = useCallback((content: string) => {
+  const handleAlert = useCallback((content: string, senderName?: string) => {
     const key = `proactive-${Date.now()}`;
 
     const waitForStreamAndSend = async (textToUser: string) => {
@@ -102,8 +102,8 @@ export const ProactiveManager: React.FC = () => {
 
     notification.info({
       key,
-      title: 'AREQA',
-      message: 'AREQA',
+      title: senderName || 'AREQA',
+      message: senderName || 'AREQA',
       description: (
         <QuickReplyPanel 
           content={content} 
