@@ -218,28 +218,11 @@ class OrchestrationService:
         if not query or not self.client:
             return
             
-        # Fast intent check to quickly reject out-of-domain queries (like math)
-        # without triggering RAG or EDF.
-        prompt = f"""請判斷以下使用者的提問是否屬於「古典文學」、「國學知識」、「紅樓夢」的範疇，或是「一般性的對話/請求協助」（例如：好、我需要協助、請幫我整理、繼續等）。
-如果是以上任一情況，請回覆 "YES"。如果明顯且完全無關（例如純數學計算、寫程式、物理化學、現代科技等專業無關領域），才回覆 "NO"。
-使用者的提問：{query}"""
-        try:
-            start = time.time()
-            rsp = await self.client.chat.completions.create(
-                model="qwen/qwen3-30b-a3b-instruct-2507",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=5,
-                temperature=0.1
-            )
-            ans = rsp.choices[0].message.content.strip().upper()
-            print(f"[Router API] Fast domain check took {time.time() - start:.2f}s, result: {ans}")
-            if "NO" in ans:
-                refusal = "這是與古典文學無關的領域呢，AREQA只熟悉《紅樓夢》與國學知識，不在我的範疇內。歡迎詢問古典文學相關問題 😊"
-                yield f"data: {json.dumps({'choices': [{'delta': {'content': refusal}, 'index': 0, 'finish_reason': 'stop'}]}, ensure_ascii=False)}\n\n"
-                yield "event: REFUSED\n\n"
-        except Exception as e:
-            print(f"[Router API] Error: {e}")
-            pass
+        # Fast intent check to quickly reject truly harmful or out-of-scope queries
+        # Router LLM is currently DISABLED. All queries pass through.
+        # If re-enabled in the future, the prompt should be updated to reflect
+        # the new universal learning scope of AREQA.
+        pass
 
 
     async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]], cached_results=None) -> AsyncGenerator[str, None]:
@@ -274,7 +257,7 @@ class OrchestrationService:
             
             effective_threshold = 0.35 if is_reranked else 0.005
             if context_results_obj.highest_score < effective_threshold:
-                refusal = "AREQA查閱了相關古籍文獻，暫時沒能找到與您問題直接相關的內容。為了保證回答的準確性，AREQA建議您換個方式提問，或是詢問關於《紅樓夢》與國學的其他問題喔！ 😊"
+                refusal = "AREQA查閱了相關文獻，暫時沒能找到與您問題直接相關的內容。為了保證回答的準確性，AREQA建議您換個方式提問，或詢問其他相關問題喔！ 😊"
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': refusal}, 'index': 0, 'finish_reason': 'stop'}]}, ensure_ascii=False)}\n\n"
                 yield "event: REFUSED\n\n"
                 return

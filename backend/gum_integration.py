@@ -456,7 +456,8 @@ async def get_suggestions():
             suggestions: list[str]
             
         context = "\n".join([f"- {p.text} (confidence: {p.confidence})" for p in props])
-        prompt = f"Based on the following facts about the user:\n{context}\n\nGenerate 3 short, engaging, and actionable suggestions for what the user might want to explore next in a classical Chinese literature (like Dream of the Red Chamber) QA system. Make them sound like natural questions the user could click to ask. Output exactly 3 strings in the array."
+        prompt = f"根據以下已知的使用者學習事實：\n{context}\n\n請生成 3 個簡短、吸引人且可點擊的建議問題，幫助使用者繼續深入探索目前正在學習的主題。請以繁體中文輸出，讓建議聽起來像使用者自然會問的問題。請輸出剛好 3 個字串在陣列中。"
+
         
         rsp = await gum_instance.client.chat.completions.create(
             model=gum_instance.model,
