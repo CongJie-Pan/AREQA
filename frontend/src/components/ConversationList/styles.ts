@@ -48,7 +48,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   logo: css`
-    width: 160px;
+    width: auto;
     height: auto;
     object-fit: contain;
     flex-shrink: 0;

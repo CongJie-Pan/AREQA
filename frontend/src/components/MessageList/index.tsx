@@ -7,6 +7,7 @@
  */
 
 import React, { useRef, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { ArrowDown } from 'lucide-react';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { MessageItem } from './MessageItem';
@@ -133,12 +134,14 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
   if (messages.length === 0) {
     return (
       <div className={cx(styles.container, styles.empty, className)}>
-        <h1 className={styles.emptyTitle}>
-          &nbsp;嗨！我是 AREQA，您的個人學習知識問答助手 😊
-        </h1>
-        <p className={styles.emptyDescription}>
-          今天有什麼我可以幫忙的嗎？
-        </p>
+        <Image 
+          src="/logo/areqa_text_logo.png" 
+          alt="AREQA Logo" 
+          width={240} 
+          height={80} 
+          style={{ objectFit: 'contain' }} 
+          priority
+        />
       </div>
     );
   }

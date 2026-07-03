@@ -5,13 +5,15 @@
  * Sidebar displaying conversation history grouped by time
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import Image from 'next/image';
 import { Spin } from 'antd';
-import { Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, BrainCircuit, Sparkles } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, BrainCircuit, Mail as MailIcon } from 'lucide-react';
 import { useConversationStore } from '@/store/conversation';
-import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
+import { useMailboxStore } from '@/store/mailbox';
 import { useStyles } from './styles';
+import { SidePanelType } from '@/types/panel';
+import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
 
 export interface ConversationListProps {
   /** Callback when conversation is selected */
@@ -23,7 +25,7 @@ export interface ConversationListProps {
   /** Callback to toggle sidebar visibility */
   onToggleSidebar?: () => void;
   /** Callback to open GUM panel */
-  onSelectGumPanel?: (type: 'memory' | 'suggestions') => void;
+  onSelectGumPanel?: (type: Exclude<SidePanelType, null>) => void;
   /** Class name for styling */
   className?: string;
 }
@@ -45,6 +47,14 @@ export function ConversationList({
   const activeId = useConversationStore((state) => state.activeConversationId);
   const isLoading = useConversationStore((state) => state.isLoading);
   const streamingTitles = useConversationStore((state) => state.streamingTitles);
+  
+
+
+  const { unreadCount, fetchMails } = useMailboxStore();
+
+  useEffect(() => {
+    fetchMails();
+  }, [fetchMails]);
 
   const handleNew = useCallback(async () => {
     // We don't create a conversation in DB yet (Lazy creation)
@@ -103,9 +113,9 @@ export function ConversationList({
       <div className={styles.logoContainer}>
         <div className={styles.logoWrapper}>
           <Image 
-            src="/logo/areqa_text_logo.png" 
+            src="/logo/logo_icon_v2.png" 
             alt="AREQA Logo" 
-            width={160} 
+            width={40} 
             height={40}
             className={styles.logo}
             priority
@@ -131,9 +141,22 @@ export function ConversationList({
           <BrainCircuit size={18} />
           <span>瀏覽記憶</span>
         </button>
-        <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('suggestions')}>
-          <Sparkles size={18} />
-          <span>您可能想知道？</span>
+        <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('mailbox')}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <MailIcon size={18} />
+            {unreadCount > 0 && (
+              <span style={{ 
+                position: 'absolute', top: -4, right: -4, 
+                backgroundColor: 'red', color: 'white', 
+                borderRadius: '50%', width: 14, height: 14, 
+                fontSize: 10, display: 'flex', 
+                justifyContent: 'center', alignItems: 'center' 
+              }}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
+          <span>信箱</span>
         </button>
       </div>
 
