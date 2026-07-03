@@ -49,7 +49,8 @@ export async function createChatStream(
   callbacks: StreamCallbacks,
   abortSignal?: AbortSignal,
   useRag: boolean = false,
-  forceThink: boolean = false
+  forceThink: boolean = false,
+  useWebSearch: boolean = false
 ): Promise<void> {
   const parser = new ThinkTagParser();
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -94,7 +95,8 @@ export async function createChatStream(
       body: JSON.stringify({ 
         messages,
         use_rag: useRag,
-        force_think: forceThink
+        force_think: forceThink,
+        use_web_search: useWebSearch
       }),
     };
 
@@ -195,6 +197,11 @@ export async function createChatStream(
           // Why: Display the verified literature sources used for retrieval.
           if (eventType === 'sources') {
             callbacks.onSources?.(chunk); // chunk is an array of source objects
+            continue;
+          }
+
+          if (eventType === 'citations') {
+            callbacks.onCitations?.(chunk); // chunk is an array of URL strings
             continue;
           }
 

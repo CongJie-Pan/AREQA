@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
     let body: { 
       messages: Array<{ role: string; content: string }>;
       use_rag?: boolean;
+      use_web_search?: boolean;
       force_think?: boolean;
       temperature?: number;
       top_p?: number;
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         messages: body.messages,
         use_rag: body.use_rag || false,
+        use_web_search: body.use_web_search || false,
         force_think: body.force_think || false,
         temperature: body.temperature ?? 0.0,
         top_p: body.top_p ?? 0.9,

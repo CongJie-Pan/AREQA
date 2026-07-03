@@ -27,6 +27,7 @@ const initialState = {
   error: null as Error | null,
   tokenUsage: null as { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null,
   useRag: false,
+  useWebSearch: false,
   forceThink: true,
   ragStatus: 'idle' as 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done',
   ragMessage: '',
@@ -297,7 +298,14 @@ export const useChatStore = create<ChatStore>((set) => ({
   },
 
   // Toggles
-  toggleRag: () => set((state) => ({ useRag: !state.useRag })),
+  toggleRag: () => set((state) => ({ 
+    useRag: !state.useRag,
+    useWebSearch: false
+  })),
+  toggleWebSearch: () => set((state) => ({ 
+    useWebSearch: !state.useWebSearch,
+    useRag: false
+  })),
   toggleThink: () => set((state) => ({ forceThink: !state.forceThink })),
 
   // RAG Visualization

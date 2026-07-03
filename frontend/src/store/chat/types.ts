@@ -74,6 +74,8 @@ export interface ChatState {
   // Toggle modes
   /** Whether explicitly requesting RAG contextual augmentation */
   useRag: boolean;
+  /** Whether explicitly requesting Web Search API */
+  useWebSearch: boolean;
   /** Whether explicitly forcing the model to wrap reasoning in <think> */
   forceThink: boolean;
 
@@ -144,6 +146,8 @@ export interface ChatActions {
   // Mode Toggles
   /** Toggle RAG mode */
   toggleRag: () => void;
+  /** Toggle Web Search mode */
+  toggleWebSearch: () => void;
   /** Toggle Think mode */
   toggleThink: () => void;
 

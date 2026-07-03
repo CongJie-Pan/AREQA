@@ -17,6 +17,7 @@ import { RAGStatusPanel } from '@/components/RAGStatusPanel';
 import type { CitationSource } from '@/components/Citations';
 import type { DisplayMessage } from '@/store/chat';
 import { useStyles } from './styles';
+import remend from 'remend';
 
 /**
  * Safe URL protocols whitelist
@@ -49,9 +50,51 @@ type WindowWithFind = Window & {
   ) => boolean;
 };
 
-const createMarkdownComponents = (): Components => ({
+const createMarkdownComponents = (messageId: string): Components => ({
   // Sanitize links - only allow safe protocols
   a: ({ href, children, ...props }) => {
+    if (href?.startsWith('#cite-')) {
+      const citeIndex = parseInt(href.replace('#cite-', ''), 10);
+      return (
+        <a 
+          href={href}
+          onClick={(e) => {
+            e.preventDefault();
+            window.dispatchEvent(new CustomEvent(`open-citation-${messageId}`, { detail: { index: citeIndex } }));
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(212, 175, 55, 0.3)';
+            e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.6)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(212, 175, 55, 0.15)';
+            e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.3)';
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: '20px',
+            height: '20px',
+            padding: '0 4px',
+            fontSize: '12px',
+            fontWeight: 600,
+            color: '#d4af37',
+            backgroundColor: 'rgba(212, 175, 55, 0.15)',
+            border: '1px solid rgba(212, 175, 55, 0.3)',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            margin: '0 4px',
+            verticalAlign: 'middle',
+            transform: 'translateY(-1px)',
+            textDecoration: 'none',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {citeIndex}
+        </a>
+      );
+    }
     if (!isSafeUrl(href)) {
       return <span>{children}</span>;
     }
@@ -108,6 +151,34 @@ export interface MessageItemProps {
   onSelectSuggestion?: (question: string) => void;
   /** Optional class name for custom styling */
   className?: string;
+}
+
+// New Sub-Component for handling streaming markdown parsing safely
+function StreamingMarkdown({ content, markdownComponents }: { content: string, markdownComponents: Components }) {
+  const deferredContent = React.useDeferredValue(content);
+  const processedContent = React.useMemo(() => {
+    let text = deferredContent;
+    try {
+      // Use remend to safely close incomplete markdown tags during streaming
+      text = remend(text);
+    } catch {
+      // remend might fail on some Edge cases
+    }
+    // Replace citations like 【文獻2】 or [2] (if followed by context, not standard markdown links)
+    text = text.replace(/【文獻(\d+)】/g, '[$1](#cite-$1)');
+    text = text.replace(/\[(\d+)\](?!\()/g, '[$1](#cite-$1)');
+    return text;
+  }, [deferredContent]);
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={markdownComponents}
+      disallowedElements={['script', 'iframe', 'object', 'embed']}
+    >
+      {processedContent}
+    </ReactMarkdown>
+  );
 }
 
 /**
@@ -189,8 +260,8 @@ export const MessageItem = memo(function MessageItem({
   }, [bubbleEl]);
 
   const markdownComponents = React.useMemo(
-    () => createMarkdownComponents(),
-    []
+    () => createMarkdownComponents(message.id),
+    [message.id]
   );
 
   // Edit mode state
@@ -375,8 +446,8 @@ export const MessageItem = memo(function MessageItem({
         <div className={styles.assistantMessageWrapper}>
           {/* Bubble Wrapper */}
           <div className={cx(styles.bubbleWrapper, 'bubbleWrapper')}>
-            {/* RAG Status Panel - Should be at the top and only visible before thinking starts */}
-            {ragInfo && ragInfo.status !== 'idle' && !thinking?.isThinking && !thinking?.content && !message.reasoning && (
+            {/* RAG Status Panel - Should be at the top and only visible before thinking or content starts */}
+            {ragInfo && ragInfo.status !== 'idle' && ragInfo.status !== 'done' && !thinking?.isThinking && !thinking?.content && !message.reasoning && !message.content && (
               <RAGStatusPanel ragInfo={ragInfo} />
             )}
 
@@ -400,13 +471,7 @@ export const MessageItem = memo(function MessageItem({
             >
               {/* Message Content */}
               <div className={styles.content}>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={markdownComponents}
-                  disallowedElements={['script', 'iframe', 'object', 'embed']}
-                >
-                  {message.content}
-                </ReactMarkdown>
+                <StreamingMarkdown content={message.content} markdownComponents={markdownComponents} />
                 {/* Streaming cursor */}
                 {isStreaming && !thinking?.isThinking && (
                   <span className={styles.streamingCursor} />
@@ -419,6 +484,7 @@ export const MessageItem = memo(function MessageItem({
                 (message.citations && message.citations.length > 0)) && (
                 <div className={styles.citationsWrapper}>
                   <Citations 
+                    messageId={message.id}
                     citations={message.citations || []} 
                     sources={message.sources || ragInfo?.sources}
                   />

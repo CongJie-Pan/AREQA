@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, Database, X, CornerDownRight } from 'lucide-react';
+import { Send, Square, Database, X, CornerDownRight, Globe } from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import { useChatStore } from '@/store/chat';
 import { useStyles } from './styles';
@@ -52,8 +52,10 @@ export function ChatInput({
   
   // Connect to global state for mode togglers
   const useRag = useChatStore((state) => state.useRag);
+  const useWebSearch = useChatStore((state) => state.useWebSearch);
   const quotedText = useChatStore((state) => state.quotedText);
   const toggleRag = useChatStore((state) => state.toggleRag);
+  const toggleWebSearch = useChatStore((state) => state.toggleWebSearch);
   const setQuotedText = useChatStore((state) => state.setQuotedText);
 
   // Calculate character count and warning state
@@ -185,15 +187,29 @@ export function ChatInput({
         <div className={styles.toolbarLeft}>
 
 
-          <Tooltip title="切換 RAG 模式" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+          <div style={{ display: 'none' }}>
+            <Tooltip title="切換 RAG 模式" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+              <button
+                type="button"
+                className={cx(styles.toggleButton, useRag && styles.toggleButtonActive)}
+                onClick={toggleRag}
+                aria-label="切換 RAG 模式"
+              >
+                <Database size={15} />
+                <span>RAG模式</span>
+              </button>
+            </Tooltip>
+          </div>
+
+          <Tooltip title="切換網路搜尋" color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
-              className={cx(styles.toggleButton, useRag && styles.toggleButtonActive)}
-              onClick={toggleRag}
-              aria-label="切換 RAG 模式"
+              className={cx(styles.toggleButton, useWebSearch && styles.toggleButtonActive)}
+              onClick={toggleWebSearch}
+              aria-label="切換網路搜尋"
             >
-              <Database size={15} />
-              <span>RAG模式</span>
+              <Globe size={15} />
+              <span>網路搜尋</span>
             </button>
           </Tooltip>
 

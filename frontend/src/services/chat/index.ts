@@ -306,7 +306,8 @@ export async function sendMessage(
       },
       abortSignal,
       chatStore.useRag,
-      chatStore.forceThink
+      chatStore.forceThink,
+      chatStore.useWebSearch
     );
   } catch (error) {
     // Clear abort controller
@@ -718,7 +719,8 @@ export async function regenerateMessage(messageId: string): Promise<void> {
       },
       abortSignal,
       chatStore.useRag,
-      chatStore.forceThink
+      chatStore.forceThink,
+      chatStore.useWebSearch
     );
   } catch (error) {
     currentAbortController = null;
@@ -930,7 +932,8 @@ export async function editUserMessage(
       },
       abortSignal,
       chatStore.useRag,
-      chatStore.forceThink
+      chatStore.forceThink,
+      chatStore.useWebSearch
     );
   } catch (error) {
     currentAbortController = null;
