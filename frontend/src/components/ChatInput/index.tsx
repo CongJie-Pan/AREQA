@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, Brain, Database, X, CornerDownRight } from 'lucide-react';
+import { Send, Square, Database, X, CornerDownRight } from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import { useChatStore } from '@/store/chat';
 import { useStyles } from './styles';
@@ -52,10 +52,8 @@ export function ChatInput({
   
   // Connect to global state for mode togglers
   const useRag = useChatStore((state) => state.useRag);
-  const forceThink = useChatStore((state) => state.forceThink);
   const quotedText = useChatStore((state) => state.quotedText);
   const toggleRag = useChatStore((state) => state.toggleRag);
-  const toggleThink = useChatStore((state) => state.toggleThink);
   const setQuotedText = useChatStore((state) => state.setQuotedText);
 
   // Calculate character count and warning state
