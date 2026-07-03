@@ -17,6 +17,7 @@ import { MessageList } from '@/components/MessageList';
 import { ChatInput } from '@/components/ChatInput';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
+import { MailboxPanel } from '@/components/MailboxPanel';
 import { ProactiveManager } from '@/components/ProactiveManager';
 import { useStyles } from './styles';
 
@@ -65,6 +66,8 @@ export interface ChatContainerProps {
   /** Class name for styling */
   className?: string;
 }
+import { SidePanelType } from '@/types/panel';
+
 
 /**
  * ChatContainer is the main component that assembles the chat interface
@@ -73,7 +76,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [gumPanelType, setGumPanelType] = useState<'memory' | 'suggestions' | null>(null);
+  const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
@@ -311,7 +314,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
         {/* Content Area */}
         <div className={cx(styles.content, isEmpty && !gumPanelType && styles.contentEmpty)}>
-          {gumPanelType ? (
+          {gumPanelType === 'mailbox' ? (
+            <MailboxPanel onClose={() => setGumPanelType(null)} />
+          ) : gumPanelType === 'memory' ? (
             <GumPanel
               open={true}
               type={gumPanelType}

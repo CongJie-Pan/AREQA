@@ -120,7 +120,13 @@ export const ProactiveManager: React.FC = () => {
   }, [notification, message]);
 
   // 以 hook 取代 setInterval
-  useProactiveWebSocket(handleAlert);
+  const handleNewMail = useCallback(() => {
+    import('@/store/mailbox').then(({ useMailboxStore }) => {
+      useMailboxStore.getState().fetchMails();
+    });
+  }, []);
+
+  useProactiveWebSocket(handleAlert, handleNewMail);
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {

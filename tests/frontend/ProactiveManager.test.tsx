@@ -89,7 +89,8 @@ describe('ProactiveManager', () => {
 
     const callArgs = mockNotificationInfo.mock.calls[0][0];
     expect(callArgs.message).toBe('AREQA');
-    expect(callArgs.description).toBe(ALERT_CONTENT);
+    // callArgs.description is the QuickReplyPanel element
+    expect(callArgs.description.props.content).toBe(ALERT_CONTENT);
   });
 
   it('should log scroll action with throttling', async () => {
@@ -153,13 +154,11 @@ describe('ProactiveManager', () => {
     });
 
     const callArgs = mockNotificationInfo.mock.calls[0][0];
-    const btnContent = callArgs.btn;
-    // btnContent is the div with AutoRejectButton and Button
-    // We can extract the onReject prop from AutoRejectButton which is the first child
-    const autoRejectBtn = btnContent.props.children[0];
+    // btn is just a span now, the logic is in description which is QuickReplyPanel
+    const quickReplyPanel = callArgs.description;
     
     await act(async () => {
-      autoRejectBtn.props.onReject();
+      quickReplyPanel.props.onReject();
     });
 
     expect(mockNotificationDestroy).toHaveBeenCalled();

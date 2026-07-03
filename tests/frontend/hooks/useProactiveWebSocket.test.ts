@@ -59,7 +59,22 @@ describe('useProactiveWebSocket', () => {
       ws.onmessage({ data: JSON.stringify({ has_alert: true, content: 'Test alert' }) });
     }
     
-    expect(onAlert).toHaveBeenCalledWith('Test alert');
+    expect(onAlert).toHaveBeenCalledWith('Test alert', undefined);
+  });
+
+  it('calls onNewMail when has_new_mail is true', () => {
+    const onAlert = vi.fn();
+    const onNewMail = vi.fn();
+    renderHook(() => useProactiveWebSocket(onAlert, onNewMail));
+    
+    const ws = webSocketInstances[0];
+    
+    if (ws.onmessage) {
+      ws.onmessage({ data: JSON.stringify({ has_new_mail: true, sender: '蘇格拉底' }) });
+    }
+    
+    expect(onNewMail).toHaveBeenCalledWith('蘇格拉底');
+    expect(onAlert).not.toHaveBeenCalled();
   });
 
   it('does not call onAlert when has_alert is false', () => {

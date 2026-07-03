@@ -1,8 +1,19 @@
 import { useEffect, useRef } from 'react';
 
-export function useProactiveWebSocket(onAlert: (content: string, senderName?: string) => void) {
+export function useProactiveWebSocket(
+  onAlert: (content: string, senderName?: string) => void,
+  onNewMail?: (sender: string) => void
+) {
   const wsRef = useRef<WebSocket | null>(null);
   const retryDelayRef = useRef(1000); // Initial backoff 1 second
+  
+  const onAlertRef = useRef(onAlert);
+  const onNewMailRef = useRef(onNewMail);
+
+  useEffect(() => {
+    onAlertRef.current = onAlert;
+    onNewMailRef.current = onNewMail;
+  }, [onAlert, onNewMail]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -15,7 +26,9 @@ export function useProactiveWebSocket(onAlert: (content: string, senderName?: st
       wsRef.current.onmessage = (e) => {
         const data = JSON.parse(e.data);
         if (data.has_alert && data.content) {
-          onAlert(data.content, data.sender_name);
+          onAlertRef.current(data.content, data.sender_name);
+        } else if (data.has_new_mail && data.sender && onNewMailRef.current) {
+          onNewMailRef.current(data.sender);
         }
       };
       
@@ -41,5 +54,5 @@ export function useProactiveWebSocket(onAlert: (content: string, senderName?: st
         wsRef.current.close();
       }
     };
-  }, [onAlert]);
+  }, []);
 }

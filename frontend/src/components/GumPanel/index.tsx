@@ -4,10 +4,11 @@ import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { useGumStore } from '@/store/gum';
 import { useStyles } from './styles';
 import { Spin, Checkbox, Input, message, Button, Space, Popconfirm, Tag } from 'antd';
+import { SidePanelType } from '@/types/panel';
 
 interface GumPanelProps {
   open: boolean;
-  type: 'memory' | 'suggestions' | null;
+  type: SidePanelType;
   onClose: () => void;
 }
 

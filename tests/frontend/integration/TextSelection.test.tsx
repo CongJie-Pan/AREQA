@@ -13,6 +13,8 @@ vi.mock('@/services/chat', () => ({
   cancelCurrentStream: vi.fn(),
   regenerateMessage: vi.fn(),
   editUserMessage: vi.fn(),
+  switchConversation: vi.fn(),
+  deleteConversation: vi.fn(),
 }));
 
 // Mock selection hook to trigger it manually
