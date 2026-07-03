@@ -8,8 +8,8 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
 
-from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Request, WebSocket, HTTPException
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import AsyncOpenAI
@@ -18,7 +18,7 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
-from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, get_suggestions, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state
+from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state
 
 # 在 main.py 最上層加入全域快取服務變數
 rag_cache = None
@@ -235,6 +235,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     from memory_store import init_global_store
+    from mailbox_store import init_mailbox_store
     
     # Init store
     hot_path = PROJECT_ROOT / "data" / "gum_data" / "hot_memory.json"
@@ -242,6 +243,10 @@ async def startup_event():
     store = init_global_store(str(hot_path), str(profile_path), budget_limit=1000000)
     store.clear_all_pending_alerts()
     print("Memory Store initialized successfully.")
+    
+    mailbox_dir = PROJECT_ROOT / "data" / "gum_data"
+    init_mailbox_store(str(mailbox_dir))
+    print("Mailbox Store initialized successfully.")
     
     await init_gum_instance()
     
@@ -270,10 +275,39 @@ async def fetch_memory():
     props = await get_all_memory()
     return {"propositions": props}
 
-@app.get("/api/v1/suggestions")
-async def fetch_suggestions_endpoint():
-    sugs = await get_suggestions()
-    return {"suggestions": sugs}
+from mailbox_store import get_mailbox_store
+
+@app.get("/api/v1/mailbox")
+async def fetch_mailbox():
+    store = get_mailbox_store()
+    return {
+        "mails": store.get_all_mails(),
+        "unread_count": store.get_unread_count()
+    }
+
+class SendMailRequest(BaseModel):
+    content: str
+    recipient: str = "AREQA"
+    conversation_id: Optional[str] = None
+
+@app.post("/api/v1/mailbox/send")
+async def send_mail_endpoint(req: SendMailRequest):
+    store = get_mailbox_store()
+    mail_id = store.add_mail(sender="User", content=req.content, recipient=req.recipient, conversation_id=req.conversation_id)
+    store.mark_as_read(mail_id)
+    import asyncio
+    from gum_integration import delayed_reply_writer
+    asyncio.create_task(delayed_reply_writer(mail_id, req.content, req.recipient, delay_seconds=300))
+    return {"status": "success", "mail_id": mail_id}
+
+@app.post("/api/v1/mailbox/read/{mail_id}")
+async def read_mail_endpoint(mail_id: str):
+    store = get_mailbox_store()
+    success = store.mark_as_read(mail_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Mail not found")
+    return {"status": "success"}
+
 
 class EditMemoryRequest(BaseModel):
     text: str

@@ -30,4 +30,15 @@ class ConnectionManager:
                 logger.error(f"Error broadcasting to user {user_id}: {e}")
                 self.disconnect(user_id)
 
+    async def broadcast_mail_alert(self, sender: str, user_id: str = "default_user"):
+        ws = self.active.get(user_id)
+        if ws:
+            try:
+                payload = {"has_new_mail": True, "sender": sender}
+                await ws.send_json(payload)
+                logger.debug(f"Broadcasted mail alert to user {user_id} from {sender}")
+            except Exception as e:
+                logger.error(f"Error broadcasting mail alert to user {user_id}: {e}")
+                self.disconnect(user_id)
+
 ws_manager = ConnectionManager()

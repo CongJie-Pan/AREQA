@@ -209,23 +209,43 @@ async def proactive_scheduler_loop():
                 user_id = "default_user"
                 from memory_store import get_global_store
                 store = get_global_store()
-                if store and not is_in_cooldown(user_id):
-                    # Consume flag safely
+                if store:
                     trigger_proactive = False
+                    avatar_summon = False
                     learner_state = "STARTING"
+                    active_avatar = None
+
                     async with _flag_lock:
                         hot_mem = store.get_hot_memory()
-                        if hot_mem.get("trigger_proactive") or hot_mem.get("avatar_summon_pending"):
+                        if hot_mem.get("avatar_summon_pending"):
+                            avatar_summon = True
+                            active_avatar = hot_mem.get("active_avatar")
+                            del hot_mem["avatar_summon_pending"]
+                            store._atomic_write(store.hot_memory_path, hot_mem)
+                        elif hot_mem.get("trigger_proactive") and not is_in_cooldown(user_id):
                             trigger_proactive = True
                             learner_state = hot_mem.get("current_learner_state", "STARTING")
-                            # 消費信號，防止重複觸發
-                            if "trigger_proactive" in hot_mem:
-                                del hot_mem["trigger_proactive"]
-                            if "avatar_summon_pending" in hot_mem:
-                                del hot_mem["avatar_summon_pending"]
+                            active_avatar = hot_mem.get("active_avatar")
+                            del hot_mem["trigger_proactive"]
                             store._atomic_write(store.hot_memory_path, hot_mem)
 
-                    if trigger_proactive:
+                    if avatar_summon and active_avatar:
+                        print(f"[Mailbox] avatar_summon_pending detected for {active_avatar}! (bypassing cooldown)")
+                        from gum_integration import generate_epistolary_letter_via_llm, get_hot_memory_snapshot, query_cold_memory_for_context
+                        snapshot = get_hot_memory_snapshot()
+                        event_summary = f"與 {active_avatar} 進行深度歷史哲學探討"
+                        cold_ctx = await query_cold_memory_for_context(event_summary)
+                        
+                        letter = await generate_epistolary_letter_via_llm(active_avatar, snapshot, cold_ctx)
+                        
+                        from mailbox_store import get_mailbox_store
+                        mb_store = get_mailbox_store()
+                        mb_store.add_mail(sender=active_avatar, content=letter, recipient="User")
+                        
+                        from services.connection_manager import ws_manager
+                        asyncio.create_task(ws_manager.broadcast_mail_alert(active_avatar))
+                        
+                    elif trigger_proactive:
                         print(f"[ComPeer] trigger_proactive detected! learner_state={learner_state}")
                         from gum_integration import (
                             generate_scaffolding_message_via_llm,
@@ -237,6 +257,8 @@ async def proactive_scheduler_loop():
                         cold_ctx = await query_cold_memory_for_context(event_summary)
                         edf_policy = store.get_current_strategy()
 
+                        # Re-fetch hot_memory safely before generating message
+                        hot_mem = store.get_hot_memory()
                         message = await generate_scaffolding_message_via_llm(
                             hot_memory_snapshot=snapshot,
                             cold_memory_context=cold_ctx,
@@ -244,13 +266,12 @@ async def proactive_scheduler_loop():
                             edf_policy=edf_policy,
                             event_summary=event_summary,
                             last_compeer_message=hot_mem.get("last_compeer_message", ""),
-                            active_avatar=hot_mem.get("active_avatar")
+                            active_avatar=active_avatar
                         )
 
                         await store.update_hot_memory_async("last_compeer_message", message)
-
                         from services.connection_manager import ws_manager
-                        asyncio.create_task(ws_manager.broadcast_alert(user_id, message, sender_name=hot_mem.get("active_avatar")))
+                        asyncio.create_task(ws_manager.broadcast_alert(user_id, message, sender_name=active_avatar))
                         set_cooldown(user_id, state=learner_state)
 
             # --- 原有路徑：定時排程事件 ---

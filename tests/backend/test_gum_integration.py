@@ -9,7 +9,6 @@ from backend.gum_integration import (
     stop_gum_instance,
     push_observation,
     get_all_memory,
-    get_suggestions,
     TextObserver,
 )
 import backend.gum_integration
@@ -213,30 +212,10 @@ async def test_get_all_memory(mock_gum_instance):
     backend.gum_integration.gum_instance = None
 
 @pytest.mark.asyncio
-async def test_get_suggestions(mock_gum_instance):
-    backend.gum_integration.gum_instance = mock_gum_instance
-    
-    suggestions = await get_suggestions()
-    
-    assert len(suggestions) == 2
-    assert suggestions[0] == "test suggestion 1"
-    assert suggestions[1] == "test suggestion 2"
-    mock_gum_instance.client.chat.completions.create.assert_called_once()
-    
-    # cleanup
-    backend.gum_integration.gum_instance = None
-
-@pytest.mark.asyncio
 async def test_get_all_memory_no_instance():
     backend.gum_integration.gum_instance = None
     memory = await get_all_memory()
     assert memory == []
-
-@pytest.mark.asyncio
-async def test_get_suggestions_no_instance():
-    backend.gum_integration.gum_instance = None
-    suggestions = await get_suggestions()
-    assert suggestions == []
 
 # --- STITCH Contextual Intent Filtering Integration Tests ---
 

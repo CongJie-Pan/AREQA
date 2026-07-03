@@ -442,34 +442,7 @@ async def get_all_memory():
         print(f"Error fetching memory: {e}")
         return []
 
-async def get_suggestions():
-    if not gum_instance:
-        return []
-    try:
-        props = await gum_instance.recent(limit=10)
-        if not props:
-            return []
-        
-        from gum.schemas import get_schema
-        from pydantic import BaseModel
-        
-        class SuggestionsResponse(BaseModel):
-            suggestions: list[str]
-            
-        context = "\n".join([f"- {p.text} (confidence: {p.confidence})" for p in props])
-        prompt = f"根據以下已知的使用者學習事實：\n{context}\n\n請生成 3 個簡短、吸引人且可點擊的建議問題，幫助使用者繼續深入探索目前正在學習的主題。請以繁體中文輸出，讓建議聽起來像使用者自然會問的問題。請輸出剛好 3 個字串在陣列中。"
 
-        
-        rsp = await gum_instance.client.chat.completions.create(
-            model=gum_instance.model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format=get_schema(SuggestionsResponse.model_json_schema()),
-        )
-        import json
-        data = json.loads(rsp.choices[0].message.content)
-        return data.get("suggestions", [])
-    except Exception as e:
-        print(f"Error generating suggestions: {e}")
 
 class ObservationQueueWorker:
     def __init__(self, process_callback, debounce_seconds: float = 3.0):
@@ -624,6 +597,12 @@ async def async_evaluate_and_update_state(client, model, chat_history):
                 print(f"[ComPeer] NEW Active Avatar detected: {state_res['active_avatar']}")
                 await store.update_hot_memory_async("active_avatar", state_res["active_avatar"])
                 await store.update_hot_memory_async("avatar_summon_pending", True)
+        elif state_res.get("active_avatar") is None:
+            hot_mem = store.get_hot_memory()
+            if "active_avatar" in hot_mem:
+                print(f"[ComPeer] Clearing Active Avatar: {hot_mem['active_avatar']}")
+                del hot_mem["active_avatar"]
+                store._atomic_write(store.hot_memory_path, hot_mem)
         if state_res.get("trigger_proactive"):
             # We flag this for ComPeer to pick up or log it
             print(f"[ComPeer] Proactive trigger needed: {state_res}")
@@ -749,3 +728,101 @@ async def generate_scaffolding_message_via_llm(
     except Exception as e:
         print(f"[ComPeer] generate_scaffolding_message_via_llm failed: {e}")
         return "你學習狀況還好嗎？有任何問題都可以問我。"
+
+async def generate_epistolary_letter_via_llm(
+    active_avatar: str,
+    hot_memory_snapshot: str,
+    cold_memory_context: str
+) -> str:
+    if not gum_instance:
+        return "系統發生錯誤，無法寫信。"
+        
+    prompt = f"""你現在是「{active_avatar}」。請以第一人稱，寫一封信給正在與你進行思想交流的學習者（User）。
+這不是一般的即時對話，而是一封跨時空的信件，因此語氣要具有沉澱感、哲學反思與歷史厚度。
+
+【當前學習行為與近期探討（Hot Memory）】
+{hot_memory_snapshot}
+
+【歷史學習背景（Cold Memory）】
+{cold_memory_context}
+
+要求：
+1. 必須回傳一個 JSON 格式，包含兩個欄位："subject"（信件主旨）與 "content"（信件內容）。
+2. "subject" 請擬定一個吸引人且具有哲理的簡短標題。
+3. "content" 長度控制在 300 到 500 字之間。針對使用者在對話中展現的疑惑、掙扎或深刻見解，給予回應與更深一層的提問。
+4. 充分展現「{active_avatar}」的歷史背景與口吻，不可像 AI 機器人。
+5. 排版支援 Markdown，請善用段落讓信件便於閱讀。
+6. 結尾請署名，並留下一個發人深省的問題等待對方的回信。
+
+請務必只回傳 JSON 格式，不要包含其他無關的文字。
+"""
+    try:
+        from config import settings
+        from pydantic import BaseModel
+        
+        class LetterSchema(BaseModel):
+            subject: str
+            content: str
+            
+        rsp = await gum_instance.client.chat.completions.create(
+            model=settings.model_gum,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_schema", "json_schema": {"name": "letter_schema", "schema": LetterSchema.model_json_schema()}},
+            max_tokens=800,
+            temperature=0.8
+        )
+        response_text = rsp.choices[0].message.content.strip()
+        
+        import json
+        import re
+        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if match:
+            response_text = match.group(0)
+            
+        data = json.loads(response_text)
+        
+        subject = data.get("subject", "一封來自遠方的信")
+        if not subject or subject.strip() == "":
+            subject = "來自遠方的思考"
+            
+        content = data.get("content", "信件內容未能解碼。")
+        
+        if isinstance(content, list):
+            content = "\n".join(str(c) for c in content)
+            
+        return subject, content
+    except Exception as e:
+        print(f"[Mailbox] generate_epistolary_letter_via_llm failed: {e}")
+        return "一封未知的信", f"來自{active_avatar}的一封信，因時空亂流未能完整送達。"
+
+async def delayed_reply_writer(mail_id: str, reply_content: str, active_avatar: str, delay_seconds: int = 300):
+    import asyncio
+    print(f"[Mailbox] delayed_reply_writer started for mail_id {mail_id}, waiting {delay_seconds} seconds...")
+    try:
+        await asyncio.sleep(delay_seconds)
+        
+        from mailbox_store import get_mailbox_store
+        store = get_mailbox_store()
+        
+        snapshot = get_hot_memory_snapshot()
+        hot_context = f"使用者的回信內容：{reply_content}\n---\n目前對話脈絡：\n{snapshot}"
+        
+        event_summary = f"使用者回信給 {active_avatar} 探討：{reply_content[:50]}"
+        cold_ctx = await query_cold_memory_for_context(event_summary)
+        
+        subject, letter_content = await generate_epistolary_letter_via_llm(
+            active_avatar=active_avatar,
+            hot_memory_snapshot=hot_context,
+            cold_memory_context=cold_ctx
+        )
+        
+        new_mail_id = store.add_mail(sender=active_avatar, subject=subject, content=letter_content, recipient="User")
+        
+        from services.connection_manager import ws_manager
+        await ws_manager.broadcast_mail_alert(active_avatar)
+        print(f"[Mailbox] delayed_reply_writer completed, sent new mail {new_mail_id} from {active_avatar} in response to {mail_id}.")
+    except asyncio.CancelledError:
+        print(f"[Mailbox] delayed_reply_writer for {mail_id} was cancelled.")
+        raise
+    except Exception as e:
+        print(f"[Mailbox] delayed_reply_writer failed for {mail_id}: {e}")
