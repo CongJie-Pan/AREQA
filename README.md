@@ -21,7 +21,7 @@ flowchart TD
 
     subgraph INFRA ["🏗️ Infrastructure"]
         Config["config.py\n集中式設定\n模型名稱 / RAG 參數 / Redis URL"]
-        RedisCache["RagCacheService\ncache_service.py\nRedis TTL=1hr"]
+        RedisCache["RagCacheService\nservices/cache_service.py\nRedis TTL=1hr"]
     end
 
     subgraph MEM ["📦 Memory 模塊（共用）"]
@@ -31,15 +31,15 @@ flowchart TD
     end
 
     subgraph API_A ["⚡ POST /api/v1/stream  ·  main.py"]
-        Orchestrator["OrchestrationService\norchestration_service.py"]
+        Orchestrator["OrchestrationService\nservices/orchestration_service.py"]
 
         subgraph ORCH_NODES ["7個節點 (Nodes)"]
-            N1["① Fast Domain Check LLM\n快速域外過濾 (< 1s)"]
+            N1["① Fast Domain Check LLM\n快速域外過濾 (目前已停用)"]
             N2["② HyDE 查詢分解 LLM\nparse_and_decompose_query"]
             N3["③ Policy Classifier LLM\nclassify_dialogue_policy\n(EDF 教學策略)"]
             N4["④ RAG Retrieval\nFAISS + BM25 + RRF\n+ Reranker + 注意力重排"]
-            N5["⑤ System Prompt 組裝\n注入 working_memory\n+ retrieved_memory + context"]
-            N6["⑥ 主 LLM 串流生成\nqwen3-235b / OpenRouter"]
+            N5["⑤ System Prompt 組裝\n注入 working_memory / context\n+ retrieved_memory / learner_state / avatar"]
+            N6["⑥ 主 LLM 串流生成\n動態切換 model_main_thinking\n/ model_main_instruct"]
             N7["⑦ Post-generation\nSuggestion / EDF 狀態更新"]
             N1 --> N2 --> N3 --> N4 --> N5 --> N6 --> N7
         end
@@ -63,12 +63,12 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph FE_B ["🖥️ Frontend · ProactiveManager/index.tsx"]
+    subgraph FE_B ["🖥️ Frontend · src/components/ProactiveManager/index.tsx"]
         direction LR
         Tracker["Behavior Tracker\nScroll ✅ 已實作 / Dwell ⏳ 待實作"]
-        State["Zustand / Dexie\nstore/chat/store.ts + database/db.ts"]
-        WSHook["useProactiveWebSocket Hook\nhooks/useProactiveWebSocket.ts\n指數退避自動重連"]
-        UI_Hint["Proactive UI\n主動關懷小燈泡\n(AutoReject 20s)"]
+        State["Zustand / Dexie\nsrc/store/chat/store.ts + src/database/db.ts"]
+        WSHook["useProactiveWebSocket Hook\nsrc/hooks/useProactiveWebSocket.ts\n指數退避自動重連"]
+        UI_Hint["Proactive UI\n主動關懷小燈泡\n(手動關閉 / 支援動態冷卻機制)"]
     end
 
     subgraph MEM_B ["📦 Memory 模塊（共用）"]
@@ -79,12 +79,12 @@ flowchart TD
 
     subgraph API_B ["⚡ FastAPI · main.py"]
         LogAPI["POST /api/v1/log_action\nscroll → HotMem\n其他互動 → ColdMem"]
-        WSEndpoint["WebSocket /api/v1/ws/notifications\nConnectionManager\nconnection_manager.py"]
+        WSEndpoint["WebSocket /api/v1/ws/notifications\nConnectionManager\nservices/connection_manager.py"]
     end
 
-    subgraph COMPEER ["ComPeer 模塊 · compeer_scheduler.py"]
-        ProLoop["proactive_scheduler_loop\n每 10 秒\nscroll ≥ 6 + 閒置 60s → 觸發"]
-        DailyLoop["daily_scheduler_loop\n每日 23:59\n反思 → 生成隔日排程"]
+    subgraph COMPEER ["ComPeer 模塊 · services/compeer_scheduler.py"]
+        ProLoop["proactive_scheduler_loop\n每 10 秒 (動態冷卻機制)\nscroll ≥ 6 + 閒置 60s → 觸發 LLM 判斷"]
+        DailyLoop["daily_scheduler_loop\n每日 23:00 後\n反思 → 生成隔日排程"]
     end
 
     Tracker -->|"① Scroll 行為日誌"| LogAPI
