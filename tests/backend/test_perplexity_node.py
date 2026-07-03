@@ -1,0 +1,112 @@
+import pytest
+import json
+import asyncio
+import httpx
+import respx
+from unittest.mock import patch
+from backend.services.orchestration_service import OrchestrationService
+
+@pytest.fixture
+def mock_orchestrator():
+    # Provide None for the constructor arguments that we don't need for this specific test
+    return OrchestrationService(None, None, None, None)
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_perplexity_search_success(mock_orchestrator):
+    import os
+    with patch.dict(os.environ, {"PERPLEXITY_API_KEY": "dummy_api_key"}):
+        # Mock the Perplexity API response
+        mock_response = {
+            "results": [
+                {
+                    "title": "Title 1",
+                    "url": "https://example.com/source1",
+                    "snippet": "Snippet 1"
+                },
+                {
+                    "title": "Title 2",
+                    "url": "https://example.com/source2",
+                    "snippet": "Snippet 2"
+                }
+            ]
+        }
+        respx.post("https://api.perplexity.ai/search").respond(
+            status_code=200, json=mock_response
+        )
+
+        events = []
+        async for event in mock_orchestrator._node_perplexity_search("測試問題"):
+            events.append(event)
+            
+        assert len(events) == 4
+
+        # Check status searching_dense
+        assert "searching_dense" in events[0]
+        assert "網路檢索中" in events[0]
+
+        # Check status reranking
+        assert "reranking" in events[1]
+        assert "篩選與統整" in events[1]
+        
+        # Check sources event instead of citations
+        assert "event: sources" in events[2]
+        sources_payload = json.loads(events[2].split("data: ")[1].strip())
+        assert len(sources_payload) == 2 # 2 sources
+        assert sources_payload[0]["chunk_id"] == "https://example.com/source1"
+        assert sources_payload[0]["snippet"] == "Snippet 1"
+        assert sources_payload[1]["chunk_id"] == "https://example.com/source2"
+        
+        # Check results_obj marker
+        assert events[3] == "event: results_obj\n\n"
+        
+        # Check the mock object properties are correctly set
+        assert hasattr(mock_orchestrator, "_temp_context_prompt")
+        assert "https://example.com/source1" in mock_orchestrator._temp_context_prompt
+        assert "Snippet 1" in mock_orchestrator._temp_context_prompt
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_perplexity_search_api_failure(mock_orchestrator):
+    import os
+    with patch.dict(os.environ, {"PERPLEXITY_API_KEY": "dummy_api_key"}):
+        # Mock the Perplexity API to return a 500 error
+        respx.post("https://api.perplexity.ai/chat/completions").respond(status_code=500)
+
+        events = []
+        async for event in mock_orchestrator._node_perplexity_search("測試問題"):
+            events.append(event)
+            
+        assert len(events) == 2
+
+        # Check status searching_dense
+        assert "searching_dense" in events[0]
+
+        # Check status error fallback
+        assert "error" in events[1]
+        assert "暫時無法使用" in events[1]
+        
+        # Check it gracefully fell back
+        assert getattr(mock_orchestrator, "_temp_context_prompt", None) == ""
+
+
+@pytest.mark.asyncio
+async def test_perplexity_search_no_api_key(mock_orchestrator):
+    import os
+    with patch.dict(os.environ, {"PERPLEXITY_API_KEY": ""}):
+        events = []
+        async for event in mock_orchestrator._node_perplexity_search("測試問題"):
+            events.append(event)
+            
+        assert len(events) == 2
+
+        # Check status searching_dense
+        assert "searching_dense" in events[0]
+
+        # Check status error fallback due to missing key
+        assert "error" in events[1]
+        assert "未設定 PERPLEXITY_API_KEY" in events[1]
+        
+        # Check it gracefully fell back
+        assert getattr(mock_orchestrator, "_temp_context_prompt", None) == ""

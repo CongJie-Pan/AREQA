@@ -407,6 +407,7 @@ class MemoryQueryRequest(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
     use_rag: bool = False
+    use_web_search: bool = False
     force_think: bool = False
     temperature: float = 0.7
     top_p: float = 0.8
@@ -725,6 +726,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
         orchestrator.execute(
             messages=chat_req.messages,
             use_rag=chat_req.use_rag,
+            use_web_search=chat_req.use_web_search,
             force_think=chat_req.force_think,
             max_tokens=chat_req.max_tokens,
             temperature=chat_req.temperature,

@@ -116,7 +116,7 @@ class OrchestrationService:
         self.suggestion = suggestion_service
         self.client = client
 
-    async def execute(self, messages: List[Dict[str, str]], use_rag: bool, force_think: bool,
+    async def execute(self, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool,
                       max_tokens: int, temperature: float, top_p: float,
                       repetition_penalty: float, request: Request) -> AsyncGenerator[str, None]:
         
@@ -158,7 +158,7 @@ class OrchestrationService:
 
         rag_queries = []
         cached_results = None
-        if use_rag and self.rag and last_user_msg:
+        if use_rag and not use_web_search and self.rag and last_user_msg:
             from main import get_query_fingerprint, rag_cache
             fingerprint = get_query_fingerprint(last_user_msg)
             if rag_cache:
@@ -171,7 +171,16 @@ class OrchestrationService:
 
         # Node 4: RAG Retrieval
         context_results_obj = None
-        if use_rag and self.rag and last_user_msg:
+        if use_web_search and last_user_msg:
+            async for event in self._node_perplexity_search(last_user_msg):
+                if event.startswith("event: results_obj"):
+                    context_results_obj = getattr(self, "_temp_rag_obj", None)
+                    continue
+                if event == "event: REFUSED\n\n":
+                    yield "data: [DONE]\n\n"
+                    return
+                yield event
+        elif use_rag and self.rag and last_user_msg:
             async for event in self._node_rag_retrieval(last_user_msg, rag_queries, cached_results):
                 if event.startswith("event: results_obj"):
                     context_results_obj = getattr(self, "_temp_rag_obj", None)
@@ -191,12 +200,12 @@ class OrchestrationService:
             policy = await policy_task
             print(f"[EDF Policy] Evaluated pedagogical policy: {policy}")
 
-        final_messages = await self._node_prompt_assembly(messages, use_rag, force_think, context_results_obj, last_user_msg)
+        final_messages = await self._node_prompt_assembly(messages, use_rag, use_web_search, force_think, context_results_obj, last_user_msg)
 
         effective_max_tokens = max_tokens
         if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
             effective_max_tokens = 1500
-        elif use_rag and max_tokens == 2048:
+        elif (use_rag or use_web_search) and max_tokens == 2048:
             effective_max_tokens = 2500
             
         if force_think:
@@ -211,7 +220,7 @@ class OrchestrationService:
             yield event
 
         # Node 7: Post-generation
-        async for event in self._node_post_generation(last_user_msg, answer_content_accumulator, context_results_obj, use_rag):
+        async for event in self._node_post_generation(last_user_msg, answer_content_accumulator, context_results_obj, use_rag, use_web_search):
             yield event
             
         yield "data: [DONE]\n\n"
@@ -296,26 +305,91 @@ class OrchestrationService:
             self._temp_context_prompt = context_prompt
             yield "event: results_obj\n\n"
 
+    async def _node_perplexity_search(self, last_user_msg: str) -> AsyncGenerator[str, None]:
+        import httpx
+        import os
+        
+        print(f"[Perplexity] 開始聯網搜尋: {last_user_msg}")
+        yield f"event: status\ndata: {json.dumps({'status': 'searching_dense', 'message': '🌐 網路檢索中...'}, ensure_ascii=False)}\n\n"
 
-    async def _node_prompt_assembly(self, messages: List[Dict[str, str]], use_rag: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
+        
+        api_key = os.environ.get("PERPLEXITY_API_KEY", "")
+        if not api_key:
+            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 未設定 PERPLEXITY_API_KEY，改用一般對話...'}, ensure_ascii=False)}\n\n"
+            self._temp_context_prompt = ""
+            return
+            
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "https://api.perplexity.ai/search",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "query": last_user_msg,
+                        "max_results": 5
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as e:
+            print(f"[EDF Perplexity Error] HTTPStatusError: {e.response.status_code} - {e.response.text}")
+            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 聯網搜尋服務暫時無法使用，改用一般對話...'}, ensure_ascii=False)}\n\n"
+            self._temp_context_prompt = ""
+            return
+        except Exception as e:
+            print(f"[EDF Perplexity Error] {type(e).__name__}: {str(e)}")
+            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 聯網搜尋服務暫時無法使用，改用一般對話...'}, ensure_ascii=False)}\n\n"
+            self._temp_context_prompt = ""
+            return
+            
+        results = data.get("results", [])
+        
+        print(f"[Perplexity] 成功取得回傳，共 {len(results)} 篇引用文獻")
+        yield f"event: status\ndata: {json.dumps({'status': 'reranking', 'message': '⚡ 篩選與統整網路資訊...'}, ensure_ascii=False)}\n\n"
+        
+        context_texts = []
+        sources_payload = []
+        if results:
+            for idx, r in enumerate(results, 1):
+                title = r.get("title", "")
+                url = r.get("url", "")
+                snippet = r.get("snippet", "")
+                context_texts.append(f"[文獻{idx}] {title}\nURL: {url}\n內容段落: {snippet}")
+                sources_payload.append({
+                    "title": title,
+                    "chunk_id": url,
+                    "snippet": snippet
+                })
+            
+            # Send structured sources event 
+            yield f"event: sources\ndata: {json.dumps(sources_payload, ensure_ascii=False)}\n\n"
+        
+        self._temp_context_prompt = "<context>\n" + "\n\n".join(context_texts) + "\n</context>\n\n"
+        self._temp_rag_obj = {"mock": True}
+        yield "event: results_obj\n\n"
+
+    async def _node_prompt_assembly(self, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
         from backend.main import SYSTEM_PROMPT_WITH_RAG_THINK, SYSTEM_PROMPT_WITH_RAG, SYSTEM_PROMPT_FORCE_THINK, SYSTEM_PROMPT_NORMAL
         
         new_messages = [m.copy() for m in messages]
         has_system = len(new_messages) > 0 and new_messages[0]["role"] == "system"
         
-        if use_rag and context_results_obj and hasattr(self, "_temp_context_prompt"):
+        if (use_rag or use_web_search) and context_results_obj and hasattr(self, "_temp_context_prompt") and self._temp_context_prompt:
             for idx in range(len(new_messages)-1, -1, -1):
                 if new_messages[idx]["role"] == "user":
                     new_messages[idx]["content"] = self._temp_context_prompt + new_messages[idx]["content"]
                     break
                     
-        if not use_rag:
+        if not use_rag and not use_web_search:
             for msg in new_messages:
                 if msg.get("role") == "assistant" and msg.get("content"):
                     msg["content"] = re.sub(r'【文獻\d+】', '', msg["content"])
                     
         if not has_system:
-            if use_rag:
+            if use_rag or use_web_search:
                 sys_prompt_text = SYSTEM_PROMPT_WITH_RAG_THINK if force_think else SYSTEM_PROMPT_WITH_RAG
                 rag_status_note = "\n【本回合狀態】：已注入 <context> 參考資料，請嚴格依文獻回答並標註來源。"
             else:
@@ -479,10 +553,10 @@ class OrchestrationService:
                 
         yield f"event: accumulator:{answer_content_accumulator}"
 
-    async def _node_post_generation(self, last_user_msg: str, answer_content_accumulator: str, context_results_obj: Any, use_rag: bool) -> AsyncGenerator[str, None]:
+    async def _node_post_generation(self, last_user_msg: str, answer_content_accumulator: str, context_results_obj: Any, use_rag: bool, use_web_search: bool) -> AsyncGenerator[str, None]:
         if self.suggestion:
             try:
-                reranked_results = context_results_obj.final_results if (use_rag and context_results_obj) else []
+                reranked_results = context_results_obj.final_results if (use_rag and not use_web_search and context_results_obj) else []
                 suggestions = await self.suggestion.generate_suggestions(
                     user_query=last_user_msg,
                     answer_text=answer_content_accumulator,
