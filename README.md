@@ -1,4 +1,5 @@
-# AREQA: An **A**daptive **R**AG-based **E**ducational **QA** System over Closed-domain Knowledge Bases.
+# AREQA: **A**daptive **R**AG-based **E**ducational **QA** System
+「AREQA：懂你所學，伴你所讀」
 
 ---
 

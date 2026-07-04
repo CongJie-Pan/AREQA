@@ -347,6 +347,19 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   isStreaming={isStreaming}
                   onStop={handleStop}
                 />
+                {isEmpty && (
+                  <div style={{
+                    fontFamily: 'ChenYuluoyan, sans-serif',
+                    fontWeight: 'normal',
+                    fontSize: '22px',
+                    textAlign: 'center',
+                    color: '#fff',
+                    marginTop: '20px',
+                    letterSpacing: '3px'
+                  }}>
+                    懂你所學，伴你所讀
+                  </div>
+                )}
               </div>
             </>
           )}

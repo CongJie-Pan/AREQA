@@ -47,3 +47,10 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #d8a25c #130f18;
 }
+
+@font-face {
+  font-family: 'ChenYuluoyan';
+  src: url('/fonts/ChenYuluoyan-2.0-Thin.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
