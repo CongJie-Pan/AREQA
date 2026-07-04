@@ -291,15 +291,21 @@ async def get_memory_summary():
     memory_text = "\n".join([f"- {p['text']}" for p in long_term_props])
     memory_hash = hashlib.md5(memory_text.encode('utf-8')).hexdigest()
     
-    import redis.asyncio as aioredis
     redis_client = None
     try:
-        redis_client = aioredis.from_url("redis://localhost:6379", decode_responses=True)
-        cached_summary = await redis_client.get("memory_summary_json")
-        cached_hash = await redis_client.get("memory_summary_hash")
-        
-        if cached_summary and cached_hash == memory_hash:
-            return {"summary": json.loads(cached_summary)}
+        if 'rag_cache' in globals() and rag_cache is not None:
+            redis_client = rag_cache.redis
+            
+            cached_summary = await redis_client.get("memory_summary_json")
+            cached_hash = await redis_client.get("memory_summary_hash")
+            
+            if cached_summary:
+                cached_summary = cached_summary.decode('utf-8') if isinstance(cached_summary, bytes) else cached_summary
+            if cached_hash:
+                cached_hash = cached_hash.decode('utf-8') if isinstance(cached_hash, bytes) else cached_hash
+            
+            if cached_summary and cached_hash == memory_hash:
+                return {"summary": json.loads(cached_summary)}
     except Exception as e:
         print(f"Redis cache error: {e}")
     
