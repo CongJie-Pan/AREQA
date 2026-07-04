@@ -74,3 +74,4 @@ backend/gum.db
 # Output
 /output/
 data/gum_data/
+data/rag/

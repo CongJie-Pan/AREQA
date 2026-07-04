@@ -243,20 +243,24 @@ class OrchestrationService:
         context_results_obj = cached_results
         
         if not context_results_obj and rag_queries is not None:
-            gen = self.rag.retrieve_with_events(rag_queries)
-            while True:
-                rag_task = asyncio.get_running_loop().run_in_executor(_thread_pool, next, gen, None)
-                while not rag_task.done():
-                    done, pending = await asyncio.wait([rag_task], timeout=5.0)
-                    if not done:
-                        yield f": heartbeat\n\n"
-                event = await rag_task
-                if event is None:
-                    break
-                if event["type"] == "status":
-                    yield f"event: status\ndata: {json.dumps({'status': event['status'], 'message': event['message']}, ensure_ascii=False)}\n\n"
-                elif event["type"] == "results":
-                    context_results_obj = event["data"]
+            if self.rag:
+                gen = self.rag.retrieve_with_events(rag_queries)
+                while True:
+                    rag_task = asyncio.get_running_loop().run_in_executor(_thread_pool, next, gen, None)
+                    while not rag_task.done():
+                        done, pending = await asyncio.wait([rag_task], timeout=5.0)
+                        if not done:
+                            yield f": heartbeat\n\n"
+                    event = await rag_task
+                    if event is None:
+                        break
+                    if event["type"] == "status":
+                        yield f"event: status\ndata: {json.dumps({'status': event['status'], 'message': event['message']}, ensure_ascii=False)}\n\n"
+                    elif event["type"] == "results":
+                        context_results_obj = event["data"]
+            else:
+                yield f"event: status\ndata: {json.dumps({'status': 'RAG disabled (missing index)', 'message': 'Skipping local vector retrieval.'}, ensure_ascii=False)}\n\n"
+                context_results_obj = {"fused_results": []}
                     
             if context_results_obj and rag_cache:
                 await rag_cache.set(fingerprint, context_results_obj)
