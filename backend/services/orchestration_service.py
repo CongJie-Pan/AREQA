@@ -319,31 +319,57 @@ class OrchestrationService:
             self._temp_context_prompt = ""
             return
             
+        import hashlib
+        import redis.asyncio as aioredis
+        search_hash = f"websearch:{hashlib.md5(last_user_msg.encode('utf-8')).hexdigest()}"
+        redis_client = None
+        cached_data_str = None
+        
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    "https://api.perplexity.ai/search",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "query": last_user_msg,
-                        "max_results": 5
-                    }
-                )
-                response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPStatusError as e:
-            print(f"[EDF Perplexity Error] HTTPStatusError: {e.response.status_code} - {e.response.text}")
-            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 聯網搜尋服務暫時無法使用，改用一般對話...'}, ensure_ascii=False)}\n\n"
-            self._temp_context_prompt = ""
-            return
+            redis_client = aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
+            cached_data_str = await redis_client.get(search_hash)
         except Exception as e:
-            print(f"[EDF Perplexity Error] {type(e).__name__}: {str(e)}")
-            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 聯網搜尋服務暫時無法使用，改用一般對話...'}, ensure_ascii=False)}\n\n"
-            self._temp_context_prompt = ""
-            return
+            print(f"[Perplexity] Redis cache check error: {e}")
+            
+        if cached_data_str:
+            print(f"[Perplexity] 命中 Redis 快取，直接使用先前的搜尋結果")
+            data = json.loads(cached_data_str)
+        else:
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        "https://api.perplexity.ai/search",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "query": last_user_msg,
+                            "max_results": 5
+                        }
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    if redis_client:
+                        try:
+                            await redis_client.setex(search_hash, 86400, json.dumps(data, ensure_ascii=False))
+                        except Exception as e:
+                            print(f"[Perplexity] Redis cache set error: {e}")
+            except httpx.HTTPStatusError as e:
+                print(f"[EDF Perplexity Error] HTTPStatusError: {e.response.status_code} - {e.response.text}")
+                yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 聯網搜尋服務暫時無法使用，改用一般對話...'}, ensure_ascii=False)}\n\n"
+                self._temp_context_prompt = ""
+                if redis_client: await redis_client.close()
+                return
+            except Exception as e:
+                print(f"[EDF Perplexity Error] {type(e).__name__}: {str(e)}")
+                yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 聯網搜尋服務暫時無法使用，改用一般對話...'}, ensure_ascii=False)}\n\n"
+                self._temp_context_prompt = ""
+                if redis_client: await redis_client.close()
+                return
+        
+        if redis_client: await redis_client.close()
             
         results = data.get("results", [])
         
