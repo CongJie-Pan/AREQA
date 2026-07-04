@@ -223,10 +223,11 @@ async def db_error_recovery_middleware(request: Request, call_next):
             )
         raise
 
-# Strict CORS: Only allow connections from the Next.js local server
+# Strict CORS: Only allow connections from the Next.js local server and Render
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], 
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"], 
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -759,7 +760,7 @@ async def ws_notifications(websocket: WebSocket, user_id: str = "default_user"):
     # 手動驗證 Origin（CORSMiddleware 不覆蓋 WebSocket）
     origin = websocket.headers.get("origin")
     allowed = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
-    if origin and origin not in allowed:
+    if origin and origin not in allowed and not origin.endswith(".onrender.com"):
         await websocket.close(code=1008)  # Policy Violation
         return
     await ws_manager.connect(user_id, websocket)
