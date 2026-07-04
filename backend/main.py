@@ -796,7 +796,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             timeout=120.0
         )
         
-    from backend.services.orchestration_service import OrchestrationService
+    from services.orchestration_service import OrchestrationService
     orchestrator = OrchestrationService(
         router_service=router_service,
         rag_service=rag_service,

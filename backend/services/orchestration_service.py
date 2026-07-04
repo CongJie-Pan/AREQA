@@ -7,7 +7,7 @@ from typing import AsyncGenerator, List, Dict, Any, Optional
 from fastapi import Request
 from openai import AsyncOpenAI
 
-from backend.gum_integration import (
+from gum_integration import (
     push_observation,
     query_cold_memory_for_context,
     query_memory_for_context,
@@ -398,7 +398,7 @@ class OrchestrationService:
         yield "event: results_obj\n\n"
 
     async def _node_prompt_assembly(self, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
-        from backend.main import SYSTEM_PROMPT_WITH_RAG_THINK, SYSTEM_PROMPT_WITH_RAG, SYSTEM_PROMPT_FORCE_THINK, SYSTEM_PROMPT_NORMAL
+        from main import SYSTEM_PROMPT_WITH_RAG_THINK, SYSTEM_PROMPT_WITH_RAG, SYSTEM_PROMPT_FORCE_THINK, SYSTEM_PROMPT_NORMAL
         
         new_messages = [m.copy() for m in messages]
         has_system = len(new_messages) > 0 and new_messages[0]["role"] == "system"
@@ -431,7 +431,7 @@ class OrchestrationService:
                 final_system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
                 
                 # Dynamic Tone/Vocabulary Adaptation based on Learner State
-                from backend.memory_store import get_global_store
+                from memory_store import get_global_store
                 store = get_global_store()
                 if store:
                     learner_state = store.get_hot_memory().get("current_learner_state", "")
@@ -570,7 +570,7 @@ class OrchestrationService:
         if tool_call_name == "update_memory" and tool_call_args:
             try:
                 args = json.loads(tool_call_args)
-                from backend.memory_store import get_global_store
+                from memory_store import get_global_store
                 store = get_global_store()
                 if store:
                     store.update_user_profile(args["key"], args["value"])
