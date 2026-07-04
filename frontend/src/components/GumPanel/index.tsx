@@ -1,10 +1,24 @@
-import React, { useEffect, useState } from 'react';
-import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Check, X as XIcon } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Clock, FolderHeart } from 'lucide-react';
 import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { useGumStore } from '@/store/gum';
 import { useStyles } from './styles';
-import { Spin, Checkbox, Input, message, Button, Space, Popconfirm, Tag } from 'antd';
+import { Spin, Checkbox, Input, message, Button, Space, Popconfirm, Modal, List, Tag } from 'antd';
 import { SidePanelType } from '@/types/panel';
+
+const cleanMemoryText = (text: string) => {
+  if (text.startsWith('【使用者畫像】')) {
+    const match = text.match(/【.*?】.*?: (.*)/);
+    if (match) {
+      let inner = match[1];
+      if (inner.startsWith("['") && inner.endsWith("']")) {
+        inner = inner.slice(2, -2).replace(/', '/g, '、');
+      }
+      return inner;
+    }
+  }
+  return text;
+};
 
 interface GumPanelProps {
   open: boolean;
@@ -14,11 +28,13 @@ interface GumPanelProps {
 
 export function GumPanel({ open, type, onClose }: GumPanelProps) {
   const { styles } = useStyles();
-  const { propositions, suggestions, loading, fetchMemory, fetchSuggestions, deleteMemory, deleteMemories, editMemory } = useGumStore();
+  const { propositions, suggestions, summary, loading, loadingSummary, fetchMemory, fetchSuggestions, fetchSummary, deleteMemory, deleteMemories, editMemory } = useGumStore();
 
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
   const [editingId, setEditingId] = useState<number | string | null>(null);
   const [editText, setEditText] = useState('');
+  const [assetModalVisible, setAssetModalVisible] = useState(false);
+  const [assetModalType, setAssetModalType] = useState<'tags' | 'scopes' | 'nodes'>('tags');
 
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
@@ -33,11 +49,53 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
     if (open) {
       if (type === 'memory') {
         fetchMemory();
+        fetchSummary();
       } else if (type === 'suggestions') {
         fetchSuggestions();
       }
     }
-  }, [open, type, fetchMemory, fetchSuggestions]);
+  }, [open, type, fetchMemory, fetchSuggestions, fetchSummary]);
+
+  // Filter out short-term memory (hot memory and scroll records)
+  const longTermProps = useMemo(() => {
+    return propositions.filter(p => {
+      const isHot = String(p.id).startsWith('hot:');
+      const isScroll = p.text.includes('Type: scroll') || p.text.includes('User Action: scroll');
+      return !isHot && !isScroll;
+    });
+  }, [propositions]);
+
+  // 整理與計算資產數據
+  const { groupedMemories, uniqueScopes, uniqueTags } = useMemo(() => {
+    const groups: Record<string, typeof longTermProps> = {};
+    const scopes = new Set<string>();
+    const tags = new Set<string>();
+
+    // Sort propositions by updated_at descending before grouping
+    const sortedProps = [...longTermProps].sort((a, b) => {
+      const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    sortedProps.forEach(p => {
+      if (p.context_scope) scopes.add(p.context_scope);
+      if (p.event_types) p.event_types.forEach(e => tags.add(e));
+      if (p.functional_type_seeds) p.functional_type_seeds.forEach(f => tags.add(f));
+
+      const dateObj = p.updated_at ? new Date(p.updated_at) : new Date();
+      const dateStr = `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
+      
+      if (!groups[dateStr]) groups[dateStr] = [];
+      groups[dateStr].push(p);
+    });
+
+    return { 
+      groupedMemories: groups, 
+      uniqueScopes: Array.from(scopes), 
+      uniqueTags: Array.from(tags) 
+    };
+  }, [longTermProps]);
 
   if (!open || !type) return null;
 
@@ -55,7 +113,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
 
   const handleSelectAll = (e: CheckboxChangeEvent) => {
     if (e.target.checked) {
-      setSelectedIds(new Set(propositions.map(p => p.id)));
+      setSelectedIds(new Set(longTermProps.map(p => p.id)));
     } else {
       setSelectedIds(new Set());
     }
@@ -89,139 +147,242 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
 
   return (
     <div className={styles.panel}>
-      {/* Header */}
-        <div className={styles.header}>
-          <div className={styles.titleWrapper}>
-            {isMemory ? (
-              <BrainCircuit size={28} className="text-amber-500" style={{ color: '#d8a25c' }} />
-            ) : (
-              <Sparkles size={28} className="text-amber-500" style={{ color: '#d8a25c' }} />
-            )}
-            <div>
-              <h2>{isMemory ? '瀏覽記憶 (Memory)' : '您可能想知道？ (Suggestions)'}</h2>
-              <p>
-                {isMemory
-                  ? 'AREQA 會透過您的對話行為自動整理記憶與偏好。'
-                  : 'AREQA 會根據您的記憶與對話內容，主動推薦您可能感興趣的議題。'}
-              </p>
-            </div>
-          </div>
-          <button className={styles.closeBtn} onClick={onClose} title="關閉面板">
-            <X size={20} />
-          </button>
-        </div>
+      <button className={styles.closeBtnFixed} onClick={onClose} title="關閉面板">
+        <X size={20} />
+      </button>
 
-        {/* Content */}
-        <div className={styles.content}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            {isMemory ? (
-              <Space>
-                <Checkbox 
-                  onChange={handleSelectAll} 
-                  checked={propositions.length > 0 && selectedIds.size === propositions.length}
-                  indeterminate={selectedIds.size > 0 && selectedIds.size < propositions.length}
-                >
-                  全選
-                </Checkbox>
-                {selectedIds.size > 0 && (
-                  <Popconfirm title={`確定要刪除選取的 ${selectedIds.size} 筆記憶嗎？`} onConfirm={handleDeleteSelected}>
-                    <Button danger size="small" icon={<Trash2 size={14} />}>
-                      刪除選取記憶
-                    </Button>
-                  </Popconfirm>
-                )}
-              </Space>
-            ) : <div />}
-            <button
-              className={styles.refreshBtn}
-              onClick={() => (isMemory ? fetchMemory() : fetchSuggestions())}
-              disabled={loading}
-            >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-              <span>重新整理</span>
-            </button>
-          </div>
-
-          {loading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
-              <Spin size="large" />
-            </div>
-          ) : isMemory ? (
-            propositions.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
-                目前還沒有任何記憶紀錄喔！開始與AREQA聊天吧。
+      <div className={styles.content}>
+        {isMemory ? (
+          <>
+            {/* Top Section: Hero Card */}
+            <div className={styles.heroSection}>
+              <div className={styles.heroTitleRow}>
+                <BrainCircuit size={28} style={{ color: '#d4af37' }} />
+                <h2>AREQA 眼中的你</h2>
               </div>
-            ) : (
-              propositions.map((p) => (
-                <div key={p.id} className={`${styles.card} ${selectedIds.has(p.id) ? 'selected' : ''}`} style={{ position: 'relative' }}>
-                  {editingId === p.id ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <Input.TextArea 
-                        value={editText}
-                        onChange={e => setEditText(e.target.value)}
-                        autoSize={{ minRows: 2, maxRows: 6 }}
-                      />
-                      <Space style={{ alignSelf: 'flex-end' }}>
-                        <Button size="small" icon={<XIcon size={14} />} onClick={() => setEditingId(null)}>取消</Button>
-                        <Button size="small" type="primary" icon={<Check size={14} />} onClick={() => handleSaveEdit(p.id)}>儲存</Button>
-                      </Space>
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                        <Checkbox 
-                          checked={selectedIds.has(p.id)} 
-                          onChange={() => handleToggleSelect(p.id)} 
-                          style={{ marginTop: 2 }}
-                        />
-                        <div className={styles.cardText} style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
-                          <div style={{ marginBottom: 4 }}>{p.text}</div>
-                          
-                          {/* STITCH Tags */}
-                          {(p.context_scope || p.target || (p.event_types && p.event_types.length > 0) || (p.functional_type_seeds && p.functional_type_seeds.length > 0)) && (
-                            <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                              {p.context_scope && <Tag color="blue" bordered={false} style={{ margin: 0 }}>Scope: {p.context_scope}</Tag>}
-                              {p.target && <Tag color="purple" bordered={false} style={{ margin: 0 }}>Target: {p.target}</Tag>}
-                              {p.event_types?.map(e => <Tag key={`evt-${e}`} color="cyan" bordered={false} style={{ margin: 0 }}>{e}</Tag>)}
-                              {p.functional_type_seeds?.map(f => <Tag key={`func-${f}`} color="green" bordered={false} style={{ margin: 0 }}>{f}</Tag>)}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ opacity: 1, display: 'flex', gap: 4, marginTop: -4, alignItems: 'center' }}>
-                          <span className={styles.confidenceBadge} style={{ marginRight: 8 }}>
-                            信心指數: {p.confidence != null && !isNaN(p.confidence) ? Number(p.confidence).toFixed(2) : 'NaN'}
-                          </span>
-                          <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} title="編輯記憶" style={{ color: '#aaa' }} />
-                          <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>
-                            <Button size="small" type="text" danger icon={<Trash2 size={14} />} title="刪除記憶" />
-                          </Popconfirm>
-                        </div>
+              <div className={styles.heroSummaryBox}>
+                {loadingSummary ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#aaa' }}>
+                    <Spin size="small" /> 正在為您生成專屬記憶綜整...
+                  </div>
+                ) : summary ? (
+                  <>
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, marginBottom: 8 }}>{summary.sentence1}</div>
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: 'rgba(255,255,255,0.7)' }}>{summary.sentence2}</div>
+                    {summary.hashtags && summary.hashtags.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        {summary.hashtags.map((tag, idx) => (
+                          <span key={idx} className={styles.heroHashtag}>{tag.startsWith('#') ? tag : `#${tag}`}</span>
+                        ))}
                       </div>
-                      <div className={styles.cardMeta} style={{ marginTop: 8, paddingLeft: 28 }}>
-                        <span style={{ marginLeft: 'auto' }}>
-                          {p.updated_at ? new Date(p.updated_at).toLocaleString() : '最近更新'}
-                        </span>
-                      </div>
-                    </>
-                  )}
+                    )}
+                  </>
+                ) : (
+                  <div>目前還沒有足夠的記憶能為您生成總結。</div>
+                )}
+              </div>
+            </div>
+
+            {/* Middle Section: Assets */}
+            <div>
+              <div className={styles.sectionHeader}>
+                <FolderHeart size={18} style={{ color: '#d4af37' }} />
+                <h3>記憶資產 <span>({longTermProps.length}條)</span></h3>
+              </div>
+              <div className={styles.assetsGrid}>
+                <div className={styles.assetCard} onClick={() => { setAssetModalType('tags'); setAssetModalVisible(true); }} style={{ cursor: 'pointer' }}>
+                  <div className={styles.assetLabel}>活躍標籤</div>
+                  <div className={styles.assetValue}>{uniqueTags.length} <span>個</span></div>
                 </div>
-              ))
-            )
-          ) : (
-            suggestions.length === 0 ? (
+                <div className={styles.assetCard} onClick={() => { setAssetModalType('scopes'); setAssetModalVisible(true); }} style={{ cursor: 'pointer' }}>
+                  <div className={styles.assetLabel}>涉及領域</div>
+                  <div className={styles.assetValue}>{uniqueScopes.length} <span>個</span></div>
+                </div>
+                <div className={styles.assetCard} onClick={() => { setAssetModalType('nodes'); setAssetModalVisible(true); }} style={{ cursor: 'pointer' }}>
+                  <div className={styles.assetLabel}>記憶節點</div>
+                  <div className={styles.assetValue}>{longTermProps.length} <span>條</span></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Section: Timeline */}
+            <div className={styles.timelineSection}>
+              <div className={styles.timelineHeaderRow}>
+                <div className={styles.sectionHeader} style={{ marginBottom: 0 }}>
+                  <Clock size={18} style={{ color: '#d4af37' }} />
+                  <h3>時間線</h3>
+                </div>
+                
+                <div className={styles.timelineActions}>
+                  <Checkbox 
+                    onChange={handleSelectAll} 
+                    checked={longTermProps.length > 0 && selectedIds.size === longTermProps.length}
+                    indeterminate={selectedIds.size > 0 && selectedIds.size < longTermProps.length}
+                  >
+                    全選
+                  </Checkbox>
+                  {selectedIds.size > 0 && (
+                    <Popconfirm title={`確定要刪除選取的 ${selectedIds.size} 筆記憶嗎？`} onConfirm={handleDeleteSelected}>
+                      <Button danger size="small" icon={<Trash2 size={14} />}>
+                        刪除
+                      </Button>
+                    </Popconfirm>
+                  )}
+                  <button className={styles.refreshBtn} onClick={() => fetchMemory()} disabled={loading}>
+                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                    重新整理
+                  </button>
+                </div>
+              </div>
+
+              {loading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
+                  <Spin size="large" />
+                </div>
+              ) : longTermProps.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+                  目前還沒有任何記憶紀錄喔！開始與AREQA聊天吧。
+                </div>
+              ) : (
+                <div className={styles.timelineItems}>
+                  {Object.entries(groupedMemories).map(([dateStr, items]) => (
+                    <div key={dateStr} className={styles.timelineGroup}>
+                      <div className={styles.timelineDate}>{dateStr}</div>
+                      
+                      {items.map(p => {
+                        const timeStr = p.updated_at ? new Date(p.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '剛剛';
+                        return (
+                          <div key={p.id} className={styles.timelineItem} style={{ backgroundColor: selectedIds.has(p.id) ? 'rgba(216, 162, 92, 0.05)' : undefined }}>
+                            <div style={{ marginTop: 4 }}>
+                              <Checkbox 
+                                checked={selectedIds.has(p.id)} 
+                                onChange={() => handleToggleSelect(p.id)} 
+                              />
+                            </div>
+                            <div className={styles.timelineTimeBox}>
+                              <div className={styles.timelineTime}>{timeStr}</div>
+                              <div className={styles.timelineTag}>記錄</div>
+                            </div>
+                            
+                            <div className={styles.timelineContent}>
+                              {editingId === p.id ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 16 }}>
+                                  <Input.TextArea 
+                                    value={editText}
+                                    onChange={e => setEditText(e.target.value)}
+                                    autoSize={{ minRows: 2, maxRows: 6 }}
+                                  />
+                                  <Space style={{ alignSelf: 'flex-end' }}>
+                                    <Button size="small" onClick={() => setEditingId(null)}>取消</Button>
+                                    <Button size="small" type="primary" onClick={() => handleSaveEdit(p.id)}>儲存</Button>
+                                  </Space>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className={styles.timelineText}>{cleanMemoryText(p.text)}</div>
+                                </>
+                              )}
+                            </div>
+                            
+                            {editingId !== p.id && (
+                              <div className={`timelineTools ${styles.timelineTools}`}>
+                                {p.confidence != null && !isNaN(p.confidence) && (
+                                  <span className={styles.confidenceBadge}>
+                                    信心: {Number(p.confidence).toFixed(2)}
+                                  </span>
+                                )}
+                                <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} style={{ color: '#aaa' }} />
+                                <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>
+                                  <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
+                                </Popconfirm>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <Modal
+              title={
+                assetModalType === 'tags' ? '活躍標籤列表' :
+                assetModalType === 'scopes' ? '涉及領域列表' : '記憶節點列表'
+              }
+              open={assetModalVisible}
+              onCancel={() => setAssetModalVisible(false)}
+              footer={null}
+              bodyStyle={{ maxHeight: '60vh', overflowY: 'auto' }}
+            >
+              {assetModalType === 'tags' && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {uniqueTags.map(t => <Tag key={t} color="cyan">{t}</Tag>)}
+                </div>
+              )}
+              {assetModalType === 'scopes' && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {uniqueScopes.map(s => <Tag key={s} color="blue">{s}</Tag>)}
+                </div>
+              )}
+              {assetModalType === 'nodes' && (
+                <List
+                  dataSource={longTermProps}
+                  renderItem={item => (
+                    <List.Item>
+                      <List.Item.Meta description={cleanMemoryText(item.text)} />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </Modal>
+          </>
+        ) : (
+          /* Suggestions View */
+          <>
+            <div className={styles.heroSection} style={{ marginBottom: 24 }}>
+              <div className={styles.heroTitleRow}>
+                <Sparkles size={28} style={{ color: '#d4af37' }} />
+                <h2>您可能想知道？ (Suggestions)</h2>
+              </div>
+              <div className={styles.heroSummaryBox}>
+                AREQA 會根據您的記憶與歷史對話內容，主動推薦您可能感興趣的議題，幫助您探索更深度的知識。
+              </div>
+            </div>
+
+            <div className={styles.timelineHeaderRow}>
+              <div className={styles.sectionHeader} style={{ marginBottom: 0 }}>
+                <Sparkles size={18} style={{ color: '#d4af37' }} />
+                <h3>推薦話題列表</h3>
+              </div>
+              <button className={styles.refreshBtn} onClick={() => fetchSuggestions()} disabled={loading}>
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                重新整理
+              </button>
+            </div>
+
+            {loading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
+                <Spin size="large" />
+              </div>
+            ) : suggestions.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
                 目前沒有任何建議。您可以先累積一些對話記憶，再試試看！
               </div>
             ) : (
-              suggestions.map((s, idx) => (
-                <div key={idx} className={styles.card}>
-                  <div className={styles.suggestionTitle}>推薦話題 #{idx + 1}</div>
-                  <div className={styles.cardText}>{s}</div>
-                </div>
-              ))
-            )
-          )}
-        </div>
+              <div className={styles.timelineItems}>
+                {suggestions.map((s, idx) => (
+                  <div key={idx} className={styles.suggestionCard}>
+                    <div className={styles.suggestionTitle}>推薦話題 #{idx + 1}</div>
+                    <div className={styles.timelineText}>{s}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

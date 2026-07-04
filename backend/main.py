@@ -275,6 +275,81 @@ async def fetch_memory():
     props = await get_all_memory()
     return {"propositions": props}
 
+@app.get("/api/v1/memory/summary")
+async def get_memory_summary():
+    props = await get_all_memory()
+    # Filter out short term and scroll
+    long_term_props = [
+        p for p in props 
+        if not str(p.get("id", "")).startswith("hot:") 
+        and "Type: scroll" not in p.get("text", "") 
+        and "User Action: scroll" not in p.get("text", "")
+    ]
+    
+    long_term_props = sorted(long_term_props, key=lambda x: str(x.get("id", "")))
+    
+    memory_text = "\n".join([f"- {p['text']}" for p in long_term_props])
+    memory_hash = hashlib.md5(memory_text.encode('utf-8')).hexdigest()
+    
+    import redis.asyncio as aioredis
+    redis_client = None
+    try:
+        redis_client = aioredis.from_url("redis://localhost:6379", decode_responses=True)
+        cached_summary = await redis_client.get("memory_summary_json")
+        cached_hash = await redis_client.get("memory_summary_hash")
+        
+        if cached_summary and cached_hash == memory_hash:
+            return {"summary": json.loads(cached_summary)}
+    except Exception as e:
+        print(f"Redis cache error: {e}")
+    
+    prompt = f"""請根據以下長期記憶內容，對這個使用者進行綜整：
+【長期記憶】
+{memory_text}
+
+【輸出要求】
+必須以嚴格的 JSON 格式輸出，不要有任何 Markdown 標記，不要輸出其他多餘的說明。格式如下：
+{{
+  "sentence1": "一句話表示對這個人的認識",
+  "sentence2": "兩句話解釋",
+  "hashtags": ["標籤1", "標籤2", "標籤3"]
+}}"""
+
+    client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.environ.get("OPENROUTER_API_KEY", "")
+    )
+    
+    try:
+        completion = await client.chat.completions.create(
+            model="qwen/qwen3-235b-a22b-2507",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+            temperature=0.7
+        )
+        summary_raw = completion.choices[0].message.content.strip()
+        if summary_raw.startswith("```json"):
+            summary_raw = summary_raw[7:]
+        elif summary_raw.startswith("```"):
+            summary_raw = summary_raw[3:]
+        if summary_raw.endswith("```"):
+            summary_raw = summary_raw[:-3]
+            
+        summary_json = json.loads(summary_raw.strip())
+        
+        # Cache it
+        if redis_client:
+            try:
+                await redis_client.set("memory_summary_json", json.dumps(summary_json, ensure_ascii=False))
+                await redis_client.set("memory_summary_hash", memory_hash)
+            except Exception as e:
+                print(f"Redis cache set error: {e}")
+                
+        return {"summary": summary_json}
+    except Exception as e:
+        print(f"Error calling Qwen for memory summary: {e}")
+        return {"summary": {"sentence1": "無法生成總結，請確認網路連線與 API Key 設定。", "sentence2": "", "hashtags": []}}
+
 from mailbox_store import get_mailbox_store
 
 @app.get("/api/v1/mailbox")

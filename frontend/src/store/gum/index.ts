@@ -16,9 +16,12 @@ export interface Proposition {
 export interface GumState {
   propositions: Proposition[];
   suggestions: string[];
+  summary: { sentence1: string; sentence2: string; hashtags: string[] } | null;
   loading: boolean;
+  loadingSummary: boolean;
   fetchMemory: () => Promise<void>;
   fetchSuggestions: () => Promise<void>;
+  fetchSummary: () => Promise<void>;
   deleteMemory: (id: string | number) => Promise<void>;
   deleteMemories: (ids: (string | number)[]) => Promise<void>;
   editMemory: (id: string | number, text: string) => Promise<void>;
@@ -27,7 +30,9 @@ export interface GumState {
 export const useGumStore = create<GumState>((set) => ({
   propositions: [],
   suggestions: [],
+  summary: null,
   loading: false,
+  loadingSummary: false,
 
   fetchMemory: async () => {
     set({ loading: true });
@@ -47,6 +52,23 @@ export const useGumStore = create<GumState>((set) => ({
       console.error('Failed to fetch memory:', error);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  fetchSummary: async () => {
+    set({ loadingSummary: true });
+    try {
+      const res = await fetch(`${backendUrl}/api/v1/memory/summary?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (data.summary) {
+        set({ summary: data.summary });
+      }
+    } catch (error) {
+      console.error('Failed to fetch summary:', error);
+    } finally {
+      set({ loadingSummary: false });
     }
   },
 
