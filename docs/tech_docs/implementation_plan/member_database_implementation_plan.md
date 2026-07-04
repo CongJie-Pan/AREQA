@@ -47,29 +47,47 @@
 1.  **引入 Auth Provider**
     *   在 Next.js 的外層 (例如 `app/layout.tsx`) 包覆 `<SupabaseProvider>` 或 `<ClerkProvider>`。
 2.  **實作 Auth UI 與側邊欄整合 (Sidebar Integration)**
-    *   **未登入狀態 (Logged Out)**：在側邊欄 (Sidebar) 左下角顯示系統選單 (如 Settings, Help 等)，並在最底部放置一個引導卡片 (例如 "Get responses tailored to you") 與顯眼的 **「Log in」按鈕**。
+    *   **未登入狀態 (Logged Out)**：在側邊欄 (Sidebar) 左下角顯示系統選單 (如 Settings, Help 等)，並在最底部放置一個引導卡片 (例如 "和 AREQA 一起探討知識的世界 ") 與顯眼的 **「登入」按鈕**。
     *   **登入對話方塊 (Login Modal/Page)**：點擊 Log in 後顯示登入介面，需支援多種登入方式 (OAuth)：包含 **Continue with Google**、**Continue with Apple**、**Continue with phone**，以及傳統的 **Email address** 輸入與註冊。
-    *   **已登入狀態 (Logged In)**：登入完成後，側邊欄左下角切換為顯示**用戶頭像 (Avatar)** 與 **用戶名稱** (下方可帶有帳號方案標籤與 Upgrade 按鈕)。使用者點擊此區域即可進入「帳號設定頁面 (Account Settings)」來修改用戶名稱等個人資料。
+    *   **已登入狀態 (Logged In)**：登入完成後，側邊欄左下角切換為顯示**用戶頭像 (Avatar)** 與 **用戶名稱** (下方可帶有帳號方案標籤與 Upgrade 按鈕)。使用者點擊此區域即可進入「帳號設定頁面 (Account Settings)」來修改用戶名稱、頭像等個人資料。
 3.  **API 請求攔截器 (Request Interceptor)**
     *   將發送訊息的 API (如 `/api/v1/stream`) 統一加上 `Authorization: Bearer <token>` Header。
     *   確保 `useProactiveWebSocket.ts` 建立連線時附加 token。
 4.  **本地歷史紀錄管理 (Dexie.js)**
     *   修改 Zustand store 與 Dexie 邏輯。當檢測到使用者「登出」時，主動呼叫 Dexie 的 `clear()` 函數清除本地歷史，避免下一個登入者看到前一個使用者的聊天內容。
 
-### 階段四：Render 雲端部署 (Phase 4: Render Deployment)
-> **目標**：在 Render 上配置正確的服務拓樸，並上線測試。
+### 階段四：Render 雲端部署與 Supabase 整合細節 (Phase 4: Render & Supabase Deployment Details)
+> **目標**：在 Render 上配置正確的服務拓樸，並與 Supabase (Auth + DB) 無縫串接，實現正式上線。
 
-1.  **部署 PostgreSQL**
-    *   在 Supabase 開設專案 (獲取 Database URL) 或在 Render 開設 Managed PostgreSQL。
-2.  **部署 Redis**
-    *   開設 Upstash Serverless Redis 或使用 Render Redis，將網址寫入環境變數。
+1.  **Supabase 專案建立與資料庫配置**
+    *   **開設專案**：在 Supabase Dashboard 建立新專案，系統會自動分配一組 PostgreSQL 資料庫與 Auth 模組。
+    *   **獲取連線字串**：取得 `DATABASE_URL` (連線字串需包含連線池參數，如 `?pgbouncer=true` 以適應 Serverless 架構)。
+    *   **獲取金鑰**：取得 `NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY` (供前端使用) 以及 `SUPABASE_JWT_SECRET` (供後端解析 Token)。
+    *   **執行 Migration**：透過 Supabase SQL Editor 或 CLI 將原先 SQLite 的 `gum.db` Schema 建立至 Supabase 專案中。
+2.  **Redis 快取服務配置**
+    *   **方案選擇**：建議註冊 **Upstash** (Serverless Redis)，因為它提供極佳的免費額度，且與 Render 相容性極高；或者也可以使用 Render 內建的付費 Redis 實例。
+    *   **獲取連線字串**：取得 `REDIS_URL` (如 `rediss://...`) 備用。
 3.  **配置 FastAPI Backend (Render Web Service)**
-    *   設定 Build Command: `pip install -r requirements.txt`
-    *   設定 Start Command: `uvicorn main:app --host 0.0.0.0 --port 10000`
-    *   注入 `DATABASE_URL`, `REDIS_URL`, 以及 JWT Secret Keys。
-4.  **配置 Next.js Frontend (Render Web Service 或 Vercel)**
-    *   設定 Build Command: `npm run build`
-    *   注入 Auth 相關的 Public 環境變數。
+    *   在 Render Dashboard 點選 **New > Web Service**，連結 GitHub 儲存庫。
+    *   **Root Directory**: 填入 `backend`。
+    *   **Environment**: 選擇 `Python 3`。
+    *   **Build Command**: `pip install -r requirements.txt`
+    *   **Start Command**: `uvicorn main:app --host 0.0.0.0 --port 10000` (Render 預設監聽 Port 為 10000)。
+    *   **Environment Variables (環境變數設定)**：
+        *   `DATABASE_URL`: 填入 Supabase 提供的連線字串。
+        *   `REDIS_URL`: 填入 Upstash / Render Redis 網址。
+        *   `JWT_SECRET`: 填入 `SUPABASE_JWT_SECRET` (用於 `verify_token` 依賴驗證)。
+        *   `OPENROUTER_API_KEY` 與 `PERPLEXITY_API_KEY`: 填入您的 LLM 與檢索 API Key。
+4.  **配置 Next.js Frontend (Render Web Service)**
+    *   在 Render Dashboard 再次點選 **New > Web Service**，連結相同的 GitHub 儲存庫。
+    *   **Root Directory**: 填入 `frontend`。
+    *   **Environment**: 選擇 `Node`。
+    *   **Build Command**: `npm install && npm run build`
+    *   **Start Command**: `npm start`
+    *   **Environment Variables (環境變數設定)**：
+        *   `NEXT_PUBLIC_API_URL`: 填入上方 Backend 部署完成後獲得的 Render 網址 (如 `https://areqa-backend.onrender.com`)。
+        *   `NEXT_PUBLIC_SUPABASE_URL`: 填入 Supabase API URL。
+        *   `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 填入 Supabase 前端匿名金鑰。
 
 ---
 
