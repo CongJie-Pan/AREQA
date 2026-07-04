@@ -75,3 +75,4 @@ backend/gum.db
 /output/
 data/gum_data/
 data/rag/
+data/complete_trainingSet_v4_B.jsonl
