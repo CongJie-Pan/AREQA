@@ -271,10 +271,19 @@ async def shutdown_event():
     if hasattr(app.state, 'daily_task'):
         app.state.daily_task.cancel()
 
+_local_summary_cache = {}
+
 @app.get("/api/v1/memory")
 async def fetch_memory():
     props = await get_all_memory()
-    return {"propositions": props}
+    # Filter out short term memory (hot:) for the UI list
+    long_term_props = [
+        p for p in props 
+        if not str(p.get("id", "")).startswith("hot:") 
+        and "Type: scroll" not in p.get("text", "") 
+        and "User Action: scroll" not in p.get("text", "")
+    ]
+    return {"propositions": long_term_props}
 
 @app.get("/api/v1/memory/summary")
 async def get_memory_summary():
@@ -292,6 +301,7 @@ async def get_memory_summary():
     memory_text = "\n".join([f"- {p['text']}" for p in long_term_props])
     memory_hash = hashlib.md5(memory_text.encode('utf-8')).hexdigest()
     
+    # 1. Try Redis cache
     redis_client = None
     try:
         if 'rag_cache' in globals() and rag_cache is not None:
@@ -309,6 +319,11 @@ async def get_memory_summary():
                 return {"summary": json.loads(cached_summary)}
     except Exception as e:
         print(f"Redis cache error: {e}")
+        
+    # 2. Try in-memory fallback cache (useful for Render deployments without Redis)
+    if _local_summary_cache.get("hash") == memory_hash:
+        print("[MemorySummary] Hit in-memory fallback cache")
+        return {"summary": _local_summary_cache.get("summary")}
     
     prompt = f"""請根據以下長期記憶內容，對這個使用者進行綜整：
 【長期記憶】
@@ -344,13 +359,17 @@ async def get_memory_summary():
             
         summary_json = json.loads(summary_raw.strip())
         
-        # Cache it
+        # Cache it (Redis)
         if redis_client:
             try:
                 await redis_client.set("memory_summary_json", json.dumps(summary_json, ensure_ascii=False))
                 await redis_client.set("memory_summary_hash", memory_hash)
             except Exception as e:
                 print(f"Redis cache set error: {e}")
+                
+        # Cache it (Local fallback)
+        _local_summary_cache["summary"] = summary_json
+        _local_summary_cache["hash"] = memory_hash
                 
         return {"summary": summary_json}
     except Exception as e:
