@@ -256,7 +256,9 @@ export function Citations({
           body: {
             background: '#262626',
             padding: '20px',
-            margin: 0
+            margin: 0,
+            maxHeight: '70vh',
+            overflowY: 'auto'
           },
           header: {
             background: '#262626',
