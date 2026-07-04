@@ -259,8 +259,8 @@ async def startup_event():
     import sys
     sys.path.append(str(PROJECT_ROOT / "backend" / "services"))
     from services.compeer_scheduler import proactive_scheduler_loop, daily_scheduler_loop
-    app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
-    app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
+    # app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
+    # app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
 
 @app.on_event("shutdown")
 async def shutdown_event():
