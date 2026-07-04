@@ -13,33 +13,37 @@
 ## 3. 分階段實作藍圖 (Phased Implementation Plan)
 
 ### 階段一：基礎設施與資料持久化重構 (Phase 1: Persistence Layer Refactoring)
-> **目標**：讓後端完全脫離對本地檔案系統的依賴，所有的讀寫皆轉向 PostgreSQL 與 Redis。
+> **目標**：讓後端完全脫離對本地檔案系統的依賴，所有的讀寫皆轉向 PostgreSQL 與 Redis，並向下傳遞 `user_id` 租戶上下文。
 
-1.  **環境變數準備**
-    *   在 `.env` 中加入 `DATABASE_URL` 與 `REDIS_URL`。
-2.  **熱記憶 (Hot Memory) 遷移**
-    *   **目標檔案**: `backend/memory_store.py`
-    *   **行動**: 捨棄讀寫 `hot_memory.json` 的邏輯。
-    *   **實作**: 改用 `redis.asyncio`，將原本的暫存列表改以 Redis 的 `HASH` 或 `LIST` 儲存，並強制所有存取需帶入 `user_id` 作為 Redis Key 的前綴 (例如：`hot_memory:{user_id}`)。
-3.  **冷記憶與長期記憶 (Cold Memory) 遷移**
-    *   **目標檔案**: `backend/gum_integration.py` 等相關資料庫腳本。
-    *   **行動**: 捨棄本地 `gum.db` (SQLite)。
-    *   **實作**: 引入 `SQLAlchemy` 或 `SQLModel`，建立 PostgreSQL 連線。修改現有 Schema，確保所有 Table (如 GUM 記憶節點) 皆具備 `user_id` 欄位以支援多租戶。
-4.  **排程器狀態儲存遷移**
+1.  **熱記憶與信箱 (Hot Memory & Mailbox) 遷移至 Redis**
+    *   **目標檔案**: `backend/memory_store.py` 與 `backend/mailbox_store.py`
+    *   **行動**: 徹底移除 `_atomic_write`、`_read_json` 等檔案 I/O 操作與 threading locks。
+    *   **實作**: 導入 `redis.asyncio`。將所有方法改為接收 `user_id: str` (如 `async def get_hot_memory(self, user_id: str)`)，並對應至特定的 Redis Keys (例如：`areqa:hot_memory:{user_id}`, `areqa:mailbox:{user_id}`, `areqa:pending_alerts:{user_id}`)。
+2.  **GUM 記憶引擎多租戶化**
+    *   **目標檔案**: `backend/gum_integration.py`
+    *   **行動**: 移除全域的 `gum_instance` 單例 (Singleton)，改為管理多個實例的字典 `gum_instances: Dict[str, Any]`。
+    *   **實作**: 建立工廠模式 `async def get_gum_instance(user_id: str)`。確保 `push_observation`, `query_cold_memory_for_context`, `run_compaction` 等核心函式皆強制接收 `user_id`，並呼叫對應的 GUM 實例。
+3.  **排程器與狀態儲存 (Compeer Scheduler) 遷移**
     *   **目標檔案**: `backend/services/compeer_scheduler.py`
-    *   **行動**: 將 `schedule_{user_id}.json` 改存至 PostgreSQL 或 Redis。
+    *   **行動**: 將 `user_cooldown_until` 字典從記憶體移至 Redis 快取 (如 `areqa:cooldown:{user_id}`)。
+    *   **實作**: 移除寫入 `schedule_{user_id}.json` 的邏輯，改為寫入 Redis List/Hash。並修改 `proactive_scheduler_loop` 與 `daily_scheduler_loop` 使其能迭代查詢 Redis 中「所有活躍的 user_id」，而非只對 `default_user` 執行排程。
+4.  **對話節點 (Orchestration) 傳遞 Context**
+    *   **目標檔案**: `backend/services/orchestration_service.py`
+    *   **實作**: 在 `execute()` 中接收 `user_id`，並向下傳遞至 `get_hot_memory_snapshot`、`async_evaluate_and_update_state` 等子函式中。
 
-### 階段二：後端 API 認證防護 (Phase 2: Backend Auth & Multi-tenancy)
-> **目標**：確保所有進入後端的請求都是合法的，並根據 Token 辨識 `user_id`。
+### 階段二：後端 API 認證防護與 PostgreSQL Schema (Phase 2: Backend Auth & Multi-tenancy)
+> **目標**：確保所有請求合法，並正式將 SQLite `gum.db` 升級為 PostgreSQL，適配 Supabase RLS 與 Vector。
 
-1.  **實作 JWT 驗證依賴 (Dependency)**
-    *   新增 `backend/dependencies.py`，實作 `def verify_token(token: str = Depends(...))`。
-    *   解析 Supabase/Clerk 傳來的 JWT，驗證合法性並回傳 `user_id`。
-2.  **替換全域 `default_user`**
-    *   檢視 `main.py` 與 `compeer_scheduler.py`，將所有硬編碼的 `"default"` 或 `"default_user"` 替換為從 JWT 獲取的真實 `user_id`。
-3.  **WebSocket 認證實作**
-    *   **目標檔案**: `backend/services/connection_manager.py` 與 `main.py`
-    *   **行動**: 修改 WS 端點，要求連線時在 URL Query Parameter 帶入 Token (`?token=...`)，並在握手 (Handshake) 階段進行 JWT 驗證。
+1.  **實作 JWT 驗證依賴 (Auth Dependency)**
+    *   **目標檔案**: `backend/main.py`
+    *   **實作**: 新增 `get_current_user_id(request: Request)` 依賴，解析 Supabase 的 `Authorization: Bearer <token>` Header 獲取 `sub` claim 作為真實的 `user_id`。
+    *   **行動**: 盤點所有路由 (`log_action`, `proactive_check_endpoint`, `ws_notifications`, `stream_endpoint`, `fetch_memory` 等)，拔除 `user_id="default_user"` 的硬編碼，統一注入 JWT 的解析結果。在 `connection_manager.py` 中亦拔除廣播的 `default_user`。
+2.  **SQLite 轉 PostgreSQL Schema 重構 (核心重構)**
+    *   **目標檔案**: `backend/cold_memory.py` 與 `gum_integration.py`
+    *   **連線字串**: 將初始化的 `db_name="gum.db"` 替換為 PostgreSQL 連線字串 (`postgresql+asyncpg://...`)。
+    *   **多租戶隔離 (RLS)**: 在 `propositions` 資料表加入 `user_id UUID` 欄位，並於 Supabase 設定 Row Level Security (RLS) 政策：`CREATE POLICY "User isolated" ON propositions FOR ALL USING (auth.uid() = user_id);`。
+    *   **FTS5 遷移至 GIN Index**: 廢棄 SQLite 專用的 `propositions_fts` 虛擬表。改在 PostgreSQL 的 `propositions` 表新增 `fts tsvector` 欄位，並以 `to_tsvector` 進行全文檢索與 GIN 索引。
+    *   **Byte Vector 遷移至 pgvector**: 廢棄原有的 `vec_memory` 結構與 `struct.pack` 轉換邏輯。啟用 Supabase 的 `pgvector` 擴充功能，在表中新增 `embedding vector(1536)` 欄位，直接以原生陣列讀寫向量。
 
 ### 階段三：前端驗證整合 (Phase 3: Frontend Auth Integration)
 > **目標**：建立使用者註冊與登入介面，並將 Token 附加於所有對外請求中。
