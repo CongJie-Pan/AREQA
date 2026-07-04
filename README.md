@@ -101,6 +101,39 @@ flowchart TD
 
 ---
 
+### 路徑 C：記憶檢視與綜整路徑 (Memory Visualization Path)
+
+```mermaid
+flowchart TD
+    subgraph FE_C ["🖥️ Frontend"]
+        UI_Gum["GumPanel (Memory UI)\n記憶資產面板 / 人物動態畫像"]
+    end
+
+    subgraph API_C ["⚡ FastAPI · main.py"]
+        SummaryAPI["GET /api/v1/memory/summary\n過濾無效行為與短期操作"]
+    end
+
+    subgraph INFRA_C ["🏗️ Infrastructure"]
+        RedisCache_C["Redis 快取\n以 MD5 Hash 確保記憶無變動時不重複呼叫"]
+        LLM_Qwen["OpenRouter (Qwen LLM)\n生成結構化 JSON (綜整、解釋、標籤)"]
+    end
+
+    subgraph MEM_C ["📦 Memory 模塊"]
+        AllMem["get_all_memory()\n讀取並合併 Hot + Cold 記憶"]
+    end
+
+    UI_Gum -->|"① 請求記憶總結"| SummaryAPI
+    SummaryAPI -->|"② 提取所有記憶"| AllMem
+    SummaryAPI -->|"③ 計算 MD5 並查詢"| RedisCache_C
+    RedisCache_C -.->|"Cache Hit: 返回快取總結"| SummaryAPI
+    SummaryAPI -->|"Cache Miss: 發送長期記憶"| LLM_Qwen
+    LLM_Qwen -->|"生成並返回 JSON"| SummaryAPI
+    SummaryAPI -->|"寫入快取"| RedisCache_C
+    SummaryAPI -->|"④ 回傳總結資料"| UI_Gum
+```
+
+---
+
 ## 核心系統模組
 
 ### 1. 知識檢索與網路搜尋 (RAG & Web Search)
