@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
     // Parse request body
     let body: { 
       messages: Array<{ role: string; content: string }>;
+      conversation_id?: string;
       use_rag?: boolean;
       use_web_search?: boolean;
       force_think?: boolean;
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         messages: body.messages,
+        conversation_id: body.conversation_id || "",
         use_rag: body.use_rag || false,
         use_web_search: body.use_web_search || false,
         force_think: body.force_think || false,

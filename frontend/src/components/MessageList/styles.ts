@@ -62,6 +62,37 @@ export const useStyles = createStyles(({ css, token }) => ({
     margin: 0;
   `,
 
+  emptyLogo: css`
+    width: 260px;
+    height: auto;
+    object-fit: contain;
+
+    @media (max-width: 768px) {
+      width: 180px;
+    }
+  `,
+
+  emptySubtitle: css`
+    font-family: "Times New Roman", Times, serif;
+    margin-top: -18px;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+    font-size: 1.1rem;
+    letter-spacing: 0.5px;
+
+    span {
+      font-weight: bold;
+      font-size: 1.2em;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    @media (max-width: 768px) {
+      font-size: 0.9rem;
+      margin-top: -12px;
+      padding: 0 16px;
+    }
+  `,
+
   // MessageItem styles
   messageItem: css`
     display: flex;
@@ -71,6 +102,11 @@ export const useStyles = createStyles(({ css, token }) => ({
     width: 90%;
     margin: 0 auto;
     animation: ${fadeIn} 0.3s ease-out;
+
+    @media (max-width: 768px) {
+      width: 100%;
+      padding: 12px 16px;
+    }
 
     /* If an assistant message follows a user message, reduce the top padding even more */
     &.assistant-after-user {
@@ -150,6 +186,13 @@ export const useStyles = createStyles(({ css, token }) => ({
     border-bottom-right-radius: 4px;
     max-width: 85%;
     width: auto;
+
+    @media (max-width: 768px) {
+      max-width: 95%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      border-bottom-right-radius: 4px;
+    }
   `,
 
   assistantBubble: css`

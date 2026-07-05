@@ -36,6 +36,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
   };
 
   it('Scenario 1: Render RAGStatusPanel when active', () => {
+    const emptyMessage = { ...baseMessage, content: '' };
     const ragInfo = {
       status: 'searching_dense' as const,
       message: '檢索中...',
@@ -44,7 +45,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     
     render(
       <MessageItem 
-        message={baseMessage} 
+        message={emptyMessage} 
         isStreaming={true} 
         ragInfo={ragInfo} 
       />

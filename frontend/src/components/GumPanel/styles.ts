@@ -43,6 +43,11 @@ export const useStyles = createStyles(({ css }) => ({
     flex-direction: column;
     gap: 32px;
     
+    @media (max-width: 768px) {
+      padding: 24px 16px;
+      gap: 24px;
+    }
+    
     &::-webkit-scrollbar {
       width: 6px;
     }
@@ -66,6 +71,10 @@ export const useStyles = createStyles(({ css }) => ({
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
     position: relative;
     overflow: hidden;
+
+    @media (max-width: 768px) {
+      padding: 16px;
+    }
     &::before {
       content: '';
       position: absolute;
@@ -182,6 +191,12 @@ export const useStyles = createStyles(({ css }) => ({
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
+
+    @media (max-width: 768px) {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+    }
   `,
   timelineActions: css`
     display: flex;
@@ -218,6 +233,10 @@ export const useStyles = createStyles(({ css }) => ({
     border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
     position: relative;
     transition: all 0.2s ease;
+
+    @media (max-width: 768px) {
+      gap: 8px;
+    }
     &:last-child {
       border-bottom: none;
     }
@@ -241,6 +260,10 @@ export const useStyles = createStyles(({ css }) => ({
     width: 60px;
     flex-shrink: 0;
     padding-top: 4px;
+
+    @media (max-width: 768px) {
+      width: 45px;
+    }
   `,
   timelineTime: css`
     color: rgba(255, 255, 255, 0.4);
@@ -268,6 +291,7 @@ export const useStyles = createStyles(({ css }) => ({
     font-size: 0.95rem;
     line-height: 1.6;
     white-space: pre-wrap;
+    word-break: break-word;
   `,
   timelineTools: css`
     opacity: 0;

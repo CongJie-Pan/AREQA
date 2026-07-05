@@ -41,7 +41,7 @@ describe('MailboxPanel', () => {
     
     render(<MailboxPanel />);
     expect(screen.getByText(/Alice/)).toBeInTheDocument();
-    expect(screen.getByText('Hello world')).toBeInTheDocument();
+    expect(screen.getByText(/Hello world/)).toBeInTheDocument();
     // Verify it renders time properly (using regex or substring if time depends on timezone)
     // We just check it doesn't crash and renders the components.
   });
@@ -59,11 +59,11 @@ describe('MailboxPanel', () => {
     });
     
     render(<MailboxPanel />);
-    const mailElement = screen.getByText('Hello world');
+    const mailElement = screen.getByText(/Hello world/);
     fireEvent.click(mailElement);
     
     // Check if reply textarea appears
-    expect(screen.getByPlaceholderText('回覆給 Alice...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/寫信回覆給 Alice/)).toBeInTheDocument();
   });
 
   it('reply button disabled when sendingReply is true', () => {
@@ -79,9 +79,9 @@ describe('MailboxPanel', () => {
     });
     
     render(<MailboxPanel />);
-    fireEvent.click(screen.getByText('Hello world'));
+    fireEvent.click(screen.getByText(/Hello world/));
     
-    const button = screen.getByRole('button', { name: /發送中/ });
+    const button = screen.getByText(/發送信件/).closest('button') as HTMLButtonElement;
     expect(button).toBeDisabled();
   });
 
@@ -98,7 +98,7 @@ describe('MailboxPanel', () => {
     });
     
     render(<MailboxPanel />);
-    fireEvent.click(screen.getByText('Hello world'));
+    fireEvent.click(screen.getByText(/Hello world/));
     
     expect(mockMarkAsRead).toHaveBeenCalledWith('1');
   });

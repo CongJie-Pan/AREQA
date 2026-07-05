@@ -50,7 +50,8 @@ export async function createChatStream(
   abortSignal?: AbortSignal,
   useRag: boolean = false,
   forceThink: boolean = false,
-  useWebSearch: boolean = false
+  useWebSearch: boolean = false,
+  conversationId: string = ""
 ): Promise<void> {
   const parser = new ThinkTagParser();
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -94,6 +95,7 @@ export async function createChatStream(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         messages,
+        conversation_id: conversationId,
         use_rag: useRag,
         force_think: forceThink,
         use_web_search: useWebSearch

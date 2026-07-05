@@ -125,7 +125,9 @@ describe('Chat Service', () => {
         expect.any(Object),
         expect.any(AbortSignal),
         mockChatStore.useRag,
-        mockChatStore.forceThink
+        mockChatStore.forceThink,
+        mockChatStore.useWebSearch,
+        'test-conv-id'
       );
     });
 

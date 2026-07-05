@@ -165,8 +165,20 @@ function StreamingMarkdown({ content, markdownComponents }: { content: string, m
       // remend might fail on some Edge cases
     }
     // Replace citations like 【文獻2】 or [2] (if followed by context, not standard markdown links)
-    text = text.replace(/【文獻(\d+)】/g, '[$1](#cite-$1)');
-    text = text.replace(/\[(\d+)\](?!\()/g, '[$1](#cite-$1)');
+    text = text.replace(/【文獻([^】]+)】/g, (match, p1) => {
+      const nums = p1.match(/\d+/g);
+      if (nums) {
+        return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
+      }
+      return match;
+    });
+    text = text.replace(/\[([\d\s,、]+)\](?!\()/g, (match, p1) => {
+      const nums = p1.match(/\d+/g);
+      if (nums) {
+        return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
+      }
+      return match;
+    });
     return text;
   }, [deferredContent]);
 

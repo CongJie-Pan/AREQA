@@ -18,13 +18,7 @@ vi.mock('@/hooks/useProactiveWebSocket', () => {
   };
 });
 
-// Mock ResizeObserver
-const MockObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
-global.ResizeObserver = MockObserver;
+// Removed bad ResizeObserver mock here, handled by setup.ts
 
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
@@ -93,7 +87,7 @@ describe('Mailbox Flow Integration', () => {
     });
 
     // The badge should show 1
-    const mailboxButton = screen.getByText('跨時空信箱');
+    const mailboxButton = screen.getByText('信箱');
     expect(mailboxButton).toBeInTheDocument();
 
     // Now let's trigger a new mail via websocket
@@ -111,12 +105,12 @@ describe('Mailbox Flow Integration', () => {
     });
 
     // Panel opens
-    expect(screen.getByText('蘇格拉底 來信')).toBeInTheDocument();
+    expect(screen.getByText('蘇格拉底')).toBeInTheDocument();
     
     // 5. Click the mail to read it
-    const mailItem = screen.getByText('你好，朋友。');
+    const mailElement = screen.getByText(/你好，朋友。/);
     await act(async () => {
-      fireEvent.click(mailItem);
+      fireEvent.click(mailElement);
     });
 
     // The read API should have been called
@@ -126,10 +120,10 @@ describe('Mailbox Flow Integration', () => {
     );
 
     // 6. Write a reply
-    const replyInput = screen.getByPlaceholderText('回覆給 蘇格拉底...');
+    const replyInput = screen.getByPlaceholderText(/寫信回覆給 蘇格拉底/);
     fireEvent.change(replyInput, { target: { value: '我的回覆' } });
     
-    const sendButton = screen.getByRole('button', { name: /發送信件/i });
+    const sendButton = screen.getByText(/發送信件/).closest('button') as HTMLButtonElement;
     
     // 7. Click send
     await act(async () => {

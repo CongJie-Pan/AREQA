@@ -139,21 +139,14 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
           alt="AREQA Logo" 
           width={260} 
           height={87} 
-          style={{ objectFit: 'contain' }} 
+          className={styles.emptyLogo}
           priority
         />
-        <div style={{ 
-          fontFamily: '"Times New Roman", Times, serif', 
-          marginTop: '-18px', 
-          color: 'rgba(255, 255, 255, 0.6)', 
-          textAlign: 'center',
-          fontSize: '1.1rem',
-          letterSpacing: '0.5px'
-        }}>
-          <span style={{ fontWeight: 'bold', fontSize: '1.2em', color: 'rgba(255, 255, 255, 0.85)' }}>A</span>daptive{' '}
-          <span style={{ fontWeight: 'bold', fontSize: '1.2em', color: 'rgba(255, 255, 255, 0.85)' }}>R</span>AG-based{' '}
-          <span style={{ fontWeight: 'bold', fontSize: '1.2em', color: 'rgba(255, 255, 255, 0.85)' }}>E</span>ducational{' '}
-          <span style={{ fontWeight: 'bold', fontSize: '1.2em', color: 'rgba(255, 255, 255, 0.85)' }}>QA</span> System
+        <div className={styles.emptySubtitle}>
+          <span>A</span>daptive{' '}
+          <span>R</span>AG-based{' '}
+          <span>E</span>ducational{' '}
+          <span>QA</span> System
         </div>
       </div>
     );
