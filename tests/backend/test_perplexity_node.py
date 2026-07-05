@@ -36,7 +36,7 @@ async def test_perplexity_search_success(mock_orchestrator):
         )
 
         events = []
-        async for event in mock_orchestrator._node_perplexity_search("測試問題"):
+        async for event in mock_orchestrator._node_perplexity_search("測試問題", "test_conv_id"):
             events.append(event)
             
         assert len(events) == 4
@@ -75,7 +75,7 @@ async def test_perplexity_search_api_failure(mock_orchestrator):
         respx.post("https://api.perplexity.ai/chat/completions").respond(status_code=500)
 
         events = []
-        async for event in mock_orchestrator._node_perplexity_search("測試問題"):
+        async for event in mock_orchestrator._node_perplexity_search("測試問題", "test_conv_id_fail"):
             events.append(event)
             
         assert len(events) == 2
@@ -96,7 +96,7 @@ async def test_perplexity_search_no_api_key(mock_orchestrator):
     import os
     with patch.dict(os.environ, {"PERPLEXITY_API_KEY": ""}):
         events = []
-        async for event in mock_orchestrator._node_perplexity_search("測試問題"):
+        async for event in mock_orchestrator._node_perplexity_search("測試問題", "test_conv_id_no_key"):
             events.append(event)
             
         assert len(events) == 2

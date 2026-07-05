@@ -156,6 +156,16 @@ class MemoryStore:
                 del hot_memory[k]
             self._atomic_write(self.hot_memory_path, hot_memory)
             print(f"[EDF-LOG] Cleared {len(keys_to_delete)} ghost pending alerts on startup.")
+            
+    def clear_all_memory(self):
+        """Completely wipe hot memory and reset user profile to defaults."""
+        self._atomic_write(self.hot_memory_path, {})
+        self._atomic_write(self.user_profile_path, {
+            "name": "default_user",
+            "explicit_memories": [],
+            "implicit_preferences": []
+        })
+        print("[EDF-LOG] Cleared all hot memory and reset user profile.")
 
 _global_store = None
 

@@ -42,7 +42,7 @@ async def test_orchestration_routing_deny(mock_router, mock_rag, mock_suggestion
          patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock):
         
         events = []
-        async for event in service.execute(messages, False, False, 100, 0.7, 0.9, 1.0, request):
+        async for event in service.execute(messages, "test_conv_id", False, False, False, 100, 0.7, 0.9, 1.0, request):
             events.append(event)
             
         assert len(events) >= 2
@@ -69,7 +69,7 @@ async def test_orchestration_routing_allow(mock_router, mock_rag, mock_suggestio
         mock_policy.return_value = "NORMAL"
         
         events = []
-        async for event in service.execute(messages, False, False, 100, 0.7, 0.9, 1.0, request):
+        async for event in service.execute(messages, "test_conv_id", False, False, False, 100, 0.7, 0.9, 1.0, request):
             events.append(event)
             
         # Since we are in Gate 1A, it yields dummy processing and OK messages

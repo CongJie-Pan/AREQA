@@ -116,7 +116,7 @@ class OrchestrationService:
         self.suggestion = suggestion_service
         self.client = client
 
-    async def execute(self, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool,
+    async def execute(self, messages: List[Dict[str, str]], conversation_id: str, use_rag: bool, use_web_search: bool, force_think: bool,
                       max_tokens: int, temperature: float, top_p: float,
                       repetition_penalty: float, request: Request) -> AsyncGenerator[str, None]:
         
@@ -172,7 +172,7 @@ class OrchestrationService:
         # Node 4: RAG Retrieval
         context_results_obj = None
         if use_web_search and last_user_msg:
-            async for event in self._node_perplexity_search(last_user_msg, messages):
+            async for event in self._node_perplexity_search(last_user_msg, conversation_id, messages):
                 if event.startswith("event: results_obj"):
                     context_results_obj = getattr(self, "_temp_rag_obj", None)
                     continue
@@ -309,7 +309,7 @@ class OrchestrationService:
             self._temp_context_prompt = context_prompt
             yield "event: results_obj\n\n"
 
-    async def _node_perplexity_search(self, last_user_msg: str, messages: List[Dict[str, str]] = None) -> AsyncGenerator[str, None]:
+    async def _node_perplexity_search(self, last_user_msg: str, conversation_id: str, messages: List[Dict[str, str]] = None) -> AsyncGenerator[str, None]:
         import httpx
         import os
         
@@ -325,7 +325,9 @@ class OrchestrationService:
             
         import hashlib
         import redis.asyncio as aioredis
-        search_hash = f"websearch:{hashlib.md5(last_user_msg.encode('utf-8')).hexdigest()}"
+        # Combine conversation_id and user msg to ensure cache is scoped to the conversation
+        hash_input = f"{conversation_id}_{last_user_msg}"
+        search_hash = f"websearch:{hashlib.md5(hash_input.encode('utf-8')).hexdigest()}"
         redis_client = None
         cached_data_str = None
         
@@ -341,22 +343,37 @@ class OrchestrationService:
         else:
             try:
                 rewritten_query = last_user_msg
+                max_results = 15
                 if self.client and messages:
                     try:
                         history_str = "\n".join([f'{m["role"]}: {m["content"]}' for m in messages[-4:]])
-                        rewrite_prompt = f"請根據以下對話歷史，將最後一個使用者的提問重寫為適合在搜尋引擎上查詢的『獨立關鍵字』（Standalone Query）。只需回傳關鍵字，不要任何解釋。\n\n對話歷史：\n{history_str}"
+                        rewrite_prompt = f"""請根據以下對話歷史，將最後一個使用者的提問重寫為適合在搜尋引擎上查詢的『獨立關鍵字』（Standalone Query）。同時請分析該問題的「複雜度」，並決定需要參考的文獻數量（3到20篇之間）。
+請嚴格以 JSON 格式回傳，格式如下：
+{{"query": "獨立關鍵字", "max_results": 15}}
+不要有任何其他解釋。
+
+對話歷史：
+{history_str}"""
+                        from config import settings
                         rewrite_res = await self.client.chat.completions.create(
-                            model="qwen/qwen3-30b-a3b-instruct-2507",
+                            model=settings.model_hyde_decomposer,
                             messages=[{"role": "user", "content": rewrite_prompt}],
                             temperature=0.1,
-                            max_tokens=50
+                            max_tokens=150
                         )
                         if rewrite_res.choices and rewrite_res.choices[0].message.content:
-                            rewritten_query = rewrite_res.choices[0].message.content.strip()
+                            content = rewrite_res.choices[0].message.content.strip()
+                            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                            if json_match:
+                                parsed = json.loads(json_match.group(0))
+                                rewritten_query = parsed.get("query", last_user_msg)
+                                max_results = min(max(int(parsed.get("max_results", 15)), 3), 20)
+                            else:
+                                rewritten_query = content
                     except Exception as e:
                         print(f"[Perplexity] Query Rewrite Error: {e}")
                 
-                print(f"[Perplexity] 重寫後的搜尋詞: {rewritten_query}")
+                print(f"[Perplexity] 重寫後的搜尋詞: {rewritten_query}, 動態篇數: {max_results}")
 
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
@@ -367,12 +384,16 @@ class OrchestrationService:
                         },
                         json={
                             "query": rewritten_query,
-                            "max_results": 15,
+                            "max_results": max_results,
                             "search_context_size": "high"
                         }
                     )
                     response.raise_for_status()
                     data = response.json()
+                    
+                    # Enforce max_results dynamically as the API might ignore the payload parameter
+                    if "results" in data:
+                        data["results"] = data["results"][:max_results]
                     
                     if redis_client:
                         try:
@@ -623,8 +644,4 @@ class OrchestrationService:
             except Exception as sug_err:
                 yield f"event: done\ndata: {json.dumps({'suggestions': []}, ensure_ascii=False)}\n\n"
                 
-        try:
-            if answer_content_accumulator:
-                asyncio.create_task(push_observation(f"Assistant answered: {answer_content_accumulator[:300]}"))
-        except Exception:
-            pass
+        # (Removed AI observation push to prevent GUM from generating user attributes based on AI responses)

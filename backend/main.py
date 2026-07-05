@@ -18,7 +18,7 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
-from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state
+from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state, clear_gum_memory
 
 # 在 main.py 最上層加入全域快取服務變數
 rag_cache = None
@@ -529,6 +529,7 @@ class MemoryQueryRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
+    conversation_id: str = ""
     use_rag: bool = False
     use_web_search: bool = False
     force_think: bool = False
@@ -794,6 +795,17 @@ async def proactive_check_endpoint(user_id: str = "default_user"):
             return {"has_alert": True, "content": alert_content}
     return {"has_alert": False}
 
+@app.delete("/api/v1/memory")
+async def clear_memory_endpoint():
+    """Clear all hot memory and cold GUM memory"""
+    from memory_store import get_global_store
+    store = get_global_store()
+    if store:
+        store.clear_all_memory()
+        
+    await clear_gum_memory()
+    return {"status": "ok", "message": "Memory cleared successfully"}
+
 from services.connection_manager import ws_manager
 
 @app.websocket("/api/v1/ws/notifications")
@@ -848,6 +860,7 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
     return StreamingResponse(
         orchestrator.execute(
             messages=chat_req.messages,
+            conversation_id=chat_req.conversation_id,
             use_rag=chat_req.use_rag,
             use_web_search=chat_req.use_web_search,
             force_think=chat_req.force_think,

@@ -55,8 +55,8 @@ async def init_gum_instance():
         db_name="gum.db",
         api_key=api_key,
         api_base="https://openrouter.ai/api/v1",
-        min_batch_size=1, # Setting to 1 to see immediate results for QA
-        max_batch_size=10,
+        min_batch_size=17,
+        max_batch_size=20,
     )
     await gum_instance.connect_db()
     gum_instance.start_update_loop()
@@ -82,6 +82,39 @@ async def stop_gum_instance():
         await gum_instance.stop_update_loop()
         if gum_instance.batcher:
             await gum_instance.batcher.stop()
+
+async def clear_gum_memory():
+    """Clear all GUM memory from the database."""
+    global gum_instance, importance_sum, interaction_count
+    importance_sum = 0
+    interaction_count = 0
+    import shutil
+    import os
+    
+    if gum_instance:
+        try:
+            await gum_instance.stop_update_loop()
+            if gum_instance.batcher:
+                await gum_instance.batcher.stop()
+                
+            if hasattr(gum_instance, 'engine') and gum_instance.engine:
+                await gum_instance.engine.dispose()
+                gum_instance.engine = None
+                gum_instance.Session = None
+                
+            data_dir = gum_instance._data_directory
+            if os.path.exists(data_dir):
+                shutil.rmtree(data_dir)
+            os.makedirs(data_dir, exist_ok=True)
+            
+            await gum_instance.connect_db()
+            gum_instance.start_update_loop()
+            if gum_instance.batcher:
+                await gum_instance.batcher.start()
+                
+            print("[GUM] Completely wiped GUM data directory and recreated it.")
+        except Exception as e:
+            print(f"[GUM] Error clearing memory directory: {e}")
 
 importance_sum = 0
 interaction_count = 0
@@ -404,39 +437,6 @@ async def get_all_memory():
             } 
             for p in props if getattr(p, "status", "") not in ["deleted", "superseded"]
         ]
-        
-        # Add Hot Memory and User Profile as virtual items
-        from memory_store import get_global_store
-        store = get_global_store()
-        if store:
-            profile = store.get_user_profile()
-            for k, v in profile.items():
-                result.append({
-                    "id": f"profile:{k}",
-                    "text": f"【使用者畫像】{k}: {v}",
-                    "confidence": 10.0,
-                    "updated_at": None,
-                    "context_scope": "user_profile",
-                    "event_types": [k],
-                    "target": "user",
-                    "functional_type_seeds": ["profile"]
-                })
-                
-            hot_mem = store.get_hot_memory()
-            for k, v in hot_mem.items():
-                text = v["text"] if isinstance(v, dict) and "text" in v else str(v)
-                conf = v.get("confidence", 8.0) if isinstance(v, dict) else 8.0
-                result.append({
-                    "id": f"hot:{k}",
-                    "text": f"【近期對話】{text}",
-                    "confidence": conf,
-                    "updated_at": None,
-                    "context_scope": "hot_memory",
-                    "event_types": [k],
-                    "target": "system",
-                    "functional_type_seeds": ["hot_memory"]
-                })
-                
         return result
     except Exception as e:
         print(f"Error fetching memory: {e}")
