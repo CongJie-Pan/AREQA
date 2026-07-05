@@ -37,8 +37,16 @@ class MemoryStore:
             raise e
             
     def _read_json(self, path: str) -> Dict[str, Any]:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        if not os.path.exists(path):
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
 
     def get_hot_memory(self) -> Dict[str, Any]:
         return self._read_json(self.hot_memory_path)

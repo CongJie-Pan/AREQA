@@ -275,7 +275,8 @@ async def startup_event():
     
     global rag_cache
     from services.cache_service import RagCacheService
-    rag_cache = RagCacheService("redis://localhost:6379")
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+    rag_cache = RagCacheService(redis_url)
     print("Redis RAG Cache initialized successfully.")
     
     # Start ComPeer Scheduler
