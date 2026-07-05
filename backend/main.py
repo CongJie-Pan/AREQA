@@ -110,7 +110,16 @@ SYSTEM_PROMPT_WITH_RAG_THINK = BASE_PERSONA + (
     "【思考與檢索引用限制】\n"
     "1. 必須全程用繁體中文。只能條列核心推演過程，絕不在思考時長篇大論。\n"
     "2. 所有精采的文本分析與列點整理，請全部放到正式回答中展現。\n"
-    "3. 正式回答必須嚴格基於 <context> 參考資料，並在句末或列點後明確標註來源（如：【文獻1】）。\n"
+    "3. 正式回答必須嚴格基於 <context> 參考資料，並在句末或列點後明確標註來源（如：【文獻1】）。\n\n"
+    "【RAG 上下文處理與衝突排解規則 - 最高優先級】\n"
+    "在進行正式回答前，你必須在內部思考區塊（<think>）中，嚴格執行以下兩步檢驗：\n\n"
+    "1. 🔍 文本性質掃描 (Nature Identification)：\n"
+    "    分析 <context> 中的資訊，判斷其屬於哪種「文本性質」？\n\n"
+    "2. ⚠️ 知識衝突偵測 (Knowledge Conflict Detection)：\n"
+    "    比對 <context> 的內容與你的「內建常識」。\n"
+    "    - 若兩者發生嚴重衝突，請「無條件優先信任 <context>」。\n"
+    "    - 絕對禁止使用你的內建常識去「糾正」或「掩蓋」上下文中的特殊設定。\n\n"
+    "完成以上兩步後，才能開始套用 EDF 教學策略進行後續引導。\n"
 )
 
 # Initialize the global thread pool for CPU bounds tasks (Tokenizer, FAISS, BM25)
