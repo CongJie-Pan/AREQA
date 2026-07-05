@@ -8,7 +8,13 @@ export const exportToMarkdown = (messages: DisplayMessage[]) => {
   
   messages.forEach(msg => {
     const roleName = msg.role === 'user' ? '👤 您' : '🤖 AREQA';
-    content += `### ${roleName}\n${msg.content}\n\n---\n\n`;
+    content += `### ${roleName}\n`;
+    
+    if (msg.reasoning && msg.reasoning.content) {
+      content += `> **🤔 思考過程：**\n> \n> ${msg.reasoning.content.split('\n').join('\n> ')}\n\n`;
+    }
+    
+    content += `${msg.content}\n\n---\n\n`;
   });
 
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
