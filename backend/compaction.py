@@ -91,13 +91,14 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
 - RUN_REPEAT: 陷入盲目重複、鬼打牆，需要切換視角打破迴圈。
 - GIVING_UP: 因認知負荷過高、看不懂而感到挫折與放棄，需要情感安撫與降維打擊。
 - MASTERY: 展現高度理解、批判性思考、或對文本提出深刻質疑與挑戰（即使語氣帶有否定或辯論），需要學術辯論或魔鬼代言人策略。
+- CHITCHAT: 使用者正在進行日常閒聊、開玩笑、無厘頭提問，或詢問無關緊要的私人問題。此階段不需要任何學術或教學策略，只需輕鬆回應。
 
 請嚴格以 JSON 格式回傳，格式如下：
 {{
-  "learner_state": "NOT_STARTED" | "STARTING" | "TINKERING" | "RUN_REPEAT" | "GIVING_UP" | "MASTERY",
-  "pedagogical_strategy": "建議的教學鷹架策略描述（如：提供底層原理、引導反思、提供具體步驟、安撫情緒、學術辯論）",
+  "learner_state": "NOT_STARTED" | "STARTING" | "TINKERING" | "RUN_REPEAT" | "GIVING_UP" | "MASTERY" | "CHITCHAT",
+  "pedagogical_strategy": "建議的教學鷹架策略描述（如：提供底層原理、引導反思、提供具體步驟、安撫情緒、學術辯論、輕鬆閒聊）",
   "trigger_proactive": true 或 false (如果學生展現出氣餒、沮喪、或是需要鼓勵，設為 true。注意：若狀態為 NOT_STARTED，則此項必須強制設為 false),
-  "active_avatar": "歷史人物名稱 或 null" (若使用者有提及或探討特定歷史人物或思想家，請強烈傾向將 active_avatar 設為該人物名稱，例如：柏拉圖、蘇格拉底。若提到多位，請選取最核心的一位。唯有在使用者明確結束該話題，或完全無關時才回傳 null),
+  "active_avatar": "歷史人物名稱 或 null" (唯有當使用者「明確要求或提及希望你進行角色扮演」，例如：「請扮演蘇格拉底」、「以伊安·摩里士的角度回答」時，才將 active_avatar 設為該人物名稱。若使用者僅是客觀探討該人物或其著作，並未要求角色扮演，請務必回傳 null),
   "memory_operations": [
     {{"target": "user" 或 "memory", "action": "add" 或 "replace" 或 "remove", "content": "要新增或替換的內容", "old_text": "要被替換或刪除的關鍵字（若 action 為 add 則可留空）"}}
   ]

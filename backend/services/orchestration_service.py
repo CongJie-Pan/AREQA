@@ -172,7 +172,7 @@ class OrchestrationService:
         # Node 4: RAG Retrieval
         context_results_obj = None
         if use_web_search and last_user_msg:
-            async for event in self._node_perplexity_search(last_user_msg):
+            async for event in self._node_perplexity_search(last_user_msg, messages):
                 if event.startswith("event: results_obj"):
                     context_results_obj = getattr(self, "_temp_rag_obj", None)
                     continue
@@ -309,7 +309,7 @@ class OrchestrationService:
             self._temp_context_prompt = context_prompt
             yield "event: results_obj\n\n"
 
-    async def _node_perplexity_search(self, last_user_msg: str) -> AsyncGenerator[str, None]:
+    async def _node_perplexity_search(self, last_user_msg: str, messages: List[Dict[str, str]] = None) -> AsyncGenerator[str, None]:
         import httpx
         import os
         
@@ -340,6 +340,24 @@ class OrchestrationService:
             data = json.loads(cached_data_str)
         else:
             try:
+                rewritten_query = last_user_msg
+                if self.client and messages:
+                    try:
+                        history_str = "\n".join([f'{m["role"]}: {m["content"]}' for m in messages[-4:]])
+                        rewrite_prompt = f"請根據以下對話歷史，將最後一個使用者的提問重寫為適合在搜尋引擎上查詢的『獨立關鍵字』（Standalone Query）。只需回傳關鍵字，不要任何解釋。\n\n對話歷史：\n{history_str}"
+                        rewrite_res = await self.client.chat.completions.create(
+                            model="qwen/qwen3-30b-a3b-instruct-2507",
+                            messages=[{"role": "user", "content": rewrite_prompt}],
+                            temperature=0.1,
+                            max_tokens=50
+                        )
+                        if rewrite_res.choices and rewrite_res.choices[0].message.content:
+                            rewritten_query = rewrite_res.choices[0].message.content.strip()
+                    except Exception as e:
+                        print(f"[Perplexity] Query Rewrite Error: {e}")
+                
+                print(f"[Perplexity] 重寫後的搜尋詞: {rewritten_query}")
+
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         "https://api.perplexity.ai/search",
@@ -348,8 +366,9 @@ class OrchestrationService:
                             "Content-Type": "application/json"
                         },
                         json={
-                            "query": last_user_msg,
-                            "max_results": 5
+                            "query": rewritten_query,
+                            "max_results": 15,
+                            "search_context_size": "high"
                         }
                     )
                     response.raise_for_status()
@@ -434,15 +453,18 @@ class OrchestrationService:
             if hot_snapshot:
                 final_system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
                 
-                # Dynamic Tone/Vocabulary Adaptation based on Learner State
                 from memory_store import get_global_store
                 store = get_global_store()
                 if store:
+                    final_system_prompt += "\n\n【事實優先原則】：在進行任何引導或提問前，必須先比對 <context> 中的客觀事實。如果發現使用者的困惑來自於客觀事實的錯誤，請直接且明確地糾正事實，絕對不要用提問的方式繞圈子。"
+                    
                     learner_state = store.get_hot_memory().get("current_learner_state", "")
                     if learner_state == "STARTING":
                         final_system_prompt += "\n\n【動態表達限制：STARTING 階段】\n注意：使用者目前為初學者（STARTING）。你必須「嚴格降低詞彙難度」，絕對禁止使用未經解釋的進階專有名詞。請用最白話、最生活化的比喻來引導，一次只講一個重點，避免造成認知負荷超載。"
                     elif learner_state == "TINKERING":
                         final_system_prompt += "\n\n【動態表達限制：TINKERING 階段】\n注意：使用者正在摸索與建構概念（TINKERING）。你可以適度引入專有名詞，但必須伴隨具體例證與解釋。鼓勵思辨，但避免過度拋出艱澀的哲學大哉問而讓使用者不知所措。"
+                    elif learner_state == "CHITCHAT":
+                        final_system_prompt += "\n\n【動態表達限制：CHITCHAT 階段】\n注意：使用者目前正在閒聊。請立刻放下所有學術架子，用幽默、輕鬆的朋友口吻回應，不要長篇大論，也不需要強硬引導回主題。"
                     
                     active_avatar = store.get_hot_memory().get("active_avatar")
                     if active_avatar:
@@ -460,6 +482,9 @@ class OrchestrationService:
             if force_think:
                 think_control_prompt = "\n【重要指令】你的思考過程請務必簡明扼要（盡量控制在 500 字以內），不要把時間浪費在複述上下文，請把所有詳細的分析與長篇論述都放在 </think> 之後的正式回答中！"
                 final_system_prompt += think_control_prompt
+                
+            if any(kw in last_user_msg for kw in ["錯", "真的嗎", "不對", "誤會", "理解錯", "確認一下"]):
+                final_system_prompt += "\n\n【自我糾錯機制】：使用者正在質疑你的前次回答。請放下防衛心，重新檢視最新的 <context> 文獻。如果你先前的回答缺乏文獻支持或是產生了 AI 幻覺，請勇敢承認錯誤並根據文獻給出正確事實，嚴禁為了合理化先前的錯誤而編造新的解釋。"
                 
             new_messages.insert(0, {"role": "system", "content": final_system_prompt})
             
