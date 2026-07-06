@@ -91,8 +91,11 @@ fi
 echo -e "\033[1;36m======================================\033[0m"
 echo -e "\033[1;32m🤖 Drift AI Brain & Antigravity CLI are Ready!\033[0m"
 echo -e "\033[1;33m👉 Run \033[1;37magy\033[0m"
-echo -e "\033[1;33m👉 Run \033[1;37mdrift init -y\033[0m"
-echo -e "\033[1;33m👉 Run \033[1;37mdrift scan\033[0m"
+echo -e "\033[1;33m👉 強制重新掃描 (重構後推薦): \033[1;37mdrift scan backend frontend --force\033[0m"
+echo -e "\033[1;33m👉 若要完全歸零重來:\033[0m"
+echo -e "\033[1;37m   1. rm -rf .drift\033[0m"
+echo -e "\033[1;37m   2. drift init\033[0m"
+echo -e "\033[1;37m   3. drift scan backend frontend\033[0m"
 echo -e "\033[1;36m======================================\033[0m"
 EOF
 fi
