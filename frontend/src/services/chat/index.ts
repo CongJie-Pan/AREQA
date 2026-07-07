@@ -253,7 +253,7 @@ export async function sendMessage(
             : undefined;
 
           // Save assistant message to database
-          const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt'> = {
+          const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
             role: 'assistant',
             content: answerContent,
           };
@@ -401,7 +401,7 @@ export async function cancelCurrentStream(): Promise<void> {
   const activeConversationId = conversationStore.activeConversationId;
   if (streamingMessageId && activeConversationId) {
     try {
-      const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt'> = {
+      const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
         role: 'assistant',
         content: currentContent || '',
       };
@@ -668,7 +668,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
             : undefined;
 
           // Save assistant message to database
-          const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt'> = {
+          const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
             role: 'assistant',
             content: answerContent,
           };
@@ -882,7 +882,7 @@ export async function editUserMessage(
             : undefined;
 
           // Save assistant message to database
-          const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt'> = {
+          const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
             role: 'assistant',
             content: answerContent,
           };

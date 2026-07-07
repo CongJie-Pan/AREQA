@@ -7,6 +7,7 @@
  */
 
 import { create } from 'zustand';
+import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import type { ChatStore, DisplayMessage } from './types';
 import type { CitationSource } from '@/components/Citations';
@@ -50,6 +51,7 @@ export const useChatStore = create<ChatStore>((set) => ({
     const id = generateUUID();
     const message: DisplayMessage = {
       id,
+      userId: getCurrentUserId(),
       conversationId,
       role: 'user',
       content,
@@ -67,6 +69,7 @@ export const useChatStore = create<ChatStore>((set) => ({
     const id = generateUUID();
     const message: DisplayMessage = {
       id,
+      userId: getCurrentUserId(),
       conversationId,
       role: 'assistant',
       content: '',

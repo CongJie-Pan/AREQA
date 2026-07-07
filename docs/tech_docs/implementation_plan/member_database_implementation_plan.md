@@ -55,8 +55,10 @@ AREQA/
 │   │   │   └── db.ts               # 修改: Dexie schema 增加 userId, 實作 .upgrade() 資料遷移
 │   │   ├── hooks/
 │   │   │   └── useProactiveWebSocket.ts # 修改: 實作先打 API 換 Ticket 再帶入 WS 參數的邏輯
-│   │   └── components/
-│   │       └── Auth/               # 新增: Supabase 登入 UI 組件 (側邊欄)
+│   │   ├── components/
+│   │   │   └── Auth/               # 新增: Supabase 登入 UI 組件 (側邊欄, Phase 3.5)
+│   │   └── services/
+│   │       └── syncService.ts      # 新增: 處理 Dexie 與 Supabase 之間的對話紀錄雙向同步 (Phase 3.5)
 └── misc/
     └── gum/                        # 深度修改: 拔除 SQLite 硬綁定，確保語法相容 PostgreSQL
 ```
@@ -205,6 +207,45 @@ AREQA/
         db.on('versionchange', () => window.location.reload());
         ```
 
+### 階段三點五：會員介面與雲端同步 (Phase 3.5 - 擴充需求)
+> **前置條件**：Supabase 專案已就緒，且前端 `.env.local` 已配置 `NEXT_PUBLIC_SUPABASE_URL` 與 `NEXT_PUBLIC_SUPABASE_ANON_KEY`。
+
+**執行步驟 (Execution Steps):**
+
+1.  **基礎設施前置作業 & 效能優化 (Infrastructure & Optimization)**
+    *   安裝套件：`npm install @supabase/supabase-js @supabase/auth-ui-react @supabase/auth-ui-shared`。
+    *   建立 Supabase Client：於前端新增 `src/lib/supabase.ts` 用於全域連線與 Auth 管理。
+    *   效能優化 (Bug Fix)：將 `conversationRepo.ts` 中 `getAll()` 的 `.filter(c => c.userId === userId)` (全表掃描) 改為 Dexie 原生的索引查詢 `.where('userId').equals(userId)`。
+
+2.  **資料庫 Schema 設計與 RLS (Database Schema & RLS)**
+    *   在 Supabase Dashboard 建立 `conversations` 與 `messages` 資料表，並強制啟用 RLS。
+    *   **👨‍💻 SQL Schema 範例**:
+        ```sql
+        CREATE TABLE conversations (
+          id UUID PRIMARY KEY,
+          user_id UUID REFERENCES auth.users(id) NOT NULL,
+          title TEXT,
+          created_at TIMESTAMPTZ DEFAULT now(),
+          updated_at TIMESTAMPTZ DEFAULT now()
+        );
+        ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can only see their own conversations" ON conversations FOR ALL USING (auth.uid() = user_id);
+        
+        -- messages 表以此類推...
+        ```
+
+3.  **左下角會員登入介面 (Auth UI)**
+    *   實作點擊左下角 (取代目前的 UserIcon/Name) 彈出 Supabase Auth 登入介面 (支援 Google, Email/Password)。
+    *   整合進 `layout.tsx` 與 `ConversationList`。
+    *   實作更改 Username 與登出功能。
+
+4.  **跨裝置對話紀錄同步 (Cross-device Sync)**
+    *   建立前端同步服務 (`syncService.ts`)，負責協調 Dexie 本地端與 Supabase 雲端之間的雙向同步。
+    *   **同步策略 (Sync Strategy)**:
+        *   **衝突解決**: 採 Last-Write-Wins，以 `updated_at` 最新者為準。
+        *   **同步時機**: 每次有新訊息產生或對話狀態改變時，立即非同步推上雲端；App 啟動/登入時，先將雲端資料拉回覆蓋本地 (若較新)。
+        *   **首次登入**: 若本地有未綁定帳號的舊歷史，登入後可提示使用者是否要將舊資料整併至雲端帳號下，或直接丟棄。
+
 ### 階段四：Render 部署拓樸 (Phase 4)
 *   **Backend Start**: `uvicorn main:app --host 0.0.0.0 --port 10000`
 *   **Connection Pool**: `pool_size=5, max_overflow=10`
@@ -216,20 +257,25 @@ AREQA/
 
 所有階段必須滿足以下驗收標準才能進入下一階段（包含自動化單元/整合測試與人工實測）。
 
-| 測試 ID | 所屬 Gate | 測試類型 | 目標項目 / 驗證行為 | 具體驗收標準 (Acceptance Criteria) | 執行方 |
-|---|---|---|---|---|---|
-| **T1-01** | Phase 1 | Unit | `test_memory_store.py` 多租戶 | user_A 寫入資料後，用 user_B 查詢回傳空值。 | 自動化 |
-| **T1-02** | Phase 1 | Unit | `test_mailbox_zset.py` 延遲 | 測試信件加入 Redis ZSET 後，能被 mock worker 正確拉出。 | 自動化 |
-| **T1-03** | Phase 1 | Unit | `test_gum_singleton.py` | 驗證全系統僅初始化一次 SQLAlchemy Engine，無多次呼叫。 | 自動化 |
-| **T1-04** | Phase 1 | Manual | **重啟恢復測試 (Resilience)** | 送出信件後立刻砍掉 FastAPI 進程。等待 5 分鐘重啟，確認信箱 Worker 從 Redis 撈出信件並正確處理。 | 人工 |
-| **T2-01** | Phase 2 | Unit | `test_auth_jwt.py` 陣列驗證 | 傳入 `aud: ["authenticated", "other"]` 的假 Token，驗證不拋出 500。 | 自動化 |
-| **T2-02** | Phase 2 | Unit | `test_cold_memory_pg.py` | 驗證向量維度為 4096，且 `to_tsquery` SQL 語法執行不報錯。 | 自動化 |
-| **T2-03** | Phase 2 | Integration | `test_rls_isolation.py` | 透過 `set_config` 設定 A 帳號 context 後，無法查到 B 帳號資料。 | 自動化 |
-| **T2-04** | Phase 2 | Manual | **Supabase RLS 攔截測試** | 在 Supabase Dashboard SQL Editor 中，不帶 `auth.uid()` 嘗試查詢 `propositions` 表，必須查無資料。 | 人工 |
-| **T3-01** | Phase 3 | Unit | `test_ws_ticket.py` 票證 | 驗證 Ticket 用 `GETDEL` 讀取，第二次讀取失敗。 | 自動化 |
-| **T3-02** | Phase 3 | Unit | `test_ws_origin.py` 安全 | 傳入非白名單的 `Origin` Header，驗證 WS 連線被 4001 拒絕。 | 自動化 |
-| **T3-03** | Phase 3 | Unit | `npm run test` (Frontend) | Dexie `.upgrade()` 執行後，舊資料的 `userId` 成功被補填。 | 自動化 |
-| **T3-04** | Phase 3 | Manual | **無痕與多 Tab 登出入測試** | 1. 未登入無法發送對話。<br>2. 登出後 Dexie 本地歷史清空。<br>3. 切換帳號看不到前人歷史。<br>4. 開雙 Tab 測試 Dexie 自動 reload。 | 人工 |
-| **T4-01** | Phase 4 | E2E | `test_api_auth.py` HTTP | 對 Render Staging 打 API，帶無效 Token 必須回 401。 | 自動化 |
-| **T4-02** | Phase 4 | E2E | `test_rls_api.py` 刪除防護 | 打 DELETE API 嘗試刪除他人記憶，必須回傳 403 或 404。 | 自動化 |
-| **T4-03** | Phase 4 | Manual | **Production Smoke Test** | 1. 開啟 RAG 串流對話順暢無卡頓 (Cloudflare bypass)。<br>2. 信箱 Avatar 5 分鐘後正常推播通知。<br>3. 重啟頁面記憶依然存在。 | 人工 |
+| 測試 ID | 狀態 | 所屬 Gate | 測試類型 | 目標項目 / 驗證行為 | 具體驗收標準 (Acceptance Criteria) | 執行方 |
+|---|---|---|---|---|---|---|
+| **T1-01** | ✅ | Phase 1 | Unit | `test_memory_store.py` 多租戶 | user_A 寫入資料後，用 user_B 查詢回傳空值。 | 自動化 |
+| **T1-02** | ✅ | Phase 1 | Unit | `test_mailbox_zset.py` 延遲 | 測試信件加入 Redis ZSET 後，能被 mock worker 正確拉出。 | 自動化 |
+| **T1-03** | ✅ | Phase 1 | Unit | `test_gum_singleton.py` | 驗證全系統僅初始化一次 SQLAlchemy Engine，無多次呼叫。 | 自動化 |
+| **T1-04** | ⏳ | Phase 1 | Manual | **重啟恢復測試 (Resilience)** | 送出信件後立刻砍掉 FastAPI 進程。等待 5 分鐘重啟，確認信箱 Worker 從 Redis 撈出信件並正確處理。 | 人工 |
+| **T2-01** | ✅ | Phase 2 | Unit | `test_auth_jwt.py` 陣列驗證 | 傳入 `aud: ["authenticated", "other"]` 的假 Token，驗證不拋出 500。 | 自動化 |
+| **T2-02** | ✅ | Phase 2 | Unit | `test_cold_memory_pg.py` | 驗證向量維度為 4096，且 `to_tsquery` SQL 語法執行不報錯。 | 自動化 |
+| **T2-03** | ✅ | Phase 2 | Integration | `test_rls_isolation.py` | 透過 `set_config` 設定 A 帳號 context 後，無法查到 B 帳號資料。 | 自動化 |
+| **T2-04** | ⏳ | Phase 2 | Manual | **Supabase RLS 攔截測試** | 在 Supabase Dashboard SQL Editor 中，不帶 `auth.uid()` 嘗試查詢 `propositions` 表，必須查無資料。 | 人工 |
+| **T3-01** | ✅ | Phase 3 | Unit | `test_ws_ticket.py` 票證 | 驗證 Ticket 用 `GETDEL` 讀取，第二次讀取失敗。 | 自動化 |
+| **T3-02** | ✅ | Phase 3 | Unit | `test_ws_origin.py` 安全 | 傳入非白名單的 `Origin` Header，驗證 WS 連線被 4001 拒絕。 | 自動化 |
+| **T3-03** | ✅ | Phase 3 | Unit | `npm run test` (Frontend) | Dexie `.upgrade()` 執行後，舊資料的 `userId` 成功被補填。 | 自動化 |
+| **T3-04** | ⏳ | Phase 3 | Manual | **無痕與多 Tab 登出入測試** | 1. 未登入無法發送對話。<br>2. 登出後 Dexie 本地歷史清空。<br>3. 切換帳號看不到前人歷史。<br>4. 開雙 Tab 測試 Dexie 自動 reload。 | 人工 |
+| **T3.5-01** | ⏳ | Phase 3.5 | Manual | **登入 UI 與 Auth 驗證** | 1. 左下角能順利呼叫 Supabase Auth 完成 Google/Email 登入與登出。<br>2. 登出後用另一帳號登入，對話歷史應完全隔離。 | 人工 |
+| **T3.5-02** | ⏳ | Phase 3.5 | Manual | **跨裝置同步驗證** | 同一帳號在 A 裝置登入並建立對話，切換至 B 裝置 (或清除快取) 登入，能自動拉回該筆對話紀錄。 | 人工 |
+| **T3.5-03** | ✅ | Phase 3.5 | Unit | `test_sync_service.ts` 同步 | 驗證 `pullFromCloud` 處理空陣列不 reload、正確寫入 Dexie，與錯誤處理。 | 自動化 |
+| **T3.5-04** | ✅ | Phase 3.5 | Unit | `test_conversation_repo_sync.ts` | 驗證 CRUD 動作正確觸發 `syncService` 的推播與刪除。 | 自動化 |
+| **T3.5-05** | ✅ | Phase 3.5 | Integration | `test_auth_logout.ts` 隔離 | 驗證登出時呼叫 `clearAll()` 清除本地資料，且登入時觸發 `pullFromCloud()`。 (核心已驗證) | 自動化 |
+| **T4-01** | ⏳ | Phase 4 | E2E | `test_api_auth.py` HTTP | 對 Render 打 API，帶無效 Token 必須回 401。 | 自動化 |
+| **T4-02** | ⏳ | Phase 4 | E2E | `test_rls_api.py` 刪除防護 | 打 DELETE API 嘗試刪除他人記憶，必須回傳 403 或 404。 | 自動化 |
+| **T4-03** | ⏳ | Phase 4 | Manual | **Production Smoke Test** | 1. 開啟 RAG 串流對話順暢無卡頓 (Cloudflare bypass)。<br>2. 信箱 Avatar 5 分鐘後正常推播通知。<br>3. 重啟頁面記憶依然存在。 | 人工 |

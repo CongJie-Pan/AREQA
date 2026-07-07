@@ -1,10 +1,13 @@
 import json
 import uuid
 import time
+import logging
 from typing import Dict, Any, List, Optional
 import asyncio
 
 from redis_client import get_redis
+
+logger = logging.getLogger(__name__)
 
 class MailboxStore:
     def __init__(self):
@@ -56,6 +59,7 @@ class MailboxStore:
         score = time.time() + delay_seconds
         mail_data_json = json.dumps(mail_data, ensure_ascii=False)
         await self.redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: score})
+        logger.info(f"[MailboxStore] Enqueued delayed mail for user {user_id} with delay {delay_seconds}s")
 
 _global_mailbox_store = None
 
@@ -73,18 +77,10 @@ def get_mailbox_store() -> MailboxStore:
 # Background Worker for Delayed Mails
 async def delayed_mail_worker():
     redis = get_redis()
-    print("[Mailbox Worker] Started delayed mail worker")
+    logger.info("[Mailbox Worker] Started delayed mail worker")
     while True:
         try:
             now = time.time()
-            # We can use SCAN to find all users' delayed mail queues if there are many.
-            # But for simplicity, we assume we might query multiple or use a global queue.
-            # Phase 1 suggests zrangebyscore("areqa:delayed_mail:*", 0, now) but ZRANGE doesn't support wildcards.
-            # We can store all delayed mails in a single global ZSET: "areqa:delayed_mails"
-            # Let's fix that.
-            
-            # Let's change schedule_delayed_mail above to use global ZSET or we scan.
-            # Scanning is safer.
             cursor = '0'
             while cursor != 0:
                 cursor, keys = await redis.scan(cursor=cursor, match="areqa:delayed_mail:*", count=100)

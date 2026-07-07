@@ -24,6 +24,14 @@ from gum_integration import init_gum_instance, stop_gum_instance, push_observati
 # 在 main.py 最上層加入全域快取服務變數
 rag_cache = None
 
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
+
 def get_query_fingerprint(query: str) -> str:
     """把查詢字串轉成固定長度的雜湊，作為快取 key"""
     return hashlib.md5(query.strip().lower().encode()).hexdigest()

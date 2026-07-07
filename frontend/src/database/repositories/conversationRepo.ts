@@ -3,9 +3,10 @@
  * Provides CRUD operations for conversation entities
  */
 
-import { db } from '../db';
+import { db, getCurrentUserId } from '../db';
 import type { Conversation } from '../schema';
 import { generateUUID } from '@/utils/id';
+import { syncService } from '@/services/syncService';
 
 export const conversationRepo = {
   /**
@@ -17,6 +18,7 @@ export const conversationRepo = {
     const now = new Date();
     const conversation: Conversation = {
       id: generateUUID(),
+      userId: getCurrentUserId(),
       title: title || '新對話',
       createdAt: now,
       updatedAt: now,
@@ -24,6 +26,7 @@ export const conversationRepo = {
       lastMessagePreview: '',
     };
     await db.conversations.add(conversation);
+    syncService.pushConversation(conversation);
     return conversation;
   },
 
@@ -32,10 +35,13 @@ export const conversationRepo = {
    * @returns Array of conversations, most recently updated first
    */
   async getAll(): Promise<Conversation[]> {
-    return db.conversations
-      .orderBy('updatedAt')
-      .reverse()
-      .toArray();
+    const userId = getCurrentUserId();
+    const conversations = await db.conversations
+      .where('userId')
+      .equals(userId)
+      .sortBy('updatedAt');
+    
+    return conversations.reverse();
   },
 
   /**
@@ -54,10 +60,17 @@ export const conversationRepo = {
    * @param updates - Partial conversation data to update
    */
   async update(id: string, updates: Partial<Conversation>): Promise<void> {
+    const updatedAt = new Date();
     await db.conversations.update(id, {
       ...updates,
-      updatedAt: new Date(),
+      updatedAt,
     });
+    
+    // Push the updated conversation to cloud (if it exists)
+    const conv = await db.conversations.get(id);
+    if (conv) {
+      syncService.pushConversation(conv);
+    }
   },
 
   /**
@@ -70,6 +83,7 @@ export const conversationRepo = {
       await db.messages.where('conversationId').equals(id).delete();
       await db.conversations.delete(id);
     });
+    syncService.deleteConversation(id);
   },
 
   /**

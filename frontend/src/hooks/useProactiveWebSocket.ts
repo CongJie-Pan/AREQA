@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { logger } from '@/utils/logger';
 
 export function useProactiveWebSocket(
   onAlert: (content: string, senderName?: string) => void,
@@ -32,7 +33,7 @@ export function useProactiveWebSocket(
             }
           }
         }
-      } catch (e) {}
+      } catch {}
       return null;
     }
 
@@ -75,16 +76,18 @@ export function useProactiveWebSocket(
         
         // On success: reset backoff
         wsRef.current.onopen = () => { 
+          logger.info('WebSocket connected successfully');
           retryDelayRef.current = 1000; 
         };
         
         // On disconnect: exponential backoff reconnect (max 30s)
         wsRef.current.onclose = () => {
+          logger.warn('WebSocket disconnected. Reconnecting...');
           timeoutId = setTimeout(connect, retryDelayRef.current);
           retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
         };
       } catch (e) {
-        console.error('WebSocket connection error:', e);
+        logger.error('WebSocket connection error', e instanceof Error ? e : new Error(String(e)));
         timeoutId = setTimeout(connect, retryDelayRef.current);
         retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
       }

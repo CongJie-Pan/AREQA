@@ -88,7 +88,7 @@ describe('Dexie Database Upgrade (Version 1 to 2)', () => {
             }
           }
         }
-      } catch (e) {}
+      } catch {}
       return 'default_user';
     }
 
@@ -106,10 +106,10 @@ describe('Dexie Database Upgrade (Version 1 to 2)', () => {
       settings: 'key',
     }).upgrade(async tx => {
       const currentUserId = getCurrentUserId();
-      await tx.table('conversations').toCollection().modify((conv: any) => {
+      await tx.table('conversations').toCollection().modify((conv: { userId?: string }) => {
         conv.userId = conv.userId ?? currentUserId;
       });
-      await tx.table('messages').toCollection().modify((msg: any) => {
+      await tx.table('messages').toCollection().modify((msg: { userId?: string }) => {
         msg.userId = msg.userId ?? currentUserId;
       });
     });

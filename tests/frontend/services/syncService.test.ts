@@ -1,0 +1,143 @@
+import 'fake-indexeddb/auto';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { syncService } from '@/services/syncService';
+import { db } from '@/database/db';
+
+// Mock dependencies
+const mockReload = vi.fn();
+Object.defineProperty(window, 'location', {
+  value: { reload: mockReload },
+  writable: true
+});
+
+// Mock logger to avoid cluttering test output
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn()
+  }
+}));
+
+// Mock getCurrentUserId
+vi.mock('@/database/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/database/db')>();
+  return {
+    ...actual,
+    getCurrentUserId: vi.fn(() => 'user_123'),
+  };
+});
+
+// Create a variable to control what supabase returns
+let mockSupabaseResponse: any = { data: [], error: null };
+let mockSupabaseMsgResponse: any = { data: [], error: null };
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    from: vi.fn().mockImplementation((table) => {
+      if (table === 'conversations') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockResolvedValue(mockSupabaseResponse),
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+          delete: vi.fn().mockReturnThis()
+        };
+      }
+      if (table === 'messages') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockResolvedValue(mockSupabaseMsgResponse),
+          upsert: vi.fn().mockResolvedValue({ error: null })
+        };
+      }
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockResolvedValue({ data: [], error: null })
+      };
+    })
+  }
+}));
+
+describe('syncService - pullFromCloud', () => {
+  beforeEach(async () => {
+    mockReload.mockClear();
+    await db.open();
+    await db.conversations.clear();
+    await db.messages.clear();
+  });
+
+  afterEach(async () => {
+    vi.clearAllMocks();
+    await db.conversations.clear();
+    await db.messages.clear();
+  });
+
+  it('should not reload if cloud returns empty array', async () => {
+    mockSupabaseResponse = { data: [], error: null };
+    mockSupabaseMsgResponse = { data: [], error: null };
+
+    await syncService.pullFromCloud();
+
+    expect(mockReload).not.toHaveBeenCalled();
+    const convs = await db.conversations.toArray();
+    expect(convs).toHaveLength(0);
+  });
+
+  it('should save data to Dexie and reload if cloud has data', async () => {
+    mockSupabaseResponse = {
+      data: [{
+        id: 'conv_1',
+        user_id: 'user_123',
+        title: 'Test',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }],
+      error: null
+    };
+
+    mockSupabaseMsgResponse = {
+      data: [{
+        id: 'msg_1',
+        user_id: 'user_123',
+        conversation_id: 'conv_1',
+        role: 'user',
+        content: 'Hi',
+        created_at: new Date().toISOString()
+      },
+      {
+        id: 'msg_2',
+        user_id: 'user_123',
+        conversation_id: 'conv_1',
+        role: 'assistant',
+        content: 'Hello',
+        created_at: new Date().toISOString()
+      }],
+      error: null
+    };
+
+    await syncService.pullFromCloud();
+
+    expect(mockReload).toHaveBeenCalledOnce();
+    
+    const convs = await db.conversations.toArray();
+    expect(convs).toHaveLength(1);
+    expect(convs[0].id).toBe('conv_1');
+    // Ensure messageCount is correctly computed
+    expect(convs[0].messageCount).toBe(2);
+
+    const msgs = await db.messages.toArray();
+    expect(msgs).toHaveLength(2);
+  });
+
+  it('should log error and not reload on network failure', async () => {
+    mockSupabaseResponse = { data: null, error: new Error('Network error') };
+    
+    const { logger } = await import('@/utils/logger');
+
+    await syncService.pullFromCloud();
+
+    expect(mockReload).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
+  });
+});

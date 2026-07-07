@@ -4,6 +4,9 @@ import httpx
 from typing import List, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import text
+import logging
+
+logger = logging.getLogger(__name__)
 
 global_engine = None
 
@@ -49,7 +52,7 @@ class ColdMemoryRetriever:
                 data = response.json()
                 return data["data"][0]["embedding"]
             except Exception as e:
-                print(f"[ColdMemory] Embedding API failed: {e}")
+                logger.error(f"[ColdMemory] Embedding API failed: {e}")
                 return []
 
     async def search(self, query: str, user_id: str = "default_user", top_k: int = 5) -> List[Dict[str, Any]]:
@@ -76,7 +79,7 @@ class ColdMemoryRetriever:
                         for row in cursor.fetchall():
                             vec_results.append((row[0], row[1]))
                     except Exception as e:
-                        print(f"[ColdMemory] Vector search failed: {e}")
+                        logger.error(f"[ColdMemory] Vector search failed: {e}")
 
                 bm25_results = []
                 try:
@@ -92,7 +95,7 @@ class ColdMemoryRetriever:
                     for row in cursor.fetchall():
                         bm25_results.append((row[0], row[1]))
                 except Exception as e:
-                    print(f"[ColdMemory] BM25 search failed: {e}")
+                    logger.error(f"[ColdMemory] BM25 search failed: {e}")
                     
                 # RRF Fusion
                 rrf_scores = {}

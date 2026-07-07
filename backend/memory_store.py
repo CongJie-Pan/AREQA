@@ -1,8 +1,11 @@
 import json
 import asyncio
+import logging
 from typing import Dict, Any
 
 from redis_client import get_redis
+
+logger = logging.getLogger(__name__)
 
 class MemoryStore:
     def __init__(self, budget_limit: int = 1000000):
@@ -11,7 +14,11 @@ class MemoryStore:
 
     async def get_hot_memory(self, user_id: str) -> Dict[str, Any]:
         data = await self.redis.get(f"areqa:hot_memory:{user_id}")
-        return json.loads(data) if data else {}
+        if data:
+            logger.debug(f"[MemoryStore] Found memory for user {user_id}")
+            return json.loads(data)
+        logger.debug(f"[MemoryStore] No memory found for user {user_id}")
+        return {}
 
     async def get_learner_state(self, user_id: str) -> str:
         hot_mem = await self.get_hot_memory(user_id)
@@ -33,6 +40,7 @@ class MemoryStore:
         profile = await self.get_user_profile(user_id)
         profile[key] = value
         await self.redis.set(f"areqa:user_profile:{user_id}", json.dumps(profile, ensure_ascii=False))
+        logger.info(f"[MemoryStore] Updated profile for user {user_id}, key: {key}")
 
     async def update_hot_memory(self, user_id: str, key: str, value: Any):
         # We can use a Redis lock if needed, but since it's async and we want to avoid race conditions,
@@ -50,9 +58,10 @@ class MemoryStore:
         serialized = json.dumps(hot_memory, ensure_ascii=False)
         # We ignore budget exceeding exception here or log it, but the existing code raised it.
         if len(serialized) > self.budget_limit:
-            pass # Usually handled by compaction
+            logger.warning(f"[MemoryStore] Memory size {len(serialized)} exceeds budget {self.budget_limit} for user {user_id}")
             
         await self.redis.set(f"areqa:hot_memory:{user_id}", serialized)
+        logger.info(f"[MemoryStore] Updated hot memory for user {user_id}, key: {key}")
 
     async def update_hot_memory_async(self, user_id: str, key: str, value: Any):
         # same as above

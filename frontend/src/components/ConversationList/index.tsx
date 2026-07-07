@@ -14,6 +14,7 @@ import { useMailboxStore } from '@/store/mailbox';
 import { useStyles } from './styles';
 import { SidePanelType } from '@/types/panel';
 import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
+import { UserAuthUI } from '../Auth';
 
 export interface ConversationListProps {
   /** Callback when conversation is selected */
@@ -211,6 +212,8 @@ export function ConversationList({
         )}
       </div>
 
+      {/* User Auth UI Area */}
+      <UserAuthUI />
     </div>
   );
 }

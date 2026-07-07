@@ -28,3 +28,14 @@ class ResizeObserverMock {
 }
 global.ResizeObserver = ResizeObserverMock as any;
 window.ResizeObserver = ResizeObserverMock as any;
+
+// Mock CSSStyleSheet insertRule to prevent Stitches parsing errors in JSDOM
+if (typeof window !== 'undefined' && window.CSSStyleSheet && window.CSSStyleSheet.prototype) {
+  window.CSSStyleSheet.prototype.insertRule = function() { return 0; };
+  try {
+    Object.defineProperty(window.CSSStyleSheet.prototype, 'cssRules', {
+      get: function() { return []; },
+      configurable: true
+    });
+  } catch (e) {}
+}

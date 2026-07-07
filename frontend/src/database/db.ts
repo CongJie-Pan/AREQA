@@ -10,7 +10,7 @@ import type { Conversation, Message, Setting } from './schema';
  * PerplexityQA Database class
  * Extends Dexie to provide typed table access
  */
-function getCurrentUserId(): string {
+export function getCurrentUserId(): string {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);

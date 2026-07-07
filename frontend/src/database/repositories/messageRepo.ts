@@ -5,9 +5,10 @@
  * Uses atomic operations to prevent race conditions
  */
 
-import { db } from '../db';
+import { db, getCurrentUserId } from '../db';
 import type { Message } from '../schema';
 import { generateUUID } from '@/utils/id';
+import { syncService } from '@/services/syncService';
 
 export const messageRepo = {
   /**
@@ -21,10 +22,11 @@ export const messageRepo = {
    */
   async add(
     conversationId: string,
-    messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt'>
+    messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'>
   ): Promise<Message> {
     const message: Message = {
       id: generateUUID(),
+      userId: getCurrentUserId(),
       conversationId,
       ...messageData,
       createdAt: new Date(),
@@ -45,7 +47,23 @@ export const messageRepo = {
           conv.lastMessagePreview = message.content.slice(0, 100);
           conv.updatedAt = new Date();
         });
+      
+      if (message.role === 'user' && !messageData.citations && !messageData.searchResults && !messageData.suggestions) {
+        await db.conversations.update(conversationId, {
+          lastMessagePreview: message.content.substring(0, 100) + (message.content.length > 100 ? '...' : ''),
+        });
+      }
     });
+
+    syncService.pushMessage(message);
+    
+    // Also update conversation timestamp in cloud if needed
+    // (though conversation update above will trigger sync if we hooked transaction, 
+    // but Dexie transaction doesn't trigger hooks for us automatically here. We can just push it.)
+    const conv = await db.conversations.get(conversationId);
+    if (conv) {
+      syncService.pushConversation(conv);
+    }
 
     return message;
   },
