@@ -43,24 +43,33 @@ class MemoryStore:
         logger.info(f"[MemoryStore] Updated profile for user {user_id}, key: {key}")
 
     async def update_hot_memory(self, user_id: str, key: str, value: Any):
-        # We can use a Redis lock if needed, but since it's async and we want to avoid race conditions,
-        # we can fetch, modify, and set. For single worker, it's fine. For multi-worker, we might need a lock.
-        # But Phase 1 plan says "全面改用 redis.asyncio".
-        hot_memory = await self.get_hot_memory(user_id)
-        hot_memory[key] = value
-        
-        obs_keys = [k for k in hot_memory.keys() if k.startswith("obs_")]
-        if len(obs_keys) > 50:
-            obs_keys.sort()
-            for k in obs_keys[:-50]:
-                del hot_memory[k]
-                
-        serialized = json.dumps(hot_memory, ensure_ascii=False)
-        # We ignore budget exceeding exception here or log it, but the existing code raised it.
-        if len(serialized) > self.budget_limit:
-            logger.warning(f"[MemoryStore] Memory size {len(serialized)} exceeds budget {self.budget_limit} for user {user_id}")
-            
-        await self.redis.set(f"areqa:hot_memory:{user_id}", serialized)
+        from redis.exceptions import WatchError
+        mem_key = f"areqa:hot_memory:{user_id}"
+        async with self.redis.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(mem_key)
+                    data = await pipe.get(mem_key)
+                    hot_memory = json.loads(data) if data else {}
+                    
+                    hot_memory[key] = value
+                    
+                    obs_keys = [k for k in hot_memory.keys() if k.startswith("obs_")]
+                    if len(obs_keys) > 50:
+                        obs_keys.sort()
+                        for k in obs_keys[:-50]:
+                            del hot_memory[k]
+                            
+                    serialized = json.dumps(hot_memory, ensure_ascii=False)
+                    if len(serialized) > self.budget_limit:
+                        logger.warning(f"[MemoryStore] Memory size {len(serialized)} exceeds budget {self.budget_limit} for user {user_id}")
+                        
+                    pipe.multi()
+                    pipe.set(mem_key, serialized)
+                    await pipe.execute()
+                    break
+                except WatchError:
+                    continue
         logger.info(f"[MemoryStore] Updated hot memory for user {user_id}, key: {key}")
 
     async def update_hot_memory_async(self, user_id: str, key: str, value: Any):
@@ -93,21 +102,38 @@ class MemoryStore:
             await self.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(data, ensure_ascii=False))
 
     async def set_pending_alert(self, user_id: str, content: str):
-        print(f"[EDF-LOG] set_pending_alert: setting alert for user '{user_id}': '{content}'")
+        logger.info(f"[EDF-LOG] set_pending_alert: setting alert for user '{user_id}': '{content}'")
         alert_key = f"pending_alert_{user_id}"
-        hot_memory = await self.get_hot_memory(user_id)
-        hot_memory[alert_key] = content
-        await self.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_memory, ensure_ascii=False))
+        await self.update_hot_memory(user_id, alert_key, content)
         
     async def get_and_clear_pending_alert(self, user_id: str) -> str:
+        from redis.exceptions import WatchError
         alert_key = f"pending_alert_{user_id}"
-        hot_memory = await self.get_hot_memory(user_id)
-        content = hot_memory.get(alert_key, "")
-        if content:
-            print(f"[EDF-LOG] get_and_clear_pending_alert: retrieved and clearing alert for '{user_id}': '{content}'")
-            del hot_memory[alert_key]
-            await self.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_memory, ensure_ascii=False))
-        return content
+        mem_key = f"areqa:hot_memory:{user_id}"
+        
+        async with self.redis.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(mem_key)
+                    data = await pipe.get(mem_key)
+                    hot_memory = json.loads(data) if data else {}
+                    
+                    content = hot_memory.get(alert_key, "")
+                    if not content:
+                        pipe.unwatch()
+                        return ""
+                        
+                    del hot_memory[alert_key]
+                    serialized = json.dumps(hot_memory, ensure_ascii=False)
+                    
+                    pipe.multi()
+                    pipe.set(mem_key, serialized)
+                    await pipe.execute()
+                    
+                    logger.info(f"[EDF-LOG] get_and_clear_pending_alert: retrieved and clearing alert for '{user_id}': '{content}'")
+                    return content
+                except WatchError:
+                    continue
 
     async def clear_all_pending_alerts(self, user_id: str = "default_user"):
         # We don't have a way to know all users easily without scanning. 
@@ -124,7 +150,7 @@ class MemoryStore:
             "explicit_memories": [],
             "implicit_preferences": []
         }, ensure_ascii=False))
-        print(f"[EDF-LOG] Cleared all hot memory and reset user profile for {user_id}.")
+        logger.info(f"[EDF-LOG] Cleared all hot memory and reset user profile for {user_id}.")
 
 _global_store = None
 

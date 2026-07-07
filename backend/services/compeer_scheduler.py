@@ -159,15 +159,26 @@ async def daily_scheduler_loop():
             today_str = now.strftime("%Y-%m-%d")
             from memory_store import get_global_store
             store = get_global_store()
-            user_id = "default_user" # Multi-tenant requires iterating all users, keeping simple for now
             if store:
-                hot_mem = await store.get_hot_memory(user_id)
-                last_reflection = hot_mem.get("last_reflection_date")
+                redis = store.redis
+                cursor = 0
+                all_users = set()
+                while True:
+                    cursor, keys = await redis.scan(cursor, match="areqa:hot_memory:*", count=100)
+                    for key in keys:
+                        k_str = key
+                        all_users.add(k_str.split("areqa:hot_memory:")[1])
+                    if cursor == 0:
+                        break
                 
-                if last_reflection != today_str:
-                    if now.hour >= 23 or last_reflection is None:
-                        await run_reflection_and_initialization(user_id)
-                        await store.update_hot_memory_async(user_id, "last_reflection_date", today_str)
+                for user_id in all_users:
+                    hot_mem = await store.get_hot_memory(user_id)
+                    last_reflection = hot_mem.get("last_reflection_date")
+                    
+                    if last_reflection != today_str:
+                        if now.hour >= 23 or last_reflection is None:
+                            await run_reflection_and_initialization(user_id)
+                            await store.update_hot_memory_async(user_id, "last_reflection_date", today_str)
             
             await asyncio.sleep(60)
         except Exception as e:
@@ -190,121 +201,178 @@ async def proactive_scheduler_loop():
     while True:
         try:
             async with _send_lock:
-                user_id = "default_user"
                 from memory_store import get_global_store
                 store = get_global_store()
                 if store:
-                    trigger_proactive = False
-                    avatar_summon = False
-                    learner_state = "STARTING"
-                    active_avatar = None
-
-                    async with _flag_lock:
-                        hot_mem = await store.get_hot_memory(user_id)
-                        if hot_mem.get("avatar_summon_pending"):
-                            avatar_summon = True
-                            active_avatar = hot_mem.get("active_avatar")
-                            del hot_mem["avatar_summon_pending"]
-                            # Since atomic write is gone, just set the modified hot_memory
-                            await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-                        elif hot_mem.get("trigger_proactive") and not await is_in_cooldown(user_id):
-                            trigger_proactive = True
-                            learner_state = hot_mem.get("current_learner_state", "STARTING")
-                            active_avatar = hot_mem.get("active_avatar")
-                            del hot_mem["trigger_proactive"]
-                            await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-
-                    if avatar_summon and active_avatar:
-                        from gum_integration import generate_epistolary_letter_via_llm, get_hot_memory_snapshot, query_cold_memory_for_context
-                        snapshot = await get_hot_memory_snapshot(user_id)
-                        event_summary = f"與 {active_avatar} 進行深度歷史哲學探討"
-                        cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
+                    redis = store.redis
+                    cursor = 0
+                    all_users = set()
+                    while True:
+                        cursor, keys = await redis.scan(cursor, match="areqa:hot_memory:*", count=100)
+                        for key in keys:
+                            k_str = key
+                            all_users.add(k_str.split("areqa:hot_memory:")[1])
+                        if cursor == 0:
+                            break
+                    for user_id in all_users:
+                        trigger_proactive = False
+                        avatar_summon = False
+                        learner_state = "STARTING"
+                        active_avatar = None
                         
-                        letter = await generate_epistolary_letter_via_llm(user_id, active_avatar, snapshot, cold_ctx)
-                        
-                        from mailbox_store import get_mailbox_store
-                        mb_store = get_mailbox_store()
-                        await mb_store.add_mail(user_id=user_id, sender=active_avatar, content=letter, recipient="User")
-                        
-                        from services.connection_manager import ws_manager
-                        asyncio.create_task(ws_manager.broadcast_mail_alert(active_avatar))
-                        
-                    elif trigger_proactive:
-                        from gum_integration import (
-                            generate_scaffolding_message_via_llm,
-                            get_hot_memory_snapshot,
-                            query_cold_memory_for_context
-                        )
-                        snapshot = await get_hot_memory_snapshot(user_id)
-                        event_summary = f"EDF 系統偵測到使用者遭遇學習瓶頸 (狀態: {learner_state})"
-                        cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
-                        edf_policy = await store.get_current_strategy(user_id)
+                        async with _flag_lock:
+                            hot_mem = await store.get_hot_memory(user_id)
+                            if hot_mem.get("avatar_summon_pending"):
+                                avatar_summon = True
+                                active_avatar = hot_mem.get("active_avatar")
+                                del hot_mem["avatar_summon_pending"]
+                                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
+                            elif hot_mem.get("trigger_proactive") and not await is_in_cooldown(user_id):
+                                trigger_proactive = True
+                                learner_state = hot_mem.get("current_learner_state", "STARTING")
+                                active_avatar = hot_mem.get("active_avatar")
+                                del hot_mem["trigger_proactive"]
+                                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
 
-                        hot_mem = await store.get_hot_memory(user_id)
-                        message = await generate_scaffolding_message_via_llm(
-                            user_id=user_id,
-                            hot_memory_snapshot=snapshot,
-                            cold_memory_context=cold_ctx,
-                            learner_state=learner_state,
-                            edf_policy=edf_policy,
-                            event_summary=event_summary,
-                            last_compeer_message=hot_mem.get("last_compeer_message", ""),
-                            active_avatar=active_avatar
-                        )
-
-                        await store.update_hot_memory_async(user_id, "last_compeer_message", message)
-                        from services.connection_manager import ws_manager
-                        asyncio.create_task(ws_manager.broadcast_alert(user_id, message, sender_name=active_avatar))
-                        await set_cooldown(user_id, state=learner_state)
-
-            await tick_proactive_schedule(user_id)
-            
-            from time import time
-            last_time = await get_last_interaction_time(user_id)
-            
-            if not await is_in_cooldown(user_id) and (time() - last_time > 60):
-                if store:
-                    hot_mem = await store.get_hot_memory(user_id)
-                    scroll_count = 0
-                    for k, v in hot_mem.items():
-                        if k.startswith("obs_") and "Type: scroll" in str(v):
-                            scroll_count += 1
-                    
-                    if scroll_count >= 6:
-                        keys_to_delete = [k for k, v in hot_mem.items() if k.startswith("obs_") and "Type: scroll" in str(v)]
-                        for k in keys_to_delete:
-                            del hot_mem[k]
-                        await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-
-                        from gum_integration import (
-                            detect_proactive_event_via_llm,
-                            generate_scaffolding_message_via_llm,
-                            get_hot_memory_snapshot,
-                            query_cold_memory_for_context
-                        )
-                        snapshot = await get_hot_memory_snapshot(user_id)
-                        event = await detect_proactive_event_via_llm(user_id, snapshot)
-
-                        if event["has_event"] and event["importance"] >= 0.7:
-                            cold_ctx = await query_cold_memory_for_context(user_id, event["event_summary"])
-                            learner_state = await store.get_learner_state(user_id)
+                        if avatar_summon and active_avatar:
+                            from gum_integration import generate_epistolary_letter_via_llm, get_hot_memory_snapshot, query_cold_memory_for_context
+                            snapshot = await get_hot_memory_snapshot(user_id)
+                            event_summary = f"與 {active_avatar} 進行深度歷史哲學探討"
+                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
+                            
+                            letter = await generate_epistolary_letter_via_llm(user_id, active_avatar, snapshot, cold_ctx)
+                            
+                            from mailbox_store import get_mailbox_store
+                            mb_store = get_mailbox_store()
+                            await mb_store.add_mail(user_id=user_id, sender=active_avatar, content=letter, recipient="User")
+                            
+                            from services.connection_manager import ws_manager
+                            asyncio.create_task(ws_manager.broadcast_mail_alert(sender=active_avatar, user_id=user_id))
+                            
+                        elif trigger_proactive:
+                            from gum_integration import (
+                                generate_scaffolding_message_via_llm,
+                                get_hot_memory_snapshot,
+                                query_cold_memory_for_context
+                            )
+                            snapshot = await get_hot_memory_snapshot(user_id)
+                            event_summary = f"EDF 系統偵測到使用者遭遇學習瓶頸 (狀態: {learner_state})"
+                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
                             edf_policy = await store.get_current_strategy(user_id)
 
+                            hot_mem = await store.get_hot_memory(user_id)
                             message = await generate_scaffolding_message_via_llm(
                                 user_id=user_id,
                                 hot_memory_snapshot=snapshot,
                                 cold_memory_context=cold_ctx,
                                 learner_state=learner_state,
                                 edf_policy=edf_policy,
-                                event_summary=event["event_summary"],
-                                last_compeer_message=hot_mem.get("last_compeer_message", "")
+                                event_summary=event_summary,
+                                last_compeer_message=hot_mem.get("last_compeer_message", ""),
+                                active_avatar=active_avatar
                             )
 
                             await store.update_hot_memory_async(user_id, "last_compeer_message", message)
-
                             from services.connection_manager import ws_manager
-                            asyncio.create_task(ws_manager.broadcast_alert(user_id, message))
+                            asyncio.create_task(ws_manager.broadcast_alert(user_id, message, sender_name=active_avatar))
                             await set_cooldown(user_id, state=learner_state)
+
+                        await tick_proactive_schedule(user_id)
+                        
+                        from time import time
+                        last_time = await get_last_interaction_time(user_id)
+                        
+                        if not await is_in_cooldown(user_id) and (time() - last_time > 60):
+                            if store:
+                                hot_mem = await store.get_hot_memory(user_id)
+                                scroll_count = 0
+                                for k, v in hot_mem.items():
+                                    if k.startswith("obs_") and "Type: scroll" in str(v):
+                                        scroll_count += 1
+                                
+                                if scroll_count >= 6:
+                                    keys_to_delete = [k for k, v in hot_mem.items() if k.startswith("obs_") and "Type: scroll" in str(v)]
+                                    for k in keys_to_delete:
+                                        del hot_mem[k]
+                                    await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
+
+                                    from gum_integration import (
+                                        detect_proactive_event_via_llm,
+                                        generate_scaffolding_message_via_llm,
+                                        get_hot_memory_snapshot,
+                                        query_cold_memory_for_context
+                                    )
+                                    snapshot = await get_hot_memory_snapshot(user_id)
+                                    event = await detect_proactive_event_via_llm(user_id, snapshot)
+
+                                    if event["has_event"] and event["importance"] >= 0.7:
+                                        cold_ctx = await query_cold_memory_for_context(user_id, event["event_summary"])
+                                        learner_state = await store.get_learner_state(user_id)
+                                        edf_policy = await store.get_current_strategy(user_id)
+
+                                        message = await generate_scaffolding_message_via_llm(
+                                            user_id=user_id,
+                                            hot_memory_snapshot=snapshot,
+                                            cold_memory_context=cold_ctx,
+                                            learner_state=learner_state,
+                                            edf_policy=edf_policy,
+                                            event_summary=event["event_summary"],
+                                            last_compeer_message=hot_mem.get("last_compeer_message", "")
+                                        )
+
+                                        await store.update_hot_memory_async(user_id, "last_compeer_message", message)
+                                        
+                                        from services.connection_manager import ws_manager
+                                        asyncio.create_task(ws_manager.broadcast_alert(user_id, message))
+                                        await set_cooldown(user_id, state=learner_state)
+
+                    await tick_proactive_schedule(user_id)
+                    
+                    from time import time
+                    last_time = await get_last_interaction_time(user_id)
+                    
+                    if not await is_in_cooldown(user_id) and (time() - last_time > 60):
+                        if store:
+                            hot_mem = await store.get_hot_memory(user_id)
+                            scroll_count = 0
+                            for k, v in hot_mem.items():
+                                if k.startswith("obs_") and "Type: scroll" in str(v):
+                                    scroll_count += 1
+                            
+                            if scroll_count >= 6:
+                                keys_to_delete = [k for k, v in hot_mem.items() if k.startswith("obs_") and "Type: scroll" in str(v)]
+                                for k in keys_to_delete:
+                                    del hot_mem[k]
+                                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
+
+                                from gum_integration import (
+                                    detect_proactive_event_via_llm,
+                                    generate_scaffolding_message_via_llm,
+                                    get_hot_memory_snapshot,
+                                    query_cold_memory_for_context
+                                )
+                                snapshot = await get_hot_memory_snapshot(user_id)
+                                event = await detect_proactive_event_via_llm(user_id, snapshot)
+
+                                if event["has_event"] and event["importance"] >= 0.7:
+                                    cold_ctx = await query_cold_memory_for_context(user_id, event["event_summary"])
+                                    learner_state = await store.get_learner_state(user_id)
+                                    edf_policy = await store.get_current_strategy(user_id)
+
+                                    message = await generate_scaffolding_message_via_llm(
+                                        user_id=user_id,
+                                        hot_memory_snapshot=snapshot,
+                                        cold_memory_context=cold_ctx,
+                                        learner_state=learner_state,
+                                        edf_policy=edf_policy,
+                                        event_summary=event["event_summary"],
+                                        last_compeer_message=hot_mem.get("last_compeer_message", "")
+                                    )
+
+                                    await store.update_hot_memory_async(user_id, "last_compeer_message", message)
+
+                                    asyncio.create_task(ws_manager.broadcast_alert(user_id, message))
+                                    await set_cooldown(user_id, state=learner_state)
                                 
             await asyncio.sleep(10)
         except Exception as e:

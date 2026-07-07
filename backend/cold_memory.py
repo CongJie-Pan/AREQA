@@ -24,17 +24,9 @@ def get_engine():
 
 class ColdMemoryRetriever:
     def __init__(self, db_path: str, openrouter_api_key: str):
-        # db_path is kept for compatibility with GUM but unused in Phase 2 for Postgres
-        self.db_path = db_path
         self.api_key = openrouter_api_key
         self.embedding_model = "qwen/qwen3-embedding-8b"
         self.embedding_url = "https://openrouter.ai/api/v1/embeddings"
-
-    def _get_conn(self):
-        # Kept for backward compatibility with older code expecting _get_conn (e.g. SQLite connection). 
-        # In a fully migrated system, this would be removed, but for now we might need to handle it.
-        # It's better to just use get_engine() instead for new async flows.
-        raise NotImplementedError("Use get_engine() instead")
 
     async def get_embedding(self, text_str: str) -> List[float]:
         async with httpx.AsyncClient(timeout=10.0) as client:

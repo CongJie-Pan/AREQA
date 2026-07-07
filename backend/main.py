@@ -1,7 +1,4 @@
 import sys
-import pysqlite3
-sys.modules['sqlite3'] = pysqlite3
-sys.modules['sqlite3.dbapi2'] = pysqlite3.dbapi2
 
 import asyncio
 import json
@@ -780,7 +777,7 @@ Return ONLY the policy name."""
         return "NORMAL"
 
 @app.post("/api/v1/log_action")
-async def log_action(req: ActionLogRequest):
+async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_current_user)):
     """
     接收前端事件 (如點擊燈泡、UI 互動、語音打斷)
     """
@@ -793,14 +790,14 @@ async def log_action(req: ActionLogRequest):
     if store:
         import uuid
         key = f"obs_{time.time()}_{uuid.uuid4().hex[:8]}"
-        asyncio.create_task(store.update_hot_memory_async("default_user", key, obs_text))
+        asyncio.create_task(store.update_hot_memory_async(current_user_id, key, obs_text))
         
     if req.action_type == "scroll":
         # Pure UI telemetry like scrolling doesn't need to go to GUM's cold memory evolution
         pass
     elif req.action_type == "compeer_rejected":
         import services.compeer_scheduler as compeer
-        target_user = req.user_id if req.user_id != "default" else "default_user"
+        target_user = current_user_id
         learner_state = await store.get_learner_state(target_user) if store else "default"
         await compeer.set_cooldown(target_user, state=learner_state)
         print(f"[ComPeer] User '{target_user}' rejected popup, entering cooldown.")
@@ -811,7 +808,8 @@ async def log_action(req: ActionLogRequest):
     return {"status": "ok"}
 
 @app.get("/api/v1/proactive-check")
-async def proactive_check_endpoint(user_id: str = "default_user"):
+async def proactive_check_endpoint(current_user_id: str = Depends(get_current_user)):
+    user_id = current_user_id
     from memory_store import get_global_store
     store = get_global_store()
     if store:
@@ -822,12 +820,12 @@ async def proactive_check_endpoint(user_id: str = "default_user"):
     return {"has_alert": False}
 
 @app.delete("/api/v1/memory")
-async def clear_memory_endpoint():
+async def clear_memory_endpoint(current_user_id: str = Depends(get_current_user)):
     """Clear all hot memory and cold GUM memory"""
     from memory_store import get_global_store
     store = get_global_store()
     if store:
-        store.clear_all_memory()
+        await store.clear_all_memory(current_user_id)
         
     await clear_gum_memory()
     return {"status": "ok", "message": "Memory cleared successfully"}

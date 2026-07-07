@@ -32,6 +32,9 @@ def verify_supabase_jwt(token: str, secret: str) -> str:
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
     token = credentials.credentials
-    secret = os.environ.get("JWT_SECRET", "dummy_secret")
+    secret = os.environ.get("JWT_SECRET")
+    if not secret:
+        logger.error("JWT_SECRET environment variable is missing")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Auth configuration missing")
     user_id = verify_supabase_jwt(token, secret)
     return user_id

@@ -40,32 +40,54 @@ export const syncService = {
       }
 
       if (cloudConvs && cloudConvs.length > 0) {
-        const convsToUpsert = cloudConvs.map(c => ({
-          id: c.id,
-          userId: c.user_id,
-          title: c.title,
-          createdAt: new Date(c.created_at),
-          updatedAt: new Date(c.updated_at),
-          messageCount: msgCountByConv[c.id] || 0,
-          lastMessagePreview: '' // We could derive this from the last message if needed
-        } as Conversation));
+        const localConvs = await db.conversations.toArray();
+        const localConvMap = new Map(localConvs.map(c => [c.id, c]));
+        
+        const convsToUpsert = [];
+        for (const c of cloudConvs) {
+          const cloudDate = new Date(c.updated_at);
+          const localConv = localConvMap.get(c.id);
+          if (!localConv || localConv.updatedAt.getTime() < cloudDate.getTime()) {
+            convsToUpsert.push({
+              id: c.id,
+              userId: c.user_id,
+              title: c.title,
+              createdAt: new Date(c.created_at),
+              updatedAt: cloudDate,
+              messageCount: msgCountByConv[c.id] || 0,
+              lastMessagePreview: '' 
+            } as Conversation);
+          }
+        }
 
-        await db.conversations.bulkPut(convsToUpsert);
-        dataChanged = true;
+        if (convsToUpsert.length > 0) {
+          await db.conversations.bulkPut(convsToUpsert);
+          dataChanged = true;
+        }
       }
 
       if (cloudMsgs && cloudMsgs.length > 0) {
-        const msgsToUpsert = cloudMsgs.map(m => ({
-          id: m.id,
-          userId: m.user_id,
-          conversationId: m.conversation_id,
-          role: m.role,
-          content: m.content,
-          createdAt: new Date(m.created_at)
-        } as Message));
+        const localMsgs = await db.messages.toArray();
+        const localMsgIds = new Set(localMsgs.map(m => m.id));
+        
+        const msgsToUpsert = [];
+        for (const m of cloudMsgs) {
+          if (!localMsgIds.has(m.id)) {
+            msgsToUpsert.push({
+              id: m.id,
+              userId: m.user_id,
+              conversationId: m.conversation_id,
+              role: m.role,
+              content: m.content,
+              createdAt: new Date(m.created_at)
+            } as Message);
+          }
+        }
 
-        await db.messages.bulkPut(msgsToUpsert);
-        dataChanged = true;
+        if (msgsToUpsert.length > 0) {
+          await db.messages.bulkPut(msgsToUpsert);
+          dataChanged = true;
+        }
       }
 
       // Only reload if we actually pulled new data
@@ -127,6 +149,7 @@ export const syncService = {
 
     try {
       await supabase.from('conversations').delete().eq('id', id);
+      await supabase.from('messages').delete().eq('conversation_id', id);
     } catch (e) {
       logger.error('Delete conversation error', e instanceof Error ? e : new Error(String(e)));
     }

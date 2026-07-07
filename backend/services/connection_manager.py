@@ -30,7 +30,7 @@ class ConnectionManager:
                 logger.error(f"Error broadcasting to user {user_id}: {e}")
                 self.disconnect(user_id)
 
-    async def broadcast_mail_alert(self, sender: str, user_id: str = "default_user"):
+    async def broadcast_mail_alert(self, sender: str, user_id: str):
         ws = self.active.get(user_id)
         if ws:
             try:

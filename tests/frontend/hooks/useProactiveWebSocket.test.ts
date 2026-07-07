@@ -1,6 +1,8 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest';
 import { useProactiveWebSocket } from '../../../frontend/src/hooks/useProactiveWebSocket';
+
+const flushPromises = () => new Promise(resolve => process.nextTick(resolve));
 
 describe('useProactiveWebSocket', () => {
   let mockWebSocket: any;
@@ -10,9 +12,7 @@ describe('useProactiveWebSocket', () => {
     vi.useFakeTimers();
     webSocketInstances = [];
     
-    // Mock WebSocket globally
     const OriginalWebSocket = global.WebSocket;
-    
     mockWebSocket = function(url: string) {
       const instance = {
         url,
@@ -27,11 +27,14 @@ describe('useProactiveWebSocket', () => {
       return instance;
     };
     
-    // Track calls on the constructor if needed, though not strictly required
     const spiedMock = vi.fn(mockWebSocket);
-    
     global.WebSocket = spiedMock as unknown as typeof WebSocket;
-    mockWebSocket = spiedMock; // So the tests can assert on it
+    mockWebSocket = spiedMock;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ticket: 'mock_ticket_123' })
+    });
   });
 
   afterEach(() => {
@@ -39,22 +42,24 @@ describe('useProactiveWebSocket', () => {
     vi.restoreAllMocks();
   });
 
-  it('connects to websocket with default_user', () => {
+  it('connects to websocket with ticket', async () => {
     const onAlert = vi.fn();
     renderHook(() => useProactiveWebSocket(onAlert));
     
+    await flushPromises();
+    
     expect(mockWebSocket).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/ws/notifications?user_id=default_user')
+      expect.stringContaining('/api/v1/ws/notifications?ticket=mock_ticket_123')
     );
   });
 
-  it('calls onAlert when has_alert is true', () => {
+  it('calls onAlert when has_alert is true', async () => {
     const onAlert = vi.fn();
     renderHook(() => useProactiveWebSocket(onAlert));
     
+    await flushPromises();
     const ws = webSocketInstances[0];
     
-    // Simulate incoming message
     if (ws.onmessage) {
       ws.onmessage({ data: JSON.stringify({ has_alert: true, content: 'Test alert' }) });
     }
@@ -62,11 +67,12 @@ describe('useProactiveWebSocket', () => {
     expect(onAlert).toHaveBeenCalledWith('Test alert', undefined);
   });
 
-  it('calls onNewMail when has_new_mail is true', () => {
+  it('calls onNewMail when has_new_mail is true', async () => {
     const onAlert = vi.fn();
     const onNewMail = vi.fn();
     renderHook(() => useProactiveWebSocket(onAlert, onNewMail));
     
+    await flushPromises();
     const ws = webSocketInstances[0];
     
     if (ws.onmessage) {
@@ -77,10 +83,11 @@ describe('useProactiveWebSocket', () => {
     expect(onAlert).not.toHaveBeenCalled();
   });
 
-  it('does not call onAlert when has_alert is false', () => {
+  it('does not call onAlert when has_alert is false', async () => {
     const onAlert = vi.fn();
     renderHook(() => useProactiveWebSocket(onAlert));
     
+    await flushPromises();
     const ws = webSocketInstances[0];
     
     if (ws.onmessage) {
@@ -90,54 +97,59 @@ describe('useProactiveWebSocket', () => {
     expect(onAlert).not.toHaveBeenCalled();
   });
 
-  it('reconnects with exponential backoff on close', () => {
+  it('reconnects with exponential backoff on close', async () => {
     const onAlert = vi.fn();
     renderHook(() => useProactiveWebSocket(onAlert));
     
+    await flushPromises();
     expect(webSocketInstances.length).toBe(1);
     
     const ws1 = webSocketInstances[0];
     
-    // Trigger first close -> should wait 1s (1000ms)
     if (ws1.onclose) ws1.onclose();
     
+    await flushPromises();
     vi.advanceTimersByTime(999);
-    expect(webSocketInstances.length).toBe(1); // not yet
+    await flushPromises();
+    expect(webSocketInstances.length).toBe(1); 
     
     vi.advanceTimersByTime(1);
-    expect(webSocketInstances.length).toBe(2); // 1st reconnect
+    await flushPromises();
+    expect(webSocketInstances.length).toBe(2); 
     
     const ws2 = webSocketInstances[1];
-    
-    // Trigger second close -> should wait 2s (2000ms)
     if (ws2.onclose) ws2.onclose();
     
+    await flushPromises();
     vi.advanceTimersByTime(1999);
+    await flushPromises();
     expect(webSocketInstances.length).toBe(2);
     
     vi.advanceTimersByTime(1);
-    expect(webSocketInstances.length).toBe(3); // 2nd reconnect
+    await flushPromises();
+    expect(webSocketInstances.length).toBe(3);
   });
 
-  it('resets backoff on successful open', () => {
+  it('resets backoff on successful open', async () => {
     const onAlert = vi.fn();
     renderHook(() => useProactiveWebSocket(onAlert));
     
+    await flushPromises();
     const ws1 = webSocketInstances[0];
     
-    // Simulate close to increase backoff to 2000
     if (ws1.onclose) ws1.onclose();
+    await flushPromises();
     vi.advanceTimersByTime(1000);
+    await flushPromises();
     
     const ws2 = webSocketInstances[1];
-    
-    // Successful open resets backoff to 1000
     if (ws2.onopen) ws2.onopen();
     
-    // Simulate close again -> should wait 1s (1000ms) because it reset, not 2s
     if (ws2.onclose) ws2.onclose();
+    await flushPromises();
     
     vi.advanceTimersByTime(1000);
+    await flushPromises();
     expect(webSocketInstances.length).toBe(3);
   });
 });

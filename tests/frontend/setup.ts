@@ -29,13 +29,60 @@ class ResizeObserverMock {
 global.ResizeObserver = ResizeObserverMock as any;
 window.ResizeObserver = ResizeObserverMock as any;
 
-// Mock CSSStyleSheet insertRule to prevent Stitches parsing errors in JSDOM
-if (typeof window !== 'undefined' && window.CSSStyleSheet && window.CSSStyleSheet.prototype) {
-  window.CSSStyleSheet.prototype.insertRule = function() { return 0; };
+// Stitches/JSDOM cssRules workaround
+const originalInsertRule = window.CSSStyleSheet.prototype.insertRule;
+window.CSSStyleSheet.prototype.insertRule = function(rule, index) {
   try {
-    Object.defineProperty(window.CSSStyleSheet.prototype, 'cssRules', {
-      get: function() { return []; },
-      configurable: true
-    });
-  } catch (e) {}
-}
+    return originalInsertRule.call(this, rule, index);
+  } catch (e) {
+    return 0; // Ignore parsing errors in JSDOM
+  }
+};
+
+try {
+  Object.defineProperty(window.CSSStyleSheet.prototype, 'cssRules', {
+    get() {
+      return [];
+    },
+    configurable: true
+  });
+} catch(e) {}
+
+try {
+  Object.defineProperty(document, 'styleSheets', {
+    value: [
+      {
+        cssRules: [],
+        insertRule: () => 0,
+        deleteRule: () => {}
+      }
+    ],
+    configurable: true
+  });
+} catch(e) {}
+
+try {
+  Object.defineProperty(window.HTMLStyleElement.prototype, 'sheet', {
+    get() {
+      return {
+        cssRules: [],
+        insertRule: () => 0,
+        deleteRule: () => {}
+      };
+    },
+    configurable: true
+  });
+} catch(e) {}
+
+// Mock Stitches core to prevent JSDOM crashes
+vi.mock('@stitches/core', () => ({
+  createStitches: vi.fn(() => ({
+    styled: vi.fn(),
+    css: vi.fn(),
+    globalCss: vi.fn(),
+    keyframes: vi.fn(),
+    getCssText: vi.fn(),
+    theme: {},
+    config: {},
+  })),
+}));

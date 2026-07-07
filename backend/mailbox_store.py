@@ -81,8 +81,8 @@ async def delayed_mail_worker():
     while True:
         try:
             now = time.time()
-            cursor = '0'
-            while cursor != 0:
+            cursor = 0
+            while True:
                 cursor, keys = await redis.scan(cursor=cursor, match="areqa:delayed_mail:*", count=100)
                 for key in keys:
                     tasks = await redis.zrangebyscore(key, 0, now)
@@ -100,9 +100,12 @@ async def delayed_mail_worker():
                         
                         # Broadcast alert (we have to import ws_manager)
                         from services.connection_manager import ws_manager
-                        asyncio.create_task(ws_manager.broadcast_mail_alert(active_avatar))
+                        asyncio.create_task(ws_manager.broadcast_mail_alert(sender=active_avatar, user_id=user_id))
                         
                         await redis.zrem(key, task_json)
+                        
+                if cursor == 0:
+                    break
                         
             await asyncio.sleep(1)
         except Exception as e:
