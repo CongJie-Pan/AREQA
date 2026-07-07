@@ -10,6 +10,26 @@ import type { Conversation, Message, Setting } from './schema';
  * PerplexityQA Database class
  * Extends Dexie to provide typed table access
  */
+function getCurrentUserId(): string {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.includes('-auth-token')) {
+        const item = localStorage.getItem(key);
+        if (item) {
+          const parsed = JSON.parse(item);
+          if (parsed?.user?.id) {
+            return parsed.user.id;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to parse auth token", e);
+  }
+  return 'default_user';
+}
+
 class PerplexityQADatabase extends Dexie {
   /** Conversations table */
   conversations!: EntityTable<Conversation, 'id'>;
@@ -21,14 +41,31 @@ class PerplexityQADatabase extends Dexie {
   constructor() {
     super('PerplexityQA');
 
-    // Define database schema with indexed fields
+    // Define database schema with indexed fields (Version 1)
     this.version(1).stores({
-      // conversations: id (primary), indexed by createdAt and updatedAt
       conversations: 'id, createdAt, updatedAt',
-      // messages: id (primary), indexed by conversationId, createdAt, and compound index
       messages: 'id, conversationId, createdAt, [conversationId+createdAt]',
-      // settings: key (primary)
       settings: 'key',
+    });
+
+    // Version 2: Multi-tenant support with userId
+    this.version(2).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
+      settings: 'key',
+    }).upgrade(async tx => {
+      const currentUserId = getCurrentUserId();
+      await tx.table('conversations').toCollection().modify(conv => {
+        conv.userId = conv.userId ?? currentUserId;
+      });
+      await tx.table('messages').toCollection().modify(msg => {
+        msg.userId = msg.userId ?? currentUserId;
+      });
+    });
+
+    // Handle multi-tab upgrades
+    this.on('versionchange', () => {
+      window.location.reload();
     });
   }
 }

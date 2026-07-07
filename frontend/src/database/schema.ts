@@ -10,6 +10,8 @@
 export interface Conversation {
   /** UUID v4 - Primary key */
   id: string;
+  /** User ID - Multi-tenant support */
+  userId: string;
   /** Conversation title (auto-generated from first message) */
   title: string;
   /** Creation timestamp */
@@ -29,6 +31,8 @@ export interface Conversation {
 export interface Message {
   /** UUID v4 - Primary key */
   id: string;
+  /** User ID - Multi-tenant support */
+  userId: string;
   /** Foreign key - Associated conversation ID */
   conversationId: string;
   /** Message role - user or assistant */

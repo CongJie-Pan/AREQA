@@ -18,30 +18,76 @@ export function useProactiveWebSocket(
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
 
-    function connect() {
+    function getAuthToken(): string | null {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes('-auth-token')) {
+            const item = localStorage.getItem(key);
+            if (item) {
+              const parsed = JSON.parse(item);
+              if (parsed?.access_token) {
+                return parsed.access_token;
+              }
+            }
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    async function connect() {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
       const wsUrl = backendUrl.replace(/^http/, 'ws');
-      wsRef.current = new WebSocket(`${wsUrl}/api/v1/ws/notifications?user_id=default_user`);
-
-      wsRef.current.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        if (data.has_alert && data.content) {
-          onAlertRef.current(data.content, data.sender_name);
-        } else if (data.has_new_mail && data.sender && onNewMailRef.current) {
-          onNewMailRef.current(data.sender);
+      
+      try {
+        // Fetch One-Time Ticket
+        const token = getAuthToken();
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
         }
-      };
-      
-      // On success: reset backoff
-      wsRef.current.onopen = () => { 
-        retryDelayRef.current = 1000; 
-      };
-      
-      // On disconnect: exponential backoff reconnect (max 30s)
-      wsRef.current.onclose = () => {
+        
+        const response = await fetch(`${backendUrl}/api/v1/ws/ticket`, {
+          method: 'POST',
+          headers: headers
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch WS ticket');
+        }
+        
+        const data = await response.json();
+        const ticket = data.ticket;
+
+        wsRef.current = new WebSocket(`${wsUrl}/api/v1/ws/notifications?ticket=${ticket}`);
+
+        wsRef.current.onmessage = (e) => {
+          const msgData = JSON.parse(e.data);
+          if (msgData.has_alert && msgData.content) {
+            onAlertRef.current(msgData.content, msgData.sender_name);
+          } else if (msgData.has_new_mail && msgData.sender && onNewMailRef.current) {
+            onNewMailRef.current(msgData.sender);
+          }
+        };
+        
+        // On success: reset backoff
+        wsRef.current.onopen = () => { 
+          retryDelayRef.current = 1000; 
+        };
+        
+        // On disconnect: exponential backoff reconnect (max 30s)
+        wsRef.current.onclose = () => {
+          timeoutId = setTimeout(connect, retryDelayRef.current);
+          retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
+        };
+      } catch (e) {
+        console.error('WebSocket connection error:', e);
         timeoutId = setTimeout(connect, retryDelayRef.current);
         retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
-      };
+      }
     }
 
     connect();
