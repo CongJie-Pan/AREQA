@@ -261,14 +261,11 @@ async def startup_event():
     from mailbox_store import init_mailbox_store
     
     # Init store
-    hot_path = PROJECT_ROOT / "data" / "gum_data" / "hot_memory.json"
-    profile_path = PROJECT_ROOT / "data" / "gum_data" / "user_profile.json"
-    store = init_global_store(str(hot_path), str(profile_path), budget_limit=1000000)
-    store.clear_all_pending_alerts()
+    store = init_global_store(budget_limit=1000000)
+    await store.clear_all_pending_alerts("default_user")
     print("Memory Store initialized successfully.")
     
-    mailbox_dir = PROJECT_ROOT / "data" / "gum_data"
-    init_mailbox_store(str(mailbox_dir))
+    init_mailbox_store()
     print("Mailbox Store initialized successfully.")
     
     await init_gum_instance()
@@ -279,12 +276,15 @@ async def startup_event():
     rag_cache = RagCacheService(redis_url)
     print("Redis RAG Cache initialized successfully.")
     
-    # Start ComPeer Scheduler
+    # Start ComPeer Scheduler and Mailbox Worker
     import sys
     sys.path.append(str(PROJECT_ROOT / "backend" / "services"))
     from services.compeer_scheduler import proactive_scheduler_loop, daily_scheduler_loop
+    from mailbox_store import delayed_mail_worker
+    
     # app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
     # app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
+    app.state.delayed_mail_worker = asyncio.create_task(delayed_mail_worker())
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -293,6 +293,8 @@ async def shutdown_event():
         app.state.proactive_task.cancel()
     if hasattr(app.state, 'daily_task'):
         app.state.daily_task.cancel()
+    if hasattr(app.state, 'delayed_mail_worker'):
+        app.state.delayed_mail_worker.cancel()
 
 _local_summary_cache = {}
 
@@ -405,8 +407,8 @@ from mailbox_store import get_mailbox_store
 async def fetch_mailbox():
     store = get_mailbox_store()
     return {
-        "mails": store.get_all_mails(),
-        "unread_count": store.get_unread_count()
+        "mails": await store.get_all_mails("default_user"),
+        "unread_count": await store.get_unread_count("default_user")
     }
 
 class SendMailRequest(BaseModel):
@@ -417,8 +419,8 @@ class SendMailRequest(BaseModel):
 @app.post("/api/v1/mailbox/send")
 async def send_mail_endpoint(req: SendMailRequest):
     store = get_mailbox_store()
-    mail_id = store.add_mail(sender="User", content=req.content, recipient=req.recipient, conversation_id=req.conversation_id)
-    store.mark_as_read(mail_id)
+    mail_id = await store.add_mail(user_id="default_user", sender="User", content=req.content, recipient=req.recipient, conversation_id=req.conversation_id)
+    await store.mark_as_read(user_id="default_user", mail_id=mail_id)
     import asyncio
     from gum_integration import delayed_reply_writer
     asyncio.create_task(delayed_reply_writer(mail_id, req.content, req.recipient, delay_seconds=300))
@@ -427,7 +429,7 @@ async def send_mail_endpoint(req: SendMailRequest):
 @app.post("/api/v1/mailbox/read/{mail_id}")
 async def read_mail_endpoint(mail_id: str):
     store = get_mailbox_store()
-    success = store.mark_as_read(mail_id)
+    success = await store.mark_as_read(user_id="default_user", mail_id=mail_id)
     if not success:
         raise HTTPException(status_code=404, detail="Mail not found")
     return {"status": "success"}
@@ -444,17 +446,19 @@ async def delete_memory_endpoint(mem_id: str):
     if mem_id.startswith("profile:"):
         store = get_global_store()
         key = mem_id.split("profile:")[1]
-        profile = store.get_user_profile()
+        profile = await store.get_user_profile("default_user")
         if key in profile:
             del profile[key]
-            store._atomic_write(store.user_profile_path, profile)
+            import json
+            await store.redis.set("areqa:user_profile:default_user", json.dumps(profile, ensure_ascii=False))
     elif mem_id.startswith("hot:"):
         store = get_global_store()
         key = mem_id.split("hot:")[1]
-        hot_mem = store.get_hot_memory()
+        hot_mem = await store.get_hot_memory("default_user")
         if key in hot_mem:
             del hot_mem[key]
-            store._atomic_write(store.hot_memory_path, hot_mem)
+            import json
+            await store.redis.set("areqa:hot_memory:default_user", json.dumps(hot_mem, ensure_ascii=False))
     else:
         if gum_instance:
             await gum_instance.update_status(int(mem_id), "deleted")
@@ -477,20 +481,22 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest):
     if mem_id.startswith("profile:"):
         store = get_global_store()
         key = mem_id.split("profile:")[1]
-        profile = store.get_user_profile()
+        profile = await store.get_user_profile("default_user")
         if key in profile:
             profile[key] = req.text
-            store._atomic_write(store.user_profile_path, profile)
+            import json
+            await store.redis.set("areqa:user_profile:default_user", json.dumps(profile, ensure_ascii=False))
     elif mem_id.startswith("hot:"):
         store = get_global_store()
         key = mem_id.split("hot:")[1]
-        hot_mem = store.get_hot_memory()
+        hot_mem = await store.get_hot_memory("default_user")
         if key in hot_mem:
             if isinstance(hot_mem[key], dict):
                 hot_mem[key]["text"] = req.text
             else:
                 hot_mem[key] = req.text
-            store._atomic_write(store.hot_memory_path, hot_mem)
+            import json
+            await store.redis.set("areqa:hot_memory:default_user", json.dumps(hot_mem, ensure_ascii=False))
     else:
         if gum_instance:
             await gum_instance.update_text(int(mem_id), req.text)
@@ -769,7 +775,7 @@ async def log_action(req: ActionLogRequest):
     if store:
         import uuid
         key = f"obs_{time.time()}_{uuid.uuid4().hex[:8]}"
-        asyncio.create_task(store.update_hot_memory_async(key, obs_text))
+        asyncio.create_task(store.update_hot_memory_async("default_user", key, obs_text))
         
     if req.action_type == "scroll":
         # Pure UI telemetry like scrolling doesn't need to go to GUM's cold memory evolution
@@ -777,8 +783,9 @@ async def log_action(req: ActionLogRequest):
     elif req.action_type == "compeer_rejected":
         import services.compeer_scheduler as compeer
         target_user = req.user_id if req.user_id != "default" else "default_user"
-        compeer.set_cooldown(target_user, state=store.get_learner_state() if store else "default")
-        print(f"[ComPeer] User '{target_user}' rejected popup, entering 30-minute cooldown.")
+        learner_state = await store.get_learner_state(target_user) if store else "default"
+        await compeer.set_cooldown(target_user, state=learner_state)
+        print(f"[ComPeer] User '{target_user}' rejected popup, entering cooldown.")
     else:
         # Meaningful interactions go to GUM to become semantic propositions
         asyncio.create_task(push_observation(obs_text))
@@ -790,7 +797,7 @@ async def proactive_check_endpoint(user_id: str = "default_user"):
     from memory_store import get_global_store
     store = get_global_store()
     if store:
-        alert_content = store.get_and_clear_pending_alert(user_id)
+        alert_content = await store.get_and_clear_pending_alert(user_id)
         if alert_content:
             print(f"[EDF-LOG] proactive-check endpoint returning alert: {alert_content}")
             return {"has_alert": True, "content": alert_content}

@@ -1,101 +1,235 @@
-# AREQA: 身份驗證與 Render 部署遷移計畫 (Implementation Plan)
+# AREQA: 身份驗證與 Render 部署遷移計畫 (Engineering Specification)
 
-## 1. 專案目標 (Objectives)
-為 AREQA 系統引入多租戶 (Multi-tenant) 會員身分驗證，並徹底解決 Render 平台因「短暫檔案系統 (Ephemeral Storage)」特性所造成的本地資料 (`gum.db`, `hot_memory.json`) 遺失問題，實現雲端無狀態 (Stateless) 擴容架構。
+**[最高指導原則]：各階段均設有門控（Quality Gate），所有自動化測試與人工實測必須全部通過，方可推進至下一階段。**
 
-## 2. 核心技術選型 (Tech Stack)
-*   **身分驗證 (Authentication)**: Supabase Auth (或 Clerk)
-*   **資料庫 (Database)**: Supabase PostgreSQL (或 Render Managed PostgreSQL)
-*   **快取與熱記憶 (Cache & Hot Memory)**: Redis (Render 內建或 Upstash Serverless Redis)
+## 1. 專案目標與架構
+為 AREQA 系統引入多租戶 (Multi-tenant) 會員身分驗證，並解決 Render 平台因「短暫檔案系統」造成的本地資料遺失問題，實現雲端無狀態 (Stateless) 擴容架構。
+*   **Auth**: Supabase Auth
+*   **Database**: Supabase PostgreSQL (pgvector + GIN Index + RLS)
+*   **Cache / Queue**: Redis (Upstash)
 
----
+### 1.1 更新後之系統架構圖 (System Architecture)
+```mermaid
+graph TD
+    Client[Next.js Client + Dexie.js] -->|1. OAuth Login| SupabaseAuth[Supabase Auth]
+    SupabaseAuth -->|2. Returns JWT| Client
+    Client -->|3. API Request w/ JWT| FastAPI[FastAPI Backend - Render]
+    
+    subgraph FastAPI_Backend [FastAPI Backend]
+        AuthDep[JWT Auth Dependency]
+        Orchestration[Orchestration Service]
+        GUM[Global GUM Engine Singleton]
+        Worker[Redis ZSET Worker]
+        
+        FastAPI --> AuthDep
+        AuthDep --> Orchestration
+        Orchestration --> GUM
+    end
 
-## 3. 分階段實作藍圖 (Phased Implementation Plan)
+    GUM -->|4. set_config RLS + SQL| Postgres[(Supabase PostgreSQL)]
+    Postgres -.->|Enforces Data Isolation| Postgres
+    
+    Orchestration -->|5. Hot Memory & Tickets| Redis[(Upstash Redis)]
+    Worker -->|6. Polls Delayed Mail| Redis
+    
+    Client -->|7. SSE Stream| FastAPI
+    Client -->|8. WS with Ticket| FastAPI
+```
 
-### 階段一：基礎設施與資料持久化重構 (Phase 1: Persistence Layer Refactoring)
-> **目標**：讓後端完全脫離對本地檔案系統的依賴，所有的讀寫皆轉向 PostgreSQL 與 Redis，並向下傳遞 `user_id` 租戶上下文。
-
-1.  **熱記憶與信箱 (Hot Memory & Mailbox) 遷移至 Redis**
-    *   **目標檔案**: `backend/memory_store.py` 與 `backend/mailbox_store.py`
-    *   **行動**: 徹底移除 `_atomic_write`、`_read_json` 等檔案 I/O 操作與 threading locks。
-    *   **實作**: 導入 `redis.asyncio`。將所有方法改為接收 `user_id: str` (如 `async def get_hot_memory(self, user_id: str)`)，並對應至特定的 Redis Keys (例如：`areqa:hot_memory:{user_id}`, `areqa:mailbox:{user_id}`, `areqa:pending_alerts:{user_id}`)。
-2.  **GUM 記憶引擎多租戶化**
-    *   **目標檔案**: `backend/gum_integration.py`
-    *   **行動**: 移除全域的 `gum_instance` 單例 (Singleton)，改為管理多個實例的字典 `gum_instances: Dict[str, Any]`。
-    *   **實作**: 建立工廠模式 `async def get_gum_instance(user_id: str)`。確保 `push_observation`, `query_cold_memory_for_context`, `run_compaction` 等核心函式皆強制接收 `user_id`，並呼叫對應的 GUM 實例。
-3.  **排程器與狀態儲存 (Compeer Scheduler) 遷移**
-    *   **目標檔案**: `backend/services/compeer_scheduler.py`
-    *   **行動**: 將 `user_cooldown_until` 字典從記憶體移至 Redis 快取 (如 `areqa:cooldown:{user_id}`)。
-    *   **實作**: 移除寫入 `schedule_{user_id}.json` 的邏輯，改為寫入 Redis List/Hash。並修改 `proactive_scheduler_loop` 與 `daily_scheduler_loop` 使其能迭代查詢 Redis 中「所有活躍的 user_id」，而非只對 `default_user` 執行排程。
-4.  **對話節點 (Orchestration) 傳遞 Context**
-    *   **目標檔案**: `backend/services/orchestration_service.py`
-    *   **實作**: 在 `execute()` 中接收 `user_id`，並向下傳遞至 `get_hot_memory_snapshot`、`async_evaluate_and_update_state` 等子函式中。
-
-### 階段二：後端 API 認證防護與 PostgreSQL Schema (Phase 2: Backend Auth & Multi-tenancy)
-> **目標**：確保所有請求合法，並正式將 SQLite `gum.db` 升級為 PostgreSQL，適配 Supabase RLS 與 Vector。
-
-1.  **實作 JWT 驗證依賴 (Auth Dependency)**
-    *   **目標檔案**: `backend/main.py`
-    *   **實作**: 新增 `get_current_user_id(request: Request)` 依賴，解析 Supabase 的 `Authorization: Bearer <token>` Header 獲取 `sub` claim 作為真實的 `user_id`。
-    *   **行動**: 盤點所有路由 (`log_action`, `proactive_check_endpoint`, `ws_notifications`, `stream_endpoint`, `fetch_memory` 等)，拔除 `user_id="default_user"` 的硬編碼，統一注入 JWT 的解析結果。在 `connection_manager.py` 中亦拔除廣播的 `default_user`。
-2.  **SQLite 轉 PostgreSQL Schema 重構 (核心重構)**
-    *   **目標檔案**: `backend/cold_memory.py` 與 `gum_integration.py`
-    *   **連線字串**: 將初始化的 `db_name="gum.db"` 替換為 PostgreSQL 連線字串 (`postgresql+asyncpg://...`)。
-    *   **多租戶隔離 (RLS)**: 在 `propositions` 資料表加入 `user_id UUID` 欄位，並於 Supabase 設定 Row Level Security (RLS) 政策：`CREATE POLICY "User isolated" ON propositions FOR ALL USING (auth.uid() = user_id);`。
-    *   **FTS5 遷移至 GIN Index**: 廢棄 SQLite 專用的 `propositions_fts` 虛擬表。改在 PostgreSQL 的 `propositions` 表新增 `fts tsvector` 欄位，並以 `to_tsvector` 進行全文檢索與 GIN 索引。
-    *   **Byte Vector 遷移至 pgvector**: 廢棄原有的 `vec_memory` 結構與 `struct.pack` 轉換邏輯。啟用 Supabase 的 `pgvector` 擴充功能，在表中新增 `embedding vector(1536)` 欄位，直接以原生陣列讀寫向量。
-
-### 階段三：前端驗證整合 (Phase 3: Frontend Auth Integration)
-> **目標**：建立使用者註冊與登入介面，並將 Token 附加於所有對外請求中。
-
-1.  **引入 Auth Provider**
-    *   在 Next.js 的外層 (例如 `app/layout.tsx`) 包覆 `<SupabaseProvider>` 或 `<ClerkProvider>`。
-2.  **實作 Auth UI 與側邊欄整合 (Sidebar Integration)**
-    *   **未登入狀態 (Logged Out)**：在側邊欄 (Sidebar) 左下角顯示系統選單 (如 Settings, Help 等)，並在最底部放置一個引導卡片 (例如 "和 AREQA 一起探討知識的世界 ") 與顯眼的 **「登入」按鈕**。
-    *   **登入對話方塊 (Login Modal/Page)**：點擊 Log in 後顯示登入介面，需支援多種登入方式 (OAuth)：包含 **Continue with Google**、**Continue with Apple**、**Continue with phone**，以及傳統的 **Email address** 輸入與註冊。
-    *   **已登入狀態 (Logged In)**：登入完成後，側邊欄左下角切換為顯示**用戶頭像 (Avatar)** 與 **用戶名稱** (下方可帶有帳號方案標籤與 Upgrade 按鈕)。使用者點擊此區域即可進入「帳號設定頁面 (Account Settings)」來修改用戶名稱、頭像等個人資料。
-3.  **API 請求攔截器 (Request Interceptor)**
-    *   將發送訊息的 API (如 `/api/v1/stream`) 統一加上 `Authorization: Bearer <token>` Header。
-    *   確保 `useProactiveWebSocket.ts` 建立連線時附加 token。
-4.  **本地歷史紀錄管理 (Dexie.js)**
-    *   修改 Zustand store 與 Dexie 邏輯。當檢測到使用者「登出」時，主動呼叫 Dexie 的 `clear()` 函數清除本地歷史，避免下一個登入者看到前一個使用者的聊天內容。
-
-### 階段四：Render 雲端部署與 Supabase 整合細節 (Phase 4: Render & Supabase Deployment Details)
-> **目標**：在 Render 上配置正確的服務拓樸，並與 Supabase (Auth + DB) 無縫串接，實現正式上線。
-
-1.  **Supabase 專案建立與資料庫配置**
-    *   **開設專案**：在 Supabase Dashboard 建立新專案，系統會自動分配一組 PostgreSQL 資料庫與 Auth 模組。
-    *   **獲取連線字串**：取得 `DATABASE_URL` (連線字串需包含連線池參數，如 `?pgbouncer=true` 以適應 Serverless 架構)。
-    *   **獲取金鑰**：取得 `NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY` (供前端使用) 以及 `SUPABASE_JWT_SECRET` (供後端解析 Token)。
-    *   **執行 Migration**：透過 Supabase SQL Editor 或 CLI 將原先 SQLite 的 `gum.db` Schema 建立至 Supabase 專案中。
-2.  **Redis 快取服務配置**
-    *   **方案選擇**：建議註冊 **Upstash** (Serverless Redis)，因為它提供極佳的免費額度，且與 Render 相容性極高；或者也可以使用 Render 內建的付費 Redis 實例。
-    *   **獲取連線字串**：取得 `REDIS_URL` (如 `rediss://...`) 備用。
-3.  **配置 FastAPI Backend (Render Web Service)**
-    *   在 Render Dashboard 點選 **New > Web Service**，連結 GitHub 儲存庫。
-    *   **Root Directory**: 填入 `backend`。
-    *   **Environment**: 選擇 `Python 3`。
-    *   **Build Command**: `pip install -r requirements.txt`
-    *   **Start Command**: `uvicorn main:app --host 0.0.0.0 --port 10000` (Render 預設監聽 Port 為 10000)。
-    *   **Environment Variables (環境變數設定)**：
-        *   `DATABASE_URL`: 填入 Supabase 提供的連線字串。
-        *   `REDIS_URL`: 填入 Upstash / Render Redis 網址。
-        *   `JWT_SECRET`: 填入 `SUPABASE_JWT_SECRET` (用於 `verify_token` 依賴驗證)。
-        *   `OPENROUTER_API_KEY` 與 `PERPLEXITY_API_KEY`: 填入您的 LLM 與檢索 API Key。
-4.  **配置 Next.js Frontend (Render Web Service)**
-    *   在 Render Dashboard 再次點選 **New > Web Service**，連結相同的 GitHub 儲存庫。
-    *   **Root Directory**: 填入 `frontend`。
-    *   **Environment**: 選擇 `Node`。
-    *   **Build Command**: `npm install && npm run build`
-    *   **Start Command**: `npm start`
-    *   **Environment Variables (環境變數設定)**：
-        *   `NEXT_PUBLIC_API_URL`: 填入上方 Backend 部署完成後獲得的 Render 網址 (如 `https://areqa-backend.onrender.com`)。
-        *   `NEXT_PUBLIC_SUPABASE_URL`: 填入 Supabase API URL。
-        *   `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 填入 Supabase 前端匿名金鑰。
+### 1.2 預期目錄與檔案架構 (Expected Directory Structure)
+以下為本次計畫將會新增或大幅修改的檔案：
+```text
+AREQA/
+├── backend/
+│   ├── main.py                     # 修改: 新增 JWT Dependency, SSE Header, WS Ticket 端點
+│   ├── cold_memory.py              # 修改: 實作 pgvector, RLS Context (set_config), GIN Index
+│   ├── gum_integration.py          # 修改: GUM Singleton 初始化, user_id 穿透傳遞
+│   ├── memory_store.py             # 重寫: 移除 File I/O，全面改用 redis.asyncio
+│   ├── mailbox_store.py            # 重寫: 移除 File I/O 與 sleep()，改用 Redis ZSET 延遲佇列
+│   └── services/
+│       ├── orchestration_service.py # 修改: 接收並傳遞 user_id context
+│       └── compeer_scheduler.py     # 修改: 移除 dict 快取，改存取 Redis TTL
+├── frontend/
+│   ├── src/
+│   │   ├── database/
+│   │   │   └── db.ts               # 修改: Dexie schema 增加 userId, 實作 .upgrade() 資料遷移
+│   │   ├── hooks/
+│   │   │   └── useProactiveWebSocket.ts # 修改: 實作先打 API 換 Ticket 再帶入 WS 參數的邏輯
+│   │   └── components/
+│   │       └── Auth/               # 新增: Supabase 登入 UI 組件 (側邊欄)
+└── misc/
+    └── gum/                        # 深度修改: 拔除 SQLite 硬綁定，確保語法相容 PostgreSQL
+```
 
 ---
 
-## 4. 預期風險與注意事項 (Risks & Mitigations)
-*   **資料庫遷移風險**: 目前的 `gum.db` Schema 需要轉換為 PostgreSQL 相容的語法。部分 SQLite 專有函數 (若有) 需改寫。
-*   **SSE (Server-Sent Events) 與連線中斷**: 若 Render 針對長連線有超時限制 (Timeout)，前端的 WebSocket `useProactiveWebSocket.ts` 已內建指數退避重連機制，應能有效應對。
-*   **冷卻機制同步**: 確保 `compeer_scheduler.py` 內的 `user_cooldown_until` 從記憶體 dict 移至 Redis，否則當 FastAPI 擴展為多個 Instance (Worker) 時會發生冷卻狀態不一致。
+## 2. 🚨 絕對禁止的反模式 (Anti-Patterns)
+實作時若出現以下模式，將無條件退回重構：
+1. **❌ 每個 User 建立一個 Engine**：會瞬間耗盡連線池 (`pool_size=5`)，導致整個應用掛掉。
+2. **❌ 使用 `asyncio.sleep(300)` 處理信件延遲**：Render 休眠重啟時 task 會直接蒸發。
+3. **❌ 依賴 `service_role` 處理 RLS**：這會完全繞過 RLS 保護，產生嚴重的越權存取漏洞。
+4. **❌ 使用 `python-jose` 自動驗證 JWT `aud`**：Supabase OAuth 的 `aud` 可能為陣列，會引發 500 錯誤。
+5. **❌ 修改 Dexie schema 卻沒寫 `.upgrade()`**：舊使用者的 IndexedDB 資料會直接隱形消失。
+
+---
+
+## 3. 檔案影響範圍清單 (Touchpoint Map)
+
+| 檔案路徑 | 負責階段 | 變更說明 |
+|---------|---------|---------|
+| `backend/memory_store.py` | 階段一 | 移除檔案 I/O，全面改用 Redis |
+| `backend/mailbox_store.py` | 階段一 | 移除 `threading.Lock` 與 `sleep()`，改用 Redis ZSET 延遲佇列 |
+| `backend/services/compeer_scheduler.py` | 階段一 | 移除 dict cache，改存 Redis TTL |
+| `misc/gum/` | 階段一/二 | 解除 SQLite 綁定，實作單一 Engine 共用架構 |
+| `backend/cold_memory.py` | 階段二 | 寫入時強制注入 RLS context，替換 `bm25()` 與 vector 操作 |
+| `backend/main.py` | 階段二/三 | 增加 JWT 依賴，修正 SSE Header，新增 WS Ticket 端點 |
+| `frontend/src/database/db.ts` | 階段三 | Schema 版本升級，加入 `userId` 欄位與資料遷移腳本 |
+| `frontend/src/hooks/useProactiveWebSocket.ts` | 階段三 | 實作 Ticket 換取與連線重試機制 |
+
+---
+
+## 4. 分階段實作藍圖與程式碼範例
+
+### 階段一：基礎設施與資料持久化重構 (Phase 1)
+> **前置條件**：本地或雲端已備妥可用的 Redis 服務。
+
+1.  **熱記憶與信箱遷移至 Redis**
+    *   移除檔案讀寫與 `threading.Lock`。
+    *   **延遲回信佇列 (Redis ZSET)**：將原本的 `sleep(300)` 改為把信件存入 Redis Sorted Set。
+    *   **👨‍💻 Expected Code Pattern**:
+        ```python
+        # 加入延遲佇列 (Score = 目前時間 + 300秒)
+        await redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: time.time() + 300})
+        
+        # 背景 Worker 輪詢
+        async def mailbox_worker():
+            while True:
+                now = time.time()
+                # 取出所有已到期的信件
+                tasks = await redis.zrangebyscore("areqa:delayed_mail:*", 0, now)
+                for task in tasks:
+                    await process_mail(task)
+                    await redis.zrem("areqa:delayed_mail:*", task)
+                await asyncio.sleep(1)
+        ```
+2.  **GUM 共用實例與 PostgreSQL 遷移準備**
+    *   **核心規範**：全系統只能有一個 SQLAlchemy AsyncEngine。
+    *   **👨‍💻 Expected Code Pattern**:
+        ```python
+        # 全域宣告，僅初始化一次 (防止 PgBouncer Prepared Statement 衝突)
+        global_engine = create_async_engine(
+            DATABASE_URL, 
+            pool_size=5, 
+            max_overflow=10,
+            connect_args={"statement_cache_size": 0} 
+        )
+        
+        # 不要為每個 user 建立 Engine，而是傳遞 context
+        async def get_gum_session(user_id: str):
+            async with AsyncSession(global_engine) as session:
+                yield session # 具體 RLS 注入見階段二
+        ```
+3.  **排程器狀態 (Compeer Scheduler) 遷移**
+    *   寫入冷卻狀態時，直接使用 Redis 的 `SETEX` (TTL)。
+
+### 階段二：後端 API 認證防護與 PostgreSQL Schema (Phase 2)
+> **前置條件**：Supabase 專案建立完畢，取得 JWT Secret。
+
+1.  **JWT 手動驗證與 Dependency**
+    *   **👨‍💻 Expected Code Pattern**:
+        ```python
+        from jose import jwt, JWTError
+        def verify_supabase_jwt(token: str, secret: str) -> str:
+            # 必須停用自動 aud 驗證，防止 array 格式導致 500 錯誤
+            payload = jwt.decode(token, secret, algorithms=["HS256"], options={"verify_aud": False})
+            aud = payload.get("aud")
+            aud_set = set(aud) if isinstance(aud, list) else {aud} if aud else set()
+            if "authenticated" not in aud_set:
+                raise JWTError("Invalid audience")
+            return payload.get("sub")
+        ```
+2.  **嚴格執行 RLS (Row Level Security)**
+    *   **👨‍💻 Expected Code Pattern**:
+        ```python
+        async def execute_with_rls(session: AsyncSession, user_id: str):
+            async with session.begin():
+                # 每個 Transaction 開頭必須設定 RLS Context
+                await session.execute(text(
+                    "SELECT set_config('request.jwt.claims', "
+                    "jsonb_build_object('role', 'authenticated', 'sub', :uid)::text, TRUE)"
+                ), {"uid": user_id})
+                await session.execute(text("SET LOCAL ROLE authenticated;"))
+                # 接下來的查詢才會被 RLS 安全隔離
+                # ...
+        ```
+3.  **FTS5 與 Vector 語法替換**
+    *   將 SQLite 的 `MATCH` 改為 Postgres 的 `@@ to_tsquery()` 與 `ts_rank`。
+
+### 階段三：前端驗證整合 (Phase 3)
+> **前置條件**：Next.js 已套用 Supabase Auth UI，可取得有效 JWT。
+
+1.  **WebSocket One-Time Ticket 驗證**
+    *   **👨‍💻 Expected Code Pattern**:
+        ```python
+        # 後端驗證並原子消費 Ticket (防止 Race Condition)
+        async def consume_ticket(redis, ticket: str) -> str:
+            # GETDEL 保證票證只被讀取一次即銷毀
+            user_id = await redis.getdel(f"ws_ticket:{ticket}")
+            if not user_id:
+                raise ValueError("Invalid or expired ticket")
+            return user_id.decode("utf-8")
+        
+        @app.websocket("/ws")
+        async def ws_endpoint(ws: WebSocket, ticket: str):
+            # 防止跨站 WebSocket 劫持 (CSWSH)
+            if ws.headers.get("origin") not in ALLOWED_ORIGINS:
+                await ws.close(code=4001)
+                return
+        ```
+2.  **SSE 串流防緩衝 (Cloudflare Bypass)**
+    *   在 `/api/v1/stream` 的 Header 加上 `"X-Accel-Buffering": "no"`。
+3.  **Dexie.js 資料蒸發防護**
+    *   **👨‍💻 Expected Code Pattern**:
+        ```typescript
+        // 舊版本
+        db.version(1).stores({ conversations: '++id, title' });
+        // 新版本：必須補上 .upgrade() 遷移舊資料
+        db.version(2).stores({ conversations: '++id, userId, title' })
+          .upgrade(async tx => {
+              const currentUserId = getCurrentUserId();
+              await tx.table('conversations').toCollection().modify(conv => {
+                  conv.userId = conv.userId ?? currentUserId;
+              });
+          });
+        // 處理多 Tab 升級卡死
+        db.on('versionchange', () => window.location.reload());
+        ```
+
+### 階段四：Render 部署拓樸 (Phase 4)
+*   **Backend Start**: `uvicorn main:app --host 0.0.0.0 --port 10000`
+*   **Connection Pool**: `pool_size=5, max_overflow=10`
+*   **ENV Vars**: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `NEXT_PUBLIC_SUPABASE_URL`.
+
+---
+
+## 5. 🚦 測試驗收總表 (Gate Checklists)
+
+所有階段必須滿足以下驗收標準才能進入下一階段（包含自動化單元/整合測試與人工實測）。
+
+| 測試 ID | 所屬 Gate | 測試類型 | 目標項目 / 驗證行為 | 具體驗收標準 (Acceptance Criteria) | 執行方 |
+|---|---|---|---|---|---|
+| **T1-01** | Phase 1 | Unit | `test_memory_store.py` 多租戶 | user_A 寫入資料後，用 user_B 查詢回傳空值。 | 自動化 |
+| **T1-02** | Phase 1 | Unit | `test_mailbox_zset.py` 延遲 | 測試信件加入 Redis ZSET 後，能被 mock worker 正確拉出。 | 自動化 |
+| **T1-03** | Phase 1 | Unit | `test_gum_singleton.py` | 驗證全系統僅初始化一次 SQLAlchemy Engine，無多次呼叫。 | 自動化 |
+| **T1-04** | Phase 1 | Manual | **重啟恢復測試 (Resilience)** | 送出信件後立刻砍掉 FastAPI 進程。等待 5 分鐘重啟，確認信箱 Worker 從 Redis 撈出信件並正確處理。 | 人工 |
+| **T2-01** | Phase 2 | Unit | `test_auth_jwt.py` 陣列驗證 | 傳入 `aud: ["authenticated", "other"]` 的假 Token，驗證不拋出 500。 | 自動化 |
+| **T2-02** | Phase 2 | Unit | `test_cold_memory_pg.py` | 驗證向量維度為 4096，且 `to_tsquery` SQL 語法執行不報錯。 | 自動化 |
+| **T2-03** | Phase 2 | Integration | `test_rls_isolation.py` | 透過 `set_config` 設定 A 帳號 context 後，無法查到 B 帳號資料。 | 自動化 |
+| **T2-04** | Phase 2 | Manual | **Supabase RLS 攔截測試** | 在 Supabase Dashboard SQL Editor 中，不帶 `auth.uid()` 嘗試查詢 `propositions` 表，必須查無資料。 | 人工 |
+| **T3-01** | Phase 3 | Unit | `test_ws_ticket.py` 票證 | 驗證 Ticket 用 `GETDEL` 讀取，第二次讀取失敗。 | 自動化 |
+| **T3-02** | Phase 3 | Unit | `test_ws_origin.py` 安全 | 傳入非白名單的 `Origin` Header，驗證 WS 連線被 4001 拒絕。 | 自動化 |
+| **T3-03** | Phase 3 | Unit | `npm run test` (Frontend) | Dexie `.upgrade()` 執行後，舊資料的 `userId` 成功被補填。 | 自動化 |
+| **T3-04** | Phase 3 | Manual | **無痕與多 Tab 登出入測試** | 1. 未登入無法發送對話。<br>2. 登出後 Dexie 本地歷史清空。<br>3. 切換帳號看不到前人歷史。<br>4. 開雙 Tab 測試 Dexie 自動 reload。 | 人工 |
+| **T4-01** | Phase 4 | E2E | `test_api_auth.py` HTTP | 對 Render Staging 打 API，帶無效 Token 必須回 401。 | 自動化 |
+| **T4-02** | Phase 4 | E2E | `test_rls_api.py` 刪除防護 | 打 DELETE API 嘗試刪除他人記憶，必須回傳 403 或 404。 | 自動化 |
+| **T4-03** | Phase 4 | Manual | **Production Smoke Test** | 1. 開啟 RAG 串流對話順暢無卡頓 (Cloudflare bypass)。<br>2. 信箱 Avatar 5 分鐘後正常推播通知。<br>3. 重啟頁面記憶依然存在。 | 人工 |

@@ -1,95 +1,114 @@
-import os
 import json
-import tempfile
 import uuid
-from typing import Dict, Any, List, Optional
 import time
-import threading
+from typing import Dict, Any, List, Optional
+import asyncio
+
+from redis_client import get_redis
 
 class MailboxStore:
-    def __init__(self, data_dir: str = "data/gum_data"):
-        self.data_dir = data_dir
-        self.lock = threading.Lock()
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir, exist_ok=True)
-            
-        self.mailbox_path = os.path.join(data_dir, "mailbox.json")
-        self._init_files()
+    def __init__(self):
+        self.redis = get_redis()
+
+    async def get_all_mails(self, user_id: str) -> List[Dict[str, Any]]:
+        # mails can be stored in a Redis list or just a JSON string of list.
+        data = await self.redis.get(f"areqa:mailbox:{user_id}")
+        return json.loads(data) if data else []
+
+    async def add_mail(self, user_id: str, sender: str, content: str, subject: str = "", recipient: str = "User", conversation_id: Optional[str] = None) -> str:
+        mails = await self.get_all_mails(user_id)
+        mail_id = str(uuid.uuid4())
         
-    def _init_files(self):
-        if not os.path.exists(self.mailbox_path):
-            self._atomic_write(self.mailbox_path, {"mails": []})
+        new_mail = {
+            "mail_id": mail_id,
+            "sender": sender,
+            "subject": subject,
+            "recipient": recipient,
+            "content": content,
+            "timestamp": time.time(),
+            "is_read": False,
+            "conversation_id": conversation_id
+        }
+        
+        mails.append(new_mail)
+        await self.redis.set(f"areqa:mailbox:{user_id}", json.dumps(mails, ensure_ascii=False))
+        return mail_id
 
-    def _atomic_write(self, path: str, data: Dict[str, Any]):
-        """Atomic write using tempfile and os.replace"""
-        fd, temp_path = tempfile.mkstemp(dir=self.data_dir, prefix=".tmp_", suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(temp_path, path)
-        except Exception as e:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            raise e
+    async def mark_as_read(self, user_id: str, mail_id: str) -> bool:
+        mails = await self.get_all_mails(user_id)
+        found = False
+        for mail in mails:
+            if mail.get("mail_id") == mail_id:
+                mail["is_read"] = True
+                found = True
+                break
+                
+        if found:
+            await self.redis.set(f"areqa:mailbox:{user_id}", json.dumps(mails, ensure_ascii=False))
+        return found
 
-    def _read_json(self, path: str) -> Dict[str, Any]:
-        if not os.path.exists(path):
-            return {"mails": []}
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    def get_all_mails(self) -> List[Dict[str, Any]]:
-        data = self._read_json(self.mailbox_path)
-        return data.get("mails", [])
-
-    def add_mail(self, sender: str, content: str, subject: str = "", recipient: str = "User", conversation_id: Optional[str] = None) -> str:
-        with self.lock:
-            mails = self.get_all_mails()
-            mail_id = str(uuid.uuid4())
-            
-            new_mail = {
-                "mail_id": mail_id,
-                "sender": sender,
-                "subject": subject,
-                "recipient": recipient,
-                "content": content,
-                "timestamp": time.time(),
-                "is_read": False,
-                "conversation_id": conversation_id
-            }
-            
-            mails.append(new_mail)
-            self._atomic_write(self.mailbox_path, {"mails": mails})
-            return mail_id
-
-    def mark_as_read(self, mail_id: str) -> bool:
-        with self.lock:
-            mails = self.get_all_mails()
-            found = False
-            for mail in mails:
-                if mail.get("mail_id") == mail_id:
-                    mail["is_read"] = True
-                    found = True
-                    break
-                    
-            if found:
-                self._atomic_write(self.mailbox_path, {"mails": mails})
-            return found
-
-    def get_unread_count(self) -> int:
-        mails = self.get_all_mails()
+    async def get_unread_count(self, user_id: str) -> int:
+        mails = await self.get_all_mails(user_id)
         return sum(1 for mail in mails if not mail.get("is_read", False) and mail.get("recipient") == "User")
 
-# Global singleton
+    async def schedule_delayed_mail(self, user_id: str, mail_data: Dict[str, Any], delay_seconds: int = 300):
+        # We assume delay_seconds = 300
+        score = time.time() + delay_seconds
+        mail_data_json = json.dumps(mail_data, ensure_ascii=False)
+        await self.redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: score})
+
 _global_mailbox_store = None
 
-def init_mailbox_store(data_dir: str = "data/gum_data"):
+def init_mailbox_store():
     global _global_mailbox_store
-    _global_mailbox_store = MailboxStore(data_dir)
+    _global_mailbox_store = MailboxStore()
     return _global_mailbox_store
 
 def get_mailbox_store() -> MailboxStore:
     global _global_mailbox_store
     if _global_mailbox_store is None:
-        _global_mailbox_store = MailboxStore()
+        init_mailbox_store()
     return _global_mailbox_store
+
+# Background Worker for Delayed Mails
+async def delayed_mail_worker():
+    redis = get_redis()
+    print("[Mailbox Worker] Started delayed mail worker")
+    while True:
+        try:
+            now = time.time()
+            # We can use SCAN to find all users' delayed mail queues if there are many.
+            # But for simplicity, we assume we might query multiple or use a global queue.
+            # Phase 1 suggests zrangebyscore("areqa:delayed_mail:*", 0, now) but ZRANGE doesn't support wildcards.
+            # We can store all delayed mails in a single global ZSET: "areqa:delayed_mails"
+            # Let's fix that.
+            
+            # Let's change schedule_delayed_mail above to use global ZSET or we scan.
+            # Scanning is safer.
+            cursor = '0'
+            while cursor != 0:
+                cursor, keys = await redis.scan(cursor=cursor, match="areqa:delayed_mail:*", count=100)
+                for key in keys:
+                    tasks = await redis.zrangebyscore(key, 0, now)
+                    for task_json in tasks:
+                        task = json.loads(task_json)
+                        # task contains: mail_id, content, active_avatar, delay_seconds, user_id
+                        user_id = task.get("user_id", "default_user")
+                        content = task.get("content", "")
+                        active_avatar = task.get("active_avatar", "AREQA")
+                        conversation_id = task.get("conversation_id")
+                        subject = task.get("subject", "")
+                        
+                        store = get_mailbox_store()
+                        await store.add_mail(user_id=user_id, sender=active_avatar, content=content, subject=subject, recipient="User", conversation_id=conversation_id)
+                        
+                        # Broadcast alert (we have to import ws_manager)
+                        from services.connection_manager import ws_manager
+                        asyncio.create_task(ws_manager.broadcast_mail_alert(active_avatar))
+                        
+                        await redis.zrem(key, task_json)
+                        
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"[Mailbox Worker] Error: {e}")
+            await asyncio.sleep(5)

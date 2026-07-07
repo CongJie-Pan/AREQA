@@ -187,12 +187,12 @@ async def query_memory_for_context(user_query: str, limit: int = 8) -> str:
         from memory_store import get_global_store
         store = get_global_store()
         if store:
-            profile = store.get_user_profile()
+            profile = await store.get_user_profile("default_user")
             prefs = profile.get("explicit_memories", [])
             if prefs:
                 memory_lines.append("【USER PROFILE (長期)】\n  - " + "\n  - ".join(prefs))
             
-            hot = store.get_hot_memory()
+            hot = await store.get_hot_memory("default_user")
             hot_memories = hot.get("explicit_memories", [])
             if hot_memories:
                 memory_lines.append("【MEMORY (目前脈絡)】\n  - " + "\n  - ".join(hot_memories))
@@ -295,7 +295,7 @@ async def batch_process_observations(items: list[str]):
             import uuid
             # Add to hot memory with timestamp and uuid to prevent overwriting
             key = f"obs_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
-            store.update_hot_memory(key, {
+            await store.update_hot_memory_async("default_user", key, {
                 "text": final_text, 
                 "confidence": 8.0, 
                 "decay": float(final_decay), 
@@ -320,7 +320,7 @@ async def run_compaction():
     store = get_global_store()
     if not store or not gum_instance: return
     
-    hot_mem = store.get_hot_memory()
+    hot_mem = await store.get_hot_memory("default_user")
     serialized = json.dumps(hot_mem, ensure_ascii=False)
     
     if len(serialized) > store.budget_limit:
@@ -394,7 +394,7 @@ async def run_compaction():
             current_len = len(json.dumps(hot_mem, ensure_ascii=False))
             
         # Write back hot memory
-        store._atomic_write(store.hot_memory_path, hot_mem)
+        await store.redis.set("areqa:hot_memory:default_user", json.dumps(hot_mem, ensure_ascii=False))
         print("[Compaction] Finished.")
 
 async def push_observation(text: str):
@@ -496,7 +496,7 @@ class ObservationQueueWorker:
                 print(f"Error in ObservationQueueWorker: {e}")
                 await asyncio.sleep(1)
 
-def get_hot_memory_snapshot() -> str:
+async def get_hot_memory_snapshot(user_id: str = "default_user") -> str:
     from memory_store import get_global_store
     import json
     store = get_global_store()
@@ -504,8 +504,8 @@ def get_hot_memory_snapshot() -> str:
         return ""
     
     # Combine user profile and hot memory for the snapshot
-    profile = store.get_user_profile()
-    hot_mem = store.get_hot_memory()
+    profile = await store.get_user_profile(user_id)
+    hot_mem = await store.get_hot_memory(user_id)
     
     parts = []
     if profile:
@@ -545,7 +545,7 @@ Return ONLY the refined query string without any quotes or explanations."""
         print(f"[ZPD Query Gen] Error: {e}")
         return original_query
 
-async def query_cold_memory_for_context(query: str, top_k: int = 5, client=None, model=None) -> str:
+async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5, client=None, model=None) -> str:
     from cold_memory import ColdMemoryRetriever
     from memory_store import get_global_store
     import os
@@ -558,7 +558,7 @@ async def query_cold_memory_for_context(query: str, top_k: int = 5, client=None,
         
     try:
         store = get_global_store()
-        learner_state = store.get_learner_state() if store else "STARTING"
+        learner_state = await store.get_learner_state(user_id) if store else "STARTING"
         
         c = client if client else (gum_instance.client if gum_instance else None)
         m = model if model else (gum_instance.model if gum_instance else "qwen/qwen-turbo")
@@ -582,31 +582,33 @@ async def query_cold_memory_for_context(query: str, top_k: int = 5, client=None,
         print(f"[GUM] Error querying cold memory: {e}")
         return ""
 
-async def async_evaluate_and_update_state(client, model, chat_history):
+async def async_evaluate_and_update_state(client, model, chat_history, user_id: str = "default_user"):
     from compaction import evaluate_student_state
     from memory_store import get_global_store
     
     state_res = await evaluate_student_state(client, model, chat_history)
     store = get_global_store()
     if store:
-        await store.update_hot_memory_async("current_learner_state", state_res.get("learner_state", "STARTING"))
-        await store.update_hot_memory_async("current_strategy", state_res.get("pedagogical_strategy", "NORMAL"))
+        await store.update_hot_memory_async(user_id, "current_learner_state", state_res.get("learner_state", "STARTING"))
+        await store.update_hot_memory_async(user_id, "current_strategy", state_res.get("pedagogical_strategy", "NORMAL"))
         if state_res.get("active_avatar"):
-            current_avatar = store.get_hot_memory().get("active_avatar")
+            hot_mem = await store.get_hot_memory(user_id)
+            current_avatar = hot_mem.get("active_avatar")
             if state_res["active_avatar"] != current_avatar:
                 print(f"[ComPeer] NEW Active Avatar detected: {state_res['active_avatar']}")
-                await store.update_hot_memory_async("active_avatar", state_res["active_avatar"])
-                await store.update_hot_memory_async("avatar_summon_pending", True)
+                await store.update_hot_memory_async(user_id, "active_avatar", state_res["active_avatar"])
+                await store.update_hot_memory_async(user_id, "avatar_summon_pending", True)
         elif state_res.get("active_avatar") is None:
-            hot_mem = store.get_hot_memory()
+            hot_mem = await store.get_hot_memory(user_id)
             if "active_avatar" in hot_mem:
                 print(f"[ComPeer] Clearing Active Avatar: {hot_mem['active_avatar']}")
                 del hot_mem["active_avatar"]
-                store._atomic_write(store.hot_memory_path, hot_mem)
+                import json
+                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
         if state_res.get("trigger_proactive"):
             # We flag this for ComPeer to pick up or log it
             print(f"[ComPeer] Proactive trigger needed: {state_res}")
-            await store.update_hot_memory_async("trigger_proactive", True)
+            await store.update_hot_memory_async(user_id, "trigger_proactive", True)
             
         ops = state_res.get("memory_operations", [])
         if ops:
@@ -616,11 +618,11 @@ async def async_evaluate_and_update_state(client, model, chat_history):
                 content = op.get("content")
                 old_text = op.get("old_text", "")
                 if target in ["user", "memory"] and action in ["add", "replace", "remove"] and content:
-                    store.perform_memory_operation(target, action, content, old_text)
+                    await store.perform_memory_operation(user_id, target, action, content, old_text)
                     print(f"[EDF-LOG] Executed memory operation: {op}")
 
 
-async def detect_proactive_event_via_llm(hot_memory_snapshot: str) -> dict:
+async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str) -> dict:
     """
     Analyze hot memory snapshot to determine if a proactive intervention is warranted.
     """
@@ -661,6 +663,7 @@ async def detect_proactive_event_via_llm(hot_memory_snapshot: str) -> dict:
 
 
 async def generate_scaffolding_message_via_llm(
+    user_id: str,
     hot_memory_snapshot: str,
     cold_memory_context: str,
     learner_state: str,
@@ -730,6 +733,7 @@ async def generate_scaffolding_message_via_llm(
         return "你學習狀況還好嗎？有任何問題都可以問我。"
 
 async def generate_epistolary_letter_via_llm(
+    user_id: str,
     active_avatar: str,
     hot_memory_snapshot: str,
     cold_memory_context: str
@@ -796,33 +800,33 @@ async def generate_epistolary_letter_via_llm(
         return "一封未知的信", f"來自{active_avatar}的一封信，因時空亂流未能完整送達。"
 
 async def delayed_reply_writer(mail_id: str, reply_content: str, active_avatar: str, delay_seconds: int = 300):
-    import asyncio
-    print(f"[Mailbox] delayed_reply_writer started for mail_id {mail_id}, waiting {delay_seconds} seconds...")
+    user_id = "default_user"
+    print(f"[Mailbox] delayed_reply_writer started for mail_id {mail_id}, scheduling in {delay_seconds} seconds...")
     try:
-        await asyncio.sleep(delay_seconds)
-        
         from mailbox_store import get_mailbox_store
         store = get_mailbox_store()
         
-        snapshot = get_hot_memory_snapshot()
+        snapshot = await get_hot_memory_snapshot(user_id)
         hot_context = f"使用者的回信內容：{reply_content}\n---\n目前對話脈絡：\n{snapshot}"
         
         event_summary = f"使用者回信給 {active_avatar} 探討：{reply_content[:50]}"
-        cold_ctx = await query_cold_memory_for_context(event_summary)
+        cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
         
         subject, letter_content = await generate_epistolary_letter_via_llm(
+            user_id=user_id,
             active_avatar=active_avatar,
             hot_memory_snapshot=hot_context,
             cold_memory_context=cold_ctx
         )
         
-        new_mail_id = store.add_mail(sender=active_avatar, subject=subject, content=letter_content, recipient="User")
+        await store.schedule_delayed_mail(user_id, {
+            "mail_id": mail_id,
+            "content": letter_content,
+            "subject": subject,
+            "active_avatar": active_avatar,
+            "conversation_id": mail_id
+        }, delay_seconds)
         
-        from services.connection_manager import ws_manager
-        await ws_manager.broadcast_mail_alert(active_avatar)
-        print(f"[Mailbox] delayed_reply_writer completed, sent new mail {new_mail_id} from {active_avatar} in response to {mail_id}.")
-    except asyncio.CancelledError:
-        print(f"[Mailbox] delayed_reply_writer for {mail_id} was cancelled.")
-        raise
+        print(f"[Mailbox] delayed_reply_writer completed, scheduled new mail from {active_avatar} in response to {mail_id}.")
     except Exception as e:
         print(f"[Mailbox] delayed_reply_writer failed for {mail_id}: {e}")

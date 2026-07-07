@@ -479,7 +479,8 @@ class OrchestrationService:
                 if store:
                     final_system_prompt += "\n\n【事實優先原則】：在進行任何引導或提問前，必須先比對 <context> 中的客觀事實。如果發現使用者的困惑來自於客觀事實的錯誤，請直接且明確地糾正事實，絕對不要用提問的方式繞圈子。"
                     
-                    learner_state = store.get_hot_memory().get("current_learner_state", "")
+                    hot_mem = await store.get_hot_memory("default_user")
+                    learner_state = hot_mem.get("current_learner_state", "")
                     if learner_state == "STARTING":
                         final_system_prompt += "\n\n【動態表達限制：STARTING 階段】\n注意：使用者目前為初學者（STARTING）。你必須「嚴格降低詞彙難度」，絕對禁止使用未經解釋的進階專有名詞。請用最白話、最生活化的比喻來引導，一次只講一個重點，避免造成認知負荷超載。"
                     elif learner_state == "TINKERING":
@@ -487,12 +488,12 @@ class OrchestrationService:
                     elif learner_state == "CHITCHAT":
                         final_system_prompt += "\n\n【動態表達限制：CHITCHAT 階段】\n注意：使用者目前正在閒聊。請立刻放下所有學術架子，用幽默、輕鬆的朋友口吻回應，不要長篇大論，也不需要強硬引導回主題。"
                     
-                    active_avatar = store.get_hot_memory().get("active_avatar")
+                    active_avatar = hot_mem.get("active_avatar")
                     if active_avatar:
                         final_system_prompt += f"\n\n【特殊語境：英靈附體】\n注意：你現在已被召喚為「{active_avatar}」。請全程以第一人稱與用戶對話，語氣必須極度符合{active_avatar}的歷史定位、思維模式與經典口吻，直到話題轉移或用戶要求停止。"
                 
             from config import settings
-            cold_memory_ctx = await query_cold_memory_for_context(last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
+            cold_memory_ctx = await query_cold_memory_for_context("default_user", last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
             if cold_memory_ctx:
                 final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
                 
@@ -623,7 +624,7 @@ class OrchestrationService:
                 from memory_store import get_global_store
                 store = get_global_store()
                 if store:
-                    store.update_user_profile(args["key"], args["value"])
+                    await store.update_user_profile("default_user", args["key"], args["value"])
             except Exception as e:
                 pass
                 
