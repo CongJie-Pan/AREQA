@@ -569,7 +569,7 @@ async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5
         zpd_query = await generate_zpd_query_via_llm(c, m, query, learner_state)
         
         cold_retriever = ColdMemoryRetriever(db_path, api_key)
-        results = await cold_retriever.search(zpd_query, top_k)
+        results = await cold_retriever.search(zpd_query, user_id=user_id, top_k=top_k)
         if not results:
             return ""
             

@@ -8,10 +8,11 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
 
-from fastapi import FastAPI, Request, WebSocket, HTTPException
+from fastapi import FastAPI, Request, WebSocket, HTTPException, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from auth import get_current_user
 from openai import AsyncOpenAI
 import opencc
 import os
@@ -299,7 +300,7 @@ async def shutdown_event():
 _local_summary_cache = {}
 
 @app.get("/api/v1/memory")
-async def fetch_memory():
+async def fetch_memory(current_user_id: str = Depends(get_current_user)):
     props = await get_all_memory()
     # Filter out short term memory (hot:) for the UI list
     long_term_props = [
@@ -311,7 +312,7 @@ async def fetch_memory():
     return {"propositions": long_term_props}
 
 @app.get("/api/v1/memory/summary")
-async def get_memory_summary():
+async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
     props = await get_all_memory()
     # Filter out short term and scroll
     long_term_props = [
@@ -404,11 +405,11 @@ async def get_memory_summary():
 from mailbox_store import get_mailbox_store
 
 @app.get("/api/v1/mailbox")
-async def fetch_mailbox():
+async def fetch_mailbox(current_user_id: str = Depends(get_current_user)):
     store = get_mailbox_store()
     return {
-        "mails": await store.get_all_mails("default_user"),
-        "unread_count": await store.get_unread_count("default_user")
+        "mails": await store.get_all_mails(current_user_id),
+        "unread_count": await store.get_unread_count(current_user_id)
     }
 
 class SendMailRequest(BaseModel):
@@ -417,19 +418,19 @@ class SendMailRequest(BaseModel):
     conversation_id: Optional[str] = None
 
 @app.post("/api/v1/mailbox/send")
-async def send_mail_endpoint(req: SendMailRequest):
+async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depends(get_current_user)):
     store = get_mailbox_store()
-    mail_id = await store.add_mail(user_id="default_user", sender="User", content=req.content, recipient=req.recipient, conversation_id=req.conversation_id)
-    await store.mark_as_read(user_id="default_user", mail_id=mail_id)
+    mail_id = await store.add_mail(user_id=current_user_id, sender="User", content=req.content, recipient=req.recipient, conversation_id=req.conversation_id)
+    await store.mark_as_read(user_id=current_user_id, mail_id=mail_id)
     import asyncio
     from gum_integration import delayed_reply_writer
     asyncio.create_task(delayed_reply_writer(mail_id, req.content, req.recipient, delay_seconds=300))
     return {"status": "success", "mail_id": mail_id}
 
 @app.post("/api/v1/mailbox/read/{mail_id}")
-async def read_mail_endpoint(mail_id: str):
+async def read_mail_endpoint(mail_id: str, current_user_id: str = Depends(get_current_user)):
     store = get_mailbox_store()
-    success = await store.mark_as_read(user_id="default_user", mail_id=mail_id)
+    success = await store.mark_as_read(user_id=current_user_id, mail_id=mail_id)
     if not success:
         raise HTTPException(status_code=404, detail="Mail not found")
     return {"status": "success"}
@@ -439,26 +440,26 @@ class EditMemoryRequest(BaseModel):
     text: str
 
 @app.delete("/api/v1/memory/{mem_id}")
-async def delete_memory_endpoint(mem_id: str):
+async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get_current_user)):
     from gum_integration import gum_instance
     from memory_store import get_global_store
     
     if mem_id.startswith("profile:"):
         store = get_global_store()
         key = mem_id.split("profile:")[1]
-        profile = await store.get_user_profile("default_user")
+        profile = await store.get_user_profile(current_user_id)
         if key in profile:
             del profile[key]
             import json
-            await store.redis.set("areqa:user_profile:default_user", json.dumps(profile, ensure_ascii=False))
+            await store.redis.set(f"areqa:user_profile:{current_user_id}", json.dumps(profile, ensure_ascii=False))
     elif mem_id.startswith("hot:"):
         store = get_global_store()
         key = mem_id.split("hot:")[1]
-        hot_mem = await store.get_hot_memory("default_user")
+        hot_mem = await store.get_hot_memory(current_user_id)
         if key in hot_mem:
             del hot_mem[key]
             import json
-            await store.redis.set("areqa:hot_memory:default_user", json.dumps(hot_mem, ensure_ascii=False))
+            await store.redis.set(f"areqa:hot_memory:{current_user_id}", json.dumps(hot_mem, ensure_ascii=False))
     else:
         if gum_instance:
             await gum_instance.update_status(int(mem_id), "deleted")
@@ -468,35 +469,35 @@ class DeleteBatchRequest(BaseModel):
     ids: List[str]
 
 @app.post("/api/v1/memory/batch-delete")
-async def batch_delete_memory_endpoint(req: DeleteBatchRequest):
+async def batch_delete_memory_endpoint(req: DeleteBatchRequest, current_user_id: str = Depends(get_current_user)):
     for mem_id in req.ids:
-        await delete_memory_endpoint(mem_id)
+        await delete_memory_endpoint(mem_id, current_user_id)
     return {"status": "success", "deleted_count": len(req.ids)}
 
 @app.put("/api/v1/memory/{mem_id}")
-async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest):
+async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user_id: str = Depends(get_current_user)):
     from gum_integration import gum_instance
     from memory_store import get_global_store
     
     if mem_id.startswith("profile:"):
         store = get_global_store()
         key = mem_id.split("profile:")[1]
-        profile = await store.get_user_profile("default_user")
+        profile = await store.get_user_profile(current_user_id)
         if key in profile:
             profile[key] = req.text
             import json
-            await store.redis.set("areqa:user_profile:default_user", json.dumps(profile, ensure_ascii=False))
+            await store.redis.set(f"areqa:user_profile:{current_user_id}", json.dumps(profile, ensure_ascii=False))
     elif mem_id.startswith("hot:"):
         store = get_global_store()
         key = mem_id.split("hot:")[1]
-        hot_mem = await store.get_hot_memory("default_user")
+        hot_mem = await store.get_hot_memory(current_user_id)
         if key in hot_mem:
             if isinstance(hot_mem[key], dict):
                 hot_mem[key]["text"] = req.text
             else:
                 hot_mem[key] = req.text
             import json
-            await store.redis.set("areqa:hot_memory:default_user", json.dumps(hot_mem, ensure_ascii=False))
+            await store.redis.set(f"areqa:hot_memory:{current_user_id}", json.dumps(hot_mem, ensure_ascii=False))
     else:
         if gum_instance:
             await gum_instance.update_text(int(mem_id), req.text)
@@ -512,16 +513,25 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest):
                     cold_retriever = ColdMemoryRetriever(db_path, api_key)
                     embed = await cold_retriever.get_embedding(req.text)
                     if embed:
-                        import struct
-                        embed_bytes = struct.pack(f'{len(embed)}f', *embed)
-                        with cold_retriever._get_conn() as conn:
-                            conn.execute("UPDATE propositions_fts SET text = ? WHERE rowid = ?", (req.text, int(mem_id)))
-                            conn.execute("UPDATE vec_memory SET embedding = ? WHERE id = ?", (embed_bytes, int(mem_id)))
-                            conn.commit()
+                        from cold_memory import get_engine
+                        from sqlalchemy import text
+                        from sqlalchemy.ext.asyncio import AsyncSession
+                        engine = get_engine()
+                        async with AsyncSession(engine) as session:
+                            async with session.begin():
+                                await session.execute(text(
+                                    "SELECT set_config('request.jwt.claims', "
+                                    "jsonb_build_object('role', 'authenticated', 'sub', :uid)::text, TRUE)"
+                                ), {"uid": current_user_id})
+                                await session.execute(text("SET LOCAL ROLE authenticated;"))
+                                
+                                await session.execute(text("UPDATE propositions SET text = :text WHERE id = :id"), {"text": req.text, "id": int(mem_id)})
+                                await session.execute(text("UPDATE vec_memory SET embedding = :emb::vector WHERE id = :id"), {"emb": str(embed), "id": int(mem_id)})
             except Exception as e:
                 print(f"Failed to update cold memory indexes for edit: {e}")
             
     return {"status": "success"}
+
 
 class ActionLogRequest(BaseModel):
     user_id: str = "default"
