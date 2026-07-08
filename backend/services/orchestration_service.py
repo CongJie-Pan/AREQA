@@ -118,7 +118,7 @@ class OrchestrationService:
 
     async def execute(self, messages: List[Dict[str, str]], conversation_id: str, use_rag: bool, use_web_search: bool, force_think: bool,
                       max_tokens: int, temperature: float, top_p: float,
-                      repetition_penalty: float, request: Request) -> AsyncGenerator[str, None]:
+                      repetition_penalty: float, request: Request, user_id: str) -> AsyncGenerator[str, None]:
         
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         
@@ -137,14 +137,14 @@ class OrchestrationService:
             
         if last_user_msg:
             print(f"[EDF-LOG] streaming endpoint received message, evaluating student state asynchronously...")
-            from services.compeer_scheduler import last_interaction_time
-            last_interaction_time["default_user"] = time.time()
-            asyncio.create_task(push_observation(f"User asked: {last_user_msg}"))
+            from services.compeer_scheduler import set_last_interaction_time
+            asyncio.create_task(set_last_interaction_time(user_id, time.time()))
+            asyncio.create_task(push_observation(user_id, f"User asked: {last_user_msg}"))
             if self.client:
                 RECENT_WINDOW = 10
                 recent_messages = messages[-RECENT_WINDOW:]
                 from config import settings
-                asyncio.create_task(async_evaluate_and_update_state(self.client, settings.model_policy_classifier, recent_messages))
+                asyncio.create_task(async_evaluate_and_update_state(self.client, settings.model_policy_classifier, recent_messages, user_id=user_id))
 
         yield f"event: metadata\ndata: {json.dumps({'promptTokens': 1024, 'completionTokens': 0, 'totalTokens': 1024})}\n\n"
 
@@ -200,7 +200,7 @@ class OrchestrationService:
             policy = await policy_task
             print(f"[EDF Policy] Evaluated pedagogical policy: {policy}")
 
-        final_messages = await self._node_prompt_assembly(messages, use_rag, use_web_search, force_think, context_results_obj, last_user_msg)
+        final_messages = await self._node_prompt_assembly(user_id, messages, use_rag, use_web_search, force_think, context_results_obj, last_user_msg)
 
         effective_max_tokens = max_tokens
         if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
@@ -213,7 +213,7 @@ class OrchestrationService:
 
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
-        async for event in self._node_llm_stream(final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request):
+        async for event in self._node_llm_stream(user_id, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request):
             if event.startswith("event: accumulator:"):
                 answer_content_accumulator = event.split("event: accumulator:", 1)[1]
                 continue
@@ -441,7 +441,7 @@ class OrchestrationService:
         self._temp_rag_obj = {"mock": True}
         yield "event: results_obj\n\n"
 
-    async def _node_prompt_assembly(self, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
         from main import SYSTEM_PROMPT_WITH_RAG_THINK, SYSTEM_PROMPT_WITH_RAG, SYSTEM_PROMPT_FORCE_THINK, SYSTEM_PROMPT_NORMAL
         
         new_messages = [m.copy() for m in messages]
@@ -470,7 +470,7 @@ class OrchestrationService:
             final_system_prompt += "\n\n【工具使用規則】你必須先用繁體中文完整回答使用者的問題，再選擇性地呼叫工具（如 update_memory）。嚴禁只呼叫工具而不輸出任何文字回應。"
             final_system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
             
-            hot_snapshot = get_hot_memory_snapshot()
+            hot_snapshot = await get_hot_memory_snapshot(user_id)
             if hot_snapshot:
                 final_system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
                 
@@ -479,7 +479,7 @@ class OrchestrationService:
                 if store:
                     final_system_prompt += "\n\n【事實優先原則】：在進行任何引導或提問前，必須先比對 <context> 中的客觀事實。如果發現使用者的困惑來自於客觀事實的錯誤，請直接且明確地糾正事實，絕對不要用提問的方式繞圈子。"
                     
-                    hot_mem = await store.get_hot_memory("default_user")
+                    hot_mem = await store.get_hot_memory(user_id)
                     learner_state = hot_mem.get("current_learner_state", "")
                     if learner_state == "STARTING":
                         final_system_prompt += "\n\n【動態表達限制：STARTING 階段】\n注意：使用者目前為初學者（STARTING）。你必須「嚴格降低詞彙難度」，絕對禁止使用未經解釋的進階專有名詞。請用最白話、最生活化的比喻來引導，一次只講一個重點，避免造成認知負荷超載。"
@@ -493,11 +493,11 @@ class OrchestrationService:
                         final_system_prompt += f"\n\n【特殊語境：英靈附體】\n注意：你現在已被召喚為「{active_avatar}」。請全程以第一人稱與用戶對話，語氣必須極度符合{active_avatar}的歷史定位、思維模式與經典口吻，直到話題轉移或用戶要求停止。"
                 
             from config import settings
-            cold_memory_ctx = await query_cold_memory_for_context("default_user", last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
+            cold_memory_ctx = await query_cold_memory_for_context(user_id, last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
             if cold_memory_ctx:
                 final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
                 
-            memory_ctx = await query_memory_for_context(last_user_msg, limit=3)
+            memory_ctx = await query_memory_for_context(last_user_msg, limit=3, user_id=self.user_id)
             if memory_ctx:
                 final_system_prompt += memory_ctx
                 
@@ -513,7 +513,7 @@ class OrchestrationService:
         return new_messages
 
 
-    async def _node_llm_stream(self, messages: List[Dict[str, str]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request) -> AsyncGenerator[str, None]:
+    async def _node_llm_stream(self, user_id: str, messages: List[Dict[str, str]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request) -> AsyncGenerator[str, None]:
         if not self.client:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             return
@@ -524,21 +524,37 @@ class OrchestrationService:
         if force_think:
             extra_body["reasoning"] = {"enabled": True, "max_tokens": 512}
             
-        tools = [{
-            "type": "function",
-            "function": {
-                "name": "update_memory",
-                "description": "[SUPPLEMENTARY ONLY] After answering the user in text, you MUST call this tool if the user reveals ANY facts about their identity, preferences (e.g., favorite books, characters, food), or long-term interests. This saves it to their permanent user profile. Always answer in text first, then call this tool.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "key": {"type": "string", "description": "The attribute key (e.g., 'user_profile_favorite_character')"},
-                        "value": {"type": "string", "description": "The attribute value"}
-                    },
-                    "required": ["key", "value"]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "update_memory",
+                    "description": "[SUPPLEMENTARY ONLY] After answering the user in text, you MUST call this tool if the user reveals ANY facts about their identity, preferences (e.g., favorite books, characters, food), or long-term interests. This saves it to their permanent user profile. Always answer in text first, then call this tool.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string", "description": "The attribute key (e.g., 'user_profile_favorite_character')"},
+                            "value": {"type": "string", "description": "The attribute value"}
+                        },
+                        "required": ["key", "value"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "send_epistolary_letter",
+                    "description": "Call this tool when the user asks you to write a letter from a specific historical or fictional character (Avatar). Do NOT write the letter directly in the chat response. Instead, tell the user that the system will send the letter to their mailbox shortly, and then call this tool.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "avatar_name": {"type": "string", "description": "The name of the character/avatar to write the letter (e.g., '夏目漱石')"}
+                        },
+                        "required": ["avatar_name"]
+                    }
                 }
             }
-        }]
+        ]
         
         answer_content_accumulator = ""
         inside_reasoning = False
@@ -624,11 +640,25 @@ class OrchestrationService:
                 from memory_store import get_global_store
                 store = get_global_store()
                 if store:
-                    await store.update_user_profile("default_user", args["key"], args["value"])
+                    await store.update_user_profile(user_id, args["key"], args["value"])
+            except Exception as e:
+                pass
+        elif tool_call_name == "send_epistolary_letter" and tool_call_args:
+            try:
+                args = json.loads(tool_call_args)
+                from memory_store import get_global_store
+                store = get_global_store()
+                if store:
+                    await store.update_hot_memory_async(user_id, "avatar_summon_pending", True)
+                    await store.update_hot_memory_async(user_id, "active_avatar", args.get("avatar_name", "Unknown"))
+                
+                notice = f"\n\n*(系統通知：已為您呼叫 {args.get('avatar_name', '對應角色')}，信件正在撰寫中，預計 5 分鐘後寄達。)*"
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+                answer_content_accumulator += notice
             except Exception as e:
                 pass
                 
-        yield f"event: accumulator:{answer_content_accumulator}"
+        yield f"event: accumulator\ndata: {json.dumps({'accumulator': answer_content_accumulator})}\n\n"
 
     async def _node_post_generation(self, last_user_msg: str, answer_content_accumulator: str, context_results_obj: Any, use_rag: bool, use_web_search: bool) -> AsyncGenerator[str, None]:
         if self.suggestion:

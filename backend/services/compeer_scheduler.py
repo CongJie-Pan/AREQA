@@ -240,14 +240,23 @@ async def proactive_scheduler_loop():
                             event_summary = f"與 {active_avatar} 進行深度歷史哲學探討"
                             cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
                             
-                            letter = await generate_epistolary_letter_via_llm(user_id, active_avatar, snapshot, cold_ctx)
+                            subject, letter_content = await generate_epistolary_letter_via_llm(user_id, active_avatar, snapshot, cold_ctx)
                             
                             from mailbox_store import get_mailbox_store
                             mb_store = get_mailbox_store()
-                            await mb_store.add_mail(user_id=user_id, sender=active_avatar, content=letter, recipient="User")
-                            
-                            from services.connection_manager import ws_manager
-                            asyncio.create_task(ws_manager.broadcast_mail_alert(sender=active_avatar, user_id=user_id))
+                            import uuid
+                            mail_data = {
+                                "id": str(uuid.uuid4()),
+                                "user_id": user_id,
+                                "active_avatar": active_avatar,
+                                "sender": active_avatar,
+                                "recipient": "User",
+                                "subject": subject,
+                                "content": letter_content,
+                                "timestamp": time.time(),
+                                "read": False
+                            }
+                            await mb_store.schedule_delayed_mail(user_id=user_id, mail_data=mail_data, delay_seconds=300)
                             
                         elif trigger_proactive:
                             from gum_integration import (

@@ -7,6 +7,9 @@ from redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
+class MemoryBudgetExceeded(Exception):
+    pass
+
 class MemoryStore:
     def __init__(self, budget_limit: int = 1000000):
         self.budget_limit = budget_limit
