@@ -8,8 +8,8 @@ export const syncService = {
    * Pulls all conversations and messages from Supabase for the current user
    * and merges them into the local Dexie DB.
    */
-  async pullFromCloud() {
-    const userId = getCurrentUserId();
+  async pullFromCloud(overrideUserId?: string) {
+    const userId = overrideUserId || getCurrentUserId();
     if (!userId || userId === 'default_user') return;
 
     try {
@@ -90,9 +90,11 @@ export const syncService = {
         }
       }
 
-      // Only reload if we actually pulled new data
+      // Only reload if we actually pulled new data, and add a small delay to ensure session is stored
       if (dataChanged) {
-        window.location.reload();
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
       }
     } catch (e) {
       logger.error('Failed to sync from cloud', e instanceof Error ? e : new Error(String(e)));

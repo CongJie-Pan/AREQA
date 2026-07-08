@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getAuthToken } from '@/database/db';
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
@@ -37,12 +38,16 @@ export const useGumStore = create<GumState>((set) => ({
   fetchMemory: async () => {
     set({ loading: true });
     try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(`${backendUrl}/api/v1/memory?t=${Date.now()}`, {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
+        headers
       });
       const data = await res.json();
       if (data.propositions) {
@@ -58,8 +63,13 @@ export const useGumStore = create<GumState>((set) => ({
   fetchSummary: async () => {
     set({ loadingSummary: true });
     try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(`${backendUrl}/api/v1/memory/summary?t=${Date.now()}`, {
         cache: 'no-store',
+        headers
       });
       const data = await res.json();
       if (data.summary) {
@@ -75,12 +85,16 @@ export const useGumStore = create<GumState>((set) => ({
   fetchSuggestions: async () => {
     set({ loading: true });
     try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(`${backendUrl}/api/v1/suggestions?t=${Date.now()}`, {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
+        headers
       });
       const data = await res.json();
       if (data.suggestions) {
@@ -95,9 +109,15 @@ export const useGumStore = create<GumState>((set) => ({
 
   deleteMemories: async (ids: (string | number)[]) => {
     try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       await fetch(`${backendUrl}/api/v1/memory/batch-delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ ids }),
       });
       // Remove from local state
@@ -109,7 +129,14 @@ export const useGumStore = create<GumState>((set) => ({
 
   deleteMemory: async (id: string | number) => {
     try {
-      await fetch(`${backendUrl}/api/v1/memory/${id}`, { method: 'DELETE' });
+      const token = getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      await fetch(`${backendUrl}/api/v1/memory/${id}`, { 
+        method: 'DELETE',
+        headers
+      });
       // Remove from local state
       set((state) => ({ propositions: state.propositions.filter(p => p.id !== id) }));
     } catch (error) {
@@ -119,9 +146,15 @@ export const useGumStore = create<GumState>((set) => ({
 
   editMemory: async (id: string | number, text: string) => {
     try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       await fetch(`${backendUrl}/api/v1/memory/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ text }),
       });
       // Update local state

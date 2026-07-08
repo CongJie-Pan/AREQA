@@ -30,6 +30,27 @@ export function getCurrentUserId(): string {
   return 'default_user';
 }
 
+export function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.includes('-auth-token')) {
+        const item = localStorage.getItem(key);
+        if (item) {
+          const parsed = JSON.parse(item);
+          if (parsed?.access_token) {
+            return parsed.access_token;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to parse auth token", e);
+  }
+  return null;
+}
+
 class PerplexityQADatabase extends Dexie {
   /** Conversations table */
   conversations!: EntityTable<Conversation, 'id'>;
