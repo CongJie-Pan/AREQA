@@ -268,7 +268,7 @@ async def startup_event():
     
     # Init store
     store = init_global_store(budget_limit=1000000)
-    await store.clear_all_pending_alerts("default_user")
+    # await store.clear_all_pending_alerts("default_user") # Skipped for multi-tenant
     print("Memory Store initialized successfully.")
     
     init_mailbox_store()
@@ -288,8 +288,8 @@ async def startup_event():
     from services.compeer_scheduler import proactive_scheduler_loop, daily_scheduler_loop
     from mailbox_store import delayed_mail_worker
     
-    # app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
-    # app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
+    app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
+    app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
     app.state.delayed_mail_worker = asyncio.create_task(delayed_mail_worker())
 
 @app.on_event("shutdown")
@@ -306,7 +306,7 @@ _local_summary_cache = {}
 
 @app.get("/api/v1/memory")
 async def fetch_memory(current_user_id: str = Depends(get_current_user)):
-    props = await get_all_memory()
+    props = await get_all_memory(current_user_id)
     # Filter out short term memory (hot:) for the UI list
     long_term_props = [
         p for p in props 
@@ -318,7 +318,7 @@ async def fetch_memory(current_user_id: str = Depends(get_current_user)):
 
 @app.get("/api/v1/memory/summary")
 async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
-    props = await get_all_memory()
+    props = await get_all_memory(current_user_id)
     # Filter out short term and scroll
     long_term_props = [
         p for p in props 
@@ -338,8 +338,8 @@ async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
         if 'rag_cache' in globals() and rag_cache is not None:
             redis_client = rag_cache.redis
             
-            cached_summary = await redis_client.get("memory_summary_json")
-            cached_hash = await redis_client.get("memory_summary_hash")
+            cached_summary = await redis_client.get(f"memory_summary_json:{current_user_id}")
+            cached_hash = await redis_client.get(f"memory_summary_hash:{current_user_id}")
             
             if cached_summary:
                 cached_summary = cached_summary.decode('utf-8') if isinstance(cached_summary, bytes) else cached_summary
@@ -352,9 +352,10 @@ async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
         print(f"Redis cache error: {e}")
         
     # 2. Try in-memory fallback cache (useful for Render deployments without Redis)
-    if _local_summary_cache.get("hash") == memory_hash:
+    user_local_cache = _local_summary_cache.get(current_user_id, {})
+    if user_local_cache.get("hash") == memory_hash:
         print("[MemorySummary] Hit in-memory fallback cache")
-        return {"summary": _local_summary_cache.get("summary")}
+        return {"summary": user_local_cache.get("summary")}
     
     prompt = f"""請根據以下長期記憶內容，對這個使用者進行綜整：
 【長期記憶】
@@ -393,14 +394,16 @@ async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
         # Cache it (Redis)
         if redis_client:
             try:
-                await redis_client.set("memory_summary_json", json.dumps(summary_json, ensure_ascii=False))
-                await redis_client.set("memory_summary_hash", memory_hash)
+                await redis_client.set(f"memory_summary_json:{current_user_id}", json.dumps(summary_json, ensure_ascii=False))
+                await redis_client.set(f"memory_summary_hash:{current_user_id}", memory_hash)
             except Exception as e:
                 print(f"Redis cache set error: {e}")
                 
         # Cache it (Local fallback)
-        _local_summary_cache["summary"] = summary_json
-        _local_summary_cache["hash"] = memory_hash
+        if current_user_id not in _local_summary_cache:
+            _local_summary_cache[current_user_id] = {}
+        _local_summary_cache[current_user_id]["summary"] = summary_json
+        _local_summary_cache[current_user_id]["hash"] = memory_hash
                 
         return {"summary": summary_json}
     except Exception as e:
@@ -429,7 +432,7 @@ async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depend
     await store.mark_as_read(user_id=current_user_id, mail_id=mail_id)
     import asyncio
     from gum_integration import delayed_reply_writer
-    asyncio.create_task(delayed_reply_writer(mail_id, req.content, req.recipient, delay_seconds=300))
+    asyncio.create_task(delayed_reply_writer(current_user_id, mail_id, req.content, req.recipient, delay_seconds=300))
     return {"status": "success", "mail_id": mail_id}
 
 @app.post("/api/v1/mailbox/read/{mail_id}")
@@ -827,7 +830,7 @@ async def clear_memory_endpoint(current_user_id: str = Depends(get_current_user)
     if store:
         await store.clear_all_memory(current_user_id)
         
-    await clear_gum_memory()
+    await clear_gum_memory(current_user_id)
     return {"status": "ok", "message": "Memory cleared successfully"}
 
 from services.connection_manager import ws_manager
@@ -875,13 +878,15 @@ async def ws_notifications(websocket: WebSocket, ticket: str):
         ws_manager.disconnect(user_id)
 
 @app.post("/api/v1/stream")
-async def stream_endpoint(request: Request, chat_req: ChatRequest):
+async def stream_endpoint(
+    request: Request, 
+    chat_req: ChatRequest,
+    current_user_id: str = Depends(get_current_user)
+):
     """
     Core streaming endpoint for textual generation using OrchestrationService.
     """
-    import services.compeer_scheduler as compeer
-    compeer.user_cooldown_until.pop("default_user", None)
-    
+    # (Deprecated local dict usage removed to prevent AttributeError)
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         async def mock_missing_key_stream():
@@ -919,7 +924,8 @@ async def stream_endpoint(request: Request, chat_req: ChatRequest):
             temperature=chat_req.temperature,
             top_p=chat_req.top_p,
             repetition_penalty=chat_req.repetition_penalty,
-            request=request
+            request=request,
+            user_id=current_user_id
         ), 
         media_type="text/event-stream",
         headers={

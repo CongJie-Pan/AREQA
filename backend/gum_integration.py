@@ -83,49 +83,45 @@ async def stop_gum_instance():
         if gum_instance.batcher:
             await gum_instance.batcher.stop()
 
-async def clear_gum_memory():
-    """Clear all GUM memory from the database."""
-    global gum_instance, importance_sum, interaction_count
-    importance_sum = 0
-    interaction_count = 0
-    import shutil
-    import os
+async def clear_gum_memory(user_id: str = "default_user"):
+    """Clear GUM memory from the database for a specific user."""
+    global gum_instance, importance_sums, interaction_counts
+    # In a fully multi-tenant setup, these globals should be per-user, 
+    # but for now we just reset them to prevent pending reflections
+    importance_sums.pop(user_id, None)
+    interaction_counts.pop(user_id, None)
     
     if gum_instance:
         try:
-            await gum_instance.stop_update_loop()
-            if gum_instance.batcher:
-                await gum_instance.batcher.stop()
-                
-            if hasattr(gum_instance, 'engine') and gum_instance.engine:
-                await gum_instance.engine.dispose()
-                gum_instance.engine = None
-                gum_instance.Session = None
-                
-            data_dir = gum_instance._data_directory
-            if os.path.exists(data_dir):
-                shutil.rmtree(data_dir)
-            os.makedirs(data_dir, exist_ok=True)
-            
-            await gum_instance.connect_db()
-            gum_instance.start_update_loop()
-            if gum_instance.batcher:
-                await gum_instance.batcher.start()
-                
-            print("[GUM] Completely wiped GUM data directory and recreated it.")
+            from sqlalchemy import text
+            async with gum_instance.Session() as session:
+                async with session.begin():
+                    # Delete user's observations and propositions
+                    await session.execute(
+                        text("DELETE FROM observations WHERE user_id = :uid"), 
+                        {"uid": user_id}
+                    )
+                    await session.execute(
+                        text("DELETE FROM propositions WHERE user_id = :uid"), 
+                        {"uid": user_id}
+                    )
+            print(f"[GUM] Wiped GUM database entries for user {user_id}.")
         except Exception as e:
-            print(f"[GUM] Error clearing memory directory: {e}")
+            print(f"[GUM] Error clearing memory for user {user_id}: {e}")
 
-importance_sum = 0
-interaction_count = 0
+importance_sums = {}
+interaction_counts = {}
 last_interaction_time = None
 
-async def run_reflection() -> list[str]:
-    global importance_sum, interaction_count
+async def run_reflection(user_id: str) -> list[str]:
+    global importance_sums, interaction_counts
     if not gum_instance:
         return []
+    
+    importance_sums[user_id] = 0
+    interaction_counts[user_id] = 0
     try:
-        obs = await gum_instance.recent_observations(limit=20)
+        obs = await gum_instance.recent_observations(limit=20, user_id=user_id)
         if not obs:
             return []
             
@@ -157,8 +153,8 @@ async def run_reflection() -> list[str]:
             await gum_instance.update_observation_status(o.id, "archived")
             
         print(f"[GUM Reflection] Archived {len(obs)} old observations. Resetting counters.")
-        importance_sum = 0
-        interaction_count = 0
+        importance_sums[user_id] = 0
+        interaction_counts[user_id] = 0
         return insights
     except Exception as e:
         print(f"Error in reflection: {e}")
@@ -212,8 +208,9 @@ async def query_memory_for_context(user_query: str, limit: int = 8) -> str:
 obs_worker = None
 
 async def batch_process_observations(items: list[str]):
-    global importance_sum, interaction_count, last_interaction_time
+    global importance_sums, interaction_counts, last_interaction_time
     last_interaction_time = datetime.now()
+    user_id = "default_user" # assuming default for now
     
     if gum_instance and text_observer:
         combined_text = " | ".join(items)
@@ -263,7 +260,7 @@ async def batch_process_observations(items: list[str]):
                 
                 print(f"[GUM Evolution] LLM decision: {decision}")
                 
-                importance_sum += decision.get("importance_score", 5)
+                importance_sums[user_id] = importance_sums.get(user_id, 0) + decision.get("importance_score", 5)
                 
                 if decision.get("should_evolve") and "prune" in decision.get("actions", []):
                     target_ids = decision.get("target_ids", [])
@@ -273,17 +270,17 @@ async def batch_process_observations(items: list[str]):
                 final_text = decision.get("revised_proposition") if decision.get("should_evolve") and decision.get("revised_proposition") else combined_text
                 final_decay = decision.get("decay_score", 5.0)
             else:
-                importance_sum += 5
+                importance_sums[user_id] = importance_sums.get(user_id, 0) + 5
                 final_text = combined_text
                 final_decay = 5.0
         except Exception as e:
             print(f"Error in evolution interceptor: {e}")
-            importance_sum += 5
+            importance_sums[user_id] = importance_sums.get(user_id, 0) + 5
             final_text = combined_text
             final_decay = 5.0
     
         await text_observer.push_text(combined_text)
-        interaction_count += len(items)
+        interaction_counts[user_id] = interaction_counts.get(user_id, 0) + len(items)
     else:
         combined_text = " | ".join(items)
         
@@ -305,12 +302,12 @@ async def batch_process_observations(items: list[str]):
         # Expected if budget exceeded, handled below
         pass
         
-    await run_compaction()
+    await run_compaction(user_id)
     
-    if importance_sum >= 100 or interaction_count >= 20:
-        asyncio.create_task(run_reflection())
+    if importance_sums.get(user_id, 0) >= 100 or interaction_counts.get(user_id, 0) >= 20:
+        asyncio.create_task(run_reflection(user_id))
 
-async def run_compaction():
+async def run_compaction(user_id: str):
     from memory_store import get_global_store, MemoryBudgetExceeded
     from compaction import calculate_activation_score, generate_stitch_tags, is_user_profile
     from cold_memory import ColdMemoryRetriever
