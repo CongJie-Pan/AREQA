@@ -9,9 +9,11 @@ import logging
 from datetime import datetime, timezone
 from typing import List
 
-import numpy as np
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 from sqlalchemy import (
     MetaData,
@@ -65,6 +67,7 @@ async def search_propositions_bm25(
     session: AsyncSession,
     user_query: str,
     *,
+    user_id: str = "default_user",
     selected_labels: dict | None = None,
     limit: int = 3,
     mode: str = "OR",
@@ -76,7 +79,9 @@ async def search_propositions_bm25(
     include_deleted: bool = False,
 ) -> list[tuple["Proposition", float]]:
 
-    q = build_fts_query(user_query, mode)
+    bind = session.bind or session.sync_session.bind
+    is_pg = getattr(bind.dialect, "name", "") == "postgresql" if bind else True
+    q = build_fts_query(user_query, mode) if not is_pg else user_query
     has_query = bool(q)
 
     # --------------------------------------------------------
@@ -89,78 +94,114 @@ async def search_propositions_bm25(
 
         if include_observations:
             # --- 1-a-1  WITH observations --------------------
-            fts_obs  = Table("observations_fts", MetaData())
+            if is_pg:
+                bm25_p = literal_column("ts_rank(to_tsvector('english', propositions.text), plainto_tsquery('english', :q))").label("score")
+                bm25_o = literal_column("ts_rank(to_tsvector('english', observations.content), plainto_tsquery('english', :q))").label("score")
 
-            bm25_p   = literal_column("bm25(propositions_fts)").label("score")
-            bm25_o   = literal_column("bm25(observations_fts)").label("score")
-
-            sub_p = (
-                select(Proposition.id.label("pid"), bm25_p)
-                .select_from(
-                    fts_prop.join(
-                        Proposition,
-                        literal_column("propositions_fts.rowid") == Proposition.id,
-                    )
+                sub_p = (
+                    select(Proposition.id.label("pid"), bm25_p)
+                    .where(text("to_tsvector('english', propositions.text) @@ plainto_tsquery('english', :q)"))
                 )
-                .where(text("propositions_fts MATCH :q"))
-            )
 
-            sub_o = (
-                select(observation_proposition.c.proposition_id.label("pid"), bm25_o)
-                .select_from(
-                    fts_obs
-                    .join(
-                        Observation,
-                        literal_column("observations_fts.rowid") == Observation.id,
+                sub_o = (
+                    select(observation_proposition.c.proposition_id.label("pid"), bm25_o)
+                    .select_from(
+                        Observation
+                        .join(
+                            observation_proposition,
+                            observation_proposition.c.observation_id == Observation.id,
+                        )
                     )
-                    .join(
-                        observation_proposition,
-                        observation_proposition.c.observation_id == Observation.id,
-                    )
+                    .where(text("to_tsvector('english', observations.content) @@ plainto_tsquery('english', :q)"))
                 )
-                .where(text("observations_fts MATCH :q"))
-            )
+            else:
+                fts_obs  = Table("observations_fts", MetaData())
+
+                bm25_p   = literal_column("bm25(propositions_fts)").label("score")
+                bm25_o   = literal_column("bm25(observations_fts)").label("score")
+
+                sub_p = (
+                    select(Proposition.id.label("pid"), bm25_p)
+                    .select_from(
+                        fts_prop.join(
+                            Proposition,
+                            literal_column("propositions_fts.rowid") == Proposition.id,
+                        )
+                    )
+                    .where(text("propositions_fts MATCH :q"))
+                )
+
+                sub_o = (
+                    select(observation_proposition.c.proposition_id.label("pid"), bm25_o)
+                    .select_from(
+                        fts_obs
+                        .join(
+                            Observation,
+                            literal_column("observations_fts.rowid") == Observation.id,
+                        )
+                        .join(
+                            observation_proposition,
+                            observation_proposition.c.observation_id == Observation.id,
+                        )
+                    )
+                    .where(text("observations_fts MATCH :q"))
+                )
 
             union_sub = sub_p.union_all(sub_o).subquery()
 
             best_scores = (
                 select(
                     union_sub.c.pid,
-                    func.min(union_sub.c.score).label("bm25"),
+                    func.max(union_sub.c.score).label("bm25") if is_pg else func.min(union_sub.c.score).label("bm25"),
                 )
                 .group_by(union_sub.c.pid)
                 .subquery()
             )
         else:
             # --- 1-a-2  WITHOUT observations -----------------
-            best_scores = (
-                select(
-                    Proposition.id.label("pid"),
-                    literal_column("bm25(propositions_fts)").label("bm25"),
-                )
-                .select_from(
-                    fts_prop.join(
-                        Proposition,
-                        literal_column("propositions_fts.rowid") == Proposition.id,
+            if is_pg:
+                best_scores = (
+                    select(
+                        Proposition.id.label("pid"),
+                        literal_column("ts_rank(to_tsvector('english', propositions.text), plainto_tsquery('english', :q))").label("bm25"),
                     )
+                    .where(text("to_tsvector('english', propositions.text) @@ plainto_tsquery('english', :q)"))
+                    .subquery()
                 )
-                .where(text("propositions_fts MATCH :q"))
-                .subquery()
-            )
+            else:
+                best_scores = (
+                    select(
+                        Proposition.id.label("pid"),
+                        literal_column("bm25(propositions_fts)").label("bm25"),
+                    )
+                    .select_from(
+                        fts_prop.join(
+                            Proposition,
+                            literal_column("propositions_fts.rowid") == Proposition.id,
+                        )
+                    )
+                    .where(text("propositions_fts MATCH :q"))
+                    .subquery()
+                )
 
         stmt = (
             select(Proposition, best_scores.c.bm25)
             .join(best_scores, best_scores.c.pid == Proposition.id)
+            .where(Proposition.user_id == user_id)
         )
         if not include_deleted:
             stmt = stmt.where(Proposition.status == 'active')
         else:
             stmt = stmt.where(Proposition.status.in_(['active', 'deleted']))
-        stmt = stmt.order_by(best_scores.c.bm25.asc())          # smallest→best
+        if is_pg:
+            stmt = stmt.order_by(best_scores.c.bm25.desc())         # largest→best
+        else:
+            stmt = stmt.order_by(best_scores.c.bm25.asc())          # smallest→best
     else:
         # --- 1-b  No user query ------------------------------
         stmt = (
-            select(Proposition, literal_column("0.0").label("bm25"))
+            select(Proposition, literal_column("0").label("bm25"))
+            .where(Proposition.user_id == user_id)
         )
         if not include_deleted:
             stmt = stmt.where(Proposition.status == 'active')
@@ -260,7 +301,7 @@ async def search_propositions_bm25(
     initial_scores: list[float] = []
     now = datetime.now(timezone.utc)
     for prop, raw_score, num_matches in filtered_rows:
-        relevance_score = -raw_score if has_query else 0.0
+        relevance_score = float(raw_score) if is_pg else float(-raw_score) if has_query else 0.0
         gamma = 0.0
         if enable_decay:
             dt = prop.created_at.replace(tzinfo=timezone.utc)
@@ -340,6 +381,7 @@ async def get_related_observations(
 async def get_recent_propositions(
     session: AsyncSession,
     *,
+    user_id: str = "default_user",
     limit: int = 10,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
@@ -367,6 +409,7 @@ async def get_recent_propositions(
 
     stmt = (
         select(Proposition)
+        .where(Proposition.user_id == user_id)
         .where(Proposition.status == 'active')
         .where(Proposition.created_at <= end_time)
         .order_by(Proposition.created_at.desc())
@@ -384,6 +427,7 @@ async def get_recent_propositions(
 async def get_recent_observations(
     session: AsyncSession,
     *,
+    user_id: str = "default_user",
     limit: int = 10,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
@@ -398,6 +442,7 @@ async def get_recent_observations(
 
     stmt = (
         select(Observation)
+        .where(Observation.user_id == user_id)
         .where(Observation.created_at <= end_time)
         .order_by(Observation.created_at.desc())
         .limit(limit)

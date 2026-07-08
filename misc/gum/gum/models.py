@@ -79,6 +79,7 @@ class Observation(Base):
     content:       Mapped[str]   = mapped_column(Text,        nullable=False)
     content_type:  Mapped[str]   = mapped_column(String(50),  nullable=False)
     status:        Mapped[str]   = mapped_column(String(50),  server_default="active", nullable=False)
+    user_id:       Mapped[str]   = mapped_column(String(50),  server_default="default_user", nullable=False, index=True)
 
     created_at:    Mapped[str]   = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -142,6 +143,7 @@ class Proposition(Base):
     confidence: Mapped[Optional[int]]
     decay:      Mapped[Optional[int]]
     status:     Mapped[str]           = mapped_column(String(50), server_default="active", nullable=False)
+    user_id:    Mapped[str]           = mapped_column(String(50), server_default="default_user", nullable=False, index=True)
 
     created_at: Mapped[str]           = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -314,38 +316,50 @@ async def init_db(
     db_directory: Optional[str] = None,
 ):
     """Create the SQLite file, ORM tables & FTS5 index (first run only)."""
-    if db_directory:
+    is_postgres = db_path.startswith("postgresql") or db_path.startswith("postgres")
+    
+    if not is_postgres and db_directory:
         path = pathlib.Path(db_directory).expanduser()
         path.mkdir(parents=True, exist_ok=True)
         db_path = str(path / db_path)
 
-    engine: AsyncEngine = create_async_engine(
-        f"sqlite+aiosqlite:///{db_path}",
-        future=True,
-        connect_args={
-            "timeout": 30,
-            "isolation_level": None,
-        },
-        poolclass=None,
-    )
-    
-    import sqlite3
-    from sqlalchemy import event
-    
-    @event.listens_for(engine.sync_engine, "handle_error")
-    def handle_db_error(exception_context):
-        if isinstance(exception_context.original_exception, sqlite3.OperationalError):
-            err_msg = str(exception_context.original_exception).lower()
-            if "disk i/o error" in err_msg or "i/o error" in err_msg:
-                exception_context.connection.invalidate()
+    if is_postgres:
+        db_url = db_path.replace("postgresql://", "postgresql+asyncpg://") if "asyncpg" not in db_path else db_path
+        engine = create_async_engine(
+            db_url,
+            future=True,
+            pool_size=5,
+            max_overflow=10,
+            connect_args={"statement_cache_size": 0} if "asyncpg" in db_url else {}
+        )
+    else:
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{db_path}",
+            future=True,
+            connect_args={
+                "timeout": 30,
+                "isolation_level": None,
+            },
+            poolclass=None,
+        )
+        import sqlite3
+        from sqlalchemy import event
+        @event.listens_for(engine.sync_engine, "handle_error")
+        def handle_db_error(exception_context):
+            if isinstance(exception_context.original_exception, sqlite3.OperationalError):
+                err_msg = str(exception_context.original_exception).lower()
+                if "disk i/o error" in err_msg or "i/o error" in err_msg:
+                    exception_context.connection.invalidate()
 
     async with engine.begin() as conn:
-        await conn.execute(sql_text("PRAGMA journal_mode=WAL"))
-        await conn.execute(sql_text("PRAGMA busy_timeout=30000"))
+        if not is_postgres:
+            await conn.execute(sql_text("PRAGMA journal_mode=WAL"))
+            await conn.execute(sql_text("PRAGMA busy_timeout=30000"))
 
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(create_fts_table)
-        await conn.run_sync(create_observations_fts)
+        if not is_postgres:
+            await conn.run_sync(create_fts_table)
+            await conn.run_sync(create_observations_fts)
 
     Session = async_sessionmaker(
         engine, 
