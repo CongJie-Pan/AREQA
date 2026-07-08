@@ -56,6 +56,7 @@ class PropositionSchema(BaseModel):
 class Update(BaseModel):
     content: str = Field(..., description="The content of the update")
     content_type: Literal["input_text", "input_image"] = Field(..., description="The type of the update")
+    user_id: str = Field("default_user", description="The ID of the user this update belongs to")
 
 RelationLabel = Literal["IDENTICAL", "SIMILAR", "UNRELATED"]
 
