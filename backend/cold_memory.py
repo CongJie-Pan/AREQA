@@ -14,6 +14,8 @@ def get_engine():
     global global_engine
     if global_engine is None:
         db_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         global_engine = create_async_engine(
             db_url,
             pool_size=5,
@@ -65,8 +67,8 @@ class ColdMemoryRetriever:
                 if query_embedding:
                     try:
                         cursor = await session.execute(
-                            text("SELECT id, embedding <-> :emb::vector AS distance FROM vec_memory ORDER BY distance LIMIT :limit"),
-                            {"emb": str(query_embedding), "limit": top_k * 2}
+                            text("SELECT v.id, v.embedding <-> :emb::vector AS distance FROM vec_memory v JOIN propositions p ON v.id = p.id WHERE p.user_id = :uid ORDER BY distance LIMIT :limit"),
+                            {"emb": str(query_embedding), "limit": top_k * 2, "uid": user_id}
                         )
                         for row in cursor.fetchall():
                             vec_results.append((row[0], row[1]))
@@ -79,10 +81,10 @@ class ColdMemoryRetriever:
                         text("""
                         SELECT id, ts_rank(to_tsvector('english', text), plainto_tsquery('english', :query)) as rank 
                         FROM propositions 
-                        WHERE to_tsvector('english', text) @@ plainto_tsquery('english', :query)
+                        WHERE to_tsvector('english', text) @@ plainto_tsquery('english', :query) AND user_id = :uid
                         ORDER BY rank DESC LIMIT :limit
                         """),
-                        {"query": query, "limit": top_k * 2}
+                        {"query": query, "limit": top_k * 2, "uid": user_id}
                     )
                     for row in cursor.fetchall():
                         bm25_results.append((row[0], row[1]))
