@@ -113,11 +113,14 @@ export async function POST(request: NextRequest) {
 
     logger.info(`Forwarding chat request to internal backend: ${fastApiUrl}`);
 
+    const authHeader = request.headers.get('authorization');
+
     // Forward request to internal FastAPI backend with the AbortSignal
     const fastApiResponse = await fetch(fastApiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(authHeader ? { 'Authorization': authHeader } : {})
       },
       body: JSON.stringify({
         messages: body.messages,

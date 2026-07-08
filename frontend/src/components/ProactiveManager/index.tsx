@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
+import { getAuthToken } from '@/database/db';
 import { App, Button, Input } from 'antd';
 import { BulbOutlined, CheckOutlined, CloseOutlined, SendOutlined } from '@ant-design/icons';
 import { useConversationStore } from '@/store/conversation';
@@ -90,9 +91,13 @@ export const ProactiveManager: React.FC = () => {
       notification.destroy(key);
       try {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const token = getAuthToken();
         await fetch(`${backendUrl}/api/v1/log_action`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({ action_type: 'compeer_rejected', timestamp: Date.now(), context: {} }),
         });
       } catch {
@@ -133,9 +138,13 @@ export const ProactiveManager: React.FC = () => {
     const logAction = async (action: string, context: Record<string, unknown>) => {
       try {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const token = getAuthToken();
         await fetch(`${backendUrl}/api/v1/log_action`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({
             action_type: action,
             timestamp: Date.now(),

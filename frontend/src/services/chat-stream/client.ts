@@ -14,6 +14,7 @@ import { ChatStreamError, StreamParseError, isAbortError } from '@/utils/error';
 import { ThinkTagParser } from './parser';
 import { useChatStore } from '@/store/chat/store';
 import type { ChatMessage, StreamCallbacks } from './types';
+import { getAuthToken } from '../../database/db';
 
 /**
  * Creates a streaming chat request to the local AI backend
@@ -89,10 +90,15 @@ export async function createChatStream(
   }
 
   try {
+    const token = getAuthToken();
+
     // Make the request with optional abort signal and timeout
     const fetchOptions: RequestInit = {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({ 
         messages,
         conversation_id: conversationId,

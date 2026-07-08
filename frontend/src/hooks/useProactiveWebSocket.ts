@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { logger } from '@/utils/logger';
+import { getAuthToken } from '../database/db';
 
 export function useProactiveWebSocket(
   onAlert: (content: string, senderName?: string) => void,
@@ -19,24 +20,6 @@ export function useProactiveWebSocket(
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
 
-    function getAuthToken(): string | null {
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.includes('-auth-token')) {
-            const item = localStorage.getItem(key);
-            if (item) {
-              const parsed = JSON.parse(item);
-              if (parsed?.access_token) {
-                return parsed.access_token;
-              }
-            }
-          }
-        }
-      } catch {}
-      return null;
-    }
-
     async function connect() {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
       const wsUrl = backendUrl.replace(/^http/, 'ws');
@@ -44,12 +27,16 @@ export function useProactiveWebSocket(
       try {
         // Fetch One-Time Ticket
         const token = getAuthToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json'
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
+        if (!token) {
+          // If not logged in, don't try to fetch WS ticket
+          timeoutId = setTimeout(connect, 5000); // Check again later
+          return;
         }
+
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        };
         
         const response = await fetch(`${backendUrl}/api/v1/ws/ticket`, {
           method: 'POST',
