@@ -99,7 +99,8 @@ async def tick_proactive_schedule(user_id: str):
 
 async def initialize_daily_schedule(user_id: str, reflection_outputs: list):
     try:
-        from gum_integration import gum_instance
+        from gum_integration import get_gum_instance
+        gum_instance, _ = await get_gum_instance(user_id)
         if not gum_instance:
             return
             
@@ -253,7 +254,7 @@ async def proactive_scheduler_loop():
                                 "recipient": "User",
                                 "subject": subject,
                                 "content": letter_content,
-                                "timestamp": time.time(),
+                                "timestamp": _time.time(),
                                 "read": False
                             }
                             await mb_store.schedule_delayed_mail(user_id=user_id, mail_data=mail_data, delay_seconds=300)

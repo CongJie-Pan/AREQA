@@ -59,7 +59,7 @@ class ColdMemoryRetriever:
                 # Enforce RLS
                 await session.execute(text(
                     "SELECT set_config('request.jwt.claims', "
-                    "jsonb_build_object('role', 'authenticated', 'sub', :uid)::text, TRUE)"
+                    "jsonb_build_object('role', 'authenticated', 'sub', :uid::text)::text, TRUE)"
                 ), {"uid": user_id})
                 await session.execute(text("SET LOCAL ROLE authenticated;"))
 

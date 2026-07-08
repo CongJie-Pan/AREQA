@@ -497,7 +497,7 @@ class OrchestrationService:
             if cold_memory_ctx:
                 final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
                 
-            memory_ctx = await query_memory_for_context(last_user_msg, limit=3, user_id=self.user_id)
+            memory_ctx = await query_memory_for_context(last_user_msg, limit=3, user_id=user_id)
             if memory_ctx:
                 final_system_prompt += memory_ctx
                 

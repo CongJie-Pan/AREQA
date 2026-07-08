@@ -30,462 +30,28 @@ class TextObserver(Observer):
         
     async def _worker(self):
         while True:
-            await asyncio.sleep(3600)
-
-# Global instances
-text_observer = None
-gum_instance = None
-
-async def init_gum_instance():
-    global gum_instance, text_observer
-    text_observer = TextObserver()
-    
-    # Initialize GUM
-    data_dir = str(project_root / "data" / "gum_data")
-    os.makedirs(data_dir, exist_ok=True)
-    
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    from config import settings
-    
-    gum_instance = gum(
-        "default_user",
-        settings.model_gum,
-        text_observer,
-        data_directory=data_dir,
-        db_name="gum.db",
-        api_key=api_key,
-        api_base="https://openrouter.ai/api/v1",
-        min_batch_size=17,
-        max_batch_size=20,
-    )
-    await gum_instance.connect_db()
-    gum_instance.start_update_loop()
-    if gum_instance.batcher:
-        await gum_instance.batcher.start()
-        
-    global reflection_task, obs_worker
-    reflection_task = asyncio.create_task(run_reflection_loop())
-    
-    obs_worker = ObservationQueueWorker(process_callback=batch_process_observations, debounce_seconds=3.0)
-    await obs_worker.start()
-    
-    print("GUM instance initialized successfully.")
-    return gum_instance
-
-async def stop_gum_instance():
-    global gum_instance, reflection_task, obs_worker
-    if obs_worker:
-        await obs_worker.stop()
-    if reflection_task:
-        reflection_task.cancel()
-    if gum_instance:
-        await gum_instance.stop_update_loop()
-        if gum_instance.batcher:
-            await gum_instance.batcher.stop()
-
-async def clear_gum_memory(user_id: str = "default_user"):
-    """Clear GUM memory from the database for a specific user."""
-    global gum_instance, importance_sums, interaction_counts
-    # In a fully multi-tenant setup, these globals should be per-user, 
-    # but for now we just reset them to prevent pending reflections
-    importance_sums.pop(user_id, None)
-    interaction_counts.pop(user_id, None)
-    
-    if gum_instance:
-        try:
-            from sqlalchemy import text
-            async with gum_instance.Session() as session:
-                async with session.begin():
-                    # Delete user's observations and propositions
-                    await session.execute(
-                        text("DELETE FROM observations WHERE user_id = :uid"), 
-                        {"uid": user_id}
-                    )
-                    await session.execute(
-                        text("DELETE FROM propositions WHERE user_id = :uid"), 
-                        {"uid": user_id}
-                    )
-            print(f"[GUM] Wiped GUM database entries for user {user_id}.")
-        except Exception as e:
-            print(f"[GUM] Error clearing memory for user {user_id}: {e}")
-
-importance_sums = {}
-interaction_counts = {}
-last_interaction_time = None
-
-async def run_reflection(user_id: str) -> list[str]:
-    global importance_sums, interaction_counts
-    if not gum_instance:
-        return []
-    
-    importance_sums[user_id] = 0
-    interaction_counts[user_id] = 0
-    try:
-        obs = await gum_instance.recent_observations(limit=20, user_id=user_id)
-        if not obs:
-            return []
-            
-        context = "\n".join([o.content for o in obs])
-        prompt = f"請將以下最近的互動紀錄總結為高層次的學習洞察（insights）：\n{context}\n請輸出這些學習洞察。"
-        
-        from pydantic import BaseModel
-        from gum.schemas import get_schema
-        class ReflectionSchema(BaseModel):
-            insights: list[str]
-            
-        rsp = await gum_instance.client.chat.completions.create(
-            model=gum_instance.model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format=get_schema(ReflectionSchema.model_json_schema()),
-        )
-        import json
-        data = json.loads(rsp.choices[0].message.content)
-        
-        insights = data.get("insights", [])
-        print(f"[GUM Reflection] Reflection triggered! Generated {len(insights)} insights:")
-        for insight in insights:
-            print(f"  - {insight}")
-            if text_observer:
-                await text_observer.push_text(f"[REFLECTION] {insight}")
-                
-        # Archive old observations
-        for o in obs:
-            await gum_instance.update_observation_status(o.id, "archived")
-            
-        print(f"[GUM Reflection] Archived {len(obs)} old observations. Resetting counters.")
-        importance_sums[user_id] = 0
-        interaction_counts[user_id] = 0
-        return insights
-    except Exception as e:
-        print(f"Error in reflection: {e}")
-        return []
-
-async def query_memory_for_context(user_query: str, limit: int = 8) -> str:
-    """
-    Query GUM memory and return a formatted string for System Prompt injection.
-
-    This is the critical bridge between STITCH-filtered memory and the LLM prompt.
-    Without this, the STITCH subsystem correctly retrieves memories but never passes
-    them to the main LLM, making memory invisible to the AI.
-
-    Args:
-        user_query: The user's current message to use as the search query.
-        limit: Maximum number of memory propositions to inject.
-
-    Returns:
-        A formatted <memory> block string for system prompt injection, or "" if no memory.
-    """
-    if not gum_instance:
-        return ""
-    try:
-        results = await gum_instance.query(user_query, limit=limit)
-        memory_lines = []
-        from memory_store import get_global_store
-        store = get_global_store()
-        if store:
-            profile = await store.get_user_profile("default_user")
-            prefs = profile.get("explicit_memories", [])
-            if prefs:
-                memory_lines.append("【USER PROFILE (長期)】\n  - " + "\n  - ".join(prefs))
-            
-            hot = await store.get_hot_memory("default_user")
-            hot_memories = hot.get("explicit_memories", [])
-            if hot_memories:
-                memory_lines.append("【MEMORY (目前脈絡)】\n  - " + "\n  - ".join(hot_memories))
-        
-        if results:
-            memory_lines.extend([p.text for p, _ in results])
-            
-        if not memory_lines:
-            return ""
-            
-        memory_block = "\n".join(f"- {line}" for line in memory_lines)
-        return f"\n<memory>\n以下是關於使用者的已知記憶，請根據這些記憶來個人化你的回答：\n{memory_block}\n</memory>"
-    except Exception as e:
-        print(f"[GUM] Error querying memory for context: {e}")
-        return ""
-
-obs_worker = None
-
-async def batch_process_observations(items: list[str]):
-    global importance_sums, interaction_counts, last_interaction_time
-    last_interaction_time = datetime.now()
-    user_id = "default_user" # assuming default for now
-    
-    if gum_instance and text_observer:
-        combined_text = " | ".join(items)
-        try:
-            neighbors = await gum_instance.query(combined_text, limit=20)
-            if not neighbors:
-                recent_props = await gum_instance.recent(limit=20)
-                neighbors = [(p, 1.0) for p in recent_props]
-    
-            if neighbors:
-                neighbor_ctx = "\\n".join([f"ID: {p.id}, Text: {p.text}" for p, _ in neighbors])
-                prompt = f"""Analyze the new observation against existing memories.
-    New observation: {combined_text}
-    Existing memories:
-    {neighbor_ctx}
-    
-    Task: 
-    1. Determine if the new observation logically CONTRADICTS, UPDATES, or is highly REDUNDANT with any existing memories.
-    2. If it is redundant or updates old memories, set should_evolve=true, add 'prune' to actions, and put the old memory IDs to be pruned in target_ids. 
-    3. Provide a 'revised_proposition' that merges the new observation and the pruned memories into a single concise, updated statement.
-    4. Generate a 'decay_score' (1-10) for this proposition. Transient or temporary actions (e.g. debugging a specific bug) decay fast (score=8-10). Stable facts (e.g. user is a PhD student) decay slowly (score=1-3).
-    5. Rate importance 1-10."""
-                
-                from pydantic import BaseModel, Field
-                from gum.schemas import get_schema
-                from typing import Optional
-                class EvolutionSchema(BaseModel):
-                    should_evolve: bool
-                    actions: list[str]
-                    target_ids: list[int]
-                    importance_score: int
-                    revised_proposition: Optional[str] = Field(None, description="The merged and updated proposition")
-                    decay_score: int = Field(5, description="1-10 score of how fast this memory should decay")
-                    
-                rsp = await gum_instance.client.chat.completions.create(
-                    model=gum_instance.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format=get_schema(EvolutionSchema.model_json_schema()),
-                )
-                import json
-                import re
-                content = rsp.choices[0].message.content.strip()
-                match = re.search(r'\{.*\}', content, re.DOTALL)
-                if match:
-                    content = match.group(0)
-                decision = json.loads(content)
-                
-                print(f"[GUM Evolution] LLM decision: {decision}")
-                
-                importance_sums[user_id] = importance_sums.get(user_id, 0) + decision.get("importance_score", 5)
-                
-                if decision.get("should_evolve") and "prune" in decision.get("actions", []):
-                    target_ids = decision.get("target_ids", [])
-                    for t_id in target_ids:
-                        await gum_instance.update_status(t_id, "superseded")
-                
-                final_text = decision.get("revised_proposition") if decision.get("should_evolve") and decision.get("revised_proposition") else combined_text
-                final_decay = decision.get("decay_score", 5.0)
-            else:
-                importance_sums[user_id] = importance_sums.get(user_id, 0) + 5
-                final_text = combined_text
-                final_decay = 5.0
-        except Exception as e:
-            print(f"Error in evolution interceptor: {e}")
-            importance_sums[user_id] = importance_sums.get(user_id, 0) + 5
-            final_text = combined_text
-            final_decay = 5.0
-    
-        await text_observer.push_text(combined_text)
-        interaction_counts[user_id] = interaction_counts.get(user_id, 0) + len(items)
-    else:
-        combined_text = " | ".join(items)
-        
-    # Sync to Hot Memory (MemoryStore)
-    try:
-        from memory_store import get_global_store
-        store = get_global_store()
-        if store:
-            import uuid
-            # Add to hot memory with timestamp and uuid to prevent overwriting
-            key = f"obs_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
-            await store.update_hot_memory_async("default_user", key, {
-                "text": final_text, 
-                "confidence": 8.0, 
-                "decay": float(final_decay), 
-                "timestamp": datetime.now().timestamp()
-            })
-    except Exception as e:
-        # Expected if budget exceeded, handled below
-        pass
-        
-    await run_compaction(user_id)
-    
-    if importance_sums.get(user_id, 0) >= 100 or interaction_counts.get(user_id, 0) >= 20:
-        asyncio.create_task(run_reflection(user_id))
-
-async def run_compaction(user_id: str):
-    from memory_store import get_global_store, MemoryBudgetExceeded
-    from compaction import calculate_activation_score, generate_stitch_tags, is_user_profile
-    from cold_memory import ColdMemoryRetriever
-    import os
-    from pathlib import Path
-    
-    store = get_global_store()
-    if not store or not gum_instance: return
-    
-    hot_mem = await store.get_hot_memory("default_user")
-    serialized = json.dumps(hot_mem, ensure_ascii=False)
-    
-    if len(serialized) > store.budget_limit:
-        print(f"[Compaction] Budget exceeded ({len(serialized)} > {store.budget_limit}). Starting compaction...")
-        # Calculate scores
-        scores = []
-        for k, v in hot_mem.items():
-            if is_user_profile(k):
-                continue
-            if isinstance(v, dict) and "timestamp" in v:
-                age_days = (datetime.now().timestamp() - v["timestamp"]) / 86400.0
-                score = calculate_activation_score(v.get("confidence", 5.0), v.get("decay", 5.0), age_days)
-                scores.append((k, score, v))
-            else:
-                scores.append((k, 0.0, v))
-                
-        # Sort by score ascending (lowest first)
-        scores.sort(key=lambda x: x[1])
-        
-        db_path = str(Path(__file__).resolve().parents[1] / "data" / "gum_data" / "gum.db")
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        cold_retriever = ColdMemoryRetriever(db_path, api_key)
-        
-        # Evict lowest scored items until under budget
-        current_len = len(serialized)
-        for k, score, v in scores:
-            if current_len <= store.budget_limit * 0.8: # Evict down to 80%
-                break
-                
-            print(f"[Compaction] Evicting {k} (score: {score:.4f})")
-            
-            # 1. STITCH Tagging
-            text_to_tag = v["text"] if isinstance(v, dict) and "text" in v else str(v)
-            tags = await generate_stitch_tags(gum_instance.client, gum_instance.model, text_to_tag)
-            
-            # 2. Save to Cold Memory
-            # For simplicity, we just use the STITCH refined text for embedding
-            refined = tags.get("refined_content", text_to_tag)
-            embed = await cold_retriever.get_embedding(refined)
-            
-            if embed:
-                with cold_retriever._get_conn() as conn:
-                    # Insert into propositions (GUM table, or custom if doesn't exist)
-                    # To be safe, we insert into our own cold storage table
-                    import uuid
-                    cursor = conn.execute(
-                        "INSERT INTO propositions (text, reasoning, revision_group, context_scope, event_types, target, functional_type_seeds, confidence, decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                        (
-                            refined, 
-                            "Compacted from hot memory.", 
-                            str(uuid.uuid4()),
-                            tags.get("selected_context_scopes", [""])[0] if tags.get("selected_context_scopes") else None,
-                            json.dumps(tags.get("selected_event_types", [])),
-                            tags.get("selected_targets", [""])[0] if tags.get("selected_targets") else None,
-                            json.dumps(tags.get("selected_functional_type_seeds", [])),
-                            v.get("confidence", 8.0) if isinstance(v, dict) else 8.0,
-                            v.get("decay", 5.0) if isinstance(v, dict) else 5.0
-                        )
-                    )
-                    doc_id = cursor.lastrowid
-                    
-                    conn.execute("INSERT INTO propositions_fts (rowid, text) VALUES (?, ?)", (doc_id, refined))
-                    
-                    import struct
-                    embed_bytes = struct.pack(f'{len(embed)}f', *embed)
-                    conn.execute("INSERT INTO vec_memory (id, embedding) VALUES (?, ?)", (doc_id, embed_bytes))
-                    conn.commit()
-            
-            # 3. Remove from Hot Memory
-            del hot_mem[k]
-            current_len = len(json.dumps(hot_mem, ensure_ascii=False))
-            
-        # Write back hot memory
-        await store.redis.set("areqa:hot_memory:default_user", json.dumps(hot_mem, ensure_ascii=False))
-        print("[Compaction] Finished.")
-
-async def push_observation(text: str):
-    if obs_worker:
-        await obs_worker.push(text)
-    else:
-        await batch_process_observations([text])
-
-async def run_reflection_loop():
-    """Background task to run reflection if user is idle for 30 minutes."""
-    global last_interaction_time
-    while True:
-        await asyncio.sleep(300)  # Check every 5 minutes
-        if not gum_instance or last_interaction_time is None:
-            continue
-        
-        idle_time = datetime.now() - last_interaction_time
-        if idle_time.total_seconds() > 1800 and interaction_count > 0:
-            print("Idle for 30 minutes, triggering session boundary reflection.")
-            await run_reflection()
-
-reflection_task = None
-
-async def get_all_memory():
-    if not gum_instance:
-        return []
-    try:
-        import json
-        props = await gum_instance.recent(limit=100)
-        result = [
-            {
-                "id": str(p.id), 
-                "text": p.text, 
-                "confidence": p.confidence, 
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-                "context_scope": p.context_scope,
-                "event_types": json.loads(p.event_types) if p.event_types else [],
-                "target": p.target,
-                "functional_type_seeds": json.loads(p.functional_type_seeds) if p.functional_type_seeds else []
-            } 
-            for p in props if getattr(p, "status", "") not in ["deleted", "superseded"]
-        ]
-        return result
-    except Exception as e:
-        print(f"Error fetching memory: {e}")
-        return []
-
-
-
-class ObservationQueueWorker:
-    def __init__(self, process_callback, debounce_seconds: float = 3.0):
-        self.queue = asyncio.Queue()
-        self.process_callback = process_callback
-        self.debounce_seconds = debounce_seconds
-        self._task = None
-
-    async def start(self):
-        if self._task is None:
-            self._task = asyncio.create_task(self._worker())
-
-    async def stop(self):
-        if self._task is not None:
-            self._task.cancel()
             try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-
-    async def push(self, observation: str):
-        await self.queue.put(observation)
-
-    async def _worker(self):
-        while True:
-            try:
-                # Wait for at least one item
-                items = [await self.queue.get()]
+                user_items = {}
+                uid, obs = await self.queue.get()
+                user_items[uid] = [obs]
                 
-                # Debounce window
                 await asyncio.sleep(self.debounce_seconds)
                 
-                # Collect any other items that arrived during the window
                 while not self.queue.empty():
                     try:
-                        items.append(self.queue.get_nowait())
+                        u, o = self.queue.get_nowait()
+                        if u not in user_items: user_items[u] = []
+                        user_items[u].append(o)
                     except asyncio.QueueEmpty:
                         break
                         
-                # Process the batch
-                if items:
-                    await self.process_callback(items)
-                    
-                # Mark as done
-                for _ in items:
+                for u, items in user_items.items():
+                    if items:
+                        await self.process_callback(u, items)
+                
+                # task_done for all items processed
+                count = sum(len(v) for v in user_items.values())
+                for _ in range(count):
                     self.queue.task_done()
             except asyncio.CancelledError:
                 break
@@ -494,6 +60,7 @@ class ObservationQueueWorker:
                 await asyncio.sleep(1)
 
 async def get_hot_memory_snapshot(user_id: str = "default_user") -> str:
+    gum_instance, _ = await get_gum_instance(user_id)
     from memory_store import get_global_store
     import json
     store = get_global_store()
@@ -580,6 +147,7 @@ async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5
         return ""
 
 async def async_evaluate_and_update_state(client, model, chat_history, user_id: str = "default_user"):
+    gum_instance, _ = await get_gum_instance(user_id)
     from compaction import evaluate_student_state
     from memory_store import get_global_store
     
@@ -620,6 +188,7 @@ async def async_evaluate_and_update_state(client, model, chat_history, user_id: 
 
 
 async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str) -> dict:
+    gum_instance, _ = await get_gum_instance(user_id)
     """
     Analyze hot memory snapshot to determine if a proactive intervention is warranted.
     """
