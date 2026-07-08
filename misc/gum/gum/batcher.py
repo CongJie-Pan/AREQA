@@ -33,13 +33,14 @@ class ObservationBatcher:
         """Stop the batching system."""
         self.logger.info("Stopped batcher")
         
-    def push(self, observer_name: str, content: str, content_type: str) -> str:
+    def push(self, observer_name: str, content: str, content_type: str, user_id: str = "default_user") -> str:
         """Push an observation onto the queue.
         
         Args:
             observer_name: Name of the observer
             content: Observation content
             content_type: Type of content
+            user_id: ID of the user this observation belongs to
             
         Returns:
             str: Observation ID
@@ -50,6 +51,7 @@ class ObservationBatcher:
             'observer_name': observer_name,
             'content': content,
             'content_type': content_type,
+            'user_id': user_id,
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
         

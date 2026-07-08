@@ -245,6 +245,7 @@ class gum:
                         observer_name=obs['observer_name'],
                         content=obs['content'],
                         content_type=obs['content_type'],
+                        user_id=obs.get('user_id', 'default_user')
                     )
                     session.add(observation)
                     observations.append(observation)
@@ -568,9 +569,10 @@ class gum:
                 functional_type_seeds=json.dumps(item.get("functional_type_seeds", [])) if item.get("functional_type_seeds") else None,
                 confidence=item.get("confidence"),
                 decay=item.get("decay"),
+                user_id=batch_user_id,
                 version=1,  # Start fresh with version 1
                 revision_group=revision_group,
-                observations=rel_obs,
+                observations=list(rel_obs),
             )
             session.add(new_prop)
 
@@ -645,7 +647,8 @@ class gum:
         observation_id = self.batcher.push(
             observer_name=observer.name,
             content=update.content,
-            content_type=update.content_type
+            content_type=update.content_type,
+            user_id=update.user_id
         )
         self.logger.info(f"Added observation {observation_id} to queue (size: {self.batcher.size()})")
 
@@ -657,11 +660,18 @@ class gum:
 
     @staticmethod
     async def _attach_obs_if_missing(prop: Proposition, obs: Observation, session):
-        await session.execute(
-            insert(observation_proposition)
-            .prefix_with("OR IGNORE")
-            .values(observation_id=obs.id, proposition_id=prop.id)
-        )
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        bind = session.bind or session.sync_session.bind
+        is_pg = getattr(bind.dialect, "name", "") == "postgresql" if bind else True
+
+        if is_pg:
+            stmt = pg_insert(observation_proposition).values(observation_id=obs.id, proposition_id=prop.id).on_conflict_do_nothing()
+        else:
+            stmt = sqlite_insert(observation_proposition).prefix_with("OR IGNORE").values(observation_id=obs.id, proposition_id=prop.id)
+            
+        await session.execute(stmt)
         await session.execute(
             update(Proposition)
             .where(Proposition.id == prop.id)
@@ -697,6 +707,7 @@ class gum:
         self,
         user_query: str,
         *,
+        user_id: str = "default_user",
         limit: int = 3,
         mode: str = "OR",
         start_time: datetime | None = None,
@@ -725,7 +736,7 @@ class gum:
                 Proposition.event_types, 
                 Proposition.target, 
                 Proposition.functional_type_seeds
-            ).where(Proposition.status == 'active').order_by(Proposition.created_at.desc()).limit(200)
+            ).where(Proposition.status == 'active', Proposition.user_id == user_id).order_by(Proposition.created_at.desc()).limit(200)
             
             result = await session.execute(stmt)
             rows = result.fetchall()
@@ -796,6 +807,7 @@ class gum:
             return await search_propositions_bm25(
                 session,
                 user_query,
+                user_id=user_id,
                 selected_labels=selected_labels,
                 limit=limit,
                 mode=mode,
@@ -806,6 +818,7 @@ class gum:
     async def recent(
         self,
         *,
+        user_id: str = "default_user",
         limit: int = 10,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
@@ -815,6 +828,7 @@ class gum:
         async with self._session() as session:
             return await get_recent_propositions(
                 session,
+                user_id=user_id,
                 limit=limit,
                 start_time=start_time,
                 end_time=end_time,
@@ -824,6 +838,7 @@ class gum:
     async def recent_observations(
         self,
         *,
+        user_id: str = "default_user",
         limit: int = 10,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
@@ -832,6 +847,7 @@ class gum:
         async with self._session() as session:
             return await get_recent_observations(
                 session,
+                user_id=user_id,
                 limit=limit,
                 start_time=start_time,
                 end_time=end_time,
