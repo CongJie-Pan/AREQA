@@ -75,11 +75,35 @@ async def test_get_and_stop_gum_instance():
 
         assert instance is mock_instance
         assert observer is not None
+        assert mock_gum.call_args.args[2] is observer
         mock_instance.connect_db.assert_called_once()
         mock_instance.start_update_loop.assert_called_once()
 
         await stop_gum_instance()
         mock_instance.stop_update_loop.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_get_gum_instance_uses_database_url_when_configured():
+    backend.gum_integration.gum_instances.clear()
+    backend.gum_integration.text_observers.clear()
+    backend.gum_integration.obs_worker = None
+
+    with patch.dict("os.environ", {"DATABASE_URL": "postgresql://user:pass@example.com:5432/postgres"}), \
+         patch("backend.gum_integration.gum") as mock_gum:
+        mock_instance = MagicMock()
+        mock_instance.connect_db = AsyncMock()
+        mock_instance.stop_update_loop = AsyncMock()
+        mock_instance.start_update_loop = MagicMock()
+        mock_instance.batcher = MagicMock()
+        mock_instance.batcher.start = AsyncMock()
+        mock_instance.batcher.stop = AsyncMock()
+        mock_gum.return_value = mock_instance
+
+        await get_gum_instance("test_user")
+
+        assert mock_gum.call_args.kwargs["db_name"] == "postgresql://user:pass@example.com:5432/postgres"
+
+        await stop_gum_instance()
 
 @pytest.mark.asyncio
 async def test_push_observation():

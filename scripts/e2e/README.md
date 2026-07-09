@@ -1,0 +1,70 @@
+# Cloud API Probe
+
+This directory contains manual cloud probes that must not run in normal CI.
+They read the repository `.env`, call the configured AREQA API, and inspect
+cloud Redis/PostgreSQL data paths with a generated test user.
+
+## Preflight
+
+```bash
+python scripts/e2e/cloud_api_probe.py
+```
+
+The preflight checks:
+
+- Required `.env` keys exist, without printing secret values.
+- Redis can be reached through `REDIS_URL`.
+- PostgreSQL can be reached through `DATABASE_URL`.
+- `public.propositions` and `public.vec_memory` schema availability.
+- Backend API auth behavior for `/api/v1/mailbox` and `/api/v1/memory`.
+
+If the preflight reports `PostgreSQL propositions table` as failed, apply:
+
+```text
+supabase/migrations/20260709_cold_memory_schema.sql
+```
+
+Run it in the Supabase SQL editor for the target project, then rerun the
+preflight.
+
+If authenticated API calls return `Auth configuration missing`, configure
+`JWT_SECRET` in the running backend environment and redeploy/restart the API.
+
+## Write Probe
+
+```bash
+python scripts/e2e/cloud_api_probe.py --write --skip-delayed-wait
+```
+
+This writes isolated test data with a generated `TEST_USER_ID` and `RUN_ID`,
+then verifies:
+
+- `POST /api/v1/log_action` writes hot memory to Redis.
+- `POST /api/v1/mailbox/send` writes a user mail.
+- Redis contains the mailbox and delayed queue records.
+- PostgreSQL contains a matching proposition when cold-memory processing works.
+
+The default cleanup removes only the generated test user's Redis keys and
+matching PostgreSQL proposition rows.
+
+## Full Delayed Mail Probe
+
+```bash
+python scripts/e2e/cloud_api_probe.py --write
+```
+
+This waits up to 420 seconds for the delayed mailbox worker to deliver the
+avatar reply and verifies it is not duplicated.
+
+## Useful Overrides
+
+```bash
+python scripts/e2e/cloud_api_probe.py \
+  --backend-url http://localhost:8000 \
+  --test-user-id 00000000-0000-0000-0000-000000000001 \
+  --run-id api-e2e-manual-001
+```
+
+Use `--backend-url http://localhost:8000` when running the backend locally with
+cloud `.env` values. This validates the same cloud Redis/PostgreSQL paths while
+avoiding Render environment drift.

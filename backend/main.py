@@ -214,14 +214,14 @@ async def db_error_recovery_middleware(request: Request, call_next):
         err_msg = str(e).lower()
         if "disk i/o error" in err_msg or "i/o error" in err_msg:
             print("MIDDLEWARE CAUGHT DISK I/O ERROR. Attempting emergency engine reset...")
-            from gum_integration import gum_instance
-            if gum_instance and hasattr(gum_instance, "engine"):
-                await gum_instance.engine.dispose()
-                # Attempt to reconnect
-                try:
-                    await gum_instance.connect_db()
-                except Exception as ex:
-                    print(f"Emergency reconnect failed: {ex}")
+            from gum_integration import gum_instances
+            for gum_instance in list(gum_instances.values()):
+                if gum_instance and hasattr(gum_instance, "engine"):
+                    await gum_instance.engine.dispose()
+                    try:
+                        await gum_instance.connect_db()
+                    except Exception as ex:
+                        print(f"Emergency reconnect failed: {ex}")
             return JSONResponse(
                 status_code=503,
                 content={
@@ -234,14 +234,14 @@ async def db_error_recovery_middleware(request: Request, call_next):
         err_msg = str(e).lower()
         if "disk i/o error" in err_msg or "i/o error" in err_msg:
             print("MIDDLEWARE CAUGHT DISK I/O ERROR. Attempting emergency engine reset...")
-            from gum_integration import gum_instance
-            if gum_instance and hasattr(gum_instance, "engine"):
-                await gum_instance.engine.dispose()
-                # Attempt to reconnect
-                try:
-                    await gum_instance.connect_db()
-                except Exception as ex:
-                    print(f"Emergency reconnect failed: {ex}")
+            from gum_integration import gum_instances
+            for gum_instance in list(gum_instances.values()):
+                if gum_instance and hasattr(gum_instance, "engine"):
+                    await gum_instance.engine.dispose()
+                    try:
+                        await gum_instance.connect_db()
+                    except Exception as ex:
+                        print(f"Emergency reconnect failed: {ex}")
             return JSONResponse(
                 status_code=503,
                 content={
@@ -430,9 +430,16 @@ async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depend
     store = get_mailbox_store()
     mail_id = await store.add_mail(user_id=current_user_id, sender="User", content=req.content, recipient=req.recipient, conversation_id=req.conversation_id)
     await store.mark_as_read(user_id=current_user_id, mail_id=mail_id)
-    import asyncio
-    from gum_integration import delayed_reply_writer
-    asyncio.create_task(delayed_reply_writer(current_user_id, mail_id, req.content, req.recipient, delay_seconds=300))
+    await store.schedule_delayed_mail(
+        user_id=current_user_id,
+        mail_data={
+            "reply_to_mail_id": mail_id,
+            "reply_content": req.content,
+            "active_avatar": req.recipient,
+            "conversation_id": req.conversation_id or mail_id,
+        },
+        delay_seconds=300,
+    )
     return {"status": "success", "mail_id": mail_id}
 
 @app.post("/api/v1/mailbox/read/{mail_id}")
@@ -449,7 +456,7 @@ class EditMemoryRequest(BaseModel):
 
 @app.delete("/api/v1/memory/{mem_id}")
 async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get_current_user)):
-    from gum_integration import gum_instance
+    from gum_integration import get_gum_instance
     from memory_store import get_global_store
     
     if mem_id.startswith("profile:"):
@@ -469,6 +476,7 @@ async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get
             import json
             await store.redis.set(f"areqa:hot_memory:{current_user_id}", json.dumps(hot_mem, ensure_ascii=False))
     else:
+        gum_instance, _ = await get_gum_instance(current_user_id)
         if gum_instance:
             await gum_instance.update_status(int(mem_id), "deleted")
     return {"status": "success"}
@@ -484,7 +492,7 @@ async def batch_delete_memory_endpoint(req: DeleteBatchRequest, current_user_id:
 
 @app.put("/api/v1/memory/{mem_id}")
 async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user_id: str = Depends(get_current_user)):
-    from gum_integration import gum_instance
+    from gum_integration import get_gum_instance
     from memory_store import get_global_store
     
     if mem_id.startswith("profile:"):
@@ -507,6 +515,7 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user
             import json
             await store.redis.set(f"areqa:hot_memory:{current_user_id}", json.dumps(hot_mem, ensure_ascii=False))
     else:
+        gum_instance, _ = await get_gum_instance(current_user_id)
         if gum_instance:
             await gum_instance.update_text(int(mem_id), req.text)
             
@@ -806,7 +815,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
         print(f"[ComPeer] User '{target_user}' rejected popup, entering cooldown.")
     else:
         # Meaningful interactions go to GUM to become semantic propositions
-        asyncio.create_task(push_observation(obs_text))
+        asyncio.create_task(push_observation(current_user_id, obs_text))
         
     return {"status": "ok"}
 

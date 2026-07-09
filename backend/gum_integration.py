@@ -67,12 +67,17 @@ async def get_gum_instance(user_id: str):
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         from config import settings
 
+        gum_database_url = os.environ.get("GUM_DATABASE_URL") or os.environ.get("DATABASE_URL")
+        gum_db_name = gum_database_url if gum_database_url else f"gum_{user_id}.db"
+
+        new_obs = TextObserver(name=f"TextChatObserver_{user_id}")
+
         new_gum = gum(
             user_id,
             settings.model_gum,
-            None, # Will set observer after
+            new_obs,
             data_directory=data_dir,
-            db_name=f"gum_{user_id}.db",
+            db_name=gum_db_name,
             api_key=api_key,
             api_base="https://openrouter.ai/api/v1",
             min_batch_size=17,
@@ -88,9 +93,6 @@ async def get_gum_instance(user_id: str):
         new_gum.start_update_loop()
         if new_gum.batcher:
             await new_gum.batcher.start()
-
-        new_obs = TextObserver(name=f"TextChatObserver_{user_id}")
-        new_gum.observer = new_obs
 
         gum_instances[user_id] = new_gum
         text_observers[user_id] = new_obs
@@ -112,11 +114,18 @@ async def stop_gum_instance():
         reflection_task.cancel()
     for uid, inst in gum_instances.items():
         if inst:
+            if hasattr(inst, "observers"):
+                inst.observers = [
+                    obs for obs in inst.observers
+                    if obs is not None and hasattr(obs, "update_queue")
+                ]
             await inst.stop_update_loop()
             if inst.batcher:
                 await inst.batcher.stop()
     gum_instances.clear()
     text_observers.clear()
+    obs_worker = None
+    reflection_task = None
 
 async def clear_gum_memory(user_id: str = "default_user"):
     """Clear GUM memory from the database for a specific user."""
@@ -448,13 +457,15 @@ async def run_reflection_loop():
     global last_interaction_time
     while True:
         await asyncio.sleep(300)  # Check every 5 minutes
-        if not gum_instance or last_interaction_time is None:
+        if not gum_instances or last_interaction_time is None:
             continue
         
         idle_time = datetime.now() - last_interaction_time
-        if idle_time.total_seconds() > 1800 and interaction_count > 0:
-            print("Idle for 30 minutes, triggering session boundary reflection.")
-            await run_reflection()
+        if idle_time.total_seconds() > 1800:
+            for user_id in list(gum_instances.keys()):
+                if interaction_counts.get(user_id, 0) > 0:
+                    print(f"Idle for 30 minutes, triggering session boundary reflection for {user_id}.")
+                    await run_reflection(user_id)
 
 reflection_task = None
 
@@ -610,10 +621,11 @@ async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5
         learner_state = await store.get_learner_state(user_id) if store else "STARTING"
         
         c = client
-        m = model if model else "qwen/qwen-turbo"
+        from config import settings
+        m = model if model else settings.model_zpd_query
         if not c:
             from openai import AsyncOpenAI
-            c = AsyncOpenAI(api_key=api_key)
+            c = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
             
         zpd_query = await generate_zpd_query_via_llm(c, m, query, learner_state)
         
@@ -675,6 +687,7 @@ async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str)
     """
     Analyze hot memory snapshot to determine if a proactive intervention is warranted.
     """
+    gum_instance, _ = await get_gum_instance(user_id)
     if not gum_instance:
         return {"has_event": False, "event_summary": "", "importance": 0.0}
 
@@ -724,6 +737,7 @@ async def generate_scaffolding_message_via_llm(
     """
     Generate a personalized scaffolding message for proactive ComPeer intervention.
     """
+    gum_instance, _ = await get_gum_instance(user_id)
     if not gum_instance:
         return "你學習狀況還好嗎？有任何問題都可以問我。"
 
@@ -787,6 +801,7 @@ async def generate_epistolary_letter_via_llm(
     hot_memory_snapshot: str,
     cold_memory_context: str
 ) -> str:
+    gum_instance, _ = await get_gum_instance(user_id)
     if not gum_instance:
         return "系統發生錯誤，無法寫信。"
         
@@ -848,30 +863,15 @@ async def generate_epistolary_letter_via_llm(
         print(f"[Mailbox] generate_epistolary_letter_via_llm failed: {e}")
         return "一封未知的信", f"來自{active_avatar}的一封信，因時空亂流未能完整送達。"
 
-async def delayed_reply_writer(mail_id: str, reply_content: str, active_avatar: str, delay_seconds: int = 300):
-    user_id = "default_user"
+async def delayed_reply_writer(user_id: str, mail_id: str, reply_content: str, active_avatar: str, delay_seconds: int = 300):
     print(f"[Mailbox] delayed_reply_writer started for mail_id {mail_id}, scheduling in {delay_seconds} seconds...")
     try:
         from mailbox_store import get_mailbox_store
         store = get_mailbox_store()
         
-        snapshot = await get_hot_memory_snapshot(user_id)
-        hot_context = f"使用者的回信內容：{reply_content}\n---\n目前對話脈絡：\n{snapshot}"
-        
-        event_summary = f"使用者回信給 {active_avatar} 探討：{reply_content[:50]}"
-        cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
-        
-        subject, letter_content = await generate_epistolary_letter_via_llm(
-            user_id=user_id,
-            active_avatar=active_avatar,
-            hot_memory_snapshot=hot_context,
-            cold_memory_context=cold_ctx
-        )
-        
         await store.schedule_delayed_mail(user_id, {
-            "mail_id": mail_id,
-            "content": letter_content,
-            "subject": subject,
+            "reply_to_mail_id": mail_id,
+            "reply_content": reply_content,
             "active_avatar": active_avatar,
             "conversation_id": mail_id
         }, delay_seconds)

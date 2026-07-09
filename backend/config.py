@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_main_instruct: str = "google/gemini-3.1-flash-lite"
     model_main_thinking: str = "google/gemini-3.1-flash-lite"
     model_gum: str = "google/gemini-3.1-flash-lite"
+    model_zpd_query: str = "google/gemini-3.1-flash-lite"
 
     # RAG Parameters
     rag_max_docs: int = 7

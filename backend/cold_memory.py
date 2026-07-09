@@ -9,6 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 global_engine = None
+_table_availability = None
 
 def get_engine():
     global global_engine
@@ -51,12 +52,50 @@ class ColdMemoryRetriever:
 
     async def search(self, query: str, user_id: str = "default_user", top_k: int = 5) -> List[Dict[str, Any]]:
         # Hybrid Search: Vector KNN + BM25 + RRF
-        query_embedding = await self.get_embedding(query)
-        
         engine = get_engine()
 
+        async def _get_table_availability() -> Dict[str, bool]:
+            global _table_availability
+            if _table_availability is not None:
+                return _table_availability
+
+            async def _table_exists(session: AsyncSession, table_name: str, *, required: bool) -> bool:
+                try:
+                    cursor = await session.execute(text(f"SELECT to_regclass('public.{table_name}')"))
+                    if hasattr(cursor, "scalar"):
+                        return cursor.scalar() is not None
+
+                    # Some tests use lightweight fake cursors that do not implement
+                    # scalar(). For the required table, stay optimistic and let the
+                    # real query path decide; for optional tables, default disabled.
+                    return required
+                except Exception as e:
+                    if required:
+                        logger.error(f"[ColdMemory] Failed to inspect required PostgreSQL table {table_name}: {e}")
+                        return True
+                    logger.warning(f"[ColdMemory] PostgreSQL table {table_name} is unavailable; related search disabled: {e}")
+                    return False
+
+            async with AsyncSession(engine) as session:
+                _table_availability = {
+                    "propositions": await _table_exists(session, "propositions", required=True),
+                    "vec_memory": await _table_exists(session, "vec_memory", required=False),
+                }
+
+            if not _table_availability["propositions"]:
+                logger.warning("[ColdMemory] PostgreSQL table propositions is missing; cold memory search disabled.")
+            elif not _table_availability["vec_memory"]:
+                logger.warning("[ColdMemory] PostgreSQL table vec_memory is missing; vector cold memory search disabled.")
+            return _table_availability
+
+        tables = await _get_table_availability()
+        if not tables["propositions"]:
+            return []
+
+        query_embedding = await self.get_embedding(query) if tables["vec_memory"] else []
+
         async def _fetch_vector_results() -> List[Tuple[int, float]]:
-            if not query_embedding:
+            if not tables["vec_memory"] or not query_embedding:
                 return []
 
             try:

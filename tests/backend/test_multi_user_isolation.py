@@ -97,13 +97,17 @@ async def test_stop_gum_instance_stops_all_users():
     gi.gum_instances["user_a"] = mock_instance_a
     gi.gum_instances["user_b"] = mock_instance_b
     
-    gi.obs_worker = AsyncMock()
+    mock_obs_worker = AsyncMock()
+    gi.obs_worker = mock_obs_worker
     gi.reflection_task = MagicMock()
+    mock_reflection_task = gi.reflection_task
     
     await stop_gum_instance()
     
-    gi.obs_worker.stop.assert_called_once()
-    gi.reflection_task.cancel.assert_called_once()
+    mock_obs_worker.stop.assert_called_once()
+    mock_reflection_task.cancel.assert_called_once()
+    assert gi.obs_worker is None
+    assert gi.reflection_task is None
     
     mock_instance_a.stop_update_loop.assert_called_once()
     mock_instance_a.batcher.stop.assert_called_once()

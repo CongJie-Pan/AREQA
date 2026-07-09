@@ -7,12 +7,16 @@ from backend.mailbox_store import MailboxStore
 class FakeRedis:
     def __init__(self):
         self.store = {}
+        self.zsets = {}
         
     async def get(self, key):
         return self.store.get(key)
         
     async def set(self, key, value):
         self.store[key] = value
+
+    async def zadd(self, key, mapping):
+        self.zsets.setdefault(key, {}).update(mapping)
 
 @pytest.fixture
 def temp_store():
@@ -68,3 +72,40 @@ async def test_conversation_thread(temp_store):
     mails = await store.get_all_mails("user1")
     conv1_mails = [m for m in mails if m.get("conversation_id") == "conv-1"]
     assert len(conv1_mails) == 2
+
+@pytest.mark.asyncio
+async def test_schedule_delayed_mail_persists_user_and_task_id(temp_store):
+    store = temp_store
+    task_id = await store.schedule_delayed_mail(
+        "user1",
+        {"reply_content": "hello", "active_avatar": "柏拉圖"},
+        delay_seconds=300,
+    )
+
+    queued = list(store.redis.zsets["areqa:delayed_mail:user1"].keys())
+    assert len(queued) == 1
+    payload = json.loads(queued[0])
+    assert payload["task_id"] == task_id
+    assert payload["user_id"] == "user1"
+    assert payload["reply_content"] == "hello"
+
+@pytest.mark.asyncio
+async def test_add_mail_is_idempotent_for_delivered_task(temp_store):
+    store = temp_store
+    first_id = await store.add_mail(
+        "user1",
+        "柏拉圖",
+        "第一封",
+        delivered_task_id="task-1",
+    )
+    second_id = await store.add_mail(
+        "user1",
+        "柏拉圖",
+        "重試不應新增",
+        delivered_task_id="task-1",
+    )
+
+    mails = await store.get_all_mails("user1")
+    assert first_id == second_id
+    assert len(mails) == 1
+    assert mails[0]["content"] == "第一封"

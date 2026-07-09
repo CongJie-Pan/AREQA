@@ -15,6 +15,20 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: PERPLEXITY_API_KEY
+        sync: false
+      - key: MODEL_ZPD_QUERY
+        value: google/gemini-3.1-flash-lite
 
   # 前端 Next.js 服務
   - type: web
@@ -30,3 +44,7 @@ services:
       # 自動從後端服務取得網址，綁定給前端使用
       - key: NEXT_PUBLIC_BACKEND_URL
         value: https://areqa-backend.onrender.com
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false

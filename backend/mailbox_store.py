@@ -18,9 +18,25 @@ class MailboxStore:
         data = await self.redis.get(f"areqa:mailbox:{user_id}")
         return json.loads(data) if data else []
 
-    async def add_mail(self, user_id: str, sender: str, content: str, subject: str = "", recipient: str = "User", conversation_id: Optional[str] = None) -> str:
+    async def add_mail(
+        self,
+        user_id: str,
+        sender: str,
+        content: str,
+        subject: str = "",
+        recipient: str = "User",
+        conversation_id: Optional[str] = None,
+        mail_id: Optional[str] = None,
+        delivered_task_id: Optional[str] = None,
+    ) -> str:
         mails = await self.get_all_mails(user_id)
-        mail_id = str(uuid.uuid4())
+
+        if delivered_task_id:
+            for mail in mails:
+                if mail.get("delivered_task_id") == delivered_task_id:
+                    return mail["mail_id"]
+
+        mail_id = mail_id or str(uuid.uuid4())
         
         new_mail = {
             "mail_id": mail_id,
@@ -32,6 +48,8 @@ class MailboxStore:
             "is_read": False,
             "conversation_id": conversation_id
         }
+        if delivered_task_id:
+            new_mail["delivered_task_id"] = delivered_task_id
         
         mails.append(new_mail)
         await self.redis.set(f"areqa:mailbox:{user_id}", json.dumps(mails, ensure_ascii=False))
@@ -55,11 +73,14 @@ class MailboxStore:
         return sum(1 for mail in mails if not mail.get("is_read", False) and mail.get("recipient") == "User")
 
     async def schedule_delayed_mail(self, user_id: str, mail_data: Dict[str, Any], delay_seconds: int = 300):
-        # We assume delay_seconds = 300
+        mail_data = dict(mail_data)
+        mail_data.setdefault("task_id", str(uuid.uuid4()))
+        mail_data["user_id"] = user_id
         score = time.time() + delay_seconds
         mail_data_json = json.dumps(mail_data, ensure_ascii=False)
         await self.redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: score})
-        logger.info(f"[MailboxStore] Enqueued delayed mail for user {user_id} with delay {delay_seconds}s")
+        logger.info(f"[MailboxStore] Added delayed mail task {mail_data['task_id']} for user {user_id} with delay {delay_seconds}s")
+        return mail_data["task_id"]
 
 _global_mailbox_store = None
 
@@ -88,21 +109,53 @@ async def delayed_mail_worker():
                     tasks = await redis.zrangebyscore(key, 0, now)
                     for task_json in tasks:
                         task = json.loads(task_json)
-                        # task contains: mail_id, content, active_avatar, delay_seconds, user_id
                         user_id = task.get("user_id", "default_user")
-                        content = task.get("content", "")
+                        task_id = task.get("task_id") or task.get("mail_id") or task_json
+                        lock_key = f"areqa:delayed_mail_lock:{task_id}"
+                        if not await redis.set(lock_key, "1", nx=True, ex=300):
+                            continue
+
                         active_avatar = task.get("active_avatar", "AREQA")
                         conversation_id = task.get("conversation_id")
-                        subject = task.get("subject", "")
+                        subject = task.get("subject") or ""
+                        content = task.get("content") or ""
+
+                        if not content:
+                            from gum_integration import (
+                                generate_epistolary_letter_via_llm,
+                                get_hot_memory_snapshot,
+                                query_cold_memory_for_context,
+                            )
+
+                            reply_content = task.get("reply_content", "")
+                            snapshot = await get_hot_memory_snapshot(user_id)
+                            hot_context = f"使用者的回信內容：{reply_content}\n---\n目前對話脈絡：\n{snapshot}"
+                            event_summary = f"使用者回信給 {active_avatar} 探討：{reply_content[:50]}"
+                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
+                            subject, content = await generate_epistolary_letter_via_llm(
+                                user_id=user_id,
+                                active_avatar=active_avatar,
+                                hot_memory_snapshot=hot_context,
+                                cold_memory_context=cold_ctx,
+                            )
                         
                         store = get_mailbox_store()
-                        await store.add_mail(user_id=user_id, sender=active_avatar, content=content, subject=subject, recipient="User", conversation_id=conversation_id)
+                        await store.add_mail(
+                            user_id=user_id,
+                            sender=active_avatar,
+                            content=content,
+                            subject=subject,
+                            recipient="User",
+                            conversation_id=conversation_id,
+                            delivered_task_id=task_id,
+                        )
                         
                         # Broadcast alert (we have to import ws_manager)
                         from services.connection_manager import ws_manager
                         asyncio.create_task(ws_manager.broadcast_mail_alert(sender=active_avatar, user_id=user_id))
                         
                         await redis.zrem(key, task_json)
+                        await redis.delete(lock_key)
                         
                 if cursor == 0:
                     break

@@ -40,10 +40,9 @@ def test_get_mailbox_with_mails(mock_store):
     assert response.status_code == 200
     assert response.json() == {"mails": [{"mail_id": "1", "sender": "AREQA"}], "unread_count": 1}
     
-@patch("backend.main.asyncio.create_task")
-@patch("gum_integration.delayed_reply_writer", new_callable=AsyncMock)
-def test_post_send_reply_creates_user_mail(mock_delayed_reply_writer, mock_create_task, mock_store):
+def test_post_send_reply_creates_user_mail(mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
+    mock_store.schedule_delayed_mail.return_value = "task-123"
     
     response = client.post("/api/v1/mailbox/send", json={"content": "這是我的回信", "recipient": "柏拉圖", "conversation_id": "thread-1"})
     assert response.status_code == 200
@@ -57,16 +56,25 @@ def test_post_send_reply_creates_user_mail(mock_delayed_reply_writer, mock_creat
         conversation_id="thread-1"
     )
     mock_store.mark_as_read.assert_called_once_with(user_id="default_user", mail_id="mock-uuid-123")
+    mock_store.schedule_delayed_mail.assert_called_once_with(
+        user_id="default_user",
+        mail_data={
+            "reply_to_mail_id": "mock-uuid-123",
+            "reply_content": "這是我的回信",
+            "active_avatar": "柏拉圖",
+            "conversation_id": "thread-1",
+        },
+        delay_seconds=300,
+    )
 
-@patch("backend.main.asyncio.create_task")
-@patch("gum_integration.delayed_reply_writer", new_callable=AsyncMock)
-def test_post_send_reply_triggers_background_task(mock_delayed_reply_writer, mock_create_task, mock_store):
+def test_post_send_reply_schedules_durable_delayed_task(mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
+    mock_store.schedule_delayed_mail.return_value = "task-123"
     
     response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
     assert response.status_code == 200
     
-    mock_create_task.assert_called_once()
+    mock_store.schedule_delayed_mail.assert_called_once()
     
 def test_post_send_reply_validation():
     # Missing content
