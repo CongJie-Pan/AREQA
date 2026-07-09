@@ -121,7 +121,7 @@ async def test_push_observation():
         await push_observation("test_user", "test observation text")
 
         mock_gum.query.assert_called_once_with("test observation text", limit=20)
-        mock_obs.push_text.assert_called_once_with("test observation text")
+        mock_obs.push_text.assert_called_once_with("test observation text", user_id="test_user")
         
 @pytest.mark.asyncio
 async def test_get_all_memory_with_stitch_tags(mock_gum_instance):
@@ -180,7 +180,7 @@ async def test_push_observation_with_evolution():
         # Should update status of ID 1 to superseded
         mock_gum.update_status.assert_called_once_with(1, "superseded")
         # Should push the new text
-        mock_text_observer.push_text.assert_called_once_with("User loves apples now")
+        mock_text_observer.push_text.assert_called_once_with("User loves apples now", user_id="test_user")
 
 @pytest.mark.asyncio
 async def test_push_observation_with_evolution_no_prune():
@@ -213,7 +213,7 @@ async def test_push_observation_with_evolution_no_prune():
         # Should NOT update status since should_evolve is false
         mock_gum.update_status.assert_not_called()
         # Should push the new text
-        mock_text_observer.push_text.assert_called_once_with("User asks about the weather")
+        mock_text_observer.push_text.assert_called_once_with("User asks about the weather", user_id="test_user")
 
 @pytest.mark.asyncio
 async def test_get_all_memory(mock_gum_instance):

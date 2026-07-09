@@ -18,9 +18,9 @@ class TextObserver(Observer):
     def __init__(self, name="TextChatObserver"):
         super().__init__(name)
         
-    async def push_text(self, text: str):
+    async def push_text(self, text: str, user_id: str = "default_user"):
         # We wrap the text in an Update object
-        await self.update_queue.put(Update(content=text, content_type="input_text"))
+        await self.update_queue.put(Update(content=text, content_type="input_text", user_id=user_id))
 
     async def start(self):
         pass
@@ -194,7 +194,7 @@ async def run_reflection(user_id: str) -> list[str]:
         for insight in insights:
             print(f"  - {insight}")
             if text_observer:
-                await text_observer.push_text(f"[REFLECTION] {insight}")
+                await text_observer.push_text(f"[REFLECTION] {insight}", user_id=user_id)
                 
         # Archive old observations
         for o in obs:
@@ -329,7 +329,7 @@ async def batch_process_observations(user_id: str, items: list[str]):
             final_text = combined_text
             final_decay = 5.0
     
-        await text_observer.push_text(combined_text)
+        await text_observer.push_text(combined_text, user_id=user_id)
         interaction_counts[user_id] = interaction_counts.get(user_id, 0) + len(items)
     else:
         combined_text = " | ".join(items)

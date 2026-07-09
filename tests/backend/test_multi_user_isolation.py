@@ -79,7 +79,7 @@ async def test_batch_process_observations_multi_user_isolation():
         await batch_process_observations("user_a", ["obs1", "obs2"])
         
         mock_get.assert_called_with("user_a")
-        mock_text_obs.push_text.assert_called_once_with("obs1 | obs2")
+        mock_text_obs.push_text.assert_called_once_with("obs1 | obs2", user_id="user_a")
         
         assert gi.importance_sums.get("user_a") == 5
         assert gi.interaction_counts.get("user_a") == 2
