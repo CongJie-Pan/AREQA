@@ -22,6 +22,7 @@ from sqlalchemy import (
     literal_column,
     text,
     func,
+    bindparam,
 )
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,24 +96,23 @@ async def search_propositions_bm25(
         if include_observations:
             # --- 1-a-1  WITH observations --------------------
             if is_pg:
-                bm25_p = literal_column("ts_rank(to_tsvector('english', propositions.text), plainto_tsquery('english', :q))").label("score")
-                bm25_o = literal_column("ts_rank(to_tsvector('english', observations.content), plainto_tsquery('english', :q))").label("score")
+                q_param = bindparam("q")
+                ts_query = func.plainto_tsquery("english", q_param)
+                prop_vector = func.to_tsvector("english", Proposition.text)
+                obs_vector = func.to_tsvector("english", Observation.content)
+                bm25_p = func.ts_rank(prop_vector, ts_query).label("score")
+                bm25_o = func.ts_rank(obs_vector, ts_query).label("score")
 
                 sub_p = (
                     select(Proposition.id.label("pid"), bm25_p)
-                    .where(text("to_tsvector('english', propositions.text) @@ plainto_tsquery('english', :q)"))
+                    .where(prop_vector.op("@@")(ts_query))
                 )
 
                 sub_o = (
                     select(observation_proposition.c.proposition_id.label("pid"), bm25_o)
-                    .select_from(
-                        Observation
-                        .join(
-                            observation_proposition,
-                            observation_proposition.c.observation_id == Observation.id,
-                        )
-                    )
-                    .where(text("to_tsvector('english', observations.content) @@ plainto_tsquery('english', :q)"))
+                    .select_from(Observation)
+                    .join(observation_proposition, observation_proposition.c.observation_id == Observation.id)
+                    .where(obs_vector.op("@@")(ts_query))
                 )
             else:
                 fts_obs  = Table("observations_fts", MetaData())
@@ -160,12 +160,15 @@ async def search_propositions_bm25(
         else:
             # --- 1-a-2  WITHOUT observations -----------------
             if is_pg:
+                q_param = bindparam("q")
+                ts_query = func.plainto_tsquery("english", q_param)
+                prop_vector = func.to_tsvector("english", Proposition.text)
                 best_scores = (
                     select(
                         Proposition.id.label("pid"),
-                        literal_column("ts_rank(to_tsvector('english', propositions.text), plainto_tsquery('english', :q))").label("bm25"),
+                        func.ts_rank(prop_vector, ts_query).label("bm25"),
                     )
-                    .where(text("to_tsvector('english', propositions.text) @@ plainto_tsquery('english', :q)"))
+                    .where(prop_vector.op("@@")(ts_query))
                     .subquery()
                 )
             else:

@@ -342,7 +342,20 @@ class gum:
             response_format=get_schema(schema),
         )
 
-        return json.loads(rsp.choices[0].message.content)["propositions"]
+        try:
+            return json.loads(rsp.choices[0].message.content)["propositions"]
+        except json.JSONDecodeError:
+            fallback_text = combined_text[:1200]
+            return [{
+                "proposition": fallback_text,
+                "reasoning": "Fallback proposition created because the model returned malformed JSON.",
+                "context_scope": "system_observation",
+                "event_types": ["observation"],
+                "target": self.user_name,
+                "functional_type_seeds": ["memory"],
+                "confidence": 1,
+                "decay": 5,
+            }]
 
     async def _build_relation_prompt(self, all_props) -> str:
         """Build a prompt for analyzing relationships between propositions.
@@ -456,13 +469,27 @@ class gum:
             messages=[{"role": "user", "content": prompt}],
             response_format=get_schema(PropositionSchema.model_json_schema()), 
         )
-        return json.loads(rsp.choices[0].message.content)["propositions"]
+        try:
+            return json.loads(rsp.choices[0].message.content)["propositions"]
+        except json.JSONDecodeError:
+            fallback_text = " ".join(o.content for o in related_obs[:10])[:1200]
+            return [{
+                "proposition": fallback_text,
+                "reasoning": "Fallback revision created because the model returned malformed JSON.",
+                "context_scope": "system_observation",
+                "event_types": ["observation"],
+                "target": self.user_name,
+                "functional_type_seeds": ["memory"],
+                "confidence": 1,
+                "decay": 5,
+            }]
 
     async def _generate_and_search(
         self, session: AsyncSession, batched_observations: list[dict]
     ) -> list[Proposition]:
 
         drafts_raw = await self._construct_propositions(batched_observations)
+        batch_user_id = batched_observations[0].get("user_id", self.user_name) if batched_observations else self.user_name
         drafts: list[Proposition] = []
         pool: dict[int, Proposition] = {}
 
@@ -476,6 +503,7 @@ class gum:
                 functional_type_seeds=json.dumps(itm.get("functional_type_seeds", [])) if itm.get("functional_type_seeds") else None,
                 confidence=itm.get("confidence"),
                 decay=itm.get("decay"),
+                user_id=batch_user_id,
                 revision_group=str(uuid4()),
                 version=1,
             )
@@ -488,7 +516,8 @@ class gum:
                     include_observations=False,
                     enable_mmr=False,
                     enable_decay=True,
-                    include_deleted=True
+                    include_deleted=True,
+                    user_id=batch_user_id,
                 )
                 
             for prop, _score in hits:
@@ -559,6 +588,7 @@ class gum:
         
         # Create new propositions to replace them
         revision_group = str(uuid4())
+        batch_user_id = observations[0].user_id if observations else self.user_name
         for item in revised_items:
             new_prop = Proposition(
                 text=item["proposition"],
@@ -572,7 +602,7 @@ class gum:
                 user_id=batch_user_id,
                 version=1,  # Start fresh with version 1
                 revision_group=revision_group,
-                observations=list(rel_obs),
+                observations=set(rel_obs),
             )
             session.add(new_prop)
 
@@ -881,4 +911,3 @@ class gum:
                 .where(Observation.id == observation_id)
                 .values(status=status, updated_at=func.now())
             )
-

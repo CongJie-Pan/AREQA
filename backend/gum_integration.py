@@ -61,7 +61,8 @@ async def get_gum_instance(user_id: str):
 
         print(f"[GUM] Initializing new GUM instance for user {user_id}...")
 
-        data_dir = str(project_root / "data" / "gum_data")
+        safe_user_id = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in user_id)
+        data_dir = str(project_root / "data" / "gum_data" / safe_user_id)
         os.makedirs(data_dir, exist_ok=True)
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -160,6 +161,23 @@ importance_sums = {}
 interaction_counts = {}
 last_interaction_time = None
 
+def is_real_gum_batcher(gum_instance) -> bool:
+    batcher = getattr(gum_instance, "batcher", None)
+    batcher_module = batcher.__class__.__module__ if batcher is not None else ""
+    return batcher is not None and hasattr(batcher, "push") and batcher_module.startswith("gum.")
+
+async def push_text_to_gum(gum_instance, text_observer, text: str, user_id: str):
+    batcher = getattr(gum_instance, "batcher", None)
+    if is_real_gum_batcher(gum_instance):
+        batcher.push(
+            observer_name=getattr(text_observer, "name", "TextChatObserver"),
+            content=text,
+            content_type="input_text",
+            user_id=user_id,
+        )
+        return
+    await text_observer.push_text(text, user_id=user_id)
+
 async def run_reflection(user_id: str) -> list[str]:
     global importance_sums, interaction_counts
     gum_instance, text_observer = await get_gum_instance(user_id)
@@ -194,7 +212,7 @@ async def run_reflection(user_id: str) -> list[str]:
         for insight in insights:
             print(f"  - {insight}")
             if text_observer:
-                await text_observer.push_text(f"[REFLECTION] {insight}", user_id=user_id)
+                await push_text_to_gum(gum_instance, text_observer, f"[REFLECTION] {insight}", user_id)
                 
         # Archive old observations
         for o in obs:
@@ -329,7 +347,11 @@ async def batch_process_observations(user_id: str, items: list[str]):
             final_text = combined_text
             final_decay = 5.0
     
-        await text_observer.push_text(combined_text, user_id=user_id)
+        if is_real_gum_batcher(gum_instance):
+            for item in items:
+                await push_text_to_gum(gum_instance, text_observer, item, user_id)
+        else:
+            await push_text_to_gum(gum_instance, text_observer, combined_text, user_id)
         interaction_counts[user_id] = interaction_counts.get(user_id, 0) + len(items)
     else:
         combined_text = " | ".join(items)
