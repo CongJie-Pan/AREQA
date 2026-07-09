@@ -75,7 +75,8 @@ async def test_get_and_stop_gum_instance():
 
         assert instance is mock_instance
         assert observer is not None
-        assert mock_gum.call_args.args[2] is observer
+        assert mock_gum.call_args.args[2] is None
+        assert mock_instance.observer is observer
         mock_instance.connect_db.assert_called_once()
         mock_instance.start_update_loop.assert_called_once()
 

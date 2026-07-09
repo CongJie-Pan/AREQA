@@ -15,7 +15,9 @@ The preflight checks:
 - Required `.env` keys exist, without printing secret values.
 - Redis can be reached through `REDIS_URL`.
 - PostgreSQL can be reached through `DATABASE_URL`.
-- `public.propositions` and `public.vec_memory` schema availability.
+- Cold-memory schema availability: `public.propositions` and `public.vec_memory`.
+- Mailbox persistence schema availability: `public.mailbox_messages` and
+  `public.mailbox_delayed_tasks`.
 - Backend API auth behavior for `/api/v1/mailbox` and `/api/v1/memory`.
 
 If the preflight reports `PostgreSQL propositions table` as failed, apply:
@@ -26,6 +28,16 @@ supabase/migrations/20260709_cold_memory_schema.sql
 
 Run it in the Supabase SQL editor for the target project, then rerun the
 preflight.
+
+If the preflight reports either mailbox table as failed, apply:
+
+```text
+supabase/migrations/20260709_mailbox_persistence_schema.sql
+```
+
+The mailbox tables make Supabase/PostgreSQL the source of truth for user-visible
+mail and scheduled delivery metadata. Redis is still used for cache, delayed
+queue, locks, and fast worker polling.
 
 If authenticated API calls return `Auth configuration missing`, configure
 `JWT_SECRET` in the running backend environment and redeploy/restart the API.
@@ -42,10 +54,11 @@ then verifies:
 - `POST /api/v1/log_action` writes hot memory to Redis.
 - `POST /api/v1/mailbox/send` writes a user mail.
 - Redis contains the mailbox and delayed queue records.
+- PostgreSQL contains matching mailbox message and delayed task rows.
 - PostgreSQL contains a matching proposition when cold-memory processing works.
 
 The default cleanup removes only the generated test user's Redis keys and
-matching PostgreSQL proposition rows.
+matching PostgreSQL mailbox/cold-memory rows.
 
 ## Full Delayed Mail Probe
 

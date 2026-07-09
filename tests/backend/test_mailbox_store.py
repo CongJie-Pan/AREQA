@@ -1,7 +1,7 @@
 import pytest
 import os
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from backend.mailbox_store import MailboxStore
 
 class FakeRedis:
@@ -17,6 +17,13 @@ class FakeRedis:
 
     async def zadd(self, key, mapping):
         self.zsets.setdefault(key, {}).update(mapping)
+
+class FailingRedis(FakeRedis):
+    async def get(self, key):
+        raise RuntimeError("redis unavailable")
+
+    async def zadd(self, key, mapping):
+        raise RuntimeError("redis unavailable")
 
 @pytest.fixture
 def temp_store():
@@ -109,3 +116,46 @@ async def test_add_mail_is_idempotent_for_delivered_task(temp_store):
     assert first_id == second_id
     assert len(mails) == 1
     assert mails[0]["content"] == "第一封"
+
+@pytest.mark.asyncio
+async def test_get_all_mails_falls_back_to_db_when_redis_cache_fails():
+    with patch("backend.mailbox_store.get_redis", return_value=FailingRedis()):
+        store = MailboxStore()
+        store._has_db = AsyncMock(return_value=True)
+        store._fetch_mails_from_db = AsyncMock(
+            return_value=[{"mail_id": "mail-1", "sender": "AREQA", "recipient": "User"}]
+        )
+
+        mails = await store.get_all_mails("user1")
+
+    assert mails == [{"mail_id": "mail-1", "sender": "AREQA", "recipient": "User"}]
+    store._fetch_mails_from_db.assert_awaited_once_with("user1")
+
+@pytest.mark.asyncio
+async def test_schedule_delayed_mail_survives_redis_failure_when_db_is_available():
+    with patch("backend.mailbox_store.get_redis", return_value=FailingRedis()):
+        store = MailboxStore()
+        store._has_db = AsyncMock(return_value=True)
+        store._get_engine = lambda: object()
+
+        class FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def begin(self):
+                return self
+
+            async def execute(self, *args, **kwargs):
+                return None
+
+        with patch("backend.mailbox_store.AsyncSession", return_value=FakeSession()):
+            task_id = await store.schedule_delayed_mail(
+                "user1",
+                {"reply_content": "hello"},
+                delay_seconds=60,
+            )
+
+    assert task_id

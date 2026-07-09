@@ -57,6 +57,8 @@ class ProbeState:
     created_mail_id: str | None = None
     db_propositions_exists: bool = False
     db_vec_memory_exists: bool = False
+    db_mailbox_messages_exists: bool = False
+    db_mailbox_delayed_tasks_exists: bool = False
     results: list[ProbeResult] = field(default_factory=list)
 
     def record(self, name: str, ok: bool, detail: str = "") -> None:
@@ -172,12 +174,18 @@ def probe_database(state: ProbeState, database_url: str) -> None:
             state.db_propositions_exists = cur.fetchone()[0] is not None
             cur.execute("SELECT to_regclass('public.vec_memory')")
             state.db_vec_memory_exists = cur.fetchone()[0] is not None
+            cur.execute("SELECT to_regclass('public.mailbox_messages')")
+            state.db_mailbox_messages_exists = cur.fetchone()[0] is not None
+            cur.execute("SELECT to_regclass('public.mailbox_delayed_tasks')")
+            state.db_mailbox_delayed_tasks_exists = cur.fetchone()[0] is not None
     state.record("PostgreSQL propositions table", state.db_propositions_exists)
     state.record(
         "PostgreSQL vec_memory table",
         True,
         "present" if state.db_vec_memory_exists else "missing; vector search should degrade",
     )
+    state.record("PostgreSQL mailbox_messages table", state.db_mailbox_messages_exists)
+    state.record("PostgreSQL mailbox_delayed_tasks table", state.db_mailbox_delayed_tasks_exists)
 
 
 def probe_api_auth(state: ProbeState) -> None:
@@ -300,11 +308,13 @@ def run_write_probe(state: ProbeState, delayed_wait_seconds: int, skip_delayed_w
         len(matching_tasks) == 1,
         f"matches={len(matching_tasks)} task_id={state.delayed_task_id}",
     )
+    probe_mailbox_persistence(state, expect_delayed=True)
 
     if skip_delayed_wait:
         state.record("Delayed delivery wait", True, "skipped by --skip-delayed-wait")
     else:
         wait_for_delayed_reply(state, delayed_wait_seconds)
+        probe_mailbox_persistence(state, expect_delayed=True)
 
     probe_cold_memory(state)
 
@@ -359,6 +369,52 @@ def probe_cold_memory(state: ProbeState) -> None:
     state.record("PostgreSQL propositions contain RUN_ID", len(rows) > 0, f"matches={len(rows)}")
 
 
+def probe_mailbox_persistence(state: ProbeState, *, expect_delayed: bool) -> None:
+    if not state.db_mailbox_messages_exists:
+        state.record("PostgreSQL mailbox_messages contain RUN_ID", False, "public.mailbox_messages is missing")
+        return
+    if expect_delayed and not state.db_mailbox_delayed_tasks_exists:
+        state.record("PostgreSQL mailbox_delayed_tasks contain task", False, "public.mailbox_delayed_tasks is missing")
+        return
+
+    db_url = psycopg2_url(os.environ["DATABASE_URL"])
+    with psycopg2.connect(db_url, connect_timeout=15) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT mail_id, content
+                FROM mailbox_messages
+                WHERE CAST(user_id AS text) = %s
+                  AND content ILIKE %s
+                ORDER BY created_at DESC
+                LIMIT 5
+                """,
+                (state.test_user_id, f"%{state.run_id}%"),
+            )
+            mail_rows = cur.fetchall()
+            delayed_rows = []
+            if expect_delayed:
+                cur.execute(
+                    """
+                    SELECT task_id, status
+                    FROM mailbox_delayed_tasks
+                    WHERE CAST(user_id AS text) = %s
+                      AND payload::text ILIKE %s
+                    ORDER BY created_at DESC
+                    LIMIT 5
+                    """,
+                    (state.test_user_id, f"%{state.run_id}%"),
+                )
+                delayed_rows = cur.fetchall()
+    state.record("PostgreSQL mailbox_messages contain RUN_ID", len(mail_rows) > 0, f"matches={len(mail_rows)}")
+    if expect_delayed:
+        state.record(
+            "PostgreSQL mailbox_delayed_tasks contain task",
+            len(delayed_rows) > 0,
+            f"matches={len(delayed_rows)} statuses={[row[1] for row in delayed_rows]}",
+        )
+
+
 def cleanup(state: ProbeState) -> None:
     print("Cleanup:")
     if state.redis_client is not None:
@@ -371,10 +427,27 @@ def cleanup(state: ProbeState) -> None:
         deleted = state.redis_client.delete(*keys)
         state.record("Redis cleanup", True, f"deleted_keys={deleted}")
 
-    if state.db_propositions_exists:
-        db_url = psycopg2_url(os.environ["DATABASE_URL"])
-        with psycopg2.connect(db_url, connect_timeout=15) as conn:
-            with conn.cursor() as cur:
+    db_url = psycopg2_url(os.environ["DATABASE_URL"])
+    with psycopg2.connect(db_url, connect_timeout=15) as conn:
+        with conn.cursor() as cur:
+            if state.db_mailbox_delayed_tasks_exists:
+                cur.execute(
+                    "DELETE FROM mailbox_delayed_tasks WHERE CAST(user_id AS text) = %s",
+                    (state.test_user_id,),
+                )
+                deleted_delayed_tasks = cur.rowcount
+            else:
+                deleted_delayed_tasks = 0
+            if state.db_mailbox_messages_exists:
+                cur.execute(
+                    "DELETE FROM mailbox_messages WHERE CAST(user_id AS text) = %s",
+                    (state.test_user_id,),
+                )
+                deleted_mailbox_messages = cur.rowcount
+            else:
+                deleted_mailbox_messages = 0
+
+            if state.db_propositions_exists:
                 cur.execute(
                     """
                     DELETE FROM observation_proposition
@@ -408,15 +481,21 @@ def cleanup(state: ProbeState) -> None:
                     (state.test_user_id,),
                 )
                 deleted_propositions = cur.rowcount
-            conn.commit()
-        state.record(
-            "PostgreSQL cleanup",
-            True,
-            (
-                f"links={deleted_links} vectors={deleted_vectors} "
-                f"observations={deleted_observations} propositions={deleted_propositions}"
-            ),
-        )
+            else:
+                deleted_links = 0
+                deleted_vectors = 0
+                deleted_observations = 0
+                deleted_propositions = 0
+        conn.commit()
+    state.record(
+        "PostgreSQL cleanup",
+        True,
+        (
+            f"mailbox_messages={deleted_mailbox_messages} delayed_tasks={deleted_delayed_tasks} "
+            f"links={deleted_links} vectors={deleted_vectors} "
+            f"observations={deleted_observations} propositions={deleted_propositions}"
+        ),
+    )
 
 
 def wait_for(fn, *, timeout: int, interval: int) -> Any:
@@ -497,6 +576,8 @@ def print_next_actions(state: ProbeState, failed: list[ProbeResult]) -> None:
         print("  - Configure JWT_SECRET in the running backend environment, then redeploy/restart the API.")
     if any(result.name == "PostgreSQL propositions table" for result in failed):
         print("  - Apply the cold-memory PostgreSQL schema/migration that creates public.propositions.")
+    if any(result.name.startswith("PostgreSQL mailbox_") for result in failed):
+        print("  - Apply the mailbox persistence PostgreSQL schema/migration that creates public.mailbox_messages and public.mailbox_delayed_tasks.")
     if not state.db_vec_memory_exists:
         print("  - Optional: create public.vec_memory for vector search; API should still degrade without it.")
     if any("failed after" in result.detail for result in failed):

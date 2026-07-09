@@ -70,12 +70,10 @@ async def get_gum_instance(user_id: str):
         gum_database_url = os.environ.get("GUM_DATABASE_URL") or os.environ.get("DATABASE_URL")
         gum_db_name = gum_database_url if gum_database_url else f"gum_{user_id}.db"
 
-        new_obs = TextObserver(name=f"TextChatObserver_{user_id}")
-
         new_gum = gum(
             user_id,
             settings.model_gum,
-            new_obs,
+            None, # Will set observer after
             data_directory=data_dir,
             db_name=gum_db_name,
             api_key=api_key,
@@ -94,6 +92,9 @@ async def get_gum_instance(user_id: str):
         if new_gum.batcher:
             await new_gum.batcher.start()
 
+        new_obs = TextObserver(name=f"TextChatObserver_{user_id}")
+        new_gum.observer = new_obs
+
         gum_instances[user_id] = new_gum
         text_observers[user_id] = new_obs
 
@@ -110,8 +111,10 @@ async def stop_gum_instance():
     global gum_instances, obs_worker, reflection_task
     if obs_worker:
         await obs_worker.stop()
+        obs_worker = None
     if reflection_task:
         reflection_task.cancel()
+        reflection_task = None
     for uid, inst in gum_instances.items():
         if inst:
             if hasattr(inst, "observers"):
@@ -124,8 +127,6 @@ async def stop_gum_instance():
                 await inst.batcher.stop()
     gum_instances.clear()
     text_observers.clear()
-    obs_worker = None
-    reflection_task = None
 
 async def clear_gum_memory(user_id: str = "default_user"):
     """Clear GUM memory from the database for a specific user."""

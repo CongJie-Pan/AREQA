@@ -2,21 +2,94 @@ import json
 import uuid
 import time
 import logging
+import os
 from typing import Dict, Any, List, Optional
 import asyncio
 
 from redis_client import get_redis
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 logger = logging.getLogger(__name__)
 
 class MailboxStore:
     def __init__(self):
         self.redis = get_redis()
+        self._engine = None
+        self._db_available: Optional[bool] = None
+
+    def _database_url(self) -> str:
+        return os.environ.get("MAILBOX_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
+
+    def _get_engine(self):
+        if self._engine is None:
+            db_url = self._database_url()
+            if not db_url:
+                return None
+            if db_url.startswith("postgresql://"):
+                db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            if db_url.startswith("postgres://"):
+                db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            self._engine = create_async_engine(
+                db_url,
+                pool_size=5,
+                max_overflow=10,
+                connect_args={"statement_cache_size": 0},
+            )
+        return self._engine
+
+    async def _has_db(self) -> bool:
+        if self._db_available is not None:
+            return self._db_available
+        engine = self._get_engine()
+        if engine is None:
+            self._db_available = False
+            return False
+        try:
+            async with AsyncSession(engine) as session:
+                cursor = await session.execute(text("SELECT to_regclass('public.mailbox_messages')"))
+                self._db_available = cursor.scalar() is not None
+        except Exception as exc:
+            logger.warning("[MailboxStore] Database mailbox unavailable; falling back to Redis: %s", exc)
+            self._db_available = False
+        return self._db_available
+
+    def _mail_to_cache(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "mail_id": row["mail_id"],
+            "sender": row["sender"],
+            "subject": row.get("subject") or "",
+            "recipient": row["recipient"],
+            "content": row["content"],
+            "timestamp": row["created_at"].timestamp() if row.get("created_at") else time.time(),
+            "is_read": bool(row.get("is_read")),
+            "conversation_id": row.get("conversation_id"),
+            "status": row.get("status", "delivered"),
+            "deliver_at": row["deliver_at"].timestamp() if row.get("deliver_at") else None,
+        }
+
+    async def _cache_mails(self, user_id: str, mails: List[Dict[str, Any]]) -> None:
+        try:
+            await self.redis.set(f"areqa:mailbox:{user_id}", json.dumps(mails, ensure_ascii=False))
+        except Exception as exc:
+            logger.warning("[MailboxStore] Failed to update Redis mailbox cache for %s: %s", user_id, exc)
 
     async def get_all_mails(self, user_id: str) -> List[Dict[str, Any]]:
         # mails can be stored in a Redis list or just a JSON string of list.
-        data = await self.redis.get(f"areqa:mailbox:{user_id}")
-        return json.loads(data) if data else []
+        try:
+            data = await self.redis.get(f"areqa:mailbox:{user_id}")
+        except Exception as exc:
+            logger.warning("[MailboxStore] Failed to read Redis mailbox cache for %s: %s", user_id, exc)
+            data = None
+        if data:
+            return json.loads(data)
+
+        if await self._has_db():
+            mails = await self._fetch_mails_from_db(user_id)
+            await self._cache_mails(user_id, mails)
+            return mails
+
+        return []
 
     async def add_mail(
         self,
@@ -29,6 +102,58 @@ class MailboxStore:
         mail_id: Optional[str] = None,
         delivered_task_id: Optional[str] = None,
     ) -> str:
+        mail_id = mail_id or str(uuid.uuid4())
+
+        if await self._has_db():
+            async with AsyncSession(self._get_engine()) as session:
+                async with session.begin():
+                    if delivered_task_id:
+                        existing = await session.execute(
+                            text(
+                                """
+                                SELECT mail_id
+                                FROM mailbox_messages
+                                WHERE user_id = :user_id AND delivered_task_id = :delivered_task_id
+                                LIMIT 1
+                                """
+                            ),
+                            {"user_id": user_id, "delivered_task_id": delivered_task_id},
+                        )
+                        row = existing.fetchone()
+                        if row:
+                            return row[0]
+
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO mailbox_messages (
+                                mail_id, user_id, sender, subject, recipient, content,
+                                conversation_id, delivered_task_id, status, is_read,
+                                delivered_at
+                            )
+                            VALUES (
+                                :mail_id, :user_id, :sender, :subject, :recipient, :content,
+                                :conversation_id, :delivered_task_id, 'delivered', false,
+                                now()
+                            )
+                            ON CONFLICT (mail_id) DO NOTHING
+                            """
+                        ),
+                        {
+                            "mail_id": mail_id,
+                            "user_id": user_id,
+                            "sender": sender,
+                            "subject": subject,
+                            "recipient": recipient,
+                            "content": content,
+                            "conversation_id": conversation_id,
+                            "delivered_task_id": delivered_task_id,
+                        },
+                    )
+
+            await self._cache_mails(user_id, await self._fetch_mails_from_db(user_id))
+            return mail_id
+
         mails = await self.get_all_mails(user_id)
 
         if delivered_task_id:
@@ -36,8 +161,6 @@ class MailboxStore:
                 if mail.get("delivered_task_id") == delivered_task_id:
                     return mail["mail_id"]
 
-        mail_id = mail_id or str(uuid.uuid4())
-        
         new_mail = {
             "mail_id": mail_id,
             "sender": sender,
@@ -52,10 +175,28 @@ class MailboxStore:
             new_mail["delivered_task_id"] = delivered_task_id
         
         mails.append(new_mail)
-        await self.redis.set(f"areqa:mailbox:{user_id}", json.dumps(mails, ensure_ascii=False))
+        await self._cache_mails(user_id, mails)
         return mail_id
 
     async def mark_as_read(self, user_id: str, mail_id: str) -> bool:
+        if await self._has_db():
+            async with AsyncSession(self._get_engine()) as session:
+                async with session.begin():
+                    cursor = await session.execute(
+                        text(
+                            """
+                            UPDATE mailbox_messages
+                            SET is_read = true, read_at = now(), updated_at = now()
+                            WHERE user_id = :user_id AND mail_id = :mail_id
+                            """
+                        ),
+                        {"user_id": user_id, "mail_id": mail_id},
+                    )
+                    found = cursor.rowcount > 0
+            if found:
+                await self._cache_mails(user_id, await self._fetch_mails_from_db(user_id))
+            return found
+
         mails = await self.get_all_mails(user_id)
         found = False
         for mail in mails:
@@ -65,10 +206,26 @@ class MailboxStore:
                 break
                 
         if found:
-            await self.redis.set(f"areqa:mailbox:{user_id}", json.dumps(mails, ensure_ascii=False))
+            await self._cache_mails(user_id, mails)
         return found
 
     async def get_unread_count(self, user_id: str) -> int:
+        if await self._has_db():
+            async with AsyncSession(self._get_engine()) as session:
+                cursor = await session.execute(
+                    text(
+                        """
+                        SELECT count(*)
+                        FROM mailbox_messages
+                        WHERE user_id = :user_id
+                          AND is_read = false
+                          AND recipient = 'User'
+                        """
+                    ),
+                    {"user_id": user_id},
+                )
+                return int(cursor.scalar() or 0)
+
         mails = await self.get_all_mails(user_id)
         return sum(1 for mail in mails if not mail.get("is_read", False) and mail.get("recipient") == "User")
 
@@ -77,10 +234,108 @@ class MailboxStore:
         mail_data.setdefault("task_id", str(uuid.uuid4()))
         mail_data["user_id"] = user_id
         score = time.time() + delay_seconds
+        if await self._has_db():
+            async with AsyncSession(self._get_engine()) as session:
+                async with session.begin():
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO mailbox_delayed_tasks (
+                                task_id, user_id, payload, status, deliver_at
+                            )
+                            VALUES (
+                                :task_id, :user_id, CAST(:payload AS jsonb), 'scheduled', to_timestamp(:deliver_at)
+                            )
+                            ON CONFLICT (task_id) DO UPDATE
+                            SET payload = EXCLUDED.payload,
+                                status = 'scheduled',
+                                deliver_at = EXCLUDED.deliver_at,
+                                updated_at = now()
+                            """
+                        ),
+                        {
+                            "task_id": mail_data["task_id"],
+                            "user_id": user_id,
+                            "payload": json.dumps(mail_data, ensure_ascii=False),
+                            "deliver_at": score,
+                        },
+                    )
         mail_data_json = json.dumps(mail_data, ensure_ascii=False)
-        await self.redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: score})
+        try:
+            await self.redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: score})
+        except Exception as exc:
+            if not await self._has_db():
+                raise
+            logger.warning("[MailboxStore] Failed to update Redis delayed queue for %s: %s", user_id, exc)
         logger.info(f"[MailboxStore] Added delayed mail task {mail_data['task_id']} for user {user_id} with delay {delay_seconds}s")
         return mail_data["task_id"]
+
+    async def _fetch_mails_from_db(self, user_id: str) -> List[Dict[str, Any]]:
+        async with AsyncSession(self._get_engine()) as session:
+            cursor = await session.execute(
+                text(
+                    """
+                    SELECT mail_id, sender, subject, recipient, content, conversation_id,
+                           status, is_read, created_at, delivered_at AS deliver_at
+                    FROM mailbox_messages
+                    WHERE user_id = :user_id
+                    ORDER BY created_at ASC
+                    """
+                ),
+                {"user_id": user_id},
+            )
+            return [self._mail_to_cache(dict(row)) for row in cursor.mappings().all()]
+
+    async def mark_delayed_task_delivered(self, task_id: str, delivered_mail_id: str) -> None:
+        if not await self._has_db():
+            return
+        async with AsyncSession(self._get_engine()) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        """
+                        UPDATE mailbox_delayed_tasks
+                        SET status = 'delivered',
+                            delivered_mail_id = :delivered_mail_id,
+                            updated_at = now()
+                        WHERE task_id = :task_id
+                        """
+                    ),
+                    {"task_id": task_id, "delivered_mail_id": delivered_mail_id},
+                )
+
+    async def restore_delayed_queue_from_db(self) -> int:
+        if not await self._has_db():
+            return 0
+        async with AsyncSession(self._get_engine()) as session:
+            cursor = await session.execute(
+                text(
+                    """
+                    SELECT task_id, user_id, payload, extract(epoch from deliver_at) AS deliver_at_epoch
+                    FROM mailbox_delayed_tasks
+                    WHERE status = 'scheduled'
+                    """
+                )
+            )
+            rows = cursor.mappings().all()
+
+        restored = 0
+        for row in rows:
+            payload = row["payload"]
+            if isinstance(payload, str):
+                task = json.loads(payload)
+            else:
+                task = dict(payload)
+            task["task_id"] = row["task_id"]
+            task["user_id"] = row["user_id"]
+            await self.redis.zadd(
+                f"areqa:delayed_mail:{row['user_id']}",
+                {json.dumps(task, ensure_ascii=False): float(row["deliver_at_epoch"])},
+            )
+            restored += 1
+        if restored:
+            logger.info("[MailboxStore] Restored %s delayed mail task(s) from database", restored)
+        return restored
 
 _global_mailbox_store = None
 
@@ -98,6 +353,8 @@ def get_mailbox_store() -> MailboxStore:
 # Background Worker for Delayed Mails
 async def delayed_mail_worker():
     redis = get_redis()
+    store = get_mailbox_store()
+    await store.restore_delayed_queue_from_db()
     logger.info("[Mailbox Worker] Started delayed mail worker")
     while True:
         try:
@@ -139,8 +396,7 @@ async def delayed_mail_worker():
                                 cold_memory_context=cold_ctx,
                             )
                         
-                        store = get_mailbox_store()
-                        await store.add_mail(
+                        delivered_mail_id = await store.add_mail(
                             user_id=user_id,
                             sender=active_avatar,
                             content=content,
@@ -149,6 +405,7 @@ async def delayed_mail_worker():
                             conversation_id=conversation_id,
                             delivered_task_id=task_id,
                         )
+                        await store.mark_delayed_task_delivered(task_id, delivered_mail_id)
                         
                         # Broadcast alert (we have to import ws_manager)
                         from services.connection_manager import ws_manager

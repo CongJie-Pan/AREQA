@@ -14,10 +14,11 @@ async def test_schedule_delayed_mail():
     
     with patch("mailbox_store.get_redis", return_value=mock_redis):
         store = MailboxStore()
+        store._db_available = False
         mail_data = {"subject": "Test"}
         
         # Schedule mail
-        await store.schedule_delayed_mail("user_A", mail_data, delay_seconds=300)
+        task_id = await store.schedule_delayed_mail("user_A", mail_data, delay_seconds=300)
         
         # Assert ZADD was called correctly
         assert mock_redis.zadd.called
@@ -27,5 +28,8 @@ async def test_schedule_delayed_mail():
         mapping = args[1]
         # Check mapping content and score
         for k, v in mapping.items():
-            assert json.loads(k) == mail_data
+            payload = json.loads(k)
+            assert payload["subject"] == "Test"
+            assert payload["task_id"] == task_id
+            assert payload["user_id"] == "user_A"
             assert v > time.time() + 290
