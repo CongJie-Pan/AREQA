@@ -16,7 +16,7 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
-from gum_integration import init_gum_instance, stop_gum_instance, push_observation, get_all_memory, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state, clear_gum_memory
+from gum_integration import stop_gum_instance, push_observation, get_all_memory, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state, clear_gum_memory
 
 # 在 main.py 最上層加入全域快取服務變數
 rag_cache = None
@@ -274,7 +274,7 @@ async def startup_event():
     init_mailbox_store()
     print("Mailbox Store initialized successfully.")
     
-    await init_gum_instance()
+    # GUM instances are now initialized lazily per user via get_gum_instance
     
     global rag_cache
     from services.cache_service import RagCacheService
@@ -529,12 +529,12 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user
                             async with session.begin():
                                 await session.execute(text(
                                     "SELECT set_config('request.jwt.claims', "
-                                    "jsonb_build_object('role', 'authenticated', 'sub', :uid)::text, TRUE)"
+                                    "jsonb_build_object('role', 'authenticated', 'sub', CAST(:uid AS text))::text, TRUE)"
                                 ), {"uid": current_user_id})
                                 await session.execute(text("SET LOCAL ROLE authenticated;"))
                                 
                                 await session.execute(text("UPDATE propositions SET text = :text WHERE id = :id"), {"text": req.text, "id": int(mem_id)})
-                                await session.execute(text("UPDATE vec_memory SET embedding = :emb::vector WHERE id = :id"), {"emb": str(embed), "id": int(mem_id)})
+                                await session.execute(text("UPDATE vec_memory SET embedding = CAST(:emb AS vector) WHERE id = :id"), {"emb": str(embed), "id": int(mem_id)})
             except Exception as e:
                 print(f"Failed to update cold memory indexes for edit: {e}")
             

@@ -22,75 +22,90 @@ from unittest.mock import MagicMock, AsyncMock, patch
 # Previously: function did not exist → <working_memory> was never populated.
 # ---------------------------------------------------------------------------
 
+@pytest.fixture
+def memory_store():
+    from backend.memory_store import MemoryStore
+    from unittest.mock import AsyncMock, patch, MagicMock
+    redis = AsyncMock()
+    _store = {}
+    async def fake_get(key): return _store.get(key)
+    async def fake_set(key, val): _store[key] = val
+    def fake_set_sync(key, val): _store[key] = val
+    redis.get = AsyncMock(side_effect=fake_get)
+    redis.set = AsyncMock(side_effect=fake_set)
+    pipe_mock = AsyncMock()
+    pipe_mock.get = AsyncMock(side_effect=fake_get)
+    pipe_mock.set = MagicMock(side_effect=fake_set_sync)
+    pipe_mock.watch = AsyncMock()
+    pipe_mock.multi = MagicMock()
+    pipe_mock.execute = AsyncMock()
+    class PipelineContext:
+        def __init__(self, **kwargs): self.pipe = pipe_mock
+        async def __aenter__(self): return self.pipe
+        async def __aexit__(self, exc_type, exc_val, exc_tb): pass
+    redis.pipeline = PipelineContext
+    redis._store = _store
+    with patch("backend.memory_store.get_redis", return_value=redis):
+        yield MemoryStore()
+
 class TestGetHotMemorySnapshot:
     """
     Target: gum_integration.get_hot_memory_snapshot()
     Regression: If the function is absent or returns "" always, these FAIL.
     """
 
-    def test_snapshot_returns_empty_when_no_store(self):
+    @pytest.mark.asyncio
+    async def test_snapshot_returns_empty_when_no_store(self):
         """When no global store is initialized, snapshot must return ''."""
         import backend.gum_integration as gi
         with patch("memory_store.get_global_store", return_value=None):
-            result = gi.get_hot_memory_snapshot()
+            result = await gi.get_hot_memory_snapshot("default_user")
         assert result == ""
 
-    def test_snapshot_includes_user_profile_section(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_snapshot_includes_user_profile_section(self, memory_store):
         """Snapshot must include user profile section when profile has data."""
-        from backend.memory_store import MemoryStore
-        hot_path = tmp_path / "hot.json"
-        profile_path = tmp_path / "profile.json"
-        store = MemoryStore(str(hot_path), str(profile_path))
-        store.update_user_profile("school", "國立臺灣大學中文系三年級")
+        await memory_store.update_user_profile("default_user", "school", "國立臺灣大學中文系三年級")
 
         import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=store):
-            result = gi.get_hot_memory_snapshot()
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "使用者畫像" in result
         assert "國立臺灣大學中文系三年級" in result
 
-    def test_snapshot_includes_hot_memory_section(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_snapshot_includes_hot_memory_section(self, memory_store):
         """Snapshot must include hot memory section when hot memory has dict-style items."""
-        from backend.memory_store import MemoryStore
-        hot_path = tmp_path / "hot.json"
-        profile_path = tmp_path / "profile.json"
-        store = MemoryStore(str(hot_path), str(profile_path))
-        store.update_hot_memory("林黛玉的老師", {"text": "賈雨村", "confidence": 9})
+        await memory_store.update_hot_memory("default_user", "林黛玉的老師", {"text": "賈雨村", "confidence": 9})
 
         import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=store):
-            result = gi.get_hot_memory_snapshot()
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "近期記憶" in result
         assert "賈雨村" in result
 
-    def test_snapshot_hot_memory_plain_string_value(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_snapshot_hot_memory_plain_string_value(self, memory_store):
         """Snapshot must handle hot memory items that are plain strings."""
-        from backend.memory_store import MemoryStore
-        hot_path = tmp_path / "hot.json"
-        profile_path = tmp_path / "profile.json"
-        store = MemoryStore(str(hot_path), str(profile_path))
-        store.update_hot_memory("怡紅院住戶", "賈寶玉")
+        await memory_store.update_hot_memory("default_user", "怡紅院住戶", "賈寶玉")
 
         import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=store):
-            result = gi.get_hot_memory_snapshot()
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "賈寶玉" in result
 
-    def test_snapshot_reflects_overwrite_immediately(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_snapshot_reflects_overwrite_immediately(self, memory_store):
         """After a=b → a=c override, snapshot must show new value only."""
-        from backend.memory_store import MemoryStore
-        hot_path = tmp_path / "hot.json"
-        profile_path = tmp_path / "profile.json"
-        store = MemoryStore(str(hot_path), str(profile_path))
-        store.update_hot_memory("林黛玉的丫鬟", "雪雁")  # a = b
-        store.update_hot_memory("林黛玉的丫鬟", "紫鵑")  # a = c (override)
+        await memory_store.update_hot_memory("default_user", "林黛玉的丫鬟", "雪雁")  # a = b
+        await memory_store.update_hot_memory("default_user", "林黛玉的丫鬟", "紫鵑")  # a = c (override)
 
         import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=store):
-            result = gi.get_hot_memory_snapshot()
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "紫鵑" in result
         assert "雪雁" not in result
@@ -114,7 +129,7 @@ class TestQueryColdMemoryForContext:
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
         from backend.gum_integration import query_cold_memory_for_context
-        result = await query_cold_memory_for_context("王熙鳳的判詞是什麼？")
+        result = await query_cold_memory_for_context("default_user", "王熙鳳的判詞是什麼？")
         assert result == ""
 
     @pytest.mark.asyncio
@@ -129,10 +144,11 @@ class TestQueryColdMemoryForContext:
         import backend.gum_integration as gi
         gi.gum_instance = MagicMock()
         with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
+               patch("memory_store.get_global_store", return_value=None), \
              patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="王熙鳳的判詞是什麼？"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(return_value=mock_results)
-            result = await gi.query_cold_memory_for_context("王熙鳳的判詞是什麼？", top_k=3)
+            result = await gi.query_cold_memory_for_context("default_user", "王熙鳳的判詞是什麼？", top_k=3)
 
         assert "長尾記憶" in result
         assert "王熙鳳" in result
@@ -147,10 +163,11 @@ class TestQueryColdMemoryForContext:
         import backend.gum_integration as gi
         gi.gum_instance = MagicMock()
         with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
+               patch("memory_store.get_global_store", return_value=None), \
              patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="林黛玉"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(return_value=[])
-            result = await gi.query_cold_memory_for_context("林黛玉是誰", top_k=3)
+            result = await gi.query_cold_memory_for_context("default_user", "林黛玉是誰", top_k=3)
 
         assert result == ""
         gi.gum_instance = None
@@ -163,13 +180,79 @@ class TestQueryColdMemoryForContext:
         import backend.gum_integration as gi
         gi.gum_instance = MagicMock()
         with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
+               patch("memory_store.get_global_store", return_value=None), \
              patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="Error query"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(side_effect=Exception("Database locked"))
-            result = await gi.query_cold_memory_for_context("引發錯誤的查詢")
+            result = await gi.query_cold_memory_for_context("default_user", "引發錯誤的查詢")
 
         assert result == ""
         gi.gum_instance = None
+
+
+class TestColdMemoryTransactionIsolation:
+    @pytest.mark.asyncio
+    async def test_vector_failure_does_not_abort_bm25_search(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-dummy")
+
+        import backend.cold_memory as cm
+
+        class FakeCursor:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def fetchall(self):
+                return self._rows
+
+            def fetchone(self):
+                return self._rows[0] if self._rows else None
+
+        class FakeSession:
+            def __init__(self, name):
+                self.name = name
+                self.aborted = False
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def begin(self):
+                return self
+
+            async def execute(self, statement, params=None):
+                sql = str(statement)
+                if "vec_memory" in sql:
+                    self.aborted = True
+                    raise Exception("relation \"vec_memory\" does not exist")
+                if self.aborted:
+                    raise Exception("current transaction is aborted")
+                if "ts_rank" in sql:
+                    return FakeCursor([(42, 0.9)])
+                if "SELECT text FROM propositions" in sql:
+                    return FakeCursor([("BM25 survives vector failure",)])
+                return FakeCursor([])
+
+        class FakeSessionFactory:
+            def __init__(self):
+                self.calls = 0
+
+            def __call__(self, engine):
+                self.calls += 1
+                return FakeSession(f"session-{self.calls}")
+
+        fake_session_factory = FakeSessionFactory()
+
+        async def fake_embedding(self, text_str):
+            return [0.1, 0.2, 0.3]
+
+        with patch.object(cm, "AsyncSession", fake_session_factory), \
+             patch.object(cm.ColdMemoryRetriever, "get_embedding", fake_embedding):
+            retriever = cm.ColdMemoryRetriever("/tmp/gum.db", "dummy-key")
+            results = await retriever.search("村上春樹短篇小說的象徵手法與魔幻寫實風格解析", user_id="u1", top_k=3)
+
+        assert results == [{"id": 42, "text": "BM25 survives vector failure", "rrf_score": pytest.approx(results[0]["rrf_score"])}]
 
 
 # ---------------------------------------------------------------------------

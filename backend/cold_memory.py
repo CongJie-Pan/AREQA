@@ -54,58 +54,76 @@ class ColdMemoryRetriever:
         query_embedding = await self.get_embedding(query)
         
         engine = get_engine()
-        async with AsyncSession(engine) as session:
-            async with session.begin():
-                # Enforce RLS
-                await session.execute(text(
-                    "SELECT set_config('request.jwt.claims', "
-                    "jsonb_build_object('role', 'authenticated', 'sub', :uid::text)::text, TRUE)"
-                ), {"uid": user_id})
-                await session.execute(text("SET LOCAL ROLE authenticated;"))
 
-                vec_results = []
-                if query_embedding:
-                    try:
+        async def _fetch_vector_results() -> List[Tuple[int, float]]:
+            if not query_embedding:
+                return []
+
+            try:
+                async with AsyncSession(engine) as session:
+                    async with session.begin():
+                        await session.execute(text(
+                            "SELECT set_config('request.jwt.claims', "
+                            "jsonb_build_object('role', 'authenticated', 'sub', CAST(:uid AS text))::text, TRUE)"
+                        ), {"uid": user_id})
+                        await session.execute(text("SET LOCAL ROLE authenticated;"))
                         cursor = await session.execute(
-                            text("SELECT v.id, v.embedding <-> :emb::vector AS distance FROM vec_memory v JOIN propositions p ON v.id = p.id WHERE p.user_id = :uid ORDER BY distance LIMIT :limit"),
+                            text("SELECT v.id, v.embedding <-> CAST(:emb AS vector) AS distance FROM vec_memory v JOIN propositions p ON v.id = p.id WHERE p.user_id = :uid ORDER BY distance LIMIT :limit"),
                             {"emb": str(query_embedding), "limit": top_k * 2, "uid": user_id}
                         )
-                        for row in cursor.fetchall():
-                            vec_results.append((row[0], row[1]))
-                    except Exception as e:
-                        logger.error(f"[ColdMemory] Vector search failed: {e}")
+                        return [(row[0], row[1]) for row in cursor.fetchall()]
+            except Exception as e:
+                logger.error(f"[ColdMemory] Vector search failed: {e}")
+                return []
 
-                bm25_results = []
-                try:
-                    cursor = await session.execute(
-                        text("""
-                        SELECT id, ts_rank(to_tsvector('english', text), plainto_tsquery('english', :query)) as rank 
-                        FROM propositions 
-                        WHERE to_tsvector('english', text) @@ plainto_tsquery('english', :query) AND user_id = :uid
-                        ORDER BY rank DESC LIMIT :limit
-                        """),
-                        {"query": query, "limit": top_k * 2, "uid": user_id}
-                    )
-                    for row in cursor.fetchall():
-                        bm25_results.append((row[0], row[1]))
-                except Exception as e:
-                    logger.error(f"[ColdMemory] BM25 search failed: {e}")
-                    
-                # RRF Fusion
-                rrf_scores = {}
-                k_const = 60
-                
-                # Sort vector by distance (lower is better)
-                for rank, (doc_id, dist) in enumerate(vec_results):
-                    rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + (1.0 / (k_const + rank + 1))
-                    
-                # Sort bm25 by rank (higher is better)
-                for rank, (doc_id, score) in enumerate(bm25_results):
-                    rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + (1.0 / (k_const + rank + 1))
-                    
-                sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
-                
-                final_results = []
+        async def _fetch_bm25_results() -> List[Tuple[int, float]]:
+            try:
+                async with AsyncSession(engine) as session:
+                    async with session.begin():
+                        await session.execute(text(
+                            "SELECT set_config('request.jwt.claims', "
+                            "jsonb_build_object('role', 'authenticated', 'sub', CAST(:uid AS text))::text, TRUE)"
+                        ), {"uid": user_id})
+                        await session.execute(text("SET LOCAL ROLE authenticated;"))
+                        cursor = await session.execute(
+                            text("""
+                            SELECT id, ts_rank(to_tsvector('english', text), plainto_tsquery('english', :query)) as rank 
+                            FROM propositions 
+                            WHERE to_tsvector('english', text) @@ plainto_tsquery('english', :query) AND user_id = :uid
+                            ORDER BY rank DESC LIMIT :limit
+                            """),
+                            {"query": query, "limit": top_k * 2, "uid": user_id}
+                        )
+                        return [(row[0], row[1]) for row in cursor.fetchall()]
+            except Exception as e:
+                logger.error(f"[ColdMemory] BM25 search failed: {e}")
+                return []
+
+        vec_results = await _fetch_vector_results()
+        bm25_results = await _fetch_bm25_results()
+
+        # RRF Fusion
+        rrf_scores = {}
+        k_const = 60
+
+        # Sort vector by distance (lower is better)
+        for rank, (doc_id, dist) in enumerate(vec_results):
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + (1.0 / (k_const + rank + 1))
+
+        # Sort bm25 by rank (higher is better)
+        for rank, (doc_id, score) in enumerate(bm25_results):
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + (1.0 / (k_const + rank + 1))
+
+        sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+
+        final_results = []
+        async with AsyncSession(engine) as session:
+            async with session.begin():
+                await session.execute(text(
+                    "SELECT set_config('request.jwt.claims', "
+                    "jsonb_build_object('role', 'authenticated', 'sub', CAST(:uid AS text))::text, TRUE)"
+                ), {"uid": user_id})
+                await session.execute(text("SET LOCAL ROLE authenticated;"))
                 for doc_id, score in sorted_docs:
                     try:
                         cursor = await session.execute(
@@ -117,5 +135,5 @@ class ColdMemoryRetriever:
                             final_results.append({"id": doc_id, "text": row[0], "rrf_score": score})
                     except Exception:
                         pass
-                        
-                return final_results
+
+        return final_results
