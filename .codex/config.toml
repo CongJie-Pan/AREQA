@@ -1,0 +1,6 @@
+[mcp_servers.drift]
+command = "npx"
+args = ["-y", "driftdetect-mcp", "start"]
+
+[mcp_servers.drift.tools.drift_env]
+approval_mode = "approve"

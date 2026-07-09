@@ -9,12 +9,9 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-07-06（重新對齊實際程式碼架構，更新模型清單、節點說明、前端元件與 API 端點）
+> **最後更新**：2026-07-09（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
 
-> 可以請 Claude 模型使用以下prompt 更新架構 :
-請你閱讀/frontend與 /backend代碼 所有代碼 然後更新README.md 的架構圖及其說明 此readme不合當前的架構了 
-  你可以使用 drift mcp 來查看當前兩資料夾的內容與系統架構 :
-  backend , frontend
+> 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 為準。
 
 ---
 
@@ -33,8 +30,8 @@ backend/
 │                                   #   ObservationQueueWorker (debounce 批次處理)
 │                                   #   async_evaluate_and_update_state (EDF 狀態更新)
 ├── memory_store.py                 # 短期熱記憶管理
-│                                   #   MemoryStore (hot_memory.json + user_profile.json)
-│                                   #   learner_state / active_avatar / pending_alert
+│                                   #   MemoryStore (Redis: hot_memory + user_profile)
+│                                   #   learner_state / current_strategy / pending_alert
 ├── cold_memory.py                  # 長期冷記憶檢索
 │                                   #   ColdMemoryRetriever (pysqlite3 + sqlite_vec)
 │                                   #   FTS5 全文索引 + 向量語意索引 雙軌檢索
@@ -42,7 +39,7 @@ backend/
 │                                   #   calculate_activation_score (Activation Score)
 │                                   #   STITCH 歸檔：熱記憶 → 結構化冷記憶
 ├── mailbox_store.py                # 信箱訊息持久化
-│                                   #   MailboxStore (mailbox.json)
+│                                   #   MailboxStore (Redis mailbox + delayed queue)
 │                                   #   add_mail / get_all_mails / mark_as_read
 │
 ├── services/
@@ -57,24 +54,24 @@ backend/
 │   │                               #   Node 7: Post-generation (Suggestions)
 │   ├── cache_service.py            # Redis RAG 快取服務 (RagCacheService)
 │   ├── connection_manager.py       # WebSocket 連線管理 (ConnectionManager)
-│   │                               #   broadcast_mail_alert / proactive_alert
+│   │                               #   broadcast_alert / broadcast_mail_alert
 │   └── compeer_scheduler.py        # ComPeer 主動關懷排程 (⚠️ 目前已停用)
 │                                   #   proactive_scheduler_loop
 │                                   #   daily_scheduler_loop
 │
 └── data/                           # 運行時資料目錄 (git 忽略)
     └── gum_data/
-        ├── gum.db                  # SQLite 長期冷記憶資料庫 (sqlite_vec 向量索引)
-        ├── hot_memory.json         # 短期熱記憶 (對話脈絡 / learner_state)
-        ├── user_profile.json       # 使用者偏好畫像 (Function Calling 寫入)
-        └── mailbox.json            # 信箱訊息存儲
+        ├── gum_{user_id}.db        # 每位使用者的 GUM 長期記憶資料庫
+        └── ...                     # 其他 GUM / RAG 運行時資料
+
+# 補充：hot memory、user profile、mailbox、delayed mail 現在主要存於 Redis，不再以本地 json 檔為主
 ```
 
 #### Frontend (`/frontend/src`)
 
 ```
 frontend/src/
-├── app/                            # Next.js 14 App Router
+├── app/                            # Next.js 16 App Router
 │   ├── layout.tsx                  # 根佈局 (全局字體 / Provider)
 │   ├── page.tsx                    # 首頁入口
 │   ├── globals.css                 # 全局樣式 (ChenYuluoyan 字體 / 暗色主題)
@@ -153,12 +150,12 @@ frontend/src/
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Frontend  (Next.js 14 App Router · TypeScript · Zustand)   │
+│  Frontend  (Next.js 16 App Router · React 19 · Zustand)     │
 │  Port 3000                                                   │
 └─────────────────────────┬───────────────────────────────────┘
                           │  HTTP SSE / WebSocket
 ┌─────────────────────────▼───────────────────────────────────┐
-│  Backend  (FastAPI · Python 3.9+)                            │
+│  Backend  (FastAPI · Python 3.10+)                           │
 │  Port 8000                                                   │
 │  ┌──────────────┬──────────────┬─────────────┬───────────┐  │
 │  │OrchestrarionS│  GUM / Memory │  Mailbox   │ ComPeer   │  │
@@ -195,8 +192,8 @@ flowchart TD
 
     subgraph MEM ["📦 Memory 模塊（共用）"]
         direction LR
-        HotMem["短期熱記憶\nMemoryStore\ndata/gum_data/hot_memory.json\n+ user_profile.json"]
-        ColdMem["長期冷記憶\nGUM (gum.db)\ngum_integration.py\n語意向量化 + STITCH 歸檔\ncompaction.py 衰減計算"]
+        HotMem["短期熱記憶\nMemoryStore\nRedis: hot_memory / user_profile"]
+        ColdMem["長期冷記憶\nGUM (gum_{user_id}.db)\ngum_integration.py\n語意向量化 + STITCH 歸檔\ncompaction.py 衰減計算"]
     end
 
     subgraph API_A ["⚡ POST /api/v1/stream  ·  main.py"]
@@ -250,14 +247,14 @@ flowchart TD
 
     subgraph MEM_B ["📦 Memory 模塊（共用）"]
         direction LR
-        HotMem_B["短期熱記憶\nhot_memory.json\nmemory_store.py\n(scroll 日誌 + pending_alert)"]
-        ColdMem_B["長期冷記憶\ngum.db\ngum_integration.py"]
+        HotMem_B["短期熱記憶\nRedis hot_memory\nmemory_store.py\n(scroll 日誌 + pending_alert)"]
+        ColdMem_B["長期冷記憶\ngum_{user_id}.db\ngum_integration.py"]
     end
 
     subgraph API_B ["⚡ FastAPI · main.py"]
         LogAPI["POST /api/v1/log_action\nscroll → HotMem only\ncompeer_rejected → 冷卻機制\n其他互動 → GUM ColdMem"]
         ProactiveCheck["GET /api/v1/proactive-check\n輪詢式備用端點\n(WebSocket 主流)"]
-        WSEndpoint["WebSocket /api/v1/ws/notifications\nConnectionManager\nservices/connection_manager.py\nbroadcast_mail_alert / proactive_alert"]
+        WSEndpoint["WebSocket /api/v1/ws/notifications\nConnectionManager\nservices/connection_manager.py\nbroadcast_mail_alert / broadcast_alert"]
     end
 
     subgraph COMPEER ["ComPeer 模塊 · services/compeer_scheduler.py\n⚠️ 目前 Scheduler Loop 已停用 (commented out)"]
@@ -294,7 +291,7 @@ flowchart TD
     end
 
     subgraph MAILBOX ["信箱模塊"]
-        MailStore["mailbox_store.py\nMailboxStore\ndata/gum_data/mailbox.json"]
+        MailStore["mailbox_store.py\nMailboxStore\nRedis mailbox + delayed queue"]
         DelayReply["delayed_reply_writer\ngum_integration.py\n延遲 5 分鐘 · 使用 ColdMemory + HotMemory\n→ LLM 生成 Avatar 回信\n→ WebSocket 推播 broadcast_mail_alert"]
     end
 
@@ -333,7 +330,7 @@ flowchart TD
 
     subgraph INFRA_D ["🏗️ Infrastructure"]
         RedisCache_D["Redis 快取\nMD5 Hash 校驗，記憶無變動時毫秒級回應"]
-        LLM_Qwen["OpenRouter (Qwen 235B)\n生成結構化 JSON\nsentence1 / sentence2 / hashtags"]
+        LLM_Qwen["OpenRouter 結構化 LLM\n依 config.py 的模型設定\n生成 sentence1 / sentence2 / hashtags"]
     end
 
     subgraph MEM_D ["📦 Memory 模塊"]
@@ -373,12 +370,12 @@ flowchart TD
 - **動態 System Prompt 組裝**: 依學習狀態動態調整表達難度限制（如 STARTING 禁用艱澀術語）。
 - **英靈附體對話模式 (Active Avatar)**: 偵測使用者提及的歷史人物（蘇格拉底、柏拉圖等），系統切換至第一人稱語境。
 - **Policy Classifier**: LLM 判定 `PROBE_UNDERSTANDING` / `SUGGEST_ACTION` / `PUSH_LIMIT` / `NORMAL`，動態調整 `max_tokens`。
-- **Function Calling (update_memory)**: LLM 可在回答後呼叫 `update_memory` Tool，自動將使用者偏好資訊寫入 `user_profile.json`。
+- **Function Calling (update_memory)**: LLM 可在回答後呼叫 `update_memory` Tool，自動將使用者偏好資訊寫入 Redis 中的 user profile。
 
 ### 3. 記憶管理系統 (GUM + MemoryStore)
 
-- **短期熱記憶 (Hot Memory)**: `memory_store.py` 管理 `hot_memory.json` 與 `user_profile.json`，儲存即時對話脈絡、學習狀態、待推播警示等。
-- **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，將對話觀察非同步語意化，存入 `gum.db`（SQLite）。`cold_memory.py` 提供 FTS5 全文索引與 `sqlite_vec` 向量索引雙重檢索。
+- **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory 與 user profile，儲存即時對話脈絡、學習狀態、待推播警示等。
+- **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance，並將觀察非同步語意化存入 `gum_{user_id}.db`。`cold_memory.py` 提供 FTS5 全文索引與 `sqlite_vec` 向量索引雙重檢索。
 - **記憶壓縮 (STITCH)**: `compaction.py` 實作 GUM 衰減計算（Activation Score），定期將熱記憶歸檔並精煉為結構化長期記憶。
 - **ObservationQueueWorker**: 去抖動 (3s debounce) 批次處理觀察訊息，防止高頻寫入。
 
@@ -386,14 +383,14 @@ flowchart TD
 
 - **行為遙測**: `POST /api/v1/log_action` 接收前端 scroll、互動等行為，scroll 純寫熱記憶，其他有意義互動推送至 GUM。
 - **ComPeer Scheduler**: `compeer_scheduler.py` 包含 proactive + daily 兩個排程迴圈（目前已停用，架構保留）。
-- **信箱系統 (Mailbox)**: `mailbox_store.py` 管理 `mailbox.json`，支援 Avatar 延遲回信（5分鐘後 LLM 生成），透過 WebSocket 推播新信通知。
-- **WebSocket 推播**: `ConnectionManager` (`services/connection_manager.py`) 管理持久連線，提供 `broadcast_mail_alert` 與 `broadcast_proactive_alert`。
+- **信箱系統 (Mailbox)**: `mailbox_store.py` 目前以 Redis 管理 mailbox 與 delayed mail queue，支援 Avatar 延遲回信（5分鐘後 LLM 生成），並透過 WebSocket 推播新信通知。
+- **WebSocket 推播**: `ConnectionManager` (`services/connection_manager.py`) 管理持久連線，提供 `broadcast_alert` 與 `broadcast_mail_alert`。
 - **冷卻機制**: `compeer_rejected` 動作觸發 30 分鐘動態冷卻，防止過度打擾。
 
 ### 5. 記憶可視化面板 (GumPanel)
 
 - **GumPanel** (`src/components/GumPanel/index.tsx`): 記憶資產面板，可查看、刪除、編輯熱/冷記憶，支援批次刪除。
-- **動態人物畫像**: 調用 `GET /api/v1/memory/summary`，透過 Qwen 235B 生成 `sentence1 / sentence2 / hashtags` 結構。
+- **動態人物畫像**: 調用 `GET /api/v1/memory/summary`，透過 OpenRouter 上配置的結構化模型生成 `sentence1 / sentence2 / hashtags`。
 - **Redis + 本地雙層快取**: MD5 Hash 校驗確保記憶無變動時毫秒級回應。
 
 ### 6. 前端元件架構
@@ -449,12 +446,12 @@ AREQA 分為 Python 後端與 Next.js 前端，兩端均支援並推薦使用環
 cp .env.example .env
 ```
 主要變數說明：
-- `OPENROUTER_API_KEY`: 呼叫 LLM（Gemini / Qwen）與 Embedding 服務的 API 密鑰。
+- `OPENROUTER_API_KEY`: 呼叫主 LLM、標題生成、部分記憶與檢索相關 API 的密鑰。
 - `PERPLEXITY_API_KEY`: Perplexity 網路搜尋服務的 API 密鑰。
 - `HF_TOKEN` / `HF_ENDPOINT_URL`: RAG 本地 Hugging Face 端點設定。
 - `REDIS_URL`: Redis 連線位址（預設 `redis://localhost:6379`）。
 
-### 2. 後端運行步驟 (Python 3.9+)
+### 2. 後端運行步驟 (Python 3.10+)
 
 後端使用 FastAPI 提供高效非同步 SSE 串流服務，並使用 Redis 進行 RAG 快取。
 ```bash
@@ -464,9 +461,9 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. 前端運行步驟 (Node.js v18+)
+### 3. 前端運行步驟 (Node.js v20+)
 
-前端基於 Next.js 14 App Router 建立，`predev` 腳本會自動從根目錄複製 `.env` 至 `frontend/.env.local`。
+前端基於 Next.js 16 App Router 建立，`predev` 腳本會自動從根目錄複製 `.env` 或 `.env.local` 至 `frontend/.env.local`。
 ```bash
 cd frontend
 npm install
