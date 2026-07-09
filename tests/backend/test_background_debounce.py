@@ -21,32 +21,32 @@ async def worker(mock_processor):
 @pytest.mark.asyncio
 async def test_debounce_multiple_pushes(worker, mock_processor):
     # Push 3 observations quickly
-    await worker.push("obs1")
-    await worker.push("obs2")
-    await worker.push("obs3")
+    await worker.push("user1", "obs1")
+    await worker.push("user1", "obs2")
+    await worker.push("user1", "obs3")
     
     # Wait for debounce window (0.1s) + buffer
     await asyncio.sleep(0.2)
     
     # Should only trigger processor once with all 3 items
     assert mock_processor.call_count == 1
-    mock_processor.assert_called_once_with(["obs1", "obs2", "obs3"])
+    mock_processor.assert_called_once_with("user1", ["obs1", "obs2", "obs3"])
 
 @pytest.mark.asyncio
 async def test_debounce_spaced_pushes(worker, mock_processor):
     # Push 1 observation
-    await worker.push("obs1")
+    await worker.push("user1", "obs1")
     
     # Wait longer than debounce window (0.1s)
     await asyncio.sleep(0.2)
     
     # Push 2nd observation
-    await worker.push("obs2")
+    await worker.push("user1", "obs2")
     
     # Wait for second debounce window
     await asyncio.sleep(0.2)
     
     # Should trigger processor twice
     assert mock_processor.call_count == 2
-    mock_processor.assert_any_call(["obs1"])
-    mock_processor.assert_any_call(["obs2"])
+    mock_processor.assert_any_call("user1", ["obs1"])
+    mock_processor.assert_any_call("user1", ["obs2"])

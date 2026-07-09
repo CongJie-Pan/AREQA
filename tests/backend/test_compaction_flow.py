@@ -10,18 +10,14 @@ async def test_end_to_end_compaction_flow(tmp_path, monkeypatch):
     hot_memory_path = tmp_path / "hot_memory.json"
     user_profile_path = tmp_path / "user_profile.json"
     
-    store = MemoryStore(
-        hot_memory_path=str(hot_memory_path),
-        user_profile_path=str(user_profile_path),
-        budget_limit=1000
-    )
+    store = MemoryStore(budget_limit=1000)
     
     # We will write a large string to force compaction.
     # To mock the compaction worker, we can patch it inside the code or just verify the budget exceed works and triggers compaction logic.
     
     mock_compaction_triggered = False
     
-    async def mock_process_callback(items):
+    async def mock_process_callback(uid, items):
         nonlocal mock_compaction_triggered
         mock_compaction_triggered = True
         
@@ -32,7 +28,7 @@ async def test_end_to_end_compaction_flow(tmp_path, monkeypatch):
     
     # Normally, pushing observations adds to queue.
     for i in range(20):
-        await worker.push(f"Observation {i}: {long_string}")
+        await worker.push("default_user", f"Observation {i}: {long_string}")
         
     await asyncio.sleep(0.5)
     

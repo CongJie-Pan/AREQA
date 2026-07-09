@@ -5,7 +5,14 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
 
 import respx
-from backend.main import app
+from backend.main import app, get_current_user
+
+
+@pytest.fixture(autouse=True)
+def override_auth():
+    app.dependency_overrides[get_current_user] = lambda: "default_user"
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 @pytest.mark.asyncio
 @respx.mock

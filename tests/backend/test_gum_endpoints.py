@@ -1,12 +1,19 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
-from backend.main import app
+from unittest.mock import patch, AsyncMock
+from backend.main import app, get_current_user
 # Clear startup/shutdown events to prevent TestClient from hanging on GUM DB initialization
 app.router.on_startup.clear()
 app.router.on_shutdown.clear()
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def override_auth():
+    app.dependency_overrides[get_current_user] = lambda: "default_user"
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 def test_get_memory_endpoint_success():
     with patch("backend.main.get_all_memory") as mock_get_memory:
@@ -24,8 +31,7 @@ def test_get_memory_endpoint_error():
         assert response.json() == {"propositions": []}
 
 def test_delete_memory_endpoint():
-    with patch("gum_integration.gum_instance") as mock_gum_instance:
-        from unittest.mock import AsyncMock
+    with patch("gum_integration.gum_instance", create=True) as mock_gum_instance:
         mock_gum_instance.update_status = AsyncMock()
         
         response = client.delete("/api/v1/memory/123")
@@ -34,8 +40,7 @@ def test_delete_memory_endpoint():
         mock_gum_instance.update_status.assert_called_once_with(123, "deleted")
 
 def test_edit_memory_endpoint():
-    with patch("gum_integration.gum_instance") as mock_gum_instance:
-        from unittest.mock import AsyncMock
+    with patch("gum_integration.gum_instance", create=True) as mock_gum_instance:
         mock_gum_instance.update_text = AsyncMock()
         
         response = client.put("/api/v1/memory/456", json={"text": "Updated text"})

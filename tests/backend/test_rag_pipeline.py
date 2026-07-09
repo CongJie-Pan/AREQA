@@ -159,7 +159,7 @@ def test_rag_pipeline_end_to_end(rag_service, test_case):
     
     # 執行 RAGService 的核心檢索流程 (會跑 FAISS + BM25 + RRF + Reranker)
     # 我們這裡利用 retrieve_with_events 取出最後的 ContextResults (RetrievalDebugInfo)
-    events = list(rag_service.retrieve_with_events(query=expand_results))
+    events = list(rag_service.retrieve_with_events(query=query))
     results_event = next(e for e in events if e["type"] == "results")
     context_results = results_event["data"]
     
@@ -203,54 +203,4 @@ def test_rag_pipeline_end_to_end(rag_service, test_case):
     assert score_drop <= SCORE_DROP_TOLERANCE, f"Score drop {score_drop} exceeds tolerance {SCORE_DROP_TOLERANCE}"
 
 # --- AREQA Memory Integration Tests ---
-from backend.cold_memory import ColdMemoryRetriever
-from unittest.mock import AsyncMock
-
-@pytest.mark.asyncio
-async def test_sqlite_vec_pipeline(tmp_path, monkeypatch):
-    db_path = tmp_path / "test_gum.db"
-    retriever = ColdMemoryRetriever(db_path=str(db_path), openrouter_api_key="dummy")
-    
-    # Mock embedding
-    async def mock_get_embedding(text):
-        return [0.1] * 4096
-    monkeypatch.setattr(retriever, 'get_embedding', mock_get_embedding)
-    
-    # Create tables and insert mock data
-    with retriever._get_conn() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS propositions (id INTEGER PRIMARY KEY, text TEXT, status TEXT DEFAULT 'active')")
-        conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS propositions_fts USING fts5(text, content='propositions', content_rowid='id')")
-        
-        conn.execute("INSERT INTO propositions (id, text) VALUES (1, '王熙鳳的判詞是凡鳥偏從末世來')")
-        conn.execute("INSERT INTO propositions_fts (rowid, text) VALUES (1, '王熙鳳的判詞是凡鳥偏從末世來')")
-        
-        import struct
-        embed = struct.pack(f'{4096}f', *([0.1]*4096))
-        conn.execute("INSERT INTO vec_memory (id, embedding) VALUES (1, ?)", (embed,))
-        conn.commit()
-        
-    results = await retriever.search("王熙鳳的判詞是什麼？")
-    assert len(results) > 0
-    assert "凡鳥偏從末世來" in results[0]["text"]
-
-@pytest.mark.asyncio
-async def test_sqlite_vec_fallback(tmp_path, monkeypatch):
-    db_path = tmp_path / "test_gum.db"
-    retriever = ColdMemoryRetriever(db_path=str(db_path), openrouter_api_key="dummy")
-    
-    # Simulate API failure -> returns empty embedding
-    async def mock_get_embedding_fail(text):
-        return []
-    monkeypatch.setattr(retriever, 'get_embedding', mock_get_embedding_fail)
-    
-    with retriever._get_conn() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS propositions (id INTEGER PRIMARY KEY, text TEXT, status TEXT DEFAULT 'active')")
-        conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS propositions_fts USING fts5(text, content='propositions', content_rowid='id')")
-        
-        conn.execute("INSERT INTO propositions (id, text) VALUES (1, '王熙鳳 判詞 凡鳥')")
-        conn.execute("INSERT INTO propositions_fts (rowid, text) VALUES (1, '王熙鳳 判詞 凡鳥')")
-        conn.commit()
-        
-    results = await retriever.search("王熙鳳 判詞")
-    assert len(results) > 0
-    assert "凡鳥" in results[0]["text"]
+# (Obsolete sqlite_vec tests removed due to Postgres migration)

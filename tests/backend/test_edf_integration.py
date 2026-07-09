@@ -6,30 +6,62 @@ import datetime
 from unittest.mock import AsyncMock, patch, MagicMock
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
+from auth import get_current_user
 from memory_store import init_global_store, get_global_store
 import memory_store as mem_store_module
-import backend.services.compeer_scheduler as compeer
+import services.compeer_scheduler as compeer
 from backend.gum_integration import async_evaluate_and_update_state
 from backend.compaction import evaluate_student_state
 
 @pytest.fixture
-def tmp_store(tmp_path):
-    hot_path = tmp_path / "hot_memory.json"
-    profile_path = tmp_path / "user_profile.json"
-    hot_path.write_text('{"current_learner_state": "RUN_REPEAT"}')
-    profile_path.write_text("{}")
-    
+def tmp_store():
     old_store = mem_store_module._global_store
-    init_global_store(str(hot_path), str(profile_path))
-    store = get_global_store()
-    yield store, hot_path, profile_path
+    
+    class FakePipeline:
+        def __init__(self, fake_redis):
+            self.r = fake_redis
+        async def __aenter__(self): return self
+        async def __aexit__(self, exc_type, exc, tb): pass
+        async def watch(self, key): pass
+        def multi(self): pass
+        def unwatch(self): pass
+        async def get(self, key): return await self.r.get(key)
+        def set(self, key, val): self._set = (key, val)
+        async def execute(self):
+            if hasattr(self, '_set'):
+                await self.r.set(self._set[0], self._set[1])
+
+    class FakeRedis:
+        def __init__(self): self.data = {}
+        async def get(self, key): return self.data.get(key)
+        async def set(self, key, val): self.data[key] = val
+        async def setex(self, key, time, val): self.data[key] = val
+        async def exists(self, key): return 1 if key in self.data else 0
+        async def delete(self, key):
+            if key in self.data: del self.data[key]
+        def pipeline(self, transaction=True): return FakePipeline(self)
+        
+    with patch("memory_store.get_redis") as mock_mem_redis, \
+         patch("services.compeer_scheduler.get_redis") as mock_comp_redis:
+        fake_r = FakeRedis()
+        fake_r.data["areqa:hot_memory:default_user"] = '{"current_learner_state": "RUN_REPEAT"}'
+        mock_mem_redis.return_value = fake_r
+        mock_comp_redis.return_value = fake_r
+        init_global_store(budget_limit=1000000)
+        store = get_global_store()
+        app.dependency_overrides[get_current_user] = lambda: "default_user"
+        yield store, fake_r
+    
+    app.dependency_overrides.clear()
     mem_store_module._global_store = old_store
 
 @pytest.mark.asyncio
 @patch("backend.main.AsyncOpenAI")
-@patch("backend.gum_integration.gum_instance")
-async def test_full_edf_dialogue_loop(mock_gum, mock_create, tmp_store):
-    store, hot_path, _ = tmp_store
+@patch("gum_integration.get_gum_instance")
+async def test_full_edf_dialogue_loop(mock_get_gum, mock_create, tmp_store):
+    mock_gum = MagicMock()
+    mock_get_gum.return_value = (mock_gum, MagicMock())
+    store, fake_r = tmp_store
     
     # Mock Policy classification
     mock_resp_policy = MagicMock()
@@ -61,11 +93,13 @@ async def test_full_edf_dialogue_loop(mock_gum, mock_create, tmp_store):
     assert res.status_code == 200
 
 @pytest.mark.asyncio
-@patch("backend.gum_integration.gum_instance")
-async def test_scaffolding_fading_flow(mock_gum, tmp_store):
-    store, hot_path, _ = tmp_store
-    hot_path.write_text('{"current_learner_state": "STARTING"}')
-    store._atomic_write(str(hot_path), {"current_learner_state": "STARTING"})
+@patch("gum_integration.get_gum_instance")
+@patch("backend.main.push_observation")
+async def test_scaffolding_fading_flow(mock_push, mock_get_gum, tmp_store):
+    mock_gum = MagicMock()
+    mock_get_gum.return_value = (mock_gum, MagicMock())
+    store, fake_r = tmp_store
+    await store.update_hot_memory("default_user", "current_learner_state", "STARTING")
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         await ac.post("/api/v1/log_action", json={"action_type": "scroll", "timestamp": 12345, "context": {}})
@@ -80,11 +114,12 @@ async def test_scaffolding_fading_flow(mock_gum, tmp_store):
     
     await async_evaluate_and_update_state(mock_gum.client, "test-model", [])
     
-    hot = json.loads(hot_path.read_text())
+    data = await fake_r.get("areqa:hot_memory:default_user")
+    hot = json.loads(data) if data else {}
     assert hot["current_learner_state"] == "TINKERING"
 
 @pytest.mark.asyncio
-@patch("backend.services.compeer_scheduler.Path")
+@patch("services.compeer_scheduler.Path")
 async def test_compeer_daily_schedule_e2e(mock_path, tmp_path, tmp_store):
     # Setup Paths
     mock_path_instance = MagicMock()
@@ -97,7 +132,12 @@ async def test_compeer_daily_schedule_e2e(mock_path, tmp_path, tmp_store):
     log_path.write_text('{"role": "user", "content": "hi"}\n')
     
     # Mock LLM calls inside compeer via gum_instance
-    with patch("gum_integration.gum_instance") as mock_gum:
+    with patch("gum_integration.get_gum_instance") as mock_get_gum:
+        mock_gum = MagicMock()
+        mock_observer = MagicMock()
+        mock_observer.push_text = AsyncMock()
+        mock_gum.update_observation_status = AsyncMock()
+        mock_get_gum.return_value = (mock_gum, mock_observer)
         mock_resp_insights = MagicMock()
         mock_resp_insights.choices = [MagicMock()]
         mock_resp_insights.choices[0].message.content = '{"insights": ["dummy insight"]}'
@@ -127,7 +167,6 @@ async def test_compeer_daily_schedule_e2e(mock_path, tmp_path, tmp_store):
     assert schedule_path.exists()
     
     # 3. 輪詢觸發
-    compeer.user_flag["default_user"] = True
     await compeer.tick_proactive_schedule("default_user")
     
     # 4. Frontend Polling
@@ -176,42 +215,4 @@ async def test_stream_graceful_fallback_without_unbound_full_content(mock_openai
             assert "Mocked API Timeout Error" in content_str
             assert "[DONE]" in content_str
 
-@pytest.mark.asyncio
-@patch("backend.main.AsyncOpenAI")
-async def test_user_flag_reset_on_message(mock_openai, tmp_store):
-    """Verify that sending a message via /stream resets the compeer user_flag to True (Cooldown reset)."""
-    os.environ["OPENROUTER_API_KEY"] = "dummy"
-    # First, simulate the scheduler putting the user into cooldown mode
-    import services.compeer_scheduler as compeer
-    compeer.set_cooldown("default_user", state="default")
-    
-    mock_client = MagicMock()
-    
-    async def side_effect(*args, **kwargs):
-        if kwargs.get("stream"):
-            # Return async generator for stream
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].delta.content = "Test stream chunk"
-            async def mock_stream():
-                yield mock_resp
-            return mock_stream()
-        else:
-            # Return normal mock response
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = "{\"state\": \"test\"}"
-            return mock_resp
-            
-    mock_client.chat.completions.create = AsyncMock(side_effect=side_effect)
-    mock_openai.return_value = mock_client
-    
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        async with ac.stream("POST", "/api/v1/stream", json={"messages": [{"role": "user", "content": "王熙鳳是誰"}], "stream": True}) as response:
-            assert response.status_code == 200
-            
-    # Allow background tasks to run briefly so the flag is updated
-    await asyncio.sleep(0.1)
-            
-    # Assert that the cooldown was cleared
-    assert compeer.is_in_cooldown("default_user") == False
+

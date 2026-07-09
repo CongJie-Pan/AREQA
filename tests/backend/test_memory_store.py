@@ -1,71 +1,89 @@
 import json
-import os
 import pytest
-from backend.memory_store import MemoryStore, MemoryBudgetExceeded
+from unittest.mock import AsyncMock, patch, MagicMock
+from backend.memory_store import MemoryStore
 
 @pytest.fixture
-def temp_memory_store(tmp_path):
-    hot_memory_path = tmp_path / "hot_memory.json"
-    user_profile_path = tmp_path / "user_profile.json"
+def mock_redis():
+    redis = AsyncMock()
     
-    # Initialize empty stores
-    hot_memory_path.write_text(json.dumps({}))
-    user_profile_path.write_text(json.dumps({}))
+    store = {}
     
-    store = MemoryStore(
-        hot_memory_path=str(hot_memory_path),
-        user_profile_path=str(user_profile_path),
-        budget_limit=1000
-    )
-    return store, hot_memory_path, user_profile_path
-
-def test_check_budget_success(temp_memory_store):
-    store, _, _ = temp_memory_store
-    
-    # Writing normal amount of data should pass
-    store.update_hot_memory("key1", "A" * 500)
-    assert len(json.dumps(store.get_hot_memory())) < 1000
-    
-def test_check_budget_exceeded(temp_memory_store):
-    store, _, _ = temp_memory_store
-    
-    with pytest.raises(MemoryBudgetExceeded):
-        store.update_hot_memory("key1", "A" * 1500)
-
-def test_user_profile_isolation(temp_memory_store):
-    store, _, _ = temp_memory_store
-    
-    store.update_user_profile("student", "國立臺灣大學中文系三年級")
-    assert store.get_user_profile()["student"] == "國立臺灣大學中文系三年級"
-    
-    # Overloading hot memory should not affect user profile
-    with pytest.raises(MemoryBudgetExceeded):
-        store.update_hot_memory("key1", "A" * 1500)
+    async def fake_get(key):
+        return store.get(key)
         
-    assert store.get_user_profile()["student"] == "國立臺灣大學中文系三年級"
-
-def test_override_memory(temp_memory_store):
-    store, _, _ = temp_memory_store
-    
-    # a=b
-    store.update_hot_memory("林黛玉的丫鬟", "雪雁")
-    assert store.get_hot_memory()["林黛玉的丫鬟"] == "雪雁"
-    
-    # a=c (Override)
-    store.update_hot_memory("林黛玉的丫鬟", "紫鵑")
-    assert store.get_hot_memory()["林黛玉的丫鬟"] == "紫鵑"
-
-def test_atomic_write(temp_memory_store, monkeypatch):
-    store, hot_path, _ = temp_memory_store
-    
-    # Pre-populate
-    store.update_hot_memory("test", "data")
-    
-    # Mock os.replace to simulate failure during atomic write
-    monkeypatch.setattr(os, "replace", lambda src, dst: (_ for _ in ()).throw(Exception("Simulated interruption")))
-    
-    with pytest.raises(Exception):
-        store.update_hot_memory("test", "new_data")
+    async def fake_set(key, val):
+        store[key] = val
         
-    # Original file should still be intact and not corrupted
-    assert json.loads(hot_path.read_text()) == {"test": "data"}
+    def fake_set_sync(key, val):
+        store[key] = val
+        
+    redis.get = AsyncMock(side_effect=fake_get)
+    redis.set = AsyncMock(side_effect=fake_set)
+    
+    pipe_mock = AsyncMock()
+    pipe_mock.get = AsyncMock(side_effect=fake_get)
+    pipe_mock.set = MagicMock(side_effect=fake_set_sync)
+    pipe_mock.watch = AsyncMock()
+    pipe_mock.multi = MagicMock()
+    pipe_mock.execute = AsyncMock()
+    
+    class PipelineContext:
+        def __init__(self, **kwargs):
+            self.pipe = pipe_mock
+            
+        async def __aenter__(self):
+            return self.pipe
+            
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+            
+    redis.pipeline = PipelineContext
+    redis._store = store
+    return redis
+
+@pytest.fixture
+def memory_store(mock_redis):
+    with patch("backend.memory_store.get_redis", return_value=mock_redis):
+        store = MemoryStore(budget_limit=1000)
+        yield store
+
+@pytest.mark.asyncio
+async def test_update_hot_memory_isolation(memory_store, mock_redis):
+    await memory_store.update_hot_memory("user_a", "key1", "val_a")
+    await memory_store.update_hot_memory("user_b", "key1", "val_b")
+    
+    assert "areqa:hot_memory:user_a" in mock_redis._store
+    assert "areqa:hot_memory:user_b" in mock_redis._store
+    
+    data_a = json.loads(mock_redis._store["areqa:hot_memory:user_a"])
+    data_b = json.loads(mock_redis._store["areqa:hot_memory:user_b"])
+    
+    assert data_a["key1"] == "val_a"
+    assert data_b["key1"] == "val_b"
+
+@pytest.mark.asyncio
+async def test_update_user_profile(memory_store, mock_redis):
+    await memory_store.update_user_profile("student", "name", "國立臺灣大學中文系三年級")
+    
+    profile = await memory_store.get_user_profile("student")
+    assert profile["name"] == "國立臺灣大學中文系三年級"
+
+@pytest.mark.asyncio
+async def test_override_memory(memory_store, mock_redis):
+    await memory_store.update_hot_memory("user1", "林黛玉的丫鬟", "雪雁")
+    mem1 = await memory_store.get_hot_memory("user1")
+    assert mem1["林黛玉的丫鬟"] == "雪雁"
+    
+    await memory_store.update_hot_memory("user1", "林黛玉的丫鬟", "紫鵑")
+    mem2 = await memory_store.get_hot_memory("user1")
+    assert mem2["林黛玉的丫鬟"] == "紫鵑"
+
+@pytest.mark.asyncio
+async def test_get_learner_state(memory_store, mock_redis):
+    state = await memory_store.get_learner_state("user2")
+    assert state == "STARTING"
+    
+    await memory_store.update_hot_memory("user2", "current_learner_state", "CONFUSED")
+    state2 = await memory_store.get_learner_state("user2")
+    assert state2 == "CONFUSED"

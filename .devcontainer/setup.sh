@@ -26,12 +26,20 @@ else
   echo "✅ Drift is already installed."
 fi
 
+echo "🚀 Installing Codex CLI..."
+if ! command -v codex >/dev/null 2>&1; then
+  npm install -g @openai/codex
+else
+  echo "✅ Codex CLI is already installed."
+fi
+
 echo "🔎 Checking versions..."
 node -v
 npm -v
 python3.11 -V || python3 -V
 agy --version || true
 drift --version || true
+codex --version || true
 
 echo "🐍 Setting up Backend Python environment..."
 if [ ! -d "$VENV_PATH" ] || ! "$VENV_PATH/bin/python" -c "import asyncio" >/dev/null 2>&1; then
@@ -89,10 +97,12 @@ else
 fi
 
 echo -e "\033[1;36m======================================\033[0m"
-echo -e "\033[1;32m🤖 Drift AI Brain & Antigravity CLI are Ready!\033[0m"
+echo -e "\033[1;32m🤖 Drift AI Brain, Antigravity CLI & Codex are Ready!\033[0m"
 echo -e "\033[1;33m👉 Run \033[1;37magy\033[0m"
-echo -e "\033[1;33m👉 強制重新掃描 (重構後推薦): \033[1;37mdrift scan backend frontend --force\033[0m"
-echo -e "\033[1;33m👉 若要完全歸零重來:\033[0m"
+echo -e "\033[1;33m👉 Login Codex if this is your first time: \033[1;37mcodex login\033[0m"
+echo -e "\033[1;33m👉 Start Codex development: \033[1;37mcodex\033[0m"
+echo -e "\033[1;33m👉 Force rescan (recommended after refactoring): \033[1;37mdrift scan backend frontend --force\033[0m"
+echo -e "\033[1;33m👉 If you want to start over completely:\033[0m"
 echo -e "\033[1;37m   1. rm -rf .drift\033[0m"
 echo -e "\033[1;37m   2. drift init\033[0m"
 echo -e "\033[1;37m   3. drift scan backend frontend\033[0m"

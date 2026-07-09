@@ -33,29 +33,27 @@ def mock_gum_instance():
     return instance
 
 @pytest.mark.asyncio
-async def test_memory_evolution_prune(mock_gum_instance):
-    backend.gum_integration.gum_instance = mock_gum_instance
-    
-    with patch("backend.gum_integration.text_observer") as mock_text_observer:
-        mock_text_observer.push_text = AsyncMock()
-        
-        # New observation contradicts old memory
-        await push_observation("Student has mastered loops")
-        
-        # Verify evolution check happened
-        mock_gum_instance.query.assert_called_once()
-        mock_gum_instance.client.chat.completions.create.assert_called_once()
-        
-        # Verify pruning action
-        mock_gum_instance.update_status.assert_called_once_with(1, "superseded")
-        
-        # Verify text was pushed
-        mock_text_observer.push_text.assert_called_once_with("Student has mastered loops")
-        
-    backend.gum_integration.gum_instance = None
+@patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock)
+async def test_memory_evolution_prune(mock_get_gum, mock_gum_instance):
+    mock_text_observer = AsyncMock()
+    mock_get_gum.return_value = (mock_gum_instance, mock_text_observer)
+
+    # New observation contradicts old memory
+    await push_observation("test_user", "Student has mastered loops")
+
+    # Verify evolution check happened
+    mock_gum_instance.query.assert_called_once()
+    mock_gum_instance.client.chat.completions.create.assert_called_once()
+
+    # Verify pruning action
+    mock_gum_instance.update_status.assert_called_once_with(1, "superseded")
+
+    # Verify text was pushed
+    mock_text_observer.push_text.assert_called_once_with("Student has mastered loops")
 
 @pytest.mark.asyncio
-async def test_memory_evolution_bm25_fallback_and_markdown(mock_gum_instance):
+@patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock)
+async def test_memory_evolution_bm25_fallback_and_markdown(mock_get_gum, mock_gum_instance):
     # Setup BM25 to fail (return empty)
     mock_gum_instance.query = AsyncMock(return_value=[])
     
@@ -71,22 +69,19 @@ async def test_memory_evolution_bm25_fallback_and_markdown(mock_gum_instance):
     ]
     mock_gum_instance.client.chat.completions.create = AsyncMock(return_value=mock_response)
     
-    backend.gum_integration.gum_instance = mock_gum_instance
-    backend.gum_integration.importance_sum = 0
+    backend.gum_integration.importance_sums = {}
     
-    with patch("backend.gum_integration.text_observer") as mock_text_observer:
-        mock_text_observer.push_text = AsyncMock()
-        
-        await push_observation("New observation")
-        
-        # Verify fallback was triggered
-        mock_gum_instance.query.assert_called_once_with("New observation", limit=20)
-        mock_gum_instance.recent.assert_called_once_with(limit=20)
-        
-        # Verify markdown parsing and pruning
-        mock_gum_instance.update_status.assert_called_once_with(2, "superseded")
-        
-        # Verify importance sum updated correctly
-        assert backend.gum_integration.importance_sum == 8
-        
-    backend.gum_integration.gum_instance = None
+    mock_text_observer = AsyncMock()
+    mock_get_gum.return_value = (mock_gum_instance, mock_text_observer)
+
+    await push_observation("test_user", "New observation")
+
+    # Verify fallback was triggered
+    mock_gum_instance.query.assert_called_once_with("New observation", limit=20)
+    mock_gum_instance.recent.assert_called_once_with(limit=20)
+
+    # Verify markdown parsing and pruning
+    mock_gum_instance.update_status.assert_called_once_with(2, "superseded")
+
+    # Verify importance sum updated correctly
+    assert backend.gum_integration.importance_sums.get("test_user", 0) == 8

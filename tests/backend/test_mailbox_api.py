@@ -1,18 +1,26 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, AsyncMock
 
 # Import app but clear startup/shutdown events to prevent hanging on DB
-from backend.main import app
+from backend.main import app, get_current_user
+
 app.router.on_startup.clear()
 app.router.on_shutdown.clear()
 
 client = TestClient(app)
 
+
+@pytest.fixture(autouse=True)
+def override_auth():
+    app.dependency_overrides[get_current_user] = lambda: "default_user"
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
 @pytest.fixture
 def mock_store():
     with patch("backend.main.get_mailbox_store") as mock_get_store:
-        mock_instance = MagicMock()
+        mock_instance = AsyncMock()
         mock_get_store.return_value = mock_instance
         yield mock_instance
 
@@ -33,7 +41,8 @@ def test_get_mailbox_with_mails(mock_store):
     assert response.json() == {"mails": [{"mail_id": "1", "sender": "AREQA"}], "unread_count": 1}
     
 @patch("backend.main.asyncio.create_task")
-def test_post_send_reply_creates_user_mail(mock_create_task, mock_store):
+@patch("gum_integration.delayed_reply_writer", new_callable=AsyncMock)
+def test_post_send_reply_creates_user_mail(mock_delayed_reply_writer, mock_create_task, mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
     
     response = client.post("/api/v1/mailbox/send", json={"content": "這是我的回信", "recipient": "柏拉圖", "conversation_id": "thread-1"})
@@ -41,14 +50,17 @@ def test_post_send_reply_creates_user_mail(mock_create_task, mock_store):
     assert response.json() == {"status": "success", "mail_id": "mock-uuid-123"}
     
     mock_store.add_mail.assert_called_once_with(
+        user_id="default_user",
         sender="User", 
         content="這是我的回信", 
         recipient="柏拉圖",
         conversation_id="thread-1"
     )
+    mock_store.mark_as_read.assert_called_once_with(user_id="default_user", mail_id="mock-uuid-123")
 
 @patch("backend.main.asyncio.create_task")
-def test_post_send_reply_triggers_background_task(mock_create_task, mock_store):
+@patch("gum_integration.delayed_reply_writer", new_callable=AsyncMock)
+def test_post_send_reply_triggers_background_task(mock_delayed_reply_writer, mock_create_task, mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
     
     response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
@@ -68,7 +80,7 @@ def test_post_read_marks_correct_mail(mock_store):
     assert response.status_code == 200
     assert response.json() == {"status": "success"}
     
-    mock_store.mark_as_read.assert_called_once_with("mock-uuid-123")
+    mock_store.mark_as_read.assert_called_once_with(user_id="default_user", mail_id="mock-uuid-123")
 
 def test_post_read_not_found(mock_store):
     mock_store.mark_as_read.return_value = False

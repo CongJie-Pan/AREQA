@@ -21,6 +21,11 @@ async def test_parse_and_decompose_query_success():
     mock_client.chat.completions.create.return_value = mock_response
     
     original_query = "請問王熙鳳與賈探春的治家策略最適當的是？"
+    
+    # Inject mocked settings into backend.main
+    import backend.main
+    backend.main.settings = MagicMock(model_policy_classifier="mocked_model")
+    
     queries = await parse_and_decompose_query(original_query, mock_client)
     
     # Check that LLM parsing succeeded and extracted exact keywords and types

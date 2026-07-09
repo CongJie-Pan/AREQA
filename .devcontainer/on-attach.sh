@@ -7,6 +7,7 @@ cd "$WORKSPACE_DIR"
 echo "🔎 Checking runtime tools..."
 command -v agy >/dev/null 2>&1 && agy --version || echo "⚠️ agy not found"
 command -v drift >/dev/null 2>&1 && drift --version || echo "⚠️ drift not found"
+command -v codex >/dev/null 2>&1 && codex --version || echo "⚠️ codex not found"
 
 if [ ! -d ".drift" ] && command -v drift >/dev/null 2>&1; then
   echo "🔧 Initializing Drift..."
@@ -15,6 +16,7 @@ fi
 
 echo "ℹ️ If this is your first time, run: agy"
 echo "ℹ️ Antigravity CLI may ask you to trust this workspace and complete login in browser."
+echo "ℹ️ For Codex CLI first-time setup, run: codex login"
 echo "ℹ️ Run 'drift scan' manually after login if needed."
 
 echo "🚀 Starting Redis server..."

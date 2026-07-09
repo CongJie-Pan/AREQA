@@ -26,7 +26,8 @@
       },
       "extensions": [
         "ms-python.python",
-        "ms-python.vscode-pylance"
+        "ms-python.vscode-pylance",
+        "codex-extension.codex-plugin"
       ]
     }
   }

@@ -10,7 +10,7 @@ def test_settings_loads_defaults():
     assert s.rag_score_drop_tolerance == 0.60
     assert s.rag_absolute_min_score == 0.005
     assert s.rag_reranker_threshold == 0.35
-    assert s.model_policy_classifier == "qwen/qwen3-30b-a3b-instruct-2507"
+    assert s.model_policy_classifier == "google/gemini-3.1-flash-lite"
 
 def test_settings_can_be_overridden_by_env():
     """Settings 應能透過環境變數覆寫，確保不 Hardcoding。"""
