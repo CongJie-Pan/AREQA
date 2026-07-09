@@ -233,7 +233,7 @@ def redis_json(client: redis.Redis, key: str) -> Any:
     return json.loads(raw)
 
 
-def run_write_probe(state: ProbeState, delayed_wait_seconds: int, skip_delayed_wait: bool) -> None:
+def run_write_probe(state: ProbeState, delayed_wait_seconds: int, skip_delayed_wait: bool, memory_events: int) -> None:
     if state.redis_client is None:
         raise RuntimeError("Redis client is not initialized")
 
@@ -243,17 +243,24 @@ def run_write_probe(state: ProbeState, delayed_wait_seconds: int, skip_delayed_w
         "probe": "cloud api memory probe",
     }
 
-    _, action = request_json(
-        state,
-        "POST",
-        "/api/v1/log_action",
-        json={
-            "action_type": "api_e2e_memory_probe",
-            "timestamp": int(time.time()),
-            "context": action_context,
-        },
+    action_results = []
+    for index in range(memory_events):
+        _, action = request_json(
+            state,
+            "POST",
+            "/api/v1/log_action",
+            json={
+                "action_type": "api_e2e_memory_probe",
+                "timestamp": int(time.time()),
+                "context": {**action_context, "event_index": index},
+            },
+        )
+        action_results.append(action.get("status") == "ok")
+    state.record(
+        "POST /api/v1/log_action",
+        all(action_results),
+        f"events={len(action_results)} ok={sum(1 for ok in action_results if ok)}",
     )
-    state.record("POST /api/v1/log_action", action.get("status") == "ok", json.dumps(action, ensure_ascii=False))
 
     hot_key = f"areqa:hot_memory:{state.test_user_id}"
     hot = wait_for(lambda: redis_json(state.redis_client, hot_key), timeout=15, interval=2)
@@ -351,6 +358,15 @@ def probe_cold_memory(state: ProbeState) -> None:
         state.record("Cold memory proposition lookup", False, "public.propositions is missing")
         return
 
+    rows = wait_for(
+        lambda: find_cold_memory_rows(state),
+        timeout=240,
+        interval=10,
+    )
+    state.record("PostgreSQL propositions contain RUN_ID", len(rows) > 0, f"matches={len(rows)}")
+
+
+def find_cold_memory_rows(state: ProbeState) -> list[tuple[Any, ...]]:
     db_url = psycopg2_url(os.environ["DATABASE_URL"])
     with psycopg2.connect(db_url, connect_timeout=15) as conn:
         with conn.cursor() as cur:
@@ -365,8 +381,7 @@ def probe_cold_memory(state: ProbeState) -> None:
                 """,
                 (state.test_user_id, f"%{state.run_id}%"),
             )
-            rows = cur.fetchall()
-    state.record("PostgreSQL propositions contain RUN_ID", len(rows) > 0, f"matches={len(rows)}")
+            return cur.fetchall()
 
 
 def probe_mailbox_persistence(state: ProbeState, *, expect_delayed: bool) -> None:
@@ -519,6 +534,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cleanup", action=argparse.BooleanOptionalAction, default=True, help="Clean up Redis/DB test data after write probe.")
     parser.add_argument("--skip-delayed-wait", action="store_true", help="Verify delayed queue only; do not wait for delivery.")
     parser.add_argument("--delayed-wait-seconds", type=int, default=420, help="Max wait for delayed mailbox delivery.")
+    parser.add_argument("--memory-events", type=int, default=18, help="Number of log_action events to send so GUM batch processing can produce cold memory.")
     parser.add_argument("--request-timeout", type=int, default=90, help="HTTP request timeout in seconds.")
     parser.add_argument("--request-retries", type=int, default=2, help="HTTP retry attempts for cloud cold starts.")
     return parser.parse_args()
@@ -552,7 +568,7 @@ def main() -> int:
         probe_api_auth(state)
 
         if args.write:
-            run_write_probe(state, args.delayed_wait_seconds, args.skip_delayed_wait)
+            run_write_probe(state, args.delayed_wait_seconds, args.skip_delayed_wait, args.memory_events)
             if args.cleanup:
                 cleanup(state)
         else:

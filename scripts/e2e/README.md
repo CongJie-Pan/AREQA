@@ -52,6 +52,8 @@ This writes isolated test data with a generated `TEST_USER_ID` and `RUN_ID`,
 then verifies:
 
 - `POST /api/v1/log_action` writes hot memory to Redis.
+- Multiple `log_action` events are sent by default so GUM batch processing can
+  produce cold-memory propositions.
 - `POST /api/v1/mailbox/send` writes a user mail.
 - Redis contains the mailbox and delayed queue records.
 - PostgreSQL contains matching mailbox message and delayed task rows.
@@ -81,3 +83,7 @@ python scripts/e2e/cloud_api_probe.py \
 Use `--backend-url http://localhost:8000` when running the backend locally with
 cloud `.env` values. This validates the same cloud Redis/PostgreSQL paths while
 avoiding Render environment drift.
+
+Use `--memory-events N` to change how many `log_action` events are sent during
+the write probe. The default is `18` because the GUM observer batches
+observations before creating long-term propositions.
