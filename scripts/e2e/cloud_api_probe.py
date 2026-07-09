@@ -376,10 +376,24 @@ def find_cold_memory_rows(state: ProbeState) -> list[tuple[Any, ...]]:
                 FROM propositions
                 WHERE CAST(user_id AS text) = %s
                   AND text ILIKE %s
+                UNION
+                SELECT p.id, p.text
+                FROM propositions p
+                JOIN observation_proposition op ON op.proposition_id = p.id
+                JOIN observations o ON o.id = op.observation_id
+                WHERE CAST(p.user_id AS text) = %s
+                  AND CAST(o.user_id AS text) = %s
+                  AND o.content ILIKE %s
                 ORDER BY id DESC
                 LIMIT 5
                 """,
-                (state.test_user_id, f"%{state.run_id}%"),
+                (
+                    state.test_user_id,
+                    f"%{state.run_id}%",
+                    state.test_user_id,
+                    state.test_user_id,
+                    f"%{state.run_id}%",
+                ),
             )
             return cur.fetchall()
 
