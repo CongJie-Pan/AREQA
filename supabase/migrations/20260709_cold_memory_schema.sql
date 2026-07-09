@@ -1,5 +1,21 @@
 -- AREQA cold-memory schema for Supabase PostgreSQL.
--- Apply from the Supabase SQL editor or migration runner against the target project.
+--
+-- Purpose:
+--   This migration creates the long-term memory tables used by GUM / cold memory:
+--   - observations
+--   - propositions
+--   - observation_proposition
+--   - vec_memory
+--   It also enables the vector extension, adds indexes, and applies RLS policies.
+--
+-- Why this file exists:
+--   Hot memory lives in Redis, but cold memory is stored in Supabase/PostgreSQL.
+--   Keeping this schema in version control makes the database reproducible and
+--   prevents cloud schema drift.
+--
+-- When to use it:
+--   Apply this migration to a fresh or partially-provisioned Supabase project
+--   before running cold-memory, GUM, or vector search tests.
 
 create extension if not exists vector;
 
