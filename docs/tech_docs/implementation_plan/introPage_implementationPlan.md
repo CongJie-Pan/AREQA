@@ -25,7 +25,7 @@
 ## 四、 頁面佈局與真實功能文案規劃 (Layout & Real Features Copywriting)
 
 ### 1. 頂部導覽列 (Header)
-*   **左側識別**：置入 `areqa_text_logo.png`。
+*   **左側識別**：置入 `areqa_text_logo_v2.png`。
 *   **右側導覽**：`關於學伴`、`陪伴核心`、`思維透明`，以及最右側的 `[ 進入學習大廳 ]` 暖橘金按鈕。
 
 ### 2. 首屏主視覺區 (Hero Section)
@@ -67,7 +67,7 @@
 *   背景顯示巨大的半透明「A R E Q A」襯線體，隨滾動產生微妙的視差。
 
 ### 6. 頁尾 (Footer)
-*   底部置中置入 `logo_icon_v2.png` (結合幾何二十面體線條的 'A' 標誌，象徵學術幾何與現代 AI 的融合)。
+*   底部置中置入 `areqa_icon_v3.png`。
 *   底部版權宣告與簡單的 sitemap。
 
 ---

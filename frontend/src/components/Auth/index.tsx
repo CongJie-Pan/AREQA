@@ -120,7 +120,7 @@ export function UserAuthUI() {
                 登入 / 註冊 AREQA
               </h2>
               <Image 
-                src="/icon/logo_icon_v2.png" 
+                src="/icon/areqa_icon_v3.png" 
                 alt="AREQA Logo" 
                 width={80}
                 height={80}

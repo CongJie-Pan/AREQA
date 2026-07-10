@@ -114,7 +114,7 @@ export function ConversationList({
       <div className={styles.logoContainer}>
         <div className={styles.logoWrapper}>
           <Image 
-            src="/logo/logo_icon_v2.png" 
+            src="/logo/areqa_icon_v3.png" 
             alt="AREQA Logo" 
             width={40} 
             height={40}

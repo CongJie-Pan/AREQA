@@ -135,7 +135,7 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
     return (
       <div className={cx(styles.container, styles.empty, className)}>
         <Image 
-          src="/logo/areqa_text_logo.png" 
+          src="/logo/areqa_text_logo_v2.png" 
           alt="AREQA Logo" 
           width={260} 
           height={87} 
