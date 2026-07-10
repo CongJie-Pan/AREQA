@@ -279,7 +279,7 @@ async def query_memory_for_context(user_query: str, limit: int = 8, user_id: str
 
 obs_worker = None
 
-async def batch_process_observations(user_id: str, items: list[str]):
+async def batch_process_observations(user_id: str, items: list[str], *, sync_to_working_memory: bool = True):
     global importance_sums, interaction_counts, last_interaction_time
     last_interaction_time = datetime.now()
     
@@ -368,7 +368,7 @@ async def batch_process_observations(user_id: str, items: list[str]):
         from memory_gate import classify_learning_observation
         store = get_global_store()
         gate = classify_learning_observation(final_text)
-        if store and gate.should_prompt:
+        if store and gate.should_prompt and sync_to_working_memory:
             await store.append_learning_observation(
                 user_id,
                 gate.proposition,
@@ -474,14 +474,18 @@ async def run_compaction(user_id: str):
         await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
         print("[Compaction] Finished.")
 
-async def push_observation(user_id: str, text: str):
+async def push_observation(user_id: str, text: str, *, sync_to_working_memory: bool = True):
     gum_instance, _ = await get_gum_instance(user_id)
     if not gum_instance:
         return
     if obs_worker:
         await obs_worker.push(user_id, text)
     else:
-        await batch_process_observations(user_id, [text])
+        await batch_process_observations(user_id, [text], sync_to_working_memory=sync_to_working_memory)
+
+
+async def push_reflection_observation(user_id: str, text: str):
+    return await push_observation(user_id, text, sync_to_working_memory=False)
 
 async def run_reflection_loop():
     """Background task to run reflection if user is idle for 30 minutes."""

@@ -5,9 +5,11 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
 from backend.gum_integration import (
+    batch_process_observations,
     get_gum_instance,
     stop_gum_instance,
     push_observation,
+    push_reflection_observation,
     get_all_memory,
     TextObserver,
 )
@@ -122,7 +124,55 @@ async def test_push_observation():
 
         mock_gum.query.assert_called_once_with("test observation text", limit=20)
         mock_obs.push_text.assert_called_once_with("test observation text", user_id="test_user")
-        
+
+@pytest.mark.asyncio
+async def test_push_reflection_observation_uses_non_working_memory_path():
+    mock_gum = MagicMock()
+    mock_obs = AsyncMock()
+
+    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum,          patch("backend.gum_integration.batch_process_observations", new_callable=AsyncMock) as mock_batch:
+        mock_get_gum.return_value = (mock_gum, mock_obs)
+        backend.gum_integration.obs_worker = None
+
+        await push_reflection_observation("test_user", "reflection text")
+
+    mock_batch.assert_awaited_once_with(
+        "test_user",
+        ["reflection text"],
+        sync_to_working_memory=False,
+    )
+
+@pytest.mark.asyncio
+async def test_batch_process_observations_skips_working_memory_sync_when_disabled():
+    class FakeGate:
+        should_prompt = True
+        proposition = "User reviewed the lesson"
+
+    class FakeStore:
+        def __init__(self):
+            self.append_learning_observation = AsyncMock()
+
+    fake_store = FakeStore()
+    mock_gum = MagicMock()
+    mock_gum.query = AsyncMock(return_value=[])
+    mock_obs = AsyncMock()
+
+    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
+         patch("backend.gum_integration.run_compaction", new_callable=AsyncMock), \
+         patch("backend.gum_integration.run_reflection", new_callable=AsyncMock), \
+         patch("memory_store.get_global_store", return_value=fake_store), \
+         patch("memory_gate.classify_learning_observation", return_value=FakeGate()):
+        mock_get_gum.return_value = (mock_gum, mock_obs)
+        backend.gum_integration.obs_worker = None
+
+        await batch_process_observations(
+            "test_user",
+            ["User asked: I was stuck on classical Chinese"],
+            sync_to_working_memory=False,
+        )
+
+    fake_store.append_learning_observation.assert_not_awaited()
+
 @pytest.mark.asyncio
 async def test_get_all_memory_with_stitch_tags(mock_gum_instance):
     with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:

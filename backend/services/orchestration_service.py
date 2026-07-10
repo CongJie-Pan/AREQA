@@ -185,6 +185,11 @@ class OrchestrationService:
                     await apply_user_message_gate(store, user_id, last_user_msg)
                 except Exception as e:
                     print(f"[MemoryStore] Failed to apply user-message memory gate: {e}")
+                try:
+                    from gum_integration import push_reflection_observation
+                    asyncio.create_task(push_reflection_observation(user_id, f"User asked: {last_user_msg}"))
+                except Exception as e:
+                    print(f"[MemoryStore] Failed to queue reflection observation: {e}")
                 if _is_stop_roleplay_request(last_user_msg):
                     hot_mem = await store.get_hot_memory(user_id)
                     key = _chat_avatar_key(conversation_id)
