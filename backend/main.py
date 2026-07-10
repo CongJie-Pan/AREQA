@@ -16,8 +16,6 @@ import os
 import hashlib
 from dotenv import load_dotenv
 
-from gum_integration import stop_gum_instance, push_observation, get_all_memory, query_memory_for_context, get_hot_memory_snapshot, query_cold_memory_for_context, async_evaluate_and_update_state, clear_gum_memory
-
 # 在 main.py 最上層加入全域快取服務變數
 rag_cache = None
 
@@ -142,61 +140,68 @@ SYSTEM_PROMPT_WITH_RAG_THINK = BASE_PERSONA + (
 # Initialize the global thread pool for CPU bounds tasks (Tokenizer, FAISS, BM25)
 _thread_pool = ThreadPoolExecutor(max_workers=4)
 
-# Load RAG Service globally
-try:
-    import sys
-    from pathlib import Path
-    
-    # In the new structure, backend/main.py is one level down from project root
-    
-    # Add the src/main/python folder to sys.path to resolve internal service imports
-    src_python_dir = PROJECT_ROOT / "src" / "main" / "python"
-    if str(src_python_dir) not in sys.path:
-        sys.path.insert(0, str(src_python_dir))
-        
-    from services.rag_service import RAGService
-    from services.router_service import RouterService
-    from services.suggestion_service import SuggestionService
-    
-    faiss_dir = PROJECT_ROOT / "data" / "rag" / "faiss_index"
-    bm25_dir = PROJECT_ROOT / "data" / "rag" / "bm25_index"
-    
-    def get_latest_file(directory: Path, pattern: str) -> str:
-        if not directory.exists():
-            return ""
-        files = list(directory.glob(pattern))
-        if not files:
-            return ""
-        return str(sorted(files, key=lambda x: x.stat().st_mtime)[-1])
-        
-    # Check if empty data folder issue occurs, if so, fail gracefully
-    latest_faiss_idx = get_latest_file(faiss_dir, "chunks*.index")
-    latest_faiss_meta = get_latest_file(faiss_dir, "index_metadata*.json")
-    
-    if not latest_faiss_idx:
-        latest_faiss_idx = "dummy_not_found.index"  # Prevent Path("") resolving to '.'
-        print("Warning: No FAISS index found in data/rag/faiss_index. RAG will not work locally.")
-    
-    print("DEBUG: Before RAGService")
-    rag_service = RAGService(
-        faiss_index_path=latest_faiss_idx,
-        faiss_metadata_path=latest_faiss_meta,
-        bm25_index_dir=str(bm25_dir),
-        embedding_model_path="api", 
-        reranker_model_path="api", # Added this back to enable high-quality reranking via API
-        top_k=5,
-        rrf_k=60,
-        score_threshold=0.0,
-        max_context_tokens=4000,
-    )
-    print("DEBUG: After RAGService")
-    router_service = RouterService()
-    print("DEBUG: After RouterService")
-    suggestion_service = SuggestionService()
-    print("RAG, Router, and Suggestion Services initialized successfully.")
-except Exception as e:
-    rag_service = None
-    print(f"Warning: Could not load RAGService. Details: {e}")
+src_python_dir = PROJECT_ROOT / "src" / "main" / "python"
+if str(src_python_dir) not in sys.path:
+    sys.path.insert(0, str(src_python_dir))
+
+from services.router_service import RouterService
+from services.suggestion_service import SuggestionService
+
+router_service = RouterService()
+suggestion_service = SuggestionService()
+rag_service = None
+
+def _env_flag(name: str, default: str = "false") -> bool:
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+def init_rag_service():
+    """Initialize internal RAG only when explicitly enabled."""
+    global rag_service
+    if rag_service is not None:
+        return rag_service
+
+    if not _env_flag("ENABLE_INTERNAL_RAG"):
+        print("Internal RAG disabled. Set ENABLE_INTERNAL_RAG=true to enable local retrieval.")
+        return None
+
+    try:
+        from services.rag_service import RAGService
+
+        faiss_dir = PROJECT_ROOT / "data" / "rag" / "faiss_index"
+        bm25_dir = PROJECT_ROOT / "data" / "rag" / "bm25_index"
+
+        def get_latest_file(directory: Path, pattern: str) -> str:
+            if not directory.exists():
+                return ""
+            files = list(directory.glob(pattern))
+            if not files:
+                return ""
+            return str(sorted(files, key=lambda x: x.stat().st_mtime)[-1])
+
+        latest_faiss_idx = get_latest_file(faiss_dir, "chunks*.index")
+        latest_faiss_meta = get_latest_file(faiss_dir, "index_metadata*.json")
+
+        if not latest_faiss_idx or not latest_faiss_meta:
+            print("Internal RAG enabled but FAISS index/metadata is missing. RAG disabled.")
+            return None
+
+        rag_service = RAGService(
+            faiss_index_path=latest_faiss_idx,
+            faiss_metadata_path=latest_faiss_meta,
+            bm25_index_dir=str(bm25_dir),
+            embedding_model_path="api",
+            reranker_model_path="api",
+            top_k=5,
+            rrf_k=60,
+            score_threshold=0.0,
+            max_context_tokens=4000,
+        )
+        print("RAG Service initialized successfully.")
+        return rag_service
+    except Exception as e:
+        rag_service = None
+        print(f"Warning: Could not load RAGService. Details: {e}")
+        return None
 
 app = FastAPI(title="XiaoHong Ancient Chinese QA - RAG Backend API")
 
@@ -294,6 +299,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    from gum_integration import stop_gum_instance
+
     await stop_gum_instance()
     if hasattr(app.state, 'proactive_task'):
         app.state.proactive_task.cancel()
@@ -306,6 +313,8 @@ _local_summary_cache = {}
 
 @app.get("/api/v1/memory")
 async def fetch_memory(current_user_id: str = Depends(get_current_user)):
+    from gum_integration import get_all_memory
+
     props = await get_all_memory(current_user_id)
     # Filter out short term memory (hot:) for the UI list
     long_term_props = [
@@ -318,6 +327,8 @@ async def fetch_memory(current_user_id: str = Depends(get_current_user)):
 
 @app.get("/api/v1/memory/summary")
 async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
+    from gum_integration import get_all_memory
+
     props = await get_all_memory(current_user_id)
     # Filter out short term and scroll
     long_term_props = [
@@ -739,13 +750,14 @@ async def retrieve_endpoint(query: str, top_k: int = 20, offset: int = 0, limit:
     Suitable for frontend debug panels or citation references.
     Includes pagination support (offset/limit).
     """
-    if not rag_service:
-        return {"results": [], "error": "RAG service not initialized"}
-        
+    active_rag = init_rag_service()
+    if not active_rag:
+        return {"results": [], "error": "Internal RAG is disabled or not initialized"}
+
     loop = asyncio.get_running_loop()
     # Execute retrieval in the thread pool
     try:
-        results = await loop.run_in_executor(_thread_pool, rag_service.retrieve, query)
+        results = await loop.run_in_executor(_thread_pool, active_rag.retrieve, query)
         # Convert RetrievalResult objects to dicts
         dict_results = [
             {
@@ -815,6 +827,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
         print(f"[ComPeer] User '{target_user}' rejected popup, entering cooldown.")
     else:
         # Meaningful interactions go to GUM to become semantic propositions
+        from gum_integration import push_observation
         asyncio.create_task(push_observation(current_user_id, obs_text))
         
     return {"status": "ok"}
@@ -834,6 +847,8 @@ async def proactive_check_endpoint(current_user_id: str = Depends(get_current_us
 @app.delete("/api/v1/memory")
 async def clear_memory_endpoint(current_user_id: str = Depends(get_current_user)):
     """Clear all hot memory and cold GUM memory"""
+    from gum_integration import clear_gum_memory
+
     from memory_store import get_global_store
     store = get_global_store()
     if store:
@@ -917,7 +932,7 @@ async def stream_endpoint(
     from services.orchestration_service import OrchestrationService
     orchestrator = OrchestrationService(
         router_service=router_service,
-        rag_service=rag_service,
+        rag_service=init_rag_service() if chat_req.use_rag else None,
         suggestion_service=suggestion_service,
         client=client
     )

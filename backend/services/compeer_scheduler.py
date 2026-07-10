@@ -336,54 +336,6 @@ async def proactive_scheduler_loop():
                                         asyncio.create_task(ws_manager.broadcast_alert(user_id, message))
                                         await set_cooldown(user_id, state=learner_state)
 
-                    await tick_proactive_schedule(user_id)
-                    
-                    from time import time
-                    last_time = await get_last_interaction_time(user_id)
-                    
-                    if not await is_in_cooldown(user_id) and (time() - last_time > 60):
-                        if store:
-                            hot_mem = await store.get_hot_memory(user_id)
-                            scroll_count = 0
-                            for k, v in hot_mem.items():
-                                if k.startswith("obs_") and "Type: scroll" in str(v):
-                                    scroll_count += 1
-                            
-                            if scroll_count >= 6:
-                                keys_to_delete = [k for k, v in hot_mem.items() if k.startswith("obs_") and "Type: scroll" in str(v)]
-                                for k in keys_to_delete:
-                                    del hot_mem[k]
-                                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-
-                                from gum_integration import (
-                                    detect_proactive_event_via_llm,
-                                    generate_scaffolding_message_via_llm,
-                                    get_hot_memory_snapshot,
-                                    query_cold_memory_for_context
-                                )
-                                snapshot = await get_hot_memory_snapshot(user_id)
-                                event = await detect_proactive_event_via_llm(user_id, snapshot)
-
-                                if event["has_event"] and event["importance"] >= 0.7:
-                                    cold_ctx = await query_cold_memory_for_context(user_id, event["event_summary"])
-                                    learner_state = await store.get_learner_state(user_id)
-                                    edf_policy = await store.get_current_strategy(user_id)
-
-                                    message = await generate_scaffolding_message_via_llm(
-                                        user_id=user_id,
-                                        hot_memory_snapshot=snapshot,
-                                        cold_memory_context=cold_ctx,
-                                        learner_state=learner_state,
-                                        edf_policy=edf_policy,
-                                        event_summary=event["event_summary"],
-                                        last_compeer_message=hot_mem.get("last_compeer_message", "")
-                                    )
-
-                                    await store.update_hot_memory_async(user_id, "last_compeer_message", message)
-
-                                    asyncio.create_task(ws_manager.broadcast_alert(user_id, message))
-                                    await set_cooldown(user_id, state=learner_state)
-                                
             await asyncio.sleep(10)
         except Exception as e:
             print(f"[EDF-LOG] proactive_scheduler_loop error: {e}")
