@@ -78,3 +78,4 @@ data/rag/
 data/complete_trainingSet_v4_B.jsonl
 
 misc/agent_mvp/.venv
+misc/AREQA-Landing-Template/node_modules
