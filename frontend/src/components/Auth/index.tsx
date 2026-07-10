@@ -16,6 +16,7 @@ export function UserAuthUI() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -132,6 +133,7 @@ export function UserAuthUI() {
               appearance={{ theme: ThemeSupa }}
               theme="dark"
               providers={['google']}
+              redirectTo={authRedirectTo}
               localization={{
                 variables: {
                   sign_in: {
