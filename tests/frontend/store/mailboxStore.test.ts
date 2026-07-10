@@ -36,7 +36,10 @@ describe('mailboxStore', () => {
       expect(state.mails).toEqual(EXPECTED_MAILS);
       expect(state.unreadCount).toBe(1);
       expect(state.loading).toBe(false);
-      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/v1/mailbox'));
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/mailbox'),
+        expect.objectContaining({ headers: expect.any(Object) })
+      );
     });
   });
 
@@ -73,6 +76,29 @@ describe('mailboxStore', () => {
       );
       
       unsubscribe();
+    });
+
+    it('keeps sendingReply true while the reply request is pending', async () => {
+      let resolveFetch: (value: { ok: boolean; json: () => Promise<{ mail_id: string }> }) => void;
+      fetchMock.mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        })
+      );
+
+      const sendPromise = useMailboxStore.getState().sendReply('pending reply', 'AREQA');
+
+      expect(useMailboxStore.getState().sendingReply).toBe(true);
+      expect(useMailboxStore.getState().mails).toHaveLength(1);
+
+      resolveFetch!({
+        ok: true,
+        json: () => Promise.resolve({ mail_id: 'real-pending-1' }),
+      });
+      await sendPromise;
+
+      expect(useMailboxStore.getState().sendingReply).toBe(false);
+      expect(useMailboxStore.getState().mails[0].mail_id).toBe('real-pending-1');
     });
   });
 

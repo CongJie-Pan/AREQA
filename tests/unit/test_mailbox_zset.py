@@ -11,6 +11,7 @@ from mailbox_store import MailboxStore
 @pytest.mark.asyncio
 async def test_schedule_delayed_mail():
     mock_redis = AsyncMock()
+    mock_redis.zrange.return_value = []
     
     with patch("mailbox_store.get_redis", return_value=mock_redis):
         store = MailboxStore()

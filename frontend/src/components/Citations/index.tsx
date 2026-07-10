@@ -14,8 +14,9 @@ import { useStyles } from './styles';
 export interface CitationSource {
   title: string;
   snippet: string;
-  score: number;
+  score?: number;
   chunk_id: string;
+  url?: string;
 }
 
 export interface CitationsProps {
@@ -46,6 +47,10 @@ function getDomain(url: string): string {
   } catch {
     return 'Invalid URL';
   }
+}
+
+function getSourceUrl(src: CitationSource): string {
+  return src.url || (src.chunk_id?.startsWith('http') ? src.chunk_id : '');
 }
 
 /**
@@ -143,61 +148,67 @@ export function Citations({
           >
             {hasSources ? (
               <div className={styles.sourcesGrid}>
-                {sources!.map((src, index) => (
-                  <div 
-                    key={src.chunk_id || index} 
-                    className={styles.sourceCard}
-                    onClick={() => openSourceModal(src)}
-                  >
-                    <div className={styles.sourceHeader}>
-                      <span className={styles.linkNumber}>{index + 1}</span>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img 
-                        src={`https://www.google.com/s2/favicons?domain=${getDomain(src.chunk_id)}&sz=32`} 
-                        alt="favicon" 
-                        style={{ width: '16px', height: '16px', borderRadius: '50%' }}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                      <span className={styles.sourceTitle} style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.title || '古籍文獻'}</span>
-                      {src.chunk_id && src.chunk_id.startsWith('http') && (
-                        <a 
-                          href={src.chunk_id} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '50%',
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            color: 'rgba(255, 255, 255, 0.65)',
-                            transition: 'all 0.2s',
-                            marginLeft: 'auto'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
-                            e.currentTarget.style.color = '#ffffff';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.65)';
-                          }}
-                          title="在新分頁開啟原文"
-                        >
-                          <ExternalLink size={12} />
-                        </a>
-                      )}
+                {sources!.map((src, index) => {
+                  const sourceUrl = getSourceUrl(src);
+                  const domain = sourceUrl ? getDomain(sourceUrl) : '';
+                  return (
+                    <div
+                      key={src.chunk_id || sourceUrl || index}
+                      className={styles.sourceCard}
+                      onClick={() => openSourceModal(src)}
+                    >
+                      <div className={styles.sourceHeader}>
+                        <span className={styles.linkNumber}>{index + 1}</span>
+                        {sourceUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
+                            alt="favicon"
+                            style={{ width: '16px', height: '16px', borderRadius: '50%' }}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        )}
+                        <span className={styles.sourceTitle} style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.title || domain || '文獻來源'}</span>
+                        {sourceUrl && (
+                          <a
+                            href={sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '50%',
+                              background: 'rgba(255, 255, 255, 0.1)',
+                              color: 'rgba(255, 255, 255, 0.65)',
+                              transition: 'all 0.2s',
+                              marginLeft: 'auto'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                              e.currentTarget.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.65)';
+                            }}
+                            title="在新分頁開啟原文"
+                          >
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                      <div className={styles.sourceSnippet}>
+                        {src.snippet}
+                      </div>
                     </div>
-                    <div className={styles.sourceSnippet}>
-                      {src.snippet}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className={styles.list}>
@@ -213,9 +224,9 @@ export function Citations({
                   >
                     <span className={styles.linkNumber}>{index + 1}</span>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img 
-                      src={`https://www.google.com/s2/favicons?domain=${getDomain(url)}&sz=32`} 
-                      alt="favicon" 
+                    <img
+                      src={`https://www.google.com/s2/favicons?domain=${getDomain(url)}&sz=32`}
+                      alt="favicon"
                       style={{ width: '16px', height: '16px', borderRadius: '50%' }}
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
@@ -246,8 +257,8 @@ export function Citations({
         width={600}
         styles={{
           mask: { backdropFilter: 'blur(4px)' },
-          container: { 
-            borderRadius: '16px', 
+          container: {
+            borderRadius: '16px',
             background: '#262626',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             padding: 0,
@@ -279,15 +290,15 @@ export function Citations({
             <div style={{ marginBottom: '16px' }}>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#ffffff' }}>{selectedSource.title}</h3>
               <div style={{ marginTop: '4px', color: 'rgba(255, 255, 255, 0.45)', fontSize: '12px' }}>
-                識別碼: {selectedSource.chunk_id}
+                {getSourceUrl(selectedSource) ? `來源: ${getSourceUrl(selectedSource)}` : `識別碼: ${selectedSource.chunk_id}`}
               </div>
             </div>
             <Divider style={{ margin: '12px 0', borderColor: 'rgba(255, 255, 255, 0.05)' }} />
-            
-            <div style={{ 
-              position: 'relative', 
-              padding: '16px 20px', 
-              background: '#333333', 
+
+            <div style={{
+              position: 'relative',
+              padding: '16px 20px',
+              background: '#333333',
               borderRadius: '12px',
               border: '1px solid rgba(255, 255, 255, 0.1)',
               lineHeight: 1.8,
@@ -299,7 +310,7 @@ export function Citations({
                 {selectedSource.snippet}
               </div>
             </div>
-            
+
             <div style={{ marginTop: '20px', textAlign: 'right', fontSize: '12px', color: '#bfbfbf' }}>
               * 以上內容為 RAG 檢索之原文片段
             </div>

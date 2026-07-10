@@ -234,10 +234,11 @@ class MailboxStore:
         mail_data.setdefault("task_id", str(uuid.uuid4()))
         mail_data["user_id"] = user_id
         score = time.time() + delay_seconds
+        should_enqueue_redis = True
         if await self._has_db():
             async with AsyncSession(self._get_engine()) as session:
                 async with session.begin():
-                    await session.execute(
+                    cursor = await session.execute(
                         text(
                             """
                             INSERT INTO mailbox_delayed_tasks (
@@ -246,11 +247,8 @@ class MailboxStore:
                             VALUES (
                                 :task_id, :user_id, CAST(:payload AS jsonb), 'scheduled', to_timestamp(:deliver_at)
                             )
-                            ON CONFLICT (task_id) DO UPDATE
-                            SET payload = EXCLUDED.payload,
-                                status = 'scheduled',
-                                deliver_at = EXCLUDED.deliver_at,
-                                updated_at = now()
+                            ON CONFLICT (task_id) DO NOTHING
+                            RETURNING task_id
                             """
                         ),
                         {
@@ -260,9 +258,34 @@ class MailboxStore:
                             "deliver_at": score,
                         },
                     )
+                    should_enqueue_redis = cursor.scalar() is not None
+                    if not should_enqueue_redis:
+                        logger.info(
+                            "[MailboxStore] Skipping duplicate delayed mail task %s for user %s",
+                            mail_data["task_id"],
+                            user_id,
+                        )
+                        return mail_data["task_id"]
         mail_data_json = json.dumps(mail_data, ensure_ascii=False)
         try:
-            await self.redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: score})
+            if not await self._has_db():
+                key = f"areqa:delayed_mail:{user_id}"
+                existing = await self.redis.zrange(key, 0, -1)
+                for item in existing:
+                    try:
+                        queued = json.loads(item)
+                    except Exception:
+                        continue
+                    if queued.get("task_id") == mail_data["task_id"]:
+                        logger.info(
+                            "[MailboxStore] Skipping duplicate Redis delayed mail task %s for user %s",
+                            mail_data["task_id"],
+                            user_id,
+                        )
+                        return mail_data["task_id"]
+
+            if should_enqueue_redis:
+                await self.redis.zadd(f"areqa:delayed_mail:{user_id}", {mail_data_json: score})
         except Exception as exc:
             if not await self._has_db():
                 raise

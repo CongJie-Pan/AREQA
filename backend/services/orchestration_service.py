@@ -313,6 +313,7 @@ class OrchestrationService:
         import httpx
         import os
         
+        node_start = time.time()
         print(f"[Perplexity] 開始聯網搜尋: {last_user_msg}")
         yield f"event: status\ndata: {json.dumps({'status': 'searching_dense', 'message': '🌐 網路檢索中...'}, ensure_ascii=False)}\n\n"
 
@@ -343,8 +344,14 @@ class OrchestrationService:
         else:
             try:
                 rewritten_query = last_user_msg
-                max_results = 15
-                if self.client and messages:
+                max_results = int(os.environ.get("WEB_SEARCH_MAX_RESULTS", "15"))
+                max_results = min(max(max_results, 3), 20)
+                search_context_size = os.environ.get("WEB_SEARCH_CONTEXT_SIZE", "high").lower()
+                if search_context_size not in {"low", "medium", "high"}:
+                    search_context_size = "high"
+                rewrite_start = time.time()
+                enable_query_rewrite = os.environ.get("ENABLE_WEB_QUERY_REWRITE", "true").lower() in {"1", "true", "yes", "on"}
+                if enable_query_rewrite and self.client and messages:
                     try:
                         history_str = "\n".join([f'{m["role"]}: {m["content"]}' for m in messages[-4:]])
                         rewrite_prompt = f"""請根據以下對話歷史，將最後一個使用者的提問重寫為適合在搜尋引擎上查詢的『獨立關鍵字』（Standalone Query）。同時請分析該問題的「複雜度」，並決定需要參考的文獻數量（3到20篇之間）。
@@ -373,8 +380,10 @@ class OrchestrationService:
                     except Exception as e:
                         print(f"[Perplexity] Query Rewrite Error: {e}")
                 
-                print(f"[Perplexity] 重寫後的搜尋詞: {rewritten_query}, 動態篇數: {max_results}")
+                print(f"[Perplexity] Query rewrite took {time.time() - rewrite_start:.2f}s")
+                print(f"[Perplexity] 搜尋詞: {rewritten_query}, 篇數: {max_results}, context: {search_context_size}, rewrite: {enable_query_rewrite}")
 
+                search_start = time.time()
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         "https://api.perplexity.ai/search",
@@ -385,7 +394,7 @@ class OrchestrationService:
                         json={
                             "query": rewritten_query,
                             "max_results": max_results,
-                            "search_context_size": "high"
+                            "search_context_size": search_context_size
                         }
                     )
                     response.raise_for_status()
@@ -394,6 +403,7 @@ class OrchestrationService:
                     # Enforce max_results dynamically as the API might ignore the payload parameter
                     if "results" in data:
                         data["results"] = data["results"][:max_results]
+                    print(f"[Perplexity] Search request took {time.time() - search_start:.2f}s")
                     
                     if redis_client:
                         try:
@@ -431,14 +441,18 @@ class OrchestrationService:
                 sources_payload.append({
                     "title": title,
                     "chunk_id": url,
-                    "snippet": snippet
+                    "url": url,
+                    "snippet": snippet,
+                    "score": float(r.get("score", 1.0) or 1.0),
                 })
             
             # Send structured sources event 
             yield f"event: sources\ndata: {json.dumps(sources_payload, ensure_ascii=False)}\n\n"
+            yield f"event: status\ndata: {json.dumps({'status': 'sources_ready', 'message': f'已取得 {len(sources_payload)} 筆網路文獻'}, ensure_ascii=False)}\n\n"
         
         self._temp_context_prompt = "<context>\n" + "\n\n".join(context_texts) + "\n</context>\n\n"
         self._temp_rag_obj = {"mock": True}
+        print(f"[Perplexity] Web search node took {time.time() - node_start:.2f}s")
         yield "event: results_obj\n\n"
 
     async def _node_prompt_assembly(self, user_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
@@ -518,6 +532,8 @@ class OrchestrationService:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             return
             
+        llm_start = time.time()
+        first_token_logged = False
         from config import settings
         target_model_name = settings.model_main_thinking if force_think else settings.model_main_instruct
         extra_body = {"repetition_penalty": repetition_penalty}
@@ -619,6 +635,9 @@ class OrchestrationService:
                     yield f"data: {json.dumps({'choices': [{'delta': {'content': reasoning_text}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
                     
                 if content_text:
+                    if not first_token_logged:
+                        first_token_logged = True
+                        print(f"[LLM Stream] First content token took {time.time() - llm_start:.2f}s")
                     if inside_reasoning:
                         inside_reasoning = False
                         yield f"data: {json.dumps({'choices': [{'delta': {'content': '</think>'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
@@ -633,6 +652,7 @@ class OrchestrationService:
             
         if inside_reasoning:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '</think>'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+        print(f"[LLM Stream] Total stream node took {time.time() - llm_start:.2f}s")
             
         if tool_call_name == "update_memory" and tool_call_args:
             try:

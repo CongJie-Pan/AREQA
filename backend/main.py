@@ -14,6 +14,7 @@ from openai import AsyncOpenAI
 import opencc
 import os
 import hashlib
+import time
 from dotenv import load_dotenv
 
 # 在 main.py 最上層加入全域快取服務變數
@@ -436,6 +437,12 @@ class SendMailRequest(BaseModel):
     recipient: str = "AREQA"
     conversation_id: Optional[str] = None
 
+def _mailbox_reply_task_id(user_id: str, recipient: str, content: str, conversation_id: Optional[str]) -> str:
+    window = int(time.time() // 600)
+    normalized = " ".join(content.split())
+    source = f"{user_id}|{recipient}|{conversation_id or ''}|{normalized}|{window}"
+    return f"reply-{hashlib.sha256(source.encode('utf-8')).hexdigest()[:32]}"
+
 @app.post("/api/v1/mailbox/send")
 async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depends(get_current_user)):
     store = get_mailbox_store()
@@ -448,6 +455,7 @@ async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depend
             "reply_content": req.content,
             "active_avatar": req.recipient,
             "conversation_id": req.conversation_id or mail_id,
+            "task_id": _mailbox_reply_task_id(current_user_id, req.recipient, req.content, req.conversation_id),
         },
         delay_seconds=300,
     )

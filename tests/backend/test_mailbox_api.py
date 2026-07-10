@@ -1,4 +1,5 @@
 import pytest
+import hashlib
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 
@@ -44,7 +45,8 @@ def test_post_send_reply_creates_user_mail(mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
     mock_store.schedule_delayed_mail.return_value = "task-123"
     
-    response = client.post("/api/v1/mailbox/send", json={"content": "這是我的回信", "recipient": "柏拉圖", "conversation_id": "thread-1"})
+    with patch("backend.main.time.time", return_value=1783650000):
+        response = client.post("/api/v1/mailbox/send", json={"content": "這是我的回信", "recipient": "柏拉圖", "conversation_id": "thread-1"})
     assert response.status_code == 200
     assert response.json() == {"status": "success", "mail_id": "mock-uuid-123"}
     
@@ -56,6 +58,8 @@ def test_post_send_reply_creates_user_mail(mock_store):
         conversation_id="thread-1"
     )
     mock_store.mark_as_read.assert_called_once_with(user_id="default_user", mail_id="mock-uuid-123")
+    source = "default_user|柏拉圖|thread-1|這是我的回信|2972750"
+    expected_task_id = f"reply-{hashlib.sha256(source.encode('utf-8')).hexdigest()[:32]}"
     mock_store.schedule_delayed_mail.assert_called_once_with(
         user_id="default_user",
         mail_data={
@@ -63,6 +67,7 @@ def test_post_send_reply_creates_user_mail(mock_store):
             "reply_content": "這是我的回信",
             "active_avatar": "柏拉圖",
             "conversation_id": "thread-1",
+            "task_id": expected_task_id,
         },
         delay_seconds=300,
     )

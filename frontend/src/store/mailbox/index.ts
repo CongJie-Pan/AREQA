@@ -71,7 +71,7 @@ export const useMailboxStore = create<MailboxState>((set, get) => ({
     };
     
     const previousMails = get().mails;
-    set({ mails: [tempMail, ...previousMails], sendingReply: false });
+    set({ mails: [tempMail, ...previousMails] });
 
     try {
       const token = getAuthToken();
@@ -89,12 +89,13 @@ export const useMailboxStore = create<MailboxState>((set, get) => ({
       
       // Update with real ID
       set((state) => ({
-        mails: state.mails.map(m => m.mail_id === tempId ? { ...m, mail_id: data.mail_id } : m)
+        mails: state.mails.map(m => m.mail_id === tempId ? { ...m, mail_id: data.mail_id } : m),
+        sendingReply: false,
       }));
       return true;
     } catch (err: unknown) {
       // Revert optimistic update on failure
-      set({ mails: previousMails, error: (err as Error).message });
+      set({ mails: previousMails, error: (err as Error).message, sendingReply: false });
       return false;
     }
   },

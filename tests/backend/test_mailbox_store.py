@@ -18,6 +18,12 @@ class FakeRedis:
     async def zadd(self, key, mapping):
         self.zsets.setdefault(key, {}).update(mapping)
 
+    async def zrange(self, key, start, end):
+        values = list(self.zsets.get(key, {}).keys())
+        if end == -1:
+            return values[start:]
+        return values[start:end + 1]
+
 class FailingRedis(FakeRedis):
     async def get(self, key):
         raise RuntimeError("redis unavailable")
@@ -97,6 +103,24 @@ async def test_schedule_delayed_mail_persists_user_and_task_id(temp_store):
     assert payload["reply_content"] == "hello"
 
 @pytest.mark.asyncio
+async def test_schedule_delayed_mail_skips_duplicate_task_id_in_redis(temp_store):
+    store = temp_store
+    first_id = await store.schedule_delayed_mail(
+        "user1",
+        {"task_id": "same-task", "reply_content": "hello"},
+        delay_seconds=300,
+    )
+    second_id = await store.schedule_delayed_mail(
+        "user1",
+        {"task_id": "same-task", "reply_content": "hello again"},
+        delay_seconds=300,
+    )
+
+    queued = list(store.redis.zsets["areqa:delayed_mail:user1"].keys())
+    assert first_id == second_id == "same-task"
+    assert len(queued) == 1
+
+@pytest.mark.asyncio
 async def test_add_mail_is_idempotent_for_delivered_task(temp_store):
     store = temp_store
     first_id = await store.add_mail(
@@ -149,7 +173,10 @@ async def test_schedule_delayed_mail_survives_redis_failure_when_db_is_available
                 return self
 
             async def execute(self, *args, **kwargs):
-                return None
+                class Cursor:
+                    def scalar(self):
+                        return "task-id"
+                return Cursor()
 
         with patch("backend.mailbox_store.AsyncSession", return_value=FakeSession()):
             task_id = await store.schedule_delayed_mail(

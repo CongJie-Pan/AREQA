@@ -58,8 +58,9 @@ export interface Message {
   sources?: Array<{
     title: string;
     snippet: string;
-    score: number;
+    score?: number;
     chunk_id: string;
+    url?: string;
   }>;
   /** Suggested follow-up questions (optional) */
   suggestions?: string[];
