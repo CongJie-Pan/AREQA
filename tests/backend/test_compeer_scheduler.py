@@ -78,16 +78,19 @@ def mock_store():
         yield store
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
-@patch("services.connection_manager.ws_manager.broadcast_alert", new_callable=AsyncMock)
-@patch("gum_integration.generate_scaffolding_message_via_llm", new_callable=AsyncMock)
+@patch("mailbox_store.get_mailbox_store")
+@patch("gum_integration.generate_areqa_care_letter_via_llm", new_callable=AsyncMock)
 @patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock)
 @patch("backend.services.compeer_scheduler.is_in_cooldown", new_callable=AsyncMock)
-async def test_trigger_proactive_consumed_from_hot_memory(mock_in_cooldown, mock_query, mock_gen, mock_broadcast, mock_sleep, mock_store):
+async def test_trigger_proactive_schedules_areqa_care_mail(mock_in_cooldown, mock_query, mock_gen, mock_get_mailbox, mock_sleep, mock_store):
     # Setup hot memory with trigger_proactive = True
     await mock_store.update_hot_memory("default_user", "trigger_proactive", True)
     await mock_store.update_hot_memory("default_user", "current_learner_state", "GIVING_UP")
     
-    mock_gen.return_value = "Test Scaffolding Message"
+    mock_mailbox = MagicMock()
+    mock_mailbox.schedule_delayed_mail = AsyncMock()
+    mock_get_mailbox.return_value = mock_mailbox
+    mock_gen.return_value = ("給你的學習小箋", "Test Care Letter")
     mock_query.return_value = "Mocked cold context"
     mock_in_cooldown.return_value = False
     
@@ -104,7 +107,12 @@ async def test_trigger_proactive_consumed_from_hot_memory(mock_in_cooldown, mock
         
     hot_mem = await mock_store.get_hot_memory("default_user")
     assert "trigger_proactive" not in hot_mem
-    mock_broadcast.assert_called_once_with("default_user", "Test Scaffolding Message", sender_name=ANY)
+    mock_mailbox.schedule_delayed_mail.assert_awaited_once()
+    call_kwargs = mock_mailbox.schedule_delayed_mail.call_args.kwargs
+    assert call_kwargs["user_id"] == "default_user"
+    assert call_kwargs["mail_data"]["kind"] == "compeer_care"
+    assert call_kwargs["mail_data"]["sender"] == "AREQA"
+    assert call_kwargs["mail_data"]["content"] == "Test Care Letter"
 
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)

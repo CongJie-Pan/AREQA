@@ -3,6 +3,7 @@ import asyncio
 import os
 import re
 import time
+import hashlib
 from typing import AsyncGenerator, List, Dict, Any, Optional
 from fastapi import Request
 from openai import AsyncOpenAI
@@ -14,6 +15,43 @@ from gum_integration import (
     get_hot_memory_snapshot,
     async_evaluate_and_update_state
 )
+
+
+def _normalize_avatar_name(value: str) -> str:
+    normalized = re.sub(r"\s+", "", (value or "").strip())
+    normalized = re.split(r"(?:跟我|和我|與我|來|回答|對話|聊天)", normalized, maxsplit=1)[0]
+    return normalized
+
+
+def _chat_avatar_key(conversation_id: str) -> str:
+    return f"chat_avatar:{conversation_id or 'default'}"
+
+
+def _extract_explicit_chat_avatar(message: str) -> Optional[str]:
+    if any(keyword in message for keyword in ["寫信", "寄信", "信給我", "信件"]):
+        return None
+    patterns = [
+        r"(?:請你|你)?(?:扮演|假扮|飾演|成為)(?P<avatar>[\u4e00-\u9fffA-Za-z·・\s]{2,24})(?:跟我|和我|與我|來|$)",
+        r"(?:用|以)(?P<avatar>[\u4e00-\u9fffA-Za-z·・\s]{2,24})(?:的)?(?:身份|口吻|語氣)(?:跟我|和我|與我|回答|對話)",
+        r"接下來你是(?P<avatar>[\u4e00-\u9fffA-Za-z·・\s]{2,24})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message)
+        if match:
+            avatar = _normalize_avatar_name(match.group("avatar"))
+            if avatar and avatar not in {"角色", "人物", "老師"}:
+                return avatar
+    return None
+
+
+def _is_stop_roleplay_request(message: str) -> bool:
+    return any(keyword in message for keyword in ["停止扮演", "不要扮演", "不用角色", "回到AREQA", "回到 AREQA", "恢復AREQA", "恢復 AREQA"])
+
+
+def _letter_task_id(user_id: str, conversation_id: str, avatar_name: str, source_text: str) -> str:
+    source_hash = hashlib.sha256(source_text.strip().encode("utf-8")).hexdigest()[:24]
+    raw = f"{user_id}|{conversation_id or ''}|{_normalize_avatar_name(avatar_name)}|{source_hash}"
+    return f"letter-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"
 
 def reorder_for_attention(results):
     """
@@ -140,6 +178,19 @@ class OrchestrationService:
             from services.compeer_scheduler import set_last_interaction_time
             asyncio.create_task(set_last_interaction_time(user_id, time.time()))
             asyncio.create_task(push_observation(user_id, f"User asked: {last_user_msg}"))
+            from memory_store import get_global_store
+            store = get_global_store()
+            if store:
+                if _is_stop_roleplay_request(last_user_msg):
+                    hot_mem = await store.get_hot_memory(user_id)
+                    key = _chat_avatar_key(conversation_id)
+                    if key in hot_mem:
+                        del hot_mem[key]
+                        await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
+                else:
+                    chat_avatar = _extract_explicit_chat_avatar(last_user_msg)
+                    if chat_avatar:
+                        await store.update_hot_memory_async(user_id, _chat_avatar_key(conversation_id), chat_avatar)
             if self.client:
                 RECENT_WINDOW = 10
                 recent_messages = messages[-RECENT_WINDOW:]
@@ -200,7 +251,7 @@ class OrchestrationService:
             policy = await policy_task
             print(f"[EDF Policy] Evaluated pedagogical policy: {policy}")
 
-        final_messages = await self._node_prompt_assembly(user_id, messages, use_rag, use_web_search, force_think, context_results_obj, last_user_msg)
+        final_messages = await self._node_prompt_assembly(user_id, conversation_id, messages, use_rag, use_web_search, force_think, context_results_obj, last_user_msg)
 
         effective_max_tokens = max_tokens
         if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
@@ -213,7 +264,7 @@ class OrchestrationService:
 
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
-        async for event in self._node_llm_stream(user_id, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request):
+        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request):
             if event.startswith("event: accumulator:"):
                 answer_content_accumulator = event.split("event: accumulator:", 1)[1]
                 continue
@@ -455,7 +506,7 @@ class OrchestrationService:
         print(f"[Perplexity] Web search node took {time.time() - node_start:.2f}s")
         yield "event: results_obj\n\n"
 
-    async def _node_prompt_assembly(self, user_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str) -> List[Dict[str, str]]:
         from main import SYSTEM_PROMPT_WITH_RAG_THINK, SYSTEM_PROMPT_WITH_RAG, SYSTEM_PROMPT_FORCE_THINK, SYSTEM_PROMPT_NORMAL
         
         new_messages = [m.copy() for m in messages]
@@ -502,9 +553,9 @@ class OrchestrationService:
                     elif learner_state == "CHITCHAT":
                         final_system_prompt += "\n\n【動態表達限制：CHITCHAT 階段】\n注意：使用者目前正在閒聊。請立刻放下所有學術架子，用幽默、輕鬆的朋友口吻回應，不要長篇大論，也不需要強硬引導回主題。"
                     
-                    active_avatar = hot_mem.get("active_avatar")
-                    if active_avatar:
-                        final_system_prompt += f"\n\n【特殊語境：英靈附體】\n注意：你現在已被召喚為「{active_avatar}」。請全程以第一人稱與用戶對話，語氣必須極度符合{active_avatar}的歷史定位、思維模式與經典口吻，直到話題轉移或用戶要求停止。"
+                    chat_avatar = hot_mem.get(_chat_avatar_key(conversation_id))
+                    if chat_avatar:
+                        final_system_prompt += f"\n\n【特殊語境：明確角色扮演】\n注意：使用者已在本對話明確要求你扮演「{chat_avatar}」。請只在這個 conversation 內以第一人稱與用戶對話，語氣符合{chat_avatar}的歷史定位、思維模式與經典口吻。若使用者要求停止扮演，下一輪必須回到 AREQA。"
                 
             from config import settings
             cold_memory_ctx = await query_cold_memory_for_context(user_id, last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
@@ -527,7 +578,7 @@ class OrchestrationService:
         return new_messages
 
 
-    async def _node_llm_stream(self, user_id: str, messages: List[Dict[str, str]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request) -> AsyncGenerator[str, None]:
+    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, str]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request) -> AsyncGenerator[str, None]:
         if not self.client:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             return
@@ -666,13 +717,26 @@ class OrchestrationService:
         elif tool_call_name == "send_epistolary_letter" and tool_call_args:
             try:
                 args = json.loads(tool_call_args)
-                from memory_store import get_global_store
-                store = get_global_store()
-                if store:
-                    await store.update_hot_memory_async(user_id, "avatar_summon_pending", True)
-                    await store.update_hot_memory_async(user_id, "active_avatar", args.get("avatar_name", "Unknown"))
+                avatar_name = args.get("avatar_name", "Unknown")
+                from mailbox_store import get_mailbox_store
+                store = get_mailbox_store()
+                task_id = _letter_task_id(user_id, conversation_id, avatar_name, last_user_msg)
+                await store.schedule_delayed_mail(
+                    user_id=user_id,
+                    mail_data={
+                        "kind": "avatar_letter",
+                        "active_avatar": avatar_name,
+                        "sender": avatar_name,
+                        "recipient": "User",
+                        "conversation_id": conversation_id,
+                        "reply_content": last_user_msg,
+                        "source_message_hash": hashlib.sha256(last_user_msg.strip().encode("utf-8")).hexdigest()[:24],
+                        "task_id": task_id,
+                    },
+                    delay_seconds=300,
+                )
                 
-                notice = f"\n\n*(系統通知：已為您呼叫 {args.get('avatar_name', '對應角色')}，信件正在撰寫中，預計 5 分鐘後寄達。)*"
+                notice = f"\n\n*(系統通知：已為您呼叫 {avatar_name or '對應角色'}，信件正在撰寫中，預計 5 分鐘後寄達。)*"
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
                 answer_content_accumulator += notice
             except Exception as e:

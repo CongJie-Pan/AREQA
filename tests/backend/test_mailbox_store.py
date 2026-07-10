@@ -36,6 +36,7 @@ def temp_store():
     fake_redis = FakeRedis()
     with patch("backend.mailbox_store.get_redis", return_value=fake_redis):
         store = MailboxStore()
+        store._has_db = AsyncMock(return_value=False)
         yield store
 
 @pytest.mark.asyncio

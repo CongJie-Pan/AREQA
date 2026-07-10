@@ -9,7 +9,7 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-07-09（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
+> **最後更新**：2026-07-10（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
 
 > 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 為準。
 
@@ -31,7 +31,7 @@ backend/
 │                                   #   async_evaluate_and_update_state (EDF 狀態更新)
 ├── memory_store.py                 # 短期熱記憶管理
 │                                   #   MemoryStore (Redis: hot_memory + user_profile)
-│                                   #   learner_state / current_strategy / pending_alert
+│                                   #   learner_state / current_strategy / chat_avatar:{conversation_id}
 ├── cold_memory.py                  # 長期冷記憶檢索
 │                                   #   ColdMemoryRetriever (pysqlite3 + sqlite_vec)
 │                                   #   FTS5 全文索引 + 向量語意索引 雙軌檢索
@@ -54,10 +54,10 @@ backend/
 │   │                               #   Node 7: Post-generation (Suggestions)
 │   ├── cache_service.py            # Redis RAG 快取服務 (RagCacheService)
 │   ├── connection_manager.py       # WebSocket 連線管理 (ConnectionManager)
-│   │                               #   broadcast_alert / broadcast_mail_alert
-│   └── compeer_scheduler.py        # ComPeer 主動關懷排程 (⚠️ 目前已停用)
-│                                   #   proactive_scheduler_loop
-│                                   #   daily_scheduler_loop
+│   │                               #   broadcast_mail_alert
+│   └── compeer_scheduler.py        # ComPeer 主動關懷排程
+│                                   #   proactive_scheduler_loop / daily_scheduler_loop
+│                                   #   FastAPI startup 目前會建立背景 task
 │
 └── data/                           # 運行時資料目錄 (git 忽略)
     └── gum_data/
@@ -90,7 +90,7 @@ frontend/src/
 │   ├── ConversationList/           # 對話歷史側欄列表
 │   ├── GumPanel/                   # 記憶資產面板 (查看 / 刪除 / 編輯)
 │   ├── MailboxPanel/               # 信箱系統 (收信 / 發信 / 已讀)
-│   ├── ProactiveManager/           # 主動關懷彈窗管理
+│   ├── ProactiveManager/           # 行為遙測 + 信箱通知同步
 │   ├── TextSelectionToolbar/       # 文字選取快捷工具列
 │   ├── ErrorBoundary/              # 錯誤邊界元件
 │   └── index.ts                    # Barrel export
@@ -205,7 +205,7 @@ flowchart TD
             N3["③ Policy Classifier LLM\nclassify_dialogue_policy\nPROBE / SUGGEST / PUSH / NORMAL"]
             N4A["④-A RAG Retrieval\nFAISS + BM25 + RRF Fusion\n+ Reranker + 注意力重排\nlost-in-the-middle reordering"]
             N4B["④-B Perplexity Web Search\n/search API · 動態 max_results\nQuery Rewrite + Redis 快取 (24h)"]
-            N5["⑤ Prompt Assembly\n注入 working_memory (熱記憶)\n+ retrieved_memory (冷記憶語意搜尋)\n+ EDF learner_state 限制\n+ active_avatar 英靈附體\n+ <context> RAG/Web 文獻"]
+            N5["⑤ Prompt Assembly\n注入 working_memory (熱記憶)\n+ retrieved_memory (冷記憶語意搜尋)\n+ EDF learner_state 限制\n+ conversation-scoped chat_avatar\n+ <context> RAG/Web 文獻"]
             N6["⑥ 主 LLM 串流生成 (SSE)\nmodel_main_thinking (force_think)\nmodel_main_instruct (一般)\nFunction Calling: update_memory\n<think> 區塊分離 · OpenCC 繁體轉換"]
             N7["⑦ Post-generation\nSuggestionService 推薦問題\nevent: suggestions / done"]
             N1 --> N2
@@ -224,7 +224,7 @@ flowchart TD
     N2 -->|"cache miss → HyDE 拆解"| RedisCache
     RedisCache -->|"cache hit → 直接返回"| N5
     N4A -->|"寫入 RAG 快取"| RedisCache
-    HotMem -->|"讀取 working_memory\n+ learner_state + active_avatar"| N5
+    HotMem -->|"讀取 working_memory\n+ learner_state + chat_avatar:{conversation_id}"| N5
     ColdMem -->|"語義搜尋 retrieved_memory (top_k=5)"| N5
     N6 -->|"串流 SSE · event: sources/suggestions/done"| UI_Chat
     N7 -.->|"update_memory Tool Call"| HotMem
@@ -233,7 +233,7 @@ flowchart TD
 
 ---
 
-### 路徑 B：主動關懷路徑 (ComPeer · 目前 Scheduler 已停用，架構保留)
+### 路徑 B：主動關懷路徑 (ComPeer · startup 會啟動背景排程)
 
 ```mermaid
 flowchart TD
@@ -242,22 +242,23 @@ flowchart TD
         Tracker["Behavior Tracker\nScroll 行為日誌"]
         State["Zustand Store\nuseChatStore\nDexie IndexedDB"]
         WSHook["useProactiveWebSocket Hook\nsrc/hooks/useProactiveWebSocket.ts\n指數退避自動重連"]
-        UI_Hint["Proactive UI\n主動關懷小燈泡\n手動關閉 / 動態冷卻機制"]
+        UI_Hint["Mailbox Sync\n只更新信箱 / 未讀數\n不再插入聊天或彈窗打斷"]
     end
 
     subgraph MEM_B ["📦 Memory 模塊（共用）"]
         direction LR
-        HotMem_B["短期熱記憶\nRedis hot_memory\nmemory_store.py\n(scroll 日誌 + pending_alert)"]
+        HotMem_B["短期熱記憶\nRedis hot_memory\nmemory_store.py\n(scroll 日誌 + learner_state)"]
         ColdMem_B["長期冷記憶\ngum_{user_id}.db\ngum_integration.py"]
     end
 
     subgraph API_B ["⚡ FastAPI · main.py"]
         LogAPI["POST /api/v1/log_action\nscroll → HotMem only\ncompeer_rejected → 冷卻機制\n其他互動 → GUM ColdMem"]
-        ProactiveCheck["GET /api/v1/proactive-check\n輪詢式備用端點\n(WebSocket 主流)"]
-        WSEndpoint["WebSocket /api/v1/ws/notifications\nConnectionManager\nservices/connection_manager.py\nbroadcast_mail_alert / broadcast_alert"]
+        ProactiveCheck["GET /api/v1/proactive-check\n舊輪詢備用端點\n新 ComPeer 主流改走信箱"]
+        TicketAPI["POST /api/v1/ws/ticket\nBearer JWT → 30秒一次性 ticket"]
+        WSEndpoint["WebSocket /api/v1/ws/notifications?ticket=...\nConnectionManager\nservices/connection_manager.py\nbroadcast_mail_alert"]
     end
 
-    subgraph COMPEER ["ComPeer 模塊 · services/compeer_scheduler.py\n⚠️ 目前 Scheduler Loop 已停用 (commented out)"]
+    subgraph COMPEER ["ComPeer 模塊 · services/compeer_scheduler.py\nFastAPI startup 建立 proactive / daily 背景 task"]
         ProLoop["proactive_scheduler_loop\n每 10 秒 (動態冷卻機制)\nscroll ≥ 6 + 閒置 60s → LLM 判斷"]
         DailyLoop["daily_scheduler_loop\n每日 23:00 後\n反思 → 生成隔日排程"]
     end
@@ -265,13 +266,13 @@ flowchart TD
     Tracker -->|"① Scroll 行為日誌"| LogAPI
     LogAPI -->|"scroll 寫入"| HotMem_B
     LogAPI -->|"其他互動寫入"| ColdMem_B
-    HotMem_B -.->|"② 監聽 scroll 累積 (停用中)"| ProLoop
-    ProLoop -.->|"③ 條件滿足 → 寫入 Alert (停用中)"| HotMem_B
-    ProLoop -.->|"④ 即時 WS 推播 (停用中)"| WSEndpoint
-    DailyLoop -.->|"反思後寫入排程 (停用中)"| HotMem_B
+    HotMem_B -->|"② 監聽 scroll 累積"| ProLoop
+    ProLoop -->|"③ 條件滿足 → 排 AREQA 關懷信 (5分鐘後)"| UI_Hint
+    DailyLoop -->|"反思後生成排程事件"| HotMem_B
     State -->|"頁面載入時建立連線"| WSHook
-    WSHook <-->|"⑤ 持久 WS 連線 (101)"| WSEndpoint
-    WSEndpoint -->|"⑥ 收到推播 → 觸發顯示"| UI_Hint
+    WSHook -->|"⑤ 先取一次性 ticket"| TicketAPI
+    WSHook <-->|"⑥ 持久 WS 連線 (101)"| WSEndpoint
+    WSEndpoint -->|"⑦ 新信推播 → fetchMails"| UI_Hint
 ```
 
 ---
@@ -368,7 +369,7 @@ flowchart TD
 - **學習者狀態判定 (EDF)**: 系統追蹤對話歷史，即時分析學習狀態：
   - `NOT_STARTED` / `STARTING` / `TINKERING` / `RUN_REPEAT` / `GIVING_UP` / `MASTERY` / `CHITCHAT`
 - **動態 System Prompt 組裝**: 依學習狀態動態調整表達難度限制（如 STARTING 禁用艱澀術語）。
-- **英靈附體對話模式 (Active Avatar)**: 偵測使用者提及的歷史人物（蘇格拉底、柏拉圖等），系統切換至第一人稱語境。
+- **明確角色扮演模式 (Conversation-scoped Chat Avatar)**: 只有使用者明確要求「請你扮演 X 跟我對話」時，系統才在當前 `conversation_id` 內切換第一人稱角色語境；「請 X 寫信」只會排信，不會污染一般聊天人格。
 - **Policy Classifier**: LLM 判定 `PROBE_UNDERSTANDING` / `SUGGEST_ACTION` / `PUSH_LIMIT` / `NORMAL`，動態調整 `max_tokens`。
 - **Function Calling (update_memory)**: LLM 可在回答後呼叫 `update_memory` Tool，自動將使用者偏好資訊寫入 Redis 中的 user profile。
 
@@ -382,9 +383,9 @@ flowchart TD
 ### 4. 主動關懷與信箱系統 (ComPeer & Mailbox)
 
 - **行為遙測**: `POST /api/v1/log_action` 接收前端 scroll、互動等行為，scroll 純寫熱記憶，其他有意義互動推送至 GUM。
-- **ComPeer Scheduler**: `compeer_scheduler.py` 包含 proactive + daily 兩個排程迴圈（目前已停用，架構保留）。
-- **信箱系統 (Mailbox)**: `mailbox_store.py` 目前以 Redis 管理 mailbox 與 delayed mail queue，支援 Avatar 延遲回信（5分鐘後 LLM 生成），並透過 WebSocket 推播新信通知。
-- **WebSocket 推播**: `ConnectionManager` (`services/connection_manager.py`) 管理持久連線，提供 `broadcast_alert` 與 `broadcast_mail_alert`。
+- **ComPeer Scheduler**: `compeer_scheduler.py` 包含 proactive + daily 兩個排程迴圈；觸發時不再彈出角色扮演視窗，而是排一封 5 分鐘後送達的 AREQA 關懷信。
+- **信箱系統 (Mailbox)**: `mailbox_store.py` 目前以 Redis 管理 mailbox 與 delayed mail queue，支援 Avatar 延遲回信與 AREQA 主動關懷信，並透過 WebSocket 推播新信通知。
+- **WebSocket 推播**: `ConnectionManager` (`services/connection_manager.py`) 管理持久連線，目前主動關懷 UX 只依賴 `broadcast_mail_alert` 更新信箱。
 - **冷卻機制**: `compeer_rejected` 動作觸發 30 分鐘動態冷卻，防止過度打擾。
 
 ### 5. 記憶可視化面板 (GumPanel)
@@ -406,7 +407,7 @@ flowchart TD
 | `RAGStatusPanel` | `src/components/RAGStatusPanel/` | RAG 檢索狀態顯示 |
 | `GumPanel` | `src/components/GumPanel/` | 記憶面板 |
 | `MailboxPanel` | `src/components/MailboxPanel/` | 信箱系統 |
-| `ProactiveManager` | `src/components/ProactiveManager/` | 主動關懷彈窗 |
+| `ProactiveManager` | `src/components/ProactiveManager/` | 行為遙測與信箱通知同步 |
 | `ConversationList` | `src/components/ConversationList/` | 對話列表側欄 |
 | `TextSelectionToolbar` | `src/components/TextSelectionToolbar/` | 文字選取快捷工具列 |
 | `ErrorBoundary` | `src/components/ErrorBoundary/` | 錯誤邊界 |
@@ -431,7 +432,10 @@ flowchart TD
 | `GET` | `/api/v1/mailbox` | 讀取信箱 |
 | `POST` | `/api/v1/mailbox/send` | 發送信件 |
 | `POST` | `/api/v1/mailbox/read/{id}` | 標記信件已讀 |
-| `WS` | `/api/v1/ws/notifications` | 持久 WebSocket 通知推播 |
+| `POST` | `/api/v1/ws/ticket` | 產生 30 秒一次性 WebSocket ticket |
+| `WS` | `/api/v1/ws/notifications?ticket=...` | 持久 WebSocket 通知推播 |
+
+> 多數後端端點透過 `Depends(get_current_user)` 驗證 Supabase JWT，呼叫時需帶 `Authorization: Bearer <token>`；`/api/v1/ws/notifications` 則先以 Bearer token 呼叫 `/api/v1/ws/ticket`，再用 ticket 建立 WebSocket。
 
 ---
 
@@ -441,15 +445,34 @@ AREQA 分為 Python 後端與 Next.js 前端，兩端均支援並推薦使用環
 
 ### 1. 環境變數配置
 
-複製根目錄下的環境變數範例：
-```bash
-cp .env.example .env
-```
+目前程式會從專案根目錄的 `.env` 或 `.env.local` 載入設定；前端 `predev` / `prebuild` 會自動把根目錄 `.env.local` 或 `.env` 複製到 `frontend/.env.local`。
+
 主要變數說明：
-- `OPENROUTER_API_KEY`: 呼叫主 LLM、標題生成、部分記憶與檢索相關 API 的密鑰。
-- `PERPLEXITY_API_KEY`: Perplexity 網路搜尋服務的 API 密鑰。
-- `HF_TOKEN` / `HF_ENDPOINT_URL`: RAG 本地 Hugging Face 端點設定。
-- `REDIS_URL`: Redis 連線位址（預設 `redis://localhost:6379`）。
+- `OPENROUTER_API_KEY`: 呼叫主 LLM、標題生成、記憶總結、GUM 與部分檢索相關 API 的密鑰。
+- `PERPLEXITY_API_KEY`: Perplexity 網路搜尋服務的 API 密鑰；未設定時 Web Search 會回退到一般對話。
+- `REDIS_URL`: Redis 連線位址（預設 `redis://localhost:6379`），用於 hot memory、user profile、mailbox、RAG cache、WS ticket。
+- `JWT_SECRET`: 後端驗證 Supabase JWT 所需密鑰，缺少時受保護端點會回 500。
+- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 與後端 JWKS 驗證使用。
+- `NEXT_PUBLIC_BACKEND_URL`: 前端直連 FastAPI 的 base URL；本地預設 `http://localhost:8000` 或 `http://127.0.0.1:8000`。
+- `NEXT_PUBLIC_CHAT_API_ENDPOINT`: 前端 chat service endpoint，預設 `/api/chat`，由 Next.js BFF 代理到 FastAPI。
+- `NEXT_PUBLIC_API_TIMEOUT` / `NEXT_PUBLIC_MAX_MESSAGE_LENGTH` / `NEXT_PUBLIC_PARSER_MAX_BUFFER`: 前端 API timeout、訊息長度與 SSE parser buffer 設定。
+- `ENABLE_INTERNAL_RAG`: 設為 `true` 才會載入本地 FAISS/BM25 index；否則 `/api/v1/retrieve` 會回傳 internal RAG disabled。
+- `DATABASE_URL`: GUM / cold memory 資料層使用；Render 部署中需手動設定。
+- `HF_TOKEN` / `HF_ENDPOINT_URL` / `HF_REPO_ID`: Hugging Face 或外部 embedding/reranking 端點相關設定。
+
+前端聊天請求的實際路徑：
+```text
+Chat UI → API_CONFIG.chatEndpoint (/api/chat)
+       → frontend/src/app/api/chat/route.ts
+       → ${NEXT_PUBLIC_BACKEND_URL}/api/v1/stream
+```
+
+標題生成請求的實際路徑：
+```text
+Conversation Store → /api/title
+                  → frontend/src/app/api/title/route.ts
+                  → ${NEXT_PUBLIC_BACKEND_URL}/api/v1/generate-title
+```
 
 ### 2. 後端運行步驟 (Python 3.10+)
 
@@ -461,6 +484,10 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+> 後端受保護端點需要 Supabase Bearer token 與 `JWT_SECRET`。若只測試服務啟動，FastAPI 可啟動；但 chat、memory、mailbox、proactive、WebSocket ticket 等 API 都會進入認證流程。
+
+> 本地 RAG 是選配。若要啟用，需設定 `ENABLE_INTERNAL_RAG=true`，並準備 `data/rag/faiss_index/chunks*.index`、`data/rag/faiss_index/index_metadata*.json` 與 `data/rag/bm25_index/`。
+
 ### 3. 前端運行步驟 (Node.js v20+)
 
 前端基於 Next.js 16 App Router 建立，`predev` 腳本會自動從根目錄複製 `.env` 或 `.env.local` 至 `frontend/.env.local`。
@@ -469,6 +496,8 @@ cd frontend
 npm install
 npm run dev
 ```
+
+Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設走 Next.js API Route 代理；記憶、信箱與 WebSocket 相關功能會依 `NEXT_PUBLIC_BACKEND_URL` 直接呼叫 FastAPI。
 
 ---
 

@@ -13,7 +13,7 @@ def mock_store():
         yield store
 
 @pytest.mark.asyncio
-async def test_avatar_cleared_when_llm_returns_null(mock_store):
+async def test_state_evaluator_does_not_clear_chat_avatar_memory(mock_store):
     mock_store.get_hot_memory = AsyncMock(return_value={"active_avatar": "柏拉圖"})
     
     with patch("compaction.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
@@ -26,9 +26,7 @@ async def test_avatar_cleared_when_llm_returns_null(mock_store):
         
         await async_evaluate_and_update_state(MagicMock(), "mock-model", [])
         
-        import json
-        expected_hot = {}
-        mock_store.redis.set.assert_called_with("areqa:hot_memory:default_user", json.dumps(expected_hot, ensure_ascii=False))
+        mock_store.redis.set.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_avatar_not_cleared_when_same_person(mock_store):
@@ -52,7 +50,7 @@ async def test_avatar_not_cleared_when_same_person(mock_store):
         assert all(call[0][1] != "avatar_summon_pending" for call in call_args_list)
 
 @pytest.mark.asyncio
-async def test_avatar_changes_trigger_new_summon(mock_store):
+async def test_avatar_changes_do_not_trigger_summon(mock_store):
     mock_store.get_hot_memory = AsyncMock(return_value={"active_avatar": "柏拉圖"})
     
     with patch("compaction.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
@@ -65,5 +63,6 @@ async def test_avatar_changes_trigger_new_summon(mock_store):
         
         await async_evaluate_and_update_state(MagicMock(), "mock-model", [])
         
-        mock_store.update_hot_memory_async.assert_any_call("default_user", "active_avatar", "蘇格拉底")
-        mock_store.update_hot_memory_async.assert_any_call("default_user", "avatar_summon_pending", True)
+        call_args_list = mock_store.update_hot_memory_async.call_args_list
+        assert all(call[0][1] != "active_avatar" for call in call_args_list)
+        assert all(call[0][1] != "avatar_summon_pending" for call in call_args_list)

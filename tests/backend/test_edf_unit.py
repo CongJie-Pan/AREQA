@@ -60,7 +60,7 @@ def tmp_store():
 
 # U-01 to U-04: log_action API
 @pytest.mark.asyncio
-@patch("backend.main.push_observation")
+@patch("gum_integration.push_observation")
 async def test_log_action_valid_request(mock_push, tmp_store):
     store, fake_r = tmp_store
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -82,7 +82,7 @@ async def test_log_action_missing_action_field(tmp_store):
         assert res.status_code == 422
 
 @pytest.mark.asyncio
-@patch("backend.main.push_observation")
+@patch("gum_integration.push_observation")
 async def test_log_action_memory_cap_at_50(mock_push, tmp_store):
     store, fake_r = tmp_store
     # Write 50 mock actions
@@ -102,7 +102,7 @@ async def test_log_action_memory_cap_at_50(mock_push, tmp_store):
     assert any("new" in str(hot_after[k]) for k in action_keys)
 
 @pytest.mark.asyncio
-@patch("backend.main.push_observation")
+@patch("gum_integration.push_observation")
 async def test_log_action_concurrent_writes(mock_push, tmp_store):
     store, fake_r = tmp_store
     async def post_action(idx):
@@ -225,11 +225,13 @@ async def test_tick_schedule_fires_within_window(mock_schedule_path, tmp_store):
         "importance": 1.0,
         "fired": False
     }]))
-    
-    
-    await compeer.tick_proactive_schedule("default_user")
-    
-    assert await store.get_and_clear_pending_alert("default_user") == "Test Alert"
+    with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule:
+        await compeer.tick_proactive_schedule("default_user")
+
+    mock_schedule.assert_awaited_once()
+    call_kwargs = mock_schedule.call_args.kwargs
+    assert call_kwargs["user_id"] == "default_user"
+    assert call_kwargs["event_summary"] == "Test Alert"
 
 @pytest.mark.asyncio
 async def test_tick_schedule_skips_outside_window(mock_schedule_path, tmp_store):
@@ -244,8 +246,9 @@ async def test_tick_schedule_skips_outside_window(mock_schedule_path, tmp_store)
     }]))
     
     
-    await compeer.tick_proactive_schedule("default_user")
-    assert await store.get_and_clear_pending_alert("default_user") == ""
+    with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule:
+        await compeer.tick_proactive_schedule("default_user")
+    mock_schedule.assert_not_awaited()
 
 @pytest.mark.asyncio
 async def test_tick_schedule_no_duplicate_fire(mock_schedule_path, tmp_store):
@@ -259,8 +262,9 @@ async def test_tick_schedule_no_duplicate_fire(mock_schedule_path, tmp_store):
     }]))
     
     
-    await compeer.tick_proactive_schedule("default_user")
-    assert await store.get_and_clear_pending_alert("default_user") == ""
+    with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule:
+        await compeer.tick_proactive_schedule("default_user")
+    mock_schedule.assert_not_awaited()
 
 @pytest.mark.asyncio
 async def test_tick_schedule_cooldown_blocks_send(mock_schedule_path, tmp_store):
@@ -274,8 +278,9 @@ async def test_tick_schedule_cooldown_blocks_send(mock_schedule_path, tmp_store)
     }]))
     
     await compeer.set_cooldown("default_user", state="default")
-    await compeer.tick_proactive_schedule("default_user")
-    assert await store.get_and_clear_pending_alert("default_user") == ""
+    with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule:
+        await compeer.tick_proactive_schedule("default_user")
+    mock_schedule.assert_not_awaited()
 
 @pytest.mark.asyncio
 async def test_proactive_check_endpoint_has_alert(tmp_store):

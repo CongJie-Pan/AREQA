@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import random
+import hashlib
 from datetime import datetime
 from pathlib import Path
 import time as _time
@@ -86,8 +87,21 @@ async def tick_proactive_schedule(user_id: str):
                     if store:
                         content = event.get("Content", "學習狀況還好嗎？")
                         print(f"[EDF-LOG] tick_proactive_schedule: firing alert for {user_id} with content: {content}")
-                        await store.set_pending_alert(user_id, content)
                         learner_state = await store.get_learner_state(user_id) if store else "default"
+                        edf_policy = await store.get_current_strategy(user_id) if store else "default"
+                        from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
+                        snapshot = await get_hot_memory_snapshot(user_id)
+                        cold_ctx = await query_cold_memory_for_context(user_id, content)
+                        hot_mem = await store.get_hot_memory(user_id)
+                        await schedule_areqa_care_letter(
+                            user_id=user_id,
+                            learner_state=learner_state,
+                            edf_policy=edf_policy,
+                            event_summary=content,
+                            hot_memory_snapshot=snapshot,
+                            cold_memory_context=cold_ctx,
+                            last_compeer_message=hot_mem.get("last_compeer_message", ""),
+                        )
                         await set_cooldown(user_id, state=learner_state)
                 
             event["fired"] = True
@@ -188,6 +202,59 @@ async def daily_scheduler_loop():
 _send_lock = asyncio.Lock()
 _flag_lock = asyncio.Lock()
 
+
+def _stable_task_id(prefix: str, user_id: str, *parts: str) -> str:
+    raw = "|".join([user_id, *[str(part or "") for part in parts]])
+    return f"{prefix}-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"
+
+
+async def schedule_areqa_care_letter(
+    user_id: str,
+    learner_state: str,
+    edf_policy: str,
+    event_summary: str,
+    hot_memory_snapshot: str,
+    cold_memory_context: str,
+    last_compeer_message: str = "",
+):
+    from gum_integration import generate_areqa_care_letter_via_llm
+    from mailbox_store import get_mailbox_store
+    from memory_store import get_global_store
+
+    subject, content = await generate_areqa_care_letter_via_llm(
+        user_id=user_id,
+        hot_memory_snapshot=hot_memory_snapshot,
+        cold_memory_context=cold_memory_context,
+        learner_state=learner_state,
+        edf_policy=edf_policy,
+        event_summary=event_summary,
+        last_compeer_message=last_compeer_message,
+    )
+
+    date_bucket = datetime.now().strftime("%Y-%m-%d")
+    task_id = _stable_task_id("compeer", user_id, event_summary, date_bucket)
+    mb_store = get_mailbox_store()
+    await mb_store.schedule_delayed_mail(
+        user_id=user_id,
+        mail_data={
+            "kind": "compeer_care",
+            "sender": "AREQA",
+            "recipient": "User",
+            "subject": subject,
+            "content": content,
+            "conversation_id": f"compeer-{date_bucket}",
+            "event_hash": hashlib.sha256(event_summary.encode("utf-8")).hexdigest()[:24],
+            "task_id": task_id,
+        },
+        delay_seconds=300,
+    )
+
+    store = get_global_store()
+    if store:
+        await store.update_hot_memory_async(user_id, "last_compeer_message", content)
+
+    return task_id
+
 async def get_last_interaction_time(user_id: str) -> float:
     redis = get_redis()
     val = await redis.get(f"areqa:last_interaction:{user_id}")
@@ -248,6 +315,7 @@ async def proactive_scheduler_loop():
                             import uuid
                             mail_data = {
                                 "id": str(uuid.uuid4()),
+                                "kind": "avatar_letter",
                                 "user_id": user_id,
                                 "active_avatar": active_avatar,
                                 "sender": active_avatar,
@@ -255,13 +323,13 @@ async def proactive_scheduler_loop():
                                 "subject": subject,
                                 "content": letter_content,
                                 "timestamp": _time.time(),
-                                "read": False
+                                "read": False,
+                                "task_id": _stable_task_id("letter", user_id, "legacy-avatar-summon", active_avatar),
                             }
                             await mb_store.schedule_delayed_mail(user_id=user_id, mail_data=mail_data, delay_seconds=300)
                             
                         elif trigger_proactive:
                             from gum_integration import (
-                                generate_scaffolding_message_via_llm,
                                 get_hot_memory_snapshot,
                                 query_cold_memory_for_context
                             )
@@ -271,20 +339,15 @@ async def proactive_scheduler_loop():
                             edf_policy = await store.get_current_strategy(user_id)
 
                             hot_mem = await store.get_hot_memory(user_id)
-                            message = await generate_scaffolding_message_via_llm(
+                            await schedule_areqa_care_letter(
                                 user_id=user_id,
-                                hot_memory_snapshot=snapshot,
-                                cold_memory_context=cold_ctx,
                                 learner_state=learner_state,
                                 edf_policy=edf_policy,
                                 event_summary=event_summary,
+                                hot_memory_snapshot=snapshot,
+                                cold_memory_context=cold_ctx,
                                 last_compeer_message=hot_mem.get("last_compeer_message", ""),
-                                active_avatar=active_avatar
                             )
-
-                            await store.update_hot_memory_async(user_id, "last_compeer_message", message)
-                            from services.connection_manager import ws_manager
-                            asyncio.create_task(ws_manager.broadcast_alert(user_id, message, sender_name=active_avatar))
                             await set_cooldown(user_id, state=learner_state)
 
                         await tick_proactive_schedule(user_id)
@@ -308,7 +371,6 @@ async def proactive_scheduler_loop():
 
                                     from gum_integration import (
                                         detect_proactive_event_via_llm,
-                                        generate_scaffolding_message_via_llm,
                                         get_hot_memory_snapshot,
                                         query_cold_memory_for_context
                                     )
@@ -320,20 +382,15 @@ async def proactive_scheduler_loop():
                                         learner_state = await store.get_learner_state(user_id)
                                         edf_policy = await store.get_current_strategy(user_id)
 
-                                        message = await generate_scaffolding_message_via_llm(
+                                        await schedule_areqa_care_letter(
                                             user_id=user_id,
-                                            hot_memory_snapshot=snapshot,
-                                            cold_memory_context=cold_ctx,
                                             learner_state=learner_state,
                                             edf_policy=edf_policy,
                                             event_summary=event["event_summary"],
+                                            hot_memory_snapshot=snapshot,
+                                            cold_memory_context=cold_ctx,
                                             last_compeer_message=hot_mem.get("last_compeer_message", "")
                                         )
-
-                                        await store.update_hot_memory_async(user_id, "last_compeer_message", message)
-                                        
-                                        from services.connection_manager import ws_manager
-                                        asyncio.create_task(ws_manager.broadcast_alert(user_id, message))
                                         await set_cooldown(user_id, state=learner_state)
 
             await asyncio.sleep(10)

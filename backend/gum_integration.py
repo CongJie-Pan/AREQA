@@ -599,7 +599,8 @@ async def get_hot_memory_snapshot(user_id: str = "default_user") -> str:
         meaningful_hot = {
             k: v for k, v in hot_mem.items()
             if not (isinstance(v, dict) and "User Action: scroll" in v.get("text", ""))
-            and k not in ("user_cooldown_until", "trigger_proactive", "current_learner_state", "current_strategy", "last_compeer_message")
+            and k not in ("user_cooldown_until", "trigger_proactive", "current_learner_state", "current_strategy", "last_compeer_message", "avatar_summon_pending", "active_avatar")
+            and not k.startswith("chat_avatar:")
         }
         # Extract just the text from hot memory items
         hot_texts = [v["text"] if isinstance(v, dict) and "text" in v else str(v) for v in meaningful_hot.values()]
@@ -676,20 +677,8 @@ async def async_evaluate_and_update_state(client, model, chat_history, user_id: 
     if store:
         await store.update_hot_memory_async(user_id, "current_learner_state", state_res.get("learner_state", "STARTING"))
         await store.update_hot_memory_async(user_id, "current_strategy", state_res.get("pedagogical_strategy", "NORMAL"))
-        if state_res.get("active_avatar"):
-            hot_mem = await store.get_hot_memory(user_id)
-            current_avatar = hot_mem.get("active_avatar")
-            if state_res["active_avatar"] != current_avatar:
-                print(f"[ComPeer] NEW Active Avatar detected: {state_res['active_avatar']}")
-                await store.update_hot_memory_async(user_id, "active_avatar", state_res["active_avatar"])
-                await store.update_hot_memory_async(user_id, "avatar_summon_pending", True)
-        elif state_res.get("active_avatar") is None:
-            hot_mem = await store.get_hot_memory(user_id)
-            if "active_avatar" in hot_mem:
-                print(f"[ComPeer] Clearing Active Avatar: {hot_mem['active_avatar']}")
-                del hot_mem["active_avatar"]
-                import json
-                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
+        # State evaluation must not summon avatars or affect chat persona.
+        # Conversation-scoped roleplay is handled only by explicit chat commands in OrchestrationService.
         if state_res.get("trigger_proactive"):
             # We flag this for ComPeer to pick up or log it
             print(f"[ComPeer] Proactive trigger needed: {state_res}")
@@ -886,6 +875,70 @@ async def generate_epistolary_letter_via_llm(
     except Exception as e:
         print(f"[Mailbox] generate_epistolary_letter_via_llm failed: {e}")
         return "一封未知的信", f"來自{active_avatar}的一封信，因時空亂流未能完整送達。"
+
+
+async def generate_areqa_care_letter_via_llm(
+    user_id: str,
+    hot_memory_snapshot: str,
+    cold_memory_context: str,
+    learner_state: str,
+    edf_policy: str,
+    event_summary: str = "",
+    last_compeer_message: str = "",
+) -> tuple[str, str]:
+    gum_instance, _ = await get_gum_instance(user_id)
+    if not gum_instance:
+        return "給你的學習小箋", "我注意到你最近可能有些卡住。先不用急著解決全部問題，回到一個最小的段落或概念就好。你願意告訴我，現在最困住你的是哪一句或哪個想法嗎？"
+
+    last_msg_hint = f"\n【避免重複】上一封主動關懷已提過：「{last_compeer_message}」，這封信不得重複同一個問法。" if last_compeer_message else ""
+    prompt = f"""你是 AREQA，一位溫暖、克制、專業的學習陪伴者。請根據學生最近的狀態寫一封非同步關懷信。
+
+【近期學習狀態（Hot Memory）】
+{hot_memory_snapshot}
+
+【長期學習背景（Cold Memory，僅供參考）】
+{cold_memory_context}
+
+【目前 learner_state】{learner_state}
+【目前教學策略】{edf_policy}
+【觸發原因】{event_summary or "系統偵測到學生可能需要低壓力關懷"}{last_msg_hint}
+
+要求：
+1. 寄件人固定是 AREQA，不要扮演任何歷史人物或虛構角色。
+2. 必須像 5 分鐘後送達的一封短箋，而不是即時聊天室插話。
+3. 內容要具體回應學生最近卡住、焦慮或長時間停留的狀態；若證據不足，請用保守語氣。
+4. 長度 120 到 220 字，繁體中文，溫柔但不肉麻，不說教。
+5. 結尾只問一個低壓力問題，讓學生可以回信。
+6. 嚴格回傳 JSON，包含 "subject" 與 "content"。
+"""
+    try:
+        from config import settings
+        from pydantic import BaseModel
+
+        class CareLetterSchema(BaseModel):
+            subject: str
+            content: str
+
+        rsp = await gum_instance.client.chat.completions.create(
+            model=settings.model_gum,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_schema", "json_schema": {"name": "care_letter_schema", "schema": CareLetterSchema.model_json_schema()}},
+            max_tokens=500,
+            temperature=0.6,
+        )
+        response_text = rsp.choices[0].message.content.strip()
+        import json
+        import re
+        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if match:
+            response_text = match.group(0)
+        data = json.loads(response_text)
+        subject = data.get("subject") or "給你的學習小箋"
+        content = data.get("content") or "我注意到你最近可能有些卡住。你願意回信告訴我，現在最困住你的是哪一小段嗎？"
+        return subject, content
+    except Exception as e:
+        print(f"[Mailbox] generate_areqa_care_letter_via_llm failed: {e}")
+        return "給你的學習小箋", "我注意到你最近可能有些卡住。先不用急著解決全部問題，我們可以只從一個最小的地方開始。你願意回信告訴我，現在最困住你的是哪一句或哪個想法嗎？"
 
 async def delayed_reply_writer(user_id: str, mail_id: str, reply_content: str, active_avatar: str, delay_seconds: int = 300):
     print(f"[Mailbox] delayed_reply_writer started for mail_id {mail_id}, scheduling in {delay_seconds} seconds...")
