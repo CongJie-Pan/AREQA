@@ -30,6 +30,29 @@ def test_get_memory_endpoint_error():
         assert response.status_code == 200
         assert response.json() == {"propositions": []}
 
+def test_memory_debug_endpoint_returns_memory_layers():
+    mock_store = AsyncMock()
+    mock_store.get_user_profile.return_value = {"explicit_memories": ["喜歡例子"]}
+    mock_store.get_hot_memory.return_value = {"current_learner_state": "TINKERING"}
+    mock_store.get_working_memory.return_value = {"current_focus": "判詞"}
+    mock_store.get_behavior_signals.return_value = [{"type": "scroll"}]
+    mock_store.get_cold_candidates.return_value = [{"text": "reflection insight"}]
+
+    with patch("memory_store.get_global_store", return_value=mock_store), \
+         patch("gum_integration.get_hot_memory_snapshot", new_callable=AsyncMock, return_value="snapshot"):
+        response = client.get("/api/v1/memory/debug")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["user_id"] == "default_user"
+    assert data["profile"]["explicit_memories"] == ["喜歡例子"]
+    assert data["hot_memory"]["current_learner_state"] == "TINKERING"
+    assert data["working_memory"]["current_focus"] == "判詞"
+    assert data["behavior_signals"] == [{"type": "scroll"}]
+    assert data["cold_candidates"] == [{"text": "reflection insight"}]
+    assert data["prompt_snapshot"] == "snapshot"
+
 def test_delete_memory_endpoint():
     with patch("gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_gum_instance = AsyncMock()

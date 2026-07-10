@@ -24,8 +24,7 @@ def test_log_action_compeer_rejected_triggers_cooldown():
     app.dependency_overrides[get_current_user] = lambda: "test_user"
     
     with patch("services.compeer_scheduler.set_cooldown", new_callable=AsyncMock) as mock_set_cooldown, \
-         patch("memory_store.get_global_store") as mock_get_store, \
-         patch("backend.main.push_observation", new_callable=AsyncMock) as mock_push_observation:
+         patch("memory_store.get_global_store") as mock_get_store:
         mock_store = AsyncMock()
         mock_store.get_learner_state.return_value = "default"
         mock_get_store.return_value = mock_store
@@ -38,5 +37,6 @@ def test_log_action_compeer_rejected_triggers_cooldown():
         
         assert response.status_code == 200
         mock_set_cooldown.assert_called_once_with("test_user", state="default")
+        mock_store.append_behavior_signal.assert_called_once()
         
     app.dependency_overrides = {}

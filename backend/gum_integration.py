@@ -209,8 +209,13 @@ async def run_reflection(user_id: str) -> list[str]:
         
         insights = data.get("insights", [])
         print(f"[GUM Reflection] Reflection triggered! Generated {len(insights)} insights:")
+        from memory_store import get_global_store
+        from memory_gate import apply_reflection_gate
+        store = get_global_store()
         for insight in insights:
             print(f"  - {insight}")
+            if store:
+                await apply_reflection_gate(store, user_id, insight)
             if text_observer:
                 await push_text_to_gum(gum_instance, text_observer, f"[REFLECTION] {insight}", user_id)
                 
@@ -356,20 +361,20 @@ async def batch_process_observations(user_id: str, items: list[str]):
     else:
         combined_text = " | ".join(items)
         
-    # Sync to Hot Memory (MemoryStore)
+    # Sync only semantic learning observations into prompt-visible working memory.
+    # Raw UI telemetry is routed by /log_action into behavior_signals instead.
     try:
         from memory_store import get_global_store
+        from memory_gate import classify_learning_observation
         store = get_global_store()
-        if store:
-            import uuid
-            # Add to hot memory with timestamp and uuid to prevent overwriting
-            key = f"obs_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
-            await store.update_hot_memory_async(user_id, key, {
-                "text": final_text, 
-                "confidence": 8.0, 
-                "decay": float(final_decay), 
-                "timestamp": datetime.now().timestamp()
-            })
+        gate = classify_learning_observation(final_text)
+        if store and gate.should_prompt:
+            await store.append_learning_observation(
+                user_id,
+                gate.proposition,
+                confidence=8.0,
+                decay=float(final_decay),
+            )
     except Exception as e:
         # Expected if budget exceeded, handled below
         pass
@@ -410,9 +415,11 @@ async def run_compaction(user_id: str):
         # Sort by score ascending (lowest first)
         scores.sort(key=lambda x: x[1])
         
-        db_path = str(Path(__file__).resolve().parents[1] / "data" / "gum_data" / "gum.db")
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        cold_retriever = ColdMemoryRetriever(db_path, api_key)
+        cold_retriever = ColdMemoryRetriever("", api_key)
+        if not hasattr(cold_retriever, "_get_conn"):
+            print("[Compaction] Direct cold-memory write path is unavailable for current retriever; skipping compaction.")
+            return
         
         # Evict lowest scored items until under budget
         current_len = len(serialized)
@@ -587,25 +594,41 @@ async def get_hot_memory_snapshot(user_id: str = "default_user") -> str:
     if not store:
         return ""
     
-    # Combine user profile and hot memory for the snapshot
+    # Combine durable profile facts and prompt-safe working memory.
     profile = await store.get_user_profile(user_id)
-    hot_mem = await store.get_hot_memory(user_id)
+    import inspect
+    get_working_memory = getattr(store, "get_working_memory", None)
+    if inspect.iscoroutinefunction(get_working_memory):
+        working_memory = await get_working_memory(user_id)
+    else:
+        working_memory = {}
     
     parts = []
     if profile:
         parts.append("【使用者畫像 (User Profile)】\n" + json.dumps(profile, ensure_ascii=False, indent=2))
-    if hot_mem:
-        # Filter out scroll noise and internal states
-        meaningful_hot = {
-            k: v for k, v in hot_mem.items()
-            if not (isinstance(v, dict) and "User Action: scroll" in v.get("text", ""))
-            and k not in ("user_cooldown_until", "trigger_proactive", "current_learner_state", "current_strategy", "last_compeer_message", "avatar_summon_pending", "active_avatar")
-            and not k.startswith("chat_avatar:")
-        }
-        # Extract just the text from hot memory items
-        hot_texts = [v["text"] if isinstance(v, dict) and "text" in v else str(v) for v in meaningful_hot.values()]
-        if hot_texts:
-            parts.append("【近期記憶 (Hot Memory)】\n- " + "\n- ".join(hot_texts))
+
+    if working_memory:
+        focus = working_memory.get("current_focus")
+        session_summary = working_memory.get("session_summary")
+        explicit_memories = working_memory.get("explicit_memories") or []
+        recent_points = working_memory.get("recent_learning_points") or []
+
+        working_parts = []
+        if session_summary:
+            working_parts.append(f"Session summary: {session_summary}")
+        if focus:
+            working_parts.append(f"Current focus: {focus}")
+        for memory in explicit_memories[-8:]:
+            if memory:
+                working_parts.append(f"Explicit memory: {memory}")
+        for point in recent_points[-8:]:
+            if isinstance(point, dict) and point.get("text"):
+                working_parts.append(point["text"])
+            elif isinstance(point, str):
+                working_parts.append(point)
+
+        if working_parts:
+            parts.append("【工作記憶 (Working Memory)】\n- " + "\n- ".join(working_parts))
         
     return "\n\n".join(parts)
 

@@ -1,6 +1,8 @@
 import json
 import asyncio
 import logging
+import hashlib
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 from redis_client import get_redis
@@ -38,6 +40,157 @@ class MemoryStore:
             "explicit_memories": [],
             "implicit_preferences": []
         }
+
+    async def get_working_memory(self, user_id: str) -> Dict[str, Any]:
+        data = await self.redis.get(f"areqa:working_memory:{user_id}")
+        if data:
+            return json.loads(data)
+        return {
+            "session_summary": "",
+            "current_focus": "",
+            "recent_learning_points": [],
+            "explicit_memories": [],
+            "updated_at": None,
+        }
+
+    async def update_working_memory(self, user_id: str, updates: Dict[str, Any]):
+        allowed_keys = {
+            "session_summary",
+            "current_focus",
+            "recent_learning_points",
+            "explicit_memories",
+        }
+        memory = await self.get_working_memory(user_id)
+        for key, value in updates.items():
+            if key in allowed_keys:
+                memory[key] = value
+        memory["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await self.redis.set(f"areqa:working_memory:{user_id}", json.dumps(memory, ensure_ascii=False))
+        logger.info(f"[MemoryStore] Updated working memory for user {user_id}: {sorted(updates.keys())}")
+
+    async def append_learning_observation(self, user_id: str, text: str, *, confidence: float = 8.0, decay: float = 5.0):
+        text = (text or "").strip()
+        if not text:
+            return
+
+        memory = await self.get_working_memory(user_id)
+        points = memory.get("recent_learning_points", [])
+        if not isinstance(points, list):
+            points = []
+
+        entry = {
+            "text": text,
+            "confidence": float(confidence),
+            "decay": float(decay),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        points.append(entry)
+        memory["recent_learning_points"] = points[-12:]
+        memory["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await self.redis.set(f"areqa:working_memory:{user_id}", json.dumps(memory, ensure_ascii=False))
+
+    async def get_behavior_signals(self, user_id: str) -> list[Dict[str, Any]]:
+        data = await self.redis.get(f"areqa:behavior_signals:{user_id}")
+        if not data:
+            return []
+        parsed = json.loads(data)
+        return parsed if isinstance(parsed, list) else []
+
+    async def append_behavior_signal(self, user_id: str, action_type: str, context: Any, *, weight: float = 1.0):
+        action_type = (action_type or "").strip()
+        if not action_type:
+            return
+
+        from redis.exceptions import WatchError
+        key = f"areqa:behavior_signals:{user_id}"
+        entry = {
+            "type": action_type,
+            "context": context if isinstance(context, dict) else {},
+            "weight": float(weight),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        async with self.redis.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(key)
+                    data = await pipe.get(key)
+                    parsed = json.loads(data) if data else []
+                    signals = parsed if isinstance(parsed, list) else []
+                    signals.append(entry)
+
+                    pipe.multi()
+                    pipe.set(key, json.dumps(signals[-50:], ensure_ascii=False))
+                    await pipe.execute()
+                    break
+                except WatchError:
+                    continue
+
+    async def get_cold_candidates(self, user_id: str) -> list[Dict[str, Any]]:
+        data = await self.redis.get(f"areqa:cold_candidates:{user_id}")
+        if not data:
+            return []
+        parsed = json.loads(data)
+        return parsed if isinstance(parsed, list) else []
+
+    async def append_cold_candidate(
+        self,
+        user_id: str,
+        text: str,
+        *,
+        category: str,
+        source: str,
+        reason: str,
+        confidence: float = 9.0,
+        decay: float = 3.0,
+    ) -> Dict[str, Any] | None:
+        text = (text or "").strip()
+        if not text:
+            return None
+
+        from redis.exceptions import WatchError
+        key = f"areqa:cold_candidates:{user_id}"
+        candidate_hash = hashlib.sha256(f"{category}|{text}".encode("utf-8")).hexdigest()[:24]
+        now = datetime.now(timezone.utc).isoformat()
+
+        async with self.redis.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(key)
+                    data = await pipe.get(key)
+                    parsed = json.loads(data) if data else []
+                    candidates = parsed if isinstance(parsed, list) else []
+
+                    for candidate in candidates:
+                        if candidate.get("hash") == candidate_hash:
+                            candidate["last_seen_at"] = now
+                            candidate["seen_count"] = int(candidate.get("seen_count", 1)) + 1
+                            pipe.multi()
+                            pipe.set(key, json.dumps(candidates[-100:], ensure_ascii=False))
+                            await pipe.execute()
+                            return candidate
+
+                    candidate = {
+                        "hash": candidate_hash,
+                        "text": text,
+                        "category": category,
+                        "source": source,
+                        "reason": reason,
+                        "confidence": float(confidence),
+                        "decay": float(decay),
+                        "created_at": now,
+                        "last_seen_at": now,
+                        "seen_count": 1,
+                        "status": "candidate",
+                    }
+                    candidates.append(candidate)
+
+                    pipe.multi()
+                    pipe.set(key, json.dumps(candidates[-100:], ensure_ascii=False))
+                    await pipe.execute()
+                    return candidate
+                except WatchError:
+                    continue
 
     async def update_user_profile(self, user_id: str, key: str, value: Any):
         profile = await self.get_user_profile(user_id)
@@ -101,8 +254,10 @@ class MemoryStore:
         data["explicit_memories"] = entries
         if target == "user":
             await self.redis.set(f"areqa:user_profile:{user_id}", json.dumps(data, ensure_ascii=False))
+            await self.update_working_memory(user_id, {"explicit_memories": entries})
         else:
             await self.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(data, ensure_ascii=False))
+            await self.update_working_memory(user_id, {"explicit_memories": entries})
 
     async def set_pending_alert(self, user_id: str, content: str):
         logger.info(f"[EDF-LOG] set_pending_alert: setting alert for user '{user_id}': '{content}'")
@@ -148,6 +303,9 @@ class MemoryStore:
     async def clear_all_memory(self, user_id: str):
         """Completely wipe hot memory and reset user profile to defaults."""
         await self.redis.delete(f"areqa:hot_memory:{user_id}")
+        await self.redis.delete(f"areqa:working_memory:{user_id}")
+        await self.redis.delete(f"areqa:behavior_signals:{user_id}")
+        await self.redis.delete(f"areqa:cold_candidates:{user_id}")
         await self.redis.set(f"areqa:user_profile:{user_id}", json.dumps({
             "name": user_id,
             "explicit_memories": [],

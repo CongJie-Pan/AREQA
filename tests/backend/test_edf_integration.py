@@ -166,13 +166,16 @@ async def test_compeer_daily_schedule_e2e(mock_path, tmp_path, tmp_store):
         print(f"DEBUG: Tmp dir contents: {list(tmp_path.glob('**/*'))}")
     assert schedule_path.exists()
     
-    # 3. 輪詢觸發
-    await compeer.tick_proactive_schedule("default_user")
-    
+    # 3. 輪詢觸發：schedule events now create asynchronous AREQA care letters
+    # instead of popup alerts.
+    with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule_care:
+        await compeer.tick_proactive_schedule("default_user")
+        mock_schedule_care.assert_awaited_once()
+
     # 4. Frontend Polling
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         res = await ac.get("/api/v1/proactive-check?user_id=default_user")
-        assert res.json() == {"has_alert": True, "content": "Test"}
+        assert res.json() == {"has_alert": False}
         
         # Second call should be empty
         res2 = await ac.get("/api/v1/proactive-check?user_id=default_user")
@@ -214,5 +217,4 @@ async def test_stream_graceful_fallback_without_unbound_full_content(mock_openai
             content_str = content.decode("utf-8")
             assert "Mocked API Timeout Error" in content_str
             assert "[DONE]" in content_str
-
 

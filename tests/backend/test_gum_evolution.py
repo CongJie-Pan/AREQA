@@ -49,7 +49,7 @@ async def test_memory_evolution_prune(mock_get_gum, mock_gum_instance):
     mock_gum_instance.update_status.assert_called_once_with(1, "superseded")
 
     # Verify text was pushed
-    mock_text_observer.push_text.assert_called_once_with("Student has mastered loops")
+    mock_text_observer.push_text.assert_called_once_with("Student has mastered loops", user_id="test_user")
 
 @pytest.mark.asyncio
 @patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock)

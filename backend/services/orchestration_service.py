@@ -177,10 +177,14 @@ class OrchestrationService:
             print(f"[EDF-LOG] streaming endpoint received message, evaluating student state asynchronously...")
             from services.compeer_scheduler import set_last_interaction_time
             asyncio.create_task(set_last_interaction_time(user_id, time.time()))
-            asyncio.create_task(push_observation(user_id, f"User asked: {last_user_msg}"))
             from memory_store import get_global_store
             store = get_global_store()
             if store:
+                try:
+                    from memory_gate import apply_user_message_gate
+                    await apply_user_message_gate(store, user_id, last_user_msg)
+                except Exception as e:
+                    print(f"[MemoryStore] Failed to apply user-message memory gate: {e}")
                 if _is_stop_roleplay_request(last_user_msg):
                     hot_mem = await store.get_hot_memory(user_id)
                     key = _chat_avatar_key(conversation_id)

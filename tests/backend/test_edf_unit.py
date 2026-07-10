@@ -71,8 +71,12 @@ async def test_log_action_valid_request(mock_push, tmp_store):
     data = await fake_r.get("areqa:hot_memory:default_user")
     hot = json.loads(data) if data else {}
     action_keys = [k for k in hot.keys() if k.startswith("obs_")]
-    assert len(action_keys) == 1
-    assert "scroll" in str(hot[action_keys[0]])
+    assert len(action_keys) == 0
+
+    signals_data = await fake_r.get("areqa:behavior_signals:default_user")
+    signals = json.loads(signals_data) if signals_data else []
+    assert len(signals) == 1
+    assert signals[0]["type"] == "scroll"
 
 @pytest.mark.asyncio
 async def test_log_action_missing_action_field(tmp_store):
@@ -85,21 +89,20 @@ async def test_log_action_missing_action_field(tmp_store):
 @patch("gum_integration.push_observation")
 async def test_log_action_memory_cap_at_50(mock_push, tmp_store):
     store, fake_r = tmp_store
-    # Write 50 mock actions
-    hot = {}
+    # Write 50 mock behavior signals
+    signals = []
     for i in range(50):
-        hot[f"obs_{1000+i}"] = "old"
-    await fake_r.set("areqa:hot_memory:default_user", json.dumps(hot))
+        signals.append({"type": f"old_{i}", "context": {}, "weight": 1.0, "timestamp": "test"})
+    await fake_r.set("areqa:behavior_signals:default_user", json.dumps(signals))
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         await ac.post("/api/v1/log_action", json={"action_type": "new", "timestamp": 12345, "context": {}})
         await asyncio.sleep(0.1)
     
-    data = await fake_r.get("areqa:hot_memory:default_user")
-    hot_after = json.loads(data) if data else {}
-    action_keys = [k for k in hot_after.keys() if k.startswith("obs_")]
-    assert len(action_keys) <= 50
-    assert any("new" in str(hot_after[k]) for k in action_keys)
+    data = await fake_r.get("areqa:behavior_signals:default_user")
+    signals_after = json.loads(data) if data else []
+    assert len(signals_after) <= 50
+    assert any(signal["type"] == "new" for signal in signals_after)
 
 @pytest.mark.asyncio
 @patch("gum_integration.push_observation")
@@ -112,10 +115,9 @@ async def test_log_action_concurrent_writes(mock_push, tmp_store):
     await asyncio.gather(*(post_action(i) for i in range(10)))
     await asyncio.sleep(0.1)
     
-    data = await fake_r.get("areqa:hot_memory:default_user")
-    hot = json.loads(data) if data else {}
-    action_keys = [k for k in hot.keys() if k.startswith("obs_")]
-    assert len(action_keys) == 10
+    data = await fake_r.get("areqa:behavior_signals:default_user")
+    signals = json.loads(data) if data else []
+    assert len(signals) == 10
 
 # U-05 to U-07: Learner State memory ops
 @pytest.mark.asyncio

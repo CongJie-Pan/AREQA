@@ -312,10 +312,18 @@ async def shutdown_event():
 
 _local_summary_cache = {}
 
-@app.get("/api/v1/memory")
-async def fetch_memory(current_user_id: str = Depends(get_current_user)):
+async def push_observation(user_id: str, text: str):
+    from gum_integration import push_observation as _push_observation
+
+    return await _push_observation(user_id, text)
+
+async def get_all_memory(user_id: str = "default_user"):
     from gum_integration import get_all_memory
 
+    return await get_all_memory(user_id)
+
+@app.get("/api/v1/memory")
+async def fetch_memory(current_user_id: str = Depends(get_current_user)):
     props = await get_all_memory(current_user_id)
     # Filter out short term memory (hot:) for the UI list
     long_term_props = [
@@ -328,8 +336,6 @@ async def fetch_memory(current_user_id: str = Depends(get_current_user)):
 
 @app.get("/api/v1/memory/summary")
 async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
-    from gum_integration import get_all_memory
-
     props = await get_all_memory(current_user_id)
     # Filter out short term and scroll
     long_term_props = [
@@ -421,6 +427,33 @@ async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
     except Exception as e:
         print(f"Error calling Qwen for memory summary: {e}")
         return {"summary": {"sentence1": "無法生成總結，請確認網路連線與 API Key 設定。", "sentence2": "", "hashtags": []}}
+
+@app.get("/api/v1/memory/debug")
+async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)):
+    from gum_integration import get_hot_memory_snapshot
+    from memory_store import get_global_store
+
+    store = get_global_store()
+    if not store:
+        return {"status": "unavailable"}
+
+    profile = await store.get_user_profile(current_user_id)
+    hot_memory = await store.get_hot_memory(current_user_id)
+    working_memory = await store.get_working_memory(current_user_id)
+    behavior_signals = await store.get_behavior_signals(current_user_id)
+    cold_candidates = await store.get_cold_candidates(current_user_id)
+    prompt_snapshot = await get_hot_memory_snapshot(current_user_id)
+
+    return {
+        "status": "ok",
+        "user_id": current_user_id,
+        "profile": profile,
+        "hot_memory": hot_memory,
+        "working_memory": working_memory,
+        "behavior_signals": behavior_signals,
+        "cold_candidates": cold_candidates,
+        "prompt_snapshot": prompt_snapshot,
+    }
 
 from mailbox_store import get_mailbox_store
 
@@ -817,15 +850,13 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
     print(f"[EDF-LOG] log_action endpoint received: {obs_text}")
     
     from memory_store import get_global_store
-    import time
     store = get_global_store()
     if store:
-        import uuid
-        key = f"obs_{time.time()}_{uuid.uuid4().hex[:8]}"
-        asyncio.create_task(store.update_hot_memory_async(current_user_id, key, obs_text))
+        from memory_gate import apply_action_gate
+        asyncio.create_task(apply_action_gate(store, current_user_id, req.action_type, req.context))
         
     if req.action_type == "scroll":
-        # Pure UI telemetry like scrolling doesn't need to go to GUM's cold memory evolution
+        # Pure UI telemetry belongs to behavior_signals only; it must not enter prompt memory.
         pass
     elif req.action_type == "compeer_rejected":
         import services.compeer_scheduler as compeer
@@ -834,9 +865,8 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
         await compeer.set_cooldown(target_user, state=learner_state)
         print(f"[ComPeer] User '{target_user}' rejected popup, entering cooldown.")
     else:
-        # Meaningful interactions go to GUM to become semantic propositions
-        from gum_integration import push_observation
-        asyncio.create_task(push_observation(current_user_id, obs_text))
+        # Other client actions are behavior signals unless a reflection pipeline promotes them.
+        pass
         
     return {"status": "ok"}
 

@@ -75,33 +75,33 @@ class TestGetHotMemorySnapshot:
         assert "國立臺灣大學中文系三年級" in result
 
     @pytest.mark.asyncio
-    async def test_snapshot_includes_hot_memory_section(self, memory_store):
-        """Snapshot must include hot memory section when hot memory has dict-style items."""
-        await memory_store.update_hot_memory("default_user", "林黛玉的老師", {"text": "賈雨村", "confidence": 9})
+    async def test_snapshot_includes_working_memory_section(self, memory_store):
+        """Snapshot must include prompt-safe working memory items."""
+        await memory_store.append_learning_observation("default_user", "林黛玉的老師是賈雨村", confidence=9)
 
         import backend.gum_integration as gi
         with patch("memory_store.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
-        assert "近期記憶" in result
+        assert "工作記憶" in result
         assert "賈雨村" in result
 
     @pytest.mark.asyncio
-    async def test_snapshot_hot_memory_plain_string_value(self, memory_store):
-        """Snapshot must handle hot memory items that are plain strings."""
+    async def test_snapshot_ignores_hot_memory_plain_string_value(self, memory_store):
+        """Arbitrary hot-memory strings must not leak into prompt-visible working memory."""
         await memory_store.update_hot_memory("default_user", "怡紅院住戶", "賈寶玉")
 
         import backend.gum_integration as gi
         with patch("memory_store.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
-        assert "賈寶玉" in result
+        assert "賈寶玉" not in result
 
     @pytest.mark.asyncio
     async def test_snapshot_reflects_overwrite_immediately(self, memory_store):
         """After a=b → a=c override, snapshot must show new value only."""
-        await memory_store.update_hot_memory("default_user", "林黛玉的丫鬟", "雪雁")  # a = b
-        await memory_store.update_hot_memory("default_user", "林黛玉的丫鬟", "紫鵑")  # a = c (override)
+        await memory_store.update_working_memory("default_user", {"current_focus": "雪雁"})
+        await memory_store.update_working_memory("default_user", {"current_focus": "紫鵑"})
 
         import backend.gum_integration as gi
         with patch("memory_store.get_global_store", return_value=memory_store):
@@ -109,6 +109,44 @@ class TestGetHotMemorySnapshot:
 
         assert "紫鵑" in result
         assert "雪雁" not in result
+
+    @pytest.mark.asyncio
+    async def test_snapshot_excludes_ui_behavior_signals(self, memory_store):
+        """UI telemetry belongs to behavior_signals and must stay out of the LLM prompt."""
+        await memory_store.append_behavior_signal("default_user", "scroll", {"duration_seconds": 3.0})
+        await memory_store.update_hot_memory("default_user", "obs_legacy_scroll", "[User Action] Type: scroll, Context: {}")
+
+        import backend.gum_integration as gi
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot("default_user")
+
+        assert "scroll" not in result
+        assert "User Action" not in result
+
+    @pytest.mark.asyncio
+    async def test_cold_candidates_are_deduplicated_by_hash(self, memory_store):
+        """Reflection-first cold candidates should keep source metadata and dedupe repeats."""
+        first = await memory_store.append_cold_candidate(
+            "default_user",
+            "學生昨天文言文卡很久，但願意反覆重讀。",
+            category="session_reflection",
+            source="reflection",
+            reason="test",
+        )
+        second = await memory_store.append_cold_candidate(
+            "default_user",
+            "學生昨天文言文卡很久，但願意反覆重讀。",
+            category="session_reflection",
+            source="reflection",
+            reason="test",
+        )
+
+        candidates = await memory_store.get_cold_candidates("default_user")
+
+        assert first["hash"] == second["hash"]
+        assert len(candidates) == 1
+        assert candidates[0]["seen_count"] == 2
+        assert candidates[0]["source"] == "reflection"
 
 
 # ---------------------------------------------------------------------------

@@ -235,6 +235,31 @@ async def test_get_all_memory_no_instance():
         memory = await get_all_memory("test_user")
     assert memory == []
 
+@pytest.mark.asyncio
+async def test_run_compaction_skips_unavailable_direct_cold_write_path():
+    class FakeStore:
+        budget_limit = 10
+
+        async def get_hot_memory(self, user_id):
+            return {
+                "obs_1": {
+                    "text": "Student struggled with classical Chinese yesterday.",
+                    "confidence": 8.0,
+                    "decay": 5.0,
+                    "timestamp": 0,
+                }
+            }
+
+    class FakeColdRetriever:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    with patch("memory_store.get_global_store", return_value=FakeStore()), \
+         patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
+         patch("cold_memory.ColdMemoryRetriever", FakeColdRetriever):
+        mock_get_gum.return_value = (MagicMock(), None)
+        await backend.gum_integration.run_compaction("test_user")
+
 # --- STITCH Contextual Intent Filtering Integration Tests ---
 
 @pytest_asyncio.fixture

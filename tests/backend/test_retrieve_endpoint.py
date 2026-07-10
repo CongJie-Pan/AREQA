@@ -31,7 +31,7 @@ def test_retrieve_endpoint_no_service():
     with patch("backend.main.rag_service", None):
         response = client.get("/api/v1/retrieve?query=test")
         assert response.status_code == 200
-        assert response.json()["error"] == "RAG service not initialized"
+        assert response.json()["error"] == "Internal RAG is disabled or not initialized"
 
 def test_retrieve_endpoint_error():
     mock_rag = MagicMock()
