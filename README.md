@@ -30,8 +30,9 @@ backend/
 │                                   #   ObservationQueueWorker (debounce 批次處理)
 │                                   #   async_evaluate_and_update_state (EDF 狀態更新)
 ├── memory_store.py                 # 短期熱記憶管理
-│                                   #   MemoryStore (Redis: hot_memory + user_profile)
+│                                   #   MemoryStore (Redis: hot_memory + user_profile + working_memory)
 │                                   #   learner_state / current_strategy / chat_avatar:{conversation_id}
+│                                   #   current_focus_conversation_id (working memory 作用域)
 ├── cold_memory.py                  # 長期冷記憶檢索
 │                                   #   ColdMemoryRetriever (PostgreSQL + pgvector)
 │                                   #   propositions 全文檢索 + vec_memory 向量檢索 + RRF 融合
@@ -392,10 +393,11 @@ flowchart TD
 
 ### 3. 記憶管理系統 (GUM + MemoryStore)
 
-- **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory 與 user profile，儲存即時對話脈絡、學習狀態、待推播警示等。
+- **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`working_memory.current_focus` 會綁定 `current_focus_conversation_id`，避免新對話繼承上一輪任務脈絡。
 - **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`，由 `cold_memory.py` 提供全文檢索 + pgvector 向量檢索。
 - **記憶壓縮 (STITCH)**: `compaction.py` 實作 GUM 衰減計算（Activation Score），定期將熱記憶歸檔並精煉為結構化長期記憶。
 - **ObservationQueueWorker**: 去抖動 (3s debounce) 批次處理觀察訊息，防止高頻寫入。
+- **低資訊問候短路**: `你好`、`hi`、`在嗎` 這類低資訊訊息會直接回固定寒暄，不會進入 long-term memory retrieval，也不會擴寫上一輪任務脈絡。
 
 ### 4. 主動關懷與信箱系統 (ComPeer & Mailbox)
 
@@ -447,6 +449,7 @@ flowchart TD
 | `GET` | `/api/v1/memory` | 讀取長期記憶列表 |
 | `GET` | `/api/v1/memory/summary` | 記憶總結 (LLM 人物畫像) |
 | `DELETE` | `/api/v1/memory` | 清除所有記憶 |
+| `DELETE` | `/api/v1/memory/working` | 只清除 working memory |
 | `DELETE` | `/api/v1/memory/{id}` | 刪除單筆記憶 |
 | `PUT` | `/api/v1/memory/{id}` | 編輯單筆記憶 |
 | `POST` | `/api/v1/memory/batch-delete` | 批次刪除記憶 |
@@ -548,3 +551,8 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   npm run typecheck:report
   ```
 - **手動 API 驗證**: FastAPI Swagger UI 可透過後端 `/docs` 檢查與測試端點。
+- **人工回歸驗證建議**:
+  1. `DELETE /api/v1/memory/working`
+  2. 新 conversation 只送 `你好`，確認回覆是固定寒暄，且不會帶出 README / React / 文言文脈絡
+  3. 同一 conversation 再送 React/useEffect 類問題，確認可以正常延續同一主題
+  4. 換新 conversation 再送 `你好`，確認不會繼承前一輪主題

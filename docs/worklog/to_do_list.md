@@ -3,7 +3,17 @@
 2. [x] 將Compeer 機制開啟，並且改為透過 GUM記憶模塊 記住學生的狀態（例如：知道學生昨天文言文卡很久、心情焦慮），並透過系統的Compeer與mailbox「主動關懷 / 信件功能」，在隔天主動推播訊息或寫信鼓勵學生。這種「非同步的關懷感」是其他對話框產品完全做不到的。
 3. [x] 改優化logo與icon
 4. [x] mailbox 資料持久化與可靠性調整：信件本體不要只存 Redis，應改為以 Supabase/Postgres 作為 source of truth，Redis 只保留快取與 delayed queue；這樣即使 Redis 清除、過期或重啟，使用者信件也不會遺失。
-5. (選擇性) 系統 agentic 化 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md
-6. 將網站新增英文語言選項，並且可以按照GPS，然自動切換語言。
-7. 建立實際系統使用案例，並拍成影片。(英文為主)
-8. 建立並修改intro Page : docs/tech_docs/implementation_plan/introPage_implementationPlan.md。如ChatGPT產出的模板 : misc/AREQA-Landing-Template
+5. [x] fix AREQA 關於主動關心寫信的問題，其傳給我，但重點是我都沒有看文言文相關的東西 :
+與 AREQA 的通信
+主題：關於昨日文言文閱讀的思索
+AREQA :
+2026/7/10 下午3:48:34
+你好，我是 AREQA。注意到你昨天在文言文閱讀上花了不少時間，甚至因為判詞的理解而感到困擾，這份認真與堅持其實非常難得。文言文的語感與邏輯往往需要拆解與堆疊，遇到卡關是很正常的學習過程，請不必過於焦慮。針對你提到的那段判詞，我們可以試著先從關鍵字詞的對應開始拆解，而不必急於全篇通讀。如果你願意，下次我們可以一起從這段判詞切入，看看是哪一個環節讓你覺得最難以銜接？期待你的回覆。
+
+6. 如temp/areqa-chat-2026-07-11_1.md, temp/areqa-chat-2026-07-11_2.md 的對話紀錄，我在2026-07-11_2 詢問有關血壓的事情，但是卻延續areqa-chat-2026-07-11_1的事情，卻覺得有點奇怪。我記得這個問題有修復過，但是為何又出現。
+
+7. 系統 agentic 化、優化回應速度、網路搜尋按鈕可以移除，讓router自己決定 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md ()
+8. 要怎麼解決用戶傳送對話的隱私問題 ? 我在想要不要publish出去。
+9. 英文版網站應該可以先不用做
+10. 但要改善的是系統回覆慢，而且用戶看不到其系統輸出前的過程
+11. 之後再做landing page 、然後還要想測試案例。
