@@ -801,7 +801,7 @@ async def generate_scaffolding_message_via_llm(
     if active_avatar:
         roleplay_instruction = f"你現在已被召喚為歷史人物/思想家：「{active_avatar}」。用戶正在學習或探討你的思想。\n請完全沉浸在這個角色中，用{active_avatar}特有的語氣（例如第一人稱、特有的哲學比喻或經典口吻），主動發一句話打斷用戶，丟出一個符合你身份的靈魂拷問或啟發式提問。"
     else:
-        roleplay_instruction = "你是 AREQA，一個溫暖且專業的古典文學學習夥伴。\n現在你需要主動關心用戶，根據以下資訊生成一句**精準的**主動關懷訊息。"
+        roleplay_instruction = "你是 AREQA，一個溫暖且專業的學習陪伴者。\n現在你需要主動關心用戶，根據以下資訊生成一句**精準的**主動關懷訊息。"
 
     prompt = f"""{roleplay_instruction}
 
@@ -912,28 +912,40 @@ async def generate_areqa_care_letter_via_llm(
     edf_policy: str,
     event_summary: str = "",
     last_compeer_message: str = "",
+    allow_topic_specific: bool = False,
 ) -> tuple[str, str]:
     gum_instance, _ = await get_gum_instance(user_id)
     if not gum_instance:
         return "給你的學習小箋", "我注意到你最近可能有些卡住。先不用急著解決全部問題，回到一個最小的段落或概念就好。你願意告訴我，現在最困住你的是哪一句或哪個想法嗎？"
 
+    safe_cold_memory_context = cold_memory_context if allow_topic_specific else ""
     last_msg_hint = f"\n【避免重複】上一封主動關懷已提過：「{last_compeer_message}」，這封信不得重複同一個問法。" if last_compeer_message else ""
+    topic_policy = (
+        "【主題證據政策】系統已確認有足夠的近期語意證據。你可以提及 Hot Memory、觸發原因、或相關 Cold Memory 中明確出現的具體學習主題，但不可超出這些證據。"
+        if allow_topic_specific
+        else (
+            "【主題證據政策】系統沒有足夠的近期語意證據支撐具體學習主題。"
+            "你必須寫成中性的低壓力關懷短箋，不得提及或暗示任何特定文本、學科、角色、章節或概念。"
+            "尤其禁止自行輸出「文言文」、「判詞」、「紅樓夢」、任何角色名，或「昨天你在讀 X」這類具體化時間敘述。"
+        )
+    )
     prompt = f"""你是 AREQA，一位溫暖、克制、專業的學習陪伴者。請根據學生最近的狀態寫一封非同步關懷信。
 
 【近期學習狀態（Hot Memory）】
 {hot_memory_snapshot}
 
 【長期學習背景（Cold Memory，僅供參考）】
-{cold_memory_context}
+{safe_cold_memory_context}
 
 【目前 learner_state】{learner_state}
 【目前教學策略】{edf_policy}
 【觸發原因】{event_summary or "系統偵測到學生可能需要低壓力關懷"}{last_msg_hint}
+{topic_policy}
 
 要求：
 1. 寄件人固定是 AREQA，不要扮演任何歷史人物或虛構角色。
 2. 必須像 5 分鐘後送達的一封短箋，而不是即時聊天室插話。
-3. 內容要具體回應學生最近卡住、焦慮或長時間停留的狀態；若證據不足，請用保守語氣。
+3. 內容要回應學生最近卡住、焦慮或長時間停留的狀態；只有在主題證據政策允許時，才可提及具體主題。
 4. 長度 120 到 220 字，繁體中文，溫柔但不肉麻，不說教。
 5. 結尾只問一個低壓力問題，讓學生可以回信。
 6. 嚴格回傳 JSON，包含 "subject" 與 "content"。

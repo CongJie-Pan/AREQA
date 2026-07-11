@@ -9,7 +9,7 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-07-10（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
+> **最後更新**：2026-07-11（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
 
 > 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 為準。
 
@@ -33,8 +33,8 @@ backend/
 │                                   #   MemoryStore (Redis: hot_memory + user_profile)
 │                                   #   learner_state / current_strategy / chat_avatar:{conversation_id}
 ├── cold_memory.py                  # 長期冷記憶檢索
-│                                   #   ColdMemoryRetriever (pysqlite3 + sqlite_vec)
-│                                   #   FTS5 全文索引 + 向量語意索引 雙軌檢索
+│                                   #   ColdMemoryRetriever (PostgreSQL + pgvector)
+│                                   #   propositions 全文檢索 + vec_memory 向量檢索 + RRF 融合
 ├── compaction.py                   # GUM 記憶壓縮與衰減算法
 │                                   #   calculate_activation_score (Activation Score)
 │                                   #   STITCH 歸檔：熱記憶 → 結構化冷記憶
@@ -61,10 +61,25 @@ backend/
 │
 └── data/                           # 運行時資料目錄 (git 忽略)
     └── gum_data/
-        ├── gum_{user_id}.db        # 每位使用者的 GUM 長期記憶資料庫
+        ├── {safe_user_id}/         # GUM 本地運行時資料目錄
         └── ...                     # 其他 GUM / RAG 運行時資料
 
-# 補充：hot memory、user profile、mailbox、delayed mail 現在主要存於 Redis，不再以本地 json 檔為主
+# 補充：
+# - hot memory、user profile、working memory、behavior signals、mailbox、delayed mail 主要存於 Redis
+# - GUM / cold memory 的正式資料層優先使用 GUM_DATABASE_URL 或 DATABASE_URL 指向的 PostgreSQL
+# - 本地 data/gum_data 主要是 GUM 運行時資料目錄，不再是主資料庫說明
+```
+
+#### Shared Python Services (`/src/main/python/services`)
+
+`backend/main.py` 會將 `src/main/python` 加入 `sys.path`，因此以下服務也是後端實際運行路徑的一部分：
+
+```
+src/main/python/services/
+├── rag_service.py                  # 選配本地文件 RAG：FAISS + BM25 + RRF + context sanitizer
+├── bm25_search.py                  # BM25 sparse retrieval
+├── router_service.py               # OpenRouter query domain/router service
+└── suggestion_service.py           # 回答後推薦問題生成
 ```
 
 #### Frontend (`/frontend/src`)
@@ -158,7 +173,7 @@ frontend/src/
 │  Backend  (FastAPI · Python 3.10+)                           │
 │  Port 8000                                                   │
 │  ┌──────────────┬──────────────┬─────────────┬───────────┐  │
-│  │OrchestrarionS│  GUM / Memory │  Mailbox   │ ComPeer   │  │
+│  │Orchestration │  GUM / Memory │  Mailbox   │ ComPeer   │  │
 │  │  RAG / Web   │  cold/hot    │  Store      │ Scheduler │  │
 │  └──────────────┴──────────────┴─────────────┴───────────┘  │
 └──────────┬──────────────────────────────────────────────────┘
@@ -168,7 +183,8 @@ frontend/src/
     │  OpenRouter (LLM)    │
     │  Perplexity Search   │
     │  Redis Cache         │
-    │  FAISS + BM25 (本地) │
+    │  PostgreSQL / pgvector│
+    │  FAISS + BM25 (選配) │
     └──────────────────────┘
 ```
 
@@ -193,7 +209,7 @@ flowchart TD
     subgraph MEM ["📦 Memory 模塊（共用）"]
         direction LR
         HotMem["短期熱記憶\nMemoryStore\nRedis: hot_memory / user_profile"]
-        ColdMem["長期冷記憶\nGUM (gum_{user_id}.db)\ngum_integration.py\n語意向量化 + STITCH 歸檔\ncompaction.py 衰減計算"]
+        ColdMem["長期冷記憶\nGUM + PostgreSQL\npropositions / vec_memory\ncold_memory.py 語意搜尋\ncompaction.py 衰減計算"]
     end
 
     subgraph API_A ["⚡ POST /api/v1/stream  ·  main.py"]
@@ -203,7 +219,7 @@ flowchart TD
             N1["① Intent Routing\n(目前已停用 DISABLED)"]
             N2["② HyDE 查詢分解 LLM\nparse_and_decompose_query\nexact_entity / abstract_concept"]
             N3["③ Policy Classifier LLM\nclassify_dialogue_policy\nPROBE / SUGGEST / PUSH / NORMAL"]
-            N4A["④-A RAG Retrieval\nFAISS + BM25 + RRF Fusion\n+ Reranker + 注意力重排\nlost-in-the-middle reordering"]
+            N4A["④-A 文件 RAG Retrieval（選配）\nENABLE_INTERNAL_RAG=true\nFAISS + BM25 + RRF Fusion\n+ Reranker + 注意力重排"]
             N4B["④-B Perplexity Web Search\n/search API · 動態 max_results\nQuery Rewrite + Redis 快取 (24h)"]
             N5["⑤ Prompt Assembly\n注入 working_memory (熱記憶)\n+ retrieved_memory (冷記憶語意搜尋)\n+ EDF learner_state 限制\n+ conversation-scoped chat_avatar\n+ <context> RAG/Web 文獻"]
             N6["⑥ 主 LLM 串流生成 (SSE)\nmodel_main_thinking (force_think)\nmodel_main_instruct (一般)\nFunction Calling: update_memory\n<think> 區塊分離 · OpenCC 繁體轉換"]
@@ -248,7 +264,7 @@ flowchart TD
     subgraph MEM_B ["📦 Memory 模塊（共用）"]
         direction LR
         HotMem_B["短期熱記憶\nRedis hot_memory\nmemory_store.py\n(scroll 日誌 + learner_state)"]
-        ColdMem_B["長期冷記憶\ngum_{user_id}.db\ngum_integration.py"]
+        ColdMem_B["長期冷記憶\nGUM + PostgreSQL\ngum_integration.py"]
     end
 
     subgraph API_B ["⚡ FastAPI · main.py"]
@@ -324,7 +340,7 @@ flowchart TD
         MemoryAPI["GET /api/v1/memory\n返回所有長期記憶 (過濾 hot + scroll)"]
         SummaryAPI["GET /api/v1/memory/summary\nMD5 Hash 快取校驗\n→ Redis → 本地 fallback → LLM 生成"]
         DeleteAPI["DELETE /api/v1/memory/{id}\n支援 hot: / profile: / cold 三種類型"]
-        EditAPI["PUT /api/v1/memory/{id}\n支援 hot: / profile: / cold\n→ 同步更新 FTS + Vec 索引"]
+        EditAPI["PUT /api/v1/memory/{id}\n支援 hot: / profile: / cold\n→ 同步更新 propositions + vec_memory"]
         BatchDelete["POST /api/v1/memory/batch-delete"]
         ClearAPI["DELETE /api/v1/memory\n清除全部記憶 (hot + cold)"]
     end
@@ -336,7 +352,7 @@ flowchart TD
 
     subgraph MEM_D ["📦 Memory 模塊"]
         AllMem["get_all_memory()\n合併 Hot + Cold 記憶"]
-        ColdMem_D["ColdMemoryRetriever\ncold_memory.py\npysqlite3 + sqlite_vec\nFTS5 全文索引 + 向量索引"]
+        ColdMem_D["ColdMemoryRetriever\ncold_memory.py\nPostgreSQL propositions\n全文檢索 + pgvector 向量檢索"]
     end
 
     UI_Gum -->|"① 請求記憶列表"| MemoryAPI
@@ -349,7 +365,7 @@ flowchart TD
     SummaryAPI -->|"④ 回傳總結資料"| UI_Gum
     UI_Gum -->|"刪除/編輯記憶"| DeleteAPI
     UI_Gum -->|"刪除/編輯記憶"| EditAPI
-    EditAPI -->|"更新 FTS5 + Vec 索引"| ColdMem_D
+    EditAPI -->|"更新 PostgreSQL text + vector"| ColdMem_D
 ```
 
 ---
@@ -358,7 +374,8 @@ flowchart TD
 
 ### 1. 知識檢索與網路搜尋 (RAG & Web Search)
 
-- **混合檢索機制 (Hybrid Retrieval)**: 整合 `FAISS` 向量檢索與 `BM25` 關鍵字檢索，透過倒數排名融合 (`RRF`) 與 API 重排模型 (`Reranker`) 取得最相關段落。
+- **文件 RAG（選配）**: `src/main/python/services/rag_service.py` 在 `ENABLE_INTERNAL_RAG=true` 時載入本地 `data/rag/faiss_index/` 與 `data/rag/bm25_index/`，整合 `FAISS` 向量檢索與 `BM25` 關鍵字檢索，透過倒數排名融合 (`RRF`) 與 API 重排模型 (`Reranker`) 取得最相關段落。
+- **使用者冷記憶檢索**: `backend/cold_memory.py` 使用 `DATABASE_URL` 連到 PostgreSQL，從 `propositions` 做全文檢索、從選配 `vec_memory` 做 pgvector 向量檢索，再以 RRF 融合結果。
 - **注意力重排序 (Lost in the Middle Reordering)**: 將最高關聯度文獻置首尾，優化 LLM 長上下文注意力。
 - **Perplexity 聯網檢索**: 整合 Perplexity Search API (`/search` 端點)，動態決定 `max_results (3~20)`，並以對話 ID + 問題的 MD5 雜湊進行 Redis 快取（TTL 24小時）。
 - **HyDE 查詢分解**: 使用 LLM 將使用者問題拆解為 `exact_entity` / `abstract_concept` 兩類子查詢，提升混合檢索的召回率。
@@ -376,7 +393,7 @@ flowchart TD
 ### 3. 記憶管理系統 (GUM + MemoryStore)
 
 - **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory 與 user profile，儲存即時對話脈絡、學習狀態、待推播警示等。
-- **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance，並將觀察非同步語意化存入 `gum_{user_id}.db`。`cold_memory.py` 提供 FTS5 全文索引與 `sqlite_vec` 向量索引雙重檢索。
+- **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`，由 `cold_memory.py` 提供全文檢索 + pgvector 向量檢索。
 - **記憶壓縮 (STITCH)**: `compaction.py` 實作 GUM 衰減計算（Activation Score），定期將熱記憶歸檔並精煉為結構化長期記憶。
 - **ObservationQueueWorker**: 去抖動 (3s debounce) 批次處理觀察訊息，防止高頻寫入。
 
@@ -394,7 +411,13 @@ flowchart TD
 - **動態人物畫像**: 調用 `GET /api/v1/memory/summary`，透過 OpenRouter 上配置的結構化模型生成 `sentence1 / sentence2 / hashtags`。
 - **Redis + 本地雙層快取**: MD5 Hash 校驗確保記憶無變動時毫秒級回應。
 
-### 6. 前端元件架構
+### 6. 模型與服務配置
+
+- **集中式預設模型**: `backend/config.py` 定義 `model_policy_classifier`、`model_hyde_decomposer`、`model_main_instruct`、`model_main_thinking`、`model_gum`、`model_zpd_query`，目前預設為 `google/gemini-3.1-flash-lite`。
+- **專用模型例外**: 部分服務有專用模型設定，例如 memory summary 使用 `qwen/qwen3-235b-a22b-2507`，`router_service.py` 使用 `qwen/qwen3-vl-8b-instruct`，`cold_memory.py` 的 embedding 使用 `qwen/qwen3-embedding-8b`。
+- **OpenRouter 統一出口**: 主 LLM、標題生成、GUM、推薦問題、embedding 與部分檢索相關流程共用 `OPENROUTER_API_KEY`。
+
+### 7. 前端元件架構
 
 | 元件 | 路徑 | 功能 |
 |------|------|------|
@@ -451,13 +474,15 @@ AREQA 分為 Python 後端與 Next.js 前端，兩端均支援並推薦使用環
 - `OPENROUTER_API_KEY`: 呼叫主 LLM、標題生成、記憶總結、GUM 與部分檢索相關 API 的密鑰。
 - `PERPLEXITY_API_KEY`: Perplexity 網路搜尋服務的 API 密鑰；未設定時 Web Search 會回退到一般對話。
 - `REDIS_URL`: Redis 連線位址（預設 `redis://localhost:6379`），用於 hot memory、user profile、mailbox、RAG cache、WS ticket。
-- `JWT_SECRET`: 後端驗證 Supabase JWT 所需密鑰，缺少時受保護端點會回 500。
+- `JWT_SECRET`: 後端驗證 Supabase JWT 所需密鑰，缺少時受保護端點會回 500；若 JWT 演算法不是 HS 系列，後端會透過 Supabase JWKS URL 驗證。
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 與後端 JWKS 驗證使用。
 - `NEXT_PUBLIC_BACKEND_URL`: 前端直連 FastAPI 的 base URL；本地預設 `http://localhost:8000` 或 `http://127.0.0.1:8000`。
 - `NEXT_PUBLIC_CHAT_API_ENDPOINT`: 前端 chat service endpoint，預設 `/api/chat`，由 Next.js BFF 代理到 FastAPI。
 - `NEXT_PUBLIC_API_TIMEOUT` / `NEXT_PUBLIC_MAX_MESSAGE_LENGTH` / `NEXT_PUBLIC_PARSER_MAX_BUFFER`: 前端 API timeout、訊息長度與 SSE parser buffer 設定。
-- `ENABLE_INTERNAL_RAG`: 設為 `true` 才會載入本地 FAISS/BM25 index；否則 `/api/v1/retrieve` 會回傳 internal RAG disabled。
-- `DATABASE_URL`: GUM / cold memory 資料層使用；Render 部署中需手動設定。
+- `ENABLE_INTERNAL_RAG`: 設為 `true` 才會載入本地文件 RAG 的 FAISS/BM25 index；否則 `/api/v1/retrieve` 會回傳 internal RAG disabled。這不控制 GUM/cold memory 是否啟用。
+- `DATABASE_URL`: PostgreSQL 連線位址，供 GUM / cold memory 使用；cold memory 依賴 `propositions`，並可使用 `vec_memory` + pgvector 做向量檢索。
+- `GUM_DATABASE_URL`: GUM 專用資料庫 URL；若設定，優先於 `DATABASE_URL`。
+- `MAILBOX_DATABASE_URL`: mailbox 專用資料庫 URL；若設定，優先於 `DATABASE_URL`。目前 mailbox 主要資料仍由 Redis 管理。
 - `HF_TOKEN` / `HF_ENDPOINT_URL` / `HF_REPO_ID`: Hugging Face 或外部 embedding/reranking 端點相關設定。
 
 前端聊天請求的實際路徑：
@@ -474,6 +499,8 @@ Conversation Store → /api/title
                   → ${NEXT_PUBLIC_BACKEND_URL}/api/v1/generate-title
 ```
 
+記憶、信箱與 WebSocket 相關功能不經 `/api/chat`，會依 `NEXT_PUBLIC_BACKEND_URL` 直接呼叫 FastAPI。WebSocket 連線流程為：先以 Bearer token 呼叫 `/api/v1/ws/ticket` 取得 30 秒一次性 ticket，再連 `/api/v1/ws/notifications?ticket=...`。
+
 ### 2. 後端運行步驟 (Python 3.10+)
 
 後端使用 FastAPI 提供高效非同步 SSE 串流服務，並使用 Redis 進行 RAG 快取。
@@ -486,7 +513,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 > 後端受保護端點需要 Supabase Bearer token 與 `JWT_SECRET`。若只測試服務啟動，FastAPI 可啟動；但 chat、memory、mailbox、proactive、WebSocket ticket 等 API 都會進入認證流程。
 
-> 本地 RAG 是選配。若要啟用，需設定 `ENABLE_INTERNAL_RAG=true`，並準備 `data/rag/faiss_index/chunks*.index`、`data/rag/faiss_index/index_metadata*.json` 與 `data/rag/bm25_index/`。
+> 本地文件 RAG 是選配。若要啟用，需設定 `ENABLE_INTERNAL_RAG=true`，並準備 `data/rag/faiss_index/chunks*.index`、`data/rag/faiss_index/index_metadata*.json` 與 `data/rag/bm25_index/`。這與 GUM / PostgreSQL cold memory 是不同路徑。
 
 ### 3. 前端運行步驟 (Node.js v20+)
 
@@ -503,14 +530,21 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
 
 ## 🧪 測試
 
-- **後端測試**: 透過 FastAPI Swagger UI (`/docs`) 進行手動驗證。
-- **前端測試**: 使用 Vitest 進行 UI Store 等單元測試：
+- **全部測試**:
   ```bash
-  cd frontend
-  npm run test
+  npm run test:all
   ```
-- **型別檢查**:
+- **後端測試**:
   ```bash
-  cd frontend
-  npm run typecheck
+  npm run test:backend
   ```
+- **前端測試**:
+  ```bash
+  npm run test:frontend
+  ```
+- **前端 lint / typecheck**:
+  ```bash
+  npm run lint:report
+  npm run typecheck:report
+  ```
+- **手動 API 驗證**: FastAPI Swagger UI 可透過後端 `/docs` 檢查與測試端點。

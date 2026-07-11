@@ -91,7 +91,12 @@ async def tick_proactive_schedule(user_id: str):
                         edf_policy = await store.get_current_strategy(user_id) if store else "default"
                         from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
                         snapshot = await get_hot_memory_snapshot(user_id)
-                        cold_ctx = await query_cold_memory_for_context(user_id, content)
+                        allow_topic_specific = should_allow_topic_specific_care(
+                            snapshot,
+                            content,
+                            trust_event_summary=True,
+                        )
+                        cold_ctx = await query_cold_memory_for_context(user_id, content) if allow_topic_specific else ""
                         hot_mem = await store.get_hot_memory(user_id)
                         await schedule_areqa_care_letter(
                             user_id=user_id,
@@ -101,6 +106,7 @@ async def tick_proactive_schedule(user_id: str):
                             hot_memory_snapshot=snapshot,
                             cold_memory_context=cold_ctx,
                             last_compeer_message=hot_mem.get("last_compeer_message", ""),
+                            allow_topic_specific=allow_topic_specific,
                         )
                         await set_cooldown(user_id, state=learner_state)
                 
@@ -202,6 +208,50 @@ async def daily_scheduler_loop():
 _send_lock = asyncio.Lock()
 _flag_lock = asyncio.Lock()
 
+_GENERIC_EVENT_MARKERS = (
+    "EDF 系統偵測到",
+    "系統偵測到",
+    "學習瓶頸",
+    "低壓力關懷",
+    "需要低壓力關懷",
+)
+
+
+def has_current_learning_evidence(hot_memory_snapshot: str) -> bool:
+    """Return True only when prompt-visible working memory has semantic content."""
+    if not hot_memory_snapshot or "【工作記憶" not in hot_memory_snapshot:
+        return False
+
+    working_section = hot_memory_snapshot.split("【工作記憶", 1)[1]
+    evidence_markers = (
+        "Session summary:",
+        "Current focus:",
+        "Explicit memory:",
+    )
+    if any(marker in working_section for marker in evidence_markers):
+        return True
+
+    return any(line.strip().startswith("- ") and len(line.strip()) > 2 for line in working_section.splitlines())
+
+
+def is_generic_event_summary(event_summary: str) -> bool:
+    text = (event_summary or "").strip()
+    if not text:
+        return True
+    return any(marker in text for marker in _GENERIC_EVENT_MARKERS)
+
+
+def should_allow_topic_specific_care(
+    hot_memory_snapshot: str,
+    event_summary: str,
+    *,
+    trust_event_summary: bool = False,
+) -> bool:
+    """Cold memory alone must not authorize a specific proactive topic."""
+    if has_current_learning_evidence(hot_memory_snapshot):
+        return True
+    return trust_event_summary and not is_generic_event_summary(event_summary)
+
 
 def _stable_task_id(prefix: str, user_id: str, *parts: str) -> str:
     raw = "|".join([user_id, *[str(part or "") for part in parts]])
@@ -216,19 +266,22 @@ async def schedule_areqa_care_letter(
     hot_memory_snapshot: str,
     cold_memory_context: str,
     last_compeer_message: str = "",
+    allow_topic_specific: bool = False,
 ):
     from gum_integration import generate_areqa_care_letter_via_llm
     from mailbox_store import get_mailbox_store
     from memory_store import get_global_store
 
+    safe_cold_memory_context = cold_memory_context if allow_topic_specific else ""
     subject, content = await generate_areqa_care_letter_via_llm(
         user_id=user_id,
         hot_memory_snapshot=hot_memory_snapshot,
-        cold_memory_context=cold_memory_context,
+        cold_memory_context=safe_cold_memory_context,
         learner_state=learner_state,
         edf_policy=edf_policy,
         event_summary=event_summary,
         last_compeer_message=last_compeer_message,
+        allow_topic_specific=allow_topic_specific,
     )
 
     date_bucket = datetime.now().strftime("%Y-%m-%d")
@@ -335,7 +388,8 @@ async def proactive_scheduler_loop():
                             )
                             snapshot = await get_hot_memory_snapshot(user_id)
                             event_summary = f"EDF 系統偵測到使用者遭遇學習瓶頸 (狀態: {learner_state})"
-                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
+                            allow_topic_specific = should_allow_topic_specific_care(snapshot, event_summary)
+                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary) if allow_topic_specific else ""
                             edf_policy = await store.get_current_strategy(user_id)
 
                             hot_mem = await store.get_hot_memory(user_id)
@@ -347,6 +401,7 @@ async def proactive_scheduler_loop():
                                 hot_memory_snapshot=snapshot,
                                 cold_memory_context=cold_ctx,
                                 last_compeer_message=hot_mem.get("last_compeer_message", ""),
+                                allow_topic_specific=allow_topic_specific,
                             )
                             await set_cooldown(user_id, state=learner_state)
 
@@ -378,7 +433,9 @@ async def proactive_scheduler_loop():
                                     event = await detect_proactive_event_via_llm(user_id, snapshot)
 
                                     if event["has_event"] and event["importance"] >= 0.7:
-                                        cold_ctx = await query_cold_memory_for_context(user_id, event["event_summary"])
+                                        event_summary = event["event_summary"]
+                                        allow_topic_specific = should_allow_topic_specific_care(snapshot, event_summary)
+                                        cold_ctx = await query_cold_memory_for_context(user_id, event_summary) if allow_topic_specific else ""
                                         learner_state = await store.get_learner_state(user_id)
                                         edf_policy = await store.get_current_strategy(user_id)
 
@@ -386,10 +443,11 @@ async def proactive_scheduler_loop():
                                             user_id=user_id,
                                             learner_state=learner_state,
                                             edf_policy=edf_policy,
-                                            event_summary=event["event_summary"],
+                                            event_summary=event_summary,
                                             hot_memory_snapshot=snapshot,
                                             cold_memory_context=cold_ctx,
-                                            last_compeer_message=hot_mem.get("last_compeer_message", "")
+                                            last_compeer_message=hot_mem.get("last_compeer_message", ""),
+                                            allow_topic_specific=allow_topic_specific,
                                         )
                                         await set_cooldown(user_id, state=learner_state)
 

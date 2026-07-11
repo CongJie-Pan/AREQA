@@ -65,6 +65,7 @@ def mock_store():
     store.update_hot_memory = AsyncMock(side_effect=mock_update_hot_memory)
     store.update_hot_memory_async = AsyncMock(side_effect=mock_update_hot_memory)
     store.get_user_profile = AsyncMock(return_value={})
+    store.get_working_memory = AsyncMock(return_value={})
     
     # Add these mock methods for Redis and strategy compatibility
     store.get_current_strategy = AsyncMock(return_value="default")
@@ -76,6 +77,18 @@ def mock_store():
     
     with patch("memory_store.get_global_store", return_value=store):
         yield store
+
+def test_topic_specific_care_requires_working_memory_by_default():
+    assert compeer.should_allow_topic_specific_care("", "User stuck on poem") is False
+
+
+def test_topic_specific_care_can_trust_scheduled_event_summary():
+    assert compeer.should_allow_topic_specific_care(
+        "",
+        "使用者正在整理 README.md 的架構描述",
+        trust_event_summary=True,
+    ) is True
+
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
 @patch("mailbox_store.get_mailbox_store")
@@ -113,12 +126,51 @@ async def test_trigger_proactive_schedules_areqa_care_mail(mock_in_cooldown, moc
     assert call_kwargs["mail_data"]["kind"] == "compeer_care"
     assert call_kwargs["mail_data"]["sender"] == "AREQA"
     assert call_kwargs["mail_data"]["content"] == "Test Care Letter"
+    mock_query.assert_not_awaited()
+    mock_gen.assert_awaited_once()
+    assert mock_gen.call_args.kwargs["allow_topic_specific"] is False
+    assert mock_gen.call_args.kwargs["cold_memory_context"] == ""
 
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
-@patch("backend.services.connection_manager.ws_manager.broadcast_alert", new_callable=AsyncMock)
+@patch("mailbox_store.get_mailbox_store")
+@patch("gum_integration.generate_areqa_care_letter_via_llm", new_callable=AsyncMock)
+@patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock)
+@patch("gum_integration.get_hot_memory_snapshot", new_callable=AsyncMock)
 @patch("backend.services.compeer_scheduler.is_in_cooldown", new_callable=AsyncMock)
-async def test_no_trigger_when_in_cooldown(mock_in_cooldown, mock_broadcast, mock_sleep, mock_store):
+async def test_trigger_proactive_allows_topic_specific_care_with_current_focus(
+    mock_in_cooldown,
+    mock_snapshot,
+    mock_query,
+    mock_gen,
+    mock_get_mailbox,
+    mock_sleep,
+    mock_store,
+):
+    await mock_store.update_hot_memory("default_user", "trigger_proactive", True)
+    await mock_store.update_hot_memory("default_user", "current_learner_state", "GIVING_UP")
+
+    mock_mailbox = MagicMock()
+    mock_mailbox.schedule_delayed_mail = AsyncMock()
+    mock_get_mailbox.return_value = mock_mailbox
+    mock_snapshot.return_value = "【工作記憶 (Working Memory)】\n- Current focus: README.md 更新"
+    mock_query.return_value = "Mocked cold context"
+    mock_gen.return_value = ("給你的學習小箋", "Specific Care Letter")
+    mock_in_cooldown.return_value = False
+    mock_sleep.side_effect = [None, Exception("Stop Loop"), Exception("Stop Loop")]
+
+    with pytest.raises(Exception, match="Stop Loop"):
+        await compeer.proactive_scheduler_loop()
+
+    mock_query.assert_awaited_once()
+    mock_gen.assert_awaited_once()
+    assert mock_gen.call_args.kwargs["allow_topic_specific"] is True
+    assert mock_gen.call_args.kwargs["cold_memory_context"] == "Mocked cold context"
+
+@pytest.mark.asyncio
+@patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
+@patch("backend.services.compeer_scheduler.is_in_cooldown", new_callable=AsyncMock)
+async def test_no_trigger_when_in_cooldown(mock_in_cooldown, mock_sleep, mock_store):
     await mock_store.update_hot_memory("default_user", "trigger_proactive", True)
     mock_in_cooldown.return_value = True
     
@@ -130,15 +182,13 @@ async def test_no_trigger_when_in_cooldown(mock_in_cooldown, mock_broadcast, moc
     # Since in cooldown, shouldn't consume trigger or broadcast
     hot_mem = await mock_store.get_hot_memory("default_user")
     assert "trigger_proactive" in hot_mem
-    assert mock_broadcast.called is False
 
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
-@patch("backend.services.connection_manager.ws_manager.broadcast_alert", new_callable=AsyncMock)
 @patch("gum_integration.generate_scaffolding_message_via_llm", new_callable=AsyncMock)
 @patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock)
 @patch("backend.services.compeer_scheduler.is_in_cooldown", new_callable=AsyncMock)
-async def test_avatar_summon_triggers_mail_despite_cooldown(mock_in_cooldown, mock_query, mock_gen, mock_broadcast, mock_sleep, mock_store):
+async def test_avatar_summon_triggers_mail_despite_cooldown(mock_in_cooldown, mock_query, mock_gen, mock_sleep, mock_store):
     await mock_store.update_hot_memory("default_user", "avatar_summon_pending", True)
     mock_in_cooldown.return_value = True
     

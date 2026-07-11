@@ -36,9 +36,9 @@ async def generate_stitch_tags(llm_client, model: str, memory_content: str) -> D
 
 請嚴格以 JSON 格式回傳，範例如下：
 {{
-  "refined_content": "使用者混淆了金陵十二釵正冊的妙玉與副冊的香菱，且對於判詞理解有偏差。",
+  "refined_content": "使用者對某個概念的前提與例子之間的關係理解不穩，需要更具體的對照說明。",
   "primary_tags": ["ConceptMastery", "ErrorWeakness"],
-  "entities": ["妙玉", "香菱", "金陵十二釵"],
+  "entities": ["概念A", "例子B"],
   "temporal_context": "2026-06-21 對話第三輪"
 }}
 
