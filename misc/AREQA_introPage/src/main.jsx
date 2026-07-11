@@ -3,7 +3,29 @@ import { createRoot } from 'react-dom/client';
 import logo from './assets/areqa_logo_v2.png';
 import icon from './assets/areqa_icon_v3.png';
 import muse from './assets/Muse.png';
+import pedagogicalPolicy from './assets/six_features/01_pedagogical_policy.png';
+import asynchronousCare from './assets/six_features/02_asynchronous_care.png';
+import persistentMemory from './assets/six_features/03_persistent_memory.png';
+import activeAvatar from './assets/six_features/04_active_avatar.png';
+import webSearchKnowledge from './assets/six_features/05_web_search_knowledge.png';
+import intentExpansion from './assets/six_features/06_intent_expansion.png';
 import './styles.css';
+
+const featureImages = [
+  pedagogicalPolicy,
+  asynchronousCare,
+  persistentMemory,
+  activeAvatar,
+  webSearchKnowledge,
+  intentExpansion
+];
+const heroTitle = '懂你所學，\n伴你所讀。';
+const promptSuggestions = [
+  '我是 AREQA 您今天想學什麼嗎 ?',
+  '今天心情如何，我可以陪你聊聊',
+  '我是 AREQA 我可以幫您什麼嗎 ?'
+];
+const areqaAppUrl = 'https://areqa-frontend-aouk.onrender.com/';
 
 const features = [
   {
@@ -28,7 +50,7 @@ const features = [
     id: 'gum',
     eyebrow: '#4 ACTIVE AVATAR',
     title: '即時\n角色扮演',
-    body: '您可以要求AREQA扮演您學習路上的關鍵人物。不管是蘇格拉底、曹雪芹、牛頓、川端康成等人物，AREQA都能搖身一變化身，並且依照您的學習狀況寫信給您，您也可以與他回信。'
+    body: '您可以要求AREQA扮演您學習路上的關鍵人物。不管是蘇格拉底、曹雪芹、牛頓、川端康成等人物，AREQA都能搖身一變，並依照您的學習狀況寫信給您，您也可以與他回信。'
   },
   {
     id: 'mailbox',
@@ -45,23 +67,154 @@ const features = [
 ];
 function App(){
   const [menu, setMenu] = useState(false);
+  const [typedTitle, setTypedTitle] = useState('');
+  const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
+  const [prompt, setPrompt] = useState('');
   useEffect(()=>{
     const onKey=(e)=>e.key==='Escape'&&setMenu(false);
     window.addEventListener('keydown',onKey); return()=>window.removeEventListener('keydown',onKey);
   },[]);
+  useEffect(() => {
+    const animatedElements = document.querySelectorAll('[data-reveal]');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.16 });
+
+    animatedElements.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setTypedTitle(heroTitle);
+      return undefined;
+    }
+
+    const characters = Array.from(heroTitle);
+    let characterIndex = 0;
+    let typingTimer;
+    const startTimer = window.setTimeout(() => {
+      typingTimer = window.setInterval(() => {
+        characterIndex += 1;
+        setTypedTitle(characters.slice(0, characterIndex).join(''));
+        if (characterIndex === characters.length) window.clearInterval(typingTimer);
+      }, 82);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearInterval(typingTimer);
+    };
+  }, []);
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setAnimatedPlaceholder(promptSuggestions[0]);
+      return undefined;
+    }
+
+    let suggestionIndex = 0;
+    let characterIndex = 0;
+    let isDeleting = false;
+    let placeholderTimer;
+
+    const animatePlaceholder = () => {
+      const characters = Array.from(promptSuggestions[suggestionIndex]);
+
+      if (!isDeleting) {
+        characterIndex += 1;
+        setAnimatedPlaceholder(characters.slice(0, characterIndex).join(''));
+
+        if (characterIndex === characters.length) {
+          isDeleting = true;
+          placeholderTimer = window.setTimeout(animatePlaceholder, 1800);
+          return;
+        }
+      } else {
+        characterIndex -= 1;
+        setAnimatedPlaceholder(characters.slice(0, characterIndex).join(''));
+
+        if (characterIndex === 0) {
+          isDeleting = false;
+          suggestionIndex = (suggestionIndex + 1) % promptSuggestions.length;
+          placeholderTimer = window.setTimeout(animatePlaceholder, 360);
+          return;
+        }
+      }
+
+      placeholderTimer = window.setTimeout(animatePlaceholder, isDeleting ? 28 : 58);
+    };
+
+    placeholderTimer = window.setTimeout(animatePlaceholder, 420);
+    return () => window.clearTimeout(placeholderTimer);
+  }, []);
+
+  const openAreqaApp = (event) => {
+    event.preventDefault();
+    window.location.assign(areqaAppUrl);
+  };
+
+  const [typedFirstLine = '', typedSecondLine = ''] = typedTitle.split('\n');
   return <>
     <header className="site-header" style={{justifyContent: 'center'}}>
       <a className="brand" href="#top" aria-label="AREQA 首頁"><img src={logo} alt="AREQA"/></a>
     </header>
 
     <main id="top">
+      <div className="knowledge-thread" aria-hidden="true">
+        <svg viewBox="0 0 1440 3600" preserveAspectRatio="none">
+          <path d="M1280 0 C1180 430 1370 620 1110 920 S720 1280 960 1640 S1250 2150 810 2480 S300 2990 690 3600" />
+          <g>
+            <circle cx="1128" cy="890" r="5" />
+            <circle cx="922" cy="1580" r="4" />
+            <circle cx="846" cy="2450" r="5" />
+            <circle cx="646" cy="3490" r="4" />
+          </g>
+        </svg>
+      </div>
+      <div className="celestial-field" aria-hidden="true">
+        <span className="celestial-star" /><span className="celestial-orbit" />
+        <span className="celestial-dot" /><span className="celestial-star" />
+        <span className="celestial-orbit" /><span className="celestial-dot" />
+        <span className="celestial-star" /><span className="celestial-orbit" />
+        <span className="celestial-dot" /><span className="celestial-star" />
+        <span className="celestial-dot" /><span className="celestial-orbit" />
+        <span className="celestial-star" /><span className="celestial-dot" />
+        <span className="celestial-star" /><span className="celestial-orbit" />
+        <span className="celestial-dot" /><span className="celestial-star" />
+      </div>
       <section className="hero" id="about">
         <div className="star-field" aria-hidden="true"/>
         <div className="hero-copy">
           <p className="eyebrow">ADAPTIVE RAG-BASED EDUCATIONAL QA SYSTEM</p>
-          <h1>懂你所學，<br/><em>伴你所讀。</em></h1>
+          <h1 aria-label="懂你所學，伴你所讀。">
+            <span aria-hidden="true">
+              {typedFirstLine}
+              {!typedTitle.includes('\n') && <i className="typing-cursor" />}
+              <br/>
+              <em>{typedSecondLine}</em>
+              {typedTitle.includes('\n') && <i className="typing-cursor" />}
+            </span>
+          </h1>
           <p className="hero-lead">AREQA :一個博學、溫暖、理解您又善於引導的學伴。<br/>想學習任何東西嗎？就來找 AREQA 吧！</p>
-          <div className="hero-actions"><a className="button primary" href="#contact">開始對話</a></div>
+          <form
+            className="prompt-launcher"
+            onSubmit={openAreqaApp}
+          >
+            <input
+              type="text"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder={animatedPlaceholder}
+              aria-label="輸入想和 AREQA 對話的內容"
+              autoComplete="off"
+            />
+            <button className="prompt-submit" type="submit" aria-label="前往 AREQA 送出訊息">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" /></svg>
+            </button>
+          </form>
         </div>
         <div className="hero-art">
           <div className="muse-halo" aria-hidden="true"/>
@@ -70,31 +223,40 @@ function App(){
       </section>
 
       <section className="demo-video-section">
+        <div className="section-texture demo-texture" aria-hidden="true" />
         <div className="video-placeholder">
           <p>Demo Video Coming Soon</p>
         </div>
       </section>
 
       <section className="features-section" id="features">
+        <div className="section-texture features-texture" aria-hidden="true" />
         <div className="feature-grid-hermes">
-          {features.map(f => (
-            <article className="hermes-card" key={f.id} id={f.id === 'trace' ? 'transparency' : undefined}>
+          {features.map((f, index) => (
+            <article className="hermes-card" key={f.id} id={f.id === 'trace' ? 'transparency' : undefined} data-reveal>
+              <span className="card-corner card-corner-top" aria-hidden="true" />
+              <span className="card-corner card-corner-bottom" aria-hidden="true" />
               <p className="hermes-eyebrow">{f.eyebrow}</p>
               <h3 className="hermes-title">
                 {f.title.split('\n').map((line, i) => (
                   <React.Fragment key={i}>{line}<br/></React.Fragment>
                 ))}
               </h3>
-              <div className="hermes-image-placeholder">
-                 <span>Image Placeholder</span>
-              </div>
+              <img
+                className="hermes-feature-image"
+                src={featureImages[index]}
+                alt={`${f.title.replace('\n', '')}特色插畫`}
+              />
               <p className="hermes-body">{f.body}</p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="brand-interlude" aria-label="AREQA 品牌過場" id="contact">
+      <section className="brand-interlude" aria-label="AREQA 品牌過場" id="contact" data-reveal>
+        <div className="closing-astrolabe" aria-hidden="true">
+          <i /><i /><i />
+        </div>
         <img src={icon} alt="AREQA 品牌圖標" className="closing-icon" />
         <div className="poster-text"><span>A</span><span>R</span><span>E</span><span>Q</span><span>A</span></div>
         <h2 className="closing-slogan">懂你所學，伴你所讀。</h2>
