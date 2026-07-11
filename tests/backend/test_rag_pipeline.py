@@ -26,32 +26,62 @@ load_dotenv()
 @pytest.fixture
 def rag_service():
     """
-    初始化 RAGService，並真實呼叫對外的 API 請求 (Embeddings 與 Reranker)。
-    需要環境中有正確的 .env 設定檔。
+    初始化一個可重現的 RAGService fixture。
+
+    這個測試不應依賴大型離線索引或外部 API，因此我們把
+    embedding / FAISS / BM25 / reranker 都改成可預期的 synthetic
+    pipeline，仍然驗證 retrieve_with_events 的整體流程。
     """
     import services.rag_service
-    # If conftest patched RAGService, restore the original
-    if hasattr(services.rag_service.RAGService, "__patched__") or isinstance(services.rag_service.RAGService, MagicMock):
-        # We need the original class. The easiest way is to reload the module or use the unwrapped class.
-        pass # Actually, just reload it
     import importlib
     importlib.reload(services.rag_service)
     from services.rag_service import RAGService
-    from pathlib import Path
-    
-    project_root = Path(__file__).resolve().parent.parent.parent
-    
-    service = RAGService(
-        faiss_index_path=str(project_root / "data/rag/faiss_index/chunks.index"),
-        faiss_metadata_path=str(project_root / "data/rag/faiss_index/index_metadata.json"),
-        bm25_index_dir=str(project_root / "data/rag/bm25_index"),
-        embedding_model_path="api",
-        reranker_model_path="api",
-        top_k=5,
-        rrf_k=60,
-        score_threshold=0.0,
-        max_context_tokens=4000,
-    )
+
+    def fake_load_faiss_index(self):
+        self._faiss_index = MagicMock(ntotal=3, d=3)
+        self._faiss_metadata = [
+            {"chunk_id": "c1", "page_content": "冷香丸配方記錄", "source": "chapter_1"},
+            {"chunk_id": "c2", "page_content": "絳珠仙草轉世傳說", "source": "chapter_2"},
+            {"chunk_id": "c3", "page_content": "大觀園青春王國", "source": "chapter_3"},
+        ]
+
+    def fake_load_bm25_index(self):
+        self._bm25 = MagicMock(total_documents=3)
+
+    with patch.object(RAGService, '_load_embedding_model'), \
+         patch.object(RAGService, '_load_reranker_model'), \
+         patch.object(RAGService, '_load_faiss_index', new=fake_load_faiss_index), \
+         patch.object(RAGService, '_load_bm25_index', new=fake_load_bm25_index):
+        service = RAGService(
+            faiss_index_path="dummy.index",
+            faiss_metadata_path="dummy.json",
+            bm25_index_dir="dummy_dir",
+            embedding_model_path="api",
+            reranker_model_path="api",
+            top_k=5,
+            rrf_k=60,
+            score_threshold=0.0,
+            max_context_tokens=4000,
+        )
+
+    service._available = True
+    service.use_reranker = False
+    service.encode_query = MagicMock(return_value=np.array([1.0, 0.0, 0.0], dtype=np.float32))
+
+    dense_results = [
+        {"id": "c1", "score": 0.95, "text": "冷香丸配方記錄", "chunk_id": "c1", "source": "chapter_1"},
+        {"id": "c2", "score": 0.80, "text": "絳珠仙草轉世傳說", "chunk_id": "c2", "source": "chapter_2"},
+        {"id": "c3", "score": 0.70, "text": "大觀園青春王國", "chunk_id": "c3", "source": "chapter_3"},
+    ]
+    sparse_results = [
+        {"id": "c1", "score": 12.0, "text": "冷香丸配方記錄", "chunk_id": "c1", "source": "chapter_1"},
+        {"id": "c4", "score": 10.0, "text": "寶釵與黛玉詩風比較", "chunk_id": "c4", "source": "chapter_4"},
+        {"id": "c5", "score": 8.0, "text": "賈探春治理策略", "chunk_id": "c5", "source": "chapter_5"},
+    ]
+
+    service._faiss_search = MagicMock(return_value=dense_results)
+    service._bm25_search = MagicMock(return_value=sparse_results)
+    service._reranker = None
     return service
 
 def simulate_pipeline_filtering(context_results_obj):

@@ -17,7 +17,7 @@ async def test_end_to_end_compaction_flow(tmp_path, monkeypatch):
     
     mock_compaction_triggered = False
     
-    async def mock_process_callback(uid, items):
+    async def mock_process_callback(uid, items, **kwargs):
         nonlocal mock_compaction_triggered
         mock_compaction_triggered = True
         
