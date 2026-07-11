@@ -182,7 +182,7 @@ class OrchestrationService:
             if store:
                 try:
                     from memory_gate import apply_user_message_gate
-                    await apply_user_message_gate(store, user_id, last_user_msg)
+                    await apply_user_message_gate(store, user_id, last_user_msg, conversation_id=conversation_id)
                 except Exception as e:
                     print(f"[MemoryStore] Failed to apply user-message memory gate: {e}")
                 try:
@@ -544,7 +544,11 @@ class OrchestrationService:
             final_system_prompt += "\n\n【工具使用規則】你必須先用繁體中文完整回答使用者的問題，再選擇性地呼叫工具（如 update_memory）。嚴禁只呼叫工具而不輸出任何文字回應。"
             final_system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
             
-            hot_snapshot = await get_hot_memory_snapshot(user_id)
+            hot_snapshot = await get_hot_memory_snapshot(
+                user_id,
+                conversation_id=conversation_id,
+                include_cross_conversation_focus=False,
+            )
             if hot_snapshot:
                 final_system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
                 

@@ -506,6 +506,17 @@ async def read_mail_endpoint(mail_id: str, current_user_id: str = Depends(get_cu
 class EditMemoryRequest(BaseModel):
     text: str
 
+@app.delete("/api/v1/memory/working")
+async def clear_working_memory_endpoint(current_user_id: str = Depends(get_current_user)):
+    from memory_store import get_global_store
+
+    store = get_global_store()
+    if not store:
+        raise HTTPException(status_code=500, detail="Memory store not initialized")
+
+    await store.clear_working_memory(current_user_id)
+    return {"status": "success", "cleared": "working_memory"}
+
 @app.delete("/api/v1/memory/{mem_id}")
 async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get_current_user)):
     from gum_integration import get_gum_instance

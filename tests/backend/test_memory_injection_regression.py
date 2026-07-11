@@ -111,6 +111,56 @@ class TestGetHotMemorySnapshot:
         assert "雪雁" not in result
 
     @pytest.mark.asyncio
+    async def test_snapshot_excludes_cross_conversation_current_focus_when_requested(self, memory_store):
+        """A new conversation greeting must not inherit the previous conversation's task focus."""
+        await memory_store.update_working_memory(
+            "default_user",
+            {
+                "session_summary": "使用者正在用 Codex 更新 AREQA 專案的 README.md",
+                "current_focus": "我正在用 Codex 更新 AREQA 專案的 README.md",
+                "current_focus_conversation_id": "conv-readme",
+                "recent_learning_points": [{"text": "README 測試殘留"}],
+            },
+        )
+
+        import backend.gum_integration as gi
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot(
+                "default_user",
+                conversation_id="conv-greeting",
+                include_cross_conversation_focus=False,
+            )
+
+        assert "README.md" not in result
+        assert "Codex" not in result
+        assert "README 測試殘留" not in result
+
+    @pytest.mark.asyncio
+    async def test_snapshot_includes_same_conversation_current_focus(self, memory_store):
+        """The active conversation should still retain its own recent task focus."""
+        await memory_store.update_working_memory(
+            "default_user",
+            {
+                "session_summary": "React useEffect dependency array 卡住",
+                "current_focus": "React useEffect dependency array 卡住",
+                "current_focus_conversation_id": "conv-react",
+                "recent_learning_points": [{"text": "cleanup function 何時執行"}],
+            },
+        )
+
+        import backend.gum_integration as gi
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot(
+                "default_user",
+                conversation_id="conv-react",
+                include_cross_conversation_focus=False,
+            )
+
+        assert "React useEffect" in result
+        assert "dependency array" in result
+        assert "cleanup function" in result
+
+    @pytest.mark.asyncio
     async def test_snapshot_excludes_ui_behavior_signals(self, memory_store):
         """UI telemetry belongs to behavior_signals and must stay out of the LLM prompt."""
         await memory_store.append_behavior_signal("default_user", "scroll", {"duration_seconds": 3.0})

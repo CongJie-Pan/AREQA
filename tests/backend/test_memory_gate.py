@@ -63,6 +63,15 @@ def test_classify_user_message_as_current_focus():
     assert decision.should_cold_store is False
 
 
+def test_classify_low_information_greeting_does_not_enter_prompt_memory():
+    decision = classify_user_message("你好")
+
+    assert decision.category == "smalltalk"
+    assert decision.should_prompt is False
+    assert decision.should_cold_store is False
+    assert decision.proposition == ""
+
+
 def test_classify_explicit_memory_request():
     decision = classify_user_message("請你記住我昨天文言文卡很久")
 
@@ -119,11 +128,23 @@ async def test_apply_user_message_gate_stores_explicit_memory():
 async def test_apply_user_message_gate_updates_current_focus_only():
     store = FakeStore()
 
-    decision = await apply_user_message_gate(store, "u1", "這段判詞是什麼意思")
+    decision = await apply_user_message_gate(store, "u1", "這段判詞是什麼意思", conversation_id="conv-a")
 
     assert decision.category == "current_focus"
     assert store.profile_ops == []
-    assert store.working_updates == [("u1", {"current_focus": "這段判詞是什麼意思"})]
+    assert store.working_updates == [
+        ("u1", {"current_focus": "這段判詞是什麼意思", "current_focus_conversation_id": "conv-a"})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_apply_user_message_gate_does_not_store_greeting_as_current_focus():
+    store = FakeStore()
+
+    decision = await apply_user_message_gate(store, "u1", "你好", conversation_id="conv-b")
+
+    assert decision.category == "smalltalk"
+    assert store.working_updates == []
 
 
 @pytest.mark.asyncio

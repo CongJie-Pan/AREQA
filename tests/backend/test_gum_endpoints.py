@@ -65,6 +65,18 @@ def test_delete_memory_endpoint():
         mock_get_gum.assert_called_once_with("default_user")
         mock_gum_instance.update_status.assert_called_once_with(123, "deleted")
 
+
+def test_clear_working_memory_endpoint():
+    mock_store = AsyncMock()
+
+    with patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.delete("/api/v1/memory/working")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "success", "cleared": "working_memory"}
+    mock_store.clear_working_memory.assert_awaited_once_with("default_user")
+
+
 def test_edit_memory_endpoint():
     with patch("gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_gum_instance = AsyncMock()

@@ -33,6 +33,18 @@ EXPLICIT_MEMORY_PATTERNS = [
 ]
 
 ROLEPLAY_KEYWORDS = ("扮演", "假扮", "飾演", "角色扮演")
+LOW_INFORMATION_GREETINGS = {
+    "你好",
+    "嗨",
+    "哈囉",
+    "hello",
+    "hi",
+    "hey",
+    "在嗎",
+    "早安",
+    "午安",
+    "晚安",
+}
 
 
 def _clean_text(value: str) -> str:
@@ -62,6 +74,18 @@ def classify_user_message(message: str) -> MemoryGateDecision:
             ttl_seconds=0,
             proposition="",
             reason="empty_message",
+        )
+
+    normalized = text.lower().strip("。！？!?，,～~ ")
+    if normalized in LOW_INFORMATION_GREETINGS:
+        return MemoryGateDecision(
+            category="smalltalk",
+            should_prompt=False,
+            should_cold_store=False,
+            ttl_seconds=0,
+            proposition="",
+            reason="low_information_greeting",
+            weight=0.0,
         )
 
     explicit_fact = _extract_explicit_fact(text)
@@ -142,7 +166,7 @@ def classify_reflection_insight(insight: str) -> MemoryGateDecision:
     )
 
 
-async def apply_user_message_gate(store: Any, user_id: str, message: str) -> MemoryGateDecision:
+async def apply_user_message_gate(store: Any, user_id: str, message: str, conversation_id: str = "") -> MemoryGateDecision:
     decision = classify_user_message(message)
     if not store or not decision.proposition:
         return decision
@@ -160,7 +184,10 @@ async def apply_user_message_gate(store: Any, user_id: str, message: str) -> Mem
                 decay=2.0,
             )
     elif decision.should_prompt:
-        await store.update_working_memory(user_id, {"current_focus": decision.proposition})
+        updates = {"current_focus": decision.proposition}
+        if conversation_id:
+            updates["current_focus_conversation_id"] = conversation_id
+        await store.update_working_memory(user_id, updates)
     return decision
 
 

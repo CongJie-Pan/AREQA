@@ -591,7 +591,12 @@ class ObservationQueueWorker:
                 print(f"Error in ObservationQueueWorker: {e}")
                 await asyncio.sleep(1)
 
-async def get_hot_memory_snapshot(user_id: str = "default_user") -> str:
+async def get_hot_memory_snapshot(
+    user_id: str = "default_user",
+    *,
+    conversation_id: str = "",
+    include_cross_conversation_focus: bool = True,
+) -> str:
     from memory_store import get_global_store
     import json
     store = get_global_store()
@@ -613,9 +618,17 @@ async def get_hot_memory_snapshot(user_id: str = "default_user") -> str:
 
     if working_memory:
         focus = working_memory.get("current_focus")
+        focus_conversation_id = working_memory.get("current_focus_conversation_id")
         session_summary = working_memory.get("session_summary")
         explicit_memories = working_memory.get("explicit_memories") or []
         recent_points = working_memory.get("recent_learning_points") or []
+        if not include_cross_conversation_focus and conversation_id:
+            is_same_conversation = bool(focus_conversation_id and focus_conversation_id == conversation_id)
+            if not is_same_conversation:
+                focus = ""
+                session_summary = ""
+                explicit_memories = []
+                recent_points = []
 
         working_parts = []
         if session_summary:

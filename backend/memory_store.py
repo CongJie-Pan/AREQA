@@ -48,6 +48,7 @@ class MemoryStore:
         return {
             "session_summary": "",
             "current_focus": "",
+            "current_focus_conversation_id": "",
             "recent_learning_points": [],
             "explicit_memories": [],
             "updated_at": None,
@@ -57,6 +58,7 @@ class MemoryStore:
         allowed_keys = {
             "session_summary",
             "current_focus",
+            "current_focus_conversation_id",
             "recent_learning_points",
             "explicit_memories",
         }
@@ -67,6 +69,10 @@ class MemoryStore:
         memory["updated_at"] = datetime.now(timezone.utc).isoformat()
         await self.redis.set(f"areqa:working_memory:{user_id}", json.dumps(memory, ensure_ascii=False))
         logger.info(f"[MemoryStore] Updated working memory for user {user_id}: {sorted(updates.keys())}")
+
+    async def clear_working_memory(self, user_id: str):
+        await self.redis.delete(f"areqa:working_memory:{user_id}")
+        logger.info(f"[MemoryStore] Cleared working memory for user {user_id}.")
 
     async def append_learning_observation(self, user_id: str, text: str, *, confidence: float = 8.0, decay: float = 5.0):
         text = (text or "").strip()
