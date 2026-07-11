@@ -39,6 +39,7 @@ describe('ProactiveManager', () => {
   const mockNotificationInfo = vi.fn();
   const mockNotificationDestroy = vi.fn();
   let registeredAlertCallback: ((content: string) => void) | null = null;
+  let registeredNewMailCallback: (() => void) | null = null;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -58,8 +59,10 @@ describe('ProactiveManager', () => {
 
     // Capture the callback passed to the hook
     registeredAlertCallback = null;
-    (hooks.useProactiveWebSocket as any).mockImplementation((callback: any) => {
+    registeredNewMailCallback = null;
+    (hooks.useProactiveWebSocket as any).mockImplementation((callback: any, onNewMail: any) => {
       registeredAlertCallback = callback;
+      registeredNewMailCallback = onNewMail;
     });
   });
 
@@ -72,7 +75,7 @@ describe('ProactiveManager', () => {
     expect(mockNotificationInfo).not.toHaveBeenCalled();
   });
 
-  it('should show notification when websocket triggers alert', async () => {
+  it('should ignore legacy websocket alerts because care now arrives by mailbox', async () => {
     render(<ProactiveManager />);
 
     expect(registeredAlertCallback).toBeTruthy();
@@ -85,12 +88,7 @@ describe('ProactiveManager', () => {
       }
     });
 
-    expect(mockNotificationInfo).toHaveBeenCalled();
-
-    const callArgs = mockNotificationInfo.mock.calls[0][0];
-    expect(callArgs.message).toBe('AREQA');
-    // callArgs.description is the QuickReplyPanel element
-    expect(callArgs.description.props.content).toBe(ALERT_CONTENT);
+    expect(mockNotificationInfo).not.toHaveBeenCalled();
   });
 
   it('should log scroll action with throttling', async () => {
@@ -140,33 +138,8 @@ describe('ProactiveManager', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('should trigger handleReject when AutoRejectButton triggers onReject', async () => {
-    (global.fetch as any).mockResolvedValue({
-      json: async () => ({ status: 'ok' }),
-    });
-
+  it('should register a mailbox refresh callback for new-mail events', async () => {
     render(<ProactiveManager />);
-
-    act(() => {
-      if (registeredAlertCallback) {
-        registeredAlertCallback('Test message');
-      }
-    });
-
-    const callArgs = mockNotificationInfo.mock.calls[0][0];
-    // btn is just a span now, the logic is in description which is QuickReplyPanel
-    const quickReplyPanel = callArgs.description;
-    
-    await act(async () => {
-      quickReplyPanel.props.onReject();
-    });
-
-    expect(mockNotificationDestroy).toHaveBeenCalled();
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/v1/log_action',
-      expect.objectContaining({
-        body: expect.stringContaining('"action_type":"compeer_rejected"')
-      })
-    );
+    expect(registeredNewMailCallback).toBeTypeOf('function');
   });
 });

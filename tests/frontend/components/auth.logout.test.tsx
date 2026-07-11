@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { UserAuthUI } from '@/components/Auth';
 import { supabase } from '@/lib/supabase';
@@ -100,7 +100,9 @@ describe('UserAuthUI Component', () => {
     const mockSession = { user: { id: 'user_123', user_metadata: { username: 'testuser' } } };
     
     // @ts-ignore
-    supabase._triggerAuthStateChange('SIGNED_IN', mockSession);
+    await act(async () => {
+      supabase._triggerAuthStateChange('SIGNED_IN', mockSession);
+    });
 
     // After signed in, it should display username
     await waitFor(() => {

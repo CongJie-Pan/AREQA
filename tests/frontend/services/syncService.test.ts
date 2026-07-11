@@ -85,49 +85,60 @@ describe('syncService - pullFromCloud', () => {
   });
 
   it('should save data to Dexie and reload if cloud has data', async () => {
-    mockSupabaseResponse = {
-      data: [{
-        id: 'conv_1',
-        user_id: 'user_123',
-        title: 'Test',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }],
-      error: null
-    };
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: TimerHandler, _delay?: number, ...args: unknown[]) => {
+      if (typeof callback === 'function') {
+        callback(...args);
+      }
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
 
-    mockSupabaseMsgResponse = {
-      data: [{
-        id: 'msg_1',
-        user_id: 'user_123',
-        conversation_id: 'conv_1',
-        role: 'user',
-        content: 'Hi',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'msg_2',
-        user_id: 'user_123',
-        conversation_id: 'conv_1',
-        role: 'assistant',
-        content: 'Hello',
-        created_at: new Date().toISOString()
-      }],
-      error: null
-    };
+    try {
+      mockSupabaseResponse = {
+        data: [{
+          id: 'conv_1',
+          user_id: 'user_123',
+          title: 'Test',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }],
+        error: null
+      };
 
-    await syncService.pullFromCloud();
+      mockSupabaseMsgResponse = {
+        data: [{
+          id: 'msg_1',
+          user_id: 'user_123',
+          conversation_id: 'conv_1',
+          role: 'user',
+          content: 'Hi',
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 'msg_2',
+          user_id: 'user_123',
+          conversation_id: 'conv_1',
+          role: 'assistant',
+          content: 'Hello',
+          created_at: new Date().toISOString()
+        }],
+        error: null
+      };
 
-    expect(mockReload).toHaveBeenCalledOnce();
-    
-    const convs = await db.conversations.toArray();
-    expect(convs).toHaveLength(1);
-    expect(convs[0].id).toBe('conv_1');
-    // Ensure messageCount is correctly computed
-    expect(convs[0].messageCount).toBe(2);
+      await syncService.pullFromCloud();
 
-    const msgs = await db.messages.toArray();
-    expect(msgs).toHaveLength(2);
+      expect(mockReload).toHaveBeenCalledOnce();
+
+      const convs = await db.conversations.toArray();
+      expect(convs).toHaveLength(1);
+      expect(convs[0].id).toBe('conv_1');
+      // Ensure messageCount is correctly computed
+      expect(convs[0].messageCount).toBe(2);
+
+      const msgs = await db.messages.toArray();
+      expect(msgs).toHaveLength(2);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
   });
 
   it('should log error and not reload on network failure', async () => {

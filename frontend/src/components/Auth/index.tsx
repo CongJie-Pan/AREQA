@@ -19,7 +19,11 @@ export function UserAuthUI() {
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
 
   useEffect(() => {
+    let hasReceivedAuthEvent = false;
+    let isMounted = true;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted || hasReceivedAuthEvent) return;
       setUser(session?.user ?? null);
       if (session?.user) {
         syncService.pullFromCloud(session.user.id);
@@ -27,6 +31,8 @@ export function UserAuthUI() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      hasReceivedAuthEvent = true;
+      if (!isMounted) return;
       setUser(session?.user ?? null);
       if (session?.user) {
         setIsModalOpen(false);
@@ -36,7 +42,10 @@ export function UserAuthUI() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleLogout = async () => {

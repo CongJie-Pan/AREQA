@@ -40,6 +40,9 @@ export default defineConfig({
       'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
       '@testing-library/react': path.resolve(__dirname, './node_modules/@testing-library/react'),
       '@testing-library/jest-dom': path.resolve(__dirname, './node_modules/@testing-library/jest-dom'),
+      'fake-indexeddb': path.resolve(__dirname, './node_modules/fake-indexeddb'),
+      '@supabase/auth-ui-react': path.resolve(__dirname, '../tests/frontend/mocks/supabaseAuthUI.tsx'),
+      '@supabase/auth-ui-shared': path.resolve(__dirname, '../tests/frontend/mocks/supabaseAuthUIShared.ts'),
     },
   },
 });

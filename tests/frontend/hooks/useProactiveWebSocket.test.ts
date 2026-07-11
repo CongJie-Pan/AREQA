@@ -1,8 +1,12 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest';
 import { useProactiveWebSocket } from '../../../frontend/src/hooks/useProactiveWebSocket';
 
-const flushPromises = () => new Promise(resolve => process.nextTick(resolve));
+const flushPromises = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
 
 describe('useProactiveWebSocket', () => {
   let mockWebSocket: any;
@@ -11,6 +15,10 @@ describe('useProactiveWebSocket', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     webSocketInstances = [];
+    localStorage.setItem(
+      'test-auth-token',
+      JSON.stringify({ access_token: 'test-access-token', user: { id: 'test-user' } })
+    );
     
     const OriginalWebSocket = global.WebSocket;
     mockWebSocket = function(url: string) {
@@ -39,6 +47,7 @@ describe('useProactiveWebSocket', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    localStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -109,24 +118,20 @@ describe('useProactiveWebSocket', () => {
     if (ws1.onclose) ws1.onclose();
     
     await flushPromises();
-    vi.advanceTimersByTime(999);
-    await flushPromises();
+    await act(async () => vi.advanceTimersByTimeAsync(999));
     expect(webSocketInstances.length).toBe(1); 
     
-    vi.advanceTimersByTime(1);
-    await flushPromises();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(webSocketInstances.length).toBe(2); 
     
     const ws2 = webSocketInstances[1];
     if (ws2.onclose) ws2.onclose();
     
     await flushPromises();
-    vi.advanceTimersByTime(1999);
-    await flushPromises();
+    await act(async () => vi.advanceTimersByTimeAsync(1999));
     expect(webSocketInstances.length).toBe(2);
     
-    vi.advanceTimersByTime(1);
-    await flushPromises();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(webSocketInstances.length).toBe(3);
   });
 
@@ -139,8 +144,7 @@ describe('useProactiveWebSocket', () => {
     
     if (ws1.onclose) ws1.onclose();
     await flushPromises();
-    vi.advanceTimersByTime(1000);
-    await flushPromises();
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
     
     const ws2 = webSocketInstances[1];
     if (ws2.onopen) ws2.onopen();
@@ -148,8 +152,7 @@ describe('useProactiveWebSocket', () => {
     if (ws2.onclose) ws2.onclose();
     await flushPromises();
     
-    vi.advanceTimersByTime(1000);
-    await flushPromises();
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(webSocketInstances.length).toBe(3);
   });
 });
