@@ -198,8 +198,20 @@ async def daily_scheduler_loop():
                     
                     if last_reflection != today_str:
                         if now.hour >= 23 or last_reflection is None:
-                            await run_reflection_and_initialization(user_id)
-                            await store.update_hot_memory_async(user_id, "last_reflection_date", today_str)
+                            from gum_integration import run_reflection
+                            insights = await run_reflection(user_id)
+                            await store.update_hot_memory_async(
+                                user_id,
+                                "last_reflection_attempt_at",
+                                now.isoformat(),
+                            )
+                            if insights:
+                                await initialize_daily_schedule(user_id, insights)
+                                await store.update_hot_memory_async(
+                                    user_id,
+                                    "last_reflection_date",
+                                    today_str,
+                                )
             
             await asyncio.sleep(60)
         except Exception as e:

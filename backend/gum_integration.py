@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import asyncio
+import inspect
 import os
 from datetime import datetime
 import json
@@ -39,6 +40,7 @@ text_observers = {}
 importance_sums = {}
 interaction_counts = {}
 last_interaction_time = None
+reflection_locks: dict[str, asyncio.Lock] = {}
 obs_worker = None
 _gum_init_locks = {}
 
@@ -178,15 +180,23 @@ async def push_text_to_gum(gum_instance, text_observer, text: str, user_id: str)
         return
     await text_observer.push_text(text, user_id=user_id)
 
-async def run_reflection(user_id: str) -> list[str]:
+async def run_reflection(user_id: str, conversation_id: str = "") -> list[str]:
+    """Serialize reflection and flush operations for one user."""
+    lock = reflection_locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        return await _run_reflection_unlocked(user_id, conversation_id)
+
+
+async def _run_reflection_unlocked(user_id: str, conversation_id: str = "") -> list[str]:
     global importance_sums, interaction_counts
     gum_instance, text_observer = await get_gum_instance(user_id)
     if not gum_instance:
         return []
     
-    importance_sums[user_id] = 0
-    interaction_counts[user_id] = 0
     try:
+        flush_pending = getattr(gum_instance, "flush_pending_observations", None)
+        if flush_pending and inspect.iscoroutinefunction(flush_pending):
+            await flush_pending()
         obs = await gum_instance.recent_observations(limit=20, user_id=user_id)
         if not obs:
             return []
@@ -215,7 +225,12 @@ async def run_reflection(user_id: str) -> list[str]:
         for insight in insights:
             print(f"  - {insight}")
             if store:
-                await apply_reflection_gate(store, user_id, insight)
+                await apply_reflection_gate(
+                    store,
+                    user_id,
+                    insight,
+                    conversation_id=conversation_id,
+                )
             if text_observer:
                 await push_text_to_gum(gum_instance, text_observer, f"[REFLECTION] {insight}", user_id)
                 
@@ -230,6 +245,13 @@ async def run_reflection(user_id: str) -> list[str]:
     except Exception as e:
         print(f"Error in reflection: {e}")
         return []
+
+
+async def get_pending_observation_count(user_id: str) -> int:
+    """Return the durable GUM queue size for diagnostics."""
+    gum_instance, _ = await get_gum_instance(user_id)
+    batcher = getattr(gum_instance, "batcher", None) if gum_instance else None
+    return int(batcher.size()) if batcher and hasattr(batcher, "size") else 0
 
 async def query_memory_for_context(user_query: str, limit: int = 8, user_id: str = "default_user") -> str:
     """
@@ -279,7 +301,13 @@ async def query_memory_for_context(user_query: str, limit: int = 8, user_id: str
 
 obs_worker = None
 
-async def batch_process_observations(user_id: str, items: list[str], *, sync_to_working_memory: bool = True):
+async def batch_process_observations(
+    user_id: str,
+    items: list[str],
+    *,
+    sync_to_working_memory: bool = True,
+    conversation_id: str = "",
+):
     global importance_sums, interaction_counts, last_interaction_time
     last_interaction_time = datetime.now()
     
@@ -374,6 +402,7 @@ async def batch_process_observations(user_id: str, items: list[str], *, sync_to_
                 gate.proposition,
                 confidence=8.0,
                 decay=float(final_decay),
+                conversation_id=conversation_id,
             )
     except Exception as e:
         # Expected if budget exceeded, handled below
@@ -474,18 +503,39 @@ async def run_compaction(user_id: str):
         await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
         print("[Compaction] Finished.")
 
-async def push_observation(user_id: str, text: str, *, sync_to_working_memory: bool = True):
+async def push_observation(
+    user_id: str,
+    text: str,
+    *,
+    sync_to_working_memory: bool = True,
+    conversation_id: str = "",
+):
     gum_instance, _ = await get_gum_instance(user_id)
     if not gum_instance:
         return
     if obs_worker:
-        await obs_worker.push(user_id, text)
+        await obs_worker.push(
+            user_id,
+            text,
+            sync_to_working_memory=sync_to_working_memory,
+            conversation_id=conversation_id,
+        )
     else:
-        await batch_process_observations(user_id, [text], sync_to_working_memory=sync_to_working_memory)
+        await batch_process_observations(
+            user_id,
+            [text],
+            sync_to_working_memory=sync_to_working_memory,
+            conversation_id=conversation_id,
+        )
 
 
-async def push_reflection_observation(user_id: str, text: str):
-    return await push_observation(user_id, text, sync_to_working_memory=False)
+async def push_reflection_observation(user_id: str, text: str, *, conversation_id: str = ""):
+    return await push_observation(
+        user_id,
+        text,
+        sync_to_working_memory=False,
+        conversation_id=conversation_id,
+    )
 
 async def run_reflection_loop():
     """Background task to run reflection if user is idle for 30 minutes."""
@@ -551,19 +601,36 @@ class ObservationQueueWorker:
                 pass
             self._task = None
 
-    async def push(self, user_id: str, observation: str):
-        await self.queue.put((user_id, observation))
+    async def push(
+        self,
+        user_id: str,
+        observation: str,
+        *,
+        sync_to_working_memory: bool = True,
+        conversation_id: str = "",
+    ):
+        await self.queue.put({
+            "user_id": user_id,
+            "observation": observation,
+            "sync_to_working_memory": sync_to_working_memory,
+            "conversation_id": conversation_id,
+        })
 
     async def _worker(self):
         from collections import defaultdict
         while True:
             try:
                 # Wait for at least one item
-                user_id, obs = await self.queue.get()
+                first = await self.queue.get()
                 
                 # We will process per-user. Let's collect items per user.
-                items_by_user = defaultdict(list)
-                items_by_user[user_id].append(obs)
+                items_by_route = defaultdict(list)
+                first_key = (
+                    first["user_id"],
+                    first["sync_to_working_memory"],
+                    first["conversation_id"],
+                )
+                items_by_route[first_key].append(first["observation"])
                 
                 # Debounce window
                 await asyncio.sleep(self.debounce_seconds)
@@ -571,18 +638,28 @@ class ObservationQueueWorker:
                 # Collect any other items that arrived during the window
                 while not self.queue.empty():
                     try:
-                        uid, o = self.queue.get_nowait()
-                        items_by_user[uid].append(o)
+                        item = self.queue.get_nowait()
+                        route_key = (
+                            item["user_id"],
+                            item["sync_to_working_memory"],
+                            item["conversation_id"],
+                        )
+                        items_by_route[route_key].append(item["observation"])
                     except asyncio.QueueEmpty:
                         break
                         
                 # Process the batch
-                for uid, items in items_by_user.items():
+                for (uid, sync_to_working, conversation_id), items in items_by_route.items():
                     if items:
-                        await self.process_callback(uid, items)
+                        await self.process_callback(
+                            uid,
+                            items,
+                            sync_to_working_memory=sync_to_working,
+                            conversation_id=conversation_id,
+                        )
                     
                 # Mark as done
-                total_items = sum(len(v) for v in items_by_user.values())
+                total_items = sum(len(v) for v in items_by_route.values())
                 for _ in range(total_items):
                     self.queue.task_done()
             except asyncio.CancelledError:
@@ -620,15 +697,23 @@ async def get_hot_memory_snapshot(
         focus = working_memory.get("current_focus")
         focus_conversation_id = working_memory.get("current_focus_conversation_id")
         session_summary = working_memory.get("session_summary")
+        summary_conversation_id = working_memory.get("session_summary_conversation_id")
         explicit_memories = working_memory.get("explicit_memories") or []
         recent_points = working_memory.get("recent_learning_points") or []
         if not include_cross_conversation_focus and conversation_id:
             is_same_conversation = bool(focus_conversation_id and focus_conversation_id == conversation_id)
             if not is_same_conversation:
                 focus = ""
-                session_summary = ""
                 explicit_memories = []
                 recent_points = []
+            if summary_conversation_id != conversation_id:
+                session_summary = ""
+
+        if not include_cross_conversation_focus and conversation_id:
+            recent_points = [
+                point for point in recent_points
+                if isinstance(point, dict) and point.get("conversation_id") == conversation_id
+            ]
 
         working_parts = []
         if session_summary:

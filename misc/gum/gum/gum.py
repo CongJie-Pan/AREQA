@@ -234,6 +234,19 @@ class gum:
                 self.logger.info(f"Processing batch of {len(batch)} observations from observers: {', '.join(observer_names)}")
                 await self._process_batch(batch)
 
+    async def flush_pending_observations(self) -> int:
+        """Process a partial durable batch at an explicit session boundary."""
+        async with self._batch_processing_lock:
+            batch = self.batcher.pop_batch()
+            if not batch:
+                return 0
+            try:
+                await self._process_batch(batch)
+            except Exception:
+                self.batcher.restore_batch(batch)
+                raise
+            return len(batch)
+
     async def _process_batch(self, batched_observations):
         """Process a batch of observations together to reduce API calls."""
         try:

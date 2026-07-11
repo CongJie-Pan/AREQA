@@ -39,10 +39,12 @@ let currentAbortController: AbortController | null = null;
  */
 function prepareMessagesForAPI(
   messages: DisplayMessage[],
-  excludeMessageId?: string
+  excludeMessageId?: string,
+  conversationId?: string
 ): ChatMessage[] {
   const mappedMessages = messages
     .filter((msg) => !excludeMessageId || msg.id !== excludeMessageId)
+    .filter((msg) => !conversationId || msg.conversationId === conversationId)
     .filter((msg) => !(msg.role === 'assistant' && msg.content.trim() === ''))
     .map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
@@ -163,7 +165,11 @@ export async function sendMessage(
   // Build messages array for API using shared filter function
   // We use the messages FROM THE STORE to ensure consistency
   const latestState = useChatStore.getState();
-  let messages = prepareMessagesForAPI(latestState.messages, assistantMessageId);
+  let messages = prepareMessagesForAPI(
+    latestState.messages,
+    assistantMessageId,
+    activeConversationId
+  );
 
   // Fallback: If for some reason the store state isn't reflected yet (async lag),
   // manually add the current user message to ensure the API doesn't fail.
@@ -591,7 +597,11 @@ export async function regenerateMessage(messageId: string): Promise<void> {
 
   // Build messages array for API using shared filter function
   const latestState = useChatStore.getState();
-  const apiMessages = prepareMessagesForAPI(latestState.messages, assistantMessageId);
+  const apiMessages = prepareMessagesForAPI(
+    latestState.messages,
+    assistantMessageId,
+    activeConversationId
+  );
 
   // Safety check: Don't send empty messages to API
   if (apiMessages.length === 0) {
@@ -778,7 +788,11 @@ export async function editUserMessage(
   // Use two-step approach to guarantee edited message is always included
 
   // Step 1: Build history messages (before the edited message) using shared filter function
-  const historyMessages = prepareMessagesForAPI(messages.slice(0, messageIndex));
+  const historyMessages = prepareMessagesForAPI(
+    messages.slice(0, messageIndex),
+    undefined,
+    activeConversationId
+  );
 
   // Step 2: Always include the edited user message at the end
   const apiMessages: ChatMessage[] = [

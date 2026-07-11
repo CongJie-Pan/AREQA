@@ -95,6 +95,13 @@ class ObservationBatcher:
             self._batch_ready_event.clear()
         
         return batch
+
+    def restore_batch(self, batch: List[Dict[str, Any]]) -> None:
+        """Return a failed batch to durable storage so observations are not lost."""
+        for observation in batch:
+            self._queue.put(observation)
+        if self.should_process_batch():
+            self._batch_ready_event.set()
     
     async def wait_for_batch_ready(self):
         """Wait for a batch to be ready for processing."""

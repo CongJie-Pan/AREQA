@@ -297,6 +297,8 @@ async def startup_event():
     app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
     app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
     app.state.delayed_mail_worker = asyncio.create_task(delayed_mail_worker())
+    from gum_integration import run_reflection_loop
+    app.state.reflection_task = asyncio.create_task(run_reflection_loop())
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -309,6 +311,8 @@ async def shutdown_event():
         app.state.daily_task.cancel()
     if hasattr(app.state, 'delayed_mail_worker'):
         app.state.delayed_mail_worker.cancel()
+    if hasattr(app.state, 'reflection_task'):
+        app.state.reflection_task.cancel()
 
 _local_summary_cache = {}
 
@@ -430,7 +434,7 @@ async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
 
 @app.get("/api/v1/memory/debug")
 async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)):
-    from gum_integration import get_hot_memory_snapshot
+    from gum_integration import get_hot_memory_snapshot, get_pending_observation_count
     from memory_store import get_global_store
 
     store = get_global_store()
@@ -453,6 +457,7 @@ async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)
         "behavior_signals": behavior_signals,
         "cold_candidates": cold_candidates,
         "prompt_snapshot": prompt_snapshot,
+        "pending_observation_count": await get_pending_observation_count(current_user_id),
     }
 
 from mailbox_store import get_mailbox_store
@@ -516,6 +521,21 @@ async def clear_working_memory_endpoint(current_user_id: str = Depends(get_curre
 
     await store.clear_working_memory(current_user_id)
     return {"status": "success", "cleared": "working_memory"}
+
+
+@app.post("/api/v1/memory/flush")
+async def flush_memory_endpoint(current_user_id: str = Depends(get_current_user)):
+    """Flush a partial observation batch and reflect it into durable propositions."""
+    from gum_integration import get_pending_observation_count, run_reflection
+
+    pending_before = await get_pending_observation_count(current_user_id)
+    insights = await run_reflection(current_user_id)
+    pending_after = await get_pending_observation_count(current_user_id)
+    return {
+        "status": "success",
+        "processed_observations": max(0, pending_before - pending_after),
+        "generated_insights": len(insights),
+    }
 
 @app.delete("/api/v1/memory/{mem_id}")
 async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get_current_user)):

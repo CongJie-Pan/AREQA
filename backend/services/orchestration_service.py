@@ -188,7 +188,11 @@ class OrchestrationService:
                     print(f"[MemoryStore] Failed to apply user-message memory gate: {e}")
                 try:
                     from gum_integration import push_reflection_observation
-                    asyncio.create_task(push_reflection_observation(user_id, f"User asked: {last_user_msg}"))
+                    asyncio.create_task(push_reflection_observation(
+                        user_id,
+                        f"User asked: {last_user_msg}",
+                        conversation_id=conversation_id,
+                    ))
                 except Exception as e:
                     print(f"[MemoryStore] Failed to queue reflection observation: {e}")
                 if _is_stop_roleplay_request(last_user_msg):
@@ -578,9 +582,17 @@ class OrchestrationService:
                         final_system_prompt += f"\n\n【特殊語境：明確角色扮演】\n注意：使用者已在本對話明確要求你扮演「{chat_avatar}」。請只在這個 conversation 內以第一人稱與用戶對話，語氣符合{chat_avatar}的歷史定位、思維模式與經典口吻。若使用者要求停止扮演，下一輪必須回到 AREQA。"
                 
             from config import settings
-            from memory_gate import classify_user_message
+            from memory_gate import (
+                classify_user_message,
+                is_sensitive_context_query,
+                requests_cross_conversation_recall,
+            )
             should_retrieve_long_term_memory = classify_user_message(last_user_msg).should_prompt
-            if should_retrieve_long_term_memory:
+            suppress_sensitive_recall = (
+                is_sensitive_context_query(last_user_msg)
+                and not requests_cross_conversation_recall(last_user_msg)
+            )
+            if should_retrieve_long_term_memory and not suppress_sensitive_recall:
                 cold_memory_ctx = await query_cold_memory_for_context(user_id, last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
                 if cold_memory_ctx:
                     final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"

@@ -46,6 +46,12 @@ LOW_INFORMATION_GREETINGS = {
     "晚安",
 }
 
+SENSITIVE_CONTEXT_KEYWORDS = (
+    "血壓", "心率", "脈搏", "胸痛", "呼吸", "頭暈", "藥物", "用藥", "醫生", "醫師",
+    "健康", "生病", "焦慮", "憂鬱", "自殺", "心理", "家庭", "父親", "母親", "財務", "債務",
+)
+EXPLICIT_RECALL_KEYWORDS = ("延續", "接續", "之前", "上次", "昨天", "前一個對話", "結合先前")
+
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())
@@ -109,6 +115,18 @@ def classify_user_message(message: str) -> MemoryGateDecision:
         reason="ordinary_user_message_for_current_turn",
         weight=1.0,
     )
+
+
+def is_sensitive_context_query(message: str) -> bool:
+    """Return whether cross-conversation episodic recall should be conservative."""
+    text = _clean_text(message).lower()
+    return any(keyword in text for keyword in SENSITIVE_CONTEXT_KEYWORDS)
+
+
+def requests_cross_conversation_recall(message: str) -> bool:
+    """Return whether the user explicitly asks to reuse earlier context."""
+    text = _clean_text(message).lower()
+    return any(keyword in text for keyword in EXPLICIT_RECALL_KEYWORDS)
 
 
 def classify_action(action_type: str, context: Any) -> MemoryGateDecision:
@@ -198,10 +216,22 @@ async def apply_action_gate(store: Any, user_id: str, action_type: str, context:
     return decision
 
 
-async def apply_reflection_gate(store: Any, user_id: str, insight: str) -> MemoryGateDecision:
+async def apply_reflection_gate(
+    store: Any,
+    user_id: str,
+    insight: str,
+    *,
+    conversation_id: str = "",
+) -> MemoryGateDecision:
     decision = classify_reflection_insight(insight)
     if store and decision.should_prompt:
-        await store.append_learning_observation(user_id, decision.proposition, confidence=9.0, decay=3.0)
+        await store.append_learning_observation(
+            user_id,
+            decision.proposition,
+            confidence=9.0,
+            decay=3.0,
+            conversation_id=conversation_id,
+        )
         if decision.should_cold_store and hasattr(store, "append_cold_candidate"):
             await store.append_cold_candidate(
                 user_id,
@@ -218,5 +248,8 @@ async def apply_reflection_gate(store: Any, user_id: str, insight: str) -> Memor
             summary = f"{summary} / {decision.proposition}"
         else:
             summary = decision.proposition
-        await store.update_working_memory(user_id, {"session_summary": summary[-1200:]})
+        summary_update = {"session_summary": summary[-1200:]}
+        if conversation_id:
+            summary_update["session_summary_conversation_id"] = conversation_id
+        await store.update_working_memory(user_id, summary_update)
     return decision

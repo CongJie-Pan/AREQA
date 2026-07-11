@@ -393,8 +393,9 @@ flowchart TD
 
 ### 3. 記憶管理系統 (GUM + MemoryStore)
 
-- **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`working_memory.current_focus` 會綁定 `current_focus_conversation_id`，避免新對話繼承上一輪任務脈絡。
-- **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`，由 `cold_memory.py` 提供全文檢索 + pgvector 向量檢索。
+- **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`current_focus` 與每筆 `recent_learning_points` 都綁定 `conversation_id`；主聊天路徑只注入目前 conversation 的暫時脈絡，legacy unscoped points 不會進入新對話。
+- **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`。Observation 正常以 17 筆批次處理，閒置 reflection 或 `POST /api/v1/memory/flush` 也能處理未滿批次的 pending observations。
+- **敏感脈絡保護**: 健康、心理、家庭與財務類問題預設不自動檢索跨對話 episodic memory，避免弱相關舊內容主導目前回答；durable user profile 仍可供一般個人化使用。
 - **記憶壓縮 (STITCH)**: `compaction.py` 實作 GUM 衰減計算（Activation Score），定期將熱記憶歸檔並精煉為結構化長期記憶。
 - **ObservationQueueWorker**: 去抖動 (3s debounce) 批次處理觀察訊息，防止高頻寫入。
 - **低資訊問候短路**: `你好`、`hi`、`在嗎` 這類低資訊訊息會直接回固定寒暄，不會進入 long-term memory retrieval，也不會擴寫上一輪任務脈絡。
@@ -448,6 +449,8 @@ flowchart TD
 | `GET` | `/api/v1/retrieve` | RAG 純查詢 (Debug/Citation) |
 | `GET` | `/api/v1/memory` | 讀取長期記憶列表 |
 | `GET` | `/api/v1/memory/summary` | 記憶總結 (LLM 人物畫像) |
+| `GET` | `/api/v1/memory/debug` | 記憶分層與 pending observation 診斷 |
+| `POST` | `/api/v1/memory/flush` | 處理未滿批次的 observations 並執行 reflection |
 | `DELETE` | `/api/v1/memory` | 清除所有記憶 |
 | `DELETE` | `/api/v1/memory/working` | 只清除 working memory |
 | `DELETE` | `/api/v1/memory/{id}` | 刪除單筆記憶 |
@@ -556,3 +559,6 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   2. 新 conversation 只送 `你好`，確認回覆是固定寒暄，且不會帶出 README / React / 文言文脈絡
   3. 同一 conversation 再送 React/useEffect 類問題，確認可以正常延續同一主題
   4. 換新 conversation 再送 `你好`，確認不會繼承前一輪主題
+  5. 在 conversation A 談家庭、工作與跑步後，於 conversation B 詢問血壓，確認回答不會自行延續 A 的內容
+  6. 對測試帳號呼叫 `POST /api/v1/memory/flush`，再以 `GET /api/v1/memory` 確認低於 17 輪的有效對話也能形成長期 propositions
+  7. 以 `GET /api/v1/memory/debug` 檢查 `pending_observation_count` 是否在成功 flush 後下降

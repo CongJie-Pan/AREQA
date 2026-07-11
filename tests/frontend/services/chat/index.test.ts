@@ -154,8 +154,8 @@ describe('Chat Service', () => {
       // Arrange
       const TARGET_MSG_ID = 'msg-1';
       mockChatStore.messages = [
-        { id: 'user-1', role: 'user', content: 'hello' },
-        { id: TARGET_MSG_ID, role: 'assistant', content: 'AI reply' }
+        { id: 'user-1', role: 'user', content: 'hello', conversationId: 'test-conv-id' },
+        { id: TARGET_MSG_ID, role: 'assistant', content: 'AI reply', conversationId: 'test-conv-id' }
       ];
 
       vi.mocked(createChatStream).mockImplementation(async (msgs, callbacks) => {

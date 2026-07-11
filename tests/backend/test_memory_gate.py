@@ -35,8 +35,12 @@ class FakeStore:
     async def append_behavior_signal(self, user_id, action_type, context, weight=1.0):
         self.behavior_signals.append((user_id, action_type, context, weight))
 
-    async def append_learning_observation(self, user_id, text, confidence=8.0, decay=5.0):
-        self.learning_observations.append((user_id, text, confidence, decay))
+    async def append_learning_observation(
+        self, user_id, text, confidence=8.0, decay=5.0, conversation_id=""
+    ):
+        self.learning_observations.append(
+            (user_id, text, confidence, decay, conversation_id)
+        )
 
     async def get_working_memory(self, user_id):
         return dict(self.working_memory)
@@ -166,7 +170,7 @@ async def test_apply_reflection_gate_updates_session_summary():
     assert decision.category == "session_reflection"
     assert decision.should_cold_store is True
     assert store.learning_observations == [
-        ("u1", "學生昨天文言文卡很久，但願意反覆重讀。", 9.0, 3.0)
+        ("u1", "學生昨天文言文卡很久，但願意反覆重讀。", 9.0, 3.0, "")
     ]
     assert store.cold_candidates == [{
         "user_id": "u1",

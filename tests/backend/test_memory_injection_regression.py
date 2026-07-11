@@ -142,9 +142,13 @@ class TestGetHotMemorySnapshot:
             "default_user",
             {
                 "session_summary": "React useEffect dependency array 卡住",
+                "session_summary_conversation_id": "conv-react",
                 "current_focus": "React useEffect dependency array 卡住",
                 "current_focus_conversation_id": "conv-react",
-                "recent_learning_points": [{"text": "cleanup function 何時執行"}],
+                "recent_learning_points": [{
+                    "text": "cleanup function 何時執行",
+                    "conversation_id": "conv-react",
+                }],
             },
         )
 
@@ -159,6 +163,55 @@ class TestGetHotMemorySnapshot:
         assert "React useEffect" in result
         assert "dependency array" in result
         assert "cleanup function" in result
+
+    @pytest.mark.asyncio
+    async def test_snapshot_excludes_legacy_summary_after_focus_moves_to_new_conversation(
+        self, memory_store
+    ):
+        await memory_store.update_working_memory(
+            "default_user",
+            {
+                "session_summary": "家庭壓力與跑步回憶",
+                "current_focus": "血壓 118/77 正常嗎？",
+                "current_focus_conversation_id": "conv-health",
+            },
+        )
+
+        import backend.gum_integration as gi
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot(
+                "default_user",
+                conversation_id="conv-health",
+                include_cross_conversation_focus=False,
+            )
+
+        assert "血壓 118/77" in result
+        assert "家庭壓力" not in result
+
+    @pytest.mark.asyncio
+    async def test_snapshot_filters_individual_points_from_other_conversations(self, memory_store):
+        await memory_store.update_working_memory(
+            "default_user",
+            {
+                "current_focus": "血壓 118/77 正常嗎？",
+                "current_focus_conversation_id": "conv-health",
+                "recent_learning_points": [
+                    {"text": "家庭壓力與跑步", "conversation_id": "conv-diary"},
+                    {"text": "血壓量測", "conversation_id": "conv-health"},
+                ],
+            },
+        )
+
+        import backend.gum_integration as gi
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot(
+                "default_user",
+                conversation_id="conv-health",
+                include_cross_conversation_focus=False,
+            )
+
+        assert "血壓量測" in result
+        assert "家庭壓力" not in result
 
     @pytest.mark.asyncio
     async def test_snapshot_excludes_ui_behavior_signals(self, memory_store):

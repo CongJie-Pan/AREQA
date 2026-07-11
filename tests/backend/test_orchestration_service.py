@@ -99,6 +99,73 @@ async def test_prompt_assembly_keeps_long_term_memory_for_substantive_query(
 
 
 @pytest.mark.asyncio
+async def test_prompt_assembly_skips_cross_conversation_memory_for_health_query(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+
+    with patch(
+        "backend.services.orchestration_service.get_hot_memory_snapshot",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_cold_memory_for_context",
+        new_callable=AsyncMock,
+    ) as mock_cold, patch(
+        "backend.services.orchestration_service.query_memory_for_context",
+        new_callable=AsyncMock,
+    ) as mock_gum:
+        messages = await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="health-conv",
+            messages=[{"role": "user", "content": "血壓 118/77，脈搏 91 正常嗎？"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="血壓 118/77，脈搏 91 正常嗎？",
+        )
+
+    assert "<retrieved_memory>" not in messages[0]["content"]
+    mock_cold.assert_not_awaited()
+    mock_gum.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prompt_assembly_allows_sensitive_recall_when_user_explicitly_requests_it(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+
+    with patch(
+        "backend.services.orchestration_service.get_hot_memory_snapshot",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_cold_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="family context",
+    ) as mock_cold, patch(
+        "backend.services.orchestration_service.query_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="",
+    ) as mock_gum:
+        await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="health-conv",
+            messages=[{"role": "user", "content": "請結合昨天家庭壓力的情況回答"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="請結合昨天家庭壓力的情況回答",
+        )
+
+    mock_cold.assert_awaited_once()
+    mock_gum.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_execute_short_circuits_low_information_greeting_without_llm(
     mock_router, mock_rag, mock_suggestion, mock_client
 ):

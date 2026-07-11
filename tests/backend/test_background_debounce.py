@@ -30,7 +30,12 @@ async def test_debounce_multiple_pushes(worker, mock_processor):
     
     # Should only trigger processor once with all 3 items
     assert mock_processor.call_count == 1
-    mock_processor.assert_called_once_with("user1", ["obs1", "obs2", "obs3"])
+    mock_processor.assert_called_once_with(
+        "user1",
+        ["obs1", "obs2", "obs3"],
+        sync_to_working_memory=True,
+        conversation_id="",
+    )
 
 @pytest.mark.asyncio
 async def test_debounce_spaced_pushes(worker, mock_processor):
@@ -48,5 +53,44 @@ async def test_debounce_spaced_pushes(worker, mock_processor):
     
     # Should trigger processor twice
     assert mock_processor.call_count == 2
-    mock_processor.assert_any_call("user1", ["obs1"])
-    mock_processor.assert_any_call("user1", ["obs2"])
+    mock_processor.assert_any_call(
+        "user1", ["obs1"], sync_to_working_memory=True, conversation_id=""
+    )
+    mock_processor.assert_any_call(
+        "user1", ["obs2"], sync_to_working_memory=True, conversation_id=""
+    )
+
+
+@pytest.mark.asyncio
+async def test_debounce_preserves_routing_metadata(worker, mock_processor):
+    await worker.push(
+        "user1",
+        "private reflection",
+        sync_to_working_memory=False,
+        conversation_id="conversation-a",
+    )
+
+    await asyncio.sleep(0.2)
+
+    mock_processor.assert_awaited_once_with(
+        "user1",
+        ["private reflection"],
+        sync_to_working_memory=False,
+        conversation_id="conversation-a",
+    )
+
+
+@pytest.mark.asyncio
+async def test_debounce_does_not_merge_conversations(worker, mock_processor):
+    await worker.push("user1", "a", conversation_id="conversation-a")
+    await worker.push("user1", "b", conversation_id="conversation-b")
+
+    await asyncio.sleep(0.2)
+
+    assert mock_processor.await_count == 2
+    mock_processor.assert_any_await(
+        "user1", ["a"], sync_to_working_memory=True, conversation_id="conversation-a"
+    )
+    mock_processor.assert_any_await(
+        "user1", ["b"], sync_to_working_memory=True, conversation_id="conversation-b"
+    )

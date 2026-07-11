@@ -140,6 +140,7 @@ async def test_push_reflection_observation_uses_non_working_memory_path():
         "test_user",
         ["reflection text"],
         sync_to_working_memory=False,
+        conversation_id="",
     )
 
 @pytest.mark.asyncio
