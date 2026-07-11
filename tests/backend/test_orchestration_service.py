@@ -25,6 +25,79 @@ def mock_client():
     client = AsyncMock()
     return client
 
+
+@pytest.mark.asyncio
+async def test_prompt_assembly_skips_long_term_memory_for_low_information_greeting(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+
+    with patch(
+        "backend.services.orchestration_service.get_hot_memory_snapshot",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_cold_memory_for_context",
+        new_callable=AsyncMock,
+    ) as mock_cold, patch(
+        "backend.services.orchestration_service.query_memory_for_context",
+        new_callable=AsyncMock,
+    ) as mock_gum:
+        messages = await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="new-conv",
+            messages=[{"role": "user", "content": "你好"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="你好",
+        )
+
+    system_prompt = messages[0]["content"]
+    assert "<retrieved_memory>" not in system_prompt
+    assert "<memory>" not in system_prompt
+    mock_cold.assert_not_awaited()
+    mock_gum.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prompt_assembly_keeps_long_term_memory_for_substantive_query(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+
+    with patch(
+        "backend.services.orchestration_service.get_hot_memory_snapshot",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_cold_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="cold context",
+    ) as mock_cold, patch(
+        "backend.services.orchestration_service.query_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="<memory>gum context</memory>",
+    ) as mock_gum:
+        messages = await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="react-conv",
+            messages=[{"role": "user", "content": "React useEffect dependency array 是什麼？"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="React useEffect dependency array 是什麼？",
+        )
+
+    system_prompt = messages[0]["content"]
+    assert "<retrieved_memory>" in system_prompt
+    assert "<memory>gum context</memory>" in system_prompt
+    mock_cold.assert_awaited_once()
+    mock_gum.assert_awaited_once()
+
+
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Router feature bypassed by user request")
 async def test_orchestration_routing_deny(mock_router, mock_rag, mock_suggestion, mock_client):

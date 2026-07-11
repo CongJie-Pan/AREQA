@@ -571,13 +571,16 @@ class OrchestrationService:
                         final_system_prompt += f"\n\n【特殊語境：明確角色扮演】\n注意：使用者已在本對話明確要求你扮演「{chat_avatar}」。請只在這個 conversation 內以第一人稱與用戶對話，語氣符合{chat_avatar}的歷史定位、思維模式與經典口吻。若使用者要求停止扮演，下一輪必須回到 AREQA。"
                 
             from config import settings
-            cold_memory_ctx = await query_cold_memory_for_context(user_id, last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
-            if cold_memory_ctx:
-                final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
-                
-            memory_ctx = await query_memory_for_context(last_user_msg, limit=3, user_id=user_id)
-            if memory_ctx:
-                final_system_prompt += memory_ctx
+            from memory_gate import classify_user_message
+            should_retrieve_long_term_memory = classify_user_message(last_user_msg).should_prompt
+            if should_retrieve_long_term_memory:
+                cold_memory_ctx = await query_cold_memory_for_context(user_id, last_user_msg, top_k=5, client=self.client, model=settings.model_policy_classifier)
+                if cold_memory_ctx:
+                    final_system_prompt += f"\n\n<retrieved_memory>\n{cold_memory_ctx}\n</retrieved_memory>"
+
+                memory_ctx = await query_memory_for_context(last_user_msg, limit=3, user_id=user_id)
+                if memory_ctx:
+                    final_system_prompt += memory_ctx
                 
             if force_think:
                 think_control_prompt = "\n【重要指令】你的思考過程請務必簡明扼要（盡量控制在 500 字以內），不要把時間浪費在複述上下文，請把所有詳細的分析與長篇論述都放在 </think> 之後的正式回答中！"
