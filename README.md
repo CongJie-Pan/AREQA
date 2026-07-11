@@ -509,7 +509,7 @@ Conversation Store → /api/title
 
 ### 2. 後端運行步驟 (Python 3.10+)
 
-後端使用 FastAPI 提供高效非同步 SSE 串流服務，並使用 Redis 進行 RAG 快取。
+後端使用 FastAPI 提供高效非同步 SSE 串流服務，並使用 Redis 進行 RAG 快取。`backend/requirements.txt` 已包含後端執行與測試所需的主要依賴，包含 `aiosqlite`、`respx`、`faiss-cpu`、`jieba` 等。
 ```bash
 cd backend
 pip install -r requirements.txt
@@ -519,7 +519,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 > 後端受保護端點需要 Supabase Bearer token 與 `JWT_SECRET`。若只測試服務啟動，FastAPI 可啟動；但 chat、memory、mailbox、proactive、WebSocket ticket 等 API 都會進入認證流程。
 
-> 本地文件 RAG 是選配。若要啟用，需設定 `ENABLE_INTERNAL_RAG=true`，並準備 `data/rag/faiss_index/chunks*.index`、`data/rag/faiss_index/index_metadata*.json` 與 `data/rag/bm25_index/`。這與 GUM / PostgreSQL cold memory 是不同路徑。
+> 本地文件 RAG 是選配。若要啟用，需設定 `ENABLE_INTERNAL_RAG=true`，並準備 `data/rag/faiss_index/chunks*.index`、`data/rag/faiss_index/index_metadata*.json` 與 `data/rag/bm25_index/`。這與 GUM / PostgreSQL cold memory 是不同路徑；若索引不存在，系統會降級為非本地 RAG 路徑。
 
 ### 3. 前端運行步驟 (Node.js v20+)
 
@@ -554,6 +554,14 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   npm run typecheck:report
   ```
 - **手動 API 驗證**: FastAPI Swagger UI 可透過後端 `/docs` 檢查與測試端點。
+- **目前已驗證的測試狀態**:
+  - `npm run test:all` 已通過。
+  - 後端 `pytest tests/backend` 已通過，包含 GUM、memory、ComPeer、Perplexity、RAG pipeline 與 SSE 相關測試。
+  - 前端 `npm test` 已通過，包含 auth / sync / websocket / mailbox / selection / store / chat 相關測試。
+- **測試注意事項**:
+  - 前端 `Supabase Auth UI`、`fake-indexeddb` 與部分 WebSocket 行為在測試環境中使用本地 mocks，以避免 jsdom 與外部登入流量造成不穩定。
+  - `syncService` 在有資料變更時會延遲觸發 reload，測試需等待該延遲行為。
+  - `tests/backend/test_rag_pipeline.py` 使用 synthetic fixture 驗證 RAG pipeline 的融合與過濾邏輯，不依賴大型離線 FAISS / BM25 產物；若要在實際服務啟用本地 RAG，仍需準備對應索引檔。
 - **人工回歸驗證建議**:
   1. `DELETE /api/v1/memory/working`
   2. 新 conversation 只送 `你好`，確認回覆是固定寒暄，且不會帶出 README / React / 文言文脈絡

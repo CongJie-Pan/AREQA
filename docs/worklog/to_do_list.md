@@ -12,8 +12,7 @@ AREQA :
 
 6. 如temp/areqa-chat-2026-07-11_1.md, temp/areqa-chat-2026-07-11_2.md 的對話紀錄，我在2026-07-11_2 詢問有關血壓的事情，但是卻延續areqa-chat-2026-07-11_1的事情，卻覺得有點奇怪。我記得這個問題有修復過，但是為何又出現。
 
-7. 系統 agentic 化、優化回應速度、網路搜尋按鈕可以移除，讓router自己決定 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md ()
+7. 系統 agentic 化、優化回應速度、用戶需要看到系統輸出的過程、網路搜尋按鈕可以移除，讓router自己決定 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md ()
 8. 要怎麼解決用戶傳送對話的隱私問題 ? 我在想要不要publish出去。
 9. 英文版網站應該可以先不用做
-10. 但要改善的是系統回覆慢，而且用戶看不到其系統輸出前的過程
-11. 之後再做landing page 、然後還要想測試案例。
+10. 之後再做landing page 、然後還要想測試案例。
