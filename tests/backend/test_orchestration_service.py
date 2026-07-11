@@ -99,6 +99,39 @@ async def test_prompt_assembly_keeps_long_term_memory_for_substantive_query(
 
 
 @pytest.mark.asyncio
+async def test_execute_short_circuits_low_information_greeting_without_llm(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+    request = MagicMock()
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock):
+        events = []
+        async for event in service.execute(
+            [{"role": "user", "content": "你好"}],
+            "greeting-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        ):
+            events.append(event)
+
+    joined = "".join(events)
+    assert "你好，我在。你可以直接告訴我現在想處理什麼。" in joined
+    assert "React" not in joined
+    assert "useEffect" not in joined
+    assert joined.endswith("data: [DONE]\n\n")
+
+
+@pytest.mark.asyncio
 @pytest.mark.skip(reason="Router feature bypassed by user request")
 async def test_orchestration_routing_deny(mock_router, mock_rag, mock_suggestion, mock_client):
     # Mock the router to DENY

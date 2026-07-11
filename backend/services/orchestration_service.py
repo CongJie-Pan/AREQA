@@ -15,6 +15,7 @@ from gum_integration import (
     get_hot_memory_snapshot,
     async_evaluate_and_update_state
 )
+from memory_gate import classify_user_message
 
 
 def _normalize_avatar_name(value: str) -> str:
@@ -207,6 +208,12 @@ class OrchestrationService:
                 asyncio.create_task(async_evaluate_and_update_state(self.client, settings.model_policy_classifier, recent_messages, user_id=user_id))
 
         yield f"event: metadata\ndata: {json.dumps({'promptTokens': 1024, 'completionTokens': 0, 'totalTokens': 1024})}\n\n"
+
+        if last_user_msg and not classify_user_message(last_user_msg).should_prompt:
+            greeting_reply = "你好，我在。你可以直接告訴我現在想處理什麼。"
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': greeting_reply}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         # Node 2 & 3: Parallel Tasks (HyDE & Policy)
         policy_task = None
