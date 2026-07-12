@@ -5,6 +5,7 @@ import { useGumStore } from '@/store/gum';
 import { useStyles } from './styles';
 import { Spin, Checkbox, Input, message, Button, Space, Popconfirm, Modal, List, Tag } from 'antd';
 import { SidePanelType } from '@/types/panel';
+import { formatUserDate, parseServerDate } from '@/utils/dateTime';
 
 const cleanMemoryText = (text: string) => {
   if (text.startsWith('【使用者畫像】')) {
@@ -73,8 +74,8 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
 
     // Sort propositions by updated_at descending before grouping
     const sortedProps = [...longTermProps].sort((a, b) => {
-      const dateA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-      const dateB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      const dateA = a.updated_at ? parseServerDate(a.updated_at).getTime() : 0;
+      const dateB = b.updated_at ? parseServerDate(b.updated_at).getTime() : 0;
       return dateB - dateA;
     });
 
@@ -83,8 +84,9 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
       if (p.event_types) p.event_types.forEach(e => tags.add(e));
       if (p.functional_type_seeds) p.functional_type_seeds.forEach(f => tags.add(f));
 
-      const dateObj = p.updated_at ? new Date(p.updated_at) : new Date();
-      const dateStr = `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
+      const dateStr = p.updated_at
+        ? formatUserDate(p.updated_at, { year: 'numeric', month: 'numeric', day: 'numeric' })
+        : formatUserDate(new Date(), { year: 'numeric', month: 'numeric', day: 'numeric' });
       
       if (!groups[dateStr]) groups[dateStr] = [];
       groups[dateStr].push(p);
@@ -250,7 +252,9 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                       <div className={styles.timelineDate}>{dateStr}</div>
                       
                       {items.map(p => {
-                        const timeStr = p.updated_at ? new Date(p.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '剛剛';
+                        const timeStr = p.updated_at
+                          ? formatUserDate(p.updated_at, { hour: '2-digit', minute: '2-digit', hour12: false })
+                          : '剛剛';
                         return (
                           <div key={p.id} className={styles.timelineItem} style={{ backgroundColor: selectedIds.has(p.id) ? 'rgba(216, 162, 92, 0.05)' : undefined }}>
                             <div style={{ marginTop: 4 }}>
