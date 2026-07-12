@@ -10,8 +10,8 @@ from core.run_context import SearchMode
 class SearchReason(str, Enum):
     USER_FORCED = "USER_FORCED"
     USER_DISABLED = "USER_DISABLED"
-    CURRENT_INFORMATION_REQUIRED = "CURRENT_INFORMATION_REQUIRED"
-    STABLE_KNOWLEDGE = "STABLE_KNOWLEDGE"
+    EXTERNAL_SEARCH_REQUIRED = "EXTERNAL_SEARCH_REQUIRED"
+    INTERNAL_KNOWLEDGE_SUFFICIENT = "INTERNAL_KNOWLEDGE_SUFFICIENT"
     AGENT_ROUTING_DISABLED = "AGENT_ROUTING_DISABLED"
 
 
@@ -47,5 +47,5 @@ class SearchPolicy:
         should_search = requires_current_info or requires_reference_lookup
         return SearchDecision(
             should_search,
-            SearchReason.CURRENT_INFORMATION_REQUIRED if should_search else SearchReason.STABLE_KNOWLEDGE,
+            SearchReason.EXTERNAL_SEARCH_REQUIRED if should_search else SearchReason.INTERNAL_KNOWLEDGE_SUFFICIENT,
         )

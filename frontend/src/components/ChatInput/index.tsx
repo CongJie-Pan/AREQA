@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, Database, X, CornerDownRight, Globe } from 'lucide-react';
+import { Send, Square, Database, X, CornerDownRight } from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import { useChatStore } from '@/store/chat';
 import { useStyles } from './styles';
@@ -52,10 +52,8 @@ export function ChatInput({
   
   // Connect to global state for mode togglers
   const useRag = useChatStore((state) => state.useRag);
-  const searchMode = useChatStore((state) => state.searchMode);
   const quotedText = useChatStore((state) => state.quotedText);
   const toggleRag = useChatStore((state) => state.toggleRag);
-  const toggleWebSearch = useChatStore((state) => state.toggleWebSearch);
   const setQuotedText = useChatStore((state) => state.setQuotedText);
 
   // Calculate character count and warning state
@@ -200,18 +198,6 @@ export function ChatInput({
               </button>
             </Tooltip>
           </div>
-
-          <Tooltip title="網路搜尋：自動／總是／停用" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-            <button
-              type="button"
-              className={cx(styles.toggleButton, searchMode !== 'never' && styles.toggleButtonActive)}
-              onClick={toggleWebSearch}
-              aria-label={`切換網路搜尋，目前為${searchMode}`}
-            >
-              <Globe size={15} />
-              <span>搜尋：{searchMode === 'auto' ? '自動' : searchMode === 'always' ? '總是' : '停用'}</span>
-            </button>
-          </Tooltip>
 
           <span
             id="char-count"

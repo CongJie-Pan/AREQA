@@ -40,9 +40,9 @@ class TutorAgent:
             return self.search_policy.evaluate(query, context.search_mode)
 
         prompt = f"""Decide whether this query needs external web search before answering.
-Search when the user asks for current facts, recent information, prices, schedules, versions, news, or reference lookups that benefit from a verified list such as an author's books, publications, works, or biography.
-Do not search for simple stable explanations, casual chat, or questions answerable from the existing conversation.
-Return JSON only: {{"should_search": true|false, "reason_code": "CURRENT_INFORMATION_REQUIRED"|"STABLE_KNOWLEDGE"}}.
+Search whenever the user asks a knowledge-based question, including conceptual explanations, definitions, facts, recent information, or reference lookups.
+Do not search ONLY if the user is making casual chat, greetings, or referring strictly to the ongoing conversation.
+Return JSON only: {{"should_search": true|false, "reason_code": "EXTERNAL_SEARCH_REQUIRED"|"INTERNAL_KNOWLEDGE_SUFFICIENT"}}.
 Do not include reasoning or repeat the query.
 
 Query: {query}"""
@@ -61,7 +61,7 @@ Query: {query}"""
             parsed = json.loads(match.group(0) if match else content)
             should_search = bool(parsed["should_search"])
             reason = SearchReason(str(parsed["reason_code"]))
-            if should_search != (reason is SearchReason.CURRENT_INFORMATION_REQUIRED):
+            if should_search != (reason is SearchReason.EXTERNAL_SEARCH_REQUIRED):
                 raise ValueError("inconsistent search decision")
             return SearchDecision(should_search, reason)
         except Exception as exc:

@@ -230,7 +230,7 @@ class OrchestrationService:
         ))
         yield sse_adapter.encode(AgentEvent(
             EventType.STATUS,
-            {"status": "routing", "message": "🔍 正在分析問題與準備回答"},
+            {"status": "routing", "message": "🔍 正在分析問題"},
             run_context.run_id,
             2,
         ))
@@ -363,7 +363,7 @@ class OrchestrationService:
                 recent_messages = messages[-RECENT_WINDOW:]
                 from config import settings
                 yield sse_adapter.encode_legacy(
-                    f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🎯 正在分析目前的學習狀態與需求'}, ensure_ascii=False)}\n\n",
+                    f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🎯 正在分析目前用戶的學習狀態'}, ensure_ascii=False)}\n\n",
                     run_context.run_id,
                 )
                 try:
@@ -464,7 +464,7 @@ class OrchestrationService:
                 )
 
         yield sse_adapter.encode_legacy(
-            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🛡️ 正在為您撰寫最終解答與檢查規範'}, ensure_ascii=False)}\n\n",
+            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '➡️ 正在思考撰寫回答內容'}, ensure_ascii=False)}\n\n",
             run_context.run_id,
         )
 
@@ -490,7 +490,7 @@ class OrchestrationService:
             effective_max_tokens = 3200
 
         yield sse_adapter.encode_legacy(
-            f"event: status\ndata: {json.dumps({'status': 'generating', 'message': '✨ 正在生成回答'}, ensure_ascii=False)}\n\n",
+            f"event: status\ndata: {json.dumps({'status': 'generating', 'message': '✨ 生成回答'}, ensure_ascii=False)}\n\n",
             run_context.run_id,
         )
 
