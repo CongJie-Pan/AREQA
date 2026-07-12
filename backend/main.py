@@ -10,12 +10,13 @@ from fastapi import FastAPI, Request, WebSocket, HTTPException, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from auth import get_current_user
+from auth import get_current_user, get_optional_current_user
 from openai import AsyncOpenAI
 import opencc
 import os
 import hashlib
 import time
+import uuid
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -588,6 +589,29 @@ def _find_candidate_memory(candidates: list[dict], memory_id: str) -> int | None
             return index
     return None
 
+
+async def _delete_explicit_profile_memory(store: Any, user_id: str, memory_id: str) -> bool:
+    profile = await store.get_user_profile(user_id)
+    index = _find_profile_memory(profile, memory_id)
+    if index is None:
+        return False
+
+    profile["explicit_memories"].pop(index)
+    await store.redis.set(
+        f"areqa:user_profile:{user_id}",
+        json.dumps(profile, ensure_ascii=False),
+    )
+    try:
+        await store.update_working_memory(
+            user_id=user_id,
+            updates={"explicit_memories": profile["explicit_memories"]},
+        )
+    except Exception as exc:
+        # Profile is the durable source of truth. Working memory is a prompt
+        # cache and must not turn a successful profile deletion into HTTP 500.
+        logger.warning("[MemoryDelete] Working memory sync failed for %s: %s", user_id, exc)
+    return True
+
 @app.delete("/api/v1/memory/working")
 async def clear_working_memory_endpoint(current_user_id: str = Depends(get_current_user)):
     from memory_store import get_global_store
@@ -621,12 +645,10 @@ async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get
     
     if mem_id.startswith("profile:explicit:"):
         store = get_global_store()
-        profile = await store.get_user_profile(current_user_id)
-        index = _find_profile_memory(profile, mem_id)
-        if index is not None:
-            profile["explicit_memories"].pop(index)
-            await store.redis.set(f"areqa:user_profile:{current_user_id}", json.dumps(profile, ensure_ascii=False))
-            await store.update_working_memory(user_id=current_user_id, updates={"explicit_memories": profile["explicit_memories"]})
+        if not store:
+            raise HTTPException(status_code=503, detail="Memory store unavailable")
+        if not await _delete_explicit_profile_memory(store, current_user_id, mem_id):
+            raise HTTPException(status_code=404, detail="Memory not found")
     elif mem_id.startswith("candidate:"):
         store = get_global_store()
         candidates = await store.get_cold_candidates(current_user_id)
@@ -1126,11 +1148,15 @@ async def ws_notifications(websocket: WebSocket, ticket: str):
 async def stream_endpoint(
     request: Request, 
     chat_req: ChatRequest,
-    current_user_id: str = Depends(get_current_user)
+    current_user_id: str | None = Depends(get_optional_current_user)
 ):
     """
     Core streaming endpoint for textual generation using OrchestrationService.
     """
+    # Anonymous chat is intentionally ephemeral. It can answer questions, but
+    # must not share persistent memory with other visitors.
+    effective_user_id = current_user_id or f"guest:{uuid.uuid4()}"
+
     # (Deprecated local dict usage removed to prevent AttributeError)
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
@@ -1158,8 +1184,23 @@ async def stream_endpoint(
         client=client
     )
 
-    return StreamingResponse(
-        orchestrator.execute(
+    async def ensure_terminal_event(event_stream):
+        done_sent = False
+        try:
+            async for event in event_stream:
+                if "data: [DONE]" in event:
+                    done_sent = True
+                yield event
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("[SSE] Stream failed before terminal event: %s", exc)
+            yield f"data: {json.dumps({'error': 'stream_failed'}, ensure_ascii=False)}\n\n"
+        finally:
+            if not done_sent:
+                yield "data: [DONE]\n\n"
+
+    event_stream = orchestrator.execute(
             messages=chat_req.messages,
             conversation_id=chat_req.conversation_id,
             use_rag=chat_req.use_rag,
@@ -1170,9 +1211,12 @@ async def stream_endpoint(
             top_p=chat_req.top_p,
             repetition_penalty=chat_req.repetition_penalty,
             request=request,
-            user_id=current_user_id,
+            user_id=effective_user_id,
             search_mode=chat_req.search_mode,
-        ), 
+        )
+
+    return StreamingResponse(
+        ensure_terminal_event(event_stream),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",

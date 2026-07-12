@@ -47,6 +47,48 @@ class MockRagResults:
         ]
         self.highest_score = 0.95
 
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_emits_done_when_orchestrator_ends_early():
+    class EarlyExitOrchestrator:
+        def execute(self, **_kwargs):
+            async def events():
+                yield "event: status\ndata: {}\n\n"
+            return events()
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=EarlyExitOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                json={"messages": [{"role": "user", "content": "測試"}]},
+            )
+
+    assert response.status_code == 200
+    assert response.text.count("data: [DONE]") == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_wrapper_emits_done_after_orchestrator_error():
+    class FailingOrchestrator:
+        def execute(self, **_kwargs):
+            async def events():
+                yield "event: status\ndata: {}\n\n"
+                raise RuntimeError("test stream failure")
+            return events()
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=FailingOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                json={"messages": [{"role": "user", "content": "測試"}]},
+            )
+
+    assert response.status_code == 200
+    assert '"error": "stream_failed"' in response.text
+    assert response.text.count("data: [DONE]") == 1
+
 @pytest.mark.asyncio
 async def test_sse_streaming_sequence_with_rag():
     # Scenario 1: SSE Streaming sequence with RAG events
@@ -115,6 +157,20 @@ async def test_sse_streaming_sequence_with_rag():
                 assert "event: suggestions" in content
                 assert "延伸問題1" in content
                 assert "data: [DONE]" in content
+
+
+@pytest.mark.asyncio
+async def test_anonymous_chat_can_open_stream_without_authorization():
+    """Guest chat is allowed while authenticated-only endpoints remain protected."""
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                json={"messages": [{"role": "user", "content": "訪客問題"}]},
+            )
+
+    assert response.status_code == 200
+    assert "data: [DONE]" in response.text
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Router feature bypassed by user request")

@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
-from backend.main import app, get_current_user
+from backend.main import app, get_current_user, _memory_source_id
 # Clear startup/shutdown events to prevent TestClient from hanging on GUM DB initialization
 app.router.on_startup.clear()
 app.router.on_shutdown.clear()
@@ -96,6 +96,30 @@ def test_delete_memory_endpoint():
         assert response.json() == {"status": "success"}
         mock_get_gum.assert_called_once_with("default_user")
         mock_gum_instance.update_status.assert_called_once_with(123, "deleted")
+
+
+def test_delete_profile_memory_succeeds_when_working_sync_fails():
+    mock_store = AsyncMock()
+    mock_store.get_user_profile.return_value = {"explicit_memories": ["測試 profile 記憶"]}
+    mock_store.update_working_memory.side_effect = RuntimeError("working cache unavailable")
+    memory_id = _memory_source_id("profile:explicit", "測試 profile 記憶")
+
+    with patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.delete(f"/api/v1/memory/{memory_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "success"}
+    mock_store.redis.set.assert_awaited_once()
+
+
+def test_delete_profile_memory_returns_404_when_id_is_unknown():
+    mock_store = AsyncMock()
+    mock_store.get_user_profile.return_value = {"explicit_memories": []}
+
+    with patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.delete("/api/v1/memory/profile:explicit:unknown")
+
+    assert response.status_code == 404
 
 
 def test_clear_working_memory_endpoint():
