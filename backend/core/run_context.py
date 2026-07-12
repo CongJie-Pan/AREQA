@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import StrEnum
+from enum import Enum
 
 
-class SearchMode(StrEnum):
+class SearchMode(str, Enum):
     AUTO = "auto"
     ALWAYS = "always"
     NEVER = "never"

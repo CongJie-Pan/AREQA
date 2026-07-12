@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 from memory_gate import (
     classify_user_message,
@@ -10,7 +10,7 @@ from memory_gate import (
 )
 
 
-class MemoryScope(StrEnum):
+class MemoryScope(str, Enum):
     DENY_MEMORY = "DENY_MEMORY"
     ALLOW_EXPLICIT_RECALL = "ALLOW_EXPLICIT_RECALL"
     ALLOW_PROFILE_ONLY = "ALLOW_PROFILE_ONLY"

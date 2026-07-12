@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 
-class EventType(StrEnum):
+class EventType(str, Enum):
     METADATA = "metadata"
     STATUS = "status"
     ACTION = "action"

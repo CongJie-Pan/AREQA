@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 from core.run_context import SearchMode
 
 
-class SearchReason(StrEnum):
+class SearchReason(str, Enum):
     USER_FORCED = "USER_FORCED"
     USER_DISABLED = "USER_DISABLED"
     CURRENT_INFORMATION_REQUIRED = "CURRENT_INFORMATION_REQUIRED"
