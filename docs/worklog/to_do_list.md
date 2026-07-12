@@ -13,7 +13,10 @@ AREQA :
 6.[單元測試、整合測試、人工測試(AI進入系統測都過)待人工實用驗證] 如temp/areqa-chat-2026-07-11_1.md, temp/areqa-chat-2026-07-11_2.md 的對話紀錄，我在2026-07-11_2 詢問有關血壓的事情，但是卻延續areqa-chat-2026-07-11_1的事情，卻覺得有點奇怪。我記得這個問題有修復過，但是為何又出現。
 - codex resume 019f4ea8-bc1d-7f70-a67c-79d6179a3d91
 
-7. 系統 agentic 化、優化回應速度、用戶需要看到系統輸出的過程、網路搜尋按鈕可以移除，讓router自己決定 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md ()
+7. [x] 系統 agentic 化、優化回應速度、用戶需要看到系統輸出的過程、網路搜尋按鈕可以移除，讓router自己決定 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md ()
+8. 深入調查為何記憶page都那用麼久了三天了，都還沒有記憶輸入進去，長期記憶真的有用到嗎? 
 8. 要怎麼解決用戶傳送對話的隱私問題 ? 我在想要不要publish出去。
 9. 英文版網站應該可以先不用做
-10. 之後再做landing page 、然後還要想測試案例。
+10. 之後再做landing page 、然後還要想測試案例。測試案例參見 : docs/misc/demo測試案例.md；docs/misc/demo範例chat_areqa-chat-2026-07-12.md。
+11. 我想讓未登入用戶可以先詢問5次，但到了第四次詢問，就需要登入(跳出登入要求視窗)，然後登入後，就將剛剛用戶登入前的對話同步到雲端。
+12. 加入匯入圖片、pdf的功能給系統讀。
