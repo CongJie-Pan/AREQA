@@ -375,6 +375,7 @@ class OrchestrationService:
                         payload={
                             "messages": recent_messages,
                             "model": settings.model_policy_classifier,
+                            "conversation_id": conversation_id,
                         },
                         idempotency_key=f"{run_context.run_id}:edf_evaluation",
                     )
@@ -387,6 +388,7 @@ class OrchestrationService:
                         settings.model_policy_classifier,
                         recent_messages,
                         user_id=user_id,
+                        conversation_id=conversation_id,
                     ))
 
         if last_user_msg and not classify_user_message(last_user_msg).should_prompt:

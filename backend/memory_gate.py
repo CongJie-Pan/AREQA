@@ -1,3 +1,4 @@
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -190,17 +191,13 @@ async def apply_user_message_gate(store: Any, user_id: str, message: str, conver
         return decision
 
     if decision.category == "explicit_memory":
-        await store.perform_memory_operation(user_id, "user", "add", decision.proposition)
-        if hasattr(store, "append_cold_candidate"):
-            await store.append_cold_candidate(
-                user_id,
-                decision.proposition,
-                category=decision.category,
-                source="user_message",
-                reason=decision.reason,
-                confidence=9.0,
-                decay=2.0,
-            )
+        await store.perform_memory_operation(
+            user_id,
+            "user",
+            "add",
+            decision.proposition,
+            source="explicit_user_request",
+        )
     elif decision.should_prompt:
         updates = {"current_focus": decision.proposition}
         if conversation_id:
@@ -231,17 +228,8 @@ async def apply_reflection_gate(
             confidence=9.0,
             decay=3.0,
             conversation_id=conversation_id,
+            source="gum_reflection",
         )
-        if decision.should_cold_store and hasattr(store, "append_cold_candidate"):
-            await store.append_cold_candidate(
-                user_id,
-                decision.proposition,
-                category=decision.category,
-                source="reflection",
-                reason=decision.reason,
-                confidence=9.0,
-                decay=3.0,
-            )
         working = await store.get_working_memory(user_id)
         summary = _clean_text(working.get("session_summary", ""))
         if summary:
@@ -253,3 +241,72 @@ async def apply_reflection_gate(
             summary_update["session_summary_conversation_id"] = conversation_id
         await store.update_working_memory(user_id, summary_update)
     return decision
+
+
+async def extract_user_memory_candidates(
+    client: Any,
+    model: str,
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Extract candidate memories from user-originated text with evidence only."""
+    user_messages = [
+        str(message.get("content", "")).strip()
+        for message in messages
+        if message.get("role") == "user" and str(message.get("content", "")).strip()
+    ]
+    if not client or not user_messages:
+        return []
+
+    prompt = f"""Analyze only the user messages below. Extract durable memory candidates that may be useful across future conversations.
+
+User messages (numbered):
+{json.dumps(user_messages, ensure_ascii=False)}
+
+This policy is domain-neutral. Do not rely on topic keywords. A candidate must describe a stable preference, recurring goal, background fact, or enduring context explicitly supported by a user message. Do not infer a fact from an assistant answer, a teaching outcome, a guessed personality trait, or a one-off question. Mark information as sensitive when retaining it long term should require the user's approval.
+
+Return JSON with a `candidates` list. Every item must contain: `text`, `normalized_text`, `category`, `confidence` (0 to 1), `requires_confirmation`, `evidence_index`, and `evidence_quote`. The evidence quote must be copied from the referenced user message. Return an empty list when there is no durable candidate."""
+    try:
+        from pydantic import BaseModel, Field
+
+        class Candidate(BaseModel):
+            text: str
+            normalized_text: str
+            category: str
+            confidence: float = Field(ge=0.0, le=1.0)
+            requires_confirmation: bool
+            evidence_index: int = Field(ge=0)
+            evidence_quote: str
+
+        class CandidateResponse(BaseModel):
+            candidates: list[Candidate]
+
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "memory_candidate_response",
+                    "schema": CandidateResponse.model_json_schema(),
+                },
+            },
+            temperature=0.0,
+        )
+        payload = json.loads(response.choices[0].message.content)
+        result = []
+        for candidate in payload.get("candidates", []):
+            index = candidate.get("evidence_index")
+            quote = _clean_text(candidate.get("evidence_quote", ""))
+            if not isinstance(index, int) or index >= len(user_messages) or not quote:
+                continue
+            evidence_text = user_messages[index]
+            if quote not in evidence_text:
+                continue
+            result.append({
+                **candidate,
+                "evidence": {"message": evidence_text, "quote": quote, "message_index": index},
+            })
+        return result
+    except Exception as exc:
+        print(f"[MemoryCandidate] Extraction failed: {type(exc).__name__}")
+        return []

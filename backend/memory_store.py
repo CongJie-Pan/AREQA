@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 class MemoryBudgetExceeded(Exception):
     pass
 
+
+class InvalidMemorySource(ValueError):
+    """Raised when a caller tries to write profile memory without user evidence."""
+
 class MemoryStore:
     def __init__(self, budget_limit: int = 1000000):
         self.budget_limit = budget_limit
@@ -84,6 +88,7 @@ class MemoryStore:
         confidence: float = 8.0,
         decay: float = 5.0,
         conversation_id: str = "",
+        source: str = "user_message",
     ):
         text = (text or "").strip()
         if not text:
@@ -97,6 +102,7 @@ class MemoryStore:
         entry = {
             "text": text,
             "conversation_id": conversation_id,
+            "source": source,
             "confidence": float(confidence),
             "decay": float(decay),
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -160,6 +166,10 @@ class MemoryStore:
         reason: str,
         confidence: float = 9.0,
         decay: float = 3.0,
+        normalized_text: str = "",
+        evidence: Dict[str, Any] | None = None,
+        conversation_id: str = "",
+        requires_confirmation: bool = False,
     ) -> Dict[str, Any] | None:
         text = (text or "").strip()
         if not text:
@@ -167,7 +177,8 @@ class MemoryStore:
 
         from redis.exceptions import WatchError
         key = f"areqa:cold_candidates:{user_id}"
-        candidate_hash = hashlib.sha256(f"{category}|{text}".encode("utf-8")).hexdigest()[:24]
+        normalized_text = (normalized_text or text).strip()
+        candidate_hash = hashlib.sha256(f"{category}|{normalized_text}".encode("utf-8")).hexdigest()[:24]
         now = datetime.now(timezone.utc).isoformat()
 
         async with self.redis.pipeline(transaction=True) as pipe:
@@ -180,8 +191,16 @@ class MemoryStore:
 
                     for candidate in candidates:
                         if candidate.get("hash") == candidate_hash:
+                            if candidate.get("status") == "rejected":
+                                return candidate
                             candidate["last_seen_at"] = now
-                            candidate["seen_count"] = int(candidate.get("seen_count", 1)) + 1
+                            if conversation_id and conversation_id not in candidate.setdefault("conversation_ids", []):
+                                candidate["conversation_ids"].append(conversation_id)
+                            if evidence and evidence not in candidate.setdefault("evidence", []):
+                                candidate["evidence"].append(evidence)
+                            candidate["evidence"] = candidate.get("evidence", [])[-8:]
+                            candidate["conversation_ids"] = candidate.get("conversation_ids", [])[-8:]
+                            candidate["seen_count"] = len(candidate.get("evidence", [])) or int(candidate.get("seen_count", 1)) + 1
                             pipe.multi()
                             pipe.set(key, json.dumps(candidates[-100:], ensure_ascii=False))
                             await pipe.execute()
@@ -190,6 +209,7 @@ class MemoryStore:
                     candidate = {
                         "hash": candidate_hash,
                         "text": text,
+                        "normalized_text": normalized_text,
                         "category": category,
                         "source": source,
                         "reason": reason,
@@ -198,6 +218,9 @@ class MemoryStore:
                         "created_at": now,
                         "last_seen_at": now,
                         "seen_count": 1,
+                        "conversation_ids": [conversation_id] if conversation_id else [],
+                        "evidence": [evidence] if evidence else [],
+                        "requires_confirmation": bool(requires_confirmation),
                         "status": "candidate",
                     }
                     candidates.append(candidate)
@@ -208,6 +231,42 @@ class MemoryStore:
                     return candidate
                 except WatchError:
                     continue
+
+    async def promote_cold_candidate(self, user_id: str, candidate_hash: str, *, source: str) -> Dict[str, Any] | None:
+        candidates = await self.get_cold_candidates(user_id)
+        candidate = next((item for item in candidates if item.get("hash") == candidate_hash), None)
+        if not candidate or candidate.get("status") == "rejected":
+            return None
+        if candidate.get("requires_confirmation") and source != "user_confirmation":
+            return None
+
+        await self.perform_memory_operation(
+            user_id,
+            "user",
+            "add",
+            str(candidate.get("text", "")),
+            source="verified_user_evidence",
+        )
+        candidate["status"] = "promoted"
+        candidate["promoted_at"] = datetime.now(timezone.utc).isoformat()
+        await self.redis.set(
+            f"areqa:cold_candidates:{user_id}",
+            json.dumps(candidates[-100:], ensure_ascii=False),
+        )
+        return candidate
+
+    async def reject_cold_candidate(self, user_id: str, candidate_hash: str) -> Dict[str, Any] | None:
+        candidates = await self.get_cold_candidates(user_id)
+        candidate = next((item for item in candidates if item.get("hash") == candidate_hash), None)
+        if not candidate:
+            return None
+        candidate["status"] = "rejected"
+        candidate["rejected_at"] = datetime.now(timezone.utc).isoformat()
+        await self.redis.set(
+            f"areqa:cold_candidates:{user_id}",
+            json.dumps(candidates[-100:], ensure_ascii=False),
+        )
+        return candidate
 
     async def update_user_profile(self, user_id: str, key: str, value: Any):
         profile = await self.get_user_profile(user_id)
@@ -287,7 +346,20 @@ class MemoryStore:
                 except WatchError:
                     continue
 
-    async def perform_memory_operation(self, user_id: str, target: str, action: str, content: str, old_text: str = ""):
+    async def perform_memory_operation(
+        self,
+        user_id: str,
+        target: str,
+        action: str,
+        content: str,
+        old_text: str = "",
+        *,
+        source: str = "internal",
+    ):
+        if target == "user" and source not in {"explicit_user_request", "user_message", "verified_user_evidence"}:
+            raise InvalidMemorySource(
+                f"User profile memory requires user evidence, got source={source!r}"
+            )
         if target == "user":
             data = await self.get_user_profile(user_id)
             entries = data.get("explicit_memories", [])

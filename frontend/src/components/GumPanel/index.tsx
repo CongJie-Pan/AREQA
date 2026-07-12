@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Clock, FolderHeart } from 'lucide-react';
+import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Clock, FolderHeart, Check } from 'lucide-react';
 import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { useGumStore } from '@/store/gum';
 import { useStyles } from './styles';
@@ -29,7 +29,7 @@ interface GumPanelProps {
 
 export function GumPanel({ open, type, onClose }: GumPanelProps) {
   const { styles } = useStyles();
-  const { propositions, suggestions, summary, loading, loadingSummary, fetchMemory, fetchSuggestions, fetchSummary, deleteMemory, deleteMemories, editMemory } = useGumStore();
+  const { propositions, suggestions, summary, loading, loadingSummary, fetchMemory, fetchSuggestions, fetchSummary, deleteMemory, deleteMemories, editMemory, confirmCandidate, rejectCandidate } = useGumStore();
 
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
   const [editingId, setEditingId] = useState<number | string | null>(null);
@@ -144,6 +144,24 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
       setEditingId(null);
     } catch {
       message.error('記憶更新失敗');
+    }
+  };
+
+  const handleConfirmCandidate = async (id: string | number) => {
+    try {
+      await confirmCandidate(id);
+      message.success('已加入長期記憶');
+    } catch {
+      message.error('確認候選記憶失敗');
+    }
+  };
+
+  const handleRejectCandidate = async (id: string | number) => {
+    try {
+      await rejectCandidate(id);
+      message.success('已忽略此候選記憶');
+    } catch {
+      message.error('忽略候選記憶失敗');
     }
   };
 
@@ -265,7 +283,9 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                             </div>
                             <div className={styles.timelineTimeBox}>
                               <div className={styles.timelineTime}>{timeStr}</div>
-                              <div className={styles.timelineTag}>記錄</div>
+                              <div className={styles.timelineTag}>
+                                {p.memory_type === 'profile' ? '已記住' : p.memory_type === 'candidate' ? '待確認' : p.memory_type === 'legacy_unverified' ? '未驗證' : '學習狀態'}
+                              </div>
                             </div>
                             
                             <div className={styles.timelineContent}>
@@ -294,6 +314,12 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                                   <span className={styles.confidenceBadge}>
                                     信心: {Number(p.confidence).toFixed(2)}
                                   </span>
+                                )}
+                                {p.memory_type === 'candidate' && (
+                                  <>
+                                    <Button size="small" type="text" icon={<Check size={14} />} onClick={() => handleConfirmCandidate(p.id)} style={{ color: '#8fce8b' }} title="確認記憶" />
+                                    <Button size="small" type="text" danger icon={<X size={14} />} onClick={() => handleRejectCandidate(p.id)} title="忽略候選記憶" />
+                                  </>
                                 )}
                                 <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} style={{ color: '#aaa' }} />
                                 <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>

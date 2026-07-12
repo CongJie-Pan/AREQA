@@ -203,7 +203,7 @@ async def _run_reflection_unlocked(user_id: str, conversation_id: str = "") -> l
             return []
             
         context = "\n".join([o.content for o in obs])
-        prompt = f"請將以下最近的互動紀錄總結為高層次的學習洞察（insights）：\n{context}\n請輸出這些學習洞察。"
+        prompt = f"請將以下最近的互動紀錄總結為高層次的學習洞察（insights）：\n{context}\n請只根據使用者明確說出的內容產生洞察。AI 回答、教學解釋與模型推論不是使用者事實；不要把模型推論寫成 user profile。請輸出這些學習洞察。"
         
         from pydantic import BaseModel
         from gum.schemas import get_schema
@@ -232,8 +232,8 @@ async def _run_reflection_unlocked(user_id: str, conversation_id: str = "") -> l
                     insight,
                     conversation_id=conversation_id,
                 )
-            if text_observer:
-                await push_text_to_gum(gum_instance, text_observer, f"[REFLECTION] {insight}", user_id)
+            # Reflection output is derived model text. Do not feed it back into
+            # the observation stream, otherwise an inference becomes a new fact.
                 
         # Archive old observations
         for o in obs:
@@ -325,7 +325,7 @@ async def batch_process_observations(
             if neighbors:
                 neighbor_ctx = "\\n".join([f"ID: {p.id}, Text: {p.text}" for p, _ in neighbors])
                 prompt = f"""Analyze the new observation against existing memories.
-    New observation: {combined_text}
+    New observation (user-originated input; not proof of a stable user fact): {combined_text}
     Existing memories:
     {neighbor_ctx}
     
@@ -334,7 +334,9 @@ async def batch_process_observations(
     2. If it is redundant or updates old memories, set should_evolve=true, add 'prune' to actions, and put the old memory IDs to be pruned in target_ids. 
     3. Provide a 'revised_proposition' that merges the new observation and the pruned memories into a single concise, updated statement.
     4. Generate a 'decay_score' (1-10) for this proposition. Transient or temporary actions (e.g. debugging a specific bug) decay fast (score=8-10). Stable facts (e.g. user is a PhD student) decay slowly (score=1-3).
-    5. Rate importance 1-10."""
+    5. Rate importance 1-10.
+    6. Never turn a teaching conclusion, an answer supplied by the assistant,
+       or a temporary learning result into a durable user preference or identity."""
                 
                 from pydantic import BaseModel, Field
                 from gum.schemas import get_schema
@@ -404,6 +406,7 @@ async def batch_process_observations(
                 confidence=8.0,
                 decay=float(final_decay),
                 conversation_id=conversation_id,
+                source="user_message",
             )
     except Exception as e:
         # Expected if budget exceeded, handled below
@@ -830,7 +833,13 @@ async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5
         print(f"[GUM] Error querying cold memory: {e}")
         return ""
 
-async def async_evaluate_and_update_state(client, model, chat_history, user_id: str = "default_user"):
+async def async_evaluate_and_update_state(
+    client,
+    model,
+    chat_history,
+    user_id: str = "default_user",
+    conversation_id: str = "",
+):
     from compaction import evaluate_student_state
     from memory_store import get_global_store
     
@@ -849,16 +858,42 @@ async def async_evaluate_and_update_state(client, model, chat_history, user_id: 
             # We flag this for ComPeer to pick up or log it
             print(f"[ComPeer] Proactive trigger needed: {state_res}")
             
-        ops = state_res.get("memory_operations", [])
-        if ops:
-            for op in ops:
-                target = op.get("target")
-                action = op.get("action")
-                content = op.get("content")
-                old_text = op.get("old_text", "")
-                if target in ["user", "memory"] and action in ["add", "replace", "remove"] and content:
-                    await store.perform_memory_operation(user_id, target, action, content, old_text)
-                    print(f"[EDF-LOG] Executed memory operation: {op}")
+        # EDF evaluates the learner state only. It must never promote an
+        # assistant-generated inference into durable user memory.
+        if state_res.get("memory_operations"):
+            print("[EDF-LOG] Ignored legacy memory_operations from state evaluation")
+
+        # Candidate extraction is evidence-based and only receives user-role
+        # messages. Its output cannot directly mutate the profile.
+        try:
+            from config import settings
+            from memory_gate import extract_user_memory_candidates
+
+            candidates = await extract_user_memory_candidates(client, model, chat_history)
+            for extracted in candidates:
+                candidate = await store.append_cold_candidate(
+                    user_id,
+                    extracted["text"],
+                    category=extracted["category"],
+                    source="user_message",
+                    reason="user_evidence_candidate",
+                    confidence=float(extracted["confidence"]) * 10.0,
+                    normalized_text=extracted["normalized_text"],
+                    evidence=extracted["evidence"],
+                    conversation_id=conversation_id,
+                    requires_confirmation=bool(extracted["requires_confirmation"]),
+                )
+                if not candidate or candidate.get("requires_confirmation"):
+                    continue
+                if len(candidate.get("conversation_ids", [])) < settings.memory_candidate_auto_promote_conversations:
+                    continue
+                await store.promote_cold_candidate(
+                    user_id,
+                    candidate["hash"],
+                    source="automatic_candidate_promotion",
+                )
+        except Exception as exc:
+            print(f"[MemoryCandidate] Persistence failed: {type(exc).__name__}")
 
 
 async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str) -> dict:

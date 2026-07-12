@@ -370,6 +370,7 @@ async def build_memory_view(user_id: str) -> list[dict]:
                     "event_types": ["explicit_memory"],
                     "target": "user",
                     "functional_type_seeds": ["profile"],
+                    "memory_type": "profile",
                 })
                 existing_text.add(text_value)
 
@@ -388,6 +389,10 @@ async def build_memory_view(user_id: str) -> list[dict]:
                     "event_types": [candidate.get("source")] if candidate.get("source") else [],
                     "target": "user",
                     "functional_type_seeds": ["cold_candidate"],
+                    "memory_type": "candidate" if candidate.get("source") == "user_message" and candidate.get("evidence") else "legacy_unverified",
+                    "candidate_status": candidate.get("status", "candidate"),
+                    "requires_confirmation": bool(candidate.get("requires_confirmation", True)),
+                    "evidence_count": len(candidate.get("evidence", [])),
                 })
                 existing_text.add(text_value)
         except Exception as exc:
@@ -402,7 +407,13 @@ async def build_memory_view(user_id: str) -> list[dict]:
 
 @app.get("/api/v1/memory")
 async def fetch_memory(current_user_id: str = Depends(get_current_user)):
-    return {"propositions": await build_memory_view(current_user_id)}
+    propositions = await build_memory_view(current_user_id)
+    return {
+        "propositions": propositions,
+        "profile_memories": [item for item in propositions if item.get("memory_type") == "profile"],
+        "candidates": [item for item in propositions if item.get("memory_type") in {"candidate", "legacy_unverified"}],
+        "learning_state": [item for item in propositions if item.get("memory_type") not in {"profile", "candidate", "legacy_unverified"}],
+    }
 
 @app.get("/api/v1/memory/summary")
 async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
@@ -611,6 +622,51 @@ async def _delete_explicit_profile_memory(store: Any, user_id: str, memory_id: s
         # cache and must not turn a successful profile deletion into HTTP 500.
         logger.warning("[MemoryDelete] Working memory sync failed for %s: %s", user_id, exc)
     return True
+
+
+async def _get_candidate_by_memory_id(store: Any, user_id: str, memory_id: str) -> dict | None:
+    candidates = await store.get_cold_candidates(user_id)
+    return next(
+        (
+            candidate for candidate in candidates
+            if _memory_source_id("candidate", str(candidate.get("text", ""))) == memory_id
+        ),
+        None,
+    )
+
+
+@app.post("/api/v1/memory/candidates/{memory_id}/confirm")
+async def confirm_candidate_memory_endpoint(memory_id: str, current_user_id: str = Depends(get_current_user)):
+    from memory_store import get_global_store
+
+    store = get_global_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Memory store unavailable")
+    candidate = await _get_candidate_by_memory_id(store, current_user_id, memory_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    promoted = await store.promote_cold_candidate(
+        current_user_id,
+        candidate["hash"],
+        source="user_confirmation",
+    )
+    if not promoted:
+        raise HTTPException(status_code=409, detail="Candidate cannot be confirmed")
+    return {"status": "success", "candidate": promoted}
+
+
+@app.post("/api/v1/memory/candidates/{memory_id}/reject")
+async def reject_candidate_memory_endpoint(memory_id: str, current_user_id: str = Depends(get_current_user)):
+    from memory_store import get_global_store
+
+    store = get_global_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Memory store unavailable")
+    candidate = await _get_candidate_by_memory_id(store, current_user_id, memory_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    rejected = await store.reject_cold_candidate(current_user_id, candidate["hash"])
+    return {"status": "success", "candidate": rejected}
 
 @app.delete("/api/v1/memory/working")
 async def clear_working_memory_endpoint(current_user_id: str = Depends(get_current_user)):

@@ -25,7 +25,7 @@ class FakeStore:
             "updated_at": None,
         }
 
-    async def perform_memory_operation(self, user_id, target, action, content, old_text=""):
+    async def perform_memory_operation(self, user_id, target, action, content, old_text="", **kwargs):
         self.profile_ops.append((user_id, target, action, content, old_text))
 
     async def update_working_memory(self, user_id, updates):
@@ -36,7 +36,7 @@ class FakeStore:
         self.behavior_signals.append((user_id, action_type, context, weight))
 
     async def append_learning_observation(
-        self, user_id, text, confidence=8.0, decay=5.0, conversation_id=""
+        self, user_id, text, confidence=8.0, decay=5.0, conversation_id="", source="user_message"
     ):
         self.learning_observations.append(
             (user_id, text, confidence, decay, conversation_id)
@@ -116,15 +116,7 @@ async def test_apply_user_message_gate_stores_explicit_memory():
 
     assert decision.category == "explicit_memory"
     assert store.profile_ops == [("u1", "user", "add", "我喜歡先看例子", "")]
-    assert store.cold_candidates == [{
-        "user_id": "u1",
-        "text": "我喜歡先看例子",
-        "category": "explicit_memory",
-        "source": "user_message",
-        "reason": "explicit_user_memory_request",
-        "confidence": 9.0,
-        "decay": 2.0,
-    }]
+    assert store.cold_candidates == []
     assert store.working_updates == []
 
 
@@ -172,15 +164,7 @@ async def test_apply_reflection_gate_updates_session_summary():
     assert store.learning_observations == [
         ("u1", "學生昨天文言文卡很久，但願意反覆重讀。", 9.0, 3.0, "")
     ]
-    assert store.cold_candidates == [{
-        "user_id": "u1",
-        "text": "學生昨天文言文卡很久，但願意反覆重讀。",
-        "category": "session_reflection",
-        "source": "reflection",
-        "reason": "reflection_promotes_session_learning_context",
-        "confidence": 9.0,
-        "decay": 3.0,
-    }]
+    assert store.cold_candidates == []
     assert store.working_updates == [
         ("u1", {"session_summary": "學生昨天文言文卡很久，但願意反覆重讀。"})
     ]

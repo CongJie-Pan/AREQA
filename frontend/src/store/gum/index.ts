@@ -12,6 +12,10 @@ export interface Proposition {
   event_types?: string[];
   target?: string;
   functional_type_seeds?: string[];
+  memory_type?: 'profile' | 'candidate' | 'legacy_unverified' | string;
+  candidate_status?: string;
+  requires_confirmation?: boolean;
+  evidence_count?: number;
 }
 
 export interface GumState {
@@ -26,9 +30,11 @@ export interface GumState {
   deleteMemory: (id: string | number) => Promise<void>;
   deleteMemories: (ids: (string | number)[]) => Promise<void>;
   editMemory: (id: string | number, text: string) => Promise<void>;
+  confirmCandidate: (id: string | number) => Promise<void>;
+  rejectCandidate: (id: string | number) => Promise<void>;
 }
 
-export const useGumStore = create<GumState>((set) => ({
+export const useGumStore = create<GumState>((set, get) => ({
   propositions: [],
   suggestions: [],
   summary: null,
@@ -164,5 +170,29 @@ export const useGumStore = create<GumState>((set) => ({
     } catch (error) {
       console.error('Failed to edit memory:', error);
     }
+  },
+
+  confirmCandidate: async (id: string | number) => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${backendUrl}/api/v1/memory/candidates/${id}/confirm`, {
+      method: 'POST',
+      headers,
+    });
+    if (!res.ok) throw new Error('Failed to confirm memory candidate');
+    await get().fetchMemory();
+  },
+
+  rejectCandidate: async (id: string | number) => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${backendUrl}/api/v1/memory/candidates/${id}/reject`, {
+      method: 'POST',
+      headers,
+    });
+    if (!res.ok) throw new Error('Failed to reject memory candidate');
+    await get().fetchMemory();
   },
 }));

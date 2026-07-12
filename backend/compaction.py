@@ -93,29 +93,19 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
 - MASTERY: 展現高度理解、批判性思考、或對文本提出深刻質疑與挑戰（即使語氣帶有否定或辯論），需要學術辯論或魔鬼代言人策略。
 - CHITCHAT: 使用者正在進行日常閒聊、開玩笑、無厘頭提問，或詢問無關緊要的私人問題。此階段不需要任何學術或教學策略，只需輕鬆回應。
 
-請嚴格以 JSON 格式回傳，格式如下：
+請嚴格以 JSON 格式回傳，格式如下。注意：這是學習狀態評估，不是記憶寫入流程；不得產生或建議任何使用者 profile 記憶：
 {{
   "learner_state": "NOT_STARTED" | "STARTING" | "TINKERING" | "RUN_REPEAT" | "GIVING_UP" | "MASTERY" | "CHITCHAT",
   "pedagogical_strategy": "建議的教學鷹架策略描述（如：提供底層原理、引導反思、提供具體步驟、安撫情緒、學術辯論、輕鬆閒聊）",
-  "trigger_proactive": true 或 false (如果學生展現出氣餒、沮喪、或是需要鼓勵，設為 true。注意：若狀態為 NOT_STARTED，則此項必須強制設為 false),
-  "memory_operations": [
-    {{"target": "user" 或 "memory", "action": "add" 或 "replace" 或 "remove", "content": "要新增或替換的內容", "old_text": "要被替換或刪除的關鍵字（若 action 為 add 則可留空）"}}
-  ]
+  "trigger_proactive": true 或 false (如果學生展現出氣餒、沮喪、或是需要鼓勵，設為 true。注意：若狀態為 NOT_STARTED，則此項必須強制設為 false)
 }}
 """
     try:
         from pydantic import BaseModel
-        class MemoryOperation(BaseModel):
-            target: str
-            action: str
-            content: str
-            old_text: str = ""
-
         class StudentStateSchema(BaseModel):
             learner_state: str
             pedagogical_strategy: str
             trigger_proactive: bool
-            memory_operations: list[MemoryOperation]
 
         rsp = await llm_client.chat.completions.create(
             model=model,
@@ -138,5 +128,4 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
             "learner_state": "STARTING",
             "pedagogical_strategy": "提供基礎引導",
             "trigger_proactive": False,
-            "memory_operations": []
         }

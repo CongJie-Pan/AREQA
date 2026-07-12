@@ -26,7 +26,8 @@ def mock_gum_instance():
 @pytest.mark.asyncio
 @patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock)
 async def test_reflection_compression(mock_get_gum, mock_gum_instance):
-    mock_get_gum.return_value = (mock_gum_instance, AsyncMock())
+    text_observer = AsyncMock()
+    mock_get_gum.return_value = (mock_gum_instance, text_observer)
     
     # We will invoke the background task's inner logic directly
     await backend.gum_integration.run_reflection(user_id="test_user")
@@ -40,3 +41,4 @@ async def test_reflection_compression(mock_get_gum, mock_gum_instance):
     # Verify the new insight was inserted (via TextObserver queue or batcher)
     # We mock _process_batch or batcher
     # Assertions will be verified during implementation.
+    text_observer.push_text.assert_not_awaited()

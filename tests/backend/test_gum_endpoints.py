@@ -20,7 +20,12 @@ def test_get_memory_endpoint_success():
         mock_get_memory.return_value = [{"content": "user likes testing", "type": "proposition"}]
         response = client.get("/api/v1/memory")
         assert response.status_code == 200
-        assert response.json() == {"propositions": [{"content": "user likes testing", "type": "proposition"}]}
+        assert response.json() == {
+            "propositions": [{"content": "user likes testing", "type": "proposition"}],
+            "profile_memories": [],
+            "candidates": [],
+            "learning_state": [{"content": "user likes testing", "type": "proposition"}],
+        }
 
 
 def test_get_memory_endpoint_error():
@@ -28,7 +33,12 @@ def test_get_memory_endpoint_error():
         mock_get_memory.return_value = []
         response = client.get("/api/v1/memory")
         assert response.status_code == 200
-        assert response.json() == {"propositions": []}
+        assert response.json() == {
+            "propositions": [],
+            "profile_memories": [],
+            "candidates": [],
+            "learning_state": [],
+        }
 
 
 def test_get_memory_endpoint_merges_profile_and_cold_candidates():
@@ -131,6 +141,36 @@ def test_clear_working_memory_endpoint():
     assert response.status_code == 200
     assert response.json() == {"status": "success", "cleared": "working_memory"}
     mock_store.clear_working_memory.assert_awaited_once_with("default_user")
+
+
+def test_confirm_candidate_promotes_with_user_confirmation():
+    candidate = {"hash": "candidate-hash", "text": "偏好範例", "status": "candidate", "requires_confirmation": True}
+    mock_store = AsyncMock()
+    mock_store.get_cold_candidates.return_value = [candidate]
+    mock_store.promote_cold_candidate.return_value = {**candidate, "status": "promoted"}
+    memory_id = _memory_source_id("candidate", candidate["text"])
+
+    with patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.post(f"/api/v1/memory/candidates/{memory_id}/confirm")
+
+    assert response.status_code == 200
+    mock_store.promote_cold_candidate.assert_awaited_once_with(
+        "default_user", "candidate-hash", source="user_confirmation"
+    )
+
+
+def test_reject_candidate_preserves_suppression_record():
+    candidate = {"hash": "candidate-hash", "text": "偏好範例", "status": "candidate"}
+    mock_store = AsyncMock()
+    mock_store.get_cold_candidates.return_value = [candidate]
+    mock_store.reject_cold_candidate.return_value = {**candidate, "status": "rejected"}
+    memory_id = _memory_source_id("candidate", candidate["text"])
+
+    with patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.post(f"/api/v1/memory/candidates/{memory_id}/reject")
+
+    assert response.status_code == 200
+    mock_store.reject_cold_candidate.assert_awaited_once_with("default_user", "candidate-hash")
 
 
 def test_edit_memory_endpoint():

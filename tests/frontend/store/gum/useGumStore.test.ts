@@ -63,4 +63,26 @@ describe('useGumStore', () => {
     const fetchCall = (global.fetch as any).mock.calls[0][0];
     expect(fetchCall).toContain('http://localhost:8000/api/v1/suggestions?t=');
   });
+
+  it('confirmCandidate posts the candidate decision and refreshes memory', async () => {
+    (global.fetch as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'success' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ propositions: [] }) });
+
+    await useGumStore.getState().confirmCandidate('candidate:test');
+
+    expect((global.fetch as any).mock.calls[0][0]).toContain('/api/v1/memory/candidates/candidate:test/confirm');
+    expect((global.fetch as any).mock.calls[1][0]).toContain('/api/v1/memory?t=');
+  });
+
+  it('rejectCandidate posts the candidate decision and refreshes memory', async () => {
+    (global.fetch as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'success' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ propositions: [] }) });
+
+    await useGumStore.getState().rejectCandidate('candidate:test');
+
+    expect((global.fetch as any).mock.calls[0][0]).toContain('/api/v1/memory/candidates/candidate:test/reject');
+    expect((global.fetch as any).mock.calls[1][0]).toContain('/api/v1/memory?t=');
+  });
 });

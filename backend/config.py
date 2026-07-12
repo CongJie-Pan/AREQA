@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     enable_agent_search_routing: bool = True
     agent_search_rollout_percentage: float = 100.0
 
+    # Candidate memory promotion policy. Values are intentionally configurable
+    # so the policy remains domain-neutral and can be tuned without code edits.
+    memory_candidate_auto_promote_conversations: int = 2
+    memory_candidate_max_evidence: int = 8
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

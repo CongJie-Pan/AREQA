@@ -238,6 +238,7 @@ async def agent_job_worker() -> None:
                     job.payload.get("model", settings.model_policy_classifier),
                     job.payload["messages"],
                     user_id=job.user_id,
+                    conversation_id=job.payload.get("conversation_id", ""),
                 )
             elif job.job_type == "memory_compaction":
                 from gum_integration import run_compaction
