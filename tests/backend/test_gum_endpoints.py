@@ -30,6 +30,38 @@ def test_get_memory_endpoint_error():
         assert response.status_code == 200
         assert response.json() == {"propositions": []}
 
+
+def test_get_memory_endpoint_merges_profile_and_cold_candidates():
+    mock_store = AsyncMock()
+    mock_store.get_user_profile.return_value = {"explicit_memories": ["喜歡例子"]}
+    mock_store.get_cold_candidates.return_value = [{
+        "text": "最近在學習判詞",
+        "category": "session_reflection",
+        "source": "reflection",
+        "confidence": 9.0,
+        "created_at": "2026-07-12T00:00:00+00:00",
+        "last_seen_at": "2026-07-12T00:01:00+00:00",
+        "status": "candidate",
+    }]
+
+    with patch("backend.main.get_all_memory", return_value=[{
+        "id": "7",
+        "text": "喜歡古典文學",
+        "confidence": 0.8,
+        "updated_at": None,
+    }]), patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.get("/api/v1/memory")
+
+    assert response.status_code == 200
+    propositions = response.json()["propositions"]
+    assert {item["text"] for item in propositions} == {
+        "喜歡古典文學",
+        "喜歡例子",
+        "最近在學習判詞",
+    }
+    assert any(item["id"].startswith("profile:explicit:") for item in propositions)
+    assert any(item["id"].startswith("candidate:") for item in propositions)
+
 def test_memory_debug_endpoint_returns_memory_layers():
     mock_store = AsyncMock()
     mock_store.get_user_profile.return_value = {"explicit_memories": ["喜歡例子"]}

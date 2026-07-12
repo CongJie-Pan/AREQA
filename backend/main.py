@@ -16,6 +16,7 @@ import opencc
 import os
 import hashlib
 import time
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # 在 main.py 最上層加入全域快取服務變數
@@ -334,29 +335,77 @@ async def get_all_memory(user_id: str = "default_user"):
 
     return await get_all_memory(user_id)
 
+
+def _memory_source_id(category: str, text: str) -> str:
+    digest = hashlib.sha256(f"{category}|{text}".encode("utf-8")).hexdigest()[:24]
+    return f"{category}:{digest}"
+
+
+async def build_memory_view(user_id: str) -> list[dict]:
+    """Merge durable profile facts, cold candidates, and GUM propositions."""
+    props = await get_all_memory(user_id)
+    store = None
+    try:
+        from memory_store import get_global_store
+        store = get_global_store()
+    except Exception as exc:
+        logger.warning("[MemoryView] Store unavailable for %s: %s", user_id, exc)
+
+    merged = list(props)
+    existing_text = {str(item.get("text", "")).strip() for item in merged}
+    if store:
+        try:
+            profile = await store.get_user_profile(user_id)
+            for text_value in profile.get("explicit_memories", []):
+                text_value = str(text_value).strip()
+                if not text_value or text_value in existing_text:
+                    continue
+                merged.append({
+                    "id": _memory_source_id("profile:explicit", text_value),
+                    "text": text_value,
+                    "confidence": 9.0,
+                    "updated_at": None,
+                    "context_scope": "user_profile",
+                    "event_types": ["explicit_memory"],
+                    "target": "user",
+                    "functional_type_seeds": ["profile"],
+                })
+                existing_text.add(text_value)
+
+            for candidate in await store.get_cold_candidates(user_id):
+                if candidate.get("status") not in (None, "candidate"):
+                    continue
+                text_value = str(candidate.get("text", "")).strip()
+                if not text_value or text_value in existing_text:
+                    continue
+                merged.append({
+                    "id": _memory_source_id("candidate", text_value),
+                    "text": text_value,
+                    "confidence": candidate.get("confidence", 9.0),
+                    "updated_at": candidate.get("last_seen_at") or candidate.get("created_at"),
+                    "context_scope": candidate.get("category"),
+                    "event_types": [candidate.get("source")] if candidate.get("source") else [],
+                    "target": "user",
+                    "functional_type_seeds": ["cold_candidate"],
+                })
+                existing_text.add(text_value)
+        except Exception as exc:
+            logger.warning("[MemoryView] Redis layers unavailable for %s: %s", user_id, exc)
+
+    return [
+        item for item in merged
+        if not str(item.get("id", "")).startswith("hot:")
+        and "Type: scroll" not in item.get("text", "")
+        and "User Action: scroll" not in item.get("text", "")
+    ]
+
 @app.get("/api/v1/memory")
 async def fetch_memory(current_user_id: str = Depends(get_current_user)):
-    props = await get_all_memory(current_user_id)
-    # Filter out short term memory (hot:) for the UI list
-    long_term_props = [
-        p for p in props 
-        if not str(p.get("id", "")).startswith("hot:") 
-        and "Type: scroll" not in p.get("text", "") 
-        and "User Action: scroll" not in p.get("text", "")
-    ]
-    return {"propositions": long_term_props}
+    return {"propositions": await build_memory_view(current_user_id)}
 
 @app.get("/api/v1/memory/summary")
 async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
-    props = await get_all_memory(current_user_id)
-    # Filter out short term and scroll
-    long_term_props = [
-        p for p in props 
-        if not str(p.get("id", "")).startswith("hot:") 
-        and "Type: scroll" not in p.get("text", "") 
-        and "User Action: scroll" not in p.get("text", "")
-    ]
-    
+    long_term_props = await build_memory_view(current_user_id)
     long_term_props = sorted(long_term_props, key=lambda x: str(x.get("id", "")))
     
     memory_text = "\n".join([f"- {p['text']}" for p in long_term_props])
@@ -454,6 +503,7 @@ async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)
     working_memory = await store.get_working_memory(current_user_id)
     behavior_signals = await store.get_behavior_signals(current_user_id)
     cold_candidates = await store.get_cold_candidates(current_user_id)
+    gum_props = await get_all_memory(current_user_id)
     prompt_snapshot = await get_hot_memory_snapshot(current_user_id)
 
     return {
@@ -466,6 +516,11 @@ async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)
         "cold_candidates": cold_candidates,
         "prompt_snapshot": prompt_snapshot,
         "pending_observation_count": await get_pending_observation_count(current_user_id),
+        "profile_memory_count": len(profile.get("explicit_memories", [])),
+        "cold_candidate_count": len([
+            item for item in cold_candidates if item.get("status") in (None, "candidate")
+        ]),
+        "gum_proposition_count": len(gum_props),
     }
 
 from mailbox_store import get_mailbox_store
@@ -519,6 +574,20 @@ async def read_mail_endpoint(mail_id: str, current_user_id: str = Depends(get_cu
 class EditMemoryRequest(BaseModel):
     text: str
 
+
+def _find_profile_memory(profile: dict, memory_id: str) -> int | None:
+    for index, value in enumerate(profile.get("explicit_memories", [])):
+        if _memory_source_id("profile:explicit", str(value)) == memory_id:
+            return index
+    return None
+
+
+def _find_candidate_memory(candidates: list[dict], memory_id: str) -> int | None:
+    for index, candidate in enumerate(candidates):
+        if _memory_source_id("candidate", str(candidate.get("text", ""))) == memory_id:
+            return index
+    return None
+
 @app.delete("/api/v1/memory/working")
 async def clear_working_memory_endpoint(current_user_id: str = Depends(get_current_user)):
     from memory_store import get_global_store
@@ -550,7 +619,22 @@ async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get
     from gum_integration import get_gum_instance
     from memory_store import get_global_store
     
-    if mem_id.startswith("profile:"):
+    if mem_id.startswith("profile:explicit:"):
+        store = get_global_store()
+        profile = await store.get_user_profile(current_user_id)
+        index = _find_profile_memory(profile, mem_id)
+        if index is not None:
+            profile["explicit_memories"].pop(index)
+            await store.redis.set(f"areqa:user_profile:{current_user_id}", json.dumps(profile, ensure_ascii=False))
+            await store.update_working_memory(user_id=current_user_id, updates={"explicit_memories": profile["explicit_memories"]})
+    elif mem_id.startswith("candidate:"):
+        store = get_global_store()
+        candidates = await store.get_cold_candidates(current_user_id)
+        index = _find_candidate_memory(candidates, mem_id)
+        if index is not None:
+            candidates.pop(index)
+            await store.redis.set(f"areqa:cold_candidates:{current_user_id}", json.dumps(candidates, ensure_ascii=False))
+    elif mem_id.startswith("profile:"):
         store = get_global_store()
         key = mem_id.split("profile:")[1]
         profile = await store.get_user_profile(current_user_id)
@@ -586,7 +670,26 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user
     from gum_integration import get_gum_instance
     from memory_store import get_global_store
     
-    if mem_id.startswith("profile:"):
+    if mem_id.startswith("profile:explicit:"):
+        store = get_global_store()
+        profile = await store.get_user_profile(current_user_id)
+        index = _find_profile_memory(profile, mem_id)
+        if index is not None:
+            profile["explicit_memories"][index] = req.text.strip()
+            await store.redis.set(f"areqa:user_profile:{current_user_id}", json.dumps(profile, ensure_ascii=False))
+            await store.update_working_memory(user_id=current_user_id, updates={"explicit_memories": profile["explicit_memories"]})
+    elif mem_id.startswith("candidate:"):
+        store = get_global_store()
+        candidates = await store.get_cold_candidates(current_user_id)
+        index = _find_candidate_memory(candidates, mem_id)
+        if index is not None:
+            candidates[index]["text"] = req.text.strip()
+            candidates[index]["hash"] = hashlib.sha256(
+                f"{candidates[index].get('category', '')}|{req.text.strip()}".encode("utf-8")
+            ).hexdigest()[:24]
+            candidates[index]["last_seen_at"] = datetime.now(timezone.utc).isoformat()
+            await store.redis.set(f"areqa:cold_candidates:{current_user_id}", json.dumps(candidates, ensure_ascii=False))
+    elif mem_id.startswith("profile:"):
         store = get_global_store()
         key = mem_id.split("profile:")[1]
         profile = await store.get_user_profile(current_user_id)

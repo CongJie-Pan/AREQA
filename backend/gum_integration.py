@@ -85,6 +85,7 @@ async def get_gum_instance(user_id: str):
             api_base="https://openrouter.ai/api/v1",
             min_batch_size=17,
             max_batch_size=20,
+            max_wait_seconds=30.0,
         )
 
         try:
@@ -272,7 +273,7 @@ async def query_memory_for_context(user_query: str, limit: int = 8, user_id: str
     if not gum_instance:
         return ""
     try:
-        results = await gum_instance.query(user_query, limit=limit)
+        results = await gum_instance.query(user_query, user_id=user_id, limit=limit)
         memory_lines = []
         from memory_store import get_global_store
         store = get_global_store()
@@ -316,9 +317,9 @@ async def batch_process_observations(
     if gum_instance and text_observer:
         combined_text = " | ".join(items)
         try:
-            neighbors = await gum_instance.query(combined_text, limit=20)
+            neighbors = await gum_instance.query(combined_text, user_id=user_id, limit=20)
             if not neighbors:
-                recent_props = await gum_instance.recent(limit=20)
+                recent_props = await gum_instance.recent(user_id=user_id, limit=20)
                 neighbors = [(p, 1.0) for p in recent_props]
     
             if neighbors:
@@ -596,7 +597,7 @@ async def get_all_memory(user_id: str = "default_user") -> list[dict]:
         return []
     try:
         import json
-        props = await gum_instance.recent(limit=100)
+        props = await gum_instance.recent(user_id=user_id, limit=100)
         result = [
             {
                 "id": str(p.id), 

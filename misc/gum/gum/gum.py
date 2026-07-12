@@ -74,6 +74,7 @@ class gum:
         api_key: str | None = None,
         min_batch_size: int = 5,
         max_batch_size: int = 50,
+        max_wait_seconds: float = 30.0,
     ):
         # basic paths
         data_directory = os.path.expanduser(data_directory)
@@ -88,6 +89,7 @@ class gum:
         # batching configuration
         self.min_batch_size = min_batch_size
         self.max_batch_size = max_batch_size
+        self.max_wait_seconds = max_wait_seconds
 
         # logging
         self.logger = logging.getLogger("gum")
@@ -117,7 +119,8 @@ class gum:
         self.batcher = ObservationBatcher(
             data_directory=data_directory,
             min_batch_size=min_batch_size,
-            max_batch_size=max_batch_size
+            max_batch_size=max_batch_size,
+            max_wait_seconds=max_wait_seconds,
         )
 
         self._loop_task: asyncio.Task | None = None
@@ -224,8 +227,16 @@ class gum:
     async def _batch_processing_loop(self):
         """Process batched observations when minimum batch size is reached."""
         while True:
-            # Wait for batch to be ready (event-driven, no polling!)
-            await self.batcher.wait_for_batch_ready()
+            # Process full batches immediately, but do not leave a small
+            # durable queue waiting forever for more observations.
+            try:
+                await asyncio.wait_for(
+                    self.batcher.wait_for_batch_ready(),
+                    timeout=self.batcher.max_wait_seconds,
+                )
+            except asyncio.TimeoutError:
+                if self.batcher.size() == 0:
+                    continue
             
             # Use lock to ensure batch processing runs synchronously
             async with self._batch_processing_lock:

@@ -9,9 +9,9 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-07-11（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
+> **最後更新**：2026-07-12（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
 
-> 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 為準。
+> 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 與 `backend/main.py` 的實際 route 為準。
 
 ---
 
@@ -23,6 +23,9 @@
 backend/
 ├── main.py                         # FastAPI 應用主入口，所有 API 端點定義
 ├── config.py                       # 集中式設定 (模型名稱 / RAG 參數 / Redis URL)
+├── auth.py                         # Supabase JWT 驗證與 current_user 依賴
+├── job_store.py                    # 背景工作佇列 / agent job worker
+├── redis_client.py                 # Redis 連線封裝
 ├── gum_integration.py              # GUM 長期記憶框架整合層
 │                                   #   TextObserver / init_gum_instance
 │                                   #   push_observation / query_cold_memory_for_context
@@ -42,6 +45,10 @@ backend/
 ├── mailbox_store.py                # 信箱訊息持久化
 │                                   #   MailboxStore (Redis mailbox + delayed queue)
 │                                   #   add_mail / get_all_mails / mark_as_read
+├── core/                           # SSE / event / runtime / budget / state 公用核心
+├── policies/                       # capability / memory / search policy
+├── tools/                          # memory_query / delayed_mail / web_search registry
+├── agents/                         # agent runtime 與 tutor agent
 │
 ├── services/
 │   ├── orchestration_service.py    # 7 節點串流編排器 (OrchestrationService)
@@ -87,7 +94,7 @@ src/main/python/services/
 
 ```
 frontend/src/
-├── app/                            # Next.js 16 App Router
+├── app/                            # Next.js 16.0.7 App Router
 │   ├── layout.tsx                  # 根佈局 (全局字體 / Provider)
 │   ├── page.tsx                    # 首頁入口
 │   ├── globals.css                 # 全局樣式 (ChenYuluoyan 字體 / 暗色主題)
@@ -99,6 +106,7 @@ frontend/src/
 │   ├── ChatContainer/              # 主對話容器 (整合所有子元件)
 │   ├── MessageList/                # 訊息列表渲染 (助手 / 使用者)
 │   ├── ChatInput/                  # 輸入框 + 工具列 (RAG/Web/Think 切換)
+│   ├── Auth/                       # Supabase 驗證 / 登入 UI
 │   ├── ThinkingPanel/              # CoT <think> 區塊摺疊渲染
 │   ├── Citations/                  # 文獻引用卡片 + Modal (Golden Citation Chips)
 │   ├── SuggestedQuestions/         # 推薦問題卡片
@@ -129,7 +137,8 @@ frontend/src/
 │   ├── chat/
 │   │   └── index.ts                # 串流聊天 / 標題生成 / 記憶 / 信箱 API 呼叫
 │   ├── chat-stream/                # SSE 串流解析服務
-│   └── database/                   # 前端資料庫操作封裝
+│   ├── database/                   # 前端資料庫操作封裝
+│   └── syncService.ts              # Supabase / 本地資料同步
 │
 ├── database/                       # Dexie (IndexedDB) 持久化層
 │   ├── db.ts                       # Dexie 資料庫初始化
@@ -144,6 +153,8 @@ frontend/src/
 │
 ├── config/
 │   └── api.ts                      # API Base URL 設定
+├── lib/
+│   └── supabase.ts                 # Supabase client 初始化
 │
 ├── utils/                          # 工具函式
 │   ├── streamingParser.ts          # SSE 事件解析
@@ -166,12 +177,13 @@ frontend/src/
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Frontend  (Next.js 16 App Router · React 19 · Zustand)     │
+│  Frontend  (Next.js 16.0.7 · React 19.2.0 · Zustand ·      │
+│             Dexie · Ant Design · Supabase Auth)            │
 │  Port 3000                                                   │
 └─────────────────────────┬───────────────────────────────────┘
                           │  HTTP SSE / WebSocket
 ┌─────────────────────────▼───────────────────────────────────┐
-│  Backend  (FastAPI · Python 3.10+)                           │
+│  Backend  (FastAPI · Python 3.10.12+)                        │
 │  Port 8000                                                   │
 │  ┌──────────────┬──────────────┬─────────────┬───────────┐  │
 │  │Orchestration │  GUM / Memory │  Mailbox   │ ComPeer   │  │
@@ -183,6 +195,7 @@ frontend/src/
     │  External Services   │
     │  OpenRouter (LLM)    │
     │  Perplexity Search   │
+    │  Supabase Auth/JWKS  │
     │  Redis Cache         │
     │  PostgreSQL / pgvector│
     │  FAISS + BM25 (選配) │
@@ -192,7 +205,7 @@ frontend/src/
 ---
 
 ### 路徑 A：對話生成路徑 (Chat Path)
-> 實際端點：`POST /api/v1/stream`
+> 實際端點鏈：`POST /api/chat` → `frontend/src/app/api/chat/route.ts` → `POST /api/v1/stream`
 
 ```mermaid
 flowchart TD
@@ -309,7 +322,7 @@ flowchart TD
     end
 
     subgraph MAILBOX ["信箱模塊"]
-        MailStore["mailbox_store.py\nMailboxStore\nRedis mailbox + delayed queue"]
+        MailStore["mailbox_store.py\nMailboxStore\nRedis mailbox + delayed queue\nDB 優先、Redis fallback"]
         DelayReply["delayed_reply_writer\ngum_integration.py\n延遲 5 分鐘 · 使用 ColdMemory + HotMemory\n→ LLM 生成 Avatar 回信\n→ WebSocket 推播 broadcast_mail_alert"]
     end
 
@@ -460,11 +473,13 @@ flowchart TD
 | `GET` | `/api/v1/proactive-check` | 主動關懷輪詢備用端點 |
 | `GET` | `/api/v1/mailbox` | 讀取信箱 |
 | `POST` | `/api/v1/mailbox/send` | 發送信件 |
-| `POST` | `/api/v1/mailbox/read/{id}` | 標記信件已讀 |
+| `POST` | `/api/v1/mailbox/read/{mail_id}` | 標記信件已讀 |
 | `POST` | `/api/v1/ws/ticket` | 產生 30 秒一次性 WebSocket ticket |
 | `WS` | `/api/v1/ws/notifications?ticket=...` | 持久 WebSocket 通知推播 |
 
 > 多數後端端點透過 `Depends(get_current_user)` 驗證 Supabase JWT，呼叫時需帶 `Authorization: Bearer <token>`；`/api/v1/ws/notifications` 則先以 Bearer token 呼叫 `/api/v1/ws/ticket`，再用 ticket 建立 WebSocket。
+
+> 補充：前端 `useGumStore.fetchSuggestions()` 目前仍會請求 `/api/v1/suggestions`，但後端 `main.py` 尚未提供這個 route；現有建議問題主要透過 `/api/v1/stream` 的 `event: suggestions` 與 `event: done` SSE 事件傳回。
 
 ---
 
@@ -477,19 +492,19 @@ AREQA 分為 Python 後端與 Next.js 前端，兩端均支援並推薦使用環
 目前程式會從專案根目錄的 `.env` 或 `.env.local` 載入設定；前端 `predev` / `prebuild` 會自動把根目錄 `.env.local` 或 `.env` 複製到 `frontend/.env.local`。
 
 主要變數說明：
-- `OPENROUTER_API_KEY`: 呼叫主 LLM、標題生成、記憶總結、GUM 與部分檢索相關 API 的密鑰。
-- `PERPLEXITY_API_KEY`: Perplexity 網路搜尋服務的 API 密鑰；未設定時 Web Search 會回退到一般對話。
-- `REDIS_URL`: Redis 連線位址（預設 `redis://localhost:6379`），用於 hot memory、user profile、mailbox、RAG cache、WS ticket。
-- `JWT_SECRET`: 後端驗證 Supabase JWT 所需密鑰，缺少時受保護端點會回 500；若 JWT 演算法不是 HS 系列，後端會透過 Supabase JWKS URL 驗證。
-- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 與後端 JWKS 驗證使用。
+- `OPENROUTER_API_KEY`: 呼叫主 LLM、標題生成、記憶總結、GUM、agent job worker、建議問題與部分檢索相關流程的密鑰。
+- `PERPLEXITY_API_KEY`: Perplexity 網路搜尋服務的 API 密鑰；未設定時 web search 會回退到一般對話。
+- `REDIS_URL`: Redis 連線位址（預設 `redis://localhost:6379`），用於 hot memory、user profile、working memory、mailbox cache、RAG cache 與 WS ticket。
+- `JWT_SECRET`: 後端驗證 Supabase JWT 所需密鑰；若缺少會使 `get_current_user` 直接回 500。若 JWT 演算法不是 HS 系列，後端會改走 Supabase JWKS。
+- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 使用，後端 JWKS 來源也依賴 `NEXT_PUBLIC_SUPABASE_URL`。
 - `NEXT_PUBLIC_BACKEND_URL`: 前端直連 FastAPI 的 base URL；本地預設 `http://localhost:8000` 或 `http://127.0.0.1:8000`。
 - `NEXT_PUBLIC_CHAT_API_ENDPOINT`: 前端 chat service endpoint，預設 `/api/chat`，由 Next.js BFF 代理到 FastAPI。
 - `NEXT_PUBLIC_API_TIMEOUT` / `NEXT_PUBLIC_MAX_MESSAGE_LENGTH` / `NEXT_PUBLIC_PARSER_MAX_BUFFER`: 前端 API timeout、訊息長度與 SSE parser buffer 設定。
 - `ENABLE_INTERNAL_RAG`: 設為 `true` 才會載入本地文件 RAG 的 FAISS/BM25 index；否則 `/api/v1/retrieve` 會回傳 internal RAG disabled。這不控制 GUM/cold memory 是否啟用。
-- `DATABASE_URL`: PostgreSQL 連線位址，供 GUM / cold memory 使用；cold memory 依賴 `propositions`，並可使用 `vec_memory` + pgvector 做向量檢索。
+- `DATABASE_URL`: PostgreSQL 連線位址，供 GUM / cold memory / agent jobs 使用；cold memory 依賴 `propositions`，並可使用 `vec_memory` + pgvector 做向量檢索。
 - `GUM_DATABASE_URL`: GUM 專用資料庫 URL；若設定，優先於 `DATABASE_URL`。
-- `MAILBOX_DATABASE_URL`: mailbox 專用資料庫 URL；若設定，優先於 `DATABASE_URL`。目前 mailbox 主要資料仍由 Redis 管理。
-- `HF_TOKEN` / `HF_ENDPOINT_URL` / `HF_REPO_ID`: Hugging Face 或外部 embedding/reranking 端點相關設定。
+- `MAILBOX_DATABASE_URL`: mailbox 專用資料庫 URL；若設定，優先於 `DATABASE_URL`。若資料表不存在或連線失敗，mailbox 會回退到 Redis。
+- `HF_TOKEN` / `HF_ENDPOINT_URL` / `HF_REPO_ID`: Hugging Face 或外部 embedding / reranking 端點相關設定。
 
 前端聊天請求的實際路徑：
 ```text
@@ -507,7 +522,7 @@ Conversation Store → /api/title
 
 記憶、信箱與 WebSocket 相關功能不經 `/api/chat`，會依 `NEXT_PUBLIC_BACKEND_URL` 直接呼叫 FastAPI。WebSocket 連線流程為：先以 Bearer token 呼叫 `/api/v1/ws/ticket` 取得 30 秒一次性 ticket，再連 `/api/v1/ws/notifications?ticket=...`。
 
-### 2. 後端運行步驟 (Python 3.10+)
+### 2. 後端運行步驟 (Python 3.10.12+)
 
 後端使用 FastAPI 提供高效非同步 SSE 串流服務，並使用 Redis 進行 RAG 快取。`backend/requirements.txt` 已包含後端執行與測試所需的主要依賴，包含 `aiosqlite`、`respx`、`faiss-cpu`、`jieba` 等。
 ```bash
@@ -523,7 +538,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ### 3. 前端運行步驟 (Node.js v20+)
 
-前端基於 Next.js 16 App Router 建立，`predev` 腳本會自動從根目錄複製 `.env` 或 `.env.local` 至 `frontend/.env.local`。
+前端基於 Next.js 16.0.7 App Router 建立，`predev` 腳本會自動從根目錄複製 `.env` 或 `.env.local` 至 `frontend/.env.local`。
 ```bash
 cd frontend
 npm install
@@ -531,6 +546,8 @@ npm run dev
 ```
 
 Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設走 Next.js API Route 代理；記憶、信箱與 WebSocket 相關功能會依 `NEXT_PUBLIC_BACKEND_URL` 直接呼叫 FastAPI。
+
+從專案根目錄執行 `npm run dev` 會同時啟動後端 Uvicorn 與前端 Next.js；這是目前最接近完整本地工作流的啟動方式。
 
 ---
 
@@ -554,10 +571,9 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   npm run typecheck:report
   ```
 - **手動 API 驗證**: FastAPI Swagger UI 可透過後端 `/docs` 檢查與測試端點。
-- **目前已驗證的測試狀態**:
-  - `npm run test:all` 已通過。
-  - 後端 `pytest tests/backend` 已通過，包含 GUM、memory、ComPeer、Perplexity、RAG pipeline 與 SSE 相關測試。
-  - 前端 `npm test` 已通過，包含 auth / sync / websocket / mailbox / selection / store / chat 相關測試。
+- **測試覆蓋範圍**:
+  - `tests/backend` 主要覆蓋 GUM、memory、ComPeer、Perplexity、RAG pipeline、SSE 與 runtime contract。
+  - `tests/frontend` 主要覆蓋 auth / sync / websocket / mailbox / selection / store / chat 與 integration 行為。
 - **測試注意事項**:
   - 前端 `Supabase Auth UI`、`fake-indexeddb` 與部分 WebSocket 行為在測試環境中使用本地 mocks，以避免 jsdom 與外部登入流量造成不穩定。
   - `syncService` 在有資料變更時會延遲觸發 reload，測試需等待該延遲行為。

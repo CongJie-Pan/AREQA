@@ -122,7 +122,7 @@ async def test_push_observation():
 
         await push_observation("test_user", "test observation text")
 
-        mock_gum.query.assert_called_once_with("test observation text", limit=20)
+        mock_gum.query.assert_called_once_with("test observation text", user_id="test_user", limit=20)
         mock_obs.push_text.assert_called_once_with("test observation text", user_id="test_user")
 
 @pytest.mark.asyncio
@@ -199,6 +199,23 @@ async def test_get_all_memory_with_stitch_tags(mock_gum_instance):
     assert m2["event_types"] == []
     assert m2["target"] is None
     assert m2["functional_type_seeds"] == []
+
+
+@pytest.mark.asyncio
+async def test_user_scoped_gum_reads_forward_user_id():
+    mock_gum = MagicMock()
+    mock_gum.recent = AsyncMock(return_value=[])
+    mock_gum.query = AsyncMock(return_value=[])
+
+    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+        mock_get_gum.return_value = (mock_gum, AsyncMock())
+        await get_all_memory("user-a")
+        await backend.gum_integration.query_memory_for_context(
+            "判詞", user_id="user-a"
+        )
+
+    mock_gum.recent.assert_awaited_once_with(user_id="user-a", limit=100)
+    mock_gum.query.assert_awaited_once_with("判詞", user_id="user-a", limit=8)
         
 @pytest.mark.asyncio
 async def test_push_observation_with_evolution():
@@ -225,7 +242,7 @@ async def test_push_observation_with_evolution():
 
         await push_observation("test_user", "User loves apples now")
 
-        mock_gum.query.assert_called_once_with("User loves apples now", limit=20)
+        mock_gum.query.assert_called_once_with("User loves apples now", user_id="test_user", limit=20)
         # Should call LLM for evolution
         mock_gum.client.chat.completions.create.assert_called_once()
         # Should update status of ID 1 to superseded
@@ -258,7 +275,7 @@ async def test_push_observation_with_evolution_no_prune():
 
         await push_observation("test_user", "User asks about the weather")
 
-        mock_gum.query.assert_called_once_with("User asks about the weather", limit=20)
+        mock_gum.query.assert_called_once_with("User asks about the weather", user_id="test_user", limit=20)
         # Should call LLM for evolution
         mock_gum.client.chat.completions.create.assert_called_once()
         # Should NOT update status since should_evolve is false
@@ -277,7 +294,7 @@ async def test_get_all_memory(mock_gum_instance):
     assert memory[0]["text"] == "test user likes apples"
     assert memory[0]["confidence"] == 0.9
     assert "updated_at" in memory[0]
-    mock_gum_instance.recent.assert_called_once_with(limit=100)
+    mock_gum_instance.recent.assert_called_once_with(user_id="test_user", limit=100)
     
 @pytest.mark.asyncio
 async def test_get_all_memory_no_instance():

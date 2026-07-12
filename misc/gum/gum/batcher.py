@@ -9,10 +9,17 @@ from persistqueue import Queue
 class ObservationBatcher:
     """A persistent queue for batching observations to reduce API calls."""
     
-    def __init__(self, data_directory: str, min_batch_size: int = 5, max_batch_size: int = 50):
+    def __init__(
+        self,
+        data_directory: str,
+        min_batch_size: int = 5,
+        max_batch_size: int = 50,
+        max_wait_seconds: float = 30.0,
+    ):
         self.data_directory = Path(data_directory)
         self.min_batch_size = min_batch_size
         self.max_batch_size = max_batch_size
+        self.max_wait_seconds = max_wait_seconds
         
         # Create persistent queue backed by SQLite
         queue_dir = self.data_directory / "batches"
