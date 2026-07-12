@@ -230,13 +230,13 @@ class OrchestrationService:
         ))
         yield sse_adapter.encode(AgentEvent(
             EventType.STATUS,
-            {"status": "routing", "message": "正在分析問題與準備回答"},
+            {"status": "routing", "message": "🔍 正在分析問題與準備回答"},
             run_context.run_id,
             2,
         ))
         yield sse_adapter.encode(AgentEvent(
             EventType.STATUS,
-            {"status": "routing", "message": "正在判斷是否需要外部搜尋"},
+            {"status": "routing", "message": "🧭 正在判斷是否需要外部搜尋"},
             run_context.run_id,
             3,
         ))
@@ -278,7 +278,7 @@ class OrchestrationService:
                 "phase": "tool_selection",
                 "action": "web_search" if use_web_search else "answer_directly",
                 "reason_code": search_decision.reason.value,
-                "display_message": "正在查找最新資料" if use_web_search else "正在整理回答脈絡",
+                "display_message": "🌐 正在查找最新資料" if use_web_search else "🧠 正在整理回答脈絡",
                 "attempt": 1,
             },
             run_context.run_id,
@@ -288,7 +288,7 @@ class OrchestrationService:
             EventType.STATUS,
             {
                 "status": "routing",
-                "message": "已判斷回答路徑，正在檢查可用記憶與背景任務",
+                "message": "🚦 已判斷回答路徑，正在檢查可用記憶與背景任務",
             },
             run_context.run_id,
             5,
@@ -319,6 +319,10 @@ class OrchestrationService:
             if store:
                 try:
                     from memory_gate import apply_user_message_gate
+                    yield sse_adapter.encode_legacy(
+                        f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '📖 正在回顧你過去的學習紀錄'}, ensure_ascii=False)}\n\n",
+                        run_context.run_id,
+                    )
                     await apply_user_message_gate(store, user_id, last_user_msg, conversation_id=conversation_id)
                 except Exception as e:
                     print(f"[MemoryStore] Failed to apply user-message memory gate: {e}")
@@ -358,6 +362,10 @@ class OrchestrationService:
                 RECENT_WINDOW = 10
                 recent_messages = messages[-RECENT_WINDOW:]
                 from config import settings
+                yield sse_adapter.encode_legacy(
+                    f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🎯 正在分析目前的學習狀態與需求'}, ensure_ascii=False)}\n\n",
+                    run_context.run_id,
+                )
                 try:
                     from job_store import get_agent_job_store
 
@@ -391,7 +399,7 @@ class OrchestrationService:
             return
 
         yield sse_adapter.encode_legacy(
-            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '正在準備檢索策略與教學策略'}, ensure_ascii=False)}\n\n",
+            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '📚 正在準備檢索策略與教學策略'}, ensure_ascii=False)}\n\n",
             run_context.run_id,
         )
 
@@ -412,6 +420,10 @@ class OrchestrationService:
                 cached_results = await rag_cache.get(fingerprint)
                 
             if not cached_results:
+                yield sse_adapter.encode_legacy(
+                    f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🧩 正在拆解問題'}, ensure_ascii=False)}\n\n",
+                    run_context.run_id,
+                )
                 rag_queries = await parse_and_decompose_query(last_user_msg, self.client)
             else:
                 rag_queries = None
@@ -447,12 +459,12 @@ class OrchestrationService:
                 policy_task.cancel()
                 print("[EDF Policy] Classifier timed out; using NORMAL fallback")
                 yield sse_adapter.encode_legacy(
-                    f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '已完成基本分析，正在組織回答'}, ensure_ascii=False)}\n\n",
+                    f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '✅ 已完成基本分析，正在組織回答'}, ensure_ascii=False)}\n\n",
                     run_context.run_id,
                 )
 
         yield sse_adapter.encode_legacy(
-            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '正在組合回答素材與安全邊界'}, ensure_ascii=False)}\n\n",
+            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🛡️ 正在為您撰寫最終解答與檢查規範'}, ensure_ascii=False)}\n\n",
             run_context.run_id,
         )
 
@@ -478,7 +490,7 @@ class OrchestrationService:
             effective_max_tokens = 3200
 
         yield sse_adapter.encode_legacy(
-            f"event: status\ndata: {json.dumps({'status': 'generating', 'message': '正在呼叫模型生成回答'}, ensure_ascii=False)}\n\n",
+            f"event: status\ndata: {json.dumps({'status': 'generating', 'message': '✨ 正在生成回答'}, ensure_ascii=False)}\n\n",
             run_context.run_id,
         )
 
@@ -637,7 +649,7 @@ class OrchestrationService:
         print(f"[Perplexity] Query rewrite took {time.time() - rewrite_start:.2f}s")
         print(f"[Perplexity] 搜尋詞: {rewritten_query}, 篇數: {max_results}, context: {search_context_size}, rewrite: {enable_query_rewrite}")
 
-        yield f"event: tool_started\ndata: {json.dumps({'tool_name': 'web_search', 'display_message': '正在查找最新資料'}, ensure_ascii=False)}\n\n"
+        yield f"event: tool_started\ndata: {json.dumps({'tool_name': 'web_search', 'display_message': '🌐 正在查找最新資料'}, ensure_ascii=False)}\n\n"
         try:
             tool_result = await self.tool_registry.execute(
                 "web_search",
