@@ -31,8 +31,11 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
   if (ragInfo.status === 'idle') return null;
 
   return (
-    <motion.div 
+    <motion.div
       className={styles.container}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: 'auto', opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
@@ -65,20 +68,17 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
           
           <div style={{ overflow: 'hidden', height: '24px', position: 'relative' }}>
             <AnimatePresence mode="wait">
-              {/* Hide text message when routing as requested "不用 發送「🔍 正在識別問題領域...」" */}
-              {!isRouting && (
-                <motion.span 
-                  key={ragInfo.message || ragInfo.status}
-                  className={styles.statusText}
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: -20, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  style={{ display: 'block', whiteSpace: 'nowrap' }}
-                >
-                  {ragInfo.message || (isComplete ? '已完成文獻檢索' : '正在檢索相關文獻...')}
-                </motion.span>
-              )}
+              <motion.span
+                key={ragInfo.message || ragInfo.status}
+                className={styles.statusText}
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -20, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                style={{ display: 'block', whiteSpace: 'nowrap' }}
+              >
+                {ragInfo.message || (isRouting ? '正在分析問題' : isComplete ? '已完成文獻檢索' : '正在檢索相關文獻...')}
+              </motion.span>
             </AnimatePresence>
           </div>
         </div>

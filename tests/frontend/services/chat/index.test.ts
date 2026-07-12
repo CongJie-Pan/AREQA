@@ -53,6 +53,8 @@ describe('Chat Service', () => {
     mockChatStore = {
       messages: [],
       useRag: false,
+      useWebSearch: false,
+      searchMode: 'auto',
       forceThink: false,
       addUserMessage: vi.fn(),
       addAssistantMessage: vi.fn().mockReturnValue('assistant-msg-id'),
@@ -126,7 +128,7 @@ describe('Chat Service', () => {
         expect.any(AbortSignal),
         mockChatStore.useRag,
         mockChatStore.forceThink,
-        mockChatStore.useWebSearch,
+        mockChatStore.searchMode,
         'test-conv-id'
       );
     });

@@ -459,16 +459,16 @@ export const MessageItem = memo(function MessageItem({
           {/* Bubble Wrapper */}
           <div className={cx(styles.bubbleWrapper, 'bubbleWrapper')}>
             {/* RAG Status Panel - Should be at the top and only visible before thinking or content starts */}
-            {ragInfo && ragInfo.status !== 'idle' && ragInfo.status !== 'done' && !thinking?.isThinking && !thinking?.content && !message.reasoning && !message.content && (
+            {ragInfo && ragInfo.status !== 'idle' && ragInfo.status !== 'done' && !thinking?.isThinking && !thinking?.content && !message.content && (
               <RAGStatusPanel ragInfo={ragInfo} />
             )}
 
             {/* Thinking Panel */}
-            {(thinking?.isThinking || message.reasoning) && (
+            {thinking?.isThinking && (
               <div className={styles.thinkingPanelWrapper}>
                 <ThinkingPanel
-                  content={thinking?.content || message.reasoning?.content}
-                  duration={thinking?.duration || message.reasoning?.duration}
+                  content={thinking.content}
+                  duration={thinking.duration}
                   isThinking={thinking?.isThinking}
                   defaultExpanded={thinking?.isThinking}
                 />

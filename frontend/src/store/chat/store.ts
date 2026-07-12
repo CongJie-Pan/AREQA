@@ -29,6 +29,7 @@ const initialState = {
   tokenUsage: null as { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null,
   useRag: false,
   useWebSearch: false,
+  searchMode: 'auto' as const,
   forceThink: true,
   ragStatus: 'idle' as 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done',
   ragMessage: '',
@@ -303,12 +304,19 @@ export const useChatStore = create<ChatStore>((set) => ({
   // Toggles
   toggleRag: () => set((state) => ({ 
     useRag: !state.useRag,
-    useWebSearch: false
+    useWebSearch: false,
+    searchMode: state.useRag ? state.searchMode : 'never'
   })),
-  toggleWebSearch: () => set((state) => ({ 
-    useWebSearch: !state.useWebSearch,
-    useRag: false
-  })),
+  toggleWebSearch: () => set((state) => {
+    const searchMode = state.searchMode === 'auto'
+      ? 'always'
+      : state.searchMode === 'always' ? 'never' : 'auto';
+    return {
+      searchMode,
+      useWebSearch: searchMode === 'always',
+      useRag: false,
+    };
+  }),
   toggleThink: () => set((state) => ({ forceThink: !state.forceThink })),
 
   // RAG Visualization

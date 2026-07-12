@@ -313,7 +313,7 @@ export async function sendMessage(
       abortSignal,
       chatStore.useRag,
       chatStore.forceThink,
-      chatStore.useWebSearch,
+      chatStore.searchMode,
       activeConversationId
     );
   } catch (error) {
@@ -731,7 +731,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
       abortSignal,
       chatStore.useRag,
       chatStore.forceThink,
-      chatStore.useWebSearch,
+      chatStore.searchMode,
       activeConversationId
     );
   } catch (error) {
@@ -949,7 +949,7 @@ export async function editUserMessage(
       abortSignal,
       chatStore.useRag,
       chatStore.forceThink,
-      chatStore.useWebSearch,
+      chatStore.searchMode,
       activeConversationId
     );
   } catch (error) {

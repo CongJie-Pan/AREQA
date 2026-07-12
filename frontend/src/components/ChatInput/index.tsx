@@ -52,7 +52,7 @@ export function ChatInput({
   
   // Connect to global state for mode togglers
   const useRag = useChatStore((state) => state.useRag);
-  const useWebSearch = useChatStore((state) => state.useWebSearch);
+  const searchMode = useChatStore((state) => state.searchMode);
   const quotedText = useChatStore((state) => state.quotedText);
   const toggleRag = useChatStore((state) => state.toggleRag);
   const toggleWebSearch = useChatStore((state) => state.toggleWebSearch);
@@ -201,15 +201,15 @@ export function ChatInput({
             </Tooltip>
           </div>
 
-          <Tooltip title="切換網路搜尋" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+          <Tooltip title="網路搜尋：自動／總是／停用" color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
-              className={cx(styles.toggleButton, useWebSearch && styles.toggleButtonActive)}
+              className={cx(styles.toggleButton, searchMode !== 'never' && styles.toggleButtonActive)}
               onClick={toggleWebSearch}
-              aria-label="切換網路搜尋"
+              aria-label={`切換網路搜尋，目前為${searchMode}`}
             >
               <Globe size={15} />
-              <span>網路搜尋</span>
+              <span>搜尋：{searchMode === 'auto' ? '自動' : searchMode === 'always' ? '總是' : '停用'}</span>
             </button>
           </Tooltip>
 

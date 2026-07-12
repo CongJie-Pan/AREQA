@@ -8,6 +8,15 @@ import { databaseService } from '@/services/database';
 import type { Conversation } from '@/database/schema';
 import type { ConversationStore } from './types';
 
+const isValidGeneratedTitle = (title: string): boolean => {
+  const normalized = title.trim();
+  return (
+    normalized.length > 0 &&
+    Array.from(normalized).length <= 10 &&
+    !/[\n\r#*`]|(?:對話)?標題\s*[:：]|請根據|上述對話|對話內容/.test(normalized)
+  );
+};
+
 /**
  * Initial state for the conversation store
  */
@@ -112,13 +121,15 @@ export const useConversationStore = create<ConversationStore>((set) => ({
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullTitle = '';
+      let sseBuffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() ?? '';
 
         for (const line of lines) {
           if (line.trim().startsWith('data: ')) {
@@ -145,8 +156,21 @@ export const useConversationStore = create<ConversationStore>((set) => ({
         }
       }
 
+      sseBuffer += decoder.decode();
+      if (sseBuffer.trim().startsWith('data: ')) {
+        const dataStr = sseBuffer.trim().slice(6);
+        if (dataStr !== '[DONE]' && !dataStr.startsWith('[ERROR]')) {
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.content) fullTitle += data.content;
+          } catch {
+            // An incomplete final SSE event is ignored and never persisted.
+          }
+        }
+      }
+
       // Persist the final title
-      if (fullTitle.trim()) {
+      if (isValidGeneratedTitle(fullTitle)) {
         const finalTitle = fullTitle.trim();
         await databaseService.conversation.update(conversationId, { title: finalTitle });
         

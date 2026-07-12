@@ -6,6 +6,8 @@
 import type { Message } from '@/database/schema';
 import type { CitationSource } from '@/components/Citations';
 
+export type SearchMode = 'auto' | 'always' | 'never';
+
 /**
  * Display message for UI rendering
  * Extends database Message with streaming state
@@ -76,6 +78,8 @@ export interface ChatState {
   useRag: boolean;
   /** Whether explicitly requesting Web Search API */
   useWebSearch: boolean;
+  /** Web search policy for the current request. */
+  searchMode: SearchMode;
   /** Whether explicitly forcing the model to wrap reasoning in <think> */
   forceThink: boolean;
 

@@ -14,6 +14,7 @@ import { ChatStreamError, StreamParseError, isAbortError } from '@/utils/error';
 import { ThinkTagParser } from './parser';
 import { useChatStore } from '@/store/chat/store';
 import type { ChatMessage, StreamCallbacks } from './types';
+import type { SearchMode } from '@/store/chat/types';
 import { getAuthToken } from '../../database/db';
 
 /**
@@ -51,7 +52,7 @@ export async function createChatStream(
   abortSignal?: AbortSignal,
   useRag: boolean = false,
   forceThink: boolean = false,
-  useWebSearch: boolean = false,
+  searchMode: SearchMode = 'auto',
   conversationId: string = ""
 ): Promise<void> {
   const parser = new ThinkTagParser();
@@ -104,7 +105,8 @@ export async function createChatStream(
         conversation_id: conversationId,
         use_rag: useRag,
         force_think: forceThink,
-        use_web_search: useWebSearch
+        use_web_search: searchMode === 'always',
+        search_mode: searchMode,
       }),
     };
 
@@ -198,6 +200,18 @@ export async function createChatStream(
           // Why: Update the RAGStatusPanel with the current backend progress.
           if (eventType === 'status') {
             callbacks.onStatus?.(chunk.status, chunk.message);
+            continue;
+          }
+
+          // Public action telemetry contains only safe display summaries. It
+          // intentionally excludes model reasoning and raw tool arguments.
+          if (eventType === 'action' || eventType === 'tool_started' || eventType === 'tool_completed') {
+            callbacks.onStatus?.('routing', chunk.display_message || chunk.message || '正在處理請求');
+            continue;
+          }
+
+          if (eventType === 'warning') {
+            callbacks.onStatus?.('routing', chunk.display_message || chunk.message || '部分功能暫時無法使用');
             continue;
           }
 

@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       conversation_id?: string;
       use_rag?: boolean;
       use_web_search?: boolean;
+      search_mode?: 'auto' | 'always' | 'never';
       force_think?: boolean;
       temperature?: number;
       top_p?: number;
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
         conversation_id: body.conversation_id || "",
         use_rag: body.use_rag || false,
         use_web_search: body.use_web_search || false,
+        search_mode: body.search_mode,
         force_think: body.force_think || false,
         temperature: body.temperature ?? 0.0,
         top_p: body.top_p ?? 0.9,

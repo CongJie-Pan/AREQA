@@ -103,5 +103,51 @@ describe('Conversation Store', () => {
       expect(databaseService.conversation.update).not.toHaveBeenCalled();
       expect(useConversationStore.getState().streamingTitles[MOCK_ID]).toBeUndefined();
     });
+
+    it('should not persist malformed model output as a title', async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(
+            'data: {"content": "**標題：** 請根據上述對話內容"}\n\n'
+          ));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      });
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true, body: stream } as any);
+
+      await useConversationStore.getState().generateTitle(
+        'conv-malformed',
+        [{ role: 'user', content: '家庭問題' }]
+      );
+
+      expect(databaseService.conversation.update).not.toHaveBeenCalled();
+      expect(useConversationStore.getState().streamingTitles['conv-malformed']).toBeUndefined();
+    });
+
+    it('should parse a title event split across arbitrary network chunks', async () => {
+      const encodedEvent = new TextEncoder().encode(
+        'data: {"content": "家庭衝突與焦慮"}\n\ndata: [DONE]\n\n'
+      );
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encodedEvent.slice(0, 12));
+          controller.enqueue(encodedEvent.slice(12, 25));
+          controller.enqueue(encodedEvent.slice(25));
+          controller.close();
+        },
+      });
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true, body: stream } as any);
+
+      await useConversationStore.getState().generateTitle(
+        'conv-split-event',
+        [{ role: 'user', content: '家庭問題' }]
+      );
+
+      expect(databaseService.conversation.update).toHaveBeenCalledWith('conv-split-event', {
+        title: '家庭衝突與焦慮',
+      });
+    });
   });
 });

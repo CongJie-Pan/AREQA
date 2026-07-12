@@ -166,7 +166,7 @@ export interface StreamCallbacks {
   /** Called on error */
   onError: (error: Error) => void;
   /** Called when RAG pipeline status changes */
-  onStatus?: (status: 'idle' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => void;
+  onStatus?: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => void;
   /** Called when structured sources payload is pushed */
   onSources?: (sources: CitationSource[]) => void;
   /** Called when suggested follow-up questions are received */

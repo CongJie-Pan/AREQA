@@ -23,6 +23,17 @@ vi.mock('../../../../frontend/src/components/RAGStatusPanel/styles', () => ({
 }));
 
 describe('RAGStatusPanel', () => {
+  it('shows routing progress text in an accessible live region', () => {
+    render(
+      <RAGStatusPanel
+        ragInfo={{ status: 'routing', message: '正在整理回答脈絡', sources: [] }}
+      />
+    );
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText('正在整理回答脈絡')).toBeInTheDocument();
+  });
   it('Scenario 1: Idle state - returns null', () => {
     const ragInfo: RAGInfo = { status: 'idle', message: '', sources: [] };
     const { container } = render(<RAGStatusPanel ragInfo={ragInfo} />);
