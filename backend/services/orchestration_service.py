@@ -234,6 +234,12 @@ class OrchestrationService:
             run_context.run_id,
             2,
         ))
+        yield sse_adapter.encode(AgentEvent(
+            EventType.STATUS,
+            {"status": "routing", "message": "正在判斷是否需要外部搜尋"},
+            run_context.run_id,
+            3,
+        ))
 
         if effective_search_mode == SearchMode.AUTO and auto_routing_enabled:
             search_decision = await self.tutor_agent.decide_search(
@@ -241,9 +247,12 @@ class OrchestrationService:
                 run_context,
                 client=self.client,
                 model=settings.model_policy_classifier,
+                timeout_seconds=1.5,
             )
         elif effective_search_mode == SearchMode.AUTO:
-            search_decision = SearchDecision(False, SearchReason.AGENT_ROUTING_DISABLED)
+            search_decision = self.tutor_agent.search_policy.evaluate(
+                last_user_msg, effective_search_mode
+            )
         else:
             search_decision = self.tutor_agent.search_policy.evaluate(
                 last_user_msg, effective_search_mode
@@ -273,7 +282,16 @@ class OrchestrationService:
                 "attempt": 1,
             },
             run_context.run_id,
-            3,
+            4,
+        ))
+        yield sse_adapter.encode(AgentEvent(
+            EventType.STATUS,
+            {
+                "status": "routing",
+                "message": "已判斷回答路徑，正在檢查可用記憶與背景任務",
+            },
+            run_context.run_id,
+            5,
         ))
         
         # Node 1: Intent Routing (DISABLED BY USER REQUEST)
@@ -372,6 +390,11 @@ class OrchestrationService:
             yield sse_adapter.encode_legacy("data: [DONE]\n\n", run_context.run_id)
             return
 
+        yield sse_adapter.encode_legacy(
+            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '正在準備檢索策略與教學策略'}, ensure_ascii=False)}\n\n",
+            run_context.run_id,
+        )
+
         # Node 2 & 3: Parallel Tasks (HyDE & Policy)
         policy_task = None
         if last_user_msg and self.client:
@@ -428,6 +451,11 @@ class OrchestrationService:
                     run_context.run_id,
                 )
 
+        yield sse_adapter.encode_legacy(
+            f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '正在組合回答素材與安全邊界'}, ensure_ascii=False)}\n\n",
+            run_context.run_id,
+        )
+
         final_messages = await self._node_prompt_assembly(
             user_id,
             conversation_id,
@@ -448,6 +476,11 @@ class OrchestrationService:
             
         if force_think:
             effective_max_tokens = 3200
+
+        yield sse_adapter.encode_legacy(
+            f"event: status\ndata: {json.dumps({'status': 'generating', 'message': '正在呼叫模型生成回答'}, ensure_ascii=False)}\n\n",
+            run_context.run_id,
+        )
 
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""

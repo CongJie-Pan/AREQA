@@ -230,14 +230,17 @@ async def test_execute_emits_visible_status_before_memory_work(
         first = await anext(stream)
         second = await anext(stream)
         third = await anext(stream)
+        fourth = await anext(stream)
         await stream.aclose()
 
     assert first.startswith("event: metadata")
     assert second.startswith("event: status")
     assert '"status": "routing"' in second
-    assert third.startswith("event: action")
-    assert "請解釋 dependency injection" not in third
-    assert '"reason_code": "USER_DISABLED"' in third
+    assert third.startswith("event: status")
+    assert "正在判斷是否需要外部搜尋" in third
+    assert fourth.startswith("event: action")
+    assert "請解釋 dependency injection" not in fourth
+    assert '"reason_code": "USER_DISABLED"' in fourth
 
 
 @pytest.mark.asyncio

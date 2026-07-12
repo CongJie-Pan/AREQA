@@ -27,6 +27,12 @@ class SearchPolicy:
         r"今天|目前|最新|近期|新聞|價格|天氣|時程|版本|現任|現在",
         r"20\d{2}",
     ))
+    _REFERENCE_LOOKUP_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+        r"(有哪些|哪些|列出|清單|列表).*(書|作品|著作|小說|文章|代表作|出版)",
+        r"(書|作品|著作|小說|文章|代表作|出版).*(有哪些|哪些|列出|清單|列表)",
+        r"\b(what|which|list).*(books|works|novels|essays|publications).*(wrote|written|by|of)\b",
+        r"\b(books|works|novels|essays|publications).*(by|of|from)\b",
+    ))
 
     def evaluate(self, query: str, mode: SearchMode) -> SearchDecision:
         if mode == SearchMode.NEVER:
@@ -35,7 +41,11 @@ class SearchPolicy:
             return SearchDecision(True, SearchReason.USER_FORCED)
 
         requires_current_info = any(pattern.search(query) for pattern in self._CURRENT_PATTERNS)
+        requires_reference_lookup = any(
+            pattern.search(query) for pattern in self._REFERENCE_LOOKUP_PATTERNS
+        )
+        should_search = requires_current_info or requires_reference_lookup
         return SearchDecision(
-            requires_current_info,
-            SearchReason.CURRENT_INFORMATION_REQUIRED if requires_current_info else SearchReason.STABLE_KNOWLEDGE,
+            should_search,
+            SearchReason.CURRENT_INFORMATION_REQUIRED if should_search else SearchReason.STABLE_KNOWLEDGE,
         )

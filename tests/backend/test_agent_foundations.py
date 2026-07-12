@@ -20,6 +20,8 @@ from backend.tools import ToolDefinition, ToolRegistry, ToolResult
         ("今天台北天氣如何", True),
         ("React 最新版本是什麼", True),
         ("Who is the current president?", True),
+        ("請問 夏目漱石有寫過哪些書 ?", True),
+        ("列出村上春樹的代表作品", True),
     ],
 )
 def test_auto_search_policy_routes_current_information(query, expected):
@@ -138,3 +140,12 @@ async def test_tutor_agent_invalid_model_output_falls_back_to_policy():
     )
     assert decision.should_search is True
     assert decision.reason == SearchReason.CURRENT_INFORMATION_REQUIRED
+
+
+def test_agent_search_routing_is_enabled_by_default():
+    from backend.config import Settings
+
+    settings = Settings()
+
+    assert settings.enable_agent_search_routing is True
+    assert settings.agent_search_rollout_percentage == 100.0
