@@ -154,6 +154,29 @@ export interface MessageItemProps {
 }
 
 // New Sub-Component for handling streaming markdown parsing safely
+export function normalizeCitationMarkers(content: string): string {
+  let text = content;
+
+  // Support both full-width and Markdown-style citation markers, e.g.
+  // 【文獻5】 and [文獻5], while leaving regular Markdown links untouched.
+  text = text.replace(/[【[]文獻([^】\]]+)[】\]](?!\()/g, (match, markerContent) => {
+    const nums = markerContent.match(/\d+/g);
+    if (nums) {
+      return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
+    }
+    return match;
+  });
+
+  // Also support legacy numeric markers such as [5] or [5, 6].
+  return text.replace(/\[([\d\s,、]+)\](?!\()/g, (match, markerContent) => {
+    const nums = markerContent.match(/\d+/g);
+    if (nums) {
+      return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
+    }
+    return match;
+  });
+}
+
 function StreamingMarkdown({ content, markdownComponents }: { content: string, markdownComponents: Components }) {
   const deferredContent = React.useDeferredValue(content);
   const processedContent = React.useMemo(() => {
@@ -164,22 +187,7 @@ function StreamingMarkdown({ content, markdownComponents }: { content: string, m
     } catch {
       // remend might fail on some Edge cases
     }
-    // Replace citations like 【文獻2】 or [2] (if followed by context, not standard markdown links)
-    text = text.replace(/【文獻([^】]+)】/g, (match, p1) => {
-      const nums = p1.match(/\d+/g);
-      if (nums) {
-        return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
-      }
-      return match;
-    });
-    text = text.replace(/\[([\d\s,、]+)\](?!\()/g, (match, p1) => {
-      const nums = p1.match(/\d+/g);
-      if (nums) {
-        return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
-      }
-      return match;
-    });
-    return text;
+    return normalizeCitationMarkers(text);
   }, [deferredContent]);
 
   return (
