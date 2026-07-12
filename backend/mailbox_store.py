@@ -320,11 +320,81 @@ class MailboxStore:
                         UPDATE mailbox_delayed_tasks
                         SET status = 'delivered',
                             delivered_mail_id = :delivered_mail_id,
+                            lease_owner = NULL,
+                            lease_expires_at = NULL,
                             updated_at = now()
                         WHERE task_id = :task_id
                         """
                     ),
                     {"task_id": task_id, "delivered_mail_id": delivered_mail_id},
+                )
+
+    async def claim_delayed_task(self, task_id: str, worker_id: str, lease_seconds: int = 300) -> bool:
+        """Atomically claim a durable task; Redis-only deployments use their lock."""
+        if not await self._has_db():
+            return True
+        async with AsyncSession(self._get_engine()) as session:
+            async with session.begin():
+                cursor = await session.execute(
+                    text(
+                        """
+                        UPDATE mailbox_delayed_tasks
+                        SET status = 'claimed',
+                            lease_owner = :worker_id,
+                            lease_expires_at = now() + (:lease_seconds * interval '1 second'),
+                            attempt_count = attempt_count + 1,
+                            updated_at = now()
+                        WHERE task_id = :task_id
+                          AND deliver_at <= now()
+                          AND (
+                            status = 'scheduled'
+                            OR status = 'retryable_failed'
+                            OR (status = 'claimed' AND lease_expires_at < now())
+                          )
+                        RETURNING task_id
+                        """
+                    ),
+                    {
+                        "task_id": task_id,
+                        "worker_id": worker_id,
+                        "lease_seconds": lease_seconds,
+                    },
+                )
+                return cursor.scalar() is not None
+
+    async def mark_delayed_task_failed(
+        self,
+        task_id: str,
+        worker_id: str,
+        error_code: str,
+        max_attempts: int = 3,
+    ) -> None:
+        if not await self._has_db():
+            return
+        async with AsyncSession(self._get_engine()) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        """
+                        UPDATE mailbox_delayed_tasks
+                        SET status = CASE WHEN attempt_count >= :max_attempts
+                              THEN 'terminal_failed' ELSE 'retryable_failed' END,
+                            deliver_at = CASE WHEN attempt_count >= :max_attempts
+                              THEN deliver_at
+                              ELSE now() + (LEAST(attempt_count, 6) * interval '30 seconds') END,
+                            last_error_code = :error_code,
+                            lease_owner = NULL,
+                            lease_expires_at = NULL,
+                            updated_at = now()
+                        WHERE task_id = :task_id AND lease_owner = :worker_id
+                        """
+                    ),
+                    {
+                        "task_id": task_id,
+                        "worker_id": worker_id,
+                        "error_code": error_code[:120],
+                        "max_attempts": max_attempts,
+                    },
                 )
 
     async def restore_delayed_queue_from_db(self) -> int:
@@ -336,7 +406,8 @@ class MailboxStore:
                     """
                     SELECT task_id, user_id, payload, extract(epoch from deliver_at) AS deliver_at_epoch
                     FROM mailbox_delayed_tasks
-                    WHERE status = 'scheduled'
+                    WHERE status IN ('scheduled', 'retryable_failed')
+                       OR (status = 'claimed' AND lease_expires_at < now())
                     """
                 )
             )
@@ -362,6 +433,59 @@ class MailboxStore:
 
 _global_mailbox_store = None
 
+
+async def _release_owned_lock(redis, lock_key: str, owner: str) -> None:
+    await redis.eval(
+        """
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+            return redis.call('del', KEYS[1])
+        end
+        return 0
+        """,
+        1,
+        lock_key,
+        owner,
+    )
+
+
+async def _deliver_claimed_mail(store: MailboxStore, task: Dict[str, Any], task_id: str) -> tuple[str, str, str]:
+    user_id = task.get("user_id", "default_user")
+    active_avatar = task.get("active_avatar", "AREQA")
+    conversation_id = task.get("conversation_id")
+    subject = task.get("subject") or ""
+    content = task.get("content") or ""
+
+    if not content:
+        from gum_integration import (
+            generate_epistolary_letter_via_llm,
+            get_hot_memory_snapshot,
+            query_cold_memory_for_context,
+        )
+
+        reply_content = task.get("reply_content", "")
+        snapshot = await get_hot_memory_snapshot(user_id)
+        hot_context = f"使用者的回信內容：{reply_content}\n---\n目前對話脈絡：\n{snapshot}"
+        event_summary = f"使用者回信給 {active_avatar} 探討：{reply_content[:50]}"
+        cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
+        subject, content = await generate_epistolary_letter_via_llm(
+            user_id=user_id,
+            active_avatar=active_avatar,
+            hot_memory_snapshot=hot_context,
+            cold_memory_context=cold_ctx,
+        )
+
+    delivered_mail_id = await store.add_mail(
+        user_id=user_id,
+        sender=active_avatar,
+        content=content,
+        subject=subject,
+        recipient="User",
+        conversation_id=conversation_id,
+        delivered_task_id=task_id,
+    )
+    await store.mark_delayed_task_delivered(task_id, delivered_mail_id)
+    return delivered_mail_id, active_avatar, user_id
+
 def init_mailbox_store():
     global _global_mailbox_store
     _global_mailbox_store = MailboxStore()
@@ -378,6 +502,7 @@ async def delayed_mail_worker():
     redis = get_redis()
     store = get_mailbox_store()
     await store.restore_delayed_queue_from_db()
+    worker_id = f"mailbox-{uuid.uuid4().hex}"
     logger.info("[Mailbox Worker] Started delayed mail worker")
     while True:
         try:
@@ -392,50 +517,38 @@ async def delayed_mail_worker():
                         user_id = task.get("user_id", "default_user")
                         task_id = task.get("task_id") or task.get("mail_id") or task_json
                         lock_key = f"areqa:delayed_mail_lock:{task_id}"
-                        if not await redis.set(lock_key, "1", nx=True, ex=300):
+                        if not await redis.set(lock_key, worker_id, nx=True, ex=600):
+                            continue
+                        if not await store.claim_delayed_task(task_id, worker_id, lease_seconds=600):
+                            await _release_owned_lock(redis, lock_key, worker_id)
                             continue
 
-                        active_avatar = task.get("active_avatar", "AREQA")
-                        conversation_id = task.get("conversation_id")
-                        subject = task.get("subject") or ""
-                        content = task.get("content") or ""
-
-                        if not content:
-                            from gum_integration import (
-                                generate_epistolary_letter_via_llm,
-                                get_hot_memory_snapshot,
-                                query_cold_memory_for_context,
+                        try:
+                            _, active_avatar, user_id = await _deliver_claimed_mail(store, task, task_id)
+                        except Exception as exc:
+                            error_code = type(exc).__name__
+                            logger.exception("[Mailbox Worker] Task %s failed", task_id)
+                            await store.mark_delayed_task_failed(
+                                task_id, worker_id, error_code
                             )
-
-                            reply_content = task.get("reply_content", "")
-                            snapshot = await get_hot_memory_snapshot(user_id)
-                            hot_context = f"使用者的回信內容：{reply_content}\n---\n目前對話脈絡：\n{snapshot}"
-                            event_summary = f"使用者回信給 {active_avatar} 探討：{reply_content[:50]}"
-                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
-                            subject, content = await generate_epistolary_letter_via_llm(
-                                user_id=user_id,
-                                active_avatar=active_avatar,
-                                hot_memory_snapshot=hot_context,
-                                cold_memory_context=cold_ctx,
-                            )
-                        
-                        delivered_mail_id = await store.add_mail(
-                            user_id=user_id,
-                            sender=active_avatar,
-                            content=content,
-                            subject=subject,
-                            recipient="User",
-                            conversation_id=conversation_id,
-                            delivered_task_id=task_id,
-                        )
-                        await store.mark_delayed_task_delivered(task_id, delivered_mail_id)
+                            await _release_owned_lock(redis, lock_key, worker_id)
+                            continue
                         
                         # Broadcast alert (we have to import ws_manager)
                         from services.connection_manager import ws_manager
-                        asyncio.create_task(ws_manager.broadcast_mail_alert(sender=active_avatar, user_id=user_id))
+                        try:
+                            await ws_manager.broadcast_mail_alert(
+                                sender=active_avatar, user_id=user_id
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "[Mailbox Worker] Delivery persisted but alert failed for %s: %s",
+                                task_id,
+                                exc,
+                            )
                         
                         await redis.zrem(key, task_json)
-                        await redis.delete(lock_key)
+                        await _release_owned_lock(redis, lock_key, worker_id)
                         
                 if cursor == 0:
                     break

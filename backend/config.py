@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # Infrastructure
     redis_url: str = "redis://localhost:6379"
 
+    # Agent rollout flags
+    enable_tutor_shadow_routing: bool = False
+    enable_agent_search_routing: bool = False
+    agent_search_rollout_percentage: float = 0.0
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

@@ -14,6 +14,25 @@ def override_auth():
     yield
     app.dependency_overrides.pop(get_current_user, None)
 
+
+@pytest.fixture(autouse=True)
+def isolate_stream_memory_dependencies():
+    """Stream contract tests must not reuse event-loop-bound global clients."""
+    with patch(
+        "backend.services.orchestration_service.get_hot_memory_snapshot",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_cold_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch("memory_store.get_global_store", return_value=None):
+        yield
+
 class MockRagChunk:
     def __init__(self, text, score, chunk_id):
         self.text = text
@@ -188,6 +207,8 @@ async def test_force_think_strips_think_tags_with_spaces():
                 
                 # 目前串流格式保留原始 chunk 內容，至少要能收到模型輸出
                 assert "這裡有" in content
+                assert "被包含的思考文字" not in content
+                assert "還有正式文字" in content
                 
                 # 確保 backend 不再對 force_think 進行 assistant role 預填
                 call_kwargs = mock_client.chat.completions.create.call_args.kwargs

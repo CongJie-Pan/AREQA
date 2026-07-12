@@ -15,8 +15,6 @@ from backend.compaction import evaluate_student_state
 
 @pytest.fixture
 def tmp_store():
-    old_store = mem_store_module._global_store
-    
     class FakePipeline:
         def __init__(self, fake_redis):
             self.r = fake_redis
@@ -53,7 +51,9 @@ def tmp_store():
         yield store, fake_r
     
     app.dependency_overrides.clear()
-    mem_store_module._global_store = old_store
+    # Async Redis clients are event-loop bound; never leak one fixture's
+    # client into a later pytest loop.
+    mem_store_module._global_store = None
 
 @pytest.mark.asyncio
 @patch("backend.main.AsyncOpenAI")
@@ -215,6 +215,6 @@ async def test_stream_graceful_fallback_without_unbound_full_content(mock_openai
             assert response.status_code == 200
             content = await response.aread()
             content_str = content.decode("utf-8")
-            assert "Mocked API Timeout Error" in content_str
+            assert "生成回答時發生錯誤" in content_str
+            assert "Mocked API Timeout Error" not in content_str
             assert "[DONE]" in content_str
-

@@ -249,6 +249,44 @@ class MemoryStore:
         # same as above
         await self.update_hot_memory(user_id, key, value)
 
+    async def update_learner_state_snapshot(
+        self,
+        user_id: str,
+        *,
+        learner_state: str,
+        strategy: str,
+        trigger_proactive: bool,
+    ) -> int:
+        """Atomically publish one versioned EDF state snapshot."""
+        from redis.exceptions import WatchError
+
+        mem_key = f"areqa:hot_memory:{user_id}"
+        async with self.redis.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(mem_key)
+                    data = await pipe.get(mem_key)
+                    hot_memory = json.loads(data) if data else {}
+                    version = int(hot_memory.get("learner_state_version", 0)) + 1
+                    hot_memory.update({
+                        "current_learner_state": learner_state,
+                        "current_strategy": strategy,
+                        "trigger_proactive": bool(trigger_proactive),
+                        "learner_state_version": version,
+                        "learner_state_evaluated_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    pipe.multi()
+                    pipe.set(mem_key, json.dumps(hot_memory, ensure_ascii=False))
+                    await pipe.execute()
+                    logger.info(
+                        "[MemoryStore] Published learner state snapshot v%s for user %s",
+                        version,
+                        user_id,
+                    )
+                    return version
+                except WatchError:
+                    continue
+
     async def perform_memory_operation(self, user_id: str, target: str, action: str, content: str, old_text: str = ""):
         if target == "user":
             data = await self.get_user_profile(user_id)

@@ -1,0 +1,14 @@
+[
+  {"id": "current-zh-news", "query": "今天台灣有哪些重要新聞？", "mode": "auto", "should_search": true},
+  {"id": "current-zh-role", "query": "目前 OpenAI 的 CEO 是誰？", "mode": "auto", "should_search": true},
+  {"id": "current-version", "query": "React 最新版本有哪些改動？", "mode": "auto", "should_search": true},
+  {"id": "current-en-price", "query": "What is the current Bitcoin price?", "mode": "auto", "should_search": true},
+  {"id": "year-specific", "query": "2026 年世界盃賽程", "mode": "auto", "should_search": true},
+  {"id": "stable-di", "query": "請解釋 dependency injection", "mode": "auto", "should_search": false},
+  {"id": "stable-history", "query": "雍正皇帝推行過哪些改革？", "mode": "auto", "should_search": false},
+  {"id": "stable-math", "query": "什麼是畢氏定理？", "mode": "auto", "should_search": false},
+  {"id": "forced-stable", "query": "什麼是 dependency injection？", "mode": "always", "should_search": true},
+  {"id": "never-current", "query": "今天最新新聞", "mode": "never", "should_search": false},
+  {"id": "never-price", "query": "目前黃金價格", "mode": "never", "should_search": false},
+  {"id": "never-explicit", "query": "請上網搜尋最新 Gemini 版本", "mode": "never", "should_search": false}
+]

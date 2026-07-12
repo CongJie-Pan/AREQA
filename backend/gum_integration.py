@@ -408,10 +408,46 @@ async def batch_process_observations(
         # Expected if budget exceeded, handled below
         pass
         
-    await run_compaction(user_id)
+    await schedule_compaction(user_id)
     
     if importance_sums.get(user_id, 0) >= 100 or interaction_counts.get(user_id, 0) >= 20:
-        asyncio.create_task(run_reflection(user_id))
+        await schedule_session_reflection(user_id, conversation_id=conversation_id)
+
+
+async def schedule_session_reflection(user_id: str, *, conversation_id: str = "") -> str | None:
+    from job_store import get_agent_job_store
+
+    idempotency_key = (
+        f"{user_id}:session_reflection:"
+        f"{interaction_counts.get(user_id, 0)}:{int(importance_sums.get(user_id, 0))}"
+    )
+    job_id = await get_agent_job_store().schedule(
+        job_type="session_reflection",
+        user_id=user_id,
+        payload={"conversation_id": conversation_id},
+        idempotency_key=idempotency_key,
+    )
+    if job_id is None:
+        asyncio.create_task(run_reflection(user_id, conversation_id=conversation_id))
+    return job_id
+
+
+async def schedule_compaction(user_id: str) -> str | None:
+    from job_store import get_agent_job_store
+
+    idempotency_key = (
+        f"{user_id}:memory_compaction:"
+        f"{interaction_counts.get(user_id, 0)}:{int(importance_sums.get(user_id, 0))}"
+    )
+    job_id = await get_agent_job_store().schedule(
+        job_type="memory_compaction",
+        user_id=user_id,
+        payload={},
+        idempotency_key=idempotency_key,
+    )
+    if job_id is None:
+        asyncio.create_task(run_compaction(user_id))
+    return job_id
 
 async def run_compaction(user_id: str):
     from memory_store import get_global_store, MemoryBudgetExceeded
@@ -550,7 +586,7 @@ async def run_reflection_loop():
             for user_id in list(gum_instances.keys()):
                 if interaction_counts.get(user_id, 0) > 0:
                     print(f"Idle for 30 minutes, triggering session boundary reflection for {user_id}.")
-                    await run_reflection(user_id)
+                    await schedule_session_reflection(user_id)
 
 reflection_task = None
 
@@ -800,14 +836,17 @@ async def async_evaluate_and_update_state(client, model, chat_history, user_id: 
     state_res = await evaluate_student_state(client, model, chat_history)
     store = get_global_store()
     if store:
-        await store.update_hot_memory_async(user_id, "current_learner_state", state_res.get("learner_state", "STARTING"))
-        await store.update_hot_memory_async(user_id, "current_strategy", state_res.get("pedagogical_strategy", "NORMAL"))
+        await store.update_learner_state_snapshot(
+            user_id,
+            learner_state=state_res.get("learner_state", "STARTING"),
+            strategy=state_res.get("pedagogical_strategy", "NORMAL"),
+            trigger_proactive=bool(state_res.get("trigger_proactive")),
+        )
         # State evaluation must not summon avatars or affect chat persona.
         # Conversation-scoped roleplay is handled only by explicit chat commands in OrchestrationService.
         if state_res.get("trigger_proactive"):
             # We flag this for ComPeer to pick up or log it
             print(f"[ComPeer] Proactive trigger needed: {state_res}")
-            await store.update_hot_memory_async(user_id, "trigger_proactive", True)
             
         ops = state_res.get("memory_operations", [])
         if ops:

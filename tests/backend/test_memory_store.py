@@ -62,6 +62,30 @@ async def test_update_hot_memory_isolation(memory_store, mock_redis):
     assert data_a["key1"] == "val_a"
     assert data_b["key1"] == "val_b"
 
+
+@pytest.mark.asyncio
+async def test_learner_state_snapshot_updates_fields_in_one_version(memory_store, mock_redis):
+    first = await memory_store.update_learner_state_snapshot(
+        "user-1",
+        learner_state="STARTING",
+        strategy="SCAFFOLD",
+        trigger_proactive=False,
+    )
+    second = await memory_store.update_learner_state_snapshot(
+        "user-1",
+        learner_state="TINKERING",
+        strategy="PROBE",
+        trigger_proactive=True,
+    )
+
+    snapshot = json.loads(mock_redis._store["areqa:hot_memory:user-1"])
+    assert first == 1 and second == 2
+    assert snapshot["current_learner_state"] == "TINKERING"
+    assert snapshot["current_strategy"] == "PROBE"
+    assert snapshot["trigger_proactive"] is True
+    assert snapshot["learner_state_version"] == 2
+    assert snapshot["learner_state_evaluated_at"]
+
 @pytest.mark.asyncio
 async def test_update_user_profile(memory_store, mock_redis):
     await memory_store.update_user_profile("student", "name", "國立臺灣大學中文系三年級")

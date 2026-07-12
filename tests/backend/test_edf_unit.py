@@ -162,6 +162,8 @@ async def test_evaluate_student_state_tinkering(tmp_store):
     hot_after = json.loads(data) if data else {}
     assert hot_after.get("current_learner_state") == "TINKERING"
     assert hot_after.get("current_strategy") == "PROBE_UNDERSTANDING"
+    assert hot_after.get("learner_state_version") == 1
+    assert hot_after.get("learner_state_evaluated_at")
 
 @pytest.mark.asyncio
 async def test_evaluate_student_state_empty_actions(tmp_store):
