@@ -105,7 +105,7 @@ function validateMessageContent(content: string): void {
 export async function sendMessage(
   content: string,
   conversationId?: string
-): Promise<void> {
+): Promise<{ completed: boolean }> {
   // Validate input
   validateMessageContent(content);
   const sanitizedContent = content.trim();
@@ -184,7 +184,7 @@ export async function sendMessage(
   if (messages.length === 0) {
     chatStore.resetStreamingState();
     chatStore.setError(new Error('無法準備對話內容，請重新嘗試。'));
-    return;
+    return { completed: false };
   }
 
   // Track state for database save
@@ -194,6 +194,7 @@ export async function sendMessage(
   let citations: string[] = [];
   let sourcesPayload: CitationSource[] = [];
   let suggestionsList: string[] = [];
+  let completed = false;
 
   // Capture conversation ID for async callback (prevents closure issues)
   const conversationIdForSave = activeConversationId;
@@ -245,6 +246,7 @@ export async function sendMessage(
         },
 
         onDone: async (suggestions?: string[]) => {
+          completed = true;
           chatStore.endStreaming();
 
           // Update message with final suggestions if received in done event
@@ -305,6 +307,7 @@ export async function sendMessage(
         },
 
         onError: (error: Error) => {
+          completed = false;
           chatStore.setError(error);
           chatStore.endStreaming();
           currentAbortController = null;
@@ -316,6 +319,8 @@ export async function sendMessage(
       chatStore.searchMode,
       activeConversationId
     );
+
+    return { completed };
   } catch (error) {
     // Clear abort controller
     currentAbortController = null;

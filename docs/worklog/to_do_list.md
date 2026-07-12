@@ -14,9 +14,10 @@ AREQA :
 - codex resume 019f4ea8-bc1d-7f70-a67c-79d6179a3d91
 
 7. [x] 系統 agentic 化、優化回應速度、用戶需要看到系統輸出的過程、網路搜尋按鈕可以移除，讓router自己決定 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md ()
-8. 深入調查為何記憶page都那用麼久了三天了，都還沒有記憶輸入進去，長期記憶真的有用到嗎? 
+8. 深入調查為何記憶page都那用麼久了三天了，都還沒有記憶輸入進去，長期記憶真的有用到嗎? codex resume 019f54d0-39c8-7581-b810-2fd99e2cd454
 8. 要怎麼解決用戶傳送對話的隱私問題 ? 我在想要不要publish出去。
 9. 英文版網站應該可以先不用做
 10. 之後再做landing page 、然後還要想測試案例。測試案例參見 : docs/misc/demo測試案例.md；docs/misc/demo範例chat_areqa-chat-2026-07-12.md。
-11. 我想讓未登入用戶可以先詢問5次，但到了第四次詢問，就需要登入(跳出登入要求視窗)，然後登入後，就將剛剛用戶登入前的對話同步到雲端。
+11. 我想讓未登入用戶可以先詢問5次，到了第六次詢問，就需要登入(跳出登入要求視窗，並鎖住對話框傳送按鈕)，然後登入後，就將剛剛用戶登入前的對話同步到雲端。codex resume 019f5535-5dae-7890-99d8-31918fe579c4
 12. 加入匯入圖片、pdf的功能給系統讀。
+13. 往研究或是商業專案走 : agy --conversation=2a99ce50-e2ae-4fbd-80d7-c2f6dcce06fe

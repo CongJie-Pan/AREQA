@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import { Modal, Input, Dropdown, MenuProps, message } from 'antd';
+import { Modal, Input, Dropdown, MenuProps, message, Button } from 'antd';
 import { User, LogOut, Edit3 } from 'lucide-react';
 import { Auth as SupabaseAuth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
@@ -238,5 +238,117 @@ export function UserAuthUI() {
         />
       </Modal>
     </>
+  );
+}
+
+export interface AuthPromptProps {
+  /** Whether the post-answer authentication prompt is visible. */
+  open: boolean;
+  /** Closes the prompt without changing the current authentication state. */
+  onDismiss: () => void;
+}
+
+/**
+ * Authentication prompt shown after a successful answer for guest users.
+ * The prompt owns its session listener so it closes immediately after sign-in.
+ */
+export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [authView, setAuthView] = useState<'sign_in' | 'sign_up' | null>(null);
+  const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+  const handleDismiss = useCallback(() => {
+    setAuthView(null);
+    onDismiss();
+  }, [onDismiss]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (isMounted) setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        handleDismiss();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [handleDismiss]);
+
+  if (!open || user) return null;
+
+  return (
+    <Modal
+      open={open}
+      onCancel={handleDismiss}
+      footer={null}
+      destroyOnHidden
+      width={400}
+      centered
+      title="歡迎來到 AREQA"
+    >
+      {authView ? (
+        <div style={{ paddingTop: '8px' }}>
+          <Button type="link" onClick={() => setAuthView(null)}>
+            返回
+          </Button>
+          <SupabaseAuth
+            supabaseClient={supabase}
+            view={authView}
+            appearance={{ theme: ThemeSupa }}
+            theme="dark"
+            providers={['google']}
+            redirectTo={authRedirectTo}
+            localization={{
+              variables: {
+                sign_in: {
+                  email_label: '電子郵件',
+                  password_label: '密碼',
+                  email_input_placeholder: '您的電子郵件',
+                  password_input_placeholder: '您的密碼',
+                  button_label: '登入',
+                  loading_button_label: '登入中...',
+                  social_provider_text: '使用 {{provider}} 登入',
+                  link_text: '還沒有帳號嗎？註冊',
+                },
+                sign_up: {
+                  email_label: '電子郵件',
+                  password_label: '密碼',
+                  email_input_placeholder: '您的電子郵件',
+                  password_input_placeholder: '您的密碼',
+                  button_label: '註冊',
+                  loading_button_label: '註冊中...',
+                  social_provider_text: '使用 {{provider}} 註冊',
+                  link_text: '已經有帳號了嗎？登入',
+                  confirmation_text: '請檢查您的信箱以確認註冊。',
+                },
+              },
+            }}
+          />
+        </div>
+      ) : (
+        <div style={{ padding: '16px 8px 8px', display: 'grid', gap: '12px' }}>
+          <p style={{ margin: 0, textAlign: 'center' }}>
+            登入後即可同步您的對話與學習記憶。
+          </p>
+          <Button type="primary" aria-label="登入" onClick={() => setAuthView('sign_in')}>
+            登入
+          </Button>
+          <Button aria-label="註冊" onClick={() => setAuthView('sign_up')}>
+            註冊
+          </Button>
+          <Button type="text" onClick={handleDismiss}>
+            維持登出狀態
+          </Button>
+        </div>
+      )}
+    </Modal>
   );
 }

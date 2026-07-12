@@ -5,14 +5,26 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
 
 import respx
-from backend.main import app, get_current_user
+from backend.main import app, get_current_user, get_optional_current_user
 
 
 @pytest.fixture(autouse=True)
 def override_auth():
     app.dependency_overrides[get_current_user] = lambda: "default_user"
+    app.dependency_overrides[get_optional_current_user] = lambda: "default_user"
     yield
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_optional_current_user, None)
+
+
+@pytest.fixture(autouse=True)
+def isolate_stream_memory_dependencies():
+    with patch(
+        "backend.services.orchestration_service.MemoryQueryTool.execute",
+        new_callable=AsyncMock,
+        return_value=MagicMock(content={"cold": "", "working": ""}),
+    ):
+        yield
 
 @pytest.mark.asyncio
 @respx.mock

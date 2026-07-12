@@ -5,14 +5,16 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
 
 # Import the FastAPI app
-from backend.main import app, get_current_user
+from backend.main import app, get_current_user, get_optional_current_user
 
 
 @pytest.fixture(autouse=True)
 def override_auth():
     app.dependency_overrides[get_current_user] = lambda: "default_user"
+    app.dependency_overrides[get_optional_current_user] = lambda: "default_user"
     yield
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_optional_current_user, None)
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +32,10 @@ def isolate_stream_memory_dependencies():
         "backend.services.orchestration_service.query_memory_for_context",
         new_callable=AsyncMock,
         return_value="",
+    ), patch(
+        "backend.services.orchestration_service.MemoryQueryTool.execute",
+        new_callable=AsyncMock,
+        return_value=MagicMock(content={"cold": "", "working": ""}),
     ), patch("memory_store.get_global_store", return_value=None):
         yield
 
@@ -162,6 +168,7 @@ async def test_sse_streaming_sequence_with_rag():
 @pytest.mark.asyncio
 async def test_anonymous_chat_can_open_stream_without_authorization():
     """Guest chat is allowed while authenticated-only endpoints remain protected."""
+    app.dependency_overrides.pop(get_optional_current_user, None)
     with patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}, clear=False):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             response = await ac.post(

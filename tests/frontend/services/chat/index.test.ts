@@ -103,13 +103,27 @@ describe('Chat Service', () => {
       });
 
       // Act
-      await sendMessage(INPUT_CONTENT);
+      const result = await sendMessage(INPUT_CONTENT);
 
       // Assert
       expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(INPUT_CONTENT, 'test-conv-id');
       expect(databaseService.message.add).toHaveBeenCalledTimes(2); // user msg + assistant msg
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
       expect(createChatStream).toHaveBeenCalled();
+      expect(result).toEqual({ completed: true });
+    });
+
+    it('returns an incomplete result when the stream reports an error', async () => {
+      mockChatStore.messages = [{ id: 'msg-prev', role: 'user', content: 'previous' }];
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onError(new Error('stream failed'));
+      });
+
+      const result = await sendMessage('new message');
+
+      expect(result).toEqual({ completed: false });
+      expect(mockChatStore.setError).toHaveBeenCalledWith(expect.objectContaining({ message: 'stream failed' }));
     });
 
     it('should include user message when store messages are empty (fallback mechanism)', async () => {

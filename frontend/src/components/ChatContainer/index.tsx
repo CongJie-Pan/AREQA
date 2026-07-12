@@ -19,6 +19,8 @@ import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
 import { MailboxPanel } from '@/components/MailboxPanel';
 import { ProactiveManager } from '@/components/ProactiveManager';
+import { AuthPrompt } from '@/components/Auth';
+import { supabase } from '@/lib/supabase';
 import { useStyles } from './styles';
 
 /**
@@ -77,6 +79,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const { message: antMessageApi } = App.useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
@@ -115,7 +118,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const handleSend = useCallback(
     async function retryableSend(content: string) {
       try {
-        await sendMessage(content, activeConversationId || undefined);
+        const result = await sendMessage(content, activeConversationId || undefined);
+        if (result?.completed) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) setShowAuthPrompt(true);
+        }
       } catch (err) {
         console.error('Failed to send message:', err);
 
@@ -192,6 +199,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const dismissError = useCallback(() => {
     setError(null);
   }, [setError]);
+
+  const dismissAuthPrompt = useCallback(() => {
+    setShowAuthPrompt(false);
+  }, []);
 
   // Handle stop streaming
   const handleStop = useCallback(async () => {
@@ -371,6 +382,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       {/* Proactive Polling & Telemetry */}
       <ProactiveManager />
+
+      <AuthPrompt open={showAuthPrompt} onDismiss={dismissAuthPrompt} />
     </div>
   );
 }

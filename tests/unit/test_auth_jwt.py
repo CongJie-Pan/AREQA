@@ -2,7 +2,7 @@ import pytest
 import sys
 from unittest.mock import patch, MagicMock
 
-from backend.auth import verify_supabase_jwt, JWTError
+from backend.auth import get_optional_current_user, verify_supabase_jwt, JWTError
 
 @patch("backend.auth.jwt")
 def test_auth_jwt_array_aud(mock_jwt):
@@ -70,3 +70,19 @@ def test_auth_jwt_jwks(mock_get, mock_jwt):
     mock_get.assert_called_with("http://mock-supabase.url/auth/v1/.well-known/jwks.json")
     mock_jwt.decode.assert_called_with("dummy_token", {"keys": [{"kid": "test"}]}, algorithms=["HS256", "HS384", "HS512", "RS256", "ES256"], options={"verify_aud": False})
     assert extracted_sub == "user_123"
+
+
+@pytest.mark.asyncio
+async def test_optional_auth_returns_none_without_credentials():
+    assert await get_optional_current_user(None) is None
+
+
+@pytest.mark.asyncio
+@patch("backend.auth.verify_supabase_jwt", return_value="user_123")
+async def test_optional_auth_verifies_supplied_credentials(mock_verify):
+    credentials = MagicMock(credentials="valid-token")
+
+    user_id = await get_optional_current_user(credentials)
+
+    assert user_id == "user_123"
+    mock_verify.assert_called_once()

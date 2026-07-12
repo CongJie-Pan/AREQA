@@ -7,6 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 import httpx
 
@@ -60,3 +61,22 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
         raise HTTPException(status_code=500, detail="Internal Server Error: Auth configuration missing")
     user_id = verify_supabase_jwt(token, secret)
     return user_id
+
+
+async def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Security(optional_security),
+) -> str | None:
+    """Return the authenticated user when present, without requiring a token.
+
+    A supplied but invalid token still fails closed with the same 401 response as
+    the required-auth dependency. Only a genuinely missing token is anonymous.
+    """
+    if credentials is None:
+        return None
+
+    secret = os.environ.get("JWT_SECRET")
+    if not secret:
+        logger.error("JWT_SECRET environment variable is missing")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Auth configuration missing")
+
+    return verify_supabase_jwt(credentials.credentials, secret)
