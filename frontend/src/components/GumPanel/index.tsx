@@ -29,7 +29,7 @@ interface GumPanelProps {
 
 export function GumPanel({ open, type, onClose }: GumPanelProps) {
   const { styles } = useStyles();
-  const { propositions, suggestions, summary, loading, loadingSummary, fetchMemory, fetchSuggestions, fetchSummary, deleteMemory, deleteMemories, editMemory, confirmCandidate, rejectCandidate } = useGumStore();
+  const { propositions, suggestions, summary, loading, loadingSummary, fetchMemory, fetchSuggestions, fetchSummary, deleteMemory, deleteMemories, editMemory } = useGumStore();
 
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
   const [editingId, setEditingId] = useState<number | string | null>(null);
@@ -144,24 +144,6 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
       setEditingId(null);
     } catch {
       message.error('記憶更新失敗');
-    }
-  };
-
-  const handleConfirmCandidate = async (id: string | number) => {
-    try {
-      await confirmCandidate(id);
-      message.success('已加入長期記憶');
-    } catch {
-      message.error('確認候選記憶失敗');
-    }
-  };
-
-  const handleRejectCandidate = async (id: string | number) => {
-    try {
-      await rejectCandidate(id);
-      message.success('已忽略此候選記憶');
-    } catch {
-      message.error('忽略候選記憶失敗');
     }
   };
 
