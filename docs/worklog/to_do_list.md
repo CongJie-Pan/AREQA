@@ -14,13 +14,13 @@ AREQA :
 6. [單元測試、整合測試、人工測試(AI進入系統測都過)待人工實用驗證] 如temp/areqa-chat-2026-07-11_1.md, temp/areqa-chat-2026-07-11_2.md 的對話紀錄，我在2026-07-11_2 詢問有關血壓的事情，但是卻延續areqa-chat-2026-07-11_1的事情，卻覺得有點奇怪。我記得這個問題有修復過，但是為何又出現。
 - codex resume 019f4ea8-bc1d-7f70-a67c-79d6179a3d91
 7. [x] 系統 agentic 化、優化回應速度、用戶需要看到系統輸出的過程、網路搜尋按鈕可以移除，讓router自己決定 : docs/tech_docs/implementation_plan/multi_agent_implementation_plan.md ()
-8. [] 深入調查為何記憶page都那用麼久了三天了，都還沒有記憶輸入進去，長期記憶真的有用到嗎? 繼續 `docs/worklog/202607/continue_test_2025_07_12.md` ；codex resume 019f54d0-39c8-7581-b810-2fd99e2cd454
+8. [] 深入調查為何記憶page都那用麼久了三天了，都還沒有記憶輸入進去，長期記憶真的有用到嗎? 繼續 `docs/worklog/202607/continue_test_2025_07_13.md` ；codex resume 019f54d0-39c8-7581-b810-2fd99e2cd454
 9. 要怎麼解決用戶傳送對話的隱私問題 ? 我在想要不要publish出去。(開新的codex和agy對話比較其回應)
 10. 英文版網站應該可以先不用做
 11. [] 之後再做landing page(landing page需要對話框送出後，和本chat後端連動) 、[x] 然後還要想測試案例。測試案例參見 : docs/misc/demo測試案例.md；docs/misc/demo範例chat_areqa-chat-2026-07-12.md。
 12. [x] 我想讓未登入用戶可以先詢問5次，到了第六次詢問，就需要登入(跳出登入要求視窗，並鎖住對話框傳送按鈕)，然後登入後，就將剛剛用戶登入前的對話同步到雲端。codex resume 019f5535-5dae-7890-99d8-31918fe579c4
-13. (選擇性) 加入匯入圖片、pdf的功能給系統讀。
-14. 往研究或是商業專案走 (開新的codex和agy對話比較其回應)，我在想論文部分該研究如何設計實驗? 論文再到商業專案的路徑是否可行 ? (先把論文過程跑完，實驗跑完再上線。)
-15. 想想如何優化openrouter 的模型回應反饋慢的問題。(見: docs/tech_docs/problem_research/openrouter_llm_slow.md)
+13. [] 加入匯入圖片、pdf的功能給系統讀。codex resume 019f5535-5dae-7890-99d8-31918fe579c4
+14. 往研究或是商業專案走 (開新的codex和agy對話比較其回應)，我在想論文部分該研究如何設計實驗? 論文再到商業專案的路徑是否可行 ? (先把論文過程跑完，實驗跑完再上線。)codex resume 019f5a91-ebe8-76a0-95bc-c63f40fa99b9
+15. [] 想想如何優化openrouter 的模型回應反饋慢的問題。(見: docs/tech_docs/problem_research/openrouter_llm_slow.md)
 16. [X] 系統回應區和user輸入欄加入latex渲染功能（並且系統回應區的部分，針對個別單行的latex區塊支援複製下來
 17. [X] 我在登入後，如果隔一段時間再打開系統為登出狀態，還看得到我的對話紀錄，但這其實是不對的，而是我登入後才能看到。
