@@ -28,6 +28,7 @@ vi.mock('@/lib/supabase', () => {
     supabase: {
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+        getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
         onAuthStateChange: vi.fn((callback) => {
           onAuthStateChangeCallback = callback;
           return { data: { subscription: { unsubscribe: vi.fn() } } };
@@ -80,6 +81,10 @@ describe('UserAuthUI Component', () => {
   });
 
   it('updates the user display on SIGNED_IN event', async () => {
+    vi.mocked(supabase.auth.getUser).mockResolvedValueOnce({
+      data: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any,
+      error: null,
+    });
     render(<UserAuthUI />);
     
     // Simulate Supabase SIGNED_IN event
@@ -101,6 +106,10 @@ describe('UserAuthUI Component', () => {
     // Start with logged in state
     vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
       data: { session: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any }
+    });
+    vi.mocked(supabase.auth.getUser).mockResolvedValueOnce({
+      data: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any,
+      error: null,
     });
 
     render(<UserAuthUI />);

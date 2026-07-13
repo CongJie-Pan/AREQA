@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
 import { getAuthToken } from '@/database/db';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 export const ProactiveManager: React.FC = () => {
   const lastScrollTime = useRef(0);
@@ -26,7 +27,7 @@ export const ProactiveManager: React.FC = () => {
       try {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
         const token = getAuthToken();
-        await fetch(`${backendUrl}/api/v1/log_action`, {
+        await authenticatedFetch(`${backendUrl}/api/v1/log_action`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',

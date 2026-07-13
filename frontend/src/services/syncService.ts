@@ -2,6 +2,13 @@ import { db, getCurrentUserId } from '@/database/db';
 import { supabase } from '@/lib/supabase';
 import type { Conversation, Message } from '@/database/schema';
 import { logger } from '@/utils/logger';
+import { useAuthStore } from '@/store/auth';
+
+function handleAuthError(error: unknown): void {
+  if ((error as { status?: number } | null)?.status === 401) {
+    void useAuthStore.getState().invalidateSession();
+  }
+}
 
 export const syncService = {
   /**
@@ -19,7 +26,10 @@ export const syncService = {
         .select('*')
         .eq('user_id', userId);
         
-      if (convError) throw convError;
+      if (convError) {
+        handleAuthError(convError);
+        throw convError;
+      }
 
       // Pull messages
       const { data: cloudMsgs, error: msgError } = await supabase
@@ -27,7 +37,10 @@ export const syncService = {
         .select('*')
         .eq('user_id', userId);
 
-      if (msgError) throw msgError;
+      if (msgError) {
+        handleAuthError(msgError);
+        throw msgError;
+      }
 
       let dataChanged = false;
 
@@ -97,6 +110,7 @@ export const syncService = {
         }, 500);
       }
     } catch (e) {
+      handleAuthError(e);
       logger.error('Failed to sync from cloud', e instanceof Error ? e : new Error(String(e)));
     }
   },
@@ -117,6 +131,7 @@ export const syncService = {
         updated_at: conv.updatedAt.toISOString(),
       });
     } catch (e) {
+      handleAuthError(e);
       logger.error('Push conversation error', e instanceof Error ? e : new Error(String(e)));
     }
   },
@@ -138,6 +153,7 @@ export const syncService = {
         created_at: msg.createdAt.toISOString(),
       });
     } catch (e) {
+      handleAuthError(e);
       logger.error('Push message error', e instanceof Error ? e : new Error(String(e)));
     }
   },
@@ -153,6 +169,7 @@ export const syncService = {
       await supabase.from('conversations').delete().eq('id', id);
       await supabase.from('messages').delete().eq('conversation_id', id);
     } catch (e) {
+      handleAuthError(e);
       logger.error('Delete conversation error', e instanceof Error ? e : new Error(String(e)));
     }
   }

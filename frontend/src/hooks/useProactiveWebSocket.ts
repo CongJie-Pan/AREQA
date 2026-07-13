@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { logger } from '@/utils/logger';
 import { getAuthToken } from '../database/db';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { useAuthStore } from '@/store/auth';
 
 export function useProactiveWebSocket(
   onAlert: (content: string, senderName?: string) => void,
@@ -8,6 +10,7 @@ export function useProactiveWebSocket(
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const retryDelayRef = useRef(1000); // Initial backoff 1 second
+  const userId = useAuthStore((state) => state.user?.id ?? null);
   
   const onAlertRef = useRef(onAlert);
   const onNewMailRef = useRef(onNewMail);
@@ -38,7 +41,7 @@ export function useProactiveWebSocket(
           'Authorization': `Bearer ${token}`
         };
         
-        const response = await fetch(`${backendUrl}/api/v1/ws/ticket`, {
+        const response = await authenticatedFetch(`${backendUrl}/api/v1/ws/ticket`, {
           method: 'POST',
           headers: headers
         });
@@ -90,5 +93,5 @@ export function useProactiveWebSocket(
         wsRef.current.close();
       }
     };
-  }, []);
+  }, [userId]);
 }

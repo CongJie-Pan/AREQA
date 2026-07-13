@@ -53,6 +53,44 @@ def verify_supabase_jwt(token: str, secret: str) -> str:
             logger.error(f"JWT verification error: {e}")
         raise HTTPException(status_code=401, detail=f"Invalid authentication credentials: {e}")
 
+
+async def verify_supabase_user(token: str, expected_user_id: str) -> None:
+    """Confirm the JWT subject still exists in Supabase Auth.
+
+    Local JWT verification alone cannot detect an account deleted from
+    ``auth.users`` until the token expires. The Auth user endpoint provides
+    the server-side revocation check for protected backend requests.
+    """
+    supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
+    anon_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    if not supabase_url or not anon_key:
+        logger.error("Supabase Auth verification configuration is missing")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Auth configuration missing")
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{supabase_url.rstrip('/')}/auth/v1/user",
+                headers={
+                    "apikey": anon_key,
+                    "Authorization": f"Bearer {token}",
+                },
+            )
+    except httpx.RequestError as error:
+        logger.error("Supabase Auth verification request failed: %s", error)
+        raise HTTPException(status_code=503, detail="Authentication service unavailable") from error
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    try:
+        user_id = response.json().get("id")
+    except (TypeError, ValueError):
+        user_id = None
+
+    if user_id != expected_user_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> str:
     token = credentials.credentials
     secret = os.environ.get("JWT_SECRET")
@@ -60,6 +98,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
         logger.error("JWT_SECRET environment variable is missing")
         raise HTTPException(status_code=500, detail="Internal Server Error: Auth configuration missing")
     user_id = verify_supabase_jwt(token, secret)
+    await verify_supabase_user(token, user_id)
     return user_id
 
 
@@ -79,4 +118,6 @@ async def get_optional_current_user(
         logger.error("JWT_SECRET environment variable is missing")
         raise HTTPException(status_code=500, detail="Internal Server Error: Auth configuration missing")
 
-    return verify_supabase_jwt(credentials.credentials, secret)
+    user_id = verify_supabase_jwt(credentials.credentials, secret)
+    await verify_supabase_user(credentials.credentials, user_id)
+    return user_id

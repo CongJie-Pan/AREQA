@@ -85,6 +85,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const user = useAuthStore((state) => state.user);
   const isAuthInitialized = useAuthStore((state) => state.isInitialized);
+  const validateSession = useAuthStore((state) => state.validateSession);
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
@@ -104,6 +105,20 @@ export function ChatContainer({ className }: ChatContainerProps) {
   useEffect(() => {
     void initializeAuth();
   }, []);
+
+  useEffect(() => {
+    const validateWhenVisible = () => {
+      if (document.visibilityState === 'visible') void validateSession();
+    };
+
+    document.addEventListener('visibilitychange', validateWhenVisible);
+    window.addEventListener('focus', validateWhenVisible);
+
+    return () => {
+      document.removeEventListener('visibilitychange', validateWhenVisible);
+      window.removeEventListener('focus', validateWhenVisible);
+    };
+  }, [validateSession]);
 
   useEffect(() => {
     if (!isAuthInitialized) return;

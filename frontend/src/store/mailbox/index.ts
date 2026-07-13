@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getAuthToken } from '@/database/db';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 export interface Mail {
   mail_id: string;
@@ -39,7 +40,7 @@ export const useMailboxStore = create<MailboxState>((set, get) => ({
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
       
-      const response = await fetch(`${BACKEND_URL}/api/v1/mailbox`, { headers });
+      const response = await authenticatedFetch(`${BACKEND_URL}/api/v1/mailbox`, { headers });
       if (!response.ok) throw new Error('Failed to fetch mails');
       const data = await response.json();
       
@@ -78,7 +79,7 @@ export const useMailboxStore = create<MailboxState>((set, get) => ({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       
-      const response = await fetch(`${BACKEND_URL}/api/v1/mailbox/send`, {
+      const response = await authenticatedFetch(`${BACKEND_URL}/api/v1/mailbox/send`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ content, recipient }),
@@ -115,7 +116,7 @@ export const useMailboxStore = create<MailboxState>((set, get) => ({
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
       
-      const response = await fetch(`${BACKEND_URL}/api/v1/mailbox/read/${mailId}`, {
+      const response = await authenticatedFetch(`${BACKEND_URL}/api/v1/mailbox/read/${mailId}`, {
         method: 'POST',
         headers
       });

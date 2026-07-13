@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getAuthToken } from '@/database/db';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
@@ -51,7 +52,7 @@ export const useGumStore = create<GumState>((set, get) => ({
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch(`${backendUrl}/api/v1/memory?t=${Date.now()}`, {
+      const res = await authenticatedFetch(`${backendUrl}/api/v1/memory?t=${Date.now()}`, {
         cache: 'no-store',
         headers
       });
@@ -73,7 +74,7 @@ export const useGumStore = create<GumState>((set, get) => ({
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch(`${backendUrl}/api/v1/memory/summary?t=${Date.now()}`, {
+      const res = await authenticatedFetch(`${backendUrl}/api/v1/memory/summary?t=${Date.now()}`, {
         cache: 'no-store',
         headers
       });
@@ -98,7 +99,7 @@ export const useGumStore = create<GumState>((set, get) => ({
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch(`${backendUrl}/api/v1/suggestions?t=${Date.now()}`, {
+      const res = await authenticatedFetch(`${backendUrl}/api/v1/suggestions?t=${Date.now()}`, {
         cache: 'no-store',
         headers
       });
@@ -121,7 +122,7 @@ export const useGumStore = create<GumState>((set, get) => ({
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      await fetch(`${backendUrl}/api/v1/memory/batch-delete`, {
+      await authenticatedFetch(`${backendUrl}/api/v1/memory/batch-delete`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ ids }),
@@ -139,7 +140,7 @@ export const useGumStore = create<GumState>((set, get) => ({
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      await fetch(`${backendUrl}/api/v1/memory/${id}`, { 
+      await authenticatedFetch(`${backendUrl}/api/v1/memory/${id}`, {
         method: 'DELETE',
         headers
       });
@@ -158,7 +159,7 @@ export const useGumStore = create<GumState>((set, get) => ({
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      await fetch(`${backendUrl}/api/v1/memory/${id}`, {
+      await authenticatedFetch(`${backendUrl}/api/v1/memory/${id}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify({ text }),
@@ -176,7 +177,7 @@ export const useGumStore = create<GumState>((set, get) => ({
     const token = getAuthToken();
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${backendUrl}/api/v1/memory/candidates/${id}/confirm`, {
+    const res = await authenticatedFetch(`${backendUrl}/api/v1/memory/candidates/${id}/confirm`, {
       method: 'POST',
       headers,
     });
@@ -188,7 +189,7 @@ export const useGumStore = create<GumState>((set, get) => ({
     const token = getAuthToken();
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${backendUrl}/api/v1/memory/candidates/${id}/reject`, {
+    const res = await authenticatedFetch(`${backendUrl}/api/v1/memory/candidates/${id}/reject`, {
       method: 'POST',
       headers,
     });

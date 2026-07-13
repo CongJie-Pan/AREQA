@@ -16,6 +16,7 @@ import { useChatStore } from '@/store/chat/store';
 import type { ChatMessage, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
 import { getAuthToken } from '../../database/db';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 /**
  * Creates a streaming chat request to the local AI backend
@@ -115,7 +116,7 @@ export async function createChatStream(
       fetchOptions.signal = abortSignal;
     }
 
-    const response = await fetch(API_CONFIG.chatEndpoint, fetchOptions);
+    const response = await authenticatedFetch(API_CONFIG.chatEndpoint, fetchOptions);
 
     // Handle HTTP errors
     if (!response.ok) {
