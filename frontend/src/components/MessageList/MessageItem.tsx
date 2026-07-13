@@ -8,6 +8,8 @@
 import React, { memo, useCallback, useState } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Copy, RefreshCw, Edit, CornerDownRight } from 'lucide-react';
 import { Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
@@ -18,6 +20,7 @@ import type { CitationSource } from '@/components/Citations';
 import type { DisplayMessage } from '@/store/chat';
 import { useStyles } from './styles';
 import remend from 'remend';
+import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 
 /**
  * Safe URL protocols whitelist
@@ -50,7 +53,11 @@ type WindowWithFind = Window & {
   ) => boolean;
 };
 
-const createMarkdownComponents = (messageId: string): Components => ({
+const createMarkdownComponents = (
+  messageId: string,
+  enableMathCopy: boolean,
+  onCopyMath: (latex: string) => void,
+): Components => ({
   // Sanitize links - only allow safe protocols
   a: ({ href, children, ...props }) => {
     if (href?.startsWith('#cite-')) {
@@ -122,6 +129,43 @@ const createMarkdownComponents = (messageId: string): Components => ({
   },
   // Prevent script tags (should be blocked by default, but extra safety)
   script: () => null,
+  span: ({ className, children, node, ...props }) => {
+    void node;
+    const latex = (props as Record<string, unknown>)['data-latex'];
+    const isDisplayMath = className === 'katex-display';
+
+    if (enableMathCopy && isDisplayMath && typeof latex === 'string') {
+      return (
+        <span
+          className={className}
+          {...props}
+          style={{ display: 'block', position: 'relative', ...((props as { style?: React.CSSProperties }).style || {}) }}
+        >
+          {children}
+          <button
+            type="button"
+            aria-label="複製 LaTeX 公式"
+            onClick={() => onCopyMath(latex)}
+            style={{
+              display: 'block',
+              margin: '6px 0 0 auto',
+              padding: '3px 8px',
+              border: '1px solid rgba(216, 162, 92, 0.45)',
+              borderRadius: '4px',
+              background: 'rgba(216, 162, 92, 0.12)',
+              color: '#d8a25c',
+              cursor: 'pointer',
+              fontSize: '11px',
+            }}
+          >
+            複製公式
+          </button>
+        </span>
+      );
+    }
+
+    return <span className={className} {...props}>{children}</span>;
+  },
 });
 
 export interface MessageItemProps {
@@ -187,12 +231,13 @@ function StreamingMarkdown({ content, markdownComponents }: { content: string, m
     } catch {
       // remend might fail on some Edge cases
     }
-    return normalizeCitationMarkers(text);
+    return normalizeDisplayMathBlocks(normalizeCitationMarkers(text));
   }, [deferredContent]);
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
       components={markdownComponents}
       disallowedElements={['script', 'iframe', 'object', 'embed']}
     >
@@ -279,9 +324,18 @@ export const MessageItem = memo(function MessageItem({
     }
   }, [bubbleEl]);
 
+  const handleCopyMath = useCallback(async (latex: string) => {
+    try {
+      await navigator.clipboard.writeText(latex);
+      antMessageApi.success('已複製 LaTeX 公式');
+    } catch {
+      antMessageApi.error('複製公式失敗');
+    }
+  }, [antMessageApi]);
+
   const markdownComponents = React.useMemo(
-    () => createMarkdownComponents(message.id),
-    [message.id]
+    () => createMarkdownComponents(message.id, !isUser, handleCopyMath),
+    [handleCopyMath, isUser, message.id]
   );
 
   // Edit mode state
@@ -407,11 +461,12 @@ export const MessageItem = memo(function MessageItem({
                         <div className={cx(styles.bubble, styles.userBubble)}>
                           <div className={styles.content}>
                             <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
+                              remarkPlugins={[remarkGfm, remarkMath]}
+                              rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
                               components={markdownComponents}
                               disallowedElements={['script', 'iframe', 'object', 'embed']}
                             >
-                              {remainingText}
+                              {normalizeDisplayMathBlocks(remainingText)}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -425,11 +480,12 @@ export const MessageItem = memo(function MessageItem({
                   <div className={cx(styles.bubble, styles.userBubble)}>
                     <div className={styles.content}>
                       <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
                         components={markdownComponents}
                         disallowedElements={['script', 'iframe', 'object', 'embed']}
                       >
-                        {message.content}
+                        {normalizeDisplayMathBlocks(message.content)}
                       </ReactMarkdown>
                     </div>
                   </div>

@@ -4,6 +4,7 @@ import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { ConfigProvider, theme, App } from 'antd';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import './globals.css';
+import 'katex/dist/katex.min.css';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',

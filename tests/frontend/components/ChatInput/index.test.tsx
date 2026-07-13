@@ -35,6 +35,18 @@ describe('ChatInput', () => {
     expect(screen.getByPlaceholderText(/問我任何問題/i)).toBeDefined();
   });
 
+  it('should render a LaTeX preview without changing the submitted source', async () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const input = screen.getByPlaceholderText(/問我任何問題/i);
+
+    fireEvent.change(input, { target: { value: '$$x^2 + y^2 = z^2$$' } });
+
+    expect(await screen.findByLabelText('LaTeX 預覽')).toBeInTheDocument();
+    expect(screen.getByLabelText('LaTeX 預覽').querySelector('.katex')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/發送訊息/i));
+    expect(mockOnSend).toHaveBeenCalledWith('$$x^2 + y^2 = z^2$$');
+  });
+
   it('should show quote preview when quotedText is provided', () => {
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {

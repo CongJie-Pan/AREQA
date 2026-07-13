@@ -1,5 +1,6 @@
 import React from 'react';
-import { render } from '@testing-library/react';
+import { App } from 'antd';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 
@@ -13,6 +14,32 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
 }));
 
 describe('MessageItem Quote Alignment Regression', () => {
+  it('renders a copy action for each assistant display-math block', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <App>
+        <MessageItem
+          message={{
+            id: 'msg-math-1',
+            role: 'assistant',
+            content: '公式：\n\n$$x^2 + y^2 = z^2$$',
+            createdAt: Date.now(),
+          }}
+        />
+      </App>,
+    );
+
+    const copyButton = await screen.findByRole('button', { name: '複製 LaTeX 公式' });
+    fireEvent.click(copyButton);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('x^2 + y^2 = z^2'));
+  });
+
   it('Scenario 1: User message with quote block should not be left-aligned', () => {
     const userMessage = {
       id: 'msg-user-1',

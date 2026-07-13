@@ -8,8 +8,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Send, Square, Database, X, CornerDownRight } from 'lucide-react';
 import { message, Tooltip } from 'antd';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
 import { useChatStore } from '@/store/chat';
 import { useStyles } from './styles';
+import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 
 /** Maximum allowed message length */
 const MAX_MESSAGE_LENGTH = 4000;
@@ -60,6 +65,7 @@ export function ChatInput({
   const charCount = value.length;
   const isNearLimit = charCount > maxLength * WARNING_THRESHOLD;
   const isOverLimit = charCount > maxLength;
+  const hasMath = /(?:\$\$?[\s\S]+?\$\$?|\\\(|\\\[)/.test(value);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -179,6 +185,18 @@ export function ChatInput({
         aria-label="訊息輸入框"
         aria-describedby="char-count"
       />
+
+      {hasMath && (
+        <div className={styles.mathPreview} aria-label="LaTeX 預覽">
+          <div className={styles.mathPreviewLabel}>公式預覽</div>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
+          >
+            {normalizeDisplayMathBlocks(value)}
+          </ReactMarkdown>
+        </div>
+      )}
 
       {/* Bottom toolbar: mode buttons left, send button right */}
       <div className={styles.toolbar}>

@@ -121,6 +121,30 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  mathPreview: css`
+    margin: 4px 0 8px;
+    padding: 8px 12px;
+    border: 1px solid rgba(216, 162, 92, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.16);
+    color: rgba(255, 255, 255, 0.85);
+    overflow-x: auto;
+
+    .katex-display {
+      margin: 0.4em 0;
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+  `,
+
+  mathPreviewLabel: css`
+    margin-bottom: 4px;
+    color: rgba(216, 162, 92, 0.8);
+    font-size: 11px;
+  `,
+
   // Bottom row: left-side mode pills + right-side send button
   toolbar: css`
     display: flex;
