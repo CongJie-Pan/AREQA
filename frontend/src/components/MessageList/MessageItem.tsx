@@ -21,6 +21,8 @@ import type { DisplayMessage } from '@/store/chat';
 import { useStyles } from './styles';
 import remend from 'remend';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
+import { AttachmentCard } from './AttachmentCard';
+import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 
 /**
  * Safe URL protocols whitelist
@@ -263,6 +265,15 @@ export const MessageItem = memo(function MessageItem({
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
   const isUser = message.role === 'user';
+  const legacyMessage = React.useMemo(
+    () => splitLegacyAttachmentMarker(message.content),
+    [message.content],
+  );
+  const displayContent = isUser ? legacyMessage.content : message.content;
+  const displayAttachments = React.useMemo(() => {
+    if (message.attachments && message.attachments.length > 0) return message.attachments;
+    return createLegacyAttachmentMetadata(legacyMessage.legacyCount);
+  }, [legacyMessage.legacyCount, message.attachments]);
   const [bubbleEl, setBubbleEl] = useState<HTMLDivElement | null>(null);
   const setBubbleRef = useCallback((node: HTMLDivElement | null) => {
     setBubbleEl(node);
@@ -340,17 +351,17 @@ export const MessageItem = memo(function MessageItem({
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(message.content);
+  const [editContent, setEditContent] = useState(displayContent);
 
   // Handle copy message content
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(displayContent);
       antMessageApi.success('已複製到剪貼簿');
     } catch {
       antMessageApi.error('複製失敗');
     }
-  }, [message.content, antMessageApi]);
+  }, [displayContent, antMessageApi]);
 
   // Handle regenerate
   const handleRegenerate = useCallback(() => {
@@ -361,24 +372,24 @@ export const MessageItem = memo(function MessageItem({
 
   // Handle entering edit mode
   const handleEditClick = useCallback(() => {
-    setEditContent(message.content);
+    setEditContent(displayContent);
     setIsEditing(true);
-  }, [message.content]);
+  }, [displayContent]);
 
   // Handle canceling edit
   const handleCancelEdit = useCallback(() => {
     setIsEditing(false);
-    setEditContent(message.content);
-  }, [message.content]);
+    setEditContent(displayContent);
+  }, [displayContent]);
 
   // Handle saving edit
   const handleSaveEdit = useCallback(() => {
     const trimmedContent = editContent.trim();
-    if (trimmedContent && trimmedContent !== message.content && onEdit) {
+    if (trimmedContent && trimmedContent !== displayContent && onEdit) {
       onEdit(message.id, trimmedContent);
     }
     setIsEditing(false);
-  }, [editContent, message.content, message.id, onEdit]);
+  }, [displayContent, editContent, message.id, onEdit]);
 
   // Handle keyboard shortcuts in edit mode
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -418,7 +429,7 @@ export const MessageItem = memo(function MessageItem({
                 <button
                   className={cx(styles.editButton, styles.editSaveButton)}
                   onClick={handleSaveEdit}
-                  disabled={!editContent.trim() || editContent.trim() === message.content}
+                  disabled={!editContent.trim() || editContent.trim() === displayContent}
                 >
                   送出
                 </button>
@@ -430,7 +441,7 @@ export const MessageItem = memo(function MessageItem({
               {(() => {
                 // Split content into citation and the rest
                 // Pattern matches one or more lines starting with '>' at the beginning
-                const quoteMatch = message.content.match(/^((?:>[^\n]*(?:\n|$))+)\n*([\s\S]*)$/);
+                const quoteMatch = displayContent.match(/^((?:>[^\n]*(?:\n|$))+)\n*([\s\S]*)$/);
                 
                 if (quoteMatch && isUser) {
                   const rawCitation = quoteMatch[1];
@@ -457,9 +468,9 @@ export const MessageItem = memo(function MessageItem({
                       </div>
                       
                       {/* 2. Main Query: Inside bubble */}
-                      {remainingText && (
+                      {(remainingText || displayAttachments.length > 0) && (
                         <div className={cx(styles.bubble, styles.userBubble)}>
-                          <div className={styles.content}>
+                          {remainingText && <div className={styles.content}>
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm, remarkMath]}
                               rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
@@ -468,7 +479,14 @@ export const MessageItem = memo(function MessageItem({
                             >
                               {normalizeDisplayMathBlocks(remainingText)}
                             </ReactMarkdown>
-                          </div>
+                          </div>}
+                          {displayAttachments.length > 0 && (
+                            <div className={styles.messageAttachmentList} aria-label="訊息附件">
+                              {displayAttachments.map((attachment, index) => (
+                                <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </>
@@ -478,16 +496,23 @@ export const MessageItem = memo(function MessageItem({
                 // Default: render everything inside bubble
                 return (
                   <div className={cx(styles.bubble, styles.userBubble)}>
-                    <div className={styles.content}>
+                    {displayContent && <div className={styles.content}>
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
                         components={markdownComponents}
                         disallowedElements={['script', 'iframe', 'object', 'embed']}
                       >
-                        {normalizeDisplayMathBlocks(message.content)}
+                        {normalizeDisplayMathBlocks(displayContent)}
                       </ReactMarkdown>
-                    </div>
+                    </div>}
+                    {displayAttachments.length > 0 && (
+                      <div className={styles.messageAttachmentList} aria-label="訊息附件">
+                        {displayAttachments.map((attachment, index) => (
+                          <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })()}

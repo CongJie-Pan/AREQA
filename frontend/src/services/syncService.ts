@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { Conversation, Message } from '@/database/schema';
 import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
+import { normalizeAttachmentMetadata } from '@/utils/attachments';
 
 function handleAuthError(error: unknown): void {
   if ((error as { status?: number } | null)?.status === 401) {
@@ -92,6 +93,7 @@ export const syncService = {
               conversationId: m.conversation_id,
               role: m.role,
               content: m.content,
+              attachments: normalizeAttachmentMetadata(m.attachments),
               createdAt: new Date(m.created_at)
             } as Message);
           }
@@ -150,6 +152,7 @@ export const syncService = {
         conversation_id: msg.conversationId,
         role: msg.role,
         content: msg.content,
+        attachments: normalizeAttachmentMetadata(msg.attachments),
         created_at: msg.createdAt.toISOString(),
       });
     } catch (e) {

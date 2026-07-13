@@ -22,6 +22,7 @@ import type { ChatMessage } from '@/services/chat-stream/types';
 import type { Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
+import { filesToAttachmentMetadata } from '@/utils/attachments';
 
 /**
  * Active abort controller for the current stream
@@ -116,9 +117,7 @@ export async function sendMessage(
   // Validate input
   validateMessageContent(content, attachments.length > 0);
   const sanitizedContent = content.trim() || (attachments.length > 0 ? '請分析我附加的檔案。' : '');
-  const persistedContent = attachments.length > 0
-    ? `${sanitizedContent}\n\n[已附加 ${attachments.length} 個檔案]`
-    : sanitizedContent;
+  const attachmentMetadata = filesToAttachmentMetadata(attachments);
 
   // Cancel any ongoing stream
   if (currentAbortController) {
@@ -158,13 +157,14 @@ export async function sendMessage(
   }
 
   // Add user message to store
-  chatStore.addUserMessage(persistedContent, activeConversationId);
+  chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata);
 
   // Save user message to database
   if (shouldPersist) {
     await databaseService.message.add(activeConversationId, {
       role: 'user',
-      content: persistedContent,
+      content: sanitizedContent,
+      ...(attachmentMetadata.length > 0 ? { attachments: attachmentMetadata } : {}),
     });
   }
 

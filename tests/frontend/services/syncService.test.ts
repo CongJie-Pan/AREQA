@@ -111,6 +111,7 @@ describe('syncService - pullFromCloud', () => {
           conversation_id: 'conv_1',
           role: 'user',
           content: 'Hi',
+          attachments: [{ name: 'lesson.pdf', mediaType: 'application/pdf', sizeBytes: 2048 }],
           created_at: new Date().toISOString()
         },
         {
@@ -136,6 +137,9 @@ describe('syncService - pullFromCloud', () => {
 
       const msgs = await db.messages.toArray();
       expect(msgs).toHaveLength(2);
+      expect(msgs.find((message) => message.id === 'msg_1')?.attachments).toEqual([
+        { name: 'lesson.pdf', mediaType: 'application/pdf', sizeBytes: 2048 },
+      ]);
     } finally {
       setTimeoutSpy.mockRestore();
     }

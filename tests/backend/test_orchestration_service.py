@@ -23,6 +23,50 @@ def test_attaches_multimodal_parts_only_to_latest_user_turn():
         attachments[0],
     ]
 
+
+def test_attachment_grounding_instruction_forbids_metadata_guessing():
+    messages = [
+        {"role": "system", "content": "base prompt"},
+        {"role": "user", "content": "請分析附件"},
+    ]
+
+    result = OrchestrationService._add_attachment_grounding_instruction(messages)
+
+    assert "只能根據實際可讀取的附件內容回答" in result[0]["content"]
+    assert "不得根據檔名" in result[0]["content"]
+    assert "解析失敗" in result[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_pdf_stream_uses_openrouter_native_parser(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    async def chunks():
+        if False:
+            yield None
+
+    mock_client.chat.completions.create = AsyncMock(return_value=chunks())
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "請分析"},
+            {"type": "file", "file": {"filename": "lesson.pdf", "file_data": "data:application/pdf;base64,AA=="}},
+        ],
+    }]
+
+    _ = [event async for event in service._node_llm_stream(
+        "u1", "conv", "請分析", messages, False, 100, 0.7, 0.9, 1.0, request
+    )]
+
+    kwargs = mock_client.chat.completions.create.await_args.kwargs
+    assert kwargs["extra_body"]["plugins"] == [
+        {"id": "file-parser", "pdf": {"engine": "native"}}
+    ]
+
 @pytest.fixture
 def mock_router():
     router = AsyncMock()
@@ -379,6 +423,63 @@ async def test_explicit_never_search_mode_overrides_legacy_search_boolean(
         )]
 
     assert "offline" in "".join(events)
+
+
+@pytest.mark.asyncio
+async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    request = MagicMock()
+    captured_messages = []
+
+    async def fail_if_searched(*args, **kwargs):
+        raise AssertionError("attachment-first AUTO mode must not use generic retrieval")
+        yield
+
+    async def llm_stream(*args, **kwargs):
+        captured_messages.extend(args[3])
+        yield 'event: accumulator\ndata: {"accumulator":"attachment answer"}\n\n'
+
+    service._node_perplexity_search = fail_if_searched
+    service._node_rag_retrieval = fail_if_searched
+    service._node_llm_stream = llm_stream
+    attachment = {
+        "type": "file",
+        "file": {"filename": "lesson.pdf", "file_data": "data:application/pdf;base64,AA=="},
+    }
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
+             {"role": "system", "content": "base prompt"},
+             {"role": "user", "content": "請解釋該 PDF"},
+         ]):
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "請解釋該 PDF"}],
+            "attachment-conv",
+            True,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+            search_mode="auto",
+            attachments=[attachment],
+        )]
+
+    joined = "".join(events)
+    assert "ATTACHMENT_CONTEXT_PRIORITY" in joined
+    assert any(
+        isinstance(message.get("content"), list) and attachment in message["content"]
+        for message in captured_messages
+    )
+    assert "不得根據檔名" in captured_messages[0]["content"]
 
 
 @pytest.mark.asyncio

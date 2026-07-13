@@ -195,6 +195,7 @@ class OrchestrationService:
             if search_mode is not None
             else (SearchMode.ALWAYS if use_web_search else SearchMode.NEVER)
         )
+        has_attachments = bool(attachments)
         from config import settings
         auto_routing_enabled = CapabilityPolicy.rollout_enabled(
             feature_enabled=settings.enable_agent_search_routing,
@@ -242,7 +243,11 @@ class OrchestrationService:
             3,
         ))
 
-        if effective_search_mode == SearchMode.AUTO and auto_routing_enabled:
+        if effective_search_mode == SearchMode.AUTO and has_attachments:
+            # In AUTO mode the uploaded document is the primary source. Generic
+            # search would answer from the filename/query instead of file content.
+            search_decision = SearchDecision(False, SearchReason.ATTACHMENT_CONTEXT_PRIORITY)
+        elif effective_search_mode == SearchMode.AUTO and auto_routing_enabled:
             search_decision = await self.tutor_agent.decide_search(
                 last_user_msg,
                 run_context,
@@ -259,8 +264,19 @@ class OrchestrationService:
                 last_user_msg, effective_search_mode
             )
         use_web_search = search_decision.should_search
+        if has_attachments and effective_search_mode == SearchMode.AUTO:
+            use_rag = False
+            attachment_types = [
+                part.get("type", "unknown")
+                for part in attachments or []
+                if isinstance(part, dict)
+            ]
+            print(
+                "[Attachments] Using attachment-first routing "
+                f"(count={len(attachment_types)}, types={attachment_types}, web_search=False, rag=False)"
+            )
 
-        if settings.enable_tutor_shadow_routing and not auto_routing_enabled and last_user_msg:
+        if settings.enable_tutor_shadow_routing and not auto_routing_enabled and last_user_msg and not has_attachments:
             shadow_task = asyncio.create_task(
                 self.tutor_agent.evaluate_search_shadow(
                     last_user_msg,
@@ -483,6 +499,8 @@ class OrchestrationService:
             context_prompt=run_state.context_prompt,
         )
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
+        if has_attachments:
+            final_messages = self._add_attachment_grounding_instruction(final_messages)
 
         effective_max_tokens = max_tokens
         if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
@@ -542,6 +560,24 @@ class OrchestrationService:
             text = content if isinstance(content, str) and content.strip() else "請分析我附加的檔案。"
             message["content"] = [{"type": "text", "text": text}, *attachments]
             break
+        return messages
+
+    @staticmethod
+    def _add_attachment_grounding_instruction(
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Require answers to be grounded in content actually read from attachments."""
+        instruction = (
+            "【附件事實邊界】本回合包含使用者附件。只能根據實際可讀取的附件內容回答；"
+            "不得根據檔名、作者、建立時間、metadata 或常識猜測文件正文。"
+            "若附件內容為空、解析失敗或只有 metadata，必須明確告知目前無法讀取文件內容，"
+            "並請使用者改傳可讀版本。"
+        )
+        for message in messages:
+            if message.get("role") == "system" and isinstance(message.get("content"), str):
+                message["content"] = f'{message["content"]}\n\n{instruction}'
+                return messages
+        messages.insert(0, {"role": "system", "content": instruction})
         return messages
 
 
@@ -825,7 +861,8 @@ class OrchestrationService:
         )
         if has_pdf_attachment:
             # Keep parser selection server-controlled to avoid surprise OCR costs.
-            extra_body["plugins"] = [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}]
+            extra_body["plugins"] = [{"id": "file-parser", "pdf": {"engine": "native"}}]
+            print("[Attachments] OpenRouter PDF parser selected (engine=native)")
         if force_think:
             extra_body["reasoning"] = {"enabled": True, "max_tokens": 512}
             

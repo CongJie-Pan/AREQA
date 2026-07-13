@@ -3,7 +3,7 @@
  * Types for managing chat state with Zustand
  */
 
-import type { Message } from '@/database/schema';
+import type { AttachmentMetadata, Message } from '@/database/schema';
 import type { CitationSource } from '@/components/Citations';
 
 export type SearchMode = 'auto' | 'always' | 'never';
@@ -98,7 +98,7 @@ export interface ChatState {
 export interface ChatActions {
   // Message operations
   /** Add a user message to the conversation */
-  addUserMessage: (content: string, conversationId: string) => string;
+  addUserMessage: (content: string, conversationId: string, attachments?: AttachmentMetadata[]) => string;
   /** Add an assistant message (usually empty, to be filled by streaming) */
   addAssistantMessage: (conversationId: string) => string;
   /** Update an existing assistant message */

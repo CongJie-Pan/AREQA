@@ -73,4 +73,36 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     
     expect(screen.queryByTestId('rag-status-panel')).not.toBeInTheDocument();
   });
+
+  it('renders persisted user attachment metadata below the message text', () => {
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          role: 'user',
+          content: '請解釋這份 PDF',
+          attachments: [{ name: 'lesson.pdf', mediaType: 'application/pdf', sizeBytes: 2048 }],
+        }}
+      />
+    );
+
+    expect(screen.getByText('請解釋這份 PDF')).toBeInTheDocument();
+    expect(screen.getByLabelText('附件 lesson.pdf')).toBeInTheDocument();
+    expect(screen.getByText('2.0 KB')).toBeInTheDocument();
+  });
+
+  it('hides the legacy attachment marker and renders a compatibility card', () => {
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          role: 'user',
+          content: '請解釋這份 PDF\n\n[已附加 1 個檔案]',
+        }}
+      />
+    );
+
+    expect(screen.queryByText(/已附加 1 個檔案/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('附件 附件 1')).toBeInTheDocument();
+  });
 });

@@ -24,6 +24,16 @@ export interface Conversation {
   lastMessagePreview: string;
 }
 
+/** Safe, display-only metadata for a request-scoped chat attachment. */
+export interface AttachmentMetadata {
+  /** Sanitized display filename; file bytes are never persisted. */
+  name: string;
+  /** Browser-provided MIME type after client validation. */
+  mediaType: string;
+  /** Original file size in bytes. */
+  sizeBytes: number;
+}
+
 /**
  * Message entity
  * Represents a single message in a conversation
@@ -39,6 +49,8 @@ export interface Message {
   role: 'user' | 'assistant';
   /** Message content */
   content: string;
+  /** Display-only attachment metadata (never binary data or extracted text). */
+  attachments?: AttachmentMetadata[];
   /** AI reasoning/thinking process (optional) */
   reasoning?: {
     /** Thinking process content */

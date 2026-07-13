@@ -223,18 +223,6 @@ export function ChatInput({
       )}
 
       <div className={styles.inputRow}>
-        <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-          <button
-            type="button"
-            className={styles.attachmentButton}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled}
-            aria-label="加入附件"
-          >
-            <Plus size={18} />
-          </button>
-        </Tooltip>
-
         <textarea
           ref={textareaRef}
           className={styles.textarea}
@@ -264,7 +252,7 @@ export function ChatInput({
           {attachments.map((attachment) => (
             <div className={styles.attachmentChip} key={`${attachment.name}-${attachment.lastModified}`}>
               {attachment.type.startsWith('image/') ? <ImageIcon size={14} /> : <FileText size={14} />}
-              <span>{attachment.name}</span>
+              <span title={attachment.name}>{attachment.name}</span>
               <button type="button" onClick={() => removeAttachment(attachment)} aria-label={`移除附件 ${attachment.name}`}>
                 <X size={13} />
               </button>
@@ -285,8 +273,21 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Bottom toolbar: send button right */}
+      {/* Bottom toolbar: attachments left, send button right */}
       <div className={styles.toolbar}>
+        <div className={styles.toolbarLeft}>
+          <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button
+              type="button"
+              className={styles.attachmentButton}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              aria-label="加入附件"
+            >
+              <Plus size={18} />
+            </button>
+          </Tooltip>
+        </div>
         <div className={styles.toolbarRight}>
           {isStreaming && onStop ? (
             <button

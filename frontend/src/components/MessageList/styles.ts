@@ -195,6 +195,59 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  messageAttachmentList: css`
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+  `,
+
+  messageAttachmentCard: css`
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 180px;
+    max-width: 320px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.16);
+    color: rgba(255, 255, 255, 0.9);
+  `,
+
+  messageAttachmentIcon: css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 30px;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #d8a25c;
+  `,
+
+  messageAttachmentDetails: css`
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    line-height: 1.3;
+  `,
+
+  messageAttachmentName: css`
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  `,
+
+  messageAttachmentMeta: css`
+    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 11px;
+  `,
+
   assistantBubble: css`
     background: transparent;
     color: #f0f0f0;

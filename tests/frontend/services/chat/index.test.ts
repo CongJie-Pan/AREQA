@@ -112,7 +112,7 @@ describe('Chat Service', () => {
       const result = await sendMessage(INPUT_CONTENT);
 
       // Assert
-      expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(INPUT_CONTENT, 'test-conv-id');
+      expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(INPUT_CONTENT, 'test-conv-id', []);
       expect(databaseService.message.add).toHaveBeenCalledTimes(2); // user msg + assistant msg
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
       expect(createChatStream).toHaveBeenCalled();
@@ -180,12 +180,17 @@ describe('Chat Service', () => {
       await sendMessage('', undefined, [attachment]);
 
       expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(
-        expect.stringContaining('[已附加 1 個檔案]'),
+        '請分析我附加的檔案。',
         'test-conv-id',
+        [{ name: 'notes.txt', mediaType: 'text/plain', sizeBytes: attachment.size }],
       );
       expect(databaseService.message.add).toHaveBeenCalledWith(
         'test-conv-id',
-        expect.objectContaining({ content: expect.not.stringContaining('attachment body') }),
+        {
+          role: 'user',
+          content: '請分析我附加的檔案。',
+          attachments: [{ name: 'notes.txt', mediaType: 'text/plain', sizeBytes: attachment.size }],
+        },
       );
       expect(createChatStream).toHaveBeenLastCalledWith(
         [{ role: 'user', content: '請分析我附加的檔案。' }],

@@ -11,6 +11,7 @@ import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import type { ChatStore, DisplayMessage } from './types';
 import type { CitationSource } from '@/components/Citations';
+import type { AttachmentMetadata } from '@/database/schema';
 
 /**
  * Initial state for the chat store
@@ -48,7 +49,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   ...initialState,
 
   // Message operations
-  addUserMessage: (content: string, conversationId: string) => {
+  addUserMessage: (content: string, conversationId: string, attachments: AttachmentMetadata[] = []) => {
     const id = generateUUID();
     const message: DisplayMessage = {
       id,
@@ -56,6 +57,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       conversationId,
       role: 'user',
       content,
+      ...(attachments.length > 0 ? { attachments } : {}),
       createdAt: new Date(),
     };
 

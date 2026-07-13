@@ -35,6 +35,9 @@ describe('ChatInput', () => {
     expect(screen.getByPlaceholderText(/問我任何問題/i)).toBeDefined();
     expect(screen.getByLabelText('加入附件')).toBeInTheDocument();
     expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
+    const input = screen.getByLabelText('訊息輸入框');
+    const attachmentButton = screen.getByLabelText('加入附件');
+    expect(input.compareDocumentPosition(attachmentButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('should render a LaTeX preview without changing the submitted source', async () => {
@@ -105,6 +108,7 @@ describe('ChatInput', () => {
 
     fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
     expect(screen.getByLabelText('待送附件')).toBeInTheDocument();
+    expect(screen.getByTitle('notes.md')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
 
     expect(mockOnSend).toHaveBeenCalledWith('', [attachment]);

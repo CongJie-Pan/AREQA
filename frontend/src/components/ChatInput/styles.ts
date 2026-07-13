@@ -98,16 +98,12 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   inputRow: css`
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
     width: 100%;
   `,
 
   // Borderless textarea that fills the input row
   textarea: css`
-    flex: 1;
-    width: 0;
+    width: 100%;
     min-height: 44px;
     max-height: 200px;
     padding: 8px 0;
@@ -158,12 +154,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-wrap: wrap;
     gap: 6px;
     width: 100%;
-    margin: 8px 0 2px 38px;
-    padding-right: 38px;
+    margin: 6px 0 4px;
 
     @media (max-width: 768px) {
-      margin-left: 38px;
-      padding-right: 24px;
+      margin: 6px 0 4px;
     }
   `,
 
@@ -203,7 +197,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   toolbar: css`
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     margin-top: 4px;
     gap: 8px;
   `,
