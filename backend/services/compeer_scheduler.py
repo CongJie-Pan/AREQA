@@ -283,6 +283,7 @@ async def schedule_areqa_care_letter(
     from gum_integration import generate_areqa_care_letter_via_llm
     from mailbox_store import get_mailbox_store
     from memory_store import get_global_store
+    from config import settings
 
     safe_cold_memory_context = cold_memory_context if allow_topic_specific else ""
     subject, content = await generate_areqa_care_letter_via_llm(
@@ -311,12 +312,10 @@ async def schedule_areqa_care_letter(
             "event_hash": hashlib.sha256(event_summary.encode("utf-8")).hexdigest()[:24],
             "task_id": task_id,
         },
-        delay_seconds=300,
+        delay_seconds=settings.compeer_delivery_delay_seconds,
     )
 
-    store = get_global_store()
-    if store:
-        await store.update_hot_memory_async(user_id, "last_compeer_message", content)
+    print(f"[ComPeer] Scheduled task {task_id} for user {user_id}; deliver_at={datetime.now().timestamp() + settings.compeer_delivery_delay_seconds}")
 
     return task_id
 

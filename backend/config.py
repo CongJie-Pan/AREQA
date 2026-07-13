@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # so the policy remains domain-neutral and can be tuned without code edits.
     memory_candidate_auto_promote_conversations: int = 2
     memory_candidate_max_evidence: int = 8
+    compeer_delivery_delay_seconds: int = 120
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

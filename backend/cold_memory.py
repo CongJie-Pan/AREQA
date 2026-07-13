@@ -50,6 +50,65 @@ class ColdMemoryRetriever:
                 logger.error(f"[ColdMemory] Embedding API failed: {e}")
                 return []
 
+    async def insert_memory(
+        self,
+        *,
+        user_id: str,
+        source_text: str,
+        reasoning: str,
+        context_scope: str | None,
+        event_types: list[str],
+        target: str | None,
+        functional_type_seeds: list[str],
+        confidence: float,
+        decay: float,
+        embedding: list[float],
+        revision_group: str,
+    ) -> int | None:
+        """Persist one user-scoped proposition and its vector atomically."""
+        if not embedding or not source_text.strip():
+            return None
+        engine = get_engine()
+        async with AsyncSession(engine) as session:
+            async with session.begin():
+                proposition = await session.execute(
+                    text(
+                        """
+                        INSERT INTO propositions (
+                            text, reasoning, revision_group, context_scope,
+                            event_types, target, functional_type_seeds,
+                            confidence, decay, user_id, status
+                        ) VALUES (
+                            :memory_text, :reasoning, :revision_group, :context_scope,
+                            :event_types, :target,
+                            :functional_type_seeds, :confidence,
+                            :decay, :user_id, 'active'
+                        )
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "memory_text": source_text.strip(),
+                        "reasoning": reasoning,
+                        "revision_group": revision_group,
+                        "context_scope": context_scope,
+                        "event_types": json.dumps(event_types, ensure_ascii=False),
+                        "target": target,
+                        "functional_type_seeds": json.dumps(functional_type_seeds, ensure_ascii=False),
+                        "confidence": confidence,
+                        "decay": decay,
+                        "user_id": user_id,
+                    },
+                )
+                proposition_id = proposition.scalar_one()
+                await session.execute(
+                    text(
+                        "INSERT INTO vec_memory (id, embedding) VALUES (:id, CAST(:embedding AS vector))"
+                    ),
+                    {"id": proposition_id, "embedding": str(embedding)},
+                )
+                return int(proposition_id)
+
     async def search(self, query: str, user_id: str = "default_user", top_k: int = 5) -> List[Dict[str, Any]]:
         # Hybrid Search: Vector KNN + BM25 + RRF
         engine = get_engine()

@@ -486,9 +486,6 @@ async def run_compaction(user_id: str):
         
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         cold_retriever = ColdMemoryRetriever("", api_key)
-        if not hasattr(cold_retriever, "_get_conn"):
-            print("[Compaction] Direct cold-memory write path is unavailable for current retriever; skipping compaction.")
-            return
         
         # Evict lowest scored items until under budget
         current_len = len(serialized)
@@ -496,51 +493,44 @@ async def run_compaction(user_id: str):
             if current_len <= store.budget_limit * 0.8: # Evict down to 80%
                 break
                 
+            if not isinstance(v, dict) or v.get("source") not in {"user_message", "verified_user_evidence"}:
+                continue
+            source_text = str(v.get("source_text") or v.get("text") or "").strip()
+            if not source_text:
+                continue
+
             print(f"[Compaction] Evicting {k} (score: {score:.4f})")
-            
-            # 1. STITCH Tagging
-            text_to_tag = v["text"] if isinstance(v, dict) and "text" in v else str(v)
+
+            # STITCH supplies retrieval metadata; it does not replace the source text.
+            text_to_tag = source_text
             tags = await generate_stitch_tags(gum_instance.client, gum_instance.model, text_to_tag)
-            
-            # 2. Save to Cold Memory
-            # For simplicity, we just use the STITCH refined text for embedding
-            refined = tags.get("refined_content", text_to_tag)
-            embed = await cold_retriever.get_embedding(refined)
-            
-            if embed:
-                with cold_retriever._get_conn() as conn:
-                    # Insert into propositions (GUM table, or custom if doesn't exist)
-                    # To be safe, we insert into our own cold storage table
-                    import uuid
-                    cursor = conn.execute(
-                        "INSERT INTO propositions (text, reasoning, revision_group, context_scope, event_types, target, functional_type_seeds, confidence, decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                        (
-                            refined, 
-                            "Compacted from hot memory.", 
-                            str(uuid.uuid4()),
-                            tags.get("selected_context_scopes", [""])[0] if tags.get("selected_context_scopes") else None,
-                            json.dumps(tags.get("selected_event_types", [])),
-                            tags.get("selected_targets", [""])[0] if tags.get("selected_targets") else None,
-                            json.dumps(tags.get("selected_functional_type_seeds", [])),
-                            v.get("confidence", 8.0) if isinstance(v, dict) else 8.0,
-                            v.get("decay", 5.0) if isinstance(v, dict) else 5.0
-                        )
-                    )
-                    doc_id = cursor.lastrowid
-                    
-                    conn.execute("INSERT INTO propositions_fts (rowid, text) VALUES (?, ?)", (doc_id, refined))
-                    
-                    import struct
-                    embed_bytes = struct.pack(f'{len(embed)}f', *embed)
-                    conn.execute("INSERT INTO vec_memory (id, embedding) VALUES (?, ?)", (doc_id, embed_bytes))
-                    conn.commit()
-            
-            # 3. Remove from Hot Memory
-            del hot_mem[k]
-            current_len = len(json.dumps(hot_mem, ensure_ascii=False))
+            if not hasattr(cold_retriever, "get_embedding") or not hasattr(cold_retriever, "insert_memory"):
+                print("[Compaction] Cold memory writer unavailable; retaining hot memory entry.")
+                continue
+            embed = await cold_retriever.get_embedding(source_text)
+            if not embed:
+                continue
+            import uuid
+            inserted_id = await cold_retriever.insert_memory(
+                user_id=user_id,
+                source_text=source_text,
+                reasoning=json.dumps({"source": "hot_memory_compaction", "stitch": tags}, ensure_ascii=False),
+                context_scope=(tags.get("selected_context_scopes") or [None])[0],
+                event_types=tags.get("selected_event_types", []),
+                target=(tags.get("selected_targets") or [None])[0],
+                functional_type_seeds=tags.get("selected_functional_type_seeds", []),
+                confidence=float(v.get("confidence", 8.0)),
+                decay=float(v.get("decay", 5.0)),
+                embedding=embed,
+                revision_group=str(uuid.uuid4()),
+            )
+            if inserted_id is not None:
+                del hot_mem[k]
+                current_len = len(json.dumps(hot_mem, ensure_ascii=False))
             
         # Write back hot memory
-        await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
+        if getattr(store, "redis", None) is not None:
+            await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
         print("[Compaction] Finished.")
 
 async def push_observation(
@@ -601,19 +591,24 @@ async def get_all_memory(user_id: str = "default_user") -> list[dict]:
     try:
         import json
         props = await gum_instance.recent(user_id=user_id, limit=100)
-        result = [
-            {
-                "id": str(p.id), 
-                "text": p.text, 
-                "confidence": p.confidence, 
+        result = []
+        for p in props:
+            if getattr(p, "status", "") in ["deleted", "superseded"]:
+                continue
+            reasoning = str(getattr(p, "reasoning", "") or "")
+            memory_type = "cold_memory" if reasoning.startswith("{\"source\": \"hot_memory_compaction\"") else "legacy_unverified"
+            result.append({
+                "id": str(p.id),
+                "text": p.text,
+                "confidence": p.confidence,
                 "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 "context_scope": p.context_scope,
                 "event_types": json.loads(p.event_types) if p.event_types else [],
                 "target": p.target,
-                "functional_type_seeds": json.loads(p.functional_type_seeds) if p.functional_type_seeds else []
-            } 
-            for p in props if getattr(p, "status", "") not in ["deleted", "superseded"]
-        ]
+                "functional_type_seeds": json.loads(p.functional_type_seeds) if p.functional_type_seeds else [],
+                "memory_type": memory_type,
+                "source": "hot_memory_compaction" if memory_type == "cold_memory" else "legacy_gum",
+            })
         return result
     except Exception as e:
         print(f"Error fetching memory: {e}")
@@ -867,7 +862,7 @@ async def async_evaluate_and_update_state(
         # messages. Its output cannot directly mutate the profile.
         try:
             from config import settings
-            from memory_gate import extract_user_memory_candidates
+            from memory_gate import evaluate_memory_retention_policy, extract_user_memory_candidates
 
             candidates = await extract_user_memory_candidates(client, model, chat_history)
             for extracted in candidates:
@@ -880,10 +875,19 @@ async def async_evaluate_and_update_state(
                     confidence=float(extracted["confidence"]) * 10.0,
                     normalized_text=extracted["normalized_text"],
                     evidence=extracted["evidence"],
+                    source_text=extracted["evidence"].get("message", ""),
                     conversation_id=conversation_id,
                     requires_confirmation=bool(extracted["requires_confirmation"]),
                 )
-                if not candidate or candidate.get("requires_confirmation"):
+                if not candidate:
+                    continue
+                policy = evaluate_memory_retention_policy(extracted)
+                candidate["policy_decision"] = policy.action
+                candidate["policy_reason"] = policy.reason
+                if policy.expires_in_seconds:
+                    candidate["expires_in_seconds"] = policy.expires_in_seconds
+                if policy.action != "allow" or candidate.get("requires_confirmation"):
+                    await store.update_cold_candidate(candidate)
                     continue
                 if len(candidate.get("conversation_ids", [])) < settings.memory_candidate_auto_promote_conversations:
                     continue

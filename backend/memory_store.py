@@ -156,6 +156,22 @@ class MemoryStore:
         parsed = json.loads(data)
         return parsed if isinstance(parsed, list) else []
 
+    async def update_cold_candidate(self, candidate: Dict[str, Any]) -> None:
+        """Persist policy metadata without promoting a candidate to profile."""
+        user_id = str(candidate.get("user_id", ""))
+        candidate_hash = candidate.get("hash")
+        if not user_id or not candidate_hash:
+            return
+        candidates = await self.get_cold_candidates(user_id)
+        for index, current in enumerate(candidates):
+            if current.get("hash") == candidate_hash:
+                candidates[index] = {**current, **candidate}
+                break
+        await self.redis.set(
+            f"areqa:cold_candidates:{user_id}",
+            json.dumps(candidates[-100:], ensure_ascii=False),
+        )
+
     async def append_cold_candidate(
         self,
         user_id: str,
@@ -168,6 +184,7 @@ class MemoryStore:
         decay: float = 3.0,
         normalized_text: str = "",
         evidence: Dict[str, Any] | None = None,
+        source_text: str = "",
         conversation_id: str = "",
         requires_confirmation: bool = False,
     ) -> Dict[str, Any] | None:
@@ -207,8 +224,10 @@ class MemoryStore:
                             return candidate
 
                     candidate = {
+                        "user_id": user_id,
                         "hash": candidate_hash,
                         "text": text,
+                        "source_text": (source_text or (evidence or {}).get("message", "") or text).strip(),
                         "normalized_text": normalized_text,
                         "category": category,
                         "source": source,
@@ -240,14 +259,40 @@ class MemoryStore:
         if candidate.get("requires_confirmation") and source != "user_confirmation":
             return None
 
+        from memory_gate import evaluate_memory_retention_policy
+
+        policy = evaluate_memory_retention_policy(candidate)
+        if policy.action == "deny":
+            candidate["policy_decision"] = policy.action
+            candidate["policy_reason"] = policy.reason
+            await self.redis.set(
+                f"areqa:cold_candidates:{user_id}",
+                json.dumps(candidates[-100:], ensure_ascii=False),
+            )
+            return None
+        if policy.action == "candidate_only" and source != "user_confirmation":
+            return None
+
+        evidence_quote = ""
+        evidence = candidate.get("evidence") or []
+        if isinstance(evidence, list) and evidence:
+            evidence_quote = str(evidence[-1].get("quote", "")).strip()
+        profile_text = evidence_quote or str(candidate.get("source_text", "")).strip()
+        if not profile_text:
+            return None
+
         await self.perform_memory_operation(
             user_id,
             "user",
             "add",
-            str(candidate.get("text", "")),
+            profile_text,
             source="verified_user_evidence",
         )
         candidate["status"] = "promoted"
+        candidate["policy_decision"] = policy.action
+        candidate["policy_reason"] = policy.reason
+        if policy.expires_in_seconds:
+            candidate["expires_in_seconds"] = policy.expires_in_seconds
         candidate["promoted_at"] = datetime.now(timezone.utc).isoformat()
         await self.redis.set(
             f"areqa:cold_candidates:{user_id}",

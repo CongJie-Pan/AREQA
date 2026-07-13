@@ -9,7 +9,7 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-07-12（依目前 frontend / backend 實際代碼、Drift MCP 分析結果與現行 routes / scripts 校正）
+> **最後更新**：2026-07-13（依目前 frontend / backend 實際代碼與測試結果校正）
 
 > 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 與 `backend/main.py` 的實際 route 為準。
 
@@ -41,7 +41,7 @@ backend/
 │                                   #   propositions 全文檢索 + vec_memory 向量檢索 + RRF 融合
 ├── compaction.py                   # GUM 記憶壓縮與衰減算法
 │                                   #   calculate_activation_score (Activation Score)
-│                                   #   STITCH 歸檔：熱記憶 → 結構化冷記憶
+│                                   #   STITCH 歸檔：符合來源條件的熱記憶 → 結構化冷記憶
 ├── mailbox_store.py                # 信箱訊息持久化
 │                                   #   MailboxStore (Redis mailbox + delayed queue)
 │                                   #   add_mail / get_all_mails / mark_as_read
@@ -297,7 +297,7 @@ flowchart TD
     LogAPI -->|"scroll 寫入"| HotMem_B
     LogAPI -->|"其他互動寫入"| ColdMem_B
     HotMem_B -->|"② 監聽 scroll 累積"| ProLoop
-    ProLoop -->|"③ 條件滿足 → 排 AREQA 關懷信 (5分鐘後)"| UI_Hint
+    ProLoop -->|"③ 條件滿足 → 排 AREQA 關懷信 (預設 2 分鐘後)"| UI_Hint
     DailyLoop -->|"反思後生成排程事件"| HotMem_B
     State -->|"頁面載入時建立連線"| WSHook
     WSHook -->|"⑤ 先取一次性 ticket"| TicketAPI
@@ -323,7 +323,7 @@ flowchart TD
 
     subgraph MAILBOX ["信箱模塊"]
         MailStore["mailbox_store.py\nMailboxStore\nRedis mailbox + delayed queue\nDB 優先、Redis fallback"]
-        DelayReply["delayed_reply_writer\ngum_integration.py\n延遲 5 分鐘 · 使用 ColdMemory + HotMemory\n→ LLM 生成 Avatar 回信\n→ WebSocket 推播 broadcast_mail_alert"]
+        DelayReply["delayed_reply_writer\ngum_integration.py\nAvatar 回信預設延遲 5 分鐘\n· 使用 ColdMemory + HotMemory\n→ LLM 生成 Avatar 回信\n→ WebSocket 推播 broadcast_mail_alert"]
     end
 
     subgraph WS_C ["WebSocket"]
@@ -351,7 +351,7 @@ flowchart TD
     end
 
     subgraph API_D ["⚡ FastAPI · main.py"]
-        MemoryAPI["GET /api/v1/memory\n返回所有長期記憶 (過濾 hot + scroll)"]
+        MemoryAPI["GET /api/v1/memory\n只返回 profile + 正式 Cold Memory"]
         SummaryAPI["GET /api/v1/memory/summary\nMD5 Hash 快取校驗\n→ Redis → 本地 fallback → LLM 生成"]
         DeleteAPI["DELETE /api/v1/memory/{id}\n支援 hot: / profile: / cold 三種類型"]
         EditAPI["PUT /api/v1/memory/{id}\n支援 hot: / profile: / cold\n→ 同步更新 propositions + vec_memory"]
@@ -365,7 +365,7 @@ flowchart TD
     end
 
     subgraph MEM_D ["📦 Memory 模塊"]
-        AllMem["get_all_memory()\n合併 Hot + Cold 記憶"]
+        AllMem["get_all_memory()\nCold Memory 來源分類"]
         ColdMem_D["ColdMemoryRetriever\ncold_memory.py\nPostgreSQL propositions\n全文檢索 + pgvector 向量檢索"]
     end
 
@@ -408,22 +408,26 @@ flowchart TD
 
 - **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`current_focus` 與每筆 `recent_learning_points` 都綁定 `conversation_id`；主聊天路徑只注入目前 conversation 的暫時脈絡，legacy unscoped points 不會進入新對話。
 - **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`。Observation 正常以 17 筆批次處理，閒置 reflection 或 `POST /api/v1/memory/flush` 也能處理未滿批次的 pending observations。
+- **記憶來源與保留政策**: 候選記憶保留原始使用者訊息作為 evidence，不把模型回答當成使用者事實。穩定偏好、背景與目標可自動保留；敏感或明顯負面能力判斷會拒絕自動升級；短期內容可附帶 30 天期限。模型抽取仍是候選產生器，最終是否寫入由 `backend/memory_gate.py` 的確定性政策再次判定。
+- **Hot Memory compact / STITCH**: 目前只有來源為 `user_message` 或 `verified_user_evidence` 的 hot item 才能進入 compact。寫入 PostgreSQL 前保留使用者原文，STITCH tags 只作為 metadata；只有 `insert_memory` 成功後才刪除 hot item，避免寫入失敗造成資料遺失。這不是把所有 hot memory 無條件轉成 cold memory。
+- **記憶頁資料範圍**: `GET /api/v1/memory` 與 `GumPanel` 只顯示 Redis user profile 中的明確記憶，以及被標記為正式 `cold_memory` 的 PostgreSQL propositions。候選記憶、learning state、一般 hot/working memory 與既有 `legacy_unverified` propositions 不會顯示在記憶頁；既有 legacy 資料目前不會被自動清除。
 - **敏感脈絡保護**: 健康、心理、家庭與財務類問題預設不自動檢索跨對話 episodic memory，避免弱相關舊內容主導目前回答；durable user profile 仍可供一般個人化使用。
-- **記憶壓縮 (STITCH)**: `compaction.py` 實作 GUM 衰減計算（Activation Score），定期將熱記憶歸檔並精煉為結構化長期記憶。
+- **記憶壓縮 (STITCH)**: `compaction.py` 實作 GUM 衰減計算（Activation Score）；`gum_integration.py` 只會將通過來源驗證的 user evidence 歸檔為結構化長期記憶，STITCH 標籤保留在 metadata，不取代使用者原文。
 - **ObservationQueueWorker**: 去抖動 (3s debounce) 批次處理觀察訊息，防止高頻寫入。
 - **低資訊問候短路**: `你好`、`hi`、`在嗎` 這類低資訊訊息會直接回固定寒暄，不會進入 long-term memory retrieval，也不會擴寫上一輪任務脈絡。
 
 ### 4. 主動關懷與信箱系統 (ComPeer & Mailbox)
 
 - **行為遙測**: `POST /api/v1/log_action` 接收前端 scroll、互動等行為，scroll 純寫熱記憶，其他有意義互動推送至 GUM。
-- **ComPeer Scheduler**: `compeer_scheduler.py` 包含 proactive + daily 兩個排程迴圈；觸發時不再彈出角色扮演視窗，而是排一封 5 分鐘後送達的 AREQA 關懷信。
+- **ComPeer Scheduler**: `compeer_scheduler.py` 包含 proactive + daily 兩個排程迴圈；觸發時不再彈出角色扮演視窗，而是排一封延遲送達的 AREQA 關懷信，預設延遲為 120 秒，可由 `COMPEER_DELIVERY_DELAY_SECONDS` 設定。
 - **信箱系統 (Mailbox)**: `mailbox_store.py` 目前以 Redis 管理 mailbox 與 delayed mail queue，支援 Avatar 延遲回信與 AREQA 主動關懷信，並透過 WebSocket 推播新信通知。
+- **ComPeer 投遞狀態**: 排程時只建立 delayed task；mailbox worker claim 並成功寫入信箱後，才更新 `last_compeer_message`。worker 會記錄 start、claim、delivery success 與 failure/retry；目前 worker 由 FastAPI startup 建立，仍屬應用程式內背景 task。
 - **WebSocket 推播**: `ConnectionManager` (`services/connection_manager.py`) 管理持久連線，目前主動關懷 UX 只依賴 `broadcast_mail_alert` 更新信箱。
 - **冷卻機制**: `compeer_rejected` 動作觸發 30 分鐘動態冷卻，防止過度打擾。
 
 ### 5. 記憶可視化面板 (GumPanel)
 
-- **GumPanel** (`src/components/GumPanel/index.tsx`): 記憶資產面板，可查看、刪除、編輯熱/冷記憶，支援批次刪除。
+- **GumPanel** (`src/components/GumPanel/index.tsx`): 記憶資產面板，只呈現正式 Cold Memory 與 user profile 記憶，可查看、刪除、編輯並支援批次刪除；候選核准/拒絕不再是主要使用者流程。
 - **動態人物畫像**: 調用 `GET /api/v1/memory/summary`，透過 OpenRouter 上配置的結構化模型生成 `sentence1 / sentence2 / hashtags`。
 - **Redis + 本地雙層快取**: MD5 Hash 校驗確保記憶無變動時毫秒級回應。
 
@@ -578,6 +582,12 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   - 前端 `Supabase Auth UI`、`fake-indexeddb` 與部分 WebSocket 行為在測試環境中使用本地 mocks，以避免 jsdom 與外部登入流量造成不穩定。
   - `syncService` 在有資料變更時會延遲觸發 reload，測試需等待該延遲行為。
   - `tests/backend/test_rag_pipeline.py` 使用 synthetic fixture 驗證 RAG pipeline 的融合與過濾邏輯，不依賴大型離線 FAISS / BM25 產物；若要在實際服務啟用本地 RAG，仍需準備對應索引檔。
+- **最近一次完整驗證結果 (2026-07-13)**:
+  - `pytest -q tests/backend`: `313 passed, 3 skipped`。
+  - `npm test --prefix frontend -- --reporter=dot`: `106 passed`。
+  - `npm run build --prefix frontend`: Next.js production build 成功。
+  - `python -m compileall -q backend`: 通過。
+  - 測試涵蓋記憶來源保留政策、Cold Memory compact、記憶頁只顯示正式 Cold Memory、ComPeer delayed mailbox delivery，以及 mailbox flow 的瀏覽器環境清理。
 - **人工回歸驗證建議**:
   1. `DELETE /api/v1/memory/working`
   2. 新 conversation 只送 `你好`，確認回覆是固定寒暄，且不會帶出 README / React / 文言文脈絡
@@ -586,3 +596,5 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   5. 在 conversation A 談家庭、工作與跑步後，於 conversation B 詢問血壓，確認回答不會自行延續 A 的內容
   6. 對測試帳號呼叫 `POST /api/v1/memory/flush`，再以 `GET /api/v1/memory` 確認低於 17 輪的有效對話也能形成長期 propositions
   7. 以 `GET /api/v1/memory/debug` 檢查 `pending_observation_count` 是否在成功 flush 後下降
+
+> 目前限制：ComPeer worker 是 FastAPI startup 建立的應用程式內背景 task，尚未拆成獨立 worker；既有 `legacy_unverified` cold propositions 目前只會被記憶頁排除，不會自動清理。完整測試使用本地 mocks/fixtures，不等同正式外部服務回歸測試。

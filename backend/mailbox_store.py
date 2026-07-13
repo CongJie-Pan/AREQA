@@ -484,6 +484,12 @@ async def _deliver_claimed_mail(store: MailboxStore, task: Dict[str, Any], task_
         delivered_task_id=task_id,
     )
     await store.mark_delayed_task_delivered(task_id, delivered_mail_id)
+    logger.info(
+        "[Mailbox Worker] Delivered task %s as mail %s for user %s",
+        task_id,
+        delivered_mail_id,
+        user_id,
+    )
     return delivered_mail_id, active_avatar, user_id
 
 def init_mailbox_store():
@@ -503,7 +509,7 @@ async def delayed_mail_worker():
     store = get_mailbox_store()
     await store.restore_delayed_queue_from_db()
     worker_id = f"mailbox-{uuid.uuid4().hex}"
-    logger.info("[Mailbox Worker] Started delayed mail worker")
+    logger.info("[Mailbox Worker] Started delayed mail worker id=%s", worker_id)
     while True:
         try:
             now = time.time()
@@ -522,9 +528,18 @@ async def delayed_mail_worker():
                         if not await store.claim_delayed_task(task_id, worker_id, lease_seconds=600):
                             await _release_owned_lock(redis, lock_key, worker_id)
                             continue
+                        logger.info("[Mailbox Worker] Claimed task %s for user %s", task_id, user_id)
 
                         try:
                             _, active_avatar, user_id = await _deliver_claimed_mail(store, task, task_id)
+                            if task.get("kind") == "compeer_care":
+                                from memory_store import get_global_store
+                                memory_store = get_global_store()
+                                await memory_store.update_hot_memory_async(
+                                    user_id,
+                                    "last_compeer_message",
+                                    task.get("content", ""),
+                                )
                         except Exception as exc:
                             error_code = type(exc).__name__
                             logger.exception("[Mailbox Worker] Task %s failed", task_id)

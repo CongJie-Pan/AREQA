@@ -17,14 +17,15 @@ def override_auth():
 
 def test_get_memory_endpoint_success():
     with patch("backend.main.get_all_memory") as mock_get_memory:
-        mock_get_memory.return_value = [{"content": "user likes testing", "type": "proposition"}]
+        mock_get_memory.return_value = [{"id": "1", "text": "user likes testing", "memory_type": "cold_memory"}]
         response = client.get("/api/v1/memory")
         assert response.status_code == 200
         assert response.json() == {
-            "propositions": [{"content": "user likes testing", "type": "proposition"}],
+            "propositions": [{"id": "1", "text": "user likes testing", "memory_type": "cold_memory"}],
             "profile_memories": [],
+            "cold_memories": [{"id": "1", "text": "user likes testing", "memory_type": "cold_memory"}],
             "candidates": [],
-            "learning_state": [{"content": "user likes testing", "type": "proposition"}],
+            "learning_state": [],
         }
 
 
@@ -36,29 +37,21 @@ def test_get_memory_endpoint_error():
         assert response.json() == {
             "propositions": [],
             "profile_memories": [],
+            "cold_memories": [],
             "candidates": [],
             "learning_state": [],
         }
 
 
-def test_get_memory_endpoint_merges_profile_and_cold_candidates():
+def test_get_memory_endpoint_returns_profile_and_cold_memory_only():
     mock_store = AsyncMock()
     mock_store.get_user_profile.return_value = {"explicit_memories": ["喜歡例子"]}
-    mock_store.get_cold_candidates.return_value = [{
-        "text": "最近在學習判詞",
-        "category": "session_reflection",
-        "source": "reflection",
-        "confidence": 9.0,
-        "created_at": "2026-07-12T00:00:00+00:00",
-        "last_seen_at": "2026-07-12T00:01:00+00:00",
-        "status": "candidate",
-    }]
-
     with patch("backend.main.get_all_memory", return_value=[{
         "id": "7",
         "text": "喜歡古典文學",
         "confidence": 0.8,
         "updated_at": None,
+        "memory_type": "cold_memory",
     }]), patch("memory_store.get_global_store", return_value=mock_store):
         response = client.get("/api/v1/memory")
 
@@ -67,10 +60,11 @@ def test_get_memory_endpoint_merges_profile_and_cold_candidates():
     assert {item["text"] for item in propositions} == {
         "喜歡古典文學",
         "喜歡例子",
-        "最近在學習判詞",
     }
     assert any(item["id"].startswith("profile:explicit:") for item in propositions)
-    assert any(item["id"].startswith("candidate:") for item in propositions)
+    assert all(item.get("memory_type") in {"profile", "cold_memory"} for item in propositions)
+    assert response.json()["candidates"] == []
+    assert response.json()["learning_state"] == []
 
 def test_memory_debug_endpoint_returns_memory_layers():
     mock_store = AsyncMock()
@@ -81,6 +75,8 @@ def test_memory_debug_endpoint_returns_memory_layers():
     mock_store.get_cold_candidates.return_value = [{"text": "reflection insight"}]
 
     with patch("memory_store.get_global_store", return_value=mock_store), \
+         patch("backend.main.get_all_memory", new_callable=AsyncMock, return_value=[]), \
+         patch("gum_integration.get_pending_observation_count", new_callable=AsyncMock, return_value=0), \
          patch("gum_integration.get_hot_memory_snapshot", new_callable=AsyncMock, return_value="snapshot"):
         response = client.get("/api/v1/memory/debug")
 

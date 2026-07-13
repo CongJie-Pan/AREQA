@@ -7,6 +7,7 @@ from backend.memory_gate import (
     classify_action,
     classify_learning_observation,
     classify_user_message,
+    evaluate_memory_retention_policy,
 )
 
 
@@ -168,3 +169,41 @@ async def test_apply_reflection_gate_updates_session_summary():
     assert store.working_updates == [
         ("u1", {"session_summary": "學生昨天文言文卡很久，但願意反覆重讀。"})
     ]
+
+
+def test_retention_policy_allows_stable_preference():
+    decision = evaluate_memory_retention_policy({
+        "text": "使用者偏好用具體例子理解抽象概念",
+        "normalized_text": "偏好用具體例子理解抽象概念",
+        "category": "preference",
+        "evidence_quote": "我偏好用具體例子理解抽象概念",
+    })
+    assert decision.action == "allow"
+
+
+def test_retention_policy_denies_negative_capability_label():
+    decision = evaluate_memory_retention_policy({
+        "text": "使用者在理化科目上有學習困難",
+        "category": "background",
+        "evidence_quote": "我之前連國中理化都一直不及格",
+    })
+    assert decision.action == "deny"
+
+
+def test_retention_policy_adds_expiry_to_time_bound_context():
+    decision = evaluate_memory_retention_policy({
+        "text": "使用者下週要參加考試",
+        "category": "goal",
+        "evidence_quote": "我下週要考試",
+    })
+    assert decision.action == "allow_with_expiry"
+    assert decision.expires_in_seconds is not None
+
+
+def test_retention_policy_keeps_unknown_candidate_pending():
+    decision = evaluate_memory_retention_policy({
+        "text": "使用者具有高度自我釐清能力",
+        "category": "personality",
+        "evidence_quote": "我可以清楚區分兩件事",
+    })
+    assert decision.action == "candidate_only"

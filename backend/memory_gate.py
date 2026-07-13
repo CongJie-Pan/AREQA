@@ -15,6 +15,19 @@ class MemoryGateDecision:
     weight: float = 1.0
 
 
+@dataclass(frozen=True)
+class MemoryRetentionDecision:
+    """Server-owned retention decision; model output is advisory only."""
+
+    action: str
+    reason: str
+    expires_in_seconds: Optional[int] = None
+
+
+_TEMPORAL_MARKERS = ("今天", "昨天", "這週", "下週", "目前", "現在", "最近", "這次")
+_NEGATIVE_MARKERS = ("不及格", "很差", "不會", "不擅長", "有學習困難", "能力不足", "失敗", "很弱")
+
+
 BEHAVIOR_ACTIONS = {
     "scroll",
     "reread",
@@ -56,6 +69,29 @@ EXPLICIT_RECALL_KEYWORDS = ("延續", "接續", "之前", "上次", "昨天", "�
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())
+
+
+def evaluate_memory_retention_policy(candidate: Dict[str, Any]) -> MemoryRetentionDecision:
+    """Apply conservative, domain-neutral rules after LLM candidate extraction."""
+    text = _clean_text(
+        " ".join(
+            str(candidate.get(key, ""))
+            for key in ("text", "normalized_text", "evidence_quote")
+        )
+    ).lower()
+    category = _clean_text(str(candidate.get("category", ""))).lower()
+
+    if not text:
+        return MemoryRetentionDecision("deny", "empty_candidate")
+    if any(marker in text for marker in SENSITIVE_CONTEXT_KEYWORDS):
+        return MemoryRetentionDecision("deny", "sensitive_or_high_impact_context")
+    if any(marker in text for marker in _NEGATIVE_MARKERS):
+        return MemoryRetentionDecision("deny", "negative_capability_label")
+    if any(marker in text for marker in _TEMPORAL_MARKERS):
+        return MemoryRetentionDecision("allow_with_expiry", "time_bound_context", 30 * 86400)
+    if category in {"preference", "goal", "background", "stable_preference", "recurring_goal"}:
+        return MemoryRetentionDecision("allow", "stable_user_evidence")
+    return MemoryRetentionDecision("candidate_only", "requires_more_policy_evidence")
 
 
 def _extract_explicit_fact(message: str) -> str:

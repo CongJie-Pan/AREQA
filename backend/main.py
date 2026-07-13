@@ -343,8 +343,8 @@ def _memory_source_id(category: str, text: str) -> str:
 
 
 async def build_memory_view(user_id: str) -> list[dict]:
-    """Merge durable profile facts, cold candidates, and GUM propositions."""
-    props = await get_all_memory(user_id)
+    """Return only user-visible, durable Cold Memory records."""
+    props = [item for item in await get_all_memory(user_id) if item.get("memory_type") == "cold_memory"]
     store = None
     try:
         from memory_store import get_global_store
@@ -374,27 +374,6 @@ async def build_memory_view(user_id: str) -> list[dict]:
                 })
                 existing_text.add(text_value)
 
-            for candidate in await store.get_cold_candidates(user_id):
-                if candidate.get("status") not in (None, "candidate"):
-                    continue
-                text_value = str(candidate.get("text", "")).strip()
-                if not text_value or text_value in existing_text:
-                    continue
-                merged.append({
-                    "id": _memory_source_id("candidate", text_value),
-                    "text": text_value,
-                    "confidence": candidate.get("confidence", 9.0),
-                    "updated_at": candidate.get("last_seen_at") or candidate.get("created_at"),
-                    "context_scope": candidate.get("category"),
-                    "event_types": [candidate.get("source")] if candidate.get("source") else [],
-                    "target": "user",
-                    "functional_type_seeds": ["cold_candidate"],
-                    "memory_type": "candidate" if candidate.get("source") == "user_message" and candidate.get("evidence") else "legacy_unverified",
-                    "candidate_status": candidate.get("status", "candidate"),
-                    "requires_confirmation": bool(candidate.get("requires_confirmation", True)),
-                    "evidence_count": len(candidate.get("evidence", [])),
-                })
-                existing_text.add(text_value)
         except Exception as exc:
             logger.warning("[MemoryView] Redis layers unavailable for %s: %s", user_id, exc)
 
@@ -411,8 +390,9 @@ async def fetch_memory(current_user_id: str = Depends(get_current_user)):
     return {
         "propositions": propositions,
         "profile_memories": [item for item in propositions if item.get("memory_type") == "profile"],
-        "candidates": [item for item in propositions if item.get("memory_type") in {"candidate", "legacy_unverified"}],
-        "learning_state": [item for item in propositions if item.get("memory_type") not in {"profile", "candidate", "legacy_unverified"}],
+        "cold_memories": [item for item in propositions if item.get("memory_type") == "cold_memory"],
+        "candidates": [],
+        "learning_state": [],
     }
 
 @app.get("/api/v1/memory/summary")

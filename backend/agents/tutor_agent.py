@@ -60,7 +60,10 @@ Query: {query}"""
             match = re.search(r"\{.*\}", content, re.DOTALL)
             parsed = json.loads(match.group(0) if match else content)
             should_search = bool(parsed["should_search"])
-            reason = SearchReason(str(parsed["reason_code"]))
+            reason_code = str(parsed["reason_code"])
+            if reason_code == "CURRENT_INFORMATION_REQUIRED":
+                reason_code = SearchReason.EXTERNAL_SEARCH_REQUIRED.value
+            reason = SearchReason(reason_code)
             if should_search != (reason is SearchReason.EXTERNAL_SEARCH_REQUIRED):
                 raise ValueError("inconsistent search decision")
             return SearchDecision(should_search, reason)

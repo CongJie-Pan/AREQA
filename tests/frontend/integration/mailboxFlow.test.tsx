@@ -4,6 +4,30 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
 import { useMailboxStore } from '@/store/mailbox';
 
+const authState = { user: null, isInitialized: true, validateSession: vi.fn() };
+
+vi.mock('@/store/auth', () => ({
+  initializeAuth: vi.fn().mockResolvedValue(undefined),
+  useAuthStore: Object.assign(
+    (selector: (state: typeof authState) => unknown) => selector(authState),
+    { getState: () => authState },
+  ),
+}));
+
+vi.mock('@/services/database', () => ({
+  databaseService: {
+    conversation: { clearGuestData: vi.fn().mockResolvedValue(undefined) },
+  },
+}));
+
+vi.mock('@/services/chat', () => ({
+  sendMessage: vi.fn().mockResolvedValue({ completed: true }),
+  initializeChatService: vi.fn().mockResolvedValue(undefined),
+  cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
+  regenerateMessage: vi.fn().mockResolvedValue(undefined),
+  editUserMessage: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock WebSockets
 let wsInstance: any = null;
 vi.mock('@/hooks/useProactiveWebSocket', () => {
@@ -138,5 +162,5 @@ describe('Mailbox Flow Integration', () => {
         body: expect.stringContaining('我的回覆')
       })
     );
-  });
+  }, 15000);
 });

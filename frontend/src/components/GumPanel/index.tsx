@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Clock, FolderHeart, Check } from 'lucide-react';
+import { X, BrainCircuit, Sparkles, RefreshCw, Trash2, Edit2, Clock, FolderHeart } from 'lucide-react';
 import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { useGumStore } from '@/store/gum';
 import { useStyles } from './styles';
@@ -284,7 +284,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                             <div className={styles.timelineTimeBox}>
                               <div className={styles.timelineTime}>{timeStr}</div>
                               <div className={styles.timelineTag}>
-                                {p.memory_type === 'profile' ? '已記住' : p.memory_type === 'candidate' ? '待確認' : p.memory_type === 'legacy_unverified' ? '未驗證' : '學習狀態'}
+                                {p.memory_type === 'profile' ? '已記住' : '長期記憶'}
                               </div>
                             </div>
                             
@@ -314,12 +314,6 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                                   <span className={styles.confidenceBadge}>
                                     信心: {Number(p.confidence).toFixed(2)}
                                   </span>
-                                )}
-                                {p.memory_type === 'candidate' && (
-                                  <>
-                                    <Button size="small" type="text" icon={<Check size={14} />} onClick={() => handleConfirmCandidate(p.id)} style={{ color: '#8fce8b' }} title="確認記憶" />
-                                    <Button size="small" type="text" danger icon={<X size={14} />} onClick={() => handleRejectCandidate(p.id)} title="忽略候選記憶" />
-                                  </>
                                 )}
                                 <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} style={{ color: '#aaa' }} />
                                 <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>
