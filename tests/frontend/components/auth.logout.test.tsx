@@ -4,8 +4,6 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom';
 import { UserAuthUI } from '@/components/Auth';
 import { supabase } from '@/lib/supabase';
-import { conversationRepo } from '@/database/repositories/conversationRepo';
-import { syncService } from '@/services/syncService';
 
 // Mock matchMedia for Ant Design Modal
 Object.defineProperty(window, 'matchMedia', {
@@ -64,18 +62,6 @@ vi.mock('@supabase/auth-ui-shared', () => ({
   ThemeSupa: {}
 }));
 
-vi.mock('@/database/repositories/conversationRepo', () => ({
-  conversationRepo: {
-    clearAll: vi.fn().mockResolvedValue(undefined),
-  }
-}));
-
-vi.mock('@/services/syncService', () => ({
-  syncService: {
-    pullFromCloud: vi.fn(),
-  }
-}));
-
 // Mock window.location.reload
 const mockReload = vi.fn();
 Object.defineProperty(window, 'location', {
@@ -93,7 +79,7 @@ describe('UserAuthUI Component', () => {
     expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
   });
 
-  it('triggers pullFromCloud on SIGNED_IN event', async () => {
+  it('updates the user display on SIGNED_IN event', async () => {
     render(<UserAuthUI />);
     
     // Simulate Supabase SIGNED_IN event
@@ -109,11 +95,9 @@ describe('UserAuthUI Component', () => {
       expect(screen.getByText('testuser')).toBeInTheDocument();
     });
 
-    // Should have triggered sync
-    expect(syncService.pullFromCloud).toHaveBeenCalledOnce();
   });
 
-  it('calls clearAll and reload on logout', async () => {
+  it('signs out without deleting persisted history or reloading the page', async () => {
     // Start with logged in state
     vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
       data: { session: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any }
@@ -136,8 +120,7 @@ describe('UserAuthUI Component', () => {
     // Verify logout chain
     await waitFor(() => {
       expect(supabase.auth.signOut).toHaveBeenCalledOnce();
-      expect(conversationRepo.clearAll).toHaveBeenCalledOnce();
-      expect(mockReload).toHaveBeenCalledOnce();
+      expect(mockReload).not.toHaveBeenCalled();
     });
   });
 });

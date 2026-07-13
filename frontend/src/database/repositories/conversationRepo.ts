@@ -15,10 +15,13 @@ export const conversationRepo = {
    * @returns The created conversation
    */
   async create(title?: string): Promise<Conversation> {
+    const userId = getCurrentUserId();
+    if (!userId) throw new Error('Authentication required to persist conversations');
+
     const now = new Date();
     const conversation: Conversation = {
       id: generateUUID(),
-      userId: getCurrentUserId(),
+      userId,
       title: title || '新對話',
       createdAt: now,
       updatedAt: now,
@@ -34,8 +37,7 @@ export const conversationRepo = {
    * Get all conversations ordered by update time (descending)
    * @returns Array of conversations, most recently updated first
    */
-  async getAll(): Promise<Conversation[]> {
-    const userId = getCurrentUserId();
+  async getAll(userId: string): Promise<Conversation[]> {
     const conversations = await db.conversations
       .where('userId')
       .equals(userId)
@@ -49,8 +51,9 @@ export const conversationRepo = {
    * @param id - The conversation ID
    * @returns The conversation or undefined if not found
    */
-  async getById(id: string): Promise<Conversation | undefined> {
-    return db.conversations.get(id);
+  async getById(id: string, userId: string): Promise<Conversation | undefined> {
+    const conversation = await db.conversations.get(id);
+    return conversation?.userId === userId ? conversation : undefined;
   },
 
   /**
@@ -94,6 +97,14 @@ export const conversationRepo = {
     await db.transaction('rw', [db.conversations, db.messages], async () => {
       await db.messages.clear();
       await db.conversations.clear();
+    });
+  },
+
+  /** Remove legacy guest records without affecting authenticated users. */
+  async clearGuestData(): Promise<void> {
+    await db.transaction('rw', [db.conversations, db.messages], async () => {
+      await db.messages.where('userId').equals('default_user').delete();
+      await db.conversations.where('userId').equals('default_user').delete();
     });
   },
 };

@@ -21,6 +21,9 @@ import { MailboxPanel } from '@/components/MailboxPanel';
 import { ProactiveManager } from '@/components/ProactiveManager';
 import { AuthPrompt } from '@/components/Auth';
 import { supabase } from '@/lib/supabase';
+import { initializeAuth, useAuthStore } from '@/store/auth';
+import { syncService } from '@/services/syncService';
+import { databaseService } from '@/services/database';
 import { useStyles } from './styles';
 
 /**
@@ -80,6 +83,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const user = useAuthStore((state) => state.user);
+  const isAuthInitialized = useAuthStore((state) => state.isInitialized);
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
@@ -95,10 +100,46 @@ export function ChatContainer({ className }: ChatContainerProps) {
     (state) => state.activeConversationId
   );
 
-  // Initialize on mount
+  // Resolve authentication before loading any user-owned history.
   useEffect(() => {
-    initializeChatService();
+    void initializeAuth();
   }, []);
+
+  useEffect(() => {
+    if (!isAuthInitialized) return;
+
+    let cancelled = false;
+
+    const loadAuthenticatedHistory = async () => {
+      if (!user) {
+        useConversationStore.getState().clearState();
+        useChatStore.getState().clearMessages();
+        useChatStore.getState().resetStreamingState();
+        if (typeof indexedDB !== 'undefined') {
+          try {
+            await databaseService.conversation.clearGuestData();
+          } catch (error) {
+            console.error('Failed to clear legacy guest history:', error);
+          }
+        }
+        return;
+      }
+
+      try {
+        if (user) setShowAuthPrompt(false);
+        await syncService.pullFromCloud(user.id);
+        if (!cancelled) await initializeChatService(user.id);
+      } catch (error) {
+        console.error('Failed to initialize authenticated history:', error);
+      }
+    };
+
+    void loadAuthenticatedHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthInitialized, user]);
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -383,7 +424,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
       {/* Proactive Polling & Telemetry */}
       <ProactiveManager />
 
-      <AuthPrompt open={showAuthPrompt} onDismiss={dismissAuthPrompt} />
+      <AuthPrompt open={showAuthPrompt && !user} onDismiss={dismissAuthPrompt} />
     </div>
   );
 }

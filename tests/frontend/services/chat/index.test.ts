@@ -4,6 +4,7 @@ import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
 import { databaseService } from '@/services/database';
+import { getCurrentUserId } from '@/database/db';
 
 vi.mock('@/store/chat', () => ({
   useChatStore: {
@@ -32,6 +33,10 @@ vi.mock('@/services/database', () => ({
   },
 }));
 
+vi.mock('@/database/db', () => ({
+  getCurrentUserId: vi.fn().mockReturnValue('test-user-id'),
+}));
+
 vi.mock('@/config/api', () => ({
   API_CONFIG: {
     minMessageLength: 0, // Mock to 0 to test the safety intercept
@@ -49,6 +54,7 @@ describe('Chat Service', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getCurrentUserId).mockReturnValue('test-user-id');
 
     mockChatStore = {
       messages: [],
@@ -111,6 +117,22 @@ describe('Chat Service', () => {
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
       expect(createChatStream).toHaveBeenCalled();
       expect(result).toEqual({ completed: true });
+    });
+
+    it('does not persist guest conversations while still returning the answer', async () => {
+      vi.mocked(getCurrentUserId).mockReturnValue(null);
+      mockChatStore.messages = [];
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('guest response');
+        await callbacks.onDone();
+      });
+
+      const result = await sendMessage('guest question');
+
+      expect(result).toEqual({ completed: true });
+      expect(createChatStream).toHaveBeenCalled();
+      expect(databaseService.message.add).not.toHaveBeenCalled();
     });
 
     it('returns an incomplete result when the stream reports an error', async () => {

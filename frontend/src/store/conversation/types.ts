@@ -25,8 +25,8 @@ export interface ConversationState {
  * Conversation actions for store manipulation
  */
 export interface ConversationActions {
-  /** Load all conversations from database */
-  loadConversations: () => Promise<void>;
+  /** Load all conversations for the authenticated user */
+  loadConversations: (userId: string) => Promise<void>;
   /** Create a new conversation */
   createConversation: (title?: string) => Promise<string>;
   /** Select a conversation as active */
@@ -37,6 +37,8 @@ export interface ConversationActions {
   updateConversation: (id: string, updates: Partial<Conversation>) => void;
   /** Clear active conversation */
   clearActiveConversation: () => void;
+  /** Clear all conversation state without deleting persisted data */
+  clearState: () => void;
   /** Set error state */
   setError: (error: Error | null) => void;
   /** Generate a conversation title using streaming */

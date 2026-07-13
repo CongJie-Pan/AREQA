@@ -36,3 +36,7 @@ export type {
   ConversationState,
   ConversationActions,
 } from './conversation';
+
+// Authentication store
+export { useAuthStore, initializeAuth } from './auth';
+export type { AuthStore } from './auth';

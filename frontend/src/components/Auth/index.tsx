@@ -7,51 +7,22 @@ import { User, LogOut, Edit3 } from 'lucide-react';
 import { Auth as SupabaseAuth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/lib/supabase';
-import { User as SupabaseUser } from '@supabase/supabase-js';
-import { syncService } from '@/services/syncService';
-import { conversationRepo } from '@/database/repositories/conversationRepo';
+import { initializeAuth, useAuthStore } from '@/store/auth';
 
 export function UserAuthUI() {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const user = useAuthStore((state) => state.user);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
 
   useEffect(() => {
-    let hasReceivedAuthEvent = false;
-    let isMounted = true;
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!isMounted || hasReceivedAuthEvent) return;
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        syncService.pullFromCloud(session.user.id);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      hasReceivedAuthEvent = true;
-      if (!isMounted) return;
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        setIsModalOpen(false);
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-          syncService.pullFromCloud(session.user.id);
-        }
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
+    void initializeAuth();
   }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    await conversationRepo.clearAll();
-    window.location.reload(); 
+    setIsModalOpen(false);
   };
 
   const handleUpdateUsername = async () => {
@@ -253,7 +224,7 @@ export interface AuthPromptProps {
  * The prompt owns its session listener so it closes immediately after sign-in.
  */
 export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const user = useAuthStore((state) => state.user);
   const [authView, setAuthView] = useState<'sign_in' | 'sign_up' | null>(null);
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
   const handleDismiss = useCallback(() => {
@@ -262,24 +233,13 @@ export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
   }, [onDismiss]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (isMounted) setUser(session?.user ?? null);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) handleDismiss();
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!isMounted) return;
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        handleDismiss();
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, [handleDismiss]);
 
   if (!open || user) return null;

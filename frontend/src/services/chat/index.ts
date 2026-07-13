@@ -20,12 +20,18 @@ import { ValidationError, normalizeError } from '@/utils/error';
 import { sanitizeMessagesForAPI } from '@/utils/sanitizer';
 import type { ChatMessage } from '@/services/chat-stream/types';
 import type { Message } from '@/database/schema';
+import { getCurrentUserId } from '@/database/db';
+import { generateUUID } from '@/utils/id';
 
 /**
  * Active abort controller for the current stream
  * Allows cancellation of ongoing requests
  */
 let currentAbortController: AbortController | null = null;
+
+function canPersistHistory(): boolean {
+  return getCurrentUserId() !== null;
+}
 
 /**
  * Prepare messages for API by filtering out invalid messages
@@ -122,32 +128,41 @@ export async function sendMessage(
 
   const chatStore = useChatStore.getState();
   const conversationStore = useConversationStore.getState();
+  const shouldPersist = canPersistHistory();
 
   // Create or use existing conversation
-  let activeConversationId = conversationId ?? conversationStore.activeConversationId;
+  let activeConversationId = shouldPersist
+    ? conversationId ?? conversationStore.activeConversationId
+    : undefined;
   let isNewConversation = false;
 
   if (!activeConversationId) {
     isNewConversation = true;
-    // Create new conversation in database first to get the ID
-    const conversation = await databaseService.conversation.create();
-    activeConversationId = conversation.id;
-    
-    // Add to the conversation list in store without selecting yet
-    // This avoids triggering the useEffect in ChatContainer prematurely
-    useConversationStore.setState((state) => ({
-      conversations: [conversation, ...state.conversations],
-    }));
+    if (shouldPersist) {
+      // Create new conversation in database first to get the ID
+      const conversation = await databaseService.conversation.create();
+      activeConversationId = conversation.id;
+
+      // Add to the conversation list in store without selecting yet
+      // This avoids triggering the useEffect in ChatContainer prematurely
+      useConversationStore.setState((state) => ({
+        conversations: [conversation, ...state.conversations],
+      }));
+    } else {
+      activeConversationId = generateUUID();
+    }
   }
 
   // Add user message to store
   chatStore.addUserMessage(sanitizedContent, activeConversationId);
 
   // Save user message to database
-  await databaseService.message.add(activeConversationId, {
-    role: 'user',
-    content: sanitizedContent,
-  });
+  if (shouldPersist) {
+    await databaseService.message.add(activeConversationId, {
+      role: 'user',
+      content: sanitizedContent,
+    });
+  }
 
   // If this was a new conversation, now set it as active
   // This will trigger the useEffect in ChatContainer, but we've already
@@ -286,14 +301,19 @@ export async function sendMessage(
           }
 
           // Use captured conversation ID to prevent null assertion issues
-          await databaseService.message.add(conversationIdForSave, messageData);
+          if (shouldPersist) {
+            await databaseService.message.add(conversationIdForSave, messageData);
+          }
 
           // Reload conversations to update stats
-          await conversationStore.loadConversations();
+          if (shouldPersist) {
+            const userId = getCurrentUserId();
+            if (userId) await conversationStore.loadConversations(userId);
+          }
 
           // Trigger title generation if this is the first assistant response
           // 'messages' contains only the preceding messages (in this case, just the first user message)
-          if (messages.length === 1 && answerContent) {
+          if (shouldPersist && messages.length === 1 && answerContent) {
             const titleMessages = [
               ...messages,
               { role: 'assistant', content: answerContent }
@@ -348,18 +368,25 @@ export async function insertAssistantMessage(
 
   const chatStore = useChatStore.getState();
   const conversationStore = useConversationStore.getState();
+  const shouldPersist = canPersistHistory();
 
   // Create or use existing conversation
-  let activeConversationId = conversationId ?? conversationStore.activeConversationId;
+  let activeConversationId = shouldPersist
+    ? conversationId ?? conversationStore.activeConversationId
+    : undefined;
   let isNewConversation = false;
 
   if (!activeConversationId) {
     isNewConversation = true;
-    const conversation = await databaseService.conversation.create();
-    activeConversationId = conversation.id;
-    useConversationStore.setState((state) => ({
-      conversations: [conversation, ...state.conversations],
-    }));
+    if (shouldPersist) {
+      const conversation = await databaseService.conversation.create();
+      activeConversationId = conversation.id;
+      useConversationStore.setState((state) => ({
+        conversations: [conversation, ...state.conversations],
+      }));
+    } else {
+      activeConversationId = generateUUID();
+    }
   }
 
   // Add assistant message to store
@@ -368,10 +395,12 @@ export async function insertAssistantMessage(
   chatStore.endStreaming();
 
   // Save to database
-  await databaseService.message.add(activeConversationId, {
-    role: 'assistant',
-    content: sanitizedContent,
-  });
+  if (shouldPersist) {
+    await databaseService.message.add(activeConversationId, {
+      role: 'assistant',
+      content: sanitizedContent,
+    });
+  }
 
   if (isNewConversation) {
     conversationStore.selectConversation(activeConversationId);
@@ -410,7 +439,7 @@ export async function cancelCurrentStream(): Promise<void> {
 
   // Save partial response to database to prevent data loss on page refresh
   const activeConversationId = conversationStore.activeConversationId;
-  if (streamingMessageId && activeConversationId) {
+  if (canPersistHistory() && streamingMessageId && activeConversationId) {
     try {
       const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
         role: 'assistant',
@@ -459,9 +488,12 @@ export async function loadMessages(conversationId: string): Promise<void> {
   chatStore.clearMessages();
   chatStore.resetStreamingState();
 
+  const userId = getCurrentUserId();
+  if (!userId) return;
+
   try {
     // 2. Load fresh records from database
-    const messages = await databaseService.message.getByConversationId(conversationId);
+    const messages = await databaseService.message.getByConversationId(conversationId, userId);
     
     // 3. Set the new messages only after they are successfully retrieved
     chatStore.setMessages(messages);
@@ -488,6 +520,11 @@ export async function startNewConversation(): Promise<string> {
   chatStore.clearMessages();
   chatStore.resetStreamingState();
 
+  if (!canPersistHistory()) {
+    conversationStore.clearActiveConversation();
+    return generateUUID();
+  }
+
   // Create new conversation
   const conversationId = await conversationStore.createConversation();
   return conversationId;
@@ -508,6 +545,8 @@ export async function switchConversation(conversationId: string): Promise<void> 
   // This ensures the UI is blank while the new messages are loading
   chatStore.clearMessages();
   chatStore.resetStreamingState();
+
+  if (!canPersistHistory()) return;
 
   // Select conversation
   conversationStore.selectConversation(conversationId);
@@ -546,9 +585,10 @@ export async function deleteConversation(conversationId: string): Promise<void> 
  * Initialize chat service
  * Loads conversations on app start
  */
-export async function initializeChatService(): Promise<void> {
+export async function initializeChatService(userId?: string): Promise<void> {
   const conversationStore = useConversationStore.getState();
-  await conversationStore.loadConversations();
+  const authenticatedUserId = userId ?? getCurrentUserId();
+  if (authenticatedUserId) await conversationStore.loadConversations(authenticatedUserId);
 }
 
 /**
@@ -566,6 +606,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
 
   const chatStore = useChatStore.getState();
   const conversationStore = useConversationStore.getState();
+  const shouldPersist = canPersistHistory();
   const messages = chatStore.messages;
 
   // Find the message index
@@ -588,7 +629,9 @@ export async function regenerateMessage(messageId: string): Promise<void> {
   chatStore.removeMessage(messageId);
 
   // Delete from database
-  await databaseService.message.delete(messageId);
+  if (shouldPersist) {
+    await databaseService.message.delete(messageId);
+  }
 
   // Create new abort controller for this request
   currentAbortController = new AbortController();
@@ -707,14 +750,19 @@ export async function regenerateMessage(messageId: string): Promise<void> {
             messageData.suggestions = suggestionsList;
           }
 
-          await databaseService.message.add(activeConversationId, messageData);
+          if (shouldPersist) {
+            await databaseService.message.add(activeConversationId, messageData);
+          }
 
 
           // Reload conversations to update stats
-          await conversationStore.loadConversations();
+          if (shouldPersist) {
+            const userId = getCurrentUserId();
+            if (userId) await conversationStore.loadConversations(userId);
+          }
 
           // Trigger title generation if this is the first assistant response
-          if (apiMessages.length === 1 && answerContent) {
+          if (shouldPersist && apiMessages.length === 1 && answerContent) {
             const titleMessages = [
               ...apiMessages,
               { role: 'assistant', content: answerContent }
@@ -771,6 +819,7 @@ export async function editUserMessage(
 
   const chatStore = useChatStore.getState();
   const conversationStore = useConversationStore.getState();
+  const shouldPersist = canPersistHistory();
   const messages = chatStore.messages;
 
   // Find the user message
@@ -810,7 +859,9 @@ export async function editUserMessage(
   chatStore.updateMessageContent(messageId, sanitizedContent);
 
   // 2. Update user message in database
-  await databaseService.message.update(messageId, { content: sanitizedContent });
+  if (shouldPersist) {
+    await databaseService.message.update(messageId, { content: sanitizedContent });
+  }
 
   // 3. Find and remove all AI messages that come after this user message
   const messagesToRemove = messages
@@ -819,7 +870,9 @@ export async function editUserMessage(
 
   for (const msg of messagesToRemove) {
     chatStore.removeMessage(msg.id);
-    await databaseService.message.delete(msg.id);
+    if (shouldPersist) {
+      await databaseService.message.delete(msg.id);
+    }
   }
 
   // 4. Create new abort controller for this request
@@ -925,14 +978,19 @@ export async function editUserMessage(
             messageData.suggestions = suggestionsList;
           }
 
-          await databaseService.message.add(activeConversationId, messageData);
+          if (shouldPersist) {
+            await databaseService.message.add(activeConversationId, messageData);
+          }
 
 
           // Reload conversations to update stats
-          await conversationStore.loadConversations();
+          if (shouldPersist) {
+            const userId = getCurrentUserId();
+            if (userId) await conversationStore.loadConversations(userId);
+          }
 
           // Trigger title generation if this is the first assistant response
-          if (apiMessages.length === 1 && answerContent) {
+          if (shouldPersist && apiMessages.length === 1 && answerContent) {
             const titleMessages = [
               ...apiMessages,
               { role: 'assistant', content: answerContent }

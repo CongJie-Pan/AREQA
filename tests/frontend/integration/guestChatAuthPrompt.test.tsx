@@ -18,6 +18,7 @@ const conversationState = {
   activeConversationId: 'conversation-1',
   conversations: [],
   clearActiveConversation: vi.fn(),
+  clearState: vi.fn(),
   setQuotedText: vi.fn(),
 };
 
@@ -41,6 +42,12 @@ vi.mock('@/lib/supabase', () => ({
         return { data: { subscription: { unsubscribe: vi.fn() } } };
       }),
     },
+  },
+}));
+
+vi.mock('@/services/syncService', () => ({
+  syncService: {
+    pullFromCloud: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -134,5 +141,21 @@ describe('Guest chat authentication prompt flow', () => {
     currentSession = { user: { id: 'user-1' } };
     fireEvent.click(screen.getByRole('button', { name: '送出問題' }));
     await waitFor(() => expect(screen.queryByText('歡迎來到 AREQA')).not.toBeInTheDocument());
+  });
+
+  it('clears rendered history when the session is signed out', async () => {
+    renderChat();
+    conversationState.conversations = [{ id: 'private-history' } as never];
+    chatState.messages = [{ id: 'private-message' } as never];
+
+    await act(async () => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+
+    await waitFor(() => {
+      expect(conversationState.clearState).toHaveBeenCalled();
+      expect(chatState.clearMessages).toHaveBeenCalled();
+      expect(chatState.resetStreamingState).toHaveBeenCalled();
+    });
   });
 });

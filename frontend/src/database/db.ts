@@ -10,7 +10,7 @@ import type { Conversation, Message, Setting } from './schema';
  * PerplexityQA Database class
  * Extends Dexie to provide typed table access
  */
-export function getCurrentUserId(): string {
+export function getCurrentUserId(): string | null {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -18,7 +18,8 @@ export function getCurrentUserId(): string {
         const item = localStorage.getItem(key);
         if (item) {
           const parsed = JSON.parse(item);
-          if (parsed?.user?.id) {
+          const isExpired = parsed?.expires_at && parsed.expires_at <= Math.floor(Date.now() / 1000);
+          if (!isExpired && parsed?.user?.id) {
             return parsed.user.id;
           }
         }
@@ -27,7 +28,7 @@ export function getCurrentUserId(): string {
   } catch (e) {
     console.error("Failed to parse auth token", e);
   }
-  return 'default_user';
+  return null;
 }
 
 export function getAuthToken(): string | null {
@@ -75,7 +76,7 @@ class PerplexityQADatabase extends Dexie {
       messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
       settings: 'key',
     }).upgrade(async tx => {
-      const currentUserId = getCurrentUserId();
+      const currentUserId = getCurrentUserId() ?? 'default_user';
       await tx.table('conversations').toCollection().modify(conv => {
         conv.userId = conv.userId ?? currentUserId;
       });

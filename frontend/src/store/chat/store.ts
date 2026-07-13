@@ -52,7 +52,7 @@ export const useChatStore = create<ChatStore>((set) => ({
     const id = generateUUID();
     const message: DisplayMessage = {
       id,
-      userId: getCurrentUserId(),
+      userId: getCurrentUserId() ?? 'guest',
       conversationId,
       role: 'user',
       content,
@@ -70,7 +70,7 @@ export const useChatStore = create<ChatStore>((set) => ({
     const id = generateUUID();
     const message: DisplayMessage = {
       id,
-      userId: getCurrentUserId(),
+      userId: getCurrentUserId() ?? 'guest',
       conversationId,
       role: 'assistant',
       content: '',

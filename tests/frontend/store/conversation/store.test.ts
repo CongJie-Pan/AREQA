@@ -13,6 +13,10 @@ vi.mock('@/services/database', () => ({
   },
 }));
 
+vi.mock('@/database/db', () => ({
+  getCurrentUserId: vi.fn().mockReturnValue('test-user-id'),
+}));
+
 describe('Conversation Store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -24,6 +28,12 @@ describe('Conversation Store', () => {
       streamingTitles: {},
     });
     global.fetch = vi.fn();
+  });
+
+  it('loads conversations only for the authenticated user', async () => {
+    await useConversationStore.getState().loadConversations('user-1');
+
+    expect(databaseService.conversation.getAll).toHaveBeenCalledWith('user-1');
   });
 
   afterEach(() => {

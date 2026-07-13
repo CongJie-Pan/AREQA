@@ -24,9 +24,12 @@ export const messageRepo = {
     conversationId: string,
     messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'>
   ): Promise<Message> {
+    const userId = getCurrentUserId();
+    if (!userId) throw new Error('Authentication required to persist messages');
+
     const message: Message = {
       id: generateUUID(),
-      userId: getCurrentUserId(),
+      userId,
       conversationId,
       ...messageData,
       createdAt: new Date(),
@@ -73,8 +76,9 @@ export const messageRepo = {
    * @param conversationId - The conversation ID
    * @returns Array of messages in chronological order
    */
-  async getByConversationId(conversationId: string): Promise<Message[]> {
-    return db.messages.where('conversationId').equals(conversationId).sortBy('createdAt');
+  async getByConversationId(conversationId: string, userId: string): Promise<Message[]> {
+    const messages = await db.messages.where('conversationId').equals(conversationId).sortBy('createdAt');
+    return messages.filter((message) => message.userId === userId);
   },
 
   /**

@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { databaseService } from '@/services/database';
+import { getCurrentUserId } from '@/database/db';
 import type { Conversation } from '@/database/schema';
 import type { ConversationStore } from './types';
 
@@ -34,10 +35,10 @@ const initialState = {
 export const useConversationStore = create<ConversationStore>((set) => ({
   ...initialState,
 
-  loadConversations: async () => {
+  loadConversations: async (userId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const conversations = await databaseService.conversation.getAll();
+      const conversations = await databaseService.conversation.getAll(userId);
       set({ conversations, isLoading: false });
     } catch (error) {
       set({
@@ -93,6 +94,16 @@ export const useConversationStore = create<ConversationStore>((set) => ({
 
   clearActiveConversation: () => {
     set({ activeConversationId: null });
+  },
+
+  clearState: () => {
+    set({
+      conversations: [],
+      activeConversationId: null,
+      isLoading: false,
+      error: null,
+      streamingTitles: {},
+    });
   },
 
   setError: (error: Error | null) => {
@@ -175,8 +186,11 @@ export const useConversationStore = create<ConversationStore>((set) => ({
         await databaseService.conversation.update(conversationId, { title: finalTitle });
         
         // Refresh conversations to show the persistent title
-        const conversations = await databaseService.conversation.getAll();
-        set({ conversations });
+        const userId = getCurrentUserId();
+        if (userId) {
+          const conversations = await databaseService.conversation.getAll(userId);
+          set({ conversations });
+        }
       }
 
       // Cleanup
