@@ -873,17 +873,21 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
         raw_messages = form.get("messages")
         if not isinstance(raw_messages, str):
             raise HTTPException(status_code=400, detail="Missing messages field")
+        parsed_messages = json.loads(raw_messages)
+        payload = parsed_messages if isinstance(parsed_messages, dict) else {
+            "messages": parsed_messages,
+        }
         payload = {
-            "messages": json.loads(raw_messages),
-            "conversation_id": form.get("conversation_id", ""),
-            "use_rag": _parse_bool(form.get("use_rag")),
-            "use_web_search": _parse_bool(form.get("use_web_search")),
-            "search_mode": form.get("search_mode") or None,
-            "force_think": _parse_bool(form.get("force_think")),
-            "temperature": form.get("temperature", 0.7),
-            "top_p": form.get("top_p", 0.8),
-            "max_tokens": form.get("max_tokens", 2048),
-            "repetition_penalty": form.get("repetition_penalty", 1.2),
+            **payload,
+            "conversation_id": payload.get("conversation_id", form.get("conversation_id", "")),
+            "use_rag": payload.get("use_rag", _parse_bool(form.get("use_rag"))),
+            "use_web_search": payload.get("use_web_search", _parse_bool(form.get("use_web_search"))),
+            "search_mode": payload.get("search_mode", form.get("search_mode") or None),
+            "force_think": payload.get("force_think", _parse_bool(form.get("force_think"))),
+            "temperature": payload.get("temperature", form.get("temperature", 0.7)),
+            "top_p": payload.get("top_p", form.get("top_p", 0.8)),
+            "max_tokens": payload.get("max_tokens", form.get("max_tokens", 2048)),
+            "repetition_penalty": payload.get("repetition_penalty", form.get("repetition_penalty", 1.2)),
         }
         uploads = [item for item in form.getlist("attachments") if hasattr(item, "read")]
         return ChatRequest.model_validate(payload), uploads

@@ -179,6 +179,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) setShowAuthPrompt(true);
         }
+        return result;
       } catch (err) {
         console.error('Failed to send message:', err);
 
@@ -194,7 +195,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                 <button
                   onClick={() => {
                     antMessageApi.destroy('send-error');
-                    retryableSend(content, attachments); // Retry with the same request
+                    void retryableSend(content, attachments).catch(() => undefined); // Retry with the same request
                   }}
                   style={{
                     marginLeft: '12px',
@@ -220,6 +221,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
             key: 'send-error',
           });
         }
+
+        throw err;
       }
     },
     [activeConversationId, antMessageApi]

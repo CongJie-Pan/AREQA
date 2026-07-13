@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { useChatStore } from '@/store/chat';
@@ -33,6 +33,8 @@ describe('ChatInput', () => {
   it('should render correctly', () => {
     render(<ChatInput onSend={mockOnSend} />);
     expect(screen.getByPlaceholderText(/問我任何問題/i)).toBeDefined();
+    expect(screen.getByLabelText('加入附件')).toBeInTheDocument();
+    expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
   });
 
   it('should render a LaTeX preview without changing the submitted source', async () => {
@@ -77,7 +79,7 @@ describe('ChatInput', () => {
     expect(mockSetQuotedText).toHaveBeenCalledWith(null);
   });
 
-  it('should merge quote into message when sending', () => {
+  it('should merge quote into message when sending', async () => {
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {
         quotedText: 'quoted content',
@@ -94,7 +96,7 @@ describe('ChatInput', () => {
     
     expect(mockOnSend).toHaveBeenCalledWith(expect.stringContaining('> quoted content'));
     expect(mockOnSend).toHaveBeenCalledWith(expect.stringContaining('my question'));
-    expect(mockSetQuotedText).toHaveBeenCalledWith(null);
+    await waitFor(() => expect(mockSetQuotedText).toHaveBeenCalledWith(null));
   });
 
   it('should send selected attachments with an otherwise empty message', () => {
@@ -117,5 +119,17 @@ describe('ChatInput', () => {
 
     expect(screen.queryByLabelText('待送附件')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/發送訊息/i)).toBeDisabled();
+  });
+
+  it('should preserve attachments when sending fails', async () => {
+    const attachment = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    const failedSend = vi.fn().mockRejectedValue(new Error('network failure'));
+    render(<ChatInput onSend={failedSend} />);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
+    fireEvent.click(screen.getByLabelText(/發送訊息/i));
+
+    await waitFor(() => expect(failedSend).toHaveBeenCalledWith('', [attachment]));
+    expect(screen.getByLabelText('待送附件')).toBeInTheDocument();
   });
 });

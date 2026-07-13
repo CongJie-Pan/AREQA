@@ -211,6 +211,61 @@ async def test_stream_endpoint_forwards_multipart_attachment_to_orchestrator():
     assert captured["messages"][-1]["content"] == "請閱讀附件"
     assert captured["attachments"][0]["type"] == "text"
 
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_accepts_complete_multipart_chat_payload():
+    captured = {}
+
+    class PayloadOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    request_payload = {
+        "messages": [{"role": "user", "content": "請分析附件"}],
+        "conversation_id": "complete-payload-conversation",
+        "use_rag": True,
+        "search_mode": "always",
+    }
+    files = {
+        "attachments": ("notes.txt", b"attachment content", "text/plain"),
+    }
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=PayloadOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                data={"messages": json.dumps(request_payload)},
+                files=files,
+            )
+
+    assert response.status_code == 200
+    assert captured["conversation_id"] == "complete-payload-conversation"
+    assert captured["use_rag"] is True
+    assert captured["search_mode"] == "always"
+    assert captured["attachments"][0]["type"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_rejects_malformed_multipart_payload():
+    files = {
+        "attachments": ("notes.txt", b"attachment content", "text/plain"),
+    }
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            "/api/v1/stream",
+            data={"messages": "not-json"},
+            files=files,
+        )
+
+    assert response.status_code == 400
+
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Router feature bypassed by user request")
 async def test_gatekeeper_rejection():

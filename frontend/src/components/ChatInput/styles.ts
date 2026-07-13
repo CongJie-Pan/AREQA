@@ -97,9 +97,17 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
-  // Borderless textarea that fills the top of the card
-  textarea: css`
+  inputRow: css`
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
     width: 100%;
+  `,
+
+  // Borderless textarea that fills the input row
+  textarea: css`
+    flex: 1;
+    width: 0;
     min-height: 44px;
     max-height: 200px;
     padding: 8px 0;
@@ -149,18 +157,26 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin: 6px 0 2px;
+    width: 100%;
+    margin: 8px 0 2px 38px;
+    padding-right: 38px;
+
+    @media (max-width: 768px) {
+      margin-left: 38px;
+      padding-right: 24px;
+    }
   `,
 
   attachmentChip: css`
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    max-width: 100%;
-    padding: 4px 7px;
-    border: 1px solid rgba(216, 162, 92, 0.35);
-    border-radius: 12px;
-    background: rgba(216, 162, 92, 0.1);
+    max-width: min(320px, 100%);
+    min-height: 30px;
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.07);
     color: rgba(255, 255, 255, 0.85);
     font-size: 12px;
 
@@ -187,7 +203,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   toolbar: css`
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     margin-top: 4px;
     gap: 8px;
   `,
@@ -228,13 +244,6 @@ export const useStyles = createStyles(({ css, token }) => ({
       cursor: not-allowed;
       opacity: 0.45;
     }
-  `,
-
-  // Faint character counter
-  charCount: css`
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.45);
-    margin-left: 4px;
   `,
 
   // Circular send button aligned in the toolbar

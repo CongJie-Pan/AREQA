@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, Database, X, CornerDownRight, Plus, FileText, Image as ImageIcon } from 'lucide-react';
+import { Send, Square, X, CornerDownRight, Plus, FileText, Image as ImageIcon } from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -19,7 +19,6 @@ import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMa
 /** Maximum allowed message length */
 const MAX_MESSAGE_LENGTH = 4000;
 /** Warning threshold for character count */
-const WARNING_THRESHOLD = 0.9;
 const MAX_ATTACHMENT_COUNT = 5;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -30,7 +29,10 @@ const SUPPORTED_ATTACHMENT_TYPES = new Set([
 
 export interface ChatInputProps {
   /** Callback when message is sent */
-  onSend: (message: string, attachments?: File[]) => void | Promise<void>;
+  onSend: (message: string, attachments?: File[]) =>
+    | void
+    | { completed: boolean }
+    | Promise<void | { completed: boolean }>;
   /** Whether input is disabled */
   disabled?: boolean;
   /** Placeholder text */
@@ -65,15 +67,10 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Connect to global state for mode togglers
-  const useRag = useChatStore((state) => state.useRag);
   const quotedText = useChatStore((state) => state.quotedText);
-  const toggleRag = useChatStore((state) => state.toggleRag);
   const setQuotedText = useChatStore((state) => state.setQuotedText);
 
-  // Calculate character count and warning state
-  const charCount = value.length;
-  const isNearLimit = charCount > maxLength * WARNING_THRESHOLD;
-  const isOverLimit = charCount > maxLength;
+  const isOverLimit = value.length > maxLength;
   const hasMath = /(?:\$\$?[\s\S]+?\$\$?|\\\(|\\\[)/.test(value);
 
   // Auto-resize textarea
@@ -99,7 +96,7 @@ export function ChatInput({
     }
   }, [disabled]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmedValue = value.trim();
 
     // Validation checks
@@ -125,14 +122,20 @@ export function ChatInput({
       finalMessage = `${formattedQuote}\n\n${trimmedValue}`;
     }
 
-    if (attachments.length > 0) {
-      onSend(finalMessage, attachments);
-    } else {
-      onSend(finalMessage);
+    try {
+      const result = attachments.length > 0
+        ? await onSend(finalMessage, attachments)
+        : await onSend(finalMessage);
+
+      if (result && 'completed' in result && !result.completed) return;
+
+      setValue('');
+      setAttachments([]);
+      setQuotedText(null); // Clear quote after sending
+    } catch {
+      // Preserve text and attachments so the user can retry the request.
+      return;
     }
-    setValue('');
-    setAttachments([]);
-    setQuotedText(null); // Clear quote after sending
 
     // Reset textarea height
     if (textareaRef.current) {
@@ -219,20 +222,32 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Textarea */}
-      <textarea
-        ref={textareaRef}
-        className={styles.textarea}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        disabled={disabled}
-        rows={1}
-        maxLength={maxLength + 100}
-        aria-label="訊息輸入框"
-        aria-describedby="char-count"
-      />
+      <div className={styles.inputRow}>
+        <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+          <button
+            type="button"
+            className={styles.attachmentButton}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            aria-label="加入附件"
+          >
+            <Plus size={18} />
+          </button>
+        </Tooltip>
+
+        <textarea
+          ref={textareaRef}
+          className={styles.textarea}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={disabled}
+          rows={1}
+          maxLength={maxLength + 100}
+          aria-label="訊息輸入框"
+        />
+      </div>
 
       <input
         ref={fileInputRef}
@@ -270,46 +285,8 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Bottom toolbar: mode buttons left, send button right */}
+      {/* Bottom toolbar: send button right */}
       <div className={styles.toolbar}>
-        <div className={styles.toolbarLeft}>
-          <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-            <button
-              type="button"
-              className={styles.attachmentButton}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled}
-              aria-label="加入附件"
-            >
-              <Plus size={18} />
-            </button>
-          </Tooltip>
-
-          <div style={{ display: 'none' }}>
-            <Tooltip title="切換 RAG 模式" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-              <button
-                type="button"
-                className={cx(styles.toggleButton, useRag && styles.toggleButtonActive)}
-                onClick={toggleRag}
-                aria-label="切換 RAG 模式"
-              >
-                <Database size={15} />
-                <span>RAG模式</span>
-              </button>
-            </Tooltip>
-          </div>
-
-          <span
-            id="char-count"
-            className={styles.charCount}
-            style={{
-              color: isOverLimit ? '#ff4d4f' : isNearLimit ? '#faad14' : undefined,
-            }}
-          >
-            {charCount}/{maxLength}
-          </span>
-        </div>
-
         <div className={styles.toolbarRight}>
           {isStreaming && onStop ? (
             <button
