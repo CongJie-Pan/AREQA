@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, Database, X, CornerDownRight } from 'lucide-react';
+import { Send, Square, Database, X, CornerDownRight, Plus, FileText, Image as ImageIcon } from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -20,10 +20,17 @@ import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMa
 const MAX_MESSAGE_LENGTH = 4000;
 /** Warning threshold for character count */
 const WARNING_THRESHOLD = 0.9;
+const MAX_ATTACHMENT_COUNT = 5;
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const SUPPORTED_ATTACHMENT_TYPES = new Set([
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/markdown',
+]);
 
 export interface ChatInputProps {
   /** Callback when message is sent */
-  onSend: (message: string) => void;
+  onSend: (message: string, attachments?: File[]) => void | Promise<void>;
   /** Whether input is disabled */
   disabled?: boolean;
   /** Placeholder text */
@@ -53,7 +60,9 @@ export function ChatInput({
 }: ChatInputProps) {
   const { styles, cx } = useStyles();
   const [value, setValue] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Connect to global state for mode togglers
   const useRag = useChatStore((state) => state.useRag);
@@ -94,7 +103,7 @@ export function ChatInput({
     const trimmedValue = value.trim();
 
     // Validation checks
-    if (!trimmedValue && !quotedText) {
+    if (!trimmedValue && !quotedText && attachments.length === 0) {
       return;
     }
 
@@ -116,20 +125,20 @@ export function ChatInput({
       finalMessage = `${formattedQuote}\n\n${trimmedValue}`;
     }
 
-    if (!finalMessage.trim()) {
-      message.warning('請輸入有效的訊息。');
-      return;
+    if (attachments.length > 0) {
+      onSend(finalMessage, attachments);
+    } else {
+      onSend(finalMessage);
     }
-
-    onSend(finalMessage);
     setValue('');
+    setAttachments([]);
     setQuotedText(null); // Clear quote after sending
 
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [value, disabled, onSend, maxLength, quotedText, setQuotedText]);
+  }, [value, attachments, disabled, onSend, maxLength, quotedText, setQuotedText]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -152,7 +161,46 @@ export function ChatInput({
     []
   );
 
-  const canSend = value.trim().length > 0 && !disabled && !isOverLimit;
+  const handleAttachmentChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (selected.length === 0) return;
+
+    const candidates = [...attachments, ...selected];
+    if (candidates.length > MAX_ATTACHMENT_COUNT) {
+      message.error(`每次最多可附加 ${MAX_ATTACHMENT_COUNT} 個檔案。`);
+      return;
+    }
+
+    let totalSize = 0;
+    for (const attachment of candidates) {
+      if (!SUPPORTED_ATTACHMENT_TYPES.has(attachment.type)) {
+        message.error('僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。');
+        return;
+      }
+      if (attachment.size === 0) {
+        message.error('不接受空白附件。');
+        return;
+      }
+      if (attachment.size > MAX_ATTACHMENT_BYTES) {
+        message.error('單一附件不得超過 5 MB。');
+        return;
+      }
+      totalSize += attachment.size;
+    }
+    if (totalSize > MAX_TOTAL_ATTACHMENT_BYTES) {
+      message.error('附件總大小不得超過 20 MB。');
+      return;
+    }
+
+    setAttachments(candidates);
+  }, [attachments]);
+
+  const removeAttachment = useCallback((target: File) => {
+    setAttachments((current) => current.filter((attachment) => attachment !== target));
+  }, []);
+
+  const canSend = (value.trim().length > 0 || attachments.length > 0) && !disabled && !isOverLimit;
 
   return (
     <div className={cx(styles.container, className)}>
@@ -186,6 +234,30 @@ export function ChatInput({
         aria-describedby="char-count"
       />
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,.txt,.md"
+        multiple
+        hidden
+        onChange={handleAttachmentChange}
+        aria-label="選擇附件"
+      />
+
+      {attachments.length > 0 && (
+        <div className={styles.attachmentList} aria-label="待送附件">
+          {attachments.map((attachment) => (
+            <div className={styles.attachmentChip} key={`${attachment.name}-${attachment.lastModified}`}>
+              {attachment.type.startsWith('image/') ? <ImageIcon size={14} /> : <FileText size={14} />}
+              <span>{attachment.name}</span>
+              <button type="button" onClick={() => removeAttachment(attachment)} aria-label={`移除附件 ${attachment.name}`}>
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {hasMath && (
         <div className={styles.mathPreview} aria-label="LaTeX 預覽">
           <div className={styles.mathPreviewLabel}>公式預覽</div>
@@ -201,7 +273,17 @@ export function ChatInput({
       {/* Bottom toolbar: mode buttons left, send button right */}
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
-
+          <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button
+              type="button"
+              className={styles.attachmentButton}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              aria-label="加入附件"
+            >
+              <Plus size={18} />
+            </button>
+          </Tooltip>
 
           <div style={{ display: 'none' }}>
             <Tooltip title="切換 RAG 模式" color="#262626" styles={{ container: { color: '#ffffff' } }}>

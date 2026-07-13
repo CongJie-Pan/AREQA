@@ -172,9 +172,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   // Handle sending message with improved error handling
   const handleSend = useCallback(
-    async function retryableSend(content: string) {
+    async function retryableSend(content: string, attachments: File[] = []) {
       try {
-        const result = await sendMessage(content, activeConversationId || undefined);
+        const result = await sendMessage(content, activeConversationId || undefined, attachments);
         if (result?.completed) {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) setShowAuthPrompt(true);
@@ -194,7 +194,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                 <button
                   onClick={() => {
                     antMessageApi.destroy('send-error');
-                    retryableSend(content); // Retry with same content
+                    retryableSend(content, attachments); // Retry with the same request
                   }}
                   style={{
                     marginLeft: '12px',

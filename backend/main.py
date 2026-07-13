@@ -209,10 +209,33 @@ def init_rag_service():
 
 app = FastAPI(title="XiaoHong Ancient Chinese QA - RAG Backend API")
 
+MAX_CHAT_MULTIPART_BYTES = 30 * 1024 * 1024
+
 import sqlite3
 import sqlalchemy.exc
 from fastapi.responses import JSONResponse
 from fastapi import Request
+
+@app.middleware("http")
+async def chat_attachment_size_limit_middleware(request: Request, call_next):
+    """Reject oversized attachment requests before multipart parsing."""
+    if request.url.path == "/api/v1/stream":
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_CHAT_MULTIPART_BYTES:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": {
+                                "code": "ATTACHMENT_TOTAL_SIZE_EXCEEDED",
+                                "message": "附件請求大小超過允許上限。",
+                            }
+                        },
+                    )
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+    return await call_next(request)
 
 @app.middleware("http")
 async def db_error_recovery_middleware(request: Request, call_next):
@@ -827,6 +850,48 @@ class ChatRequest(BaseModel):
     presence_penalty: float = 1.5
     no_repeat_ngram_size: int = 3
 
+
+def _parse_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in {"1", "true", "yes", "on"}
+
+
+async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]]:
+    """Support legacy JSON chat requests and attachment multipart requests."""
+    content_type = request.headers.get("content-type", "")
+    if not content_type.startswith("multipart/form-data"):
+        try:
+            return ChatRequest.model_validate(await request.json()), []
+        except (ValueError, TypeError) as error:
+            raise HTTPException(status_code=400, detail="Invalid JSON in request body") from error
+
+    try:
+        form = await request.form(max_files=5, max_fields=20, max_part_size=5 * 1024 * 1024)
+        raw_messages = form.get("messages")
+        if not isinstance(raw_messages, str):
+            raise HTTPException(status_code=400, detail="Missing messages field")
+        payload = {
+            "messages": json.loads(raw_messages),
+            "conversation_id": form.get("conversation_id", ""),
+            "use_rag": _parse_bool(form.get("use_rag")),
+            "use_web_search": _parse_bool(form.get("use_web_search")),
+            "search_mode": form.get("search_mode") or None,
+            "force_think": _parse_bool(form.get("force_think")),
+            "temperature": form.get("temperature", 0.7),
+            "top_p": form.get("top_p", 0.8),
+            "max_tokens": form.get("max_tokens", 2048),
+            "repetition_penalty": form.get("repetition_penalty", 1.2),
+        }
+        uploads = [item for item in form.getlist("attachments") if hasattr(item, "read")]
+        return ChatRequest.model_validate(payload), uploads
+    except HTTPException:
+        raise
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=400, detail="Invalid multipart chat request") from error
+
 class TitleRequest(BaseModel):
     messages: List[Dict[str, str]]
 
@@ -1182,13 +1247,22 @@ async def ws_notifications(websocket: WebSocket, ticket: str):
 
 @app.post("/api/v1/stream")
 async def stream_endpoint(
-    request: Request, 
-    chat_req: ChatRequest,
+    request: Request,
     current_user_id: str | None = Depends(get_optional_current_user)
 ):
     """
     Core streaming endpoint for textual generation using OrchestrationService.
     """
+    chat_req, uploads = await parse_stream_request(request)
+    if not chat_req.messages:
+        raise HTTPException(status_code=422, detail="At least one message is required")
+
+    processed_attachments = []
+    if uploads:
+        from services.attachment_service import process_attachments
+
+        processed_attachments = await process_attachments(uploads)
+
     # Anonymous chat is intentionally ephemeral. It can answer questions, but
     # must not share persistent memory with other visitors.
     effective_user_id = current_user_id or f"guest:{uuid.uuid4()}"
@@ -1249,6 +1323,7 @@ async def stream_endpoint(
             request=request,
             user_id=effective_user_id,
             search_mode=chat_req.search_mode,
+            attachments=[attachment.content_part for attachment in processed_attachments],
         )
 
     return StreamingResponse(

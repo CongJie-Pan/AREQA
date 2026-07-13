@@ -65,14 +65,14 @@ function prepareMessagesForAPI(
  * @param content - Message content to validate
  * @throws ValidationError if content is invalid
  */
-function validateMessageContent(content: string): void {
-  if (!content) {
+function validateMessageContent(content: string, hasAttachments = false): void {
+  if (!content && !hasAttachments) {
     throw new ValidationError('Message content is required', 'content');
   }
 
   const trimmedContent = content.trim();
 
-  if (trimmedContent.length < API_CONFIG.minMessageLength) {
+  if (!hasAttachments && trimmedContent.length < API_CONFIG.minMessageLength) {
     throw new ValidationError('Message cannot be empty', 'content');
   }
 
@@ -110,11 +110,15 @@ function validateMessageContent(content: string): void {
  */
 export async function sendMessage(
   content: string,
-  conversationId?: string
+  conversationId?: string,
+  attachments: File[] = []
 ): Promise<{ completed: boolean }> {
   // Validate input
-  validateMessageContent(content);
-  const sanitizedContent = content.trim();
+  validateMessageContent(content, attachments.length > 0);
+  const sanitizedContent = content.trim() || (attachments.length > 0 ? '請分析我附加的檔案。' : '');
+  const persistedContent = attachments.length > 0
+    ? `${sanitizedContent}\n\n[已附加 ${attachments.length} 個檔案]`
+    : sanitizedContent;
 
   // Cancel any ongoing stream
   if (currentAbortController) {
@@ -154,13 +158,13 @@ export async function sendMessage(
   }
 
   // Add user message to store
-  chatStore.addUserMessage(sanitizedContent, activeConversationId);
+  chatStore.addUserMessage(persistedContent, activeConversationId);
 
   // Save user message to database
   if (shouldPersist) {
     await databaseService.message.add(activeConversationId, {
       role: 'user',
-      content: sanitizedContent,
+      content: persistedContent,
     });
   }
 
@@ -195,6 +199,11 @@ export async function sendMessage(
     }];
   }
 
+  if (attachments.length > 0) {
+    const latestUserMessage = [...messages].reverse().find((item) => item.role === 'user');
+    if (latestUserMessage) latestUserMessage.content = sanitizedContent;
+  }
+
   // Safety check: Don't send empty messages to API
   if (messages.length === 0) {
     chatStore.resetStreamingState();
@@ -215,130 +224,108 @@ export async function sendMessage(
   const conversationIdForSave = activeConversationId;
 
   try {
-    await createChatStream(
-      messages,
-      {
-        onThinkingStart: () => {
-          if (!latestState.forceThink) return;
-          thinkingStartTime = Date.now();
-          // Store handles isThinking state
-        },
+    const callbacks = {
+      onThinkingStart: () => {
+        if (!latestState.forceThink) return;
+        thinkingStartTime = Date.now();
+        // Store handles isThinking state
+      },
 
-        onThinkingContent: (chunk: string) => {
-          if (!latestState.forceThink) return;
-          thinkingContent += chunk;
-          chatStore.appendThinkingContent(chunk);
-        },
+      onThinkingContent: (chunk: string) => {
+        if (!latestState.forceThink) return;
+        thinkingContent += chunk;
+        chatStore.appendThinkingContent(chunk);
+      },
 
-        onThinkingEnd: () => {
-          if (!latestState.forceThink) return;
-          chatStore.endThinking();
-        },
+      onThinkingEnd: () => {
+        if (!latestState.forceThink) return;
+        chatStore.endThinking();
+      },
 
-        onContent: (chunk: string) => {
-          answerContent += chunk;
-          chatStore.appendContent(chunk);
-        },
+      onContent: (chunk: string) => {
+        answerContent += chunk;
+        chatStore.appendContent(chunk);
+      },
 
-        onCitations: (citationUrls: string[]) => {
-          citations = citationUrls;
-          chatStore.setCitations(citationUrls);
-        },
+      onCitations: (citationUrls: string[]) => {
+        citations = citationUrls;
+        chatStore.setCitations(citationUrls);
+      },
 
-        onStatus: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => {
-          chatStore.setRagStatus(status, message);
-        },
+      onStatus: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => {
+        chatStore.setRagStatus(status, message);
+      },
 
-        onSources: (sources: CitationSource[]) => {
-          sourcesPayload = sources;
-          chatStore.setRagStatus('sources_ready');
-          chatStore.setRagSources(sources);
-        },
+      onSources: (sources: CitationSource[]) => {
+        sourcesPayload = sources;
+        chatStore.setRagStatus('sources_ready');
+        chatStore.setRagSources(sources);
+      },
 
-        onSuggestions: (suggestions: string[]) => {
+      onSuggestions: (suggestions: string[]) => {
+        suggestionsList = suggestions;
+        chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
+      },
+
+      onDone: async (suggestions?: string[]) => {
+        completed = true;
+        chatStore.endStreaming();
+
+        if (suggestions && suggestions.length > 0) {
           suggestionsList = suggestions;
           chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
-        },
+        }
 
-        onDone: async (suggestions?: string[]) => {
-          completed = true;
-          chatStore.endStreaming();
-
-          // Update message with final suggestions if received in done event
-          if (suggestions && suggestions.length > 0) {
-            suggestionsList = suggestions;
-            chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
-          }
-
-          // Calculate thinking duration
-          const thinkingDuration = thinkingStartTime
-            ? Date.now() - thinkingStartTime
-            : undefined;
-
-          // Save assistant message to database
-          const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
-            role: 'assistant',
-            content: answerContent,
-          };
-
-          if (thinkingContent) {
-            messageData.reasoning = {
-              content: thinkingContent,
-              duration: thinkingDuration,
-            };
-          }
-
-          if (citations.length > 0) {
-            messageData.citations = citations;
-          }
-
-          if (sourcesPayload.length > 0) {
-            messageData.sources = sourcesPayload;
-          }
-
-          if (suggestionsList.length > 0) {
-            messageData.suggestions = suggestionsList;
-          }
-
-          // Use captured conversation ID to prevent null assertion issues
-          if (shouldPersist) {
-            await databaseService.message.add(conversationIdForSave, messageData);
-          }
-
-          // Reload conversations to update stats
-          if (shouldPersist) {
-            const userId = getCurrentUserId();
-            if (userId) await conversationStore.loadConversations(userId);
-          }
-
-          // Trigger title generation if this is the first assistant response
-          // 'messages' contains only the preceding messages (in this case, just the first user message)
-          if (shouldPersist && messages.length === 1 && answerContent) {
-            const titleMessages = [
-              ...messages,
-              { role: 'assistant', content: answerContent }
-            ];
-            // Start title generation in background (streaming to store)
-            useConversationStore.getState().generateTitle(conversationIdForSave, titleMessages);
-          }
-
-          // Clear abort controller reference
-          currentAbortController = null;
-        },
-
-        onError: (error: Error) => {
-          completed = false;
-          chatStore.setError(error);
-          chatStore.endStreaming();
-          currentAbortController = null;
-        },
+        const thinkingDuration = thinkingStartTime ? Date.now() - thinkingStartTime : undefined;
+        const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
+          role: 'assistant', content: answerContent,
+        };
+        if (thinkingContent) messageData.reasoning = { content: thinkingContent, duration: thinkingDuration };
+        if (citations.length > 0) messageData.citations = citations;
+        if (sourcesPayload.length > 0) messageData.sources = sourcesPayload;
+        if (suggestionsList.length > 0) messageData.suggestions = suggestionsList;
+        if (shouldPersist) await databaseService.message.add(conversationIdForSave, messageData);
+        if (shouldPersist) {
+          const userId = getCurrentUserId();
+          if (userId) await conversationStore.loadConversations(userId);
+        }
+        if (shouldPersist && messages.length === 1 && answerContent) {
+          useConversationStore.getState().generateTitle(conversationIdForSave, [
+            ...messages, { role: 'assistant', content: answerContent },
+          ]);
+        }
+        currentAbortController = null;
       },
-      abortSignal,
-      chatStore.useRag,
-      chatStore.forceThink,
-      chatStore.searchMode,
-      activeConversationId
-    );
+
+      onError: (error: Error) => {
+        chatStore.setError(error);
+        chatStore.endStreaming();
+        currentAbortController = null;
+      },
+    };
+
+    if (attachments.length > 0) {
+      await createChatStream(
+        messages,
+        callbacks,
+        abortSignal,
+        chatStore.useRag,
+        chatStore.forceThink,
+        chatStore.searchMode,
+        activeConversationId,
+        attachments,
+      );
+    } else {
+      await createChatStream(
+        messages,
+        callbacks,
+        abortSignal,
+        chatStore.useRag,
+        chatStore.forceThink,
+        chatStore.searchMode,
+        activeConversationId,
+      );
+    }
 
     return { completed };
   } catch (error) {

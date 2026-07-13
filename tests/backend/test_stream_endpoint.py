@@ -179,6 +179,38 @@ async def test_anonymous_chat_can_open_stream_without_authorization():
     assert response.status_code == 200
     assert "data: [DONE]" in response.text
 
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_forwards_multipart_attachment_to_orchestrator():
+    captured = {}
+
+    class AttachmentOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    request_data = {
+        "messages": json.dumps([{"role": "user", "content": "請閱讀附件"}]),
+        "conversation_id": "attachment-conversation",
+        "use_rag": "false",
+    }
+    files = {
+        "attachments": ("notes.txt", b"attachment content", "text/plain"),
+    }
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=AttachmentOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post("/api/v1/stream", data=request_data, files=files)
+
+    assert response.status_code == 200
+    assert captured["messages"][-1]["content"] == "請閱讀附件"
+    assert captured["attachments"][0]["type"] == "text"
+
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Router feature bypassed by user request")
 async def test_gatekeeper_rejection():

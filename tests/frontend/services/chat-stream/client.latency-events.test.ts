@@ -85,4 +85,28 @@ describe('chat stream visible latency events', () => {
     expect(onStatus).toHaveBeenCalledWith('retrieving', '正在整理相關脈絡');
     expect(onContent).toHaveBeenCalledWith('回答內容');
   });
+
+  it('uses FormData when the request includes attachments', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
+    const attachment = new File(['attachment'], 'notes.txt', { type: 'text/plain' });
+
+    await createChatStream(
+      [{ role: 'user', content: '請摘要附件' }],
+      {
+        onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+        onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(),
+      },
+      undefined,
+      false,
+      false,
+      'auto',
+      'conversation-1',
+      [attachment],
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    expect(request.body).toBeInstanceOf(FormData);
+    expect((request.body as FormData).getAll('attachments')).toEqual([attachment]);
+    expect((request.body as FormData).get('messages')).toContain('請摘要附件');
+  });
 });

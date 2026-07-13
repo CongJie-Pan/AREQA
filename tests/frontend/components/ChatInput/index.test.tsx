@@ -96,4 +96,26 @@ describe('ChatInput', () => {
     expect(mockOnSend).toHaveBeenCalledWith(expect.stringContaining('my question'));
     expect(mockSetQuotedText).toHaveBeenCalledWith(null);
   });
+
+  it('should send selected attachments with an otherwise empty message', () => {
+    const attachment = new File(['notes'], 'notes.md', { type: 'text/markdown' });
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
+    expect(screen.getByLabelText('待送附件')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/發送訊息/i));
+
+    expect(mockOnSend).toHaveBeenCalledWith('', [attachment]);
+  });
+
+  it('should remove a pending attachment before sending', () => {
+    const attachment = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
+    fireEvent.click(screen.getByLabelText('移除附件 notes.txt'));
+
+    expect(screen.queryByLabelText('待送附件')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/發送訊息/i)).toBeDisabled();
+  });
 });

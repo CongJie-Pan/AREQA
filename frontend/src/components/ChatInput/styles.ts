@@ -145,6 +145,44 @@ export const useStyles = createStyles(({ css, token }) => ({
     font-size: 11px;
   `,
 
+  attachmentList: css`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0 2px;
+  `,
+
+  attachmentChip: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 4px 7px;
+    border: 1px solid rgba(216, 162, 92, 0.35);
+    border-radius: 12px;
+    background: rgba(216, 162, 92, 0.1);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 180px;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+  `,
+
   // Bottom row: left-side mode pills + right-side send button
   toolbar: css`
     display: flex;
@@ -165,6 +203,31 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     align-items: center;
     flex-shrink: 0;
+  `,
+
+  attachmentButton: css`
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.82);
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover:not(:disabled) {
+      border-color: #d8a25c;
+      background: rgba(216, 162, 92, 0.15);
+      color: #ffffff;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
   `,
 
   // Faint character counter

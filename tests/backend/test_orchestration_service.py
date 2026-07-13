@@ -6,6 +6,23 @@ from unittest.mock import AsyncMock, MagicMock
 from backend.services.orchestration_service import OrchestrationService
 from unittest.mock import patch
 
+
+def test_attaches_multimodal_parts_only_to_latest_user_turn():
+    messages = [
+        {"role": "user", "content": "先前問題"},
+        {"role": "assistant", "content": "先前回答"},
+        {"role": "user", "content": "請分析附件"},
+    ]
+    attachments = [{"type": "file", "file": {"filename": "lesson.pdf", "file_data": "data:application/pdf;base64,AA=="}}]
+
+    result = OrchestrationService._attach_to_latest_user_message(messages, attachments)
+
+    assert result[0]["content"] == "先前問題"
+    assert result[-1]["content"] == [
+        {"type": "text", "text": "請分析附件"},
+        attachments[0],
+    ]
+
 @pytest.fixture
 def mock_router():
     router = AsyncMock()

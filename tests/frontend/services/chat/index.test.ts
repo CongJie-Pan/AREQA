@@ -169,6 +169,36 @@ describe('Chat Service', () => {
       );
     });
 
+    it('sends attachments without persisting binary content', async () => {
+      mockChatStore.messages = [];
+      const attachment = new File(['attachment body'], 'notes.txt', { type: 'text/plain' });
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        await callbacks.onDone();
+      });
+
+      await sendMessage('', undefined, [attachment]);
+
+      expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(
+        expect.stringContaining('[已附加 1 個檔案]'),
+        'test-conv-id',
+      );
+      expect(databaseService.message.add).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({ content: expect.not.stringContaining('attachment body') }),
+      );
+      expect(createChatStream).toHaveBeenLastCalledWith(
+        [{ role: 'user', content: '請分析我附加的檔案。' }],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        mockChatStore.useRag,
+        mockChatStore.forceThink,
+        mockChatStore.searchMode,
+        'test-conv-id',
+        [attachment],
+      );
+    });
+
     it('should not call createChatStream and set error when messages are empty after preparation (safety intercept)', async () => {
       // Arrange
       mockChatStore.messages = [];

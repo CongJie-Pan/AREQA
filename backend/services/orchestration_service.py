@@ -184,7 +184,8 @@ class OrchestrationService:
     async def execute(self, messages: List[Dict[str, str]], conversation_id: str, use_rag: bool, use_web_search: bool, force_think: bool,
                       max_tokens: int, temperature: float, top_p: float,
                       repetition_penalty: float, request: Request, user_id: str,
-                      search_mode: Optional[str] = None) -> AsyncGenerator[str, None]:
+                      search_mode: Optional[str] = None,
+                      attachments: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
@@ -481,6 +482,7 @@ class OrchestrationService:
             last_user_msg,
             context_prompt=run_state.context_prompt,
         )
+        final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
 
         effective_max_tokens = max_tokens
         if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
@@ -524,6 +526,23 @@ class OrchestrationService:
         # If re-enabled in the future, the prompt should be updated to reflect
         # the new universal learning scope of AREQA.
         pass
+
+    @staticmethod
+    def _attach_to_latest_user_message(
+        messages: List[Dict[str, Any]], attachments: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Attach request-scoped multimodal content only to the latest user turn."""
+        if not attachments:
+            return messages
+
+        for message in reversed(messages):
+            if message.get("role") != "user":
+                continue
+            content = message.get("content")
+            text = content if isinstance(content, str) and content.strip() else "請分析我附加的檔案。"
+            message["content"] = [{"type": "text", "text": text}, *attachments]
+            break
+        return messages
 
 
     async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]], cached_results=None, run_state: Optional[ConversationRunState] = None) -> AsyncGenerator[str, None]:
@@ -789,7 +808,7 @@ class OrchestrationService:
         return new_messages
 
 
-    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, str]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None) -> AsyncGenerator[str, None]:
+    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None) -> AsyncGenerator[str, None]:
         if not self.client:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             return
@@ -799,6 +818,14 @@ class OrchestrationService:
         from config import settings
         target_model_name = settings.model_main_thinking if force_think else settings.model_main_instruct
         extra_body = {"repetition_penalty": repetition_penalty}
+        has_pdf_attachment = any(
+            isinstance(message.get("content"), list)
+            and any(part.get("type") == "file" for part in message["content"] if isinstance(part, dict))
+            for message in messages
+        )
+        if has_pdf_attachment:
+            # Keep parser selection server-controlled to avoid surprise OCR costs.
+            extra_body["plugins"] = [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}]
         if force_think:
             extra_body["reasoning"] = {"enabled": True, "max_tokens": 512}
             

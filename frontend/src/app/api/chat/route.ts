@@ -16,6 +16,32 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MAX_ATTACHMENT_COUNT = 5;
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const SUPPORTED_ATTACHMENT_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+]);
+
+interface ChatRequestBody {
+  messages: Array<{ role: string; content: string }>;
+  conversation_id?: string;
+  use_rag?: boolean;
+  use_web_search?: boolean;
+  search_mode?: 'auto' | 'always' | 'never';
+  force_think?: boolean;
+  temperature?: number;
+  top_p?: number;
+  max_tokens?: number;
+  repetition_penalty?: number;
+}
+
 /** Error response structure */
 interface ErrorResponse {
   error: {
@@ -60,6 +86,24 @@ function createRateLimitHeaders(
   };
 }
 
+function validateAttachments(files: File[]): string | null {
+  if (files.length > MAX_ATTACHMENT_COUNT) {
+    return `每次最多可附加 ${MAX_ATTACHMENT_COUNT} 個檔案。`;
+  }
+
+  let totalSize = 0;
+  for (const file of files) {
+    if (!SUPPORTED_ATTACHMENT_TYPES.has(file.type)) {
+      return '僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。';
+    }
+    if (file.size === 0) return '不接受空白附件。';
+    if (file.size > MAX_ATTACHMENT_BYTES) return '單一附件不得超過 5 MB。';
+    totalSize += file.size;
+  }
+
+  return totalSize > MAX_TOTAL_ATTACHMENT_BYTES ? '附件總大小不得超過 20 MB。' : null;
+}
+
 export async function POST(request: NextRequest) {
   const clientId = getClientIdentifier(request);
 
@@ -81,23 +125,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
-    let body: { 
-      messages: Array<{ role: string; content: string }>;
-      conversation_id?: string;
-      use_rag?: boolean;
-      use_web_search?: boolean;
-      search_mode?: 'auto' | 'always' | 'never';
-      force_think?: boolean;
-      temperature?: number;
-      top_p?: number;
-      max_tokens?: number;
-      repetition_penalty?: number;
-    };
+    const isMultipart = request.headers.get('content-type')?.startsWith('multipart/form-data') ?? false;
+    let body: ChatRequestBody;
+    let outgoingBody: BodyInit;
+    let isAttachmentRequest = false;
+
     try {
-      body = await request.json();
+      if (isMultipart) {
+        const formData = await request.formData();
+        const rawMessages = formData.get('messages');
+        if (typeof rawMessages !== 'string') {
+          return createErrorResponse('Missing messages field', 'INVALID_MESSAGES', 400);
+        }
+        body = JSON.parse(rawMessages) as ChatRequestBody;
+        const files = formData.getAll('attachments').filter((entry): entry is File => entry instanceof File);
+        const attachmentError = validateAttachments(files);
+        if (attachmentError) {
+          return createErrorResponse(attachmentError, 'INVALID_ATTACHMENT', 413);
+        }
+        isAttachmentRequest = true;
+        outgoingBody = formData;
+      } else {
+        body = await request.json() as ChatRequestBody;
+        outgoingBody = JSON.stringify({
+          messages: body.messages,
+          conversation_id: body.conversation_id || '',
+          use_rag: body.use_rag || false,
+          use_web_search: body.use_web_search || false,
+          search_mode: body.search_mode,
+          force_think: body.force_think || false,
+          temperature: body.temperature ?? 0.0,
+          top_p: body.top_p ?? 0.9,
+          max_tokens: body.max_tokens ?? 2048,
+          repetition_penalty: body.repetition_penalty ?? 1.1,
+        });
+      }
     } catch {
-      return createErrorResponse('Invalid JSON in request body', 'INVALID_JSON', 400);
+      return createErrorResponse(isMultipart ? 'Invalid multipart request' : 'Invalid JSON in request body', 'INVALID_REQUEST', 400);
     }
 
     // Validate messages
@@ -120,21 +184,10 @@ export async function POST(request: NextRequest) {
     const fastApiResponse = await fetch(fastApiUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        ...(!isAttachmentRequest ? { 'Content-Type': 'application/json' } : {}),
         ...(authHeader ? { 'Authorization': authHeader } : {})
       },
-      body: JSON.stringify({
-        messages: body.messages,
-        conversation_id: body.conversation_id || "",
-        use_rag: body.use_rag || false,
-        use_web_search: body.use_web_search || false,
-        search_mode: body.search_mode,
-        force_think: body.force_think || false,
-        temperature: body.temperature ?? 0.0,
-        top_p: body.top_p ?? 0.9,
-        max_tokens: body.max_tokens ?? 2048,
-        repetition_penalty: body.repetition_penalty ?? 1.1
-      }),
+      body: outgoingBody,
       // The signal allows cancelling the local FastAPI fetch if the user closes the Next.js connection
       signal: request.signal,
     });

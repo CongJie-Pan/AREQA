@@ -15,7 +15,6 @@ import { ThinkTagParser } from './parser';
 import { useChatStore } from '@/store/chat/store';
 import type { ChatMessage, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
-import { getAuthToken } from '../../database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 /**
@@ -54,7 +53,8 @@ export async function createChatStream(
   useRag: boolean = false,
   forceThink: boolean = false,
   searchMode: SearchMode = 'auto',
-  conversationId: string = ""
+  conversationId: string = "",
+  attachments: File[] = []
 ): Promise<void> {
   const parser = new ThinkTagParser();
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -92,23 +92,29 @@ export async function createChatStream(
   }
 
   try {
-    const token = getAuthToken();
+    const requestPayload = {
+      messages,
+      conversation_id: conversationId,
+      use_rag: useRag,
+      force_think: forceThink,
+      use_web_search: searchMode === 'always',
+      search_mode: searchMode,
+    };
+
+    const body = attachments.length > 0
+      ? (() => {
+          const formData = new FormData();
+          formData.append('messages', JSON.stringify(requestPayload));
+          for (const attachment of attachments) formData.append('attachments', attachment);
+          return formData;
+        })()
+      : JSON.stringify(requestPayload);
 
     // Make the request with optional abort signal and timeout
     const fetchOptions: RequestInit = {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify({ 
-        messages,
-        conversation_id: conversationId,
-        use_rag: useRag,
-        force_think: forceThink,
-        use_web_search: searchMode === 'always',
-        search_mode: searchMode,
-      }),
+      ...(attachments.length === 0 ? { headers: { 'Content-Type': 'application/json' } } : {}),
+      body,
     };
 
     // Add abort signal if provided
