@@ -24,3 +24,5 @@ AREQA :
 15. [] 想想如何優化openrouter 的模型回應反饋慢的問題。(見: docs/tech_docs/problem_research/openrouter_llm_slow.md)
 16. [X] 系統回應區和user輸入欄加入latex渲染功能（並且系統回應區的部分，針對個別單行的latex區塊支援複製下來
 17. [X] 我在登入後，如果隔一段時間再打開系統為登出狀態，還看得到我的對話紀錄，但這其實是不對的，而是我登入後才能看到。
+18. PELICAN MVP :  codex resume 019f5eee-734c-79f0-8a42-bad3a906b406 
+思考 PELICAN 如何應用至 AREQA 系統中，補足知識樹與知識進度不足的問題。(當用戶提及某個知識，就可以在旁邊生成知識樹，給用戶看 ?)
