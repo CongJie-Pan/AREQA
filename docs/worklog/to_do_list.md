@@ -19,7 +19,7 @@ AREQA :
 10. 英文版網站應該可以先不用做
 11. [] 之後再做landing page(landing page需要對話框送出後，和本chat後端連動) 、[x] 然後還要想測試案例。測試案例參見 : docs/misc/demo測試案例.md；docs/misc/demo範例chat_areqa-chat-2026-07-12.md。
 12. [x] 我想讓未登入用戶可以先詢問5次，到了第六次詢問，就需要登入(跳出登入要求視窗，並鎖住對話框傳送按鈕)，然後登入後，就將剛剛用戶登入前的對話同步到雲端。codex resume 019f5535-5dae-7890-99d8-31918fe579c4
-13. [] 加入匯入圖片、pdf的功能給系統讀。codex resume 019f5535-5dae-7890-99d8-31918fe579c4
+13. [x] 加入匯入圖片、pdf的功能給系統讀。codex resume 019f5535-5dae-7890-99d8-31918fe579c4
 14. 往研究或是商業專案走 (開新的codex和agy對話比較其回應)，我在想論文部分該研究如何設計實驗? 論文再到商業專案的路徑是否可行 ? (先把論文過程跑完，實驗跑完再上線。)codex resume 019f5a91-ebe8-76a0-95bc-c63f40fa99b9
 15. [] 想想如何優化openrouter 的模型回應反饋慢的問題。(見: docs/tech_docs/problem_research/openrouter_llm_slow.md)
 16. [X] 系統回應區和user輸入欄加入latex渲染功能（並且系統回應區的部分，針對個別單行的latex區塊支援複製下來
