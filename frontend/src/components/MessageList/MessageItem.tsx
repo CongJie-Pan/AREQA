@@ -22,6 +22,7 @@ import { useStyles } from './styles';
 import remend from 'remend';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 import { AttachmentCard } from './AttachmentCard';
+import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 
 /**
@@ -275,6 +276,7 @@ export const MessageItem = memo(function MessageItem({
     return createLegacyAttachmentMetadata(legacyMessage.legacyCount);
   }, [legacyMessage.legacyCount, message.attachments]);
   const [bubbleEl, setBubbleEl] = useState<HTMLDivElement | null>(null);
+  const [areAttachmentsExpanded, setAreAttachmentsExpanded] = useState(false);
   const setBubbleRef = useCallback((node: HTMLDivElement | null) => {
     setBubbleEl(node);
   }, []);
@@ -505,9 +507,16 @@ export const MessageItem = memo(function MessageItem({
 
               {displayAttachments.length > 0 && (
                 <div className={styles.messageAttachmentList} aria-label="訊息附件">
-                  {displayAttachments.map((attachment, index) => (
-                    <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />
-                  ))}
+                  {displayAttachments.length === 1 ? (
+                    <AttachmentCard attachment={displayAttachments[0]} />
+                  ) : (
+                    <AttachmentToggleList
+                      attachments={displayAttachments}
+                      expanded={areAttachmentsExpanded}
+                      listId={`message-attachments-${message.id}`}
+                      onToggle={() => setAreAttachmentsExpanded((expanded) => !expanded)}
+                    />
+                  )}
                 </div>
               )}
               

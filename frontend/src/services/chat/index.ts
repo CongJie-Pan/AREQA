@@ -607,44 +607,14 @@ export async function regenerateMessage(messageId: string): Promise<void> {
     throw new Error('Can only regenerate assistant messages');
   }
 
-  const activeConversationId = conversationStore.activeConversationId;
+  const activeConversationId = conversationStore.activeConversationId ?? targetMessage.conversationId;
   if (!activeConversationId) {
     throw new Error('No active conversation');
   }
 
-  // Regeneration replaces the target and everything after it. Keep the
-  // preceding history intact so the new response is generated in context.
-  const messagesToRemove = messages.slice(messageIndex);
-  // Delete persisted records before mutating the in-memory store. If a
-  // database delete fails, the existing conversation remains visible and the
-  // caller can report the failure without creating an immediate UI mismatch.
-  if (shouldPersist) {
-    for (const message of messagesToRemove) {
-      await databaseService.message.delete(message.id);
-    }
-  }
-  for (const message of messagesToRemove) {
-    chatStore.removeMessage(message.id);
-  }
-
-  // Create new abort controller for this request
-  currentAbortController = new AbortController();
-  const abortSignal = currentAbortController.signal;
-
-  // Insert the new placeholder where the regenerated response used to be.
-  const assistantMessageId = chatStore.addAssistantMessageAt(
-    activeConversationId,
-    messageIndex
-  );
-
-  // Start streaming
-  chatStore.startStreaming(assistantMessageId);
-
-  // Build messages array for API using shared filter function
-  const latestState = useChatStore.getState();
   const apiMessages = prepareMessagesForAPI(
-    latestState.messages,
-    assistantMessageId,
+    messages.slice(0, messageIndex),
+    undefined,
     activeConversationId
   );
 
@@ -654,6 +624,25 @@ export async function regenerateMessage(messageId: string): Promise<void> {
     chatStore.setError(new Error('無法準備對話內容（歷史記錄為空），無法重新生成。'));
     return;
   }
+
+  // Create new abort controller for this request
+  currentAbortController = new AbortController();
+  const abortSignal = currentAbortController.signal;
+
+  const originalAssistantMessage = { ...targetMessage };
+  chatStore.updateAssistantMessage(messageId, {
+    content: '',
+    reasoning: undefined,
+    citations: undefined,
+    sources: undefined,
+    suggestions: undefined,
+    isStreaming: true,
+  });
+
+  // Start streaming
+  chatStore.startStreaming(messageId);
+
+  const latestState = useChatStore.getState();
 
   // Track state for database save
   let thinkingContent = '';
@@ -705,7 +694,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
 
         onSuggestions: (suggestions: string[]) => {
           suggestionsList = suggestions;
-          chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
+          chatStore.updateAssistantMessage(messageId, { suggestions });
         },
 
         onDone: async (suggestions?: string[]) => {
@@ -714,7 +703,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           // Update message with final suggestions if received in done event
           if (suggestions && suggestions.length > 0) {
             suggestionsList = suggestions;
-            chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
+            chatStore.updateAssistantMessage(messageId, { suggestions });
           }
 
           // Calculate thinking duration
@@ -748,7 +737,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           }
 
           if (shouldPersist) {
-            await databaseService.message.add(activeConversationId, messageData);
+            await databaseService.message.update(messageId, messageData);
           }
 
 
@@ -775,6 +764,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
         onError: (error: Error) => {
           chatStore.setError(error);
           chatStore.endStreaming();
+          chatStore.updateAssistantMessage(messageId, originalAssistantMessage);
           currentAbortController = null;
         },
       },
@@ -789,6 +779,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
     const err = normalizeError(error);
     chatStore.setError(err);
     chatStore.endStreaming();
+    chatStore.updateAssistantMessage(messageId, originalAssistantMessage);
     throw err;
   }
 }

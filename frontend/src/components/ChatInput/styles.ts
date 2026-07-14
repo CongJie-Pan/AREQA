@@ -18,7 +18,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     padding: 12px 20px 10px;
     background: #1e1826;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 999px;
+    border-radius: 24px;
     max-width: 800px;
     width: 90%;
     margin: 0 auto 16px;
@@ -28,7 +28,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     @media (max-width: 768px) {
       width: calc(100% - 24px);
       margin: 0 auto 12px;
-      border-radius: 999px;
+      border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.15);
       padding: 10px 14px 8px;
     }
@@ -99,10 +99,11 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   inputRow: css`
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     width: 100%;
     min-width: 0;
-    gap: 10px;
+    min-height: 36px;
+    gap: 12px;
   `,
 
   // Borderless textarea that fills the input row
@@ -110,14 +111,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex: 1 1 auto;
     width: 0;
     min-width: 0;
-    min-height: 44px;
+    min-height: 24px;
     max-height: 200px;
-    padding: 8px 0;
+    padding: 0;
     border: none;
     background: transparent;
     color: #ffffff;
     font-size: 16px;
-    line-height: 1.5;
+    line-height: 24px;
     resize: none;
     outline: none;
 
@@ -157,13 +158,15 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   attachmentList: css`
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 6px;
     width: 100%;
-    margin: 6px 0 4px;
+    margin: 0 0 12px;
+    overflow-x: auto;
+    padding-bottom: 2px;
 
     @media (max-width: 768px) {
-      margin: 6px 0 4px;
+      margin: 0 0 10px;
     }
   `,
 
@@ -171,14 +174,15 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    max-width: min(320px, 100%);
-    min-height: 30px;
-    padding: 5px 8px;
+    flex: 0 0 auto;
+    max-width: min(360px, 72vw);
+    min-height: 44px;
+    padding: 7px 10px;
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.07);
     color: rgba(255, 255, 255, 0.85);
-    font-size: 12px;
+    font-size: 13px;
 
     span {
       overflow: hidden;

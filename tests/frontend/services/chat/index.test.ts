@@ -65,6 +65,7 @@ describe('Chat Service', () => {
       addUserMessage: vi.fn(),
       addAssistantMessage: vi.fn().mockReturnValue('assistant-msg-id'),
       addAssistantMessageAt: vi.fn().mockReturnValue('assistant-msg-id'),
+      updateAssistantMessage: vi.fn(),
       startStreaming: vi.fn(),
       stopStreaming: vi.fn(),
       setError: vi.fn(),
@@ -241,10 +242,18 @@ describe('Chat Service', () => {
       await regenerateMessage(TARGET_MSG_ID);
 
       // Assert
-      expect(mockChatStore.removeMessage).toHaveBeenCalledWith(TARGET_MSG_ID);
-      expect(mockChatStore.addAssistantMessageAt).toHaveBeenCalledWith('test-conv-id', 1);
-      expect(databaseService.message.delete).toHaveBeenCalledWith(TARGET_MSG_ID);
-      expect(databaseService.message.add).toHaveBeenCalled(); // the new assistant message
+      expect(mockChatStore.removeMessage).not.toHaveBeenCalled();
+      expect(mockChatStore.addAssistantMessageAt).not.toHaveBeenCalled();
+      expect(mockChatStore.startStreaming).toHaveBeenCalledWith(TARGET_MSG_ID);
+      expect(mockChatStore.updateAssistantMessage).toHaveBeenCalledWith(
+        TARGET_MSG_ID,
+        expect.objectContaining({ content: '', isStreaming: true }),
+      );
+      expect(databaseService.message.delete).not.toHaveBeenCalled();
+      expect(databaseService.message.update).toHaveBeenCalledWith(
+        TARGET_MSG_ID,
+        expect.objectContaining({ role: 'assistant', content: 'new response chunk' }),
+      );
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
     });
 
@@ -259,12 +268,12 @@ describe('Chat Service', () => {
       await regenerateMessage(TARGET_MSG_ID);
 
       // Assert
-      expect(mockChatStore.removeMessage).toHaveBeenCalledWith(TARGET_MSG_ID);
-      expect(databaseService.message.delete).toHaveBeenCalledWith(TARGET_MSG_ID);
       expect(mockChatStore.resetStreamingState).toHaveBeenCalled();
       expect(mockChatStore.setError).toHaveBeenCalledWith(
         expect.objectContaining({ message: '無法準備對話內容（歷史記錄為空），無法重新生成。' })
       );
+      expect(mockChatStore.removeMessage).not.toHaveBeenCalled();
+      expect(databaseService.message.delete).not.toHaveBeenCalled();
       expect(createChatStream).not.toHaveBeenCalled();
     });
 
@@ -283,10 +292,10 @@ describe('Chat Service', () => {
 
       await regenerateMessage(targetId);
 
-      expect(mockChatStore.removeMessage).toHaveBeenCalledTimes(1);
-      expect(mockChatStore.removeMessage).toHaveBeenCalledWith(targetId);
-      expect(databaseService.message.delete).toHaveBeenCalledWith(targetId);
-      expect(mockChatStore.addAssistantMessageAt).toHaveBeenCalledWith('test-conv-id', 2);
+      expect(mockChatStore.removeMessage).not.toHaveBeenCalled();
+      expect(databaseService.message.delete).not.toHaveBeenCalled();
+      expect(mockChatStore.addAssistantMessageAt).not.toHaveBeenCalled();
+      expect(mockChatStore.startStreaming).toHaveBeenCalledWith(targetId);
       expect(createChatStream).toHaveBeenCalledWith(
         [
           { role: 'user', content: 'first question' },
@@ -301,7 +310,7 @@ describe('Chat Service', () => {
       );
     });
 
-    it('removes the target and later messages, then inserts the replacement at the same index', async () => {
+    it('replaces the target assistant in place and preserves later messages', async () => {
       const targetId = 'assistant-middle';
       const laterUserId = 'user-later';
       const laterAssistantId = 'assistant-later';
@@ -320,13 +329,10 @@ describe('Chat Service', () => {
 
       await regenerateMessage(targetId);
 
-      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(1, targetId);
-      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(2, laterUserId);
-      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(3, laterAssistantId);
-      expect(databaseService.message.delete).toHaveBeenCalledWith(targetId);
-      expect(databaseService.message.delete).toHaveBeenCalledWith(laterUserId);
-      expect(databaseService.message.delete).toHaveBeenCalledWith(laterAssistantId);
-      expect(mockChatStore.addAssistantMessageAt).toHaveBeenCalledWith('test-conv-id', 2);
+      expect(mockChatStore.removeMessage).not.toHaveBeenCalled();
+      expect(databaseService.message.delete).not.toHaveBeenCalled();
+      expect(mockChatStore.addAssistantMessageAt).not.toHaveBeenCalled();
+      expect(mockChatStore.startStreaming).toHaveBeenCalledWith(targetId);
       expect(createChatStream).toHaveBeenCalledWith(
         [
           { role: 'user', content: 'first question' },
@@ -339,6 +345,36 @@ describe('Chat Service', () => {
         'auto',
         'test-conv-id',
       );
+    });
+
+    it('regenerates guest messages from in-memory history without persistence', async () => {
+      vi.mocked(getCurrentUserId).mockReturnValue(null);
+      const targetId = 'guest-assistant';
+      mockConversationStore.activeConversationId = null;
+      mockChatStore.messages = [
+        { id: 'guest-user', role: 'user', content: 'guest question', conversationId: 'guest-conv' },
+        { id: targetId, role: 'assistant', content: 'old answer', conversationId: 'guest-conv' },
+      ];
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('guest replacement');
+        await callbacks.onDone();
+      });
+
+      await regenerateMessage(targetId);
+
+      expect(createChatStream).toHaveBeenCalledWith(
+        [{ role: 'user', content: 'guest question' }],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        false,
+        false,
+        'auto',
+        'guest-conv',
+      );
+      expect(databaseService.message.delete).not.toHaveBeenCalled();
+      expect(databaseService.message.update).not.toHaveBeenCalled();
+      expect(mockChatStore.startStreaming).toHaveBeenCalledWith(targetId);
     });
   });
 });

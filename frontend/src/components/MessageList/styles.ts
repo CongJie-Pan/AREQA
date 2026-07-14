@@ -197,11 +197,12 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   messageAttachmentList: css`
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     justify-content: flex-end;
     align-self: flex-end;
+    align-items: flex-end;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 8px;
     max-width: 85%;
 
     @media (max-width: 768px) {
@@ -252,6 +253,98 @@ export const useStyles = createStyles(({ css, token }) => ({
     margin-top: 2px;
     color: rgba(255, 255, 255, 0.48);
     font-size: 11px;
+  `,
+
+  messageAttachmentToggleWrap: css`
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    max-width: min(560px, 100%);
+  `,
+
+  messageAttachmentToggle: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 7px 14px 7px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 14px;
+    background: #1b1b1d;
+    color: rgba(255, 255, 255, 0.72);
+    cursor: pointer;
+    font-size: 17px;
+    line-height: 1;
+    transition: border-color 0.2s ease, background 0.2s ease;
+
+    &:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      background: #222225;
+    }
+  `,
+
+  messageAttachmentToggleIcon: css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.8);
+  `,
+
+  messageAttachmentToggleChevron: css`
+    color: rgba(255, 255, 255, 0.48);
+    transition: transform 0.2s ease;
+  `,
+
+  messageAttachmentToggleChevronOpen: css`
+    transform: rotate(180deg);
+  `,
+
+  messageAttachmentDropdown: css`
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 20;
+    width: min(632px, 100%);
+    padding: 14px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 16px;
+    background: #19191a;
+    color: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  `,
+
+  messageAttachmentDropdownItem: css`
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    padding: 9px 0;
+
+    & + & {
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+  `,
+
+  messageAttachmentDropdownIcon: css`
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    color: rgba(255, 255, 255, 0.78);
+  `,
+
+  messageAttachmentDropdownName: css`
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 18px;
   `,
 
   assistantBubble: css`

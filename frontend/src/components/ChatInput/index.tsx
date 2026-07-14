@@ -222,6 +222,20 @@ export function ChatInput({
         </div>
       )}
 
+      {attachments.length > 0 && (
+        <div className={styles.attachmentList} aria-label="待送附件">
+          {attachments.map((attachment) => (
+            <div className={styles.attachmentChip} key={`${attachment.name}-${attachment.lastModified}`}>
+              {attachment.type.startsWith('image/') ? <ImageIcon size={14} /> : <FileText size={14} />}
+              <span title={attachment.name}>{attachment.name}</span>
+              <button type="button" onClick={() => removeAttachment(attachment)} aria-label={`移除附件 ${attachment.name}`}>
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className={styles.inputRow} role="group" aria-label="訊息輸入列">
         <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
           <button
@@ -277,20 +291,6 @@ export function ChatInput({
         onChange={handleAttachmentChange}
         aria-label="選擇附件"
       />
-
-      {attachments.length > 0 && (
-        <div className={styles.attachmentList} aria-label="待送附件">
-          {attachments.map((attachment) => (
-            <div className={styles.attachmentChip} key={`${attachment.name}-${attachment.lastModified}`}>
-              {attachment.type.startsWith('image/') ? <ImageIcon size={14} /> : <FileText size={14} />}
-              <span title={attachment.name}>{attachment.name}</span>
-              <button type="button" onClick={() => removeAttachment(attachment)} aria-label={`移除附件 ${attachment.name}`}>
-                <X size={13} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {hasMath && (
         <div className={styles.mathPreview} aria-label="LaTeX 預覽">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 
@@ -24,6 +24,15 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       messageAttachmentDetails: 'messageAttachmentDetails',
       messageAttachmentName: 'messageAttachmentName',
       messageAttachmentMeta: 'messageAttachmentMeta',
+      messageAttachmentToggleWrap: 'messageAttachmentToggleWrap',
+      messageAttachmentToggle: 'messageAttachmentToggle',
+      messageAttachmentToggleIcon: 'messageAttachmentToggleIcon',
+      messageAttachmentToggleChevron: 'messageAttachmentToggleChevron',
+      messageAttachmentToggleChevronOpen: 'messageAttachmentToggleChevronOpen',
+      messageAttachmentDropdown: 'messageAttachmentDropdown',
+      messageAttachmentDropdownItem: 'messageAttachmentDropdownItem',
+      messageAttachmentDropdownIcon: 'messageAttachmentDropdownIcon',
+      messageAttachmentDropdownName: 'messageAttachmentDropdownName',
       content: 'content',
       streamingCursor: 'streamingCursor'
     },
@@ -131,5 +140,33 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByLabelText('訊息附件').closest('.userBubble')).not.toBeInTheDocument();
     expect(screen.getByText('原始問題')).toBeInTheDocument();
     expect(screen.getByText('請解釋這份 PDF')).toBeInTheDocument();
+  });
+
+  it('collapses multiple attachments into an expandable filename list', () => {
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          role: 'user',
+          content: '請幫我確認',
+          attachments: [
+            { name: 'first.pdf', mediaType: 'application/pdf', sizeBytes: 2048 },
+            { name: 'second.pdf', mediaType: 'application/pdf', sizeBytes: 4096 },
+          ],
+        }}
+      />
+    );
+
+    const toggle = screen.getByRole('button', { name: /2 個附件/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('附件檔名列表')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('附件 first.pdf')).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('附件檔名列表')).toBeInTheDocument();
+    expect(screen.getByText('first.pdf')).toBeInTheDocument();
+    expect(screen.getByText('second.pdf')).toBeInTheDocument();
   });
 });
