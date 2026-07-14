@@ -15,6 +15,15 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
     styles: { 
       assistantMessageWrapper: 'assistantMessageWrapper', 
       assistantBubble: 'assistantBubble',
+      bubble: 'bubble',
+      userBubble: 'userBubble',
+      bubbleWrapper: 'bubbleWrapper',
+      messageAttachmentList: 'messageAttachmentList',
+      messageAttachmentCard: 'messageAttachmentCard',
+      messageAttachmentIcon: 'messageAttachmentIcon',
+      messageAttachmentDetails: 'messageAttachmentDetails',
+      messageAttachmentName: 'messageAttachmentName',
+      messageAttachmentMeta: 'messageAttachmentMeta',
       content: 'content',
       streamingCursor: 'streamingCursor'
     },
@@ -89,6 +98,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('請解釋這份 PDF')).toBeInTheDocument();
     expect(screen.getByLabelText('附件 lesson.pdf')).toBeInTheDocument();
     expect(screen.getByText('2.0 KB')).toBeInTheDocument();
+    expect(screen.getByLabelText('訊息附件').closest('.userBubble')).not.toBeInTheDocument();
   });
 
   it('hides the legacy attachment marker and renders a compatibility card', () => {
@@ -104,5 +114,22 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     expect(screen.queryByText(/已附加 1 個檔案/)).not.toBeInTheDocument();
     expect(screen.getByLabelText('附件 附件 1')).toBeInTheDocument();
+  });
+
+  it('renders quote-branch attachments outside the user bubble', () => {
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          role: 'user',
+          content: '> 原始問題\n\n請解釋這份 PDF',
+          attachments: [{ name: 'lesson.pdf', mediaType: 'application/pdf', sizeBytes: 2048 }],
+        }}
+      />
+    );
+
+    expect(screen.getByLabelText('訊息附件').closest('.userBubble')).not.toBeInTheDocument();
+    expect(screen.getByText('原始問題')).toBeInTheDocument();
+    expect(screen.getByText('請解釋這份 PDF')).toBeInTheDocument();
   });
 });

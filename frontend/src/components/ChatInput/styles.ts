@@ -18,7 +18,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     padding: 12px 20px 10px;
     background: #1e1826;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 24px;
+    border-radius: 999px;
     max-width: 800px;
     width: 90%;
     margin: 0 auto 16px;
@@ -28,7 +28,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     @media (max-width: 768px) {
       width: calc(100% - 24px);
       margin: 0 auto 12px;
-      border-radius: 20px;
+      border-radius: 999px;
       border: 1px solid rgba(255, 255, 255, 0.15);
       padding: 10px 14px 8px;
     }
@@ -98,12 +98,18 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   inputRow: css`
+    display: flex;
+    align-items: flex-end;
     width: 100%;
+    min-width: 0;
+    gap: 10px;
   `,
 
   // Borderless textarea that fills the input row
   textarea: css`
-    width: 100%;
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
     min-height: 44px;
     max-height: 200px;
     padding: 8px 0;
@@ -248,7 +254,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     align-items: center;
     justify-content: center;
-    border: none;
+    border: 1px solid transparent;
     border-radius: 50%;
     background: ${token.colorPrimary};
     color: ${token.colorWhite};
@@ -265,8 +271,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     &:disabled {
-      background: ${token.colorBgContainerDisabled};
-      color: ${token.colorTextDisabled};
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.28);
+      color: rgba(255, 255, 255, 0.48);
       cursor: not-allowed;
     }
   `,

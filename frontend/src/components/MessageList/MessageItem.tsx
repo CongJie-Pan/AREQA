@@ -468,9 +468,9 @@ export const MessageItem = memo(function MessageItem({
                       </div>
                       
                       {/* 2. Main Query: Inside bubble */}
-                      {(remainingText || displayAttachments.length > 0) && (
+                      {remainingText && (
                         <div className={cx(styles.bubble, styles.userBubble)}>
-                          {remainingText && <div className={styles.content}>
+                          <div className={styles.content}>
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm, remarkMath]}
                               rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
@@ -479,14 +479,7 @@ export const MessageItem = memo(function MessageItem({
                             >
                               {normalizeDisplayMathBlocks(remainingText)}
                             </ReactMarkdown>
-                          </div>}
-                          {displayAttachments.length > 0 && (
-                            <div className={styles.messageAttachmentList} aria-label="訊息附件">
-                              {displayAttachments.map((attachment, index) => (
-                                <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />
-                              ))}
-                            </div>
-                          )}
+                          </div>
                         </div>
                       )}
                     </>
@@ -506,16 +499,17 @@ export const MessageItem = memo(function MessageItem({
                         {normalizeDisplayMathBlocks(displayContent)}
                       </ReactMarkdown>
                     </div>}
-                    {displayAttachments.length > 0 && (
-                      <div className={styles.messageAttachmentList} aria-label="訊息附件">
-                        {displayAttachments.map((attachment, index) => (
-                          <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />
-                        ))}
-                      </div>
-                    )}
                   </div>
                 );
               })()}
+
+              {displayAttachments.length > 0 && (
+                <div className={styles.messageAttachmentList} aria-label="訊息附件">
+                  {displayAttachments.map((attachment, index) => (
+                    <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />
+                  ))}
+                </div>
+              )}
               
               <div className={styles.userActionButtons}>
                 <Tooltip title="複製訊息" color="#262626" styles={{ container: { color: '#ffffff' } }}>

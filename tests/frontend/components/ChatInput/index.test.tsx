@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { useChatStore } from '@/store/chat';
@@ -37,7 +37,21 @@ describe('ChatInput', () => {
     expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
     const input = screen.getByLabelText('訊息輸入框');
     const attachmentButton = screen.getByLabelText('加入附件');
-    expect(input.compareDocumentPosition(attachmentButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const inputRow = screen.getByRole('group', { name: '訊息輸入列' });
+    const sendButton = screen.getByLabelText('發送訊息');
+    expect(inputRow).toContainElement(attachmentButton);
+    expect(inputRow).toContainElement(input);
+    expect(inputRow).toContainElement(sendButton);
+    expect(attachmentButton.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(input.compareDocumentPosition(sendButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('should keep the send control visibly disabled until there is content', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const sendButton = screen.getByLabelText('發送訊息');
+
+    expect(sendButton).toBeDisabled();
+    expect(sendButton.className).toBeTruthy();
   });
 
   it('should render a LaTeX preview without changing the submitted source', async () => {
@@ -135,5 +149,30 @@ describe('ChatInput', () => {
 
     await waitFor(() => expect(failedSend).toHaveBeenCalledWith('', [attachment]));
     expect(screen.getByLabelText('待送附件')).toBeInTheDocument();
+  });
+
+  it('should send on Enter but not while an IME composition is active', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const input = screen.getByLabelText('訊息輸入框');
+
+    fireEvent.change(input, { target: { value: 'composed text' } });
+    const composingEvent = createEvent.keyDown(input, { key: 'Enter' });
+    Object.defineProperty(composingEvent, 'isComposing', { value: true });
+    fireEvent(input, composingEvent);
+    expect(mockOnSend).not.toHaveBeenCalled();
+
+    const completedEvent = createEvent.keyDown(input, { key: 'Enter' });
+    Object.defineProperty(completedEvent, 'isComposing', { value: false });
+    fireEvent(input, completedEvent);
+    expect(mockOnSend).toHaveBeenCalledWith('composed text');
+  });
+
+  it('should show the stop control and call onStop while streaming', () => {
+    const onStop = vi.fn();
+    render(<ChatInput onSend={mockOnSend} isStreaming onStop={onStop} />);
+
+    expect(screen.queryByLabelText('發送訊息')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('停止生成'));
+    expect(onStop).toHaveBeenCalledTimes(1);
   });
 });

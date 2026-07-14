@@ -101,6 +101,8 @@ export interface ChatActions {
   addUserMessage: (content: string, conversationId: string, attachments?: AttachmentMetadata[]) => string;
   /** Add an assistant message (usually empty, to be filled by streaming) */
   addAssistantMessage: (conversationId: string) => string;
+  /** Insert an assistant message at a specific position in the conversation */
+  addAssistantMessageAt: (conversationId: string, index: number) => string;
   /** Update an existing assistant message */
   updateAssistantMessage: (id: string, updates: Partial<DisplayMessage>) => void;
   /** Set all messages (when loading from database) */

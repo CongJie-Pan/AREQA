@@ -199,8 +199,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
+    align-self: flex-end;
     gap: 8px;
     margin-top: 12px;
+    max-width: 85%;
+
+    @media (max-width: 768px) {
+      max-width: 95%;
+    }
   `,
 
   messageAttachmentCard: css`

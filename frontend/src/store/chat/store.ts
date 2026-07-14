@@ -87,6 +87,32 @@ export const useChatStore = create<ChatStore>((set) => ({
     return id;
   },
 
+  addAssistantMessageAt: (conversationId: string, index: number) => {
+    const id = generateUUID();
+    const message: DisplayMessage = {
+      id,
+      userId: getCurrentUserId() ?? 'guest',
+      conversationId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date(),
+      isStreaming: true,
+    };
+
+    set((state) => {
+      const insertionIndex = Math.max(0, Math.min(index, state.messages.length));
+      return {
+        messages: [
+          ...state.messages.slice(0, insertionIndex),
+          message,
+          ...state.messages.slice(insertionIndex),
+        ],
+      };
+    });
+
+    return id;
+  },
+
   updateAssistantMessage: (id: string, updates: Partial<DisplayMessage>) => {
     set((state) => ({
       messages: state.messages.map((msg) =>

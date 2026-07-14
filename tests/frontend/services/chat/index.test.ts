@@ -64,6 +64,7 @@ describe('Chat Service', () => {
       forceThink: false,
       addUserMessage: vi.fn(),
       addAssistantMessage: vi.fn().mockReturnValue('assistant-msg-id'),
+      addAssistantMessageAt: vi.fn().mockReturnValue('assistant-msg-id'),
       startStreaming: vi.fn(),
       stopStreaming: vi.fn(),
       setError: vi.fn(),
@@ -241,6 +242,7 @@ describe('Chat Service', () => {
 
       // Assert
       expect(mockChatStore.removeMessage).toHaveBeenCalledWith(TARGET_MSG_ID);
+      expect(mockChatStore.addAssistantMessageAt).toHaveBeenCalledWith('test-conv-id', 1);
       expect(databaseService.message.delete).toHaveBeenCalledWith(TARGET_MSG_ID);
       expect(databaseService.message.add).toHaveBeenCalled(); // the new assistant message
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
@@ -264,6 +266,79 @@ describe('Chat Service', () => {
         expect.objectContaining({ message: '無法準備對話內容（歷史記錄為空），無法重新生成。' })
       );
       expect(createChatStream).not.toHaveBeenCalled();
+    });
+
+    it('preserves history and replaces the final assistant message in place', async () => {
+      const targetId = 'assistant-final';
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
+        { id: 'assistant-1', role: 'assistant', content: 'first answer', conversationId: 'test-conv-id' },
+        { id: targetId, role: 'assistant', content: 'old final answer', conversationId: 'test-conv-id' },
+      ];
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('replacement');
+        await callbacks.onDone();
+      });
+
+      await regenerateMessage(targetId);
+
+      expect(mockChatStore.removeMessage).toHaveBeenCalledTimes(1);
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith(targetId);
+      expect(databaseService.message.delete).toHaveBeenCalledWith(targetId);
+      expect(mockChatStore.addAssistantMessageAt).toHaveBeenCalledWith('test-conv-id', 2);
+      expect(createChatStream).toHaveBeenCalledWith(
+        [
+          { role: 'user', content: 'first question' },
+          { role: 'assistant', content: 'first answer' },
+        ],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        false,
+        false,
+        'auto',
+        'test-conv-id',
+      );
+    });
+
+    it('removes the target and later messages, then inserts the replacement at the same index', async () => {
+      const targetId = 'assistant-middle';
+      const laterUserId = 'user-later';
+      const laterAssistantId = 'assistant-later';
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
+        { id: 'assistant-1', role: 'assistant', content: 'first answer', conversationId: 'test-conv-id' },
+        { id: targetId, role: 'assistant', content: 'old answer', conversationId: 'test-conv-id' },
+        { id: laterUserId, role: 'user', content: 'later question', conversationId: 'test-conv-id' },
+        { id: laterAssistantId, role: 'assistant', content: 'later answer', conversationId: 'test-conv-id' },
+      ];
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('replacement');
+        await callbacks.onDone();
+      });
+
+      await regenerateMessage(targetId);
+
+      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(1, targetId);
+      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(2, laterUserId);
+      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(3, laterAssistantId);
+      expect(databaseService.message.delete).toHaveBeenCalledWith(targetId);
+      expect(databaseService.message.delete).toHaveBeenCalledWith(laterUserId);
+      expect(databaseService.message.delete).toHaveBeenCalledWith(laterAssistantId);
+      expect(mockChatStore.addAssistantMessageAt).toHaveBeenCalledWith('test-conv-id', 2);
+      expect(createChatStream).toHaveBeenCalledWith(
+        [
+          { role: 'user', content: 'first question' },
+          { role: 'assistant', content: 'first answer' },
+        ],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        false,
+        false,
+        'auto',
+        'test-conv-id',
+      );
     });
   });
 });

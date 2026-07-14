@@ -612,20 +612,30 @@ export async function regenerateMessage(messageId: string): Promise<void> {
     throw new Error('No active conversation');
   }
 
-  // Remove the AI message from store
-  chatStore.removeMessage(messageId);
-
-  // Delete from database
+  // Regeneration replaces the target and everything after it. Keep the
+  // preceding history intact so the new response is generated in context.
+  const messagesToRemove = messages.slice(messageIndex);
+  // Delete persisted records before mutating the in-memory store. If a
+  // database delete fails, the existing conversation remains visible and the
+  // caller can report the failure without creating an immediate UI mismatch.
   if (shouldPersist) {
-    await databaseService.message.delete(messageId);
+    for (const message of messagesToRemove) {
+      await databaseService.message.delete(message.id);
+    }
+  }
+  for (const message of messagesToRemove) {
+    chatStore.removeMessage(message.id);
   }
 
   // Create new abort controller for this request
   currentAbortController = new AbortController();
   const abortSignal = currentAbortController.signal;
 
-  // Add new assistant message placeholder
-  const assistantMessageId = chatStore.addAssistantMessage(activeConversationId);
+  // Insert the new placeholder where the regenerated response used to be.
+  const assistantMessageId = chatStore.addAssistantMessageAt(
+    activeConversationId,
+    messageIndex
+  );
 
   // Start streaming
   chatStore.startStreaming(assistantMessageId);

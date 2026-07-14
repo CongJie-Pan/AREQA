@@ -222,7 +222,18 @@ export function ChatInput({
         </div>
       )}
 
-      <div className={styles.inputRow}>
+      <div className={styles.inputRow} role="group" aria-label="訊息輸入列">
+        <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+          <button
+            type="button"
+            className={styles.attachmentButton}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            aria-label="加入附件"
+          >
+            <Plus size={18} />
+          </button>
+        </Tooltip>
         <textarea
           ref={textareaRef}
           className={styles.textarea}
@@ -235,6 +246,26 @@ export function ChatInput({
           maxLength={maxLength + 100}
           aria-label="訊息輸入框"
         />
+        {isStreaming && onStop ? (
+          <button
+            type="button"
+            className={cx(styles.sendButton, styles.stopButton)}
+            onClick={onStop}
+            aria-label="停止生成"
+          >
+            <Square size={16} fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={styles.sendButton}
+            onClick={handleSend}
+            disabled={!canSend}
+            aria-label="發送訊息"
+          >
+            <Send size={18} />
+          </button>
+        )}
       </div>
 
       <input
@@ -273,44 +304,6 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Bottom toolbar: attachments left, send button right */}
-      <div className={styles.toolbar}>
-        <div className={styles.toolbarLeft}>
-          <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-            <button
-              type="button"
-              className={styles.attachmentButton}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled}
-              aria-label="加入附件"
-            >
-              <Plus size={18} />
-            </button>
-          </Tooltip>
-        </div>
-        <div className={styles.toolbarRight}>
-          {isStreaming && onStop ? (
-            <button
-              type="button"
-              className={cx(styles.sendButton, styles.stopButton)}
-              onClick={onStop}
-              aria-label="停止生成"
-            >
-              <Square size={16} fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={styles.sendButton}
-              onClick={handleSend}
-              disabled={!canSend}
-              aria-label="發送訊息"
-            >
-              <Send size={18} />
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
