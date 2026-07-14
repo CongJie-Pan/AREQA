@@ -29,6 +29,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       messageAttachmentToggleIcon: 'messageAttachmentToggleIcon',
       messageAttachmentToggleChevron: 'messageAttachmentToggleChevron',
       messageAttachmentToggleChevronOpen: 'messageAttachmentToggleChevronOpen',
+      messageAttachmentPopoverContainer: 'messageAttachmentPopoverContainer',
       messageAttachmentDropdown: 'messageAttachmentDropdown',
       messageAttachmentDropdownItem: 'messageAttachmentDropdownItem',
       messageAttachmentDropdownIcon: 'messageAttachmentDropdownIcon',
@@ -165,7 +166,9 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     fireEvent.click(toggle);
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByLabelText('附件檔名列表')).toBeInTheDocument();
+    const attachmentList = screen.getByLabelText('附件檔名列表');
+    expect(attachmentList).toBeInTheDocument();
+    expect(attachmentList.closest('.messageAttachmentList')).toBeNull();
     expect(screen.getByText('first.pdf')).toBeInTheDocument();
     expect(screen.getByText('second.pdf')).toBeInTheDocument();
   });

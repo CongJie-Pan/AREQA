@@ -514,7 +514,7 @@ export const MessageItem = memo(function MessageItem({
                       attachments={displayAttachments}
                       expanded={areAttachmentsExpanded}
                       listId={`message-attachments-${message.id}`}
-                      onToggle={() => setAreAttachmentsExpanded((expanded) => !expanded)}
+                      onExpandedChange={setAreAttachmentsExpanded}
                     />
                   )}
                 </div>

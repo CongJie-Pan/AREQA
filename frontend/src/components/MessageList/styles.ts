@@ -304,12 +304,17 @@ export const useStyles = createStyles(({ css, token }) => ({
     transform: rotate(180deg);
   `,
 
+  messageAttachmentPopoverContainer: css`
+    max-width: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  `,
+
   messageAttachmentDropdown: css`
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 6px);
-    z-index: 20;
-    width: min(632px, 100%);
+    width: min(632px, calc(100vw - 32px));
+    max-height: min(560px, calc(100vh - 96px));
+    overflow-y: auto;
     padding: 14px 18px;
     border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 16px;
