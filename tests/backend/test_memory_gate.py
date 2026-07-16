@@ -3,11 +3,9 @@ import pytest
 from backend.memory_gate import (
     apply_action_gate,
     apply_reflection_gate,
-    apply_user_message_gate,
     classify_action,
     classify_learning_observation,
     classify_user_message,
-    evaluate_memory_retention_policy,
 )
 
 
@@ -110,41 +108,6 @@ def test_legacy_action_observation_never_enters_prompt():
 
 
 @pytest.mark.asyncio
-async def test_apply_user_message_gate_stores_explicit_memory():
-    store = FakeStore()
-
-    decision = await apply_user_message_gate(store, "u1", "請你記住我喜歡先看例子")
-
-    assert decision.category == "explicit_memory"
-    assert store.profile_ops == [("u1", "user", "add", "我喜歡先看例子", "")]
-    assert store.cold_candidates == []
-    assert store.working_updates == []
-
-
-@pytest.mark.asyncio
-async def test_apply_user_message_gate_updates_current_focus_only():
-    store = FakeStore()
-
-    decision = await apply_user_message_gate(store, "u1", "這段判詞是什麼意思", conversation_id="conv-a")
-
-    assert decision.category == "current_focus"
-    assert store.profile_ops == []
-    assert store.working_updates == [
-        ("u1", {"current_focus": "這段判詞是什麼意思", "current_focus_conversation_id": "conv-a"})
-    ]
-
-
-@pytest.mark.asyncio
-async def test_apply_user_message_gate_does_not_store_greeting_as_current_focus():
-    store = FakeStore()
-
-    decision = await apply_user_message_gate(store, "u1", "你好", conversation_id="conv-b")
-
-    assert decision.category == "smalltalk"
-    assert store.working_updates == []
-
-
-@pytest.mark.asyncio
 async def test_apply_action_gate_writes_behavior_signal():
     store = FakeStore()
 
@@ -171,39 +134,24 @@ async def test_apply_reflection_gate_updates_session_summary():
     ]
 
 
-def test_retention_policy_allows_stable_preference():
-    decision = evaluate_memory_retention_policy({
-        "text": "使用者偏好用具體例子理解抽象概念",
-        "normalized_text": "偏好用具體例子理解抽象概念",
-        "category": "preference",
-        "evidence_quote": "我偏好用具體例子理解抽象概念",
-    })
-    assert decision.action == "allow"
+def test_preference_question_is_classified_before_preference_pattern():
+    decision = classify_user_message("我偏好什麼學習方法？")
+
+    assert decision.category == "current_focus"
+    assert decision.should_cold_store is False
+    assert decision.reason == "interrogative_not_memory_evidence"
 
 
-def test_retention_policy_denies_negative_capability_label():
-    decision = evaluate_memory_retention_policy({
-        "text": "使用者在理化科目上有學習困難",
-        "category": "background",
-        "evidence_quote": "我之前連國中理化都一直不及格",
-    })
-    assert decision.action == "deny"
+def test_declarative_preference_is_a_cold_candidate_not_direct_profile_memory():
+    decision = classify_user_message("我偏好用具體例子理解抽象概念。")
+
+    assert decision.category == "passive_preference"
+    assert decision.should_cold_store is True
+    assert decision.ttl_seconds == 90 * 86400
 
 
-def test_retention_policy_adds_expiry_to_time_bound_context():
-    decision = evaluate_memory_retention_policy({
-        "text": "使用者下週要參加考試",
-        "category": "goal",
-        "evidence_quote": "我下週要考試",
-    })
-    assert decision.action == "allow_with_expiry"
-    assert decision.expires_in_seconds is not None
+def test_temporary_learning_goal_has_thirty_day_lifecycle():
+    decision = classify_user_message("這個月我想完成牛頓運動定律的複習")
 
-
-def test_retention_policy_keeps_unknown_candidate_pending():
-    decision = evaluate_memory_retention_policy({
-        "text": "使用者具有高度自我釐清能力",
-        "category": "personality",
-        "evidence_quote": "我可以清楚區分兩件事",
-    })
-    assert decision.action == "candidate_only"
+    assert decision.category == "temporary_goal"
+    assert decision.ttl_seconds == 30 * 86400

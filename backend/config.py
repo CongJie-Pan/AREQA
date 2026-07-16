@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_main_thinking: str = "google/gemini-3.1-flash-lite"
     model_gum: str = "google/gemini-3.1-flash-lite"
     model_zpd_query: str = "google/gemini-3.1-flash-lite"
+    model_memory_semantic_analyzer: str = "google/gemini-2.5-flash-lite"
 
     # RAG Parameters
     rag_max_docs: int = 7
@@ -29,6 +30,12 @@ class Settings(BaseSettings):
     # so the policy remains domain-neutral and can be tuned without code edits.
     memory_candidate_auto_promote_conversations: int = 2
     memory_candidate_max_evidence: int = 8
+    memory_semantic_analysis_enabled: bool = False
+    memory_semantic_shadow_mode: bool = True
+    memory_semantic_timeout_seconds: float = 3.0
+    memory_semantic_candidate_limit: int = 20
+    memory_semantic_match_min_confidence: float = 0.85
+    memory_semantic_external_processing_acknowledged: bool = False
     compeer_delivery_delay_seconds: int = 120
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
