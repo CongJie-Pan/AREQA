@@ -1,3 +1,13 @@
+"""
+Orchestration Service Module.
+
+This module provides the OrchestrationService class, which acts as the main
+director for handling incoming user chat requests. It coordinates various
+sub-services including search routing, memory and learning state evaluation,
+Retrieval-Augmented Generation (RAG), web search integration (Perplexity),
+prompt assembly, and streaming LLM responses back to the client.
+"""
+
 import json
 import asyncio
 import os
@@ -23,16 +33,43 @@ from tools import DelayedMailTool, MemoryQueryTool, ToolDefinition, ToolRegistry
 
 
 def _normalize_avatar_name(value: str) -> str:
+    """
+    Normalize an avatar name by removing whitespace and conversational suffixes.
+
+    Args:
+        value (str): The raw avatar name string.
+
+    Returns:
+        str: The normalized avatar name.
+    """
     normalized = re.sub(r"\s+", "", (value or "").strip())
     normalized = re.split(r"(?:跟我|和我|與我|來|回答|對話|聊天)", normalized, maxsplit=1)[0]
     return normalized
 
 
 def _chat_avatar_key(conversation_id: str) -> str:
+    """
+    Generate a Redis cache key for storing the active chat avatar of a conversation.
+
+    Args:
+        conversation_id (str): The unique identifier for the conversation.
+
+    Returns:
+        str: The formatted cache key string.
+    """
     return f"chat_avatar:{conversation_id or 'default'}"
 
 
 def _extract_explicit_chat_avatar(message: str) -> Optional[str]:
+    """
+    Extract an explicit roleplay avatar name from a user message if one is requested.
+
+    Args:
+        message (str): The user message to analyze.
+
+    Returns:
+        Optional[str]: The extracted avatar name, or None if no roleplay is requested.
+    """
     if any(keyword in message for keyword in ["寫信", "寄信", "信給我", "信件"]):
         return None
     patterns = [
@@ -50,18 +87,46 @@ def _extract_explicit_chat_avatar(message: str) -> Optional[str]:
 
 
 def _is_stop_roleplay_request(message: str) -> bool:
+    """
+    Determine if the user is requesting to stop the current roleplay session.
+
+    Args:
+        message (str): The user message to analyze.
+
+    Returns:
+        bool: True if a stop request is detected, False otherwise.
+    """
     return any(keyword in message for keyword in ["停止扮演", "不要扮演", "不用角色", "回到AREQA", "回到 AREQA", "恢復AREQA", "恢復 AREQA"])
 
 
 def _letter_task_id(user_id: str, conversation_id: str, avatar_name: str, source_text: str) -> str:
+    """
+    Generate a unique task ID for a delayed letter generation task.
+
+    Args:
+        user_id (str): The ID of the user.
+        conversation_id (str): The ID of the conversation.
+        avatar_name (str): The name of the avatar writing the letter.
+        source_text (str): The source text or prompt for the letter.
+
+    Returns:
+        str: A unique SHA-256 based task ID prefixed with 'letter-'.
+    """
     source_hash = hashlib.sha256(source_text.strip().encode("utf-8")).hexdigest()[:24]
     raw = f"{user_id}|{conversation_id or ''}|{_normalize_avatar_name(avatar_name)}|{source_hash}"
     return f"letter-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"
 
 def reorder_for_attention(results):
     """
-    解決 Lost in the Middle：注意力重排序 (Best-First & Second-Last)
-    把最高分的放第一，次高分的放最後，其餘夾中間。
+    Reorder search results to mitigate the 'Lost in the Middle' problem.
+    Places the highest scoring result first and the second highest last,
+    with the rest in the middle.
+
+    Args:
+        results (list): A list of search result objects or dictionaries.
+
+    Returns:
+        list: The reordered list of results.
     """
     if len(results) <= 2:
         return results
@@ -71,7 +136,17 @@ def reorder_for_attention(results):
     return top + middle + bottom
 
 async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dict[str, str]]:
-    prompt = f"""你是一個「古典文學檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」，同時判斷這個檢索詞的類型。
+    """
+    Parse and decompose a complex user query into sub-queries suitable for hybrid retrieval.
+
+    Args:
+        query (str): The raw user query.
+        client (AsyncOpenAI): The OpenAI async client instance.
+
+    Returns:
+        List[Dict[str, str]]: A list of dictionaries, each containing a sub-query and its type.
+    """
+    prompt = f"""你是一個「檢索分析師」。你的任務是解析使用者的提問，並將其拆解為適合進行混合檢索（BM25 與 FAISS）的「乾淨檢索詞」，同時判斷這個檢索詞的類型。
 
 要求：
 1. 去除所有冗言贅字與題幹指令語（如「請問」、「最適當的是」、「下列何者」、「哪一項」等）。
@@ -132,6 +207,18 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dic
     return queries
 
 async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: str, chat_history: list) -> str:
+    """
+    Analyze the user's message to determine the appropriate pedagogical dialogue policy.
+
+    Args:
+        client (AsyncOpenAI): The OpenAI async client instance.
+        model (str): The model identifier to use for classification.
+        user_msg (str): The latest user message.
+        chat_history (list): The list of previous conversation messages.
+
+    Returns:
+        str: The selected dialogue policy (e.g., 'NORMAL', 'PROBE_UNDERSTANDING').
+    """
     prompt = f"""Analyze the user's message and determine the pedagogical dialogue policy.
 User message: {user_msg}
 Select one of: PROBE_UNDERSTANDING, SUGGEST_ACTION, PUSH_LIMIT, NORMAL.
@@ -153,7 +240,20 @@ Return ONLY the policy name."""
 
 
 class OrchestrationService:
+    """
+    The main orchestration service managing the conversational flow, tools, and retrievals.
+    """
+
     def __init__(self, router_service, rag_service, suggestion_service, client):
+        """
+        Initialize the OrchestrationService with required sub-services.
+
+        Args:
+            router_service (Any): Service for routing decisions.
+            rag_service (Any): Service for RAG retrieval operations.
+            suggestion_service (Any): Service for generating post-answer suggestions.
+            client (AsyncOpenAI): The OpenAI async client instance.
+        """
         self.router = router_service
         self.rag = rag_service
         self.suggestion = suggestion_service
@@ -186,6 +286,27 @@ class OrchestrationService:
                       repetition_penalty: float, request: Request, user_id: str,
                       search_mode: Optional[str] = None,
                       attachments: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
+        """
+        Execute the main conversational flow, yielding server-sent events (SSE) back to the client.
+
+        Args:
+            messages (List[Dict[str, str]]): The conversation history.
+            conversation_id (str): The unique identifier for the conversation.
+            use_rag (bool): Whether to use local RAG retrieval.
+            use_web_search (bool): Whether to allow web search.
+            force_think (bool): Whether to force deep thinking (reasoning) models.
+            max_tokens (int): Maximum tokens for the generation.
+            temperature (float): Sampling temperature.
+            top_p (float): Nucleus sampling parameter.
+            repetition_penalty (float): Repetition penalty parameter.
+            request (Request): The FastAPI request object.
+            user_id (str): The unique identifier for the user.
+            search_mode (Optional[str]): Explicit search mode override. Defaults to None.
+            attachments (Optional[List[Dict[str, Any]]]): Files or attachments provided by the user. Defaults to None.
+
+        Yields:
+            str: SSE formatted string events representing status updates and token chunks.
+        """
         
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
@@ -536,6 +657,15 @@ class OrchestrationService:
 
 
     async def _node_intent_routing(self, query: str) -> AsyncGenerator[str, None]:
+        """
+        Perform fast intent checking to reject harmful or out-of-scope queries (Currently Disabled).
+
+        Args:
+            query (str): The user query to evaluate.
+
+        Yields:
+            str: SSE formatted events if rejection occurs.
+        """
         if not query or not self.client:
             return
             
@@ -549,7 +679,16 @@ class OrchestrationService:
     def _attach_to_latest_user_message(
         messages: List[Dict[str, Any]], attachments: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Attach request-scoped multimodal content only to the latest user turn."""
+        """
+        Attach request-scoped multimodal content only to the latest user turn.
+
+        Args:
+            messages (List[Dict[str, Any]]): The list of conversation messages.
+            attachments (List[Dict[str, Any]]): The list of attachment data dictionaries.
+
+        Returns:
+            List[Dict[str, Any]]: The updated list of messages with attachments embedded.
+        """
         if not attachments:
             return messages
 
@@ -566,7 +705,15 @@ class OrchestrationService:
     def _add_attachment_grounding_instruction(
         messages: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """Require answers to be grounded in content actually read from attachments."""
+        """
+        Require answers to be grounded in content actually read from attachments.
+
+        Args:
+            messages (List[Dict[str, Any]]): The list of conversation messages.
+
+        Returns:
+            List[Dict[str, Any]]: The updated list of messages with grounding instructions added to the system prompt.
+        """
         instruction = (
             "【附件事實邊界】本回合包含使用者附件。只能根據實際可讀取的附件內容回答；"
             "不得根據檔名、作者、建立時間、metadata 或常識猜測文件正文。"
@@ -582,6 +729,18 @@ class OrchestrationService:
 
 
     async def _node_rag_retrieval(self, last_user_msg: str, rag_queries: List[Dict[str, str]], cached_results=None, run_state: Optional[ConversationRunState] = None) -> AsyncGenerator[str, None]:
+        """
+        Execute the local RAG retrieval node.
+
+        Args:
+            last_user_msg (str): The latest user message.
+            rag_queries (List[Dict[str, str]]): Decomposed queries for retrieval.
+            cached_results (Optional[Any]): Cached retrieval results, if any. Defaults to None.
+            run_state (Optional[ConversationRunState]): The current conversation state object. Defaults to None.
+
+        Yields:
+            str: SSE formatted status updates and retrieved sources.
+        """
         run_state = run_state or ConversationRunState()
         from main import get_query_fingerprint, rag_cache, _thread_pool
         fingerprint = get_query_fingerprint(last_user_msg)
@@ -655,6 +814,19 @@ class OrchestrationService:
             yield "event: results_obj\n\n"
 
     async def _node_perplexity_search(self, last_user_msg: str, conversation_id: str, messages: List[Dict[str, str]] = None, run_state: Optional[ConversationRunState] = None, user_id: str = "") -> AsyncGenerator[str, None]:
+        """
+        Execute the web search node using Perplexity or a configured web search tool.
+
+        Args:
+            last_user_msg (str): The latest user message.
+            conversation_id (str): The conversation identifier.
+            messages (Optional[List[Dict[str, str]]]): The conversation history. Defaults to None.
+            run_state (Optional[ConversationRunState]): The current conversation state object. Defaults to None.
+            user_id (str): The user identifier. Defaults to "".
+
+        Yields:
+            str: SSE formatted status updates and search results.
+        """
         node_start = time.time()
         run_state = run_state or ConversationRunState()
         print(f"[Perplexity] 開始聯網搜尋: {last_user_msg}")
@@ -759,6 +931,23 @@ class OrchestrationService:
         yield "event: results_obj\n\n"
 
     async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "") -> List[Dict[str, str]]:
+        """
+        Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
+
+        Args:
+            user_id (str): The user identifier.
+            conversation_id (str): The conversation identifier.
+            messages (List[Dict[str, str]]): The base conversation messages.
+            use_rag (bool): Whether RAG was used.
+            use_web_search (bool): Whether web search was used.
+            force_think (bool): Whether reasoning output is enforced.
+            context_results_obj (Any): The retrieval results object.
+            last_user_msg (str): The latest user message.
+            context_prompt (str): The formatted context text block. Defaults to "".
+
+        Returns:
+            List[Dict[str, str]]: The finalized list of messages ready to be sent to the LLM.
+        """
         from main import SYSTEM_PROMPT_WITH_RAG_THINK, SYSTEM_PROMPT_WITH_RAG, SYSTEM_PROMPT_FORCE_THINK, SYSTEM_PROMPT_NORMAL
         
         new_messages = [m.copy() for m in messages]
@@ -845,6 +1034,25 @@ class OrchestrationService:
 
 
     async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None) -> AsyncGenerator[str, None]:
+        """
+        Execute the main LLM generation stream, handling tool calls and yielding tokens.
+
+        Args:
+            user_id (str): The user identifier.
+            conversation_id (str): The conversation identifier.
+            last_user_msg (str): The latest user message.
+            messages (List[Dict[str, Any]]): The finalized prompt messages.
+            force_think (bool): Whether reasoning mode is enabled.
+            max_tokens (int): Maximum tokens to generate.
+            temperature (float): Sampling temperature.
+            top_p (float): Nucleus sampling top-p.
+            repetition_penalty (float): Repetition penalty.
+            request (Request): The incoming FastAPI request.
+            tool_budget (Optional[Any]): The tracker for tool usage limits. Defaults to None.
+
+        Yields:
+            str: SSE formatted token chunks and tool status updates.
+        """
         if not self.client:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             return
@@ -977,6 +1185,19 @@ class OrchestrationService:
         yield f"event: accumulator\ndata: {json.dumps({'accumulator': answer_content_accumulator})}\n\n"
 
     async def _node_post_generation(self, last_user_msg: str, answer_content_accumulator: str, context_results_obj: Any, use_rag: bool, use_web_search: bool) -> AsyncGenerator[str, None]:
+        """
+        Perform post-generation tasks such as generating follow-up suggestions.
+
+        Args:
+            last_user_msg (str): The user's input message.
+            answer_content_accumulator (str): The full text generated by the LLM.
+            context_results_obj (Any): The retrieval results object.
+            use_rag (bool): Whether RAG was used.
+            use_web_search (bool): Whether web search was used.
+
+        Yields:
+            str: SSE formatted events containing suggestions or completion signals.
+        """
         if self.suggestion:
             try:
                 reranked_results = context_results_obj.final_results if (use_rag and not use_web_search and context_results_obj) else []

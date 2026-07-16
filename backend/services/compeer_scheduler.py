@@ -1,3 +1,13 @@
+"""
+ComPeer Scheduler Module.
+
+This module provides background loops and scheduling services for the proactive 
+ComPeer system. It manages user cooldown periods, schedules daily reflection 
+and proactive care tasks, and dispatches delayed "letters" (messages) to the user 
+based on learning states, behavioral telemetry (e.g., scrolling), or explicit 
+avatar summons.
+"""
+
 import asyncio
 import json
 import os
@@ -10,12 +20,26 @@ import time as _time
 from redis_client import get_redis
 
 async def is_in_cooldown(user_id: str) -> bool:
-    """Return True if the user is within the cooldown period using Redis."""
+    """
+    Check if the user is currently within a proactive communication cooldown period.
+
+    Args:
+        user_id (str): The unique identifier for the user.
+
+    Returns:
+        bool: True if the user is in cooldown, False otherwise.
+    """
     redis = get_redis()
     return await redis.exists(f"areqa:cooldown:{user_id}") > 0
 
 async def set_cooldown(user_id: str, state: str = "default") -> None:
-    """Set a cooldown period dynamically based on the learner state using Redis TTL."""
+    """
+    Set a communication cooldown period dynamically based on the current learner state.
+
+    Args:
+        user_id (str): The unique identifier for the user.
+        state (str): The current pedagogical state of the learner. Defaults to "default".
+    """
     COOLDOWN_BY_STATE = {
         "NOT_STARTED": 2.0,
         "GIVING_UP": 0.25,
@@ -41,12 +65,27 @@ async def set_cooldown(user_id: str, state: str = "default") -> None:
             print(f"[EDF-LOG] Error setting cooldown in hot memory: {e}")
 
 async def evaluate_importance_gate(event: dict) -> bool:
+    """
+    Determine probabilistically whether an event should trigger based on its importance.
+
+    Args:
+        event (dict): The event dictionary containing an 'importance' score.
+
+    Returns:
+        bool: True if the event passes the gate, False otherwise.
+    """
     importance = float(event.get("importance", 0.5))
     passed = random.random() < importance
     print(f"[EDF-LOG] evaluate_importance_gate: event='{event.get('Content')}', importance={importance}, passed={passed}")
     return passed
 
 async def tick_proactive_schedule(user_id: str):
+    """
+    Evaluate and trigger scheduled proactive care events for a user if their time has arrived.
+
+    Args:
+        user_id (str): The unique identifier for the user.
+    """
     project_root = Path(__file__).resolve().parents[2]
     schedule_path = project_root / "data" / "gum_data" / f"schedule_{user_id}.json"
     
@@ -118,6 +157,13 @@ async def tick_proactive_schedule(user_id: str):
             json.dump(events, f, ensure_ascii=False, indent=2)
 
 async def initialize_daily_schedule(user_id: str, reflection_outputs: list):
+    """
+    Generate a daily proactive communication schedule based on the user's past reflections.
+
+    Args:
+        user_id (str): The unique identifier for the user.
+        reflection_outputs (list): A list of insights generated from the previous day's reflections.
+    """
     try:
         from gum_integration import get_gum_instance
         gum_instance, _ = await get_gum_instance(user_id)
@@ -161,6 +207,12 @@ async def initialize_daily_schedule(user_id: str, reflection_outputs: list):
         print(f"[Daily Schedule] Failed to initialize: {e}")
 
 async def run_reflection_and_initialization(user_id: str):
+    """
+    Execute the reflection process for a user and initialize their schedule for the new day.
+
+    Args:
+        user_id (str): The unique identifier for the user.
+    """
     try:
         from gum_integration import run_reflection
         insights = await run_reflection(user_id)
@@ -174,6 +226,10 @@ async def run_reflection_and_initialization(user_id: str):
         print(f"[Daily Scheduler] run_reflection_and_initialization failed: {e}")
 
 async def daily_scheduler_loop():
+    """
+    Background worker loop that runs daily reflections and schedule initialization 
+    for all active users.
+    """
     while True:
         try:
             now = datetime.now()
@@ -230,7 +286,15 @@ _GENERIC_EVENT_MARKERS = (
 
 
 def has_current_learning_evidence(hot_memory_snapshot: str) -> bool:
-    """Return True only when prompt-visible working memory has semantic content."""
+    """
+    Check if there is current semantic learning evidence in the user's working memory.
+
+    Args:
+        hot_memory_snapshot (str): The current snapshot of the user's hot memory.
+
+    Returns:
+        bool: True if prompt-visible working memory has semantic content, False otherwise.
+    """
     if not hot_memory_snapshot or "【工作記憶" not in hot_memory_snapshot:
         return False
 
@@ -247,6 +311,16 @@ def has_current_learning_evidence(hot_memory_snapshot: str) -> bool:
 
 
 def is_generic_event_summary(event_summary: str) -> bool:
+    """
+    Determine if an event summary is purely generic (e.g., generic system alerts) 
+    rather than specific to a learning topic.
+
+    Args:
+        event_summary (str): The text of the event summary.
+
+    Returns:
+        bool: True if the summary is generic or empty, False otherwise.
+    """
     text = (event_summary or "").strip()
     if not text:
         return True
@@ -259,13 +333,36 @@ def should_allow_topic_specific_care(
     *,
     trust_event_summary: bool = False,
 ) -> bool:
-    """Cold memory alone must not authorize a specific proactive topic."""
+    """
+    Determine if a proactive care letter can reference specific learning topics.
+    Cold memory alone must not authorize a specific proactive topic unless there 
+    is current evidence or the event summary is explicitly trusted.
+
+    Args:
+        hot_memory_snapshot (str): The current snapshot of the user's hot memory.
+        event_summary (str): The text of the event summary.
+        trust_event_summary (bool): Whether to trust the event summary as specific context. Defaults to False.
+
+    Returns:
+        bool: True if topic-specific care is allowed, False otherwise.
+    """
     if has_current_learning_evidence(hot_memory_snapshot):
         return True
     return trust_event_summary and not is_generic_event_summary(event_summary)
 
 
 def _stable_task_id(prefix: str, user_id: str, *parts: str) -> str:
+    """
+    Generate a stable, deterministic task ID based on user and task parameters.
+
+    Args:
+        prefix (str): A string prefix for the task ID.
+        user_id (str): The ID of the user.
+        *parts (str): Additional strings to hash into the task ID.
+
+    Returns:
+        str: A unique SHA-256 based task ID string.
+    """
     raw = "|".join([user_id, *[str(part or "") for part in parts]])
     return f"{prefix}-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"
 
@@ -280,6 +377,22 @@ async def schedule_areqa_care_letter(
     last_compeer_message: str = "",
     allow_topic_specific: bool = False,
 ):
+    """
+    Generate and schedule a proactive care letter from the ComPeer system via an LLM.
+
+    Args:
+        user_id (str): The user's ID.
+        learner_state (str): The current learning state of the user.
+        edf_policy (str): The pedagogical policy to apply.
+        event_summary (str): The summary of the triggering event.
+        hot_memory_snapshot (str): The current state of working memory.
+        cold_memory_context (str): Relevant long-term memory facts.
+        last_compeer_message (str): The last message sent by ComPeer. Defaults to "".
+        allow_topic_specific (bool): Whether the letter can reference specific learning topics. Defaults to False.
+
+    Returns:
+        str: The task ID of the scheduled letter.
+    """
     from gum_integration import generate_areqa_care_letter_via_llm
     from mailbox_store import get_mailbox_store
     from memory_store import get_global_store
@@ -320,15 +433,35 @@ async def schedule_areqa_care_letter(
     return task_id
 
 async def get_last_interaction_time(user_id: str) -> float:
+    """
+    Retrieve the timestamp of the user's last interaction from Redis.
+
+    Args:
+        user_id (str): The ID of the user.
+
+    Returns:
+        float: The UNIX timestamp of the last interaction.
+    """
     redis = get_redis()
     val = await redis.get(f"areqa:last_interaction:{user_id}")
     return float(val) if val else _time.time()
 
 async def set_last_interaction_time(user_id: str, timestamp: float):
+    """
+    Save the timestamp of the user's latest interaction to Redis.
+
+    Args:
+        user_id (str): The ID of the user.
+        timestamp (float): The UNIX timestamp to save.
+    """
     redis = get_redis()
     await redis.set(f"areqa:last_interaction:{user_id}", str(timestamp))
 
 async def proactive_scheduler_loop():
+    """
+    Background worker loop that periodically checks for triggers to send proactive 
+    care letters. It evaluates user inactivity, avatar summons, and learning bottlenecks.
+    """
     print("[EDF-LOG] Starting proactive_scheduler_loop background task.")
     while True:
         try:
