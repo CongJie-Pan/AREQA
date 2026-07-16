@@ -1,6 +1,6 @@
 ---
 name: plan-write-agent
-description: Write reviewable, phase-based software implementation plans in English. Use when planning a feature, refactor, bug fix, architecture change, or cross-system change before implementation. Every phase defines the problem, assumptions, solution, implementation, expected file tree, checkbox work list, test plan, expected result, concise Act-based testing script, and a mandatory test gate.
+description: Write reviewable, phase-based software implementation plans in English. Use when planning a feature, refactor, bug fix, architecture change, or cross-system change before implementation. Every phase defines the problem, assumptions, solution, implementation, expected file tree, checkbox work list, test plan, expected result, concise Act-based testing script, a mandatory test gate, and a phase-scoped Git commit.
 ---
 
 # Plan Write Agent
@@ -11,7 +11,7 @@ Produce an implementation plan that another engineer can execute and verify with
 
 1. Read the user request, relevant documentation, source entry points, callers, tests, configuration, and repository structure before drafting the plan.
 2. Identify the current behavior, target behavior, data flow, compatibility boundaries, dependencies, and regression risks. Treat unknown facts as assumptions, validation tasks, or risks; never present them as confirmed.
-3. Divide the work into dependency-ordered phases. Each phase must be independently implementable and verifiable. Resolve data ownership, invariants, failure handling, and terminal observability before larger structural refactors.
+3. Divide the work into dependency-ordered phases. Each phase must be independently implementable, verifiable, and committable. Resolve data ownership, invariants, failure handling, and terminal observability before larger structural refactors.
 4. Do not modify production code when the user asks only for a plan. Write the plan into the requested document and preserve unrelated user changes.
 
 ## Required Phase Format
@@ -88,23 +88,36 @@ Use as many Acts as necessary, but keep every Act narrow. Prefer realistic user 
 #### Gate to Enter the Next Phase
 
 List the exact commands and required checks. Define the success condition, evidence to retain, and required response to failure. The next phase must not start until every gate passes; do not weaken assertions, skip failing tests, or mark failures flaky to proceed.
+
+#### Phase Commit
+
+Define the Git commit created only after this phase's gate passes. Provide a concrete Conventional Commit-style message, the exact phase-owned paths or hunk boundaries to stage, and the commands used to verify the staged patch and resulting commit. Require the implementer to:
+
+1. Inspect `git status --short` and preserve unrelated user changes.
+2. Stage only this phase's files or explicitly identified hunks; never use a broad stage command when unrelated changes exist.
+3. Run `git diff --cached --check` and review `git diff --cached --stat` before committing.
+4. Create exactly one coherent phase commit unless the plan explicitly justifies smaller atomic commits.
+5. Confirm the commit with `git show --stat --oneline --summary HEAD` before entering the next phase.
+
+If a file is modified across multiple phases, identify which functions or hunks belong to each phase in advance. Keep every intermediate commit buildable and ensure its phase gate can run from that commit. Do not commit when the gate fails, do not amend or rewrite unrelated commits, and do not push unless the user explicitly requests it.
 ```
 
 ## Plan Quality Requirements
 
 - Keep phase scope coherent. Do not split work only to create more phases.
+- Keep phase commits coherent and dependency ordered. A later phase may build on an earlier commit, but no phase commit may depend on uncommitted code from a future phase.
 - Prefer existing project patterns, names, and tests. Do not invent files or APIs without marking them as proposed additions.
 - Make all external contracts explicit: API responses, SSE events, database records, queues, logs, configuration, and frontend behavior when relevant.
 - Define terminal observability for every changed critical path. Require structured logs through the project's existing logging abstraction, with stable event names, appropriate correlation IDs, state/result, and safe reason codes. Specify log levels for success, policy block/retry, and unexpected failure. Never require `print` statements or human-only free-form logs.
 - Treat logs as a privacy boundary. Exclude raw user text, prompts, model output, credentials, tokens, sensitive labels, and other unnecessary personal data. Require tests to capture critical events and assert event names plus safe metadata rather than formatted log sentences.
 - For migrations, describe treatment of legacy records, incomplete provenance, retries, idempotency, rollback, and fail-closed behavior where applicable.
 - Make test coverage proportional to risk. Shared data paths, background jobs, public streaming contracts, and user profile writes require focused regression and integration tests.
-- Begin every Implementation section with a phase-specific `> Context:` block defining the required Google-style docstrings, rationale-focused inline comments, and critical structured-log documentation. Put expected file trees, detailed file/function-level checkbox work lists, expected results, and Act-based scripts in every phase. For critical state transitions, include safe structured-log work and test assertions. These are mandatory review artifacts, not optional additions.
+- Begin every Implementation section with a phase-specific `> Context:` block defining the required Google-style docstrings, rationale-focused inline comments, and critical structured-log documentation. Put expected file trees, detailed file/function-level checkbox work lists, expected results, Act-based scripts, test gates, and phase commit instructions in every phase. For critical state transitions, include safe structured-log work and test assertions. These are mandatory review artifacts, not optional additions.
 
 ## Cross-Phase Regression and Final Acceptance
 
-End every plan with `### Cross-Phase Regression and Final Acceptance`. Include the full regression command, focused commands omitted from the full suite, the end-to-end or manual rerun scenario, concrete acceptance outcomes, remaining risks, and mitigations. State any unresolved product or deployment decisions explicitly.
+End every plan with `### Cross-Phase Regression and Final Acceptance`. Include the full regression command, focused commands omitted from the full suite, the end-to-end or manual rerun scenario, concrete acceptance outcomes, remaining risks, and mitigations. Require a final `git status --short` and ordered `git log --oneline` review proving that every phase commit exists and no planned changes remain uncommitted. State any unresolved product or deployment decisions explicitly.
 
 ## Final Review
 
-Before delivering, confirm that every phase has all ten required sections: Problem, Assumptions, Solution, Implementation, Expected File Tree, Work List, Test Plan, Expected Output / Result, Testing Script, and Gate. Confirm that each Implementation heading is immediately followed by a phase-specific `> Context:` block; the output is English; every work-list item names a file and symbol or explicitly proposed new symbol; test work names test files; file paths and commands are concrete; Act scripts are concise; and no phase can proceed without passing its stated verification gate.
+Before delivering, confirm that every phase has all eleven required sections: Problem, Assumptions, Solution, Implementation, Expected File Tree, Work List, Test Plan, Expected Output / Result, Testing Script, Gate, and Phase Commit. Confirm that each Implementation heading is immediately followed by a phase-specific `> Context:` block; the output is English; every work-list item names a file and symbol or explicitly proposed new symbol; test work names test files; file paths and commands are concrete; Act scripts are concise; each commit message and staged scope are explicit; and no phase can be committed or followed by the next phase until its verification gate passes.

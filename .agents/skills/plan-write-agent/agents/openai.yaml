@@ -1,4 +1,4 @@
 interface:
   display_name: "Plan Write Agent"
-  short_description: "Write English phased plans with work lists"
-  default_prompt: "Use $plan-write-agent to produce an English phased implementation plan with file trees, checkbox work lists, expected results, concise Act-based testing scripts, and unit/integration test gates."
+  short_description: "Write English phased plans with gated commits"
+  default_prompt: "Use $plan-write-agent to produce an English phased implementation plan with file trees, checkbox work lists, expected results, concise Act-based testing scripts, test gates, and one verified Git commit at the end of each completed phase."
