@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from unittest.mock import AsyncMock
 
 import pytest
@@ -167,6 +168,206 @@ async def test_low_confidence_semantic_match_cannot_merge_candidates():
     await service.ingest_user_evidence(evidence("學抽象概念時，我希望先看具體案例再理解原理。"))
 
     assert store.append_cold_candidate.await_args.kwargs["candidate_hash_override"] == ""
+
+
+@pytest.mark.asyncio
+async def test_equivalent_preference_uses_deterministic_match_without_semantics(caplog):
+    caplog.set_level(logging.INFO)
+    canonical_key = "learning_preference:abstract_concepts:concrete_examples"
+    store = AsyncMock()
+    store.get_cold_candidates.return_value = [{
+        "user_id": "user-a",
+        "hash": "existing",
+        "category": "passive_preference",
+        "status": "candidate",
+        "requires_confirmation": False,
+        "canonical_key": canonical_key,
+        "normalized_text": canonical_key,
+    }]
+    store.append_cold_candidate.return_value = {"hash": "existing"}
+    store.promote_cold_candidate.return_value = {"hash": "existing"}
+    service = MemoryIngestionService(store, semantic_enabled=False)
+
+    result = await service.ingest_user_evidence(
+        evidence(
+            "學抽象概念時，我希望先看具體案例或實際情境，再理解原理。",
+            conversation_id="conv-b",
+            message_id="msg-b",
+        )
+    )
+
+    kwargs = store.append_cold_candidate.await_args.kwargs
+    assert kwargs["canonical_key"] == canonical_key
+    assert kwargs["candidate_hash_override"] == "existing"
+    assert result.promoted is True
+    assert "memory.canonical_match_accepted" in caplog.text
+    assert "category=passive_preference" in caplog.text
+    assert "學抽象概念時" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_canonical_match_logs_metadata_without_raw_text(caplog):
+    caplog.set_level(logging.WARNING)
+    canonical_key = "learning_preference:abstract_concepts:concrete_examples"
+    store = AsyncMock()
+    store.get_cold_candidates.return_value = [
+        {
+            "user_id": "user-a",
+            "hash": candidate_hash,
+            "category": "passive_preference",
+            "status": "candidate",
+            "requires_confirmation": False,
+            "canonical_key": canonical_key,
+            "normalized_text": canonical_key,
+        }
+        for candidate_hash in ("candidate-a", "candidate-b")
+    ]
+    store.append_cold_candidate.return_value = {"hash": "new"}
+    store.promote_cold_candidate.return_value = None
+    service = MemoryIngestionService(store, semantic_enabled=False)
+    raw_text = "學抽象概念時，我希望先看具體案例或實際情境，再理解原理。"
+
+    await service.ingest_user_evidence(evidence(raw_text))
+
+    assert "memory.canonical_match_rejected" in caplog.text
+    assert "reason=ambiguous_candidates" in caplog.text
+    assert raw_text not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_negative_preference_cannot_join_positive_canonical_candidate():
+    canonical_key = "learning_preference:abstract_concepts:concrete_examples"
+    store = AsyncMock()
+    store.get_cold_candidates.return_value = [{
+        "user_id": "user-a",
+        "hash": "positive",
+        "category": "passive_preference",
+        "status": "candidate",
+        "requires_confirmation": False,
+        "canonical_key": canonical_key,
+        "normalized_text": canonical_key,
+    }]
+    store.append_cold_candidate.return_value = {"hash": "negative"}
+    store.promote_cold_candidate.return_value = None
+    service = MemoryIngestionService(store, semantic_enabled=False)
+
+    await service.ingest_user_evidence(
+        evidence("我不喜歡用具體例子理解抽象概念。", message_id="msg-negative")
+    )
+
+    kwargs = store.append_cold_candidate.await_args.kwargs
+    assert kwargs["canonical_key"] != canonical_key
+    assert kwargs["candidate_hash_override"] == ""
+
+
+@pytest.mark.asyncio
+async def test_temporary_goal_completion_retires_match_and_clears_focus():
+    store = AsyncMock()
+    store.get_cold_candidates.return_value = [{
+        "user_id": "user-a",
+        "hash": "goal-a",
+        "category": "temporary_goal",
+        "status": "candidate",
+        "requires_confirmation": False,
+        "text": "這個月我想完成牛頓運動定律的複習，請在這段期間協助我安排練習。",
+    }]
+    store.complete_temporary_goal_candidate.return_value = {
+        "hash": "goal-a",
+        "status": "completed",
+        "text": "這個月我想完成牛頓運動定律的複習，請在這段期間協助我安排練習。",
+    }
+    store.get_working_memory.return_value = {
+        "current_focus": "這個月我想完成牛頓運動定律的複習",
+    }
+    service = MemoryIngestionService(store)
+
+    result = await service.ingest_user_evidence(
+        evidence(
+            "我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。",
+            message_id="msg-completed",
+        )
+    )
+
+    assert result.reason_code == "temporary_goal_completed"
+    assert result.candidate_id == "goal-a"
+    store.complete_temporary_goal_candidate.assert_awaited_once()
+    store.update_working_memory.assert_awaited_once_with(
+        "user-a",
+        {"current_focus": "", "current_focus_conversation_id": ""},
+    )
+    store.perform_memory_operation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_temporary_goal_completion_preserves_unrelated_current_focus():
+    goal_text = "這個月我想完成牛頓運動定律的複習。"
+    store = AsyncMock()
+    store.get_cold_candidates.return_value = [{
+        "user_id": "user-a",
+        "hash": "goal-a",
+        "category": "temporary_goal",
+        "status": "candidate",
+        "requires_confirmation": False,
+        "text": goal_text,
+    }]
+    store.complete_temporary_goal_candidate.return_value = {
+        "hash": "goal-a",
+        "status": "completed",
+        "text": goal_text,
+    }
+    store.get_working_memory.return_value = {
+        "current_focus": "英文作文架構練習",
+        "current_focus_conversation_id": "conversation-english",
+    }
+    service = MemoryIngestionService(store)
+
+    result = await service.ingest_user_evidence(
+        evidence("我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。")
+    )
+
+    assert result.reason_code == "temporary_goal_completed"
+    store.update_working_memory.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_temporary_goal_completion_without_safe_match_fails_closed():
+    store = AsyncMock()
+    store.get_cold_candidates.return_value = []
+    store.complete_temporary_goal_candidate.return_value = None
+    service = MemoryIngestionService(store)
+
+    result = await service.ingest_user_evidence(
+        evidence("我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。")
+    )
+
+    assert result.reason_code == "temporary_goal_completion_not_found"
+    store.update_working_memory.assert_not_awaited()
+    store.perform_memory_operation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_temporary_goal_completion_with_multiple_matches_is_ambiguous():
+    goal = {
+        "user_id": "user-a",
+        "category": "temporary_goal",
+        "status": "candidate",
+        "requires_confirmation": False,
+        "text": "這個月我想完成牛頓運動定律的複習。",
+    }
+    store = AsyncMock()
+    store.get_cold_candidates.return_value = [
+        {**goal, "hash": "goal-a"},
+        {**goal, "hash": "goal-b"},
+    ]
+    store.complete_temporary_goal_candidate.return_value = None
+    service = MemoryIngestionService(store)
+
+    result = await service.ingest_user_evidence(
+        evidence("我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。")
+    )
+
+    assert result.reason_code == "temporary_goal_completion_ambiguous"
+    store.update_working_memory.assert_not_awaited()
 
 
 def test_external_semantic_processing_requires_explicit_deployment_acknowledgement(

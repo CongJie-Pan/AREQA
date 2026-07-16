@@ -302,6 +302,253 @@ Pass condition: each failure produces a safe unavailable/uncertain event, does n
 
 All Phase 2 tests must pass, including the new question, provenance, independent-conversation, category-lifecycle, sensitive-data, semantic-match, and semantic-failure assertions. The implementation must preserve the existing `perform_memory_operation` source guard, and a test must demonstrate that no live caller still depends on the retired retention policy. Before enabling active semantic matching, retain a shadow-mode evaluation sample showing no false match of question, sensitive, cross-user, expired, or category-mismatched candidates. Record the exact command and result in the worklog. If any test fails, stop in this phase, identify whether the fault is deterministic classification, semantic analysis, provenance propagation, lifecycle routing, or promotion logic, fix it, and rerun the complete Phase 2 command; do not weaken the evidence assertions, use model fallback, or bypass promotion checks.
 
+### Phase 2A: Close the Equivalent-Preference Promotion Gap for Manual Act 05
+
+#### Problem
+
+The manual validation script expects the preference declaration `我偏好用具體例子理解抽象概念。` and the later declaration `學抽象概念時，我希望先看具體案例或實際情境，再理解原理。` to count as the same low-risk passive preference when they appear in two distinct conversations. The current plan allows Gemini semantic matching, but the implementation can run with semantic analysis disabled or in shadow mode. In that state, semantically equivalent but differently worded declarations may create two separate cold candidates and never satisfy the two-conversation promotion threshold. The target behaviour is that the manual Act 05 equivalent-preference path is deterministic enough to pass in the intended validation environment, while Gemini remains only an advisory matching layer and cannot authorize promotion by itself.
+
+#### Assumptions
+
+This phase assumes that passive preference promotion still requires at least two distinct conversation IDs and two distinct message IDs. It also assumes that production may keep the semantic analyzer disabled or shadow-only by default. If active semantic matching is enabled for validation, the implementation must still fail closed for questions, sensitive content, cross-user candidates, expired candidates, category mismatches, and low-confidence matches. If deterministic canonicalization is added, it must be narrow and category-specific; it must not normalize arbitrary user statements into profile facts.
+
+#### Solution
+
+Add a server-owned candidate matching policy that first applies deterministic canonicalization for a small allowlist of low-risk learning-preference patterns, then optionally consults the semantic analyzer only after deterministic eligibility has passed. The canonicalization should produce the same canonical key for concrete-example learning preference phrasings used in the manual script, including “具體例子”, “具體案例”, “實際例子”, and “實際情境” when the statement is about learning or understanding abstract concepts. The canonical key may join evidence to an existing candidate, but promotion remains inside `MemoryStore.promote_cold_candidate()` and still requires independent complete evidence. Shadow-mode semantic output may be logged and evaluated, but it must not change storage.
+
+#### Implementation
+
+> Context: Add Google-style docstrings to any new canonicalization helper and materially changed ingestion or store methods. Document why canonicalization is restricted to already eligible passive preferences, why it cannot rescue questions or sensitive messages, and why profile promotion remains a deterministic storage decision. Add inline rationale at the canonical-key decision, semantic fallback boundary, candidate override validation, and structured-log emission; do not add comments that restate regex mechanics.
+
+Modify `backend/services/memory_ingestion_service.py` so passive low-risk preference intake computes a policy-owned canonical key before semantic analysis. The helper should accept only a deterministic `MemoryGateDecision` that is already categorized as `passive_preference`; it must return an empty value for every other category. For the manual Act 05 phrasing family, return a stable key such as `learning_preference:abstract_concepts:concrete_examples`. When this key matches an active same-user, same-category candidate, pass that candidate hash as the append override without requiring active Gemini analysis. Keep semantic matching as an optional second layer for cases outside the deterministic allowlist.
+
+Modify `backend/memory_store.py` only if needed to guarantee that a canonical-key match cannot create an arbitrary new candidate through `candidate_hash_override`; an override must still refer to an existing same-user, same-category, active candidate. Ensure duplicate declarations inside the same conversation append at most one evidence record and do not increase the independent conversation count. Emit safe structured events such as `memory.canonical_match_accepted` and `memory.canonical_match_rejected` with user ID, candidate ID when available, category, reason code, and correlation fields, but no raw user text or evidence quote.
+
+#### Expected File Tree After Phase 2A
+
+This tree is cumulative with Phases 1 and 2.
+
+```text
+backend/
+├── memory_store.py                                      [modified if needed]
+└── services/
+    └── memory_ingestion_service.py                      [modified]
+tests/backend/
+├── test_memory_ingestion_service.py                     [modified]
+├── test_memory_injection_regression.py                  [modified]
+└── test_memory_store.py                                 [modified if storage guard changes]
+```
+
+#### Work List
+
+1. [ ] Modify `backend/services/memory_ingestion_service.py`.
+   - [ ] Add the proposed `canonicalize_passive_preference()` helper or equivalent private method.
+   - [ ] Update `MemoryIngestionService.ingest_user_evidence()` so the concrete-example abstract-concept preference phrasings share one canonical key after deterministic eligibility passes.
+   - [ ] Add same-user, same-category active-candidate lookup by canonical key before optional semantic analysis.
+   - [ ] Emit `memory.canonical_match_accepted` and `memory.canonical_match_rejected` with safe metadata only.
+2. [ ] Modify `backend/memory_store.py` if the current candidate override guard is insufficient.
+   - [ ] Keep `MemoryStore.append_cold_candidate()` fail-closed when a candidate override does not reference an existing candidate owned by the same user and category.
+   - [ ] Preserve message-ID de-duplication and distinct-conversation promotion counting.
+3. [ ] Extend `tests/backend/test_memory_ingestion_service.py`.
+   - [ ] Add the manual Act 05 pair: `我偏好用具體例子理解抽象概念。` in conversation C and `學抽象概念時，我希望先看具體案例或實際情境，再理解原理。` in conversation D.
+   - [ ] Assert both messages attach to one candidate when canonicalization is enabled and promotion occurs only after `MemoryStore.promote_cold_candidate()` verifies two distinct conversations.
+   - [ ] Assert repeating `我真的比較喜歡用實際例子來學抽象概念。` inside conversation D does not create a second profile write or count as a third independent conversation.
+4. [ ] Extend `tests/backend/test_memory_injection_regression.py`.
+   - [ ] Add a regression proving the question `我偏好什麼學習方法？` is not canonicalized into a preference candidate.
+   - [ ] Add a regression proving sensitive or one-off context cannot be canonicalized into this preference key.
+
+#### Test Plan
+
+Add service-level tests with a fake memory store containing an active candidate from conversation C, then ingest the conversation D equivalent phrasing. Assert that the append call uses the existing candidate hash and that the evidence record contains the exact second message ID, conversation ID, timestamp, source role, message, and quote. Add a repeated-message case inside conversation D and assert the independent conversation count remains two. Add negative tests for the preference question, sensitive content, cross-category input, and an unknown override. Capture canonical-match logs and assert they include event names and safe reason codes without raw user text.
+
+Run:
+
+```bash
+./backend/.venv/bin/python -m pytest -q \
+  tests/backend/test_memory_ingestion_service.py \
+  tests/backend/test_memory_injection_regression.py \
+  tests/backend/test_memory_store.py
+```
+
+#### Expected Output / Result
+
+The manual Act 05 preference pair creates one candidate with two complete evidence records from different conversations, and that candidate may be promoted exactly once by the deterministic promotion rule. A repeated declaration in the same conversation does not add independent evidence or create a duplicate profile memory. Questions, sensitive content, temporary goals, and one-off learning/search context cannot be canonicalized into the concrete-example preference key.
+
+#### Testing Script
+
+##### Act 01: Equivalent Safe Preferences Join One Candidate
+
+In conversation C, ingest `我偏好用具體例子理解抽象概念。`. In conversation D, ingest `學抽象概念時，我希望先看具體案例或實際情境，再理解原理。`.
+
+Pass condition: one candidate contains two complete evidence records with distinct conversation IDs and message IDs, and exactly one verified profile write is performed through `verified_user_evidence`.
+
+##### Act 02: Same-Conversation Repetition Is Not Independent Evidence
+
+Still in conversation D, ingest `我真的比較喜歡用實際例子來學抽象概念。`.
+
+Pass condition: no second profile write occurs, and the independent conversation count remains based on conversations C and D only.
+
+##### Act 03: Question and Sensitive Text Cannot Use the Canonical Key
+
+In clean conversations, ingest `我偏好什麼學習方法？` and one sensitive message that contains anxiety or grade history.
+
+Pass condition: neither message creates or joins a passive-preference candidate, and neither emits `memory.canonical_match_accepted`.
+
+#### Gate to Enter the Next Phase
+
+The Phase 2A command must pass, and logs captured by tests must prove that canonical matching emits safe metadata only. The implementer must also run the original Phase 2 command and confirm no semantic analyzer failure path now creates corroboration. If the equivalent-preference pair does not promote exactly once, remain in Phase 2A and fix canonicalization or storage de-duplication; do not lower `memory_candidate_auto_promote_conversations` below two.
+
+#### Phase Commit
+
+Commit message: `fix(memory): canonicalize equivalent safe learning preferences`
+
+Stage only the Phase 2A hunks in `backend/services/memory_ingestion_service.py`, `backend/memory_store.py` if changed, and the named test files. Before committing, run:
+
+```bash
+git status --short
+git diff --cached --check
+git diff --cached --stat
+./backend/.venv/bin/python -m pytest -q \
+  tests/backend/test_memory_ingestion_service.py \
+  tests/backend/test_memory_injection_regression.py \
+  tests/backend/test_memory_store.py
+```
+
+Create exactly one Phase 2A commit only after the gate passes, then confirm it with:
+
+```bash
+git show --stat --oneline --summary HEAD
+```
+
+### Phase 2B: Complete Temporary-Goal Lifecycle Removal for Manual Act 06
+
+#### Problem
+
+The manual validation script expects a temporary learning goal to become a 30-day candidate or equivalent short-lived working state, then stop being used when the user explicitly says the goal is complete and asks not to be reminded. The current plan defines a 30-day temporary-goal lifecycle, but it does not explicitly require completion detection, candidate status transition, working-memory cleanup, or reminder suppression. Without this boundary, `我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。` may remain ordinary current focus, leaving the old goal active until expiry and risking future personalization or reminders.
+
+#### Assumptions
+
+This phase assumes that temporary goals must never promote to profile memory. It also assumes the completion message is user-authored evidence but is an instruction to retire an active temporary goal, not a new durable preference or profile fact. If there are multiple active temporary goals for a user, completion should retire only the matching goal when a safe deterministic match exists; otherwise it should retire the most recent active temporary goal only when the message clearly refers to the same topic, or fail closed and log an ambiguous-completion block.
+
+#### Solution
+
+Extend the memory ingestion boundary with a deterministic temporary-goal completion intent. The classifier should detect completion/reminder-suppression wording before ordinary current-focus fallback, route it to `MemoryIngestionService`, and mark the matching active `temporary_goal` candidate as `completed` or remove it according to storage policy. The service should also clear any prompt-visible working-memory fields that would keep using the completed goal. Completion must emit safe structured events and must not call `perform_memory_operation()` for profile memory.
+
+#### Implementation
+
+> Context: Add Google-style docstrings to any new completion-intent type, store method, or changed ingestion public path. Document why completed temporary goals are retired rather than promoted, why completion evidence is not profile memory, and how ambiguous matching fails closed. Add inline rationale at completion detection, candidate matching, status transition, working-memory cleanup, and structured-log emission.
+
+Modify `backend/memory_gate.py` so `classify_user_message()` detects explicit temporary-goal completion before the default current-focus branch. Use conservative markers such as `完成`, `已經完成`, `不要再提醒`, and the presence of a recent-goal topic term when available. Return a new category such as `temporary_goal_completed` with `should_cold_store = False`, `should_prompt = True`, and reason `temporary_goal_completion_request`.
+
+Modify `backend/services/memory_ingestion_service.py` so `ingest_user_evidence()` routes `temporary_goal_completed` to a new store operation. The service should look for active same-user `temporary_goal` candidates, match by deterministic normalized topic overlap or canonical key, and mark the chosen candidate `completed`. It should clear working-memory fields such as `current_focus` only when they refer to the completed goal or when the completion message clearly asks not to be reminded. Return `WORKING_CONTEXT_ONLY` with a completion reason code after successful retirement; return `REJECTED` or `WORKING_CONTEXT_ONLY` with `temporary_goal_completion_ambiguous` if no safe target exists.
+
+Modify `backend/memory_store.py` to add a proposed `complete_temporary_goal_candidate(user_id, evidence, *, reason)` method or equivalent private helper. It must update status to `completed`, set `completed_at`, append completion evidence without raw-text logging, and persist the candidate list atomically. It must never call `perform_memory_operation()`. Emit `memory.temporary_goal_completed` at `INFO` for successful completion and `memory.temporary_goal_completion_blocked` at `WARNING` for no active goal, ambiguous match, incomplete provenance, or ownership/category mismatch.
+
+#### Expected File Tree After Phase 2B
+
+This tree is cumulative with Phases 1, 2, and 2A.
+
+```text
+backend/
+├── memory_gate.py                                      [modified]
+├── memory_store.py                                     [modified]
+└── services/
+    └── memory_ingestion_service.py                     [modified]
+tests/backend/
+├── test_memory_gate.py                                 [modified]
+├── test_memory_ingestion_service.py                    [modified]
+├── test_memory_injection_regression.py                 [modified]
+└── test_memory_store.py                                [modified]
+```
+
+#### Work List
+
+1. [ ] Modify `backend/memory_gate.py`.
+   - [ ] Update `classify_user_message()` to return `temporary_goal_completed` for explicit completion/reminder-suppression messages such as `我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。`.
+   - [ ] Add conservative negative handling so ordinary learning questions, preferences, and sensitive messages do not become completion commands.
+2. [ ] Modify `backend/services/memory_ingestion_service.py`.
+   - [ ] Update `MemoryIngestionService.ingest_user_evidence()` to route `temporary_goal_completed` to the temporary-goal completion store operation.
+   - [ ] Clear prompt-visible working-memory goal/focus fields only when the completion target is safely matched.
+   - [ ] Return stable reason codes such as `temporary_goal_completed`, `temporary_goal_completion_ambiguous`, and `temporary_goal_completion_not_found`.
+3. [ ] Modify `backend/memory_store.py`.
+   - [ ] Add the proposed `MemoryStore.complete_temporary_goal_candidate()` method or equivalent helper.
+   - [ ] Persist candidate status `completed`, `completed_at`, and completion evidence atomically.
+   - [ ] Block promotion for completed temporary goals and emit safe `memory.temporary_goal_completed` or `memory.temporary_goal_completion_blocked` events.
+4. [ ] Extend `tests/backend/test_memory_gate.py`.
+   - [ ] Add the manual Act 06 completion sentence and assert category `temporary_goal_completed`.
+   - [ ] Add negative cases proving ordinary questions and preferences are not classified as completions.
+5. [ ] Extend `tests/backend/test_memory_ingestion_service.py` and `tests/backend/test_memory_store.py`.
+   - [ ] Assert a temporary goal creates a 30-day candidate.
+   - [ ] Assert the completion sentence marks the matching candidate `completed`, clears applicable working-memory state, and never calls `perform_memory_operation()`.
+   - [ ] Assert ambiguous or missing active goals fail closed and log a safe blocked event.
+6. [ ] Extend `tests/backend/test_memory_injection_regression.py`.
+   - [ ] Add the full manual Act 06 sequence and assert the completed goal cannot later be promoted or used as verified profile memory.
+
+#### Test Plan
+
+Add classifier tests for completion intent and negative cases. Add store tests that create an active `temporary_goal` candidate, complete it with provenance-complete user evidence, and verify persisted status, `completed_at`, evidence append, and promotion block. Add ingestion tests for successful completion, no active goal, ambiguous multiple goals, and incomplete provenance. Add a regression sequence matching the manual script: first message creates a 30-day temporary goal; second message completes it and suppresses further reminder use.
+
+Run:
+
+```bash
+./backend/.venv/bin/python -m pytest -q \
+  tests/backend/test_memory_gate.py \
+  tests/backend/test_memory_ingestion_service.py \
+  tests/backend/test_memory_store.py \
+  tests/backend/test_memory_injection_regression.py
+```
+
+#### Expected Output / Result
+
+The manual Act 06 temporary goal is stored only as a short-lived candidate with a 30-day expiry and never as profile memory. When the user declares completion and asks not to be reminded, the matching temporary goal is marked `completed` or removed according to the chosen storage policy, prompt-visible working state no longer uses it, and future promotion attempts return no profile write. Safe logs explain whether completion succeeded or was blocked.
+
+#### Testing Script
+
+##### Act 01: Temporary Goal Receives a Short Lifecycle
+
+In conversation E, ingest `這個月我想完成牛頓運動定律的複習，請在這段期間協助我安排練習。`.
+
+Pass condition: one `temporary_goal` candidate exists with complete provenance and an expiry no later than 30 days after creation; no profile write occurs.
+
+##### Act 02: Completion Retires the Goal
+
+In the same user context, ingest `我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。`.
+
+Pass condition: the matching temporary-goal candidate is marked `completed` or removed, relevant working-memory goal/focus state is cleared, and no profile write occurs.
+
+##### Act 03: Completed Goals Cannot Reappear Through Promotion
+
+Attempt to promote the completed temporary-goal candidate or rebuild prompt memory after completion.
+
+Pass condition: promotion returns no profile write, and prompt context does not use the completed goal as an active reminder or durable preference.
+
+#### Gate to Enter the Next Phase
+
+The Phase 2B command must pass, and test logs must prove successful and blocked completion paths emit safe metadata only. The implementer must also rerun the Phase 2 and Phase 2A preference commands to prove completion handling did not change preference classification or promotion. If a completed goal remains prompt-visible or promotable, stop in Phase 2B and fix lifecycle cleanup before entering Phase 3.
+
+#### Phase Commit
+
+Commit message: `fix(memory): retire completed temporary learning goals`
+
+Stage only the Phase 2B hunks in `backend/memory_gate.py`, `backend/services/memory_ingestion_service.py`, `backend/memory_store.py`, and the named tests. Before committing, run:
+
+```bash
+git status --short
+git diff --cached --check
+git diff --cached --stat
+./backend/.venv/bin/python -m pytest -q \
+  tests/backend/test_memory_gate.py \
+  tests/backend/test_memory_ingestion_service.py \
+  tests/backend/test_memory_store.py \
+  tests/backend/test_memory_injection_regression.py
+```
+
+Create exactly one Phase 2B commit only after the gate passes, then confirm it with:
+
+```bash
+git show --stat --oneline --summary HEAD
+```
+
 ### Phase 3: Make ComPeer Scheduling Durable and Observable
 
 #### Problem

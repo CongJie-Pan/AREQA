@@ -61,7 +61,7 @@ EXPLICIT_MEMORY_PATTERNS = [
     r"(?:請你|麻煩你)?(?:記住|記得)(?:一下)?(?P<fact>.+)",
 ]
 PASSIVE_PREFERENCE_PATTERNS = [
-    r"(?:我喜歡|我不喜歡|我討厭|我偏好)(?P<fact>.+)",
+    r"(?:我(?:真的)?(?:比較)?喜歡|我不喜歡|我討厭|我偏好)(?P<fact>.+)",
     r"(?:學|理解|讀書|練習).*(?:我希望|我想要|我習慣)(?P<fact>.+)",
 ]
 STABLE_FACT_PATTERNS = [
@@ -88,6 +88,8 @@ SENSITIVE_CONTEXT_KEYWORDS = (
     "健康", "生病", "焦慮", "憂鬱", "自殺", "心理", "家庭", "父親", "母親", "財務", "債務",
 )
 EXPLICIT_RECALL_KEYWORDS = ("延續", "接續", "之前", "上次", "昨天", "前一個對話", "結合先前")
+TEMPORARY_GOAL_COMPLETION_MARKERS = ("已經完成", "完成了", "不要再提醒", "不用再提醒", "停止提醒")
+TEMPORARY_GOAL_CONTEXT_MARKERS = ("目標", "複習", "學習計畫", "讀書計畫")
 
 
 def _clean_text(value: str) -> str:
@@ -145,6 +147,20 @@ def _is_interrogative(message: str) -> bool:
     return any(marker in text for marker in markers)
 
 
+def _is_temporary_goal_completion(message: str) -> bool:
+    """Return whether a message explicitly retires a temporary learning goal.
+
+    Completion evidence changes lifecycle state; it is not a durable learner
+    fact. Requiring both a completion command and goal context prevents an
+    ordinary statement such as completing one exercise from retiring memory.
+    """
+
+    text = _clean_text(message)
+    has_completion = any(marker in text for marker in TEMPORARY_GOAL_COMPLETION_MARKERS)
+    has_goal_context = any(marker in text for marker in TEMPORARY_GOAL_CONTEXT_MARKERS)
+    return has_completion and has_goal_context
+
+
 def classify_user_message(message: str) -> MemoryGateDecision:
     """
     Classify a user message to determine its memory category and retention properties.
@@ -199,6 +215,19 @@ def classify_user_message(message: str) -> MemoryGateDecision:
             ttl_seconds=3600,
             proposition=text,
             reason="roleplay_not_memory_evidence",
+            weight=1.0,
+        )
+
+    # Lifecycle commands must be classified before preference/fact patterns;
+    # the completion statement retires state and must not create new memory.
+    if _is_temporary_goal_completion(text):
+        return MemoryGateDecision(
+            category="temporary_goal_completed",
+            should_prompt=True,
+            should_cold_store=False,
+            ttl_seconds=0,
+            proposition=text,
+            reason="temporary_goal_completion_request",
             weight=1.0,
         )
 

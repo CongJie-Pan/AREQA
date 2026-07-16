@@ -155,3 +155,24 @@ def test_temporary_learning_goal_has_thirty_day_lifecycle():
 
     assert decision.category == "temporary_goal"
     assert decision.ttl_seconds == 30 * 86400
+
+
+def test_completed_temporary_goal_is_a_lifecycle_command():
+    decision = classify_user_message(
+        "我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。"
+    )
+
+    assert decision.category == "temporary_goal_completed"
+    assert decision.should_cold_store is False
+    assert decision.reason == "temporary_goal_completion_request"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "我完成這題之後要怎麼檢查答案？",
+        "我偏好完成例題後再理解抽象概念。",
+    ],
+)
+def test_ordinary_questions_and_preferences_are_not_goal_completions(message):
+    assert classify_user_message(message).category != "temporary_goal_completed"

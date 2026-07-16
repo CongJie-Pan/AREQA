@@ -27,6 +27,37 @@ from services.memory_semantic_analyzer import (
 logger = logging.getLogger(__name__)
 
 
+_CONCRETE_EXAMPLE_MARKERS = ("具體例子", "具體案例", "實際例子", "實際情境")
+_ABSTRACT_CONCEPT_MARKERS = ("抽象概念", "抽象原理")
+_NEGATIVE_PREFERENCE_MARKERS = ("不喜歡", "討厭", "不希望", "不想要")
+_CONCRETE_ABSTRACT_PREFERENCE_KEY = (
+    "learning_preference:abstract_concepts:concrete_examples"
+)
+_GOAL_MATCH_NOISE = (
+    "請在這段期間協助我安排練習",
+    "請不要再提醒我",
+    "不要再提醒我",
+    "不用再提醒我",
+    "停止提醒",
+    "我已經",
+    "我想",
+    "這個月",
+    "這週",
+    "下週",
+    "目前",
+    "已經",
+    "完成了",
+    "完成",
+    "複習目標",
+    "學習目標",
+    "讀書計畫",
+    "目標",
+    "複習",
+    "請",
+    "的",
+)
+
+
 class MemoryEligibilityState(str, Enum):
     """Describe the server-owned outcome of one evidence ingestion."""
 
@@ -138,6 +169,9 @@ class MemoryIngestionService:
                 evidence,
             )
 
+        if decision.category == "temporary_goal_completed":
+            return await self._complete_temporary_goal(evidence)
+
         if decision.should_prompt:
             await self.store.update_working_memory(
                 evidence.user_id,
@@ -188,10 +222,41 @@ class MemoryIngestionService:
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(days=ttl_days)).isoformat() if ttl_days else None
         normalized_text = self._normalize_candidate(evidence.raw_message_text)
-        canonical_key = normalized_text
+        canonical_key = self._canonicalize_passive_preference(
+            evidence.raw_message_text,
+            category,
+        ) or normalized_text
         candidate_hash_override = ""
 
         active_candidates = await self._active_candidates(evidence.user_id, category, now)
+        if canonical_key != normalized_text:
+            canonical_matches = [
+                item for item in active_candidates
+                if str(item.get("canonical_key") or "") == canonical_key
+            ]
+            if len(canonical_matches) == 1:
+                matched = canonical_matches[0]
+                candidate_hash_override = str(matched["hash"])
+                normalized_text = str(matched.get("normalized_text") or canonical_key)
+                logger.info(
+                    "memory.canonical_match_accepted user_id=%s message_id=%s candidate_id=%s category=%s reason=canonical_key_match",
+                    evidence.user_id,
+                    evidence.message_id,
+                    candidate_hash_override,
+                    category,
+                )
+            elif len(canonical_matches) > 1:
+                logger.warning(
+                    "memory.canonical_match_rejected user_id=%s message_id=%s category=%s reason=ambiguous_candidates",
+                    evidence.user_id,
+                    evidence.message_id,
+                    category,
+                )
+            else:
+                # The canonical key becomes the deterministic identity for the
+                # first allowlisted candidate; later equivalent phrasing joins it.
+                normalized_text = canonical_key
+
         if self.semantic_enabled and self.semantic_analyzer is not None:
             analysis = await self.semantic_analyzer.analyze(
                 SemanticAnalysisRequest(
@@ -220,7 +285,8 @@ class MemoryIngestionService:
                 self.semantic_shadow_mode,
             )
             if (
-                not self.semantic_shadow_mode
+                not candidate_hash_override
+                and not self.semantic_shadow_mode
                 and analysis.relation == "match_existing"
                 and analysis.confidence >= settings.memory_semantic_match_min_confidence
             ):
@@ -296,6 +362,84 @@ class MemoryIngestionService:
             promoted=promoted,
         )
 
+    async def _complete_temporary_goal(
+        self,
+        evidence: UserEvidence,
+    ) -> MemoryIngestionResult:
+        """Retire one safely matched temporary goal without profile mutation.
+
+        Completion text is lifecycle evidence, not a learner profile fact. An
+        ambiguous match is rejected so one command cannot silently retire an
+        unrelated goal.
+        """
+
+        now = datetime.now(timezone.utc)
+        candidates = await self._active_candidates(evidence.user_id, "temporary_goal", now)
+        completion_topic = self._normalize_goal_topic(evidence.raw_message_text)
+        matches = [
+            candidate for candidate in candidates
+            if self._goal_topics_match(
+                completion_topic,
+                self._normalize_goal_topic(
+                    str(candidate.get("source_text") or candidate.get("text") or "")
+                ),
+            )
+        ]
+
+        if len(matches) != 1:
+            reason = (
+                "temporary_goal_completion_not_found"
+                if not matches
+                else "temporary_goal_completion_ambiguous"
+            )
+            await self.store.complete_temporary_goal_candidate(
+                evidence.user_id,
+                "",
+                self._evidence_record(evidence),
+                reason=reason,
+            )
+            return self._result(
+                MemoryEligibilityState.WORKING_CONTEXT_ONLY,
+                reason,
+                "temporary_goal_completed",
+                evidence,
+            )
+
+        candidate = await self.store.complete_temporary_goal_candidate(
+            evidence.user_id,
+            str(matches[0]["hash"]),
+            self._evidence_record(evidence),
+            reason="explicit_user_completion",
+        )
+        if candidate is None:
+            return self._result(
+                MemoryEligibilityState.REJECTED,
+                "temporary_goal_completion_blocked",
+                "temporary_goal_completed",
+                evidence,
+            )
+
+        working_memory = await self.store.get_working_memory(evidence.user_id)
+        focus_matches_goal = self._goal_topics_match(
+            self._normalize_goal_topic(str(working_memory.get("current_focus") or "")),
+            self._normalize_goal_topic(
+                str(candidate.get("source_text") or candidate.get("text") or "")
+            ),
+        )
+        if focus_matches_goal:
+            # Reminder suppression retires the matched goal, never unrelated focus.
+            await self.store.update_working_memory(
+                evidence.user_id,
+                {"current_focus": "", "current_focus_conversation_id": ""},
+            )
+        return self._result(
+            MemoryEligibilityState.WORKING_CONTEXT_ONLY,
+            "temporary_goal_completed",
+            "temporary_goal_completed",
+            evidence,
+            candidate_id=str(candidate["hash"]),
+        )
+
     async def _active_candidates(
         self,
         user_id: str,
@@ -329,6 +473,53 @@ class MemoryIngestionService:
         """Create a conservative key; semantic equivalence requires the analyzer."""
 
         return re.sub(r"[\s，,。！？!?：:；;]", "", text).lower()
+
+    @staticmethod
+    def _canonicalize_passive_preference(text: str, category: str) -> str:
+        """Canonicalize one narrow, low-risk positive learning preference."""
+
+        if category != "passive_preference":
+            return ""
+        normalized = MemoryIngestionService._normalize_candidate(text)
+        if any(marker in normalized for marker in _NEGATIVE_PREFERENCE_MARKERS):
+            return ""
+        if not any(marker in normalized for marker in _CONCRETE_EXAMPLE_MARKERS):
+            return ""
+        if not any(marker in normalized for marker in _ABSTRACT_CONCEPT_MARKERS):
+            return ""
+        if not any(marker in normalized for marker in ("學", "理解", "偏好", "希望")):
+            return ""
+        return _CONCRETE_ABSTRACT_PREFERENCE_KEY
+
+    @staticmethod
+    def _normalize_goal_topic(text: str) -> str:
+        """Remove lifecycle boilerplate while preserving a goal's topic."""
+
+        normalized = MemoryIngestionService._normalize_candidate(text)
+        for marker in _GOAL_MATCH_NOISE:
+            normalized = normalized.replace(marker, "")
+        return normalized
+
+    @staticmethod
+    def _goal_topics_match(completion_topic: str, candidate_topic: str) -> bool:
+        """Match only non-empty deterministic topics, allowing added qualifiers."""
+
+        if len(completion_topic) < 2 or len(candidate_topic) < 2:
+            return False
+        return completion_topic in candidate_topic or candidate_topic in completion_topic
+
+    @staticmethod
+    def _evidence_record(evidence: UserEvidence) -> dict[str, str]:
+        """Serialize immutable user evidence for candidate lifecycle updates."""
+
+        return {
+            "message_id": evidence.message_id,
+            "conversation_id": evidence.conversation_id,
+            "timestamp": evidence.timestamp,
+            "source_role": evidence.source_role,
+            "message": evidence.raw_message_text,
+            "quote": evidence.raw_message_text,
+        }
 
     @staticmethod
     def _validate_provenance(evidence: UserEvidence) -> str:
