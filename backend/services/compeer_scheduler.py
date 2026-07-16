@@ -10,6 +10,7 @@ avatar summons.
 
 import asyncio
 import json
+import logging
 import os
 import random
 import hashlib
@@ -18,6 +19,29 @@ from pathlib import Path
 import time as _time
 
 from redis_client import get_redis
+from services.hot_memory_service import remove_typed_entry
+
+
+logger = logging.getLogger(__name__)
+
+
+async def _clear_persisted_trigger(store, user_id: str, trigger_key: str) -> None:
+    """Clear a trigger only after its delayed-mail intent is durable."""
+
+    async with _flag_lock:
+        hot_memory = await store.get_hot_memory(user_id)
+        if not hot_memory.get(trigger_key):
+            return
+        remove_typed_entry(hot_memory, trigger_key)
+        await store.redis.set(
+            f"areqa:hot_memory:{user_id}",
+            json.dumps(hot_memory, ensure_ascii=False),
+        )
+    logger.info(
+        "compeer.trigger_cleared user_id=%s trigger=%s reason=durable_task_created",
+        user_id,
+        trigger_key,
+    )
 
 async def is_in_cooldown(user_id: str) -> bool:
     """
@@ -76,7 +100,11 @@ async def evaluate_importance_gate(event: dict) -> bool:
     """
     importance = float(event.get("importance", 0.5))
     passed = random.random() < importance
-    print(f"[EDF-LOG] evaluate_importance_gate: event='{event.get('Content')}', importance={importance}, passed={passed}")
+    logger.info(
+        "compeer.importance_evaluated importance=%s passed=%s",
+        importance,
+        passed,
+    )
     return passed
 
 async def tick_proactive_schedule(user_id: str):
@@ -125,7 +153,10 @@ async def tick_proactive_schedule(user_id: str):
                     store = get_global_store()
                     if store:
                         content = event.get("Content", "學習狀況還好嗎？")
-                        print(f"[EDF-LOG] tick_proactive_schedule: firing alert for {user_id} with content: {content}")
+                        logger.info(
+                            "compeer.legacy_schedule_due user_id=%s",
+                            user_id,
+                        )
                         learner_state = await store.get_learner_state(user_id) if store else "default"
                         edf_policy = await store.get_current_strategy(user_id) if store else "default"
                         from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
@@ -137,7 +168,7 @@ async def tick_proactive_schedule(user_id: str):
                         )
                         cold_ctx = await query_cold_memory_for_context(user_id, content) if allow_topic_specific else ""
                         hot_mem = await store.get_hot_memory(user_id)
-                        await schedule_areqa_care_letter(
+                        task_id = await schedule_areqa_care_letter(
                             user_id=user_id,
                             learner_state=learner_state,
                             edf_policy=edf_policy,
@@ -147,6 +178,12 @@ async def tick_proactive_schedule(user_id: str):
                             last_compeer_message=hot_mem.get("last_compeer_message", ""),
                             allow_topic_specific=allow_topic_specific,
                         )
+                        if not task_id:
+                            logger.warning(
+                                "compeer.legacy_schedule_not_durable user_id=%s reason=missing_task_id",
+                                user_id,
+                            )
+                            continue
                         await set_cooldown(user_id, state=learner_state)
                 
             event["fired"] = True
@@ -428,9 +465,49 @@ async def schedule_areqa_care_letter(
         delay_seconds=settings.compeer_delivery_delay_seconds,
     )
 
-    print(f"[ComPeer] Scheduled task {task_id} for user {user_id}; deliver_at={datetime.now().timestamp() + settings.compeer_delivery_delay_seconds}")
+    logger.info(
+        "compeer.scheduled task_id=%s user_id=%s kind=compeer_care delay_seconds=%s",
+        task_id,
+        user_id,
+        settings.compeer_delivery_delay_seconds,
+    )
 
     return task_id
+
+
+async def _schedule_areqa_care_letter_safely(**kwargs):
+    """Contain one user's scheduling failure so other users still progress."""
+
+    user_id = kwargs.get("user_id", "")
+    try:
+        return await schedule_areqa_care_letter(**kwargs)
+    except Exception as exc:
+        logger.exception(
+            "compeer.schedule_failed user_id=%s reason=%s trigger_retained=true",
+            user_id,
+            type(exc).__name__,
+        )
+        from memory_store import get_global_store
+
+        store = get_global_store()
+        if store:
+            await store.update_hot_memory_async(
+                user_id,
+                "compeer_retry_reason",
+                type(exc).__name__,
+                kind="operational_state",
+                prompt_safe=False,
+                cold_export_eligible=False,
+            )
+            await store.update_hot_memory_async(
+                user_id,
+                "compeer_next_attempt_at",
+                _time.time() + 30,
+                kind="operational_state",
+                prompt_safe=False,
+                cold_export_eligible=False,
+            )
+        return None
 
 async def get_last_interaction_time(user_id: str) -> float:
     """
@@ -457,12 +534,150 @@ async def set_last_interaction_time(user_id: str, timestamp: float):
     redis = get_redis()
     await redis.set(f"areqa:last_interaction:{user_id}", str(timestamp))
 
+
+async def _process_proactive_user(store, user_id: str) -> None:
+    """Process one user without owning the scheduler-cycle failure boundary."""
+
+    trigger_proactive = False
+    avatar_summon = False
+    learner_state = "STARTING"
+    active_avatar = None
+
+    async with _flag_lock:
+        hot_mem = await store.get_hot_memory(user_id)
+        if hot_mem.get("avatar_summon_pending"):
+            avatar_summon = True
+            active_avatar = hot_mem.get("active_avatar")
+        elif hot_mem.get("trigger_proactive") and not await is_in_cooldown(user_id):
+            trigger_proactive = True
+            learner_state = hot_mem.get("current_learner_state", "STARTING")
+            active_avatar = hot_mem.get("active_avatar")
+
+    if avatar_summon and active_avatar:
+        from gum_integration import (
+            generate_epistolary_letter_via_llm,
+            get_hot_memory_snapshot,
+            query_cold_memory_for_context,
+        )
+        from mailbox_store import get_mailbox_store
+        import uuid
+
+        snapshot = await get_hot_memory_snapshot(user_id)
+        event_summary = f"與 {active_avatar} 進行深度歷史哲學探討"
+        cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
+        subject, letter_content = await generate_epistolary_letter_via_llm(
+            user_id, active_avatar, snapshot, cold_ctx
+        )
+        mail_data = {
+            "id": str(uuid.uuid4()),
+            "kind": "avatar_letter",
+            "user_id": user_id,
+            "active_avatar": active_avatar,
+            "sender": active_avatar,
+            "recipient": "User",
+            "subject": subject,
+            "content": letter_content,
+            "timestamp": _time.time(),
+            "read": False,
+            "task_id": _stable_task_id(
+                "letter", user_id, "legacy-avatar-summon", active_avatar
+            ),
+        }
+        task_id = await get_mailbox_store().schedule_delayed_mail(
+            user_id=user_id,
+            mail_data=mail_data,
+            delay_seconds=300,
+        )
+        if task_id:
+            await _clear_persisted_trigger(store, user_id, "avatar_summon_pending")
+    elif trigger_proactive:
+        from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
+
+        snapshot = await get_hot_memory_snapshot(user_id)
+        event_summary = f"EDF 系統偵測到使用者遭遇學習瓶頸 (狀態: {learner_state})"
+        allow_topic_specific = should_allow_topic_specific_care(snapshot, event_summary)
+        cold_ctx = (
+            await query_cold_memory_for_context(user_id, event_summary)
+            if allow_topic_specific
+            else ""
+        )
+        edf_policy = await store.get_current_strategy(user_id)
+        hot_mem = await store.get_hot_memory(user_id)
+        task_id = await _schedule_areqa_care_letter_safely(
+            user_id=user_id,
+            learner_state=learner_state,
+            edf_policy=edf_policy,
+            event_summary=event_summary,
+            hot_memory_snapshot=snapshot,
+            cold_memory_context=cold_ctx,
+            last_compeer_message=hot_mem.get("last_compeer_message", ""),
+            allow_topic_specific=allow_topic_specific,
+        )
+        if task_id:
+            await _clear_persisted_trigger(store, user_id, "trigger_proactive")
+            await set_cooldown(user_id, state=learner_state)
+
+    await tick_proactive_schedule(user_id)
+
+    last_time = await get_last_interaction_time(user_id)
+    if await is_in_cooldown(user_id) or (_time.time() - last_time <= 60):
+        return
+
+    hot_mem = await store.get_hot_memory(user_id)
+    scroll_keys = [
+        key
+        for key, value in hot_mem.items()
+        if key.startswith("obs_") and "Type: scroll" in str(value)
+    ]
+    if len(scroll_keys) < 6:
+        return
+
+    for key in scroll_keys:
+        remove_typed_entry(hot_mem, key)
+    await store.redis.set(
+        f"areqa:hot_memory:{user_id}",
+        json.dumps(hot_mem, ensure_ascii=False),
+    )
+
+    from gum_integration import (
+        detect_proactive_event_via_llm,
+        get_hot_memory_snapshot,
+        query_cold_memory_for_context,
+    )
+
+    snapshot = await get_hot_memory_snapshot(user_id)
+    event = await detect_proactive_event_via_llm(user_id, snapshot)
+    if not event["has_event"] or event["importance"] < 0.7:
+        return
+
+    event_summary = event["event_summary"]
+    allow_topic_specific = should_allow_topic_specific_care(snapshot, event_summary)
+    cold_ctx = (
+        await query_cold_memory_for_context(user_id, event_summary)
+        if allow_topic_specific
+        else ""
+    )
+    learner_state = await store.get_learner_state(user_id)
+    task_id = await _schedule_areqa_care_letter_safely(
+        user_id=user_id,
+        learner_state=learner_state,
+        edf_policy=await store.get_current_strategy(user_id),
+        event_summary=event_summary,
+        hot_memory_snapshot=snapshot,
+        cold_memory_context=cold_ctx,
+        last_compeer_message=hot_mem.get("last_compeer_message", ""),
+        allow_topic_specific=allow_topic_specific,
+    )
+    if task_id:
+        await set_cooldown(user_id, state=learner_state)
+
+
 async def proactive_scheduler_loop():
     """
     Background worker loop that periodically checks for triggers to send proactive 
     care letters. It evaluates user inactivity, avatar summons, and learning bottlenecks.
     """
-    print("[EDF-LOG] Starting proactive_scheduler_loop background task.")
+    logger.info("compeer.scheduler_started")
     while True:
         try:
             async with _send_lock:
@@ -479,123 +694,18 @@ async def proactive_scheduler_loop():
                             all_users.add(k_str.split("areqa:hot_memory:")[1])
                         if cursor == 0:
                             break
-                    for user_id in all_users:
-                        trigger_proactive = False
-                        avatar_summon = False
-                        learner_state = "STARTING"
-                        active_avatar = None
-                        
-                        async with _flag_lock:
-                            hot_mem = await store.get_hot_memory(user_id)
-                            if hot_mem.get("avatar_summon_pending"):
-                                avatar_summon = True
-                                active_avatar = hot_mem.get("active_avatar")
-                                del hot_mem["avatar_summon_pending"]
-                                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-                            elif hot_mem.get("trigger_proactive") and not await is_in_cooldown(user_id):
-                                trigger_proactive = True
-                                learner_state = hot_mem.get("current_learner_state", "STARTING")
-                                active_avatar = hot_mem.get("active_avatar")
-                                del hot_mem["trigger_proactive"]
-                                await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-
-                        if avatar_summon and active_avatar:
-                            from gum_integration import generate_epistolary_letter_via_llm, get_hot_memory_snapshot, query_cold_memory_for_context
-                            snapshot = await get_hot_memory_snapshot(user_id)
-                            event_summary = f"與 {active_avatar} 進行深度歷史哲學探討"
-                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
-                            
-                            subject, letter_content = await generate_epistolary_letter_via_llm(user_id, active_avatar, snapshot, cold_ctx)
-                            
-                            from mailbox_store import get_mailbox_store
-                            mb_store = get_mailbox_store()
-                            import uuid
-                            mail_data = {
-                                "id": str(uuid.uuid4()),
-                                "kind": "avatar_letter",
-                                "user_id": user_id,
-                                "active_avatar": active_avatar,
-                                "sender": active_avatar,
-                                "recipient": "User",
-                                "subject": subject,
-                                "content": letter_content,
-                                "timestamp": _time.time(),
-                                "read": False,
-                                "task_id": _stable_task_id("letter", user_id, "legacy-avatar-summon", active_avatar),
-                            }
-                            await mb_store.schedule_delayed_mail(user_id=user_id, mail_data=mail_data, delay_seconds=300)
-                            
-                        elif trigger_proactive:
-                            from gum_integration import (
-                                get_hot_memory_snapshot,
-                                query_cold_memory_for_context
+                    for user_id in sorted(all_users):
+                        try:
+                            await _process_proactive_user(store, user_id)
+                        except Exception as exc:
+                            logger.warning(
+                                "compeer.user_iteration_failed user_id=%s reason=%s",
+                                user_id,
+                                type(exc).__name__,
+                                exc_info=True,
                             )
-                            snapshot = await get_hot_memory_snapshot(user_id)
-                            event_summary = f"EDF 系統偵測到使用者遭遇學習瓶頸 (狀態: {learner_state})"
-                            allow_topic_specific = should_allow_topic_specific_care(snapshot, event_summary)
-                            cold_ctx = await query_cold_memory_for_context(user_id, event_summary) if allow_topic_specific else ""
-                            edf_policy = await store.get_current_strategy(user_id)
-
-                            hot_mem = await store.get_hot_memory(user_id)
-                            await schedule_areqa_care_letter(
-                                user_id=user_id,
-                                learner_state=learner_state,
-                                edf_policy=edf_policy,
-                                event_summary=event_summary,
-                                hot_memory_snapshot=snapshot,
-                                cold_memory_context=cold_ctx,
-                                last_compeer_message=hot_mem.get("last_compeer_message", ""),
-                                allow_topic_specific=allow_topic_specific,
-                            )
-                            await set_cooldown(user_id, state=learner_state)
-
-                        await tick_proactive_schedule(user_id)
-                        
-                        from time import time
-                        last_time = await get_last_interaction_time(user_id)
-                        
-                        if not await is_in_cooldown(user_id) and (time() - last_time > 60):
-                            if store:
-                                hot_mem = await store.get_hot_memory(user_id)
-                                scroll_count = 0
-                                for k, v in hot_mem.items():
-                                    if k.startswith("obs_") and "Type: scroll" in str(v):
-                                        scroll_count += 1
-                                
-                                if scroll_count >= 6:
-                                    keys_to_delete = [k for k, v in hot_mem.items() if k.startswith("obs_") and "Type: scroll" in str(v)]
-                                    for k in keys_to_delete:
-                                        del hot_mem[k]
-                                    await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-
-                                    from gum_integration import (
-                                        detect_proactive_event_via_llm,
-                                        get_hot_memory_snapshot,
-                                        query_cold_memory_for_context
-                                    )
-                                    snapshot = await get_hot_memory_snapshot(user_id)
-                                    event = await detect_proactive_event_via_llm(user_id, snapshot)
-
-                                    if event["has_event"] and event["importance"] >= 0.7:
-                                        event_summary = event["event_summary"]
-                                        allow_topic_specific = should_allow_topic_specific_care(snapshot, event_summary)
-                                        cold_ctx = await query_cold_memory_for_context(user_id, event_summary) if allow_topic_specific else ""
-                                        learner_state = await store.get_learner_state(user_id)
-                                        edf_policy = await store.get_current_strategy(user_id)
-
-                                        await schedule_areqa_care_letter(
-                                            user_id=user_id,
-                                            learner_state=learner_state,
-                                            edf_policy=edf_policy,
-                                            event_summary=event_summary,
-                                            hot_memory_snapshot=snapshot,
-                                            cold_memory_context=cold_ctx,
-                                            last_compeer_message=hot_mem.get("last_compeer_message", ""),
-                                            allow_topic_specific=allow_topic_specific,
-                                        )
-                                        await set_cooldown(user_id, state=learner_state)
 
             await asyncio.sleep(10)
-        except Exception as e:
-            print(f"[EDF-LOG] proactive_scheduler_loop error: {e}")
+        except Exception:
+            logger.exception("compeer.scheduler_iteration_failed")
             await asyncio.sleep(10)

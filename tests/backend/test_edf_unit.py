@@ -237,6 +237,30 @@ async def test_tick_schedule_fires_within_window(mock_schedule_path, tmp_store):
     assert call_kwargs["user_id"] == "default_user"
     assert call_kwargs["event_summary"] == "Test Alert"
 
+
+@pytest.mark.asyncio
+async def test_tick_schedule_retains_event_until_mail_is_durable(
+    mock_schedule_path, tmp_store
+):
+    now = datetime.now()
+    mock_schedule_path.write_text(json.dumps([{
+        "Timing": now.strftime("%H:%M"),
+        "Content": "Test Alert",
+        "importance": 1.0,
+        "fired": False,
+    }]))
+
+    with patch(
+        "services.compeer_scheduler.schedule_areqa_care_letter",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        await compeer.tick_proactive_schedule("default_user")
+
+    events = json.loads(mock_schedule_path.read_text())
+    assert events[0]["fired"] is False
+
+
 @pytest.mark.asyncio
 async def test_tick_schedule_skips_outside_window(mock_schedule_path, tmp_store):
     store, fake_r = tmp_store

@@ -5,6 +5,36 @@ from unittest.mock import AsyncMock, patch, MagicMock, ANY
 
 import backend.services.compeer_scheduler as compeer
 
+
+@pytest.mark.asyncio
+async def test_scheduler_isolates_each_user_failure(caplog):
+    store = MagicMock()
+    store.redis = AsyncMock()
+    store.redis.scan = AsyncMock(
+        return_value=(0, ["areqa:hot_memory:user-a", "areqa:hot_memory:user-b"])
+    )
+    processed = []
+
+    async def process_user(_store, user_id):
+        processed.append(user_id)
+        if user_id == "user-a":
+            raise ConnectionError("redis unavailable")
+
+    with patch("memory_store.get_global_store", return_value=store), patch.object(
+        compeer,
+        "_process_proactive_user",
+        side_effect=process_user,
+    ), patch.object(
+        compeer.asyncio,
+        "sleep",
+        new=AsyncMock(side_effect=RuntimeError("stop loop")),
+    ):
+        with pytest.raises(RuntimeError, match="stop loop"):
+            await compeer.proactive_scheduler_loop()
+
+    assert processed == ["user-a", "user-b"]
+    assert "compeer.user_iteration_failed user_id=user-a" in caplog.text
+
 @pytest.mark.asyncio
 async def test_is_in_cooldown_false_when_no_entry():
     with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
@@ -58,7 +88,7 @@ def mock_store():
     async def mock_get_hot_memory(user_id):
         return hot_mem_data
         
-    async def mock_update_hot_memory(user_id, key, value):
+    async def mock_update_hot_memory(user_id, key, value, **policy):
         hot_mem_data[key] = value
         
     store.get_hot_memory = AsyncMock(side_effect=mock_get_hot_memory)
@@ -88,6 +118,32 @@ def test_topic_specific_care_can_trust_scheduled_event_summary():
         "使用者正在整理 README.md 的架構描述",
         trust_event_summary=True,
     ) is True
+
+
+@pytest.mark.asyncio
+async def test_safe_schedule_retains_trigger_on_durable_failure(mock_store):
+    await mock_store.update_hot_memory("default_user", "trigger_proactive", True)
+
+    with patch.object(
+        compeer,
+        "schedule_areqa_care_letter",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("database unavailable"),
+    ):
+        task_id = await compeer._schedule_areqa_care_letter_safely(
+            user_id="default_user",
+            learner_state="STARTING",
+            edf_policy="NORMAL",
+            event_summary="event",
+            hot_memory_snapshot="",
+            cold_memory_context="",
+        )
+
+    hot_memory = await mock_store.get_hot_memory("default_user")
+    assert task_id is None
+    assert hot_memory["trigger_proactive"] is True
+    assert hot_memory["compeer_retry_reason"] == "RuntimeError"
+    assert hot_memory["compeer_next_attempt_at"] > time.time()
 
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)

@@ -12,6 +12,9 @@ class FakeCursor:
     def scalar(self):
         return self.value
 
+    def fetchone(self):
+        return self.value if isinstance(self.value, tuple) else None
+
 
 class FakeSession:
     def __init__(self, value):
@@ -83,11 +86,11 @@ async def test_lock_release_is_owner_checked():
 
 
 @pytest.mark.asyncio
-async def test_failed_task_records_retryable_or_terminal_transition():
+async def test_failed_task_records_retryable_or_terminal_transition(caplog):
     store = MailboxStore()
     store._has_db = AsyncMock(return_value=True)
     store._get_engine = lambda: object()
-    session = FakeSession(None)
+    session = FakeSession(("retryable_failed", 1))
 
     with patch("backend.mailbox_store.AsyncSession", return_value=session):
         await store.mark_delayed_task_failed(
@@ -97,3 +100,22 @@ async def test_failed_task_records_retryable_or_terminal_transition():
     assert "retryable_failed" in session.statement
     assert "terminal_failed" in session.statement
     assert session.parameters["error_code"] == "ProviderTimeout"
+    assert "mailbox.retryable_failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_terminal_failure_emits_distinct_event(caplog):
+    store = MailboxStore()
+    store._has_db = AsyncMock(return_value=True)
+    store._get_engine = lambda: object()
+
+    with patch(
+        "backend.mailbox_store.AsyncSession",
+        return_value=FakeSession(("terminal_failed", 3)),
+    ):
+        status = await store.mark_delayed_task_failed(
+            "task-2", "worker-1", "ProviderRejected", max_attempts=3
+        )
+
+    assert status == "terminal_failed"
+    assert "mailbox.terminal_failed" in caplog.text

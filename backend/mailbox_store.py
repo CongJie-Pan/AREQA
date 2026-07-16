@@ -290,7 +290,13 @@ class MailboxStore:
             if not await self._has_db():
                 raise
             logger.warning("[MailboxStore] Failed to update Redis delayed queue for %s: %s", user_id, exc)
-        logger.info(f"[MailboxStore] Added delayed mail task {mail_data['task_id']} for user {user_id} with delay {delay_seconds}s")
+        logger.info(
+            "mailbox.scheduled task_id=%s user_id=%s kind=%s delay_seconds=%s",
+            mail_data["task_id"],
+            user_id,
+            mail_data.get("kind", "delayed_mail"),
+            delay_seconds,
+        )
         return mail_data["task_id"]
 
     async def _fetch_mails_from_db(self, user_id: str) -> List[Dict[str, Any]]:
@@ -368,12 +374,18 @@ class MailboxStore:
         worker_id: str,
         error_code: str,
         max_attempts: int = 3,
-    ) -> None:
+    ) -> str:
         if not await self._has_db():
-            return
+            logger.warning(
+                "mailbox.retryable_failed task_id=%s worker_id=%s reason=%s persistence=redis_only",
+                task_id,
+                worker_id,
+                error_code[:120],
+            )
+            return "retryable_failed"
         async with AsyncSession(self._get_engine()) as session:
             async with session.begin():
-                await session.execute(
+                cursor = await session.execute(
                     text(
                         """
                         UPDATE mailbox_delayed_tasks
@@ -387,6 +399,7 @@ class MailboxStore:
                             lease_expires_at = NULL,
                             updated_at = now()
                         WHERE task_id = :task_id AND lease_owner = :worker_id
+                        RETURNING status, attempt_count
                         """
                     ),
                     {
@@ -396,6 +409,22 @@ class MailboxStore:
                         "max_attempts": max_attempts,
                     },
                 )
+        row = cursor.fetchone() if hasattr(cursor, "fetchone") else None
+        status = str(row[0]) if row else "retryable_failed"
+        event_name = (
+            "mailbox.terminal_failed"
+            if status == "terminal_failed"
+            else "mailbox.retryable_failed"
+        )
+        logger.warning(
+            "%s task_id=%s worker_id=%s reason=%s attempt_count=%s",
+            event_name,
+            task_id,
+            worker_id,
+            error_code[:120],
+            row[1] if row and len(row) > 1 else "unknown",
+        )
+        return status
 
     async def restore_delayed_queue_from_db(self) -> int:
         if not await self._has_db():
@@ -428,7 +457,7 @@ class MailboxStore:
             )
             restored += 1
         if restored:
-            logger.info("[MailboxStore] Restored %s delayed mail task(s) from database", restored)
+            logger.info("mailbox.reconciled restored=%s", restored)
         return restored
 
 _global_mailbox_store = None
@@ -485,7 +514,7 @@ async def _deliver_claimed_mail(store: MailboxStore, task: Dict[str, Any], task_
     )
     await store.mark_delayed_task_delivered(task_id, delivered_mail_id)
     logger.info(
-        "[Mailbox Worker] Delivered task %s as mail %s for user %s",
+        "mailbox.delivered task_id=%s mail_id=%s user_id=%s",
         task_id,
         delivered_mail_id,
         user_id,
@@ -503,72 +532,106 @@ def get_mailbox_store() -> MailboxStore:
         init_mailbox_store()
     return _global_mailbox_store
 
+
+async def run_delayed_mail_iteration(
+    redis: Any,
+    store: MailboxStore,
+    worker_id: str,
+    *,
+    now: float | None = None,
+) -> int:
+    """Claim and deliver all currently due tasks once.
+
+    The bounded iteration is independently testable so recovery and exactly-once
+    behavior do not depend on controlling an infinite worker loop.
+    """
+
+    delivered = 0
+    cursor = 0
+    due_before = time.time() if now is None else now
+    while True:
+        cursor, keys = await redis.scan(
+            cursor=cursor,
+            match="areqa:delayed_mail:*",
+            count=100,
+        )
+        for key in keys:
+            tasks = await redis.zrangebyscore(key, 0, due_before)
+            for task_json in tasks:
+                task = json.loads(task_json)
+                user_id = task.get("user_id", "default_user")
+                task_id = task.get("task_id") or task.get("mail_id") or task_json
+                lock_key = f"areqa:delayed_mail_lock:{task_id}"
+                if not await redis.set(lock_key, worker_id, nx=True, ex=600):
+                    continue
+                if not await store.claim_delayed_task(task_id, worker_id, lease_seconds=600):
+                    await _release_owned_lock(redis, lock_key, worker_id)
+                    continue
+                logger.info(
+                    "mailbox.claimed task_id=%s user_id=%s worker_id=%s",
+                    task_id,
+                    user_id,
+                    worker_id,
+                )
+                try:
+                    _, active_avatar, user_id = await _deliver_claimed_mail(store, task, task_id)
+                    if task.get("kind") == "compeer_care":
+                        from memory_store import get_global_store
+
+                        memory_store = get_global_store()
+                        if memory_store:
+                            await memory_store.update_hot_memory_async(
+                                user_id,
+                                "last_compeer_message",
+                                task.get("content", ""),
+                            )
+                except Exception as exc:
+                    error_code = type(exc).__name__
+                    logger.exception(
+                        "mailbox.delivery_failed task_id=%s user_id=%s reason=%s",
+                        task_id,
+                        user_id,
+                        error_code,
+                    )
+                    await store.mark_delayed_task_failed(task_id, worker_id, error_code)
+                    await _release_owned_lock(redis, lock_key, worker_id)
+                    continue
+
+                from services.connection_manager import ws_manager
+
+                try:
+                    await ws_manager.broadcast_mail_alert(sender=active_avatar, user_id=user_id)
+                except Exception as exc:
+                    logger.warning(
+                        "mailbox.notification_failed task_id=%s user_id=%s reason=%s",
+                        task_id,
+                        user_id,
+                        type(exc).__name__,
+                    )
+                await redis.zrem(key, task_json)
+                await _release_owned_lock(redis, lock_key, worker_id)
+                delivered += 1
+        if cursor == 0:
+            break
+    return delivered
+
+
 # Background Worker for Delayed Mails
 async def delayed_mail_worker():
     redis = get_redis()
     store = get_mailbox_store()
     await store.restore_delayed_queue_from_db()
     worker_id = f"mailbox-{uuid.uuid4().hex}"
-    logger.info("[Mailbox Worker] Started delayed mail worker id=%s", worker_id)
+    logger.info("mailbox.worker_started worker_id=%s", worker_id)
+    last_reconciled_at = time.monotonic()
     while True:
         try:
-            now = time.time()
-            cursor = 0
-            while True:
-                cursor, keys = await redis.scan(cursor=cursor, match="areqa:delayed_mail:*", count=100)
-                for key in keys:
-                    tasks = await redis.zrangebyscore(key, 0, now)
-                    for task_json in tasks:
-                        task = json.loads(task_json)
-                        user_id = task.get("user_id", "default_user")
-                        task_id = task.get("task_id") or task.get("mail_id") or task_json
-                        lock_key = f"areqa:delayed_mail_lock:{task_id}"
-                        if not await redis.set(lock_key, worker_id, nx=True, ex=600):
-                            continue
-                        if not await store.claim_delayed_task(task_id, worker_id, lease_seconds=600):
-                            await _release_owned_lock(redis, lock_key, worker_id)
-                            continue
-                        logger.info("[Mailbox Worker] Claimed task %s for user %s", task_id, user_id)
-
-                        try:
-                            _, active_avatar, user_id = await _deliver_claimed_mail(store, task, task_id)
-                            if task.get("kind") == "compeer_care":
-                                from memory_store import get_global_store
-                                memory_store = get_global_store()
-                                await memory_store.update_hot_memory_async(
-                                    user_id,
-                                    "last_compeer_message",
-                                    task.get("content", ""),
-                                )
-                        except Exception as exc:
-                            error_code = type(exc).__name__
-                            logger.exception("[Mailbox Worker] Task %s failed", task_id)
-                            await store.mark_delayed_task_failed(
-                                task_id, worker_id, error_code
-                            )
-                            await _release_owned_lock(redis, lock_key, worker_id)
-                            continue
-                        
-                        # Broadcast alert (we have to import ws_manager)
-                        from services.connection_manager import ws_manager
-                        try:
-                            await ws_manager.broadcast_mail_alert(
-                                sender=active_avatar, user_id=user_id
-                            )
-                        except Exception as exc:
-                            logger.warning(
-                                "[Mailbox Worker] Delivery persisted but alert failed for %s: %s",
-                                task_id,
-                                exc,
-                            )
-                        
-                        await redis.zrem(key, task_json)
-                        await _release_owned_lock(redis, lock_key, worker_id)
-                        
-                if cursor == 0:
-                    break
+            if time.monotonic() - last_reconciled_at >= 30:
+                await store.restore_delayed_queue_from_db()
+                last_reconciled_at = time.monotonic()
+            await run_delayed_mail_iteration(redis, store, worker_id)
                         
             await asyncio.sleep(1)
-        except Exception as e:
-            print(f"[Mailbox Worker] Error: {e}")
+        except Exception:
+            logger.exception("mailbox.worker_iteration_failed worker_id=%s", worker_id)
             await asyncio.sleep(5)
