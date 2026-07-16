@@ -1,4 +1,5 @@
 import json
+import logging
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from backend.memory_store import MemoryStore
@@ -111,3 +112,51 @@ async def test_get_learner_state(memory_store, mock_redis):
     await memory_store.update_hot_memory("user2", "current_learner_state", "CONFUSED")
     state2 = await memory_store.get_learner_state("user2")
     assert state2 == "CONFUSED"
+
+
+@pytest.mark.asyncio
+async def test_unknown_semantic_candidate_override_fails_closed(memory_store, mock_redis):
+    candidate = await memory_store.append_cold_candidate(
+        "user-1",
+        "我偏好用具體例子理解抽象概念。",
+        category="passive_preference",
+        source="verified_user_evidence",
+        reason="test",
+        candidate_hash_override="unknown-candidate",
+        evidence={
+            "message_id": "message-1",
+            "conversation_id": "conversation-1",
+            "timestamp": "2026-07-16T00:00:00+00:00",
+            "source_role": "user",
+            "message": "我偏好用具體例子理解抽象概念。",
+            "quote": "我偏好用具體例子理解抽象概念。",
+        },
+    )
+
+    assert candidate is None
+    assert "areqa:cold_candidates:user-1" not in mock_redis._store
+
+
+@pytest.mark.asyncio
+async def test_candidate_creation_and_correction_emit_structured_events(
+    memory_store, caplog
+):
+    caplog.set_level(logging.INFO)
+    await memory_store.append_cold_candidate(
+        "user-1",
+        "我偏好先看例子。",
+        category="passive_preference",
+        source="verified_user_evidence",
+        reason="test",
+    )
+    await memory_store.perform_memory_operation(
+        "user-1",
+        "user",
+        "remove",
+        "",
+        old_text="outdated",
+        source="explicit_user_request",
+    )
+
+    assert "memory.candidate_created" in caplog.text
+    assert "memory.correction_applied" in caplog.text

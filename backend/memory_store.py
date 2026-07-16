@@ -6,6 +6,11 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 
 from redis_client import get_redis
+from services.hot_memory_service import (
+    HotMemoryKind,
+    attach_typed_entry,
+    build_hot_memory_entry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +104,18 @@ class MemoryStore:
         if not isinstance(points, list):
             points = []
 
+        is_user_evidence = source in {"user", "user_message", "verified_user_evidence"}
         entry = {
             "text": text,
             "conversation_id": conversation_id,
             "source": source,
+            "kind": (
+                HotMemoryKind.USER_EVIDENCE.value
+                if is_user_evidence
+                else HotMemoryKind.MODEL_INFERENCE.value
+            ),
+            "prompt_safe": is_user_evidence,
+            "cold_export_eligible": False,
             "confidence": float(confidence),
             "decay": float(decay),
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -187,7 +200,16 @@ class MemoryStore:
         source_text: str = "",
         conversation_id: str = "",
         requires_confirmation: bool = False,
+        expires_at: str | None = None,
+        canonical_key: str = "",
+        candidate_hash_override: str = "",
     ) -> Dict[str, Any] | None:
+        """Append immutable user evidence to one expiring cold candidate.
+
+        Semantic matching may select an existing candidate hash, but this
+        storage boundary still verifies ownership and de-duplicates message and
+        conversation identifiers before evidence can count toward promotion.
+        """
         text = (text or "").strip()
         if not text:
             return None
@@ -195,7 +217,9 @@ class MemoryStore:
         from redis.exceptions import WatchError
         key = f"areqa:cold_candidates:{user_id}"
         normalized_text = (normalized_text or text).strip()
-        candidate_hash = hashlib.sha256(f"{category}|{normalized_text}".encode("utf-8")).hexdigest()[:24]
+        candidate_hash = candidate_hash_override or hashlib.sha256(
+            f"{category}|{normalized_text}".encode("utf-8")
+        ).hexdigest()[:24]
         now = datetime.now(timezone.utc).isoformat()
 
         async with self.redis.pipeline(transaction=True) as pipe:
@@ -208,13 +232,26 @@ class MemoryStore:
 
                     for candidate in candidates:
                         if candidate.get("hash") == candidate_hash:
-                            if candidate.get("status") == "rejected":
+                            if candidate.get("user_id") != user_id or candidate.get("category") != category:
+                                logger.warning(
+                                    "memory.promotion_blocked user_id=%s candidate_id=%s reason=ownership_or_category",
+                                    user_id,
+                                    candidate_hash,
+                                )
+                                return None
+                            if candidate.get("status") != "candidate":
                                 return candidate
                             candidate["last_seen_at"] = now
-                            if conversation_id and conversation_id not in candidate.setdefault("conversation_ids", []):
-                                candidate["conversation_ids"].append(conversation_id)
-                            if evidence and evidence not in candidate.setdefault("evidence", []):
+                            existing_message_ids = {
+                                str(item.get("message_id", ""))
+                                for item in candidate.setdefault("evidence", [])
+                                if isinstance(item, dict)
+                            }
+                            message_id = str((evidence or {}).get("message_id", ""))
+                            if evidence and message_id and message_id not in existing_message_ids:
                                 candidate["evidence"].append(evidence)
+                                if conversation_id and conversation_id not in candidate.setdefault("conversation_ids", []):
+                                    candidate["conversation_ids"].append(conversation_id)
                             candidate["evidence"] = candidate.get("evidence", [])[-8:]
                             candidate["conversation_ids"] = candidate.get("conversation_ids", [])[-8:]
                             candidate["seen_count"] = len(candidate.get("evidence", [])) or int(candidate.get("seen_count", 1)) + 1
@@ -223,12 +260,23 @@ class MemoryStore:
                             await pipe.execute()
                             return candidate
 
+                    # A semantic override may only select an already validated
+                    # candidate. It must never become an alternate create API.
+                    if candidate_hash_override:
+                        logger.warning(
+                            "memory.candidate_append_blocked user_id=%s candidate_id=%s reason=unknown_override",
+                            user_id,
+                            candidate_hash_override,
+                        )
+                        return None
+
                     candidate = {
                         "user_id": user_id,
                         "hash": candidate_hash,
                         "text": text,
                         "source_text": (source_text or (evidence or {}).get("message", "") or text).strip(),
                         "normalized_text": normalized_text,
+                        "canonical_key": canonical_key or normalized_text,
                         "category": category,
                         "source": source,
                         "reason": reason,
@@ -240,6 +288,7 @@ class MemoryStore:
                         "conversation_ids": [conversation_id] if conversation_id else [],
                         "evidence": [evidence] if evidence else [],
                         "requires_confirmation": bool(requires_confirmation),
+                        "expires_at": expires_at,
                         "status": "candidate",
                     }
                     candidates.append(candidate)
@@ -247,34 +296,84 @@ class MemoryStore:
                     pipe.multi()
                     pipe.set(key, json.dumps(candidates[-100:], ensure_ascii=False))
                     await pipe.execute()
+                    logger.info(
+                        "memory.candidate_created user_id=%s candidate_id=%s category=%s expires=%s",
+                        user_id,
+                        candidate_hash,
+                        category,
+                        bool(expires_at),
+                    )
                     return candidate
                 except WatchError:
                     continue
 
     async def promote_cold_candidate(self, user_id: str, candidate_hash: str, *, source: str) -> Dict[str, Any] | None:
+        """Promote only provenance-complete evidence that satisfies category policy."""
+
         candidates = await self.get_cold_candidates(user_id)
         candidate = next((item for item in candidates if item.get("hash") == candidate_hash), None)
-        if not candidate or candidate.get("status") == "rejected":
+        if (
+            not candidate
+            or candidate.get("user_id") != user_id
+            or candidate.get("status") in {"rejected", "promoted", "expired", "completed"}
+        ):
             return None
         if candidate.get("requires_confirmation") and source != "user_confirmation":
             return None
 
-        from memory_gate import evaluate_memory_retention_policy
+        expires_at = str(candidate.get("expires_at") or "")
+        if expires_at:
+            try:
+                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=timezone.utc)
+                if expiry <= datetime.now(timezone.utc):
+                    candidate["status"] = "expired"
+                    await self.update_cold_candidate(candidate)
+                    logger.info(
+                        "memory.candidate_expired user_id=%s candidate_id=%s",
+                        user_id,
+                        candidate_hash,
+                    )
+                    return None
+            except ValueError:
+                return None
 
-        policy = evaluate_memory_retention_policy(candidate)
-        if policy.action == "deny":
-            candidate["policy_decision"] = policy.action
-            candidate["policy_reason"] = policy.reason
-            await self.redis.set(
-                f"areqa:cold_candidates:{user_id}",
-                json.dumps(candidates[-100:], ensure_ascii=False),
+        category = str(candidate.get("category", ""))
+        evidence = [item for item in candidate.get("evidence", []) if isinstance(item, dict)]
+        complete_evidence = [
+            item for item in evidence
+            if all(str(item.get(field, "")).strip() for field in (
+                "message_id", "conversation_id", "timestamp", "source_role", "message", "quote"
+            )) and item.get("source_role") == "user"
+        ]
+        if source != "user_confirmation" and len(complete_evidence) != len(evidence):
+            logger.warning(
+                "memory.promotion_blocked user_id=%s candidate_id=%s reason=incomplete_provenance",
+                user_id,
+                candidate_hash,
             )
             return None
-        if policy.action == "candidate_only" and source != "user_confirmation":
+
+        if category == "temporary_goal":
+            return None
+        if category == "passive_preference" and source != "user_confirmation":
+            from config import settings
+
+            conversation_ids = {item["conversation_id"] for item in complete_evidence}
+            message_ids = {item["message_id"] for item in complete_evidence}
+            threshold = max(2, settings.memory_candidate_auto_promote_conversations)
+            if len(conversation_ids) < threshold or len(message_ids) < threshold:
+                logger.warning(
+                    "memory.promotion_blocked user_id=%s candidate_id=%s reason=insufficient_independent_evidence",
+                    user_id,
+                    candidate_hash,
+                )
+                return None
+        elif category not in {"passive_preference", "stable_fact_candidate"} and source != "user_confirmation":
             return None
 
         evidence_quote = ""
-        evidence = candidate.get("evidence") or []
         if isinstance(evidence, list) and evidence:
             evidence_quote = str(evidence[-1].get("quote", "")).strip()
         profile_text = evidence_quote or str(candidate.get("source_text", "")).strip()
@@ -289,14 +388,18 @@ class MemoryStore:
             source="verified_user_evidence",
         )
         candidate["status"] = "promoted"
-        candidate["policy_decision"] = policy.action
-        candidate["policy_reason"] = policy.reason
-        if policy.expires_in_seconds:
-            candidate["expires_in_seconds"] = policy.expires_in_seconds
+        candidate["policy_decision"] = "promoted"
+        candidate["policy_reason"] = "verified_user_evidence"
         candidate["promoted_at"] = datetime.now(timezone.utc).isoformat()
         await self.redis.set(
             f"areqa:cold_candidates:{user_id}",
             json.dumps(candidates[-100:], ensure_ascii=False),
+        )
+        logger.info(
+            "memory.profile_promoted user_id=%s candidate_id=%s category=%s",
+            user_id,
+            candidate_hash,
+            category,
         )
         return candidate
 
@@ -319,7 +422,26 @@ class MemoryStore:
         await self.redis.set(f"areqa:user_profile:{user_id}", json.dumps(profile, ensure_ascii=False))
         logger.info(f"[MemoryStore] Updated profile for user {user_id}, key: {key}")
 
-    async def update_hot_memory(self, user_id: str, key: str, value: Any):
+    async def update_hot_memory(
+        self,
+        user_id: str,
+        key: str,
+        value: Any,
+        *,
+        kind: HotMemoryKind | str | None = None,
+        source_role: str = "system",
+        expires_at: str | None = None,
+        confidence: float = 1.0,
+        prompt_safe: bool | None = None,
+        cold_export_eligible: bool = False,
+        provenance: Dict[str, Any] | None = None,
+    ):
+        """Write a hot value with policy metadata while preserving raw-key reads.
+
+        The metadata envelope is authoritative for prompt and export decisions.
+        Legacy callers remain compatible, but their writes default to
+        non-exportable working or operational state.
+        """
         from redis.exceptions import WatchError
         mem_key = f"areqa:hot_memory:{user_id}"
         async with self.redis.pipeline(transaction=True) as pipe:
@@ -329,13 +451,23 @@ class MemoryStore:
                     data = await pipe.get(mem_key)
                     hot_memory = json.loads(data) if data else {}
                     
-                    hot_memory[key] = value
+                    entry = build_hot_memory_entry(
+                        key,
+                        kind=kind,
+                        source_role=source_role,
+                        expires_at=expires_at,
+                        confidence=confidence,
+                        prompt_safe=prompt_safe,
+                        cold_export_eligible=cold_export_eligible,
+                        provenance=provenance,
+                    )
+                    attach_typed_entry(hot_memory, key, value, entry)
                     
                     obs_keys = [k for k in hot_memory.keys() if k.startswith("obs_")]
                     if len(obs_keys) > 50:
                         obs_keys.sort()
                         for k in obs_keys[:-50]:
-                            del hot_memory[k]
+                            remove_typed_entry(hot_memory, k)
                             
                     serialized = json.dumps(hot_memory, ensure_ascii=False)
                     if len(serialized) > self.budget_limit:
@@ -349,9 +481,10 @@ class MemoryStore:
                     continue
         logger.info(f"[MemoryStore] Updated hot memory for user {user_id}, key: {key}")
 
-    async def update_hot_memory_async(self, user_id: str, key: str, value: Any):
-        # same as above
-        await self.update_hot_memory(user_id, key, value)
+    async def update_hot_memory_async(self, user_id: str, key: str, value: Any, **policy):
+        """Async compatibility alias for :meth:`update_hot_memory`."""
+
+        await self.update_hot_memory(user_id, key, value, **policy)
 
     async def update_learner_state_snapshot(
         self,
@@ -372,13 +505,27 @@ class MemoryStore:
                     data = await pipe.get(mem_key)
                     hot_memory = json.loads(data) if data else {}
                     version = int(hot_memory.get("learner_state_version", 0)) + 1
-                    hot_memory.update({
-                        "current_learner_state": learner_state,
-                        "current_strategy": strategy,
-                        "trigger_proactive": bool(trigger_proactive),
-                        "learner_state_version": version,
-                        "learner_state_evaluated_at": datetime.now(timezone.utc).isoformat(),
-                    })
+                    evaluated_at = datetime.now(timezone.utc).isoformat()
+                    typed_values = {
+                        "current_learner_state": (learner_state, HotMemoryKind.MODEL_INFERENCE),
+                        "current_strategy": (strategy, HotMemoryKind.MODEL_INFERENCE),
+                        "trigger_proactive": (bool(trigger_proactive), HotMemoryKind.OPERATIONAL_STATE),
+                        "learner_state_version": (version, HotMemoryKind.OPERATIONAL_STATE),
+                        "learner_state_evaluated_at": (evaluated_at, HotMemoryKind.OPERATIONAL_STATE),
+                    }
+                    for key, (value, kind) in typed_values.items():
+                        attach_typed_entry(
+                            hot_memory,
+                            key,
+                            value,
+                            build_hot_memory_entry(
+                                key,
+                                kind=kind,
+                                source_role="model" if kind is HotMemoryKind.MODEL_INFERENCE else "system",
+                                prompt_safe=False,
+                                cold_export_eligible=False,
+                            ),
+                        )
                     pipe.multi()
                     pipe.set(mem_key, json.dumps(hot_memory, ensure_ascii=False))
                     await pipe.execute()
@@ -430,6 +577,14 @@ class MemoryStore:
         else:
             await self.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(data, ensure_ascii=False))
             await self.update_working_memory(user_id, {"explicit_memories": entries})
+        if action in {"replace", "remove"}:
+            logger.info(
+                "memory.correction_applied user_id=%s target=%s action=%s source=%s",
+                user_id,
+                target,
+                action,
+                source,
+            )
 
     async def set_pending_alert(self, user_id: str, content: str):
         logger.info(f"[EDF-LOG] set_pending_alert: setting alert for user '{user_id}': '{content}'")

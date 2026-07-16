@@ -227,6 +227,23 @@ class TestGetHotMemorySnapshot:
         assert "User Action" not in result
 
     @pytest.mark.asyncio
+    async def test_snapshot_excludes_typed_model_and_operational_state(self, memory_store):
+        await memory_store.update_learner_state_snapshot(
+            "default_user",
+            learner_state="MASTERY",
+            strategy="PUSH_LIMIT",
+            trigger_proactive=True,
+        )
+
+        import backend.gum_integration as gi
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot("default_user")
+
+        assert "MASTERY" not in result
+        assert "PUSH_LIMIT" not in result
+        assert "trigger_proactive" not in result
+
+    @pytest.mark.asyncio
     async def test_cold_candidates_are_deduplicated_by_hash(self, memory_store):
         """Reflection-first cold candidates should keep source metadata and dedupe repeats."""
         first = await memory_store.append_cold_candidate(
