@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Experiment Report Agent"
+  short_description: "Write evidence-based experiment reports in English"
+  default_prompt: "Use $write-experiment-report-agent to write an evidence-based English experiment report from the supplied artifacts."
