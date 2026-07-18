@@ -363,19 +363,19 @@ The tree is cumulative from Phases 1 and 2.
 
 #### Work List
 
-1. [ ] Modify `tests/backend/test_compeer_integration.py` or create proposed `tests/backend/test_compeer_behavior_signal_flow.py`.
-   - [ ] Add a test that posts six scroll actions through `/api/v1/log_action`.
-   - [ ] Assert the actions are persisted through `append_behavior_signal()` or the fake Redis behavior-signal key.
-   - [ ] Invoke `_process_proactive_user()` or the scheduler loop with deterministic inactivity and cooldown state.
-   - [ ] Assert one ComPeer task or mailbox record is created.
-   - [ ] Run the scheduler again and assert no duplicate task or mailbox record is created from the same consumed signals.
-2. [ ] Modify `tests/frontend/ProactiveManager.test.tsx` only if needed.
-   - [ ] Assert scroll actions are throttled and sent to `/api/v1/log_action` with safe telemetry context.
-   - [ ] Avoid asserting backend scheduling behavior in frontend tests.
-3. [ ] Modify `docs/worklog/202607/2026_07_18_experiment/test_script_2026_07_18_check.md` if timing contract changes.
-   - [ ] Clarify whether `T0` means the time of last user interaction, scheduler eligibility, or task scheduling.
-   - [ ] If production delay remains 120 seconds, update Act 09 to wait for inactivity threshold plus delivery delay, or instruct the tester to use a test environment with a shortened delay.
-   - [ ] Keep Act 09's user-facing pass condition: exactly one mailbox message, no direct chat interruption, unread UI synchronized, and safe content boundaries.
+1. [x] Modify `tests/backend/test_compeer_integration.py` or create proposed `tests/backend/test_compeer_behavior_signal_flow.py`.
+   - [x] Add a test that posts six scroll actions through `/api/v1/log_action`.
+   - [x] Assert the actions are persisted through `append_behavior_signal()` or the fake Redis behavior-signal key.
+   - [x] Invoke `_process_proactive_user()` or the scheduler loop with deterministic inactivity and cooldown state.
+   - [x] Assert one ComPeer task or mailbox record is created.
+   - [x] Run the scheduler again and assert no duplicate task or mailbox record is created from the same consumed signals.
+2. [x] Modify `tests/frontend/ProactiveManager.test.tsx` only if needed.
+   - [x] Assert scroll actions are throttled and sent to `/api/v1/log_action` with safe telemetry context. Existing coverage already verified this, so no frontend hunk was needed.
+   - [x] Avoid asserting backend scheduling behavior in frontend tests. Existing coverage already keeps this boundary.
+3. [x] Modify `docs/worklog/202607/2026_07_18_experiment/test_script_2026_07_18_check.md` if timing contract changes.
+   - [x] Clarify whether `T0` means the time of last user interaction, scheduler eligibility, or task scheduling.
+   - [x] If production delay remains 120 seconds, update Act 09 to wait for inactivity threshold plus delivery delay, or instruct the tester to use a test environment with a shortened delay.
+   - [x] Keep Act 09's user-facing pass condition: exactly one mailbox message, no direct chat interruption, unread UI synchronized, and safe content boundaries.
 
 #### Test Plan
 

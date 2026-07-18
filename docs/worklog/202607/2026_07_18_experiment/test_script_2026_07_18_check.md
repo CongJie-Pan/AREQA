@@ -128,3 +128,5 @@
   - 在第九幕要求的 `T0 + 150` 秒窗口內，沒有一封新信送達信箱；後端也顯示 ComPeer preflight 因沒有 trigger 而未排程，因此違反「恰好出現一封新信」的成功標準。
 - 觀察事項 :
   - 因為沒有新信，無法驗證信件內容是否避開焦慮、能力推論、單次 SpaceX 問題或候選記憶等限制；本幕主要失敗點是未送達。
+  - 後續重測時需明確定義 Act 09 的時間窗：若使用行為訊號 fallback path，`T0` 應至少拆成「最後一次使用者互動時間」、「scheduler 判定 eligible / 建立 task 的時間」與「信箱 delivery delay 到期時間」。目前 production `compeer_delivery_delay_seconds=120`，因此若 scheduler 約在 inactive `T0 + 120` 秒才建立 task，人工檢查信箱應等待到「task 建立時間 + 120 秒」附近，而不是只用「最後互動時間 + 150 秒」判定。
+  - 人工 pass condition 維持使用者可見標準：信箱中恰好出現一封新的 ComPeer/AREQA 信件、聊天視窗不直接插入打擾訊息、未讀狀態同步，且信件內容不得把焦慮、能力推論、單次 SpaceX 問題或候選記憶寫成已確認長期事實。
