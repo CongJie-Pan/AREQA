@@ -8,6 +8,16 @@ All five implementation phases and their automated gates are complete. Checked w
 
 Automated final gate: backend `385 passed, 3 skipped`; frontend `127 passed`; strict ESLint and TypeScript checks passed; Next.js production build passed. Phase commits are `41c0171`, `acaf7a1` / `3605365` / `a206739`, `893fc77` / `8d8aad6`, `326bcb6`, and `08895af` / `a9258e9`.
 
+### Audit Follow-up Status (2026-07-18)
+
+An implementation audit of `41c0171^..cc77ca4` found that several checked items were only partially implemented or were verified from pre-existing code rather than completed in that audited range. The follow-up commits below close those audit gaps and supersede the earlier over-broad status interpretation:
+
+- `3c75855 fix(search): fail closed on malformed citation sources` completed web-source URL validation, malformed-source backend coverage, and structured citation panel tests.
+- `5154ff0 fix(safety): broaden learner-state response guard` expanded deterministic response-boundary coverage for unsupported emotional-state, ability, mastery, understanding, and progress claims while preserving user-attributed acknowledgements.
+- `438bbda test(memory-mailbox): close observability audit gaps` added temporary-goal lifecycle metadata, prompt-focus clearing logs, and mailbox/reconciliation safety assertions.
+
+Focused follow-up gates passed: `tests/backend/test_perplexity_node.py` (`4 passed`); frontend citation/export tests (`6 passed`); response-boundary/context/stream endpoint tests (`21 passed, 1 skipped`); memory/mailbox focused tests (`41 passed`); `git diff --check` passed for each follow-up phase. These automated gates still do not claim that the manual `test_script_new.md` journey has been rerun.
+
 ### Phase 1: Restore Explicit Profile-Memory Editing
 
 #### Problem
@@ -365,6 +375,8 @@ docs/worklog/202607/2026_07_17_experiment/
 
 #### Work List
 
+Audit follow-up note: Items 1, 4, and 5 were not fully satisfied by the original `41c0171^..cc77ca4` range. They are completed by follow-up commit `3c75855`. Items 2 and 3 were primarily verified as pre-existing stream/UI behavior and are now covered by the added citation component tests.
+
 1. [x] Modify `backend/services/orchestration_service.py`.
    - [x] Validate the source records built by `OrchestrationService._node_perplexity_search()` before emitting `event: sources`; omit malformed records rather than emitting a source without a URL.
    - [x] Preserve source ordering so citation index `n` has a deterministic mapping to source record `n`.
@@ -470,6 +482,8 @@ docs/worklog/202607/2026_07_17_experiment/
 ```
 
 #### Work List
+
+Audit follow-up note: The mailbox-store delivery/reconciliation behavior listed here existed before the audited `41c0171^..cc77ca4` range. Follow-up commit `438bbda` adds the missing safe lifecycle metadata and deterministic assertions without changing the mailbox delivery contract.
 
 1. [x] Modify `backend/services/compeer_scheduler.py`.
    - [x] Add the proposed `ProactivePreflight` type and `evaluate_proactive_preflight()` helper for `_process_proactive_user()`.
