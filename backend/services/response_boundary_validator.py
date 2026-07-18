@@ -17,21 +17,34 @@ class ResponseBoundaryResult:
 class ResponseBoundaryValidator:
     """Detect unsupported claims that turn a disclosure into a user attribute.
 
-    This deterministic guard deliberately has a small allowlist of high-risk
-    patterns. It never stores user or model text; callers log only ``reason``.
+    This deterministic guard blocks assistant-authored learner-state judgments
+    while allowing user-attributed acknowledgements such as "you mentioned...".
+    It never stores user or model text; callers log only safe reason codes.
     """
 
-    _PATTERNS = (
-        ("unsupported_understanding", re.compile(r"你已經(?:理解|掌握|熟悉)")),
-        ("unsupported_ability", re.compile(r"(?:你的|你)\S{0,8}(?:基礎較弱|能力不足)")),
+    _ATTRIBUTION_PREFIXES = ("你提到", "你說", "你表示", "你剛剛說", "你提及")
+    _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+        ("unsupported_understanding", re.compile(r"你(?:已經|現在)?(?:理解|懂得)")),
+        ("unsupported_mastery", re.compile(r"你(?:已經|現在)?(?:掌握|熟悉|精通)")),
+        ("unsupported_progress", re.compile(r"你(?:已經|正在|有|明顯)?(?:進步|會應用|能應用|學會)")),
+        ("unsupported_ability", re.compile(r"(?:你的\S{0,10}(?:基礎較弱|能力不足)|你對\S{0,10}(?:不太熟|不擅長)|你(?:能力不足|不擅長))")),
+        ("unsupported_emotional_state", re.compile(r"你(?:現在|目前|可能|應該|看起來|其實)?(?:很|非常|有點)?(?:焦慮|緊張|害怕|沮喪)")),
     )
 
     def validate(self, text: str) -> ResponseBoundaryResult:
         """Return a safe reason code when a high-risk assertion is present."""
+        value = text or ""
         for reason, pattern in self._PATTERNS:
-            if pattern.search(text or ""):
+            match = pattern.search(value)
+            if match and not self._is_user_attributed(value, match.start()):
                 return ResponseBoundaryResult(allowed=False, reason=reason)
         return ResponseBoundaryResult(allowed=True)
+
+    def _is_user_attributed(self, text: str, match_start: int) -> bool:
+        """Return whether a matched claim is explicitly attributed to the user."""
+
+        prefix = text[max(0, match_start - 8):match_start]
+        return any(marker in prefix for marker in self._ATTRIBUTION_PREFIXES)
 
 
 class StreamingResponseBoundaryFilter:
