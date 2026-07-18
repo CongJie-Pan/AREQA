@@ -298,11 +298,13 @@ async def startup_event():
     from memory_store import init_global_store
     from mailbox_store import init_mailbox_store
     from job_store import init_agent_job_store
+    from redis_client import log_redis_open_status
     
     # Init store
     store = init_global_store(budget_limit=1000000)
     # await store.clear_all_pending_alerts("default_user") # Skipped for multi-tenant
     print("Memory Store initialized successfully.")
+    await log_redis_open_status()
     
     init_mailbox_store()
     print("Mailbox Store initialized successfully.")
