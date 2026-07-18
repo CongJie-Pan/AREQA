@@ -16,7 +16,7 @@ import random
 import hashlib
 import uuid
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time as _time
 
@@ -46,6 +46,9 @@ class ProactivePreflight:
     recent_scroll_count: int = 0
     legacy_scroll_count: int = 0
     delivery_delay_seconds: int | None = None
+    cooldown_remaining_seconds: int | None = None
+    daily_sent_count: int | None = None
+    daily_send_limit: int | None = None
     importance_passed: bool | None = None
     existing_pending_task: bool = False
     scheduling_succeeded: bool | None = None
@@ -71,6 +74,9 @@ def evaluate_proactive_preflight(
     recent_scroll_count: int = 0,
     legacy_scroll_count: int = 0,
     delivery_delay_seconds: int | None = None,
+    cooldown_remaining_seconds: int | None = None,
+    daily_sent_count: int | None = None,
+    daily_send_limit: int | None = None,
     importance_passed: bool | None = None,
     existing_pending_task: bool = False,
 ) -> ProactivePreflight:
@@ -88,6 +94,13 @@ def evaluate_proactive_preflight(
         reason = "existing_pending_task"
     elif avatar_pending:
         reason = None
+    elif (
+        daily_send_limit is not None
+        and daily_send_limit >= 0
+        and daily_sent_count is not None
+        and daily_sent_count >= daily_send_limit
+    ):
+        reason = "daily_limit_reached"
     elif cooldown_active:
         reason = "cooldown_active"
     elif trigger_present:
@@ -112,6 +125,9 @@ def evaluate_proactive_preflight(
         recent_scroll_count=recent_scroll_count,
         legacy_scroll_count=legacy_scroll_count,
         delivery_delay_seconds=delivery_delay_seconds,
+        cooldown_remaining_seconds=cooldown_remaining_seconds,
+        daily_sent_count=daily_sent_count,
+        daily_send_limit=daily_send_limit,
         importance_passed=importance_passed,
         existing_pending_task=existing_pending_task,
         block_reason=reason,
@@ -148,6 +164,7 @@ def _log_proactive_preflight(
         "inactive_seconds=%s scroll_count=%s importance_passed=%s "
         "signal_source=%s behavior_signal_count=%s recent_scroll_count=%s "
         "legacy_scroll_count=%s delivery_delay_seconds=%s "
+        "cooldown_remaining_seconds=%s daily_sent_count=%s daily_send_limit=%s "
         "existing_pending_task=%s scheduling_succeeded=%s task_id=%s",
         user_id,
         iteration_id,
@@ -170,6 +187,21 @@ def _log_proactive_preflight(
             if preflight.delivery_delay_seconds is not None
             else "not_evaluated"
         ),
+        (
+            preflight.cooldown_remaining_seconds
+            if preflight.cooldown_remaining_seconds is not None
+            else "not_evaluated"
+        ),
+        (
+            preflight.daily_sent_count
+            if preflight.daily_sent_count is not None
+            else "not_evaluated"
+        ),
+        (
+            preflight.daily_send_limit
+            if preflight.daily_send_limit is not None
+            else "not_evaluated"
+        ),
         preflight.existing_pending_task,
         preflight.scheduling_succeeded,
         preflight.task_id or "none",
@@ -177,10 +209,26 @@ def _log_proactive_preflight(
     if preflight.block_reason:
         logger.log(
             log_level,
-            "compeer.preflight_blocked user_id=%s iteration_id=%s reason=%s",
+            "compeer.preflight_blocked user_id=%s iteration_id=%s reason=%s "
+            "cooldown_remaining_seconds=%s daily_sent_count=%s daily_send_limit=%s",
             user_id,
             iteration_id,
             preflight.block_reason,
+            (
+                preflight.cooldown_remaining_seconds
+                if preflight.cooldown_remaining_seconds is not None
+                else "not_evaluated"
+            ),
+            (
+                preflight.daily_sent_count
+                if preflight.daily_sent_count is not None
+                else "not_evaluated"
+            ),
+            (
+                preflight.daily_send_limit
+                if preflight.daily_send_limit is not None
+                else "not_evaluated"
+            ),
         )
 
 
@@ -215,6 +263,82 @@ async def is_in_cooldown(user_id: str) -> bool:
     redis = get_redis()
     return await redis.exists(f"areqa:cooldown:{user_id}") > 0
 
+
+async def get_cooldown_remaining_seconds(user_id: str) -> int | None:
+    """Return the Redis TTL for the ComPeer cooldown key, if it is active."""
+
+    redis = get_redis()
+    ttl = await redis.ttl(f"areqa:cooldown:{user_id}")
+    return ttl if ttl is not None and ttl >= 0 else None
+
+
+async def clear_cooldown(user_id: str) -> bool:
+    """Clear a user's ComPeer cooldown key for development/manual testing."""
+
+    redis = get_redis()
+    deleted = await redis.delete(f"areqa:cooldown:{user_id}")
+    logger.info(
+        "compeer.cooldown_cleared user_id=%s deleted=%s",
+        user_id,
+        bool(deleted),
+    )
+    return bool(deleted)
+
+
+def _compeer_daily_counter_key(user_id: str, now: datetime | None = None) -> str:
+    """Return the UTC daily proactive-mail counter key for a user."""
+
+    current = now or datetime.now(timezone.utc)
+    return f"areqa:compeer_daily_count:{current.strftime('%Y-%m-%d')}:{user_id}"
+
+
+def _seconds_until_next_utc_day(now: datetime | None = None) -> int:
+    """Return seconds until the next UTC day boundary."""
+
+    current = now or datetime.now(timezone.utc)
+    next_day = current.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return max(1, int((next_day - current).total_seconds()))
+
+
+async def get_daily_proactive_sent_count(user_id: str) -> int:
+    """Return how many ComPeer proactive mails have been scheduled today."""
+
+    redis = get_redis()
+    value = await redis.get(_compeer_daily_counter_key(user_id))
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def has_reached_daily_proactive_limit(user_id: str) -> tuple[bool, int, int]:
+    """Return whether the user has reached the configured daily ComPeer limit."""
+
+    from config import settings
+
+    limit = settings.compeer_daily_proactive_limit
+    sent_count = await get_daily_proactive_sent_count(user_id)
+    if limit < 0:
+        return False, sent_count, limit
+    return sent_count >= limit, sent_count, limit
+
+
+async def record_daily_proactive_send(user_id: str) -> int:
+    """Increment the user's UTC daily proactive-mail counter after durable scheduling."""
+
+    redis = get_redis()
+    key = _compeer_daily_counter_key(user_id)
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, _seconds_until_next_utc_day())
+    logger.info(
+        "compeer.daily_send_recorded user_id=%s daily_sent_count=%s",
+        user_id,
+        count,
+    )
+    return int(count)
+
+
 async def set_cooldown(user_id: str, state: str = "default") -> None:
     """
     Set a communication cooldown period dynamically based on the current learner state.
@@ -233,9 +357,33 @@ async def set_cooldown(user_id: str, state: str = "default") -> None:
     }
     hours = COOLDOWN_BY_STATE.get(state, COOLDOWN_BY_STATE["default"])
     expire_seconds = int(hours * 3600)
+    from config import settings
+
+    if settings.compeer_cooldown_override_seconds is not None:
+        expire_seconds = max(0, settings.compeer_cooldown_override_seconds)
     
     redis = get_redis()
+    if expire_seconds <= 0:
+        await redis.delete(f"areqa:cooldown:{user_id}")
+        logger.info(
+            "compeer.cooldown_set user_id=%s learner_state=%s "
+            "cooldown_seconds=%s override_active=%s action=cleared",
+            user_id,
+            state,
+            expire_seconds,
+            True,
+        )
+        return
+
     await redis.setex(f"areqa:cooldown:{user_id}", expire_seconds, "1")
+    logger.info(
+        "compeer.cooldown_set user_id=%s learner_state=%s "
+        "cooldown_seconds=%s override_active=%s",
+        user_id,
+        state,
+        expire_seconds,
+        settings.compeer_cooldown_override_seconds is not None,
+    )
     
     # Also persist to hot_memory
     from memory_store import get_global_store
@@ -840,6 +988,23 @@ async def _process_proactive_user(store, user_id: str) -> None:
         await tick_proactive_schedule(user_id)
         return
     elif trigger_proactive:
+        daily_limit_reached, daily_sent_count, daily_send_limit = (
+            await has_reached_daily_proactive_limit(user_id)
+        )
+        if daily_limit_reached:
+            _log_proactive_preflight(
+                user_id,
+                iteration_id,
+                evaluate_proactive_preflight(
+                    trigger_present=True,
+                    cooldown_active=False,
+                    daily_sent_count=daily_sent_count,
+                    daily_send_limit=daily_send_limit,
+                ),
+            )
+            await tick_proactive_schedule(user_id)
+            return
+
         from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
 
         snapshot = await get_hot_memory_snapshot(user_id)
@@ -863,6 +1028,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
             allow_topic_specific=allow_topic_specific,
         )
         if task_id:
+            await record_daily_proactive_send(user_id)
             await _clear_persisted_trigger(store, user_id, "trigger_proactive")
             await set_cooldown(user_id, state=learner_state)
         preflight = evaluate_proactive_preflight(
@@ -888,6 +1054,9 @@ async def _process_proactive_user(store, user_id: str) -> None:
     last_time = await get_last_interaction_time(user_id)
     inactive_seconds = max(0.0, _time.time() - last_time)
     cooldown_active = await is_in_cooldown(user_id)
+    cooldown_remaining_seconds = (
+        await get_cooldown_remaining_seconds(user_id) if cooldown_active else None
+    )
     if cooldown_active or inactive_seconds <= 60:
         _log_proactive_preflight(
             user_id,
@@ -897,6 +1066,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 avatar_pending=avatar_summon,
                 cooldown_active=cooldown_active,
                 inactive_seconds=inactive_seconds,
+                cooldown_remaining_seconds=cooldown_remaining_seconds,
             ),
         )
         return
@@ -951,6 +1121,29 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 recent_scroll_count=len(recent_scroll_signals),
                 legacy_scroll_count=len(legacy_scroll_keys),
                 delivery_delay_seconds=settings.compeer_delivery_delay_seconds,
+            ),
+        )
+        return
+
+    daily_limit_reached, daily_sent_count, daily_send_limit = (
+        await has_reached_daily_proactive_limit(user_id)
+    )
+    if daily_limit_reached:
+        _log_proactive_preflight(
+            user_id,
+            iteration_id,
+            evaluate_proactive_preflight(
+                trigger_present=False,
+                cooldown_active=False,
+                inactive_seconds=inactive_seconds,
+                scroll_count=scroll_count,
+                signal_source=signal_source,
+                behavior_signal_count=len(behavior_signals),
+                recent_scroll_count=len(recent_scroll_signals),
+                legacy_scroll_count=len(legacy_scroll_keys),
+                delivery_delay_seconds=settings.compeer_delivery_delay_seconds,
+                daily_sent_count=daily_sent_count,
+                daily_send_limit=daily_send_limit,
             ),
         )
         return
@@ -1019,6 +1212,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
         allow_topic_specific=allow_topic_specific,
     )
     if task_id:
+        await record_daily_proactive_send(user_id)
         # Consume only after the delayed mailbox intent is durable; otherwise
         # retry needs the same behavior evidence to remain available.
         if signal_source == "behavior_signals":

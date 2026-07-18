@@ -5,8 +5,8 @@ services:
     env: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements-render.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildCommand: python -m pip install --upgrade pip && python -m pip install --upgrade -r requirements-render.txt
+    startCommand: python -m uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
@@ -29,6 +29,10 @@ services:
         sync: false
       - key: MODEL_ZPD_QUERY
         value: google/gemini-3.1-flash-lite
+      - key: COMPEER_COOLDOWN_OVERRIDE_SECONDS
+        value: "10"
+      - key: ENABLE_COMPEER_DEV_CONTROLS
+        value: "true"
 
   # 前端 Next.js 服務
   - type: web

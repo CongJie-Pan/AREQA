@@ -3,6 +3,13 @@ import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
 import { getAuthToken } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 
+export const MAILBOX_POLL_INTERVAL_MS = 30000;
+
+const refreshMailbox = async () => {
+  const { useMailboxStore } = await import('@/store/mailbox');
+  await useMailboxStore.getState().fetchMails();
+};
+
 export const ProactiveManager: React.FC = () => {
   const lastScrollTime = useRef(0);
   const lastScrollY = useRef(-1);
@@ -14,12 +21,20 @@ export const ProactiveManager: React.FC = () => {
 
   // 以 hook 取代 setInterval
   const handleNewMail = useCallback(() => {
-    import('@/store/mailbox').then(({ useMailboxStore }) => {
-      useMailboxStore.getState().fetchMails();
-    });
+    void refreshMailbox();
   }, []);
 
   useProactiveWebSocket(handleAlert, handleNewMail);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void refreshMailbox();
+    }, MAILBOX_POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {

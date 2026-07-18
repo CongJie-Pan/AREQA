@@ -63,6 +63,14 @@ class FakeRedis:
     async def delete(self, key):
         self.data.pop(key, None)
 
+    async def incr(self, key):
+        value = int(self.data.get(key) or 0) + 1
+        self.data[key] = str(value)
+        return value
+
+    async def expire(self, key, seconds):
+        return True
+
     async def exists(self, key):
         return int(key in self.data)
 
@@ -158,3 +166,4 @@ async def test_log_action_behavior_signals_drive_compeer_schedule_once(
     remaining_data = await fake_redis.get("areqa:behavior_signals:test_user")
     remaining = json.loads(remaining_data) if remaining_data else []
     assert remaining == []
+    assert await fake_redis.get(compeer._compeer_daily_counter_key("test_user")) == "1"

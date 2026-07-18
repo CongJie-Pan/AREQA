@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, patch, MagicMock, ANY
 
 import backend.services.compeer_scheduler as compeer
+from config import settings
 
 
 @pytest.mark.parametrize(
@@ -35,6 +36,10 @@ import backend.services.compeer_scheduler as compeer
         (
             {"trigger_present": True, "existing_pending_task": True},
             "existing_pending_task",
+        ),
+        (
+            {"trigger_present": True, "daily_sent_count": 2, "daily_send_limit": 2},
+            "daily_limit_reached",
         ),
     ],
 )
@@ -73,6 +78,21 @@ def test_preflight_log_contains_only_safe_metadata(caplog):
     assert "reason=insufficient_scroll_evidence" in caplog.text
     assert "event_summary" not in caplog.text
     assert "content=" not in caplog.text
+
+
+def test_preflight_log_includes_cooldown_remaining_seconds(caplog):
+    result = compeer.evaluate_proactive_preflight(
+        trigger_present=False,
+        cooldown_active=True,
+        inactive_seconds=90,
+        cooldown_remaining_seconds=1732,
+    )
+
+    with caplog.at_level("INFO"):
+        compeer._log_proactive_preflight("user-1", "iteration-1", result)
+
+    assert "cooldown_remaining_seconds=1732" in caplog.text
+    assert "reason=cooldown_active" in caplog.text
 
 
 def test_empty_absent_trigger_preflight_is_debug_noise(caplog):
@@ -143,6 +163,67 @@ async def test_is_in_cooldown_true_within_period():
         
         assert await compeer.is_in_cooldown("default_user") is True
 
+
+@pytest.mark.asyncio
+async def test_get_cooldown_remaining_seconds_returns_active_ttl():
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.ttl.return_value = 123
+        mock_get_redis.return_value = mock_redis
+
+        assert await compeer.get_cooldown_remaining_seconds("default_user") == 123
+
+
+@pytest.mark.asyncio
+async def test_get_cooldown_remaining_seconds_returns_none_when_inactive():
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.ttl.return_value = -2
+        mock_get_redis.return_value = mock_redis
+
+        assert await compeer.get_cooldown_remaining_seconds("default_user") is None
+
+
+@pytest.mark.asyncio
+async def test_clear_cooldown_deletes_key():
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.delete.return_value = 1
+        mock_get_redis.return_value = mock_redis
+
+        assert await compeer.clear_cooldown("default_user") is True
+        mock_redis.delete.assert_awaited_once_with("areqa:cooldown:default_user")
+
+
+@pytest.mark.asyncio
+async def test_daily_proactive_limit_detects_reached_limit(monkeypatch):
+    monkeypatch.setattr(settings, "compeer_daily_proactive_limit", 2)
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = "2"
+        mock_get_redis.return_value = mock_redis
+
+        reached, sent_count, limit = await compeer.has_reached_daily_proactive_limit("default_user")
+
+    assert reached is True
+    assert sent_count == 2
+    assert limit == 2
+
+
+@pytest.mark.asyncio
+async def test_record_daily_proactive_send_sets_expiry_on_first_send():
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.incr.return_value = 1
+        mock_get_redis.return_value = mock_redis
+
+        count = await compeer.record_daily_proactive_send("default_user")
+
+    assert count == 1
+    mock_redis.incr.assert_awaited_once()
+    mock_redis.expire.assert_awaited_once()
+
+
 @pytest.mark.asyncio
 async def test_set_cooldown_stores_correct_timestamp(mock_store):
     with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
@@ -153,6 +234,37 @@ async def test_set_cooldown_stores_correct_timestamp(mock_store):
         
         mock_redis.setex.assert_called_once()
         mock_store.update_hot_memory_async.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_set_cooldown_uses_configured_override_seconds(mock_store, monkeypatch):
+    monkeypatch.setattr(settings, "compeer_cooldown_override_seconds", 7)
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+
+        await compeer.set_cooldown("default_user", state="STARTING")
+
+        mock_redis.setex.assert_awaited_once_with(
+            "areqa:cooldown:default_user",
+            7,
+            "1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_set_cooldown_zero_override_clears_key(mock_store, monkeypatch):
+    monkeypatch.setattr(settings, "compeer_cooldown_override_seconds", 0)
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+
+        await compeer.set_cooldown("default_user", state="STARTING")
+
+        mock_redis.delete.assert_awaited_once_with("areqa:cooldown:default_user")
+        mock_redis.setex.assert_not_called()
+        mock_store.update_hot_memory_async.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_evaluate_importance_gate_passes_high_importance():
@@ -209,8 +321,13 @@ def mock_store():
     store.redis = AsyncMock()
     store.redis.scan = AsyncMock(return_value=(0, ["areqa:hot_memory:default_user"]))
     store.redis.set = AsyncMock()
+    store.redis.get = AsyncMock(return_value="0")
+    store.redis.incr = AsyncMock(return_value=1)
+    store.redis.expire = AsyncMock()
     
-    with patch("memory_store.get_global_store", return_value=store):
+    with patch("memory_store.get_global_store", return_value=store), patch(
+        "backend.services.compeer_scheduler.get_redis", return_value=store.redis
+    ):
         yield store
 
 def test_topic_specific_care_requires_working_memory_by_default():
@@ -427,6 +544,44 @@ async def test_behavior_signals_schedule_proactive_mail_without_legacy_obs(mock_
     assert "delivery_delay_seconds=120" in caplog.text
     assert "task_id=task-1" in caplog.text
     assert "SECRET_CONTEXT" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_behavior_signals_do_not_schedule_after_daily_limit(mock_store, caplog, monkeypatch):
+    monkeypatch.setattr(settings, "compeer_daily_proactive_limit", 2)
+    mock_store.redis.get.return_value = "2"
+    mock_store.behavior_signals.extend(_recent_scroll_signals(6))
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch.object(
+        compeer,
+        "get_last_interaction_time",
+        new=AsyncMock(return_value=time.time() - 120),
+    ), patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(return_value=False),
+    ), patch.object(
+        compeer,
+        "tick_proactive_schedule",
+        new=AsyncMock(),
+    ), patch(
+        "gum_integration.detect_proactive_event_via_llm",
+        new=AsyncMock(),
+    ) as detect_event, patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ):
+        with caplog.at_level("INFO"):
+            await compeer._process_proactive_user(mock_store, "default_user")
+
+    scheduled.assert_not_awaited()
+    detect_event.assert_not_awaited()
+    mock_store.consume_behavior_signals.assert_not_awaited()
+    assert "reason=daily_limit_reached" in caplog.text
+    assert "daily_sent_count=2" in caplog.text
+    assert "daily_send_limit=2" in caplog.text
 
 
 @pytest.mark.asyncio

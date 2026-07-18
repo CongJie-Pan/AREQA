@@ -154,6 +154,43 @@ async def test_restore_delayed_queue_from_db_logs_safe_restored_count(caplog):
     assert "mailbox.reconciled restored=1" in caplog.text
     assert "private delayed content" not in caplog.text
 
+
+@pytest.mark.asyncio
+async def test_ensure_delayed_task_schema_adds_missing_lease_columns(caplog):
+    caplog.set_level("INFO")
+    with patch("backend.mailbox_store.get_redis", return_value=FakeRedis()):
+        store = MailboxStore()
+        store._has_db = AsyncMock(return_value=True)
+        store._get_engine = lambda: object()
+
+        class FakeSession:
+            def __init__(self):
+                self.statements = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def begin(self):
+                return self
+
+            async def execute(self, statement, *args, **kwargs):
+                self.statements.append(str(statement))
+
+        session = FakeSession()
+        with patch("backend.mailbox_store.AsyncSession", return_value=session):
+            assert await store.ensure_delayed_task_schema() is True
+
+    joined = "\n".join(session.statements)
+    assert "ADD COLUMN IF NOT EXISTS attempt_count" in joined
+    assert "ADD COLUMN IF NOT EXISTS lease_owner" in joined
+    assert "ADD COLUMN IF NOT EXISTS lease_expires_at" in joined
+    assert "ADD COLUMN IF NOT EXISTS last_error_code" in joined
+    assert "idx_mailbox_delayed_tasks_claimable" in joined
+    assert "mailbox.delayed_task_schema_ready" in caplog.text
+
 @pytest.mark.asyncio
 async def test_schedule_delayed_mail_skips_duplicate_task_id_in_redis(temp_store):
     store = temp_store

@@ -335,6 +335,44 @@ class MailboxStore:
                     {"task_id": task_id, "delivered_mail_id": delivered_mail_id},
                 )
 
+    async def ensure_delayed_task_schema(self) -> bool:
+        """Ensure delayed-task lease columns exist before the worker restores.
+
+        Some deployments may have the original mailbox persistence table without
+        the later lease/retry migration. The delayed mail worker requires these
+        columns for claim, retry, and reconciliation queries. Applying the same
+        idempotent schema additions at startup prevents one missing migration
+        from killing the worker before it can deliver already scheduled mail.
+
+        Returns:
+            True when the database is unavailable or the schema check succeeds.
+        """
+        if not await self._has_db():
+            return True
+        async with AsyncSession(self._get_engine()) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        """
+                        ALTER TABLE public.mailbox_delayed_tasks
+                          ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0,
+                          ADD COLUMN IF NOT EXISTS lease_owner text,
+                          ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz,
+                          ADD COLUMN IF NOT EXISTS last_error_code text
+                        """
+                    )
+                )
+                await session.execute(
+                    text(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_mailbox_delayed_tasks_claimable
+                          ON public.mailbox_delayed_tasks(status, lease_expires_at, deliver_at)
+                        """
+                    )
+                )
+        logger.info("mailbox.delayed_task_schema_ready")
+        return True
+
     async def claim_delayed_task(self, task_id: str, worker_id: str, lease_seconds: int = 300) -> bool:
         """Atomically claim a durable task; Redis-only deployments use their lock."""
         if not await self._has_db():
@@ -547,6 +585,11 @@ async def run_delayed_mail_iteration(
     """
 
     delivered = 0
+    due_tasks = 0
+    claimed = 0
+    delivery_failed = 0
+    skipped_locked = 0
+    skipped_unclaimable = 0
     cursor = 0
     due_before = time.time() if now is None else now
     while True:
@@ -558,15 +601,24 @@ async def run_delayed_mail_iteration(
         for key in keys:
             tasks = await redis.zrangebyscore(key, 0, due_before)
             for task_json in tasks:
+                due_tasks += 1
                 task = json.loads(task_json)
                 user_id = task.get("user_id", "default_user")
                 task_id = task.get("task_id") or task.get("mail_id") or task_json
                 lock_key = f"areqa:delayed_mail_lock:{task_id}"
                 if not await redis.set(lock_key, worker_id, nx=True, ex=600):
+                    skipped_locked += 1
                     continue
                 if not await store.claim_delayed_task(task_id, worker_id, lease_seconds=600):
                     await _release_owned_lock(redis, lock_key, worker_id)
+                    # Redis is only an acceleration queue. If the durable DB row
+                    # cannot be claimed, remove this stale queue copy so the
+                    # worker does not retry an already delivered or otherwise
+                    # non-claimable task every second.
+                    await redis.zrem(key, task_json)
+                    skipped_unclaimable += 1
                     continue
+                claimed += 1
                 logger.info(
                     "mailbox.claimed task_id=%s user_id=%s worker_id=%s",
                     task_id,
@@ -595,6 +647,7 @@ async def run_delayed_mail_iteration(
                     )
                     await store.mark_delayed_task_failed(task_id, worker_id, error_code)
                     await _release_owned_lock(redis, lock_key, worker_id)
+                    delivery_failed += 1
                     continue
 
                 from services.connection_manager import ws_manager
@@ -613,6 +666,18 @@ async def run_delayed_mail_iteration(
                 delivered += 1
         if cursor == 0:
             break
+    if due_tasks:
+        logger.info(
+            "mailbox.worker_iteration worker_id=%s due=%s claimed=%s delivered=%s "
+            "failed=%s skipped_locked=%s skipped_unclaimable=%s",
+            worker_id,
+            due_tasks,
+            claimed,
+            delivered,
+            delivery_failed,
+            skipped_locked,
+            skipped_unclaimable,
+        )
     return delivered
 
 
@@ -620,8 +685,11 @@ async def run_delayed_mail_iteration(
 async def delayed_mail_worker():
     redis = get_redis()
     store = get_mailbox_store()
-    await store.restore_delayed_queue_from_db()
     worker_id = f"mailbox-{uuid.uuid4().hex}"
+    logger.info("mailbox.worker_starting worker_id=%s", worker_id)
+    await store.ensure_delayed_task_schema()
+    restored = await store.restore_delayed_queue_from_db()
+    logger.info("mailbox.worker_restored worker_id=%s restored=%s", worker_id, restored)
     logger.info("mailbox.worker_started worker_id=%s", worker_id)
     last_reconciled_at = time.monotonic()
     while True:

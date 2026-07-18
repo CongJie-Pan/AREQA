@@ -31,6 +31,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _track_background_task(name: str, task: asyncio.Task) -> asyncio.Task:
+    """Attach terminal observability to a FastAPI background task.
+
+    Startup creates several infinite workers with `asyncio.create_task()`. If a
+    worker fails before its own first log line, the task can otherwise disappear
+    without an actionable event. This callback keeps the logs sufficient to
+    distinguish "worker never started" from "worker started and later failed".
+    """
+
+    logger.info("background.worker_task_started name=%s", name)
+
+    def _log_task_done(done_task: asyncio.Task) -> None:
+        if done_task.cancelled():
+            logger.info("background.worker_task_cancelled name=%s", name)
+            return
+        exc = done_task.exception()
+        if exc is not None:
+            logger.error(
+                "background.worker_task_failed name=%s reason=%s",
+                name,
+                type(exc).__name__,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            return
+        logger.warning("background.worker_task_stopped name=%s", name)
+
+    task.add_done_callback(_log_task_done)
+    return task
+
+
 def get_query_fingerprint(query: str) -> str:
     """把查詢字串轉成固定長度的雜湊，作為快取 key"""
     return hashlib.md5(query.strip().lower().encode()).hexdigest()
@@ -326,12 +357,27 @@ async def startup_event():
     from mailbox_store import delayed_mail_worker
     from job_store import agent_job_worker
     
-    app.state.proactive_task = asyncio.create_task(proactive_scheduler_loop())
-    app.state.daily_task = asyncio.create_task(daily_scheduler_loop())
-    app.state.delayed_mail_worker = asyncio.create_task(delayed_mail_worker())
-    app.state.agent_job_worker = asyncio.create_task(agent_job_worker())
+    app.state.proactive_task = _track_background_task(
+        "proactive_scheduler_loop",
+        asyncio.create_task(proactive_scheduler_loop()),
+    )
+    app.state.daily_task = _track_background_task(
+        "daily_scheduler_loop",
+        asyncio.create_task(daily_scheduler_loop()),
+    )
+    app.state.delayed_mail_worker = _track_background_task(
+        "delayed_mail_worker",
+        asyncio.create_task(delayed_mail_worker()),
+    )
+    app.state.agent_job_worker = _track_background_task(
+        "agent_job_worker",
+        asyncio.create_task(agent_job_worker()),
+    )
     from gum_integration import run_reflection_loop
-    app.state.reflection_task = asyncio.create_task(run_reflection_loop())
+    app.state.reflection_task = _track_background_task(
+        "reflection_loop",
+        asyncio.create_task(run_reflection_loop()),
+    )
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1212,6 +1258,16 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
     
     from memory_store import get_global_store
     store = get_global_store()
+    if req.action_type == "compeer_cooldown_reset":
+        from config import settings
+
+        if not settings.enable_compeer_dev_controls:
+            raise HTTPException(status_code=403, detail="ComPeer dev controls are disabled")
+        import services.compeer_scheduler as compeer
+
+        deleted = await compeer.clear_cooldown(current_user_id)
+        return {"status": "ok", "cooldown_deleted": deleted}
+
     if store:
         from memory_gate import apply_action_gate
         asyncio.create_task(apply_action_gate(store, current_user_id, req.action_type, req.context))

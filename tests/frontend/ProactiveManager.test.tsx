@@ -1,6 +1,9 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import { ProactiveManager } from '@/components/ProactiveManager';
+import {
+  MAILBOX_POLL_INTERVAL_MS,
+  ProactiveManager,
+} from '@/components/ProactiveManager';
 import { App } from 'antd';
 import { sendMessage } from '@/services/chat';
 import { useConversationStore } from '@/store/conversation';
@@ -33,6 +36,18 @@ vi.mock('@/store/conversation', () => ({
 
 vi.mock('@/hooks/useProactiveWebSocket', () => ({
   useProactiveWebSocket: vi.fn(),
+}));
+
+const { mockFetchMails } = vi.hoisted(() => ({
+  mockFetchMails: vi.fn(),
+}));
+
+vi.mock('@/store/mailbox', () => ({
+  useMailboxStore: {
+    getState: () => ({
+      fetchMails: mockFetchMails,
+    }),
+  },
 }));
 
 describe('ProactiveManager', () => {
@@ -142,5 +157,28 @@ describe('ProactiveManager', () => {
   it('should register a mailbox refresh callback for new-mail events', async () => {
     render(<ProactiveManager />);
     expect(registeredNewMailCallback).toBeTypeOf('function');
+  });
+
+  it('polls mailbox as a fallback when websocket new-mail events are unavailable', async () => {
+    const intervalSpy = vi.spyOn(window, 'setInterval');
+    await act(async () => {
+      render(<ProactiveManager />);
+      await Promise.resolve();
+    });
+
+    expect(intervalSpy).toHaveBeenCalledWith(
+      expect.any(Function),
+      MAILBOX_POLL_INTERVAL_MS,
+    );
+    expect(mockFetchMails).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(MAILBOX_POLL_INTERVAL_MS);
+      await vi.dynamicImportSettled();
+      await Promise.resolve();
+    });
+
+    expect(mockFetchMails).toHaveBeenCalledTimes(1);
   });
 });

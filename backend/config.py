@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     memory_semantic_match_min_confidence: float = 0.85
     memory_semantic_external_processing_acknowledged: bool = False
     compeer_delivery_delay_seconds: int = 120
+    compeer_cooldown_override_seconds: int | None = None
+    compeer_daily_proactive_limit: int = 2
+    enable_compeer_dev_controls: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
