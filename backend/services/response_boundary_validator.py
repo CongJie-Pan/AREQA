@@ -32,3 +32,42 @@ class ResponseBoundaryValidator:
             if pattern.search(text or ""):
                 return ResponseBoundaryResult(allowed=False, reason=reason)
         return ResponseBoundaryResult(allowed=True)
+
+
+class StreamingResponseBoundaryFilter:
+    """Hold one sentence until unsupported learner-state claims are checked."""
+
+    _BOUNDARIES = frozenset("。！？!?\n")
+    _SAFE_REPLACEMENT = "讓我們從目前的問題與具體例子開始。"
+
+    def __init__(self, validator: ResponseBoundaryValidator | None = None) -> None:
+        self._validator = validator or ResponseBoundaryValidator()
+        self._buffer = ""
+
+    def feed(self, text: str) -> tuple[str, list[str]]:
+        """Return complete safe sentences and metadata-only violation reasons."""
+        output: list[str] = []
+        reasons: list[str] = []
+        for char in text:
+            self._buffer += char
+            if char in self._BOUNDARIES:
+                safe_text, reason = self._flush()
+                output.append(safe_text)
+                if reason:
+                    reasons.append(reason)
+        return "".join(output), reasons
+
+    def finish(self) -> tuple[str, list[str]]:
+        """Validate and release the final unterminated sentence."""
+        if not self._buffer:
+            return "", []
+        safe_text, reason = self._flush()
+        return safe_text, [reason] if reason else []
+
+    def _flush(self) -> tuple[str, str | None]:
+        candidate = self._buffer
+        self._buffer = ""
+        result = self._validator.validate(candidate)
+        if result.allowed:
+            return candidate, None
+        return self._SAFE_REPLACEMENT, result.reason

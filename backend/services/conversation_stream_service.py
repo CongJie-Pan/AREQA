@@ -10,6 +10,7 @@ import time
 from typing import Any, AsyncGenerator, Dict, List
 
 from core import PublicAnswerFilter
+from services.response_boundary_validator import StreamingResponseBoundaryFilter
 
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ class ConversationStreamService:
 
         accumulator = ""
         output_filter = PublicAnswerFilter()
+        boundary_filter = StreamingResponseBoundaryFilter()
         tool_call_name = ""
         tool_call_args = ""
         logger.info(
@@ -140,6 +142,14 @@ class ConversationStreamService:
                 if content:
                     content = output_filter.feed(content)
                 if content:
+                    content, reasons = boundary_filter.feed(content)
+                    for reason in reasons:
+                        logger.warning(
+                            "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
+                            conversation_id,
+                            reason,
+                        )
+                if content:
                     accumulator += content
                     yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
                 await asyncio.sleep(0)
@@ -150,8 +160,26 @@ class ConversationStreamService:
 
         trailing = output_filter.finish()
         if trailing:
-            accumulator += trailing
-            yield f"data: {json.dumps({'choices': [{'delta': {'content': trailing}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+            safe_trailing, reasons = boundary_filter.feed(trailing)
+            for reason in reasons:
+                logger.warning(
+                    "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
+                    conversation_id,
+                    reason,
+                )
+            if safe_trailing:
+                accumulator += safe_trailing
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': safe_trailing}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+        final_text, final_reasons = boundary_filter.finish()
+        for reason in final_reasons:
+            logger.warning(
+                "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
+                conversation_id,
+                reason,
+            )
+        if final_text:
+            accumulator += final_text
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': final_text}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
         logger.info(
             "orchestration.stream_completed conversation_id=%s elapsed_ms=%s",
             conversation_id,
