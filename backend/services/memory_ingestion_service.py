@@ -432,6 +432,12 @@ class MemoryIngestionService:
                 evidence.user_id,
                 {"current_focus": "", "current_focus_conversation_id": ""},
             )
+            logger.info(
+                "memory.goal_focus_cleared user_id=%s candidate_id=%s cleared_keys=%s",
+                evidence.user_id,
+                candidate["hash"],
+                "current_focus,current_focus_conversation_id",
+            )
         return self._result(
             MemoryEligibilityState.WORKING_CONTEXT_ONLY,
             "temporary_goal_completed",

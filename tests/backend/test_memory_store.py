@@ -376,6 +376,12 @@ async def test_completed_temporary_goal_is_persisted_and_cannot_promote(
     assert promoted is None
     assert profile["explicit_memories"] == []
     assert "memory.temporary_goal_completed" in caplog.text
+    assert "status=completed" in caplog.text
+    assert "reason=explicit_user_completion" in caplog.text
+    assert "evidence_count=2" in caplog.text
+    assert "cleared_keys=none" in caplog.text
+    assert goal_text not in caplog.text
+    assert completion_text not in caplog.text
 
 
 @pytest.mark.asyncio

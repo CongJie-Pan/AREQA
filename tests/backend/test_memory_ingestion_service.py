@@ -261,20 +261,22 @@ async def test_negative_preference_cannot_join_positive_canonical_candidate():
 
 
 @pytest.mark.asyncio
-async def test_temporary_goal_completion_retires_match_and_clears_focus():
+async def test_temporary_goal_completion_retires_match_and_clears_focus(caplog):
+    caplog.set_level("INFO")
     store = AsyncMock()
+    goal_text = "這個月我想完成牛頓運動定律的複習，請在這段期間協助我安排練習。"
     store.get_cold_candidates.return_value = [{
         "user_id": "user-a",
         "hash": "goal-a",
         "category": "temporary_goal",
         "status": "candidate",
         "requires_confirmation": False,
-        "text": "這個月我想完成牛頓運動定律的複習，請在這段期間協助我安排練習。",
+        "text": goal_text,
     }]
     store.complete_temporary_goal_candidate.return_value = {
         "hash": "goal-a",
         "status": "completed",
-        "text": "這個月我想完成牛頓運動定律的複習，請在這段期間協助我安排練習。",
+        "text": goal_text,
     }
     store.get_working_memory.return_value = {
         "current_focus": "這個月我想完成牛頓運動定律的複習",
@@ -296,6 +298,10 @@ async def test_temporary_goal_completion_retires_match_and_clears_focus():
         {"current_focus": "", "current_focus_conversation_id": ""},
     )
     store.perform_memory_operation.assert_not_awaited()
+    assert "memory.goal_focus_cleared" in caplog.text
+    assert "candidate_id=goal-a" in caplog.text
+    assert "cleared_keys=current_focus,current_focus_conversation_id" in caplog.text
+    assert goal_text not in caplog.text
 
 
 @pytest.mark.asyncio

@@ -592,9 +592,12 @@ class MemoryStore:
                     pipe.set(key, json.dumps(candidates[-100:], ensure_ascii=False))
                     await pipe.execute()
                     logger.info(
-                        "memory.temporary_goal_completed user_id=%s candidate_id=%s",
+                        "memory.temporary_goal_completed user_id=%s candidate_id=%s status=completed reason=%s evidence_count=%s cleared_keys=%s",
                         user_id,
                         candidate_hash,
+                        safe_reason,
+                        len(candidate["evidence"]),
+                        "none",
                     )
                     return candidate
                 except WatchError:

@@ -34,7 +34,8 @@ class WorkerRedis:
 
 
 @pytest.mark.asyncio
-async def test_reconciled_task_is_delivered_exactly_once():
+async def test_reconciled_task_is_delivered_exactly_once(caplog):
+    caplog.set_level("INFO")
     task = {
         "task_id": "task-1",
         "user_id": "user-1",
@@ -58,10 +59,14 @@ async def test_reconciled_task_is_delivered_exactly_once():
     assert second == 0
     store.add_mail.assert_awaited_once()
     store.mark_delayed_task_delivered.assert_awaited_once_with("task-1", "mail-1")
+    assert "mailbox.claimed task_id=task-1" in caplog.text
+    assert "mailbox.delivered task_id=task-1 mail_id=mail-1 user_id=user-1" in caplog.text
+    assert "safe content" not in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_notification_failure_does_not_undo_persisted_delivery(caplog):
+    caplog.set_level("INFO")
     task = {
         "task_id": "task-2",
         "user_id": "user-2",
@@ -83,6 +88,8 @@ async def test_notification_failure_does_not_undo_persisted_delivery(caplog):
     assert delivered == 1
     store.mark_delayed_task_delivered.assert_awaited_once_with("task-2", "mail-2")
     assert "mailbox.notification_failed" in caplog.text
+    assert "task_id=task-2" in caplog.text
+    assert "safe content" not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -116,3 +123,7 @@ async def test_database_reconciliation_restores_task_after_redis_enqueue_timeout
     assert restored == 1
     assert delivered == 1
     store.add_mail.assert_awaited_once()
+    store.mark_delayed_task_delivered.assert_awaited_once_with(
+        "task-recovered",
+        "mail-recovered",
+    )

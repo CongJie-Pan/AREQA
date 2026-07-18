@@ -88,7 +88,8 @@ async def test_conversation_thread(temp_store):
     assert len(conv1_mails) == 2
 
 @pytest.mark.asyncio
-async def test_schedule_delayed_mail_persists_user_and_task_id(temp_store):
+async def test_schedule_delayed_mail_persists_user_and_task_id(temp_store, caplog):
+    caplog.set_level("INFO")
     store = temp_store
     task_id = await store.schedule_delayed_mail(
         "user1",
@@ -102,6 +103,56 @@ async def test_schedule_delayed_mail_persists_user_and_task_id(temp_store):
     assert payload["task_id"] == task_id
     assert payload["user_id"] == "user1"
     assert payload["reply_content"] == "hello"
+    assert "mailbox.scheduled" in caplog.text
+    assert f"task_id={task_id}" in caplog.text
+    assert "hello" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_restore_delayed_queue_from_db_logs_safe_restored_count(caplog):
+    caplog.set_level("INFO")
+    fake_redis = FakeRedis()
+    with patch("backend.mailbox_store.get_redis", return_value=fake_redis):
+        store = MailboxStore()
+        store._has_db = AsyncMock(return_value=True)
+        store._get_engine = lambda: object()
+
+        class Cursor:
+            class Mappings:
+                def all(self):
+                    return [{
+                        "task_id": "task-restored",
+                        "user_id": "user-restored",
+                        "payload": {
+                            "content": "private delayed content",
+                            "sender": "AREQA",
+                        },
+                        "deliver_at_epoch": 100.0,
+                    }]
+
+            def mappings(self):
+                return self.Mappings()
+
+        class FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def execute(self, *args, **kwargs):
+                return Cursor()
+
+        with patch("backend.mailbox_store.AsyncSession", return_value=FakeSession()):
+            restored = await store.restore_delayed_queue_from_db()
+
+    assert restored == 1
+    queued = list(fake_redis.zsets["areqa:delayed_mail:user-restored"].keys())
+    payload = json.loads(queued[0])
+    assert payload["task_id"] == "task-restored"
+    assert payload["user_id"] == "user-restored"
+    assert "mailbox.reconciled restored=1" in caplog.text
+    assert "private delayed content" not in caplog.text
 
 @pytest.mark.asyncio
 async def test_schedule_delayed_mail_skips_duplicate_task_id_in_redis(temp_store):
