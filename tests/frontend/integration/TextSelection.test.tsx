@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
 import { useChatStore } from '@/store/chat';
@@ -75,7 +75,9 @@ describe('Text Selection Integration', () => {
     expect(lastCall[0]).toContain('這是什麼？');
     
     // 7. Verify quote is cleared
-    expect(screen.queryByText('紅樓夢')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText('紅樓夢')).toBeNull();
+    });
   });
 
   it('should flow from selection to explain automatically', async () => {

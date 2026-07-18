@@ -129,10 +129,11 @@ describe('ProactiveManager', () => {
     expect(global.fetch).not.toHaveBeenCalled();
 
     // Advance time beyond throttle and change scroll position
-    act(() => {
+    await act(async () => {
       vi.advanceTimersByTime(6000);
       Object.defineProperty(window, 'scrollY', { value: 1000, configurable: true });
       window.dispatchEvent(new Event('scroll'));
+      await Promise.resolve();
     });
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
