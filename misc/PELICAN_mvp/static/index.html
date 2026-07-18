@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PELICAN Knowledge Tracing MVP</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Settings -->
+        <aside class="sidebar">
+            <h2>PELICAN MVP</h2>
+            <div class="controls">
+                <label for="curriculum-select">教學主題 (Topic):</label>
+                <select id="curriculum-select">
+                    <!-- Populated by JS -->
+                </select>
+                <label for="mode-select">教學模式 (Mode):</label>
+                <select id="mode-select">
+                    <option value="rule">Rule-based (規則引擎)</option>
+                    <option value="llm">LLM-based (生成式AI)</option>
+                </select>
+                <button id="reset-btn" class="btn">重新開始會話 (Reset)</button>
+            </div>
+            <div class="tree-container">
+                <h3>知識狀態樹</h3>
+                <div id="tree" class="tree"></div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-container">
+            <div id="chat-history" class="chat-history"></div>
+            
+            <div id="loading" class="loading hidden">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+
+            <form id="chat-form" class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="請輸入您的答案..." autocomplete="off" />
+                <button type="submit" class="send-btn">送出</button>
+            </form>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

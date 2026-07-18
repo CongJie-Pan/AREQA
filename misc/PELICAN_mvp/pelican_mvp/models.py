@@ -84,6 +84,7 @@ class TurnRecord:
 @dataclass
 class SessionState:
     learner_id: str
+    curriculum_id: str = "cnn"
     mode: str = "rule"
     phase: str = "diagnosis"
     current_node_id: str | None = None
@@ -99,6 +100,7 @@ class SessionState:
     def to_dict(self) -> dict[str, Any]:
         return {
             "learner_id": self.learner_id,
+            "curriculum_id": self.curriculum_id,
             "mode": self.mode,
             "phase": self.phase,
             "current_node_id": self.current_node_id,
@@ -132,6 +134,7 @@ class SessionState:
         history = [TurnRecord(**item) for item in payload.get("history", [])]
         return cls(
             learner_id=payload["learner_id"],
+            curriculum_id=payload.get("curriculum_id", "cnn"),
             mode=payload.get("mode", "rule"),
             phase=payload.get("phase", "diagnosis"),
             current_node_id=payload.get("current_node_id"),

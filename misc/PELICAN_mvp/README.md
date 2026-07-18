@@ -1,11 +1,13 @@
 # PELICAN CLI MVP
 
-這是 PELICAN 論文方法的可觀察最小實作，使用論文中的集合與不等式題：
+這是 PELICAN 論文方法的可觀察最小實作，使用深度學習卷積神經網路(CNN)的知識點作為範例：
 
 ```text
-A = {x ∈ R | |x - 1| ≤ 2}
-B = {x ∈ Z | √x ≤ 4}
-Find A ∩ B
+設計一個 CNN 模型來處理 28x28 的灰階影像：
+1. 第一層使用 3x3 的卷積核，步幅(stride)=1，無填充(padding=0)。
+2. 接著通過 ReLU 激活函數。
+3. 最後使用 2x2 的最大池化(Max Pooling)，步幅=2。
+求最後輸出的特徵圖(Feature Map)尺寸。
 ```
 
 它先用 successor-first 進行協作式認知診斷，再依學生回應更新知識狀態，最後以快/慢思考選擇教學策略。它不會把使用者程度當成已知，也不會在未完成當前知識節點時隨意跳到無關問題。
@@ -15,7 +17,7 @@ Find A ∩ B
 ```bash
 cd misc/PELICAN_mvp
 python -m venv .venv
-. .venv/bin/activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 python -m pelican_mvp
 ```

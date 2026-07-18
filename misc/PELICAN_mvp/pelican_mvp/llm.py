@@ -22,6 +22,11 @@ class LlmConfig:
 
     @classmethod
     def from_environment(cls) -> "LlmConfig | None":
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
         api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not api_key:
             return None

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .curriculum import NODES
+from .curriculum import Curriculum
 from .models import ResponseCategory, TutoringStrategy
 
 
@@ -45,21 +45,7 @@ def _simulation_score(strategy: TutoringStrategy, category: ResponseCategory, di
     return success_probability + (1.0 - discount)
 
 
-def rule_tutor_message(strategy: TutoringStrategy, node_id: str, prompt: str) -> str:
-    label = NODES[node_id].label
-    if strategy is TutoringStrategy.CORRECTION:
-        return f"你的答案還沒有符合「{label}」的條件。先回到題目的限制：{prompt}"
-    if strategy is TutoringStrategy.DECOMPOSITION:
-        if node_id == "absolute_value":
-            return "我們拆成兩邊：-2 ≤ x - 1 ≤ 2。每一邊同時加 1 後，x 的範圍是什麼？"
-        if node_id == "sqrt_integer":
-            return "先找根號有意義的範圍，再把 √x ≤ 4 兩邊平方。最後記得 x 必須是整數；你得到哪個範圍？"
-        return "先分別列出兩個集合的元素，再找兩邊都出現的元素。你先能列出其中一個集合嗎？"
-    if strategy is TutoringStrategy.SIMPLIFICATION:
-        return "先用較小的例子練習：{1, 2, 3} 和 {2, 3, 4} 的交集是什麼？再把同一個方法用回原題。"
-    if strategy is TutoringStrategy.EXPLANATION:
-        return f"目前要處理的是「{label}」。先不要急著求最後答案，請看這個條件：{prompt}"
-    if strategy is TutoringStrategy.CONFIRMATION:
-        return "這一步正確。接下來請把這個結果帶入下一個條件。"
-    return f"請只聚焦「{label}」：{prompt}"
-
+def rule_tutor_message(strategy: TutoringStrategy, node_id: str, prompt: str, curriculum: Curriculum) -> str:
+    label = curriculum.nodes[node_id].label
+    hint_template = curriculum.tutor_hints.get(strategy, "請只聚焦「{label}」：{prompt}")
+    return hint_template.format(label=label, prompt=prompt)
