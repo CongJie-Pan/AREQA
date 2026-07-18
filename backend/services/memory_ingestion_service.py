@@ -544,12 +544,15 @@ class MemoryIngestionService:
         promoted: bool = False,
     ) -> MemoryIngestionResult:
         logger.info(
-            "memory.ingestion_decided user_id=%s message_id=%s state=%s reason=%s category=%s",
+            "memory.ingestion_decided user_id=%s message_id=%s conversation_id=%s candidate_id=%s state=%s reason=%s category=%s promoted=%s",
             evidence.user_id,
             evidence.message_id,
+            evidence.conversation_id,
+            candidate_id or "none",
             state.value,
             reason_code,
             category,
+            promoted,
         )
         return MemoryIngestionResult(
             state=state,
