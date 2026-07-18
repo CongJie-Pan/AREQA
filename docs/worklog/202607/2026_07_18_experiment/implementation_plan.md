@@ -62,22 +62,22 @@ The tree is cumulative for this phase only.
 
 #### Work List
 
-1. [ ] Modify `backend/services/compeer_scheduler.py`.
-   - [ ] Add proposed `_parse_behavior_signal_timestamp()` to safely parse ISO timestamps and reject invalid timestamps without raising scheduler-level exceptions.
-   - [ ] Add proposed `_collect_recent_scroll_behavior_signals()` to filter `type == "scroll"` signals inside the configured behavior evidence window.
-   - [ ] Update `_process_proactive_user()` to call `store.get_behavior_signals(user_id)` after inactivity and cooldown checks.
-   - [ ] Replace the primary `hot_mem.items()` `obs_*` scroll count with behavior-signal scroll count.
-   - [ ] Preserve explicit `trigger_proactive` and avatar summon scheduling behavior.
-   - [ ] Keep or remove the legacy `obs_*` fallback intentionally; if kept, label the source as `legacy_hot_memory` in preflight metadata.
-2. [ ] Modify `backend/memory_store.py` only if scheduler-side consumption would be non-atomic.
-   - [ ] Add proposed `consume_behavior_signals(user_id, consumed_signals)` to remove or mark consumed entries from `areqa:behavior_signals:{user_id}`.
-   - [ ] Preserve existing `get_behavior_signals()` and `append_behavior_signal()` behavior.
-3. [ ] Extend `tests/backend/test_compeer_scheduler.py`.
-   - [ ] Add a fake store with `get_behavior_signals()` returning six recent scroll signals.
-   - [ ] Assert `_process_proactive_user()` schedules through the behavior-signal path when inactivity and importance gates pass.
-   - [ ] Assert fewer than six scroll signals block scheduling.
-   - [ ] Assert malformed timestamps do not crash the scheduler and do not count as valid recent scroll evidence.
-   - [ ] Assert explicit trigger and avatar summon tests still pass unchanged.
+1. [x] Modify `backend/services/compeer_scheduler.py`.
+   - [x] Add proposed `_parse_behavior_signal_timestamp()` to safely parse ISO timestamps and reject invalid timestamps without raising scheduler-level exceptions.
+   - [x] Add proposed `_collect_recent_scroll_behavior_signals()` to filter `type == "scroll"` signals inside the configured behavior evidence window.
+   - [x] Update `_process_proactive_user()` to call `store.get_behavior_signals(user_id)` after inactivity and cooldown checks.
+   - [x] Replace the primary `hot_mem.items()` `obs_*` scroll count with behavior-signal scroll count.
+   - [x] Preserve explicit `trigger_proactive` and avatar summon scheduling behavior.
+   - [x] Keep or remove the legacy `obs_*` fallback intentionally; if kept, label the source as `legacy_hot_memory` in preflight metadata.
+2. [x] Modify `backend/memory_store.py` only if scheduler-side consumption would be non-atomic.
+   - [x] Add proposed `consume_behavior_signals(user_id, consumed_signals)` to remove or mark consumed entries from `areqa:behavior_signals:{user_id}`.
+   - [x] Preserve existing `get_behavior_signals()` and `append_behavior_signal()` behavior.
+3. [x] Extend `tests/backend/test_compeer_scheduler.py`.
+   - [x] Add a fake store with `get_behavior_signals()` returning six recent scroll signals.
+   - [x] Assert `_process_proactive_user()` schedules through the behavior-signal path when inactivity and importance gates pass.
+   - [x] Assert fewer than six scroll signals block scheduling.
+   - [x] Assert malformed timestamps do not crash the scheduler and do not count as valid recent scroll evidence.
+   - [x] Assert explicit trigger and avatar summon tests still pass unchanged.
 
 #### Test Plan
 

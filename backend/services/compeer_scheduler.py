@@ -16,7 +16,7 @@ import random
 import hashlib
 import uuid
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import time as _time
 
@@ -433,6 +433,8 @@ _GENERIC_EVENT_MARKERS = (
     "低壓力關懷",
     "需要低壓力關懷",
 )
+PROACTIVE_SCROLL_SIGNAL_THRESHOLD = 6
+PROACTIVE_SCROLL_SIGNAL_WINDOW_SECONDS = 15 * 60
 
 
 def has_current_learning_evidence(hot_memory_snapshot: str) -> bool:
@@ -515,6 +517,70 @@ def _stable_task_id(prefix: str, user_id: str, *parts: str) -> str:
     """
     raw = "|".join([user_id, *[str(part or "") for part in parts]])
     return f"{prefix}-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"
+
+
+def _parse_behavior_signal_timestamp(signal: dict) -> float | None:
+    """Return a UNIX timestamp for one behavior signal when it is trustworthy.
+
+    ComPeer consumes UI telemetry from `behavior_signals` rather than hot
+    memory so scroll events stay out of prompt-visible memory. Invalid or
+    missing timestamps are ignored because a stale or malformed signal must not
+    create a proactive message.
+
+    Args:
+        signal: A behavior-signal dictionary persisted by `MemoryStore`.
+
+    Returns:
+        A UNIX timestamp in seconds, or `None` when the timestamp is invalid.
+    """
+    timestamp = signal.get("timestamp") if isinstance(signal, dict) else None
+    if isinstance(timestamp, (int, float)):
+        return float(timestamp)
+    if not isinstance(timestamp, str) or not timestamp.strip():
+        return None
+
+    normalized = timestamp.strip()
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _collect_recent_scroll_behavior_signals(
+    signals: list[dict],
+    *,
+    now: float,
+    window_seconds: float,
+) -> list[dict]:
+    """Filter recent scroll signals for behavior-derived ComPeer scheduling.
+
+    The scheduler requires enough recent scroll evidence before asking the LLM
+    proactive-event detector. This preserves the existing minimum-evidence
+    invariant while using the current behavior-signal storage path.
+
+    Args:
+        signals: Behavior signals returned by `MemoryStore.get_behavior_signals`.
+        now: Current UNIX timestamp in seconds.
+        window_seconds: Maximum signal age to consider eligible.
+
+    Returns:
+        Scroll signal dictionaries inside the eligible time window.
+    """
+    recent_scrolls = []
+    for signal in signals:
+        if not isinstance(signal, dict) or signal.get("type") != "scroll":
+            continue
+        timestamp = _parse_behavior_signal_timestamp(signal)
+        if timestamp is None:
+            continue
+        if 0 <= now - timestamp <= window_seconds:
+            recent_scrolls.append(signal)
+    return recent_scrolls
 
 
 async def schedule_areqa_care_letter(
@@ -789,13 +855,25 @@ async def _process_proactive_user(store, user_id: str) -> None:
         )
         return
 
+    behavior_signals = await store.get_behavior_signals(user_id)
+    recent_scroll_signals = _collect_recent_scroll_behavior_signals(
+        behavior_signals,
+        now=_time.time(),
+        window_seconds=PROACTIVE_SCROLL_SIGNAL_WINDOW_SECONDS,
+    )
     hot_mem = await store.get_hot_memory(user_id)
-    scroll_keys = [
+    legacy_scroll_keys = [
         key
         for key, value in hot_mem.items()
         if key.startswith("obs_") and "Type: scroll" in str(value)
     ]
-    if len(scroll_keys) < 6:
+    scroll_count = len(recent_scroll_signals)
+    signal_source = "behavior_signals"
+    if scroll_count == 0 and legacy_scroll_keys:
+        scroll_count = len(legacy_scroll_keys)
+        signal_source = "legacy_hot_memory"
+
+    if scroll_count < PROACTIVE_SCROLL_SIGNAL_THRESHOLD:
         _log_proactive_preflight(
             user_id,
             iteration_id,
@@ -803,17 +881,10 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 trigger_present=False,
                 cooldown_active=False,
                 inactive_seconds=inactive_seconds,
-                scroll_count=len(scroll_keys),
+                scroll_count=scroll_count,
             ),
         )
         return
-
-    for key in scroll_keys:
-        remove_typed_entry(hot_mem, key)
-    await store.redis.set(
-        f"areqa:hot_memory:{user_id}",
-        json.dumps(hot_mem, ensure_ascii=False),
-    )
 
     from gum_integration import (
         detect_proactive_event_via_llm,
@@ -832,7 +903,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 trigger_present=False,
                 cooldown_active=False,
                 inactive_seconds=inactive_seconds,
-                scroll_count=len(scroll_keys),
+                scroll_count=scroll_count,
                 importance_passed=False,
             ),
         )
@@ -857,12 +928,23 @@ async def _process_proactive_user(store, user_id: str) -> None:
         allow_topic_specific=allow_topic_specific,
     )
     if task_id:
+        # Consume only after the delayed mailbox intent is durable; otherwise
+        # retry needs the same behavior evidence to remain available.
+        if signal_source == "behavior_signals":
+            await store.consume_behavior_signals(user_id, recent_scroll_signals)
+        else:
+            for key in legacy_scroll_keys:
+                remove_typed_entry(hot_mem, key)
+            await store.redis.set(
+                f"areqa:hot_memory:{user_id}",
+                json.dumps(hot_mem, ensure_ascii=False),
+            )
         await set_cooldown(user_id, state=learner_state)
     preflight = evaluate_proactive_preflight(
         trigger_present=False,
         cooldown_active=False,
         inactive_seconds=inactive_seconds,
-        scroll_count=len(scroll_keys),
+        scroll_count=scroll_count,
         importance_passed=True,
     )
     if not task_id:

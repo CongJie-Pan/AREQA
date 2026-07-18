@@ -1,6 +1,7 @@
 import pytest
 import time
 import asyncio
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, patch, MagicMock, ANY
 
 import backend.services.compeer_scheduler as compeer
@@ -152,16 +153,31 @@ def mock_store():
     store = MagicMock()
     # Provide an in-memory dictionary to simulate get_hot_memory
     hot_mem_data = {}
+    behavior_signals = []
     
     async def mock_get_hot_memory(user_id):
         return hot_mem_data
         
     async def mock_update_hot_memory(user_id, key, value, **policy):
         hot_mem_data[key] = value
+
+    async def mock_get_behavior_signals(user_id):
+        return list(behavior_signals)
+
+    async def mock_consume_behavior_signals(user_id, consumed):
+        removed = 0
+        for item in consumed:
+            if item in behavior_signals:
+                behavior_signals.remove(item)
+                removed += 1
+        return removed
         
     store.get_hot_memory = AsyncMock(side_effect=mock_get_hot_memory)
     store.update_hot_memory = AsyncMock(side_effect=mock_update_hot_memory)
     store.update_hot_memory_async = AsyncMock(side_effect=mock_update_hot_memory)
+    store.get_behavior_signals = AsyncMock(side_effect=mock_get_behavior_signals)
+    store.consume_behavior_signals = AsyncMock(side_effect=mock_consume_behavior_signals)
+    store.behavior_signals = behavior_signals
     store.get_user_profile = AsyncMock(return_value={})
     store.get_working_memory = AsyncMock(return_value={})
     
@@ -316,3 +332,132 @@ def test_avatar_summon_preflight_bypasses_cooldown():
 
     assert result.eligible is True
     assert result.block_reason is None
+
+
+def _recent_scroll_signals(count: int):
+    """Build recent scroll signals that match MemoryStore behavior telemetry."""
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    return [
+        {
+            "type": "scroll",
+            "context": {"scrollY": 100 + index},
+            "weight": 0.2,
+            "timestamp": timestamp,
+        }
+        for index in range(count)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_behavior_signals_schedule_proactive_mail_without_legacy_obs(mock_store):
+    mock_store.behavior_signals.extend(_recent_scroll_signals(6))
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch.object(
+        compeer,
+        "get_last_interaction_time",
+        new=AsyncMock(return_value=time.time() - 120),
+    ), patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(return_value=False),
+    ), patch.object(
+        compeer,
+        "tick_proactive_schedule",
+        new=AsyncMock(),
+    ), patch(
+        "gum_integration.get_hot_memory_snapshot",
+        new=AsyncMock(return_value="【工作記憶 (Working Memory)】\n- Current focus: force"),
+    ), patch(
+        "gum_integration.detect_proactive_event_via_llm",
+        new=AsyncMock(
+            return_value={
+                "has_event": True,
+                "importance": 0.9,
+                "event_summary": "User paused while reviewing force.",
+            }
+        ),
+    ), patch(
+        "gum_integration.query_cold_memory_for_context",
+        new=AsyncMock(return_value=""),
+    ), patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ), patch.object(
+        compeer,
+        "set_cooldown",
+        new=AsyncMock(),
+    ):
+        await compeer._process_proactive_user(mock_store, "default_user")
+
+    scheduled.assert_awaited_once()
+    mock_store.consume_behavior_signals.assert_awaited_once()
+    hot_memory = await mock_store.get_hot_memory("default_user")
+    assert not [key for key in hot_memory if key.startswith("obs_")]
+
+
+@pytest.mark.asyncio
+async def test_behavior_signals_below_threshold_do_not_schedule(mock_store):
+    mock_store.behavior_signals.extend(_recent_scroll_signals(5))
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch.object(
+        compeer,
+        "get_last_interaction_time",
+        new=AsyncMock(return_value=time.time() - 120),
+    ), patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(return_value=False),
+    ), patch.object(
+        compeer,
+        "tick_proactive_schedule",
+        new=AsyncMock(),
+    ), patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ):
+        await compeer._process_proactive_user(mock_store, "default_user")
+
+    scheduled.assert_not_awaited()
+    mock_store.consume_behavior_signals.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_malformed_behavior_signal_timestamps_do_not_count_or_crash(mock_store):
+    mock_store.behavior_signals.extend(
+        [
+            {"type": "scroll", "context": {"secret": "must-not-log"}, "timestamp": "not-a-date"},
+            {
+                "type": "scroll",
+                "context": {"scrollY": 1},
+                "timestamp": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+            },
+        ]
+    )
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch.object(
+        compeer,
+        "get_last_interaction_time",
+        new=AsyncMock(return_value=time.time() - 120),
+    ), patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(return_value=False),
+    ), patch.object(
+        compeer,
+        "tick_proactive_schedule",
+        new=AsyncMock(),
+    ), patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ):
+        await compeer._process_proactive_user(mock_store, "default_user")
+
+    scheduled.assert_not_awaited()
+    mock_store.consume_behavior_signals.assert_not_awaited()

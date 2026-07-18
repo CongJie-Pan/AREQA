@@ -162,6 +162,56 @@ class MemoryStore:
                 except WatchError:
                     continue
 
+    async def consume_behavior_signals(
+        self,
+        user_id: str,
+        consumed_signals: list[Dict[str, Any]],
+    ) -> int:
+        """Atomically remove behavior signals after a durable consumer accepts them.
+
+        UI telemetry is stored outside prompt-visible memory under
+        `areqa:behavior_signals:{user_id}`. Consumers such as the ComPeer
+        scheduler must remove only the exact entries they have accepted so a
+        successful scheduling decision cannot be replayed by the same signal
+        batch. Malformed or missing storage data fails closed as an empty list.
+
+        Args:
+            user_id: The owner of the behavior-signal list.
+            consumed_signals: Exact signal dictionaries to remove.
+
+        Returns:
+            The number of entries removed from the behavior-signal list.
+        """
+        if not consumed_signals:
+            return 0
+
+        from redis.exceptions import WatchError
+
+        key = f"areqa:behavior_signals:{user_id}"
+        async with self.redis.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(key)
+                    data = await pipe.get(key)
+                    parsed = json.loads(data) if data else []
+                    signals = parsed if isinstance(parsed, list) else []
+
+                    remaining = list(signals)
+                    removed = 0
+                    for consumed in consumed_signals:
+                        for index, signal in enumerate(remaining):
+                            if signal == consumed:
+                                remaining.pop(index)
+                                removed += 1
+                                break
+
+                    pipe.multi()
+                    pipe.set(key, json.dumps(remaining[-50:], ensure_ascii=False))
+                    await pipe.execute()
+                    return removed
+                except WatchError:
+                    continue
+
     async def get_cold_candidates(self, user_id: str) -> list[Dict[str, Any]]:
         data = await self.redis.get(f"areqa:cold_candidates:{user_id}")
         if not data:
