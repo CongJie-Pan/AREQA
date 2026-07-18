@@ -307,21 +307,12 @@ async def test_no_trigger_when_in_cooldown(mock_in_cooldown, mock_sleep, mock_st
     hot_mem = await mock_store.get_hot_memory("default_user")
     assert "trigger_proactive" in hot_mem
 
-@pytest.mark.asyncio
-@patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
-@patch("gum_integration.generate_scaffolding_message_via_llm", new_callable=AsyncMock)
-@patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock)
-@patch("backend.services.compeer_scheduler.is_in_cooldown", new_callable=AsyncMock)
-async def test_avatar_summon_triggers_mail_despite_cooldown(mock_in_cooldown, mock_query, mock_gen, mock_sleep, mock_store):
-    await mock_store.update_hot_memory("default_user", "avatar_summon_pending", True)
-    mock_in_cooldown.return_value = True
-    
-    mock_gen.return_value = "Test Avatar Message"
-    mock_query.return_value = "Mocked cold context"
-    mock_sleep.side_effect = [None, Exception("Stop Loop"), Exception("Stop Loop")]
-    
-    # We expect this to fail for now because we haven't implemented the bypass in compeer_scheduler.py yet.
-    # We will implement it in Phase 3. For Phase 1, we just write the test (it might fail or we can mark it xfail).
-    # Actually wait, Phase 3 says "修改 avatar_summon_pending 路徑使其繞過 cooldown".
-    # Since we are writing the test now, let's add @pytest.mark.xfail for it to pass Phase 1, or just implement it.
-    pass
+def test_avatar_summon_preflight_bypasses_cooldown():
+    result = compeer.evaluate_proactive_preflight(
+        trigger_present=False,
+        avatar_pending=True,
+        cooldown_active=True,
+    )
+
+    assert result.eligible is True
+    assert result.block_reason is None
