@@ -208,24 +208,24 @@ The tree is cumulative from Phase 1.
 
 #### Work List
 
-1. [ ] Modify `backend/services/compeer_scheduler.py`.
-   - [ ] Extend `ProactivePreflightResult` with safe behavior-signal and timing metadata if needed.
-   - [ ] Update `evaluate_proactive_preflight()` to preserve existing reason-code behavior while carrying metadata.
-   - [ ] Update `_log_proactive_preflight()` to log source, counts, delivery delay, scheduling result, and task ID.
-   - [ ] Add lifecycle logs in `_process_proactive_user()` for behavior-signal evaluation, eligibility, rejection, scheduling, and consumption.
-2. [ ] Modify `backend/mailbox_store.py` only if required.
-   - [ ] Keep or extend `mailbox.scheduled` so it remains the durable evidence that a delayed mailbox task exists.
-   - [ ] Avoid raw message body logging.
-3. [ ] Modify `backend/config.py` only if required.
-   - [ ] Preserve the production `compeer_delivery_delay_seconds=120` default.
-   - [ ] Add any test override through existing settings patterns if the tests need deterministic shorter delivery.
-4. [ ] Extend `tests/backend/test_compeer_scheduler.py`.
-   - [ ] Assert behavior-signal lifecycle logs include safe event names and reason codes.
-   - [ ] Assert no raw behavior context or message text is emitted in scheduler logs.
-   - [ ] Assert delivery-delay metadata matches configured settings.
-5. [ ] Extend `tests/backend/test_config.py` only if config changes.
-   - [ ] Assert the default `compeer_delivery_delay_seconds` remains 120.
-   - [ ] Assert any test override parses correctly.
+1. [x] Modify `backend/services/compeer_scheduler.py`.
+   - [x] Extend `ProactivePreflightResult` with safe behavior-signal and timing metadata if needed.
+   - [x] Update `evaluate_proactive_preflight()` to preserve existing reason-code behavior while carrying metadata.
+   - [x] Update `_log_proactive_preflight()` to log source, counts, delivery delay, scheduling result, and task ID.
+   - [x] Add lifecycle logs in `_process_proactive_user()` for behavior-signal evaluation, eligibility, rejection, scheduling, and consumption.
+2. [x] Modify `backend/mailbox_store.py` only if required.
+   - [x] Keep or extend `mailbox.scheduled` so it remains the durable evidence that a delayed mailbox task exists. No code change was required.
+   - [x] Avoid raw message body logging. Existing mailbox scheduling logs already avoid raw message body logging.
+3. [x] Modify `backend/config.py` only if required.
+   - [x] Preserve the production `compeer_delivery_delay_seconds=120` default. No code change was required.
+   - [x] Add any test override through existing settings patterns if the tests need deterministic shorter delivery. No override was required for Phase 2 tests.
+4. [x] Extend `tests/backend/test_compeer_scheduler.py`.
+   - [x] Assert behavior-signal lifecycle logs include safe event names and reason codes.
+   - [x] Assert no raw behavior context or message text is emitted in scheduler logs.
+   - [x] Assert delivery-delay metadata matches configured settings.
+5. [x] Extend `tests/backend/test_config.py` only if config changes.
+   - [x] Assert the default `compeer_delivery_delay_seconds` remains 120. Existing config tests passed; no config hunk was needed.
+   - [x] Assert any test override parses correctly. Not applicable because no new override was added.
 
 #### Test Plan
 

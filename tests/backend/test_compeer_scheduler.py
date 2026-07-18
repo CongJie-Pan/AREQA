@@ -350,8 +350,9 @@ def _recent_scroll_signals(count: int):
 
 
 @pytest.mark.asyncio
-async def test_behavior_signals_schedule_proactive_mail_without_legacy_obs(mock_store):
+async def test_behavior_signals_schedule_proactive_mail_without_legacy_obs(mock_store, caplog):
     mock_store.behavior_signals.extend(_recent_scroll_signals(6))
+    mock_store.behavior_signals[0]["context"] = {"raw_user_text": "SECRET_CONTEXT"}
     scheduled = AsyncMock(return_value="task-1")
 
     with patch.object(
@@ -390,16 +391,25 @@ async def test_behavior_signals_schedule_proactive_mail_without_legacy_obs(mock_
         "set_cooldown",
         new=AsyncMock(),
     ):
-        await compeer._process_proactive_user(mock_store, "default_user")
+        with caplog.at_level("INFO"):
+            await compeer._process_proactive_user(mock_store, "default_user")
 
     scheduled.assert_awaited_once()
     mock_store.consume_behavior_signals.assert_awaited_once()
     hot_memory = await mock_store.get_hot_memory("default_user")
     assert not [key for key in hot_memory if key.startswith("obs_")]
+    assert "compeer.behavior_signals_evaluated" in caplog.text
+    assert "compeer.behavior_trigger_eligible" in caplog.text
+    assert "compeer.behavior_signals_consumed" in caplog.text
+    assert "signal_source=behavior_signals" in caplog.text
+    assert "recent_scroll_count=6" in caplog.text
+    assert "delivery_delay_seconds=120" in caplog.text
+    assert "task_id=task-1" in caplog.text
+    assert "SECRET_CONTEXT" not in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_behavior_signals_below_threshold_do_not_schedule(mock_store):
+async def test_behavior_signals_below_threshold_do_not_schedule(mock_store, caplog):
     mock_store.behavior_signals.extend(_recent_scroll_signals(5))
     scheduled = AsyncMock(return_value="task-1")
 
@@ -420,10 +430,15 @@ async def test_behavior_signals_below_threshold_do_not_schedule(mock_store):
         "_schedule_areqa_care_letter_safely",
         new=scheduled,
     ):
-        await compeer._process_proactive_user(mock_store, "default_user")
+        with caplog.at_level("INFO"):
+            await compeer._process_proactive_user(mock_store, "default_user")
 
     scheduled.assert_not_awaited()
     mock_store.consume_behavior_signals.assert_not_awaited()
+    assert "compeer.behavior_signals_evaluated" in caplog.text
+    assert "signal_source=behavior_signals" in caplog.text
+    assert "recent_scroll_count=5" in caplog.text
+    assert "reason=insufficient_scroll_evidence" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -461,3 +476,47 @@ async def test_malformed_behavior_signal_timestamps_do_not_count_or_crash(mock_s
 
     scheduled.assert_not_awaited()
     mock_store.consume_behavior_signals.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_behavior_trigger_rejection_logs_safe_reason(mock_store, caplog):
+    mock_store.behavior_signals.extend(_recent_scroll_signals(6))
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch.object(
+        compeer,
+        "get_last_interaction_time",
+        new=AsyncMock(return_value=time.time() - 120),
+    ), patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(return_value=False),
+    ), patch.object(
+        compeer,
+        "tick_proactive_schedule",
+        new=AsyncMock(),
+    ), patch(
+        "gum_integration.get_hot_memory_snapshot",
+        new=AsyncMock(return_value="【工作記憶 (Working Memory)】\n- Current focus: force"),
+    ), patch(
+        "gum_integration.detect_proactive_event_via_llm",
+        new=AsyncMock(
+            return_value={
+                "has_event": False,
+                "importance": 0.0,
+                "event_summary": "SECRET_EVENT_SUMMARY",
+            }
+        ),
+    ), patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ):
+        with caplog.at_level("INFO"):
+            await compeer._process_proactive_user(mock_store, "default_user")
+
+    scheduled.assert_not_awaited()
+    mock_store.consume_behavior_signals.assert_not_awaited()
+    assert "compeer.behavior_trigger_rejected" in caplog.text
+    assert "reason=importance_gate_failed" in caplog.text
+    assert "SECRET_EVENT_SUMMARY" not in caplog.text

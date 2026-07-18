@@ -41,6 +41,11 @@ class ProactivePreflight:
     cooldown_active: bool
     inactive_seconds: float | None = None
     scroll_count: int = 0
+    signal_source: str = "not_evaluated"
+    behavior_signal_count: int = 0
+    recent_scroll_count: int = 0
+    legacy_scroll_count: int = 0
+    delivery_delay_seconds: int | None = None
     importance_passed: bool | None = None
     existing_pending_task: bool = False
     scheduling_succeeded: bool | None = None
@@ -61,6 +66,11 @@ def evaluate_proactive_preflight(
     cooldown_active: bool = False,
     inactive_seconds: float | None = None,
     scroll_count: int = 0,
+    signal_source: str = "not_evaluated",
+    behavior_signal_count: int = 0,
+    recent_scroll_count: int = 0,
+    legacy_scroll_count: int = 0,
+    delivery_delay_seconds: int | None = None,
     importance_passed: bool | None = None,
     existing_pending_task: bool = False,
 ) -> ProactivePreflight:
@@ -69,6 +79,8 @@ def evaluate_proactive_preflight(
     Explicit avatar summons bypass the ordinary cooldown. Explicit proactive
     triggers bypass inactivity and scroll gates. Behaviour-derived scheduling
     fails closed when its required evidence or importance decision is absent.
+    Signal counters and delivery delay are safe observability metadata; they do
+    not affect the decision reason.
     """
 
     reason = None
@@ -95,6 +107,11 @@ def evaluate_proactive_preflight(
         cooldown_active=cooldown_active,
         inactive_seconds=inactive_seconds,
         scroll_count=scroll_count,
+        signal_source=signal_source,
+        behavior_signal_count=behavior_signal_count,
+        recent_scroll_count=recent_scroll_count,
+        legacy_scroll_count=legacy_scroll_count,
+        delivery_delay_seconds=delivery_delay_seconds,
         importance_passed=importance_passed,
         existing_pending_task=existing_pending_task,
         block_reason=reason,
@@ -112,6 +129,8 @@ def _log_proactive_preflight(
         "compeer.preflight_evaluated user_id=%s iteration_id=%s "
         "trigger_present=%s avatar_pending=%s cooldown_active=%s "
         "inactive_seconds=%s scroll_count=%s importance_passed=%s "
+        "signal_source=%s behavior_signal_count=%s recent_scroll_count=%s "
+        "legacy_scroll_count=%s delivery_delay_seconds=%s "
         "existing_pending_task=%s scheduling_succeeded=%s task_id=%s",
         user_id,
         iteration_id,
@@ -125,6 +144,15 @@ def _log_proactive_preflight(
         ),
         preflight.scroll_count,
         preflight.importance_passed,
+        preflight.signal_source,
+        preflight.behavior_signal_count,
+        preflight.recent_scroll_count,
+        preflight.legacy_scroll_count,
+        (
+            preflight.delivery_delay_seconds
+            if preflight.delivery_delay_seconds is not None
+            else "not_evaluated"
+        ),
         preflight.existing_pending_task,
         preflight.scheduling_succeeded,
         preflight.task_id or "none",
@@ -856,6 +884,8 @@ async def _process_proactive_user(store, user_id: str) -> None:
         return
 
     behavior_signals = await store.get_behavior_signals(user_id)
+    from config import settings
+
     recent_scroll_signals = _collect_recent_scroll_behavior_signals(
         behavior_signals,
         now=_time.time(),
@@ -873,6 +903,20 @@ async def _process_proactive_user(store, user_id: str) -> None:
         scroll_count = len(legacy_scroll_keys)
         signal_source = "legacy_hot_memory"
 
+    logger.info(
+        "compeer.behavior_signals_evaluated user_id=%s iteration_id=%s "
+        "signal_source=%s behavior_signal_count=%s recent_scroll_count=%s "
+        "legacy_scroll_count=%s scroll_count=%s delivery_delay_seconds=%s",
+        user_id,
+        iteration_id,
+        signal_source,
+        len(behavior_signals),
+        len(recent_scroll_signals),
+        len(legacy_scroll_keys),
+        scroll_count,
+        settings.compeer_delivery_delay_seconds,
+    )
+
     if scroll_count < PROACTIVE_SCROLL_SIGNAL_THRESHOLD:
         _log_proactive_preflight(
             user_id,
@@ -882,6 +926,11 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 cooldown_active=False,
                 inactive_seconds=inactive_seconds,
                 scroll_count=scroll_count,
+                signal_source=signal_source,
+                behavior_signal_count=len(behavior_signals),
+                recent_scroll_count=len(recent_scroll_signals),
+                legacy_scroll_count=len(legacy_scroll_keys),
+                delivery_delay_seconds=settings.compeer_delivery_delay_seconds,
             ),
         )
         return
@@ -896,6 +945,14 @@ async def _process_proactive_user(store, user_id: str) -> None:
     event = await detect_proactive_event_via_llm(user_id, snapshot)
     importance_passed = bool(event["has_event"] and event["importance"] >= 0.7)
     if not importance_passed:
+        logger.info(
+            "compeer.behavior_trigger_rejected user_id=%s iteration_id=%s "
+            "signal_source=%s scroll_count=%s reason=importance_gate_failed",
+            user_id,
+            iteration_id,
+            signal_source,
+            scroll_count,
+        )
         _log_proactive_preflight(
             user_id,
             iteration_id,
@@ -904,12 +961,26 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 cooldown_active=False,
                 inactive_seconds=inactive_seconds,
                 scroll_count=scroll_count,
+                signal_source=signal_source,
+                behavior_signal_count=len(behavior_signals),
+                recent_scroll_count=len(recent_scroll_signals),
+                legacy_scroll_count=len(legacy_scroll_keys),
+                delivery_delay_seconds=settings.compeer_delivery_delay_seconds,
                 importance_passed=False,
             ),
         )
         return
 
     event_summary = event["event_summary"]
+    logger.info(
+        "compeer.behavior_trigger_eligible user_id=%s iteration_id=%s "
+        "signal_source=%s scroll_count=%s delivery_delay_seconds=%s",
+        user_id,
+        iteration_id,
+        signal_source,
+        scroll_count,
+        settings.compeer_delivery_delay_seconds,
+    )
     allow_topic_specific = should_allow_topic_specific_care(snapshot, event_summary)
     cold_ctx = (
         await query_cold_memory_for_context(user_id, event_summary)
@@ -931,7 +1002,10 @@ async def _process_proactive_user(store, user_id: str) -> None:
         # Consume only after the delayed mailbox intent is durable; otherwise
         # retry needs the same behavior evidence to remain available.
         if signal_source == "behavior_signals":
-            await store.consume_behavior_signals(user_id, recent_scroll_signals)
+            consumed_count = await store.consume_behavior_signals(
+                user_id,
+                recent_scroll_signals,
+            )
         else:
             for key in legacy_scroll_keys:
                 remove_typed_entry(hot_mem, key)
@@ -939,12 +1013,27 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 f"areqa:hot_memory:{user_id}",
                 json.dumps(hot_mem, ensure_ascii=False),
             )
+            consumed_count = len(legacy_scroll_keys)
+        logger.info(
+            "compeer.behavior_signals_consumed user_id=%s iteration_id=%s "
+            "signal_source=%s consumed_count=%s task_id=%s",
+            user_id,
+            iteration_id,
+            signal_source,
+            consumed_count,
+            task_id,
+        )
         await set_cooldown(user_id, state=learner_state)
     preflight = evaluate_proactive_preflight(
         trigger_present=False,
         cooldown_active=False,
         inactive_seconds=inactive_seconds,
         scroll_count=scroll_count,
+        signal_source=signal_source,
+        behavior_signal_count=len(behavior_signals),
+        recent_scroll_count=len(recent_scroll_signals),
+        legacy_scroll_count=len(legacy_scroll_keys),
+        delivery_delay_seconds=settings.compeer_delivery_delay_seconds,
         importance_passed=True,
     )
     if not task_id:
