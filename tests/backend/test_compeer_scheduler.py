@@ -6,6 +6,74 @@ from unittest.mock import AsyncMock, patch, MagicMock, ANY
 import backend.services.compeer_scheduler as compeer
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "reason"),
+    [
+        ({"trigger_present": False}, "absent_trigger"),
+        (
+            {"trigger_present": True, "cooldown_active": True},
+            "cooldown_active",
+        ),
+        (
+            {"trigger_present": False, "inactive_seconds": 30, "scroll_count": 6},
+            "inactivity_threshold",
+        ),
+        (
+            {"trigger_present": False, "inactive_seconds": 90, "scroll_count": 3},
+            "insufficient_scroll_evidence",
+        ),
+        (
+            {
+                "trigger_present": False,
+                "inactive_seconds": 90,
+                "scroll_count": 6,
+                "importance_passed": False,
+            },
+            "importance_gate_failed",
+        ),
+        (
+            {"trigger_present": True, "existing_pending_task": True},
+            "existing_pending_task",
+        ),
+    ],
+)
+def test_proactive_preflight_returns_stable_block_reasons(kwargs, reason):
+    result = compeer.evaluate_proactive_preflight(**kwargs)
+
+    assert result.eligible is False
+    assert result.block_reason == reason
+
+
+def test_proactive_preflight_allows_explicit_and_behavior_triggers():
+    explicit = compeer.evaluate_proactive_preflight(trigger_present=True)
+    behavior = compeer.evaluate_proactive_preflight(
+        trigger_present=False,
+        inactive_seconds=90,
+        scroll_count=6,
+        importance_passed=True,
+    )
+
+    assert explicit.eligible is True
+    assert behavior.eligible is True
+
+
+def test_preflight_log_contains_only_safe_metadata(caplog):
+    result = compeer.evaluate_proactive_preflight(
+        trigger_present=False,
+        inactive_seconds=90,
+        scroll_count=2,
+    )
+
+    with caplog.at_level("INFO"):
+        compeer._log_proactive_preflight("user-1", "iteration-1", result)
+
+    assert "compeer.preflight_evaluated" in caplog.text
+    assert "iteration_id=iteration-1" in caplog.text
+    assert "reason=insufficient_scroll_evidence" in caplog.text
+    assert "event_summary" not in caplog.text
+    assert "content=" not in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_scheduler_isolates_each_user_failure(caplog):
     store = MagicMock()

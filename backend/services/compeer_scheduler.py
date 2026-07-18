@@ -14,6 +14,8 @@ import logging
 import os
 import random
 import hashlib
+import uuid
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 import time as _time
@@ -23,6 +25,117 @@ from services.hot_memory_service import remove_typed_entry
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ProactivePreflight:
+    """Describe one proactive scheduling decision using safe metadata only.
+
+    The task ID is the correlation boundary between scheduler and mailbox
+    events. Raw hot-memory values, event summaries, and generated mail content
+    are intentionally excluded from this result.
+    """
+
+    trigger_present: bool
+    avatar_pending: bool
+    cooldown_active: bool
+    inactive_seconds: float | None = None
+    scroll_count: int = 0
+    importance_passed: bool | None = None
+    existing_pending_task: bool = False
+    scheduling_succeeded: bool | None = None
+    task_id: str | None = None
+    block_reason: str | None = None
+
+    @property
+    def eligible(self) -> bool:
+        """Return whether the preflight permits a scheduling attempt."""
+
+        return self.block_reason is None
+
+
+def evaluate_proactive_preflight(
+    *,
+    trigger_present: bool,
+    avatar_pending: bool = False,
+    cooldown_active: bool = False,
+    inactive_seconds: float | None = None,
+    scroll_count: int = 0,
+    importance_passed: bool | None = None,
+    existing_pending_task: bool = False,
+) -> ProactivePreflight:
+    """Evaluate proactive eligibility once without reading or writing user data.
+
+    Explicit avatar summons bypass the ordinary cooldown. Explicit proactive
+    triggers bypass inactivity and scroll gates. Behaviour-derived scheduling
+    fails closed when its required evidence or importance decision is absent.
+    """
+
+    reason = None
+    if existing_pending_task:
+        reason = "existing_pending_task"
+    elif avatar_pending:
+        reason = None
+    elif cooldown_active:
+        reason = "cooldown_active"
+    elif trigger_present:
+        reason = None
+    elif inactive_seconds is not None and inactive_seconds <= 60:
+        reason = "inactivity_threshold"
+    elif scroll_count == 0:
+        reason = "absent_trigger"
+    elif scroll_count < 6:
+        reason = "insufficient_scroll_evidence"
+    elif importance_passed is not True:
+        reason = "importance_gate_failed"
+
+    return ProactivePreflight(
+        trigger_present=trigger_present,
+        avatar_pending=avatar_pending,
+        cooldown_active=cooldown_active,
+        inactive_seconds=inactive_seconds,
+        scroll_count=scroll_count,
+        importance_passed=importance_passed,
+        existing_pending_task=existing_pending_task,
+        block_reason=reason,
+    )
+
+
+def _log_proactive_preflight(
+    user_id: str,
+    iteration_id: str,
+    preflight: ProactivePreflight,
+) -> None:
+    """Emit the allowlisted result of one scheduler preflight."""
+
+    logger.info(
+        "compeer.preflight_evaluated user_id=%s iteration_id=%s "
+        "trigger_present=%s avatar_pending=%s cooldown_active=%s "
+        "inactive_seconds=%s scroll_count=%s importance_passed=%s "
+        "existing_pending_task=%s scheduling_succeeded=%s task_id=%s",
+        user_id,
+        iteration_id,
+        preflight.trigger_present,
+        preflight.avatar_pending,
+        preflight.cooldown_active,
+        (
+            round(preflight.inactive_seconds, 3)
+            if preflight.inactive_seconds is not None
+            else "not_evaluated"
+        ),
+        preflight.scroll_count,
+        preflight.importance_passed,
+        preflight.existing_pending_task,
+        preflight.scheduling_succeeded,
+        preflight.task_id or "none",
+    )
+    if preflight.block_reason:
+        logger.info(
+            "compeer.preflight_blocked user_id=%s iteration_id=%s reason=%s",
+            user_id,
+            iteration_id,
+            preflight.block_reason,
+        )
 
 
 async def _clear_persisted_trigger(store, user_id: str, trigger_key: str) -> None:
@@ -542,6 +655,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
     later mailbox task without exposing hot-memory or generated-message content.
     """
 
+    iteration_id = uuid.uuid4().hex
     trigger_proactive = False
     avatar_summon = False
     learner_state = "STARTING"
@@ -560,19 +674,6 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 learner_state = hot_mem.get("current_learner_state", "STARTING")
                 active_avatar = hot_mem.get("active_avatar")
 
-    logger.info(
-        "compeer.preflight_evaluated user_id=%s trigger_present=%s avatar_pending=%s cooldown_active=%s",
-        user_id,
-        bool(hot_mem.get("trigger_proactive")),
-        avatar_summon,
-        cooldown_active,
-    )
-    if hot_mem.get("trigger_proactive") and cooldown_active:
-        logger.info(
-            "compeer.preflight_blocked user_id=%s reason=cooldown_active",
-            user_id,
-        )
-
     if avatar_summon and active_avatar:
         from gum_integration import (
             generate_epistolary_letter_via_llm,
@@ -580,8 +681,6 @@ async def _process_proactive_user(store, user_id: str) -> None:
             query_cold_memory_for_context,
         )
         from mailbox_store import get_mailbox_store
-        import uuid
-
         snapshot = await get_hot_memory_snapshot(user_id)
         event_summary = f"與 {active_avatar} 進行深度歷史哲學探討"
         cold_ctx = await query_cold_memory_for_context(user_id, event_summary)
@@ -610,6 +709,24 @@ async def _process_proactive_user(store, user_id: str) -> None:
         )
         if task_id:
             await _clear_persisted_trigger(store, user_id, "avatar_summon_pending")
+        preflight = evaluate_proactive_preflight(
+            trigger_present=False,
+            avatar_pending=True,
+            cooldown_active=False,
+        )
+        if not task_id:
+            preflight = replace(preflight, block_reason="scheduling_failed")
+        _log_proactive_preflight(
+            user_id,
+            iteration_id,
+            replace(
+                preflight,
+                scheduling_succeeded=bool(task_id),
+                task_id=task_id,
+            ),
+        )
+        await tick_proactive_schedule(user_id)
+        return
     elif trigger_proactive:
         from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
 
@@ -636,11 +753,40 @@ async def _process_proactive_user(store, user_id: str) -> None:
         if task_id:
             await _clear_persisted_trigger(store, user_id, "trigger_proactive")
             await set_cooldown(user_id, state=learner_state)
+        preflight = evaluate_proactive_preflight(
+            trigger_present=True,
+            cooldown_active=False,
+        )
+        if not task_id:
+            preflight = replace(preflight, block_reason="scheduling_failed")
+        _log_proactive_preflight(
+            user_id,
+            iteration_id,
+            replace(
+                preflight,
+                scheduling_succeeded=bool(task_id),
+                task_id=task_id,
+            ),
+        )
+        await tick_proactive_schedule(user_id)
+        return
 
     await tick_proactive_schedule(user_id)
 
     last_time = await get_last_interaction_time(user_id)
-    if await is_in_cooldown(user_id) or (_time.time() - last_time <= 60):
+    inactive_seconds = max(0.0, _time.time() - last_time)
+    cooldown_active = await is_in_cooldown(user_id)
+    if cooldown_active or inactive_seconds <= 60:
+        _log_proactive_preflight(
+            user_id,
+            iteration_id,
+            evaluate_proactive_preflight(
+                trigger_present=bool(hot_mem.get("trigger_proactive")),
+                avatar_pending=avatar_summon,
+                cooldown_active=cooldown_active,
+                inactive_seconds=inactive_seconds,
+            ),
+        )
         return
 
     hot_mem = await store.get_hot_memory(user_id)
@@ -650,6 +796,16 @@ async def _process_proactive_user(store, user_id: str) -> None:
         if key.startswith("obs_") and "Type: scroll" in str(value)
     ]
     if len(scroll_keys) < 6:
+        _log_proactive_preflight(
+            user_id,
+            iteration_id,
+            evaluate_proactive_preflight(
+                trigger_present=False,
+                cooldown_active=False,
+                inactive_seconds=inactive_seconds,
+                scroll_count=len(scroll_keys),
+            ),
+        )
         return
 
     for key in scroll_keys:
@@ -667,7 +823,19 @@ async def _process_proactive_user(store, user_id: str) -> None:
 
     snapshot = await get_hot_memory_snapshot(user_id)
     event = await detect_proactive_event_via_llm(user_id, snapshot)
-    if not event["has_event"] or event["importance"] < 0.7:
+    importance_passed = bool(event["has_event"] and event["importance"] >= 0.7)
+    if not importance_passed:
+        _log_proactive_preflight(
+            user_id,
+            iteration_id,
+            evaluate_proactive_preflight(
+                trigger_present=False,
+                cooldown_active=False,
+                inactive_seconds=inactive_seconds,
+                scroll_count=len(scroll_keys),
+                importance_passed=False,
+            ),
+        )
         return
 
     event_summary = event["event_summary"]
@@ -690,6 +858,24 @@ async def _process_proactive_user(store, user_id: str) -> None:
     )
     if task_id:
         await set_cooldown(user_id, state=learner_state)
+    preflight = evaluate_proactive_preflight(
+        trigger_present=False,
+        cooldown_active=False,
+        inactive_seconds=inactive_seconds,
+        scroll_count=len(scroll_keys),
+        importance_passed=True,
+    )
+    if not task_id:
+        preflight = replace(preflight, block_reason="scheduling_failed")
+    _log_proactive_preflight(
+        user_id,
+        iteration_id,
+        replace(
+            preflight,
+            scheduling_succeeded=bool(task_id),
+            task_id=task_id,
+        ),
+    )
 
 
 async def proactive_scheduler_loop():
