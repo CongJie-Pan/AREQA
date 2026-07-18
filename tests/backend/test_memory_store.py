@@ -178,6 +178,36 @@ def candidate_evidence(message_id, conversation_id, message):
 
 
 @pytest.mark.asyncio
+async def test_candidate_evidence_event_reports_safe_counts(memory_store, caplog):
+    caplog.set_level(logging.INFO)
+    message = "我偏好先看具體例子。"
+    candidate = await memory_store.append_cold_candidate(
+        "user-1",
+        message,
+        category="passive_preference",
+        source="verified_user_evidence",
+        reason="test",
+        conversation_id="conversation-1",
+        evidence=candidate_evidence("message-1", "conversation-1", message),
+    )
+    await memory_store.append_cold_candidate(
+        "user-1",
+        message,
+        category="passive_preference",
+        source="verified_user_evidence",
+        reason="test",
+        conversation_id="conversation-1",
+        candidate_hash_override=candidate["hash"],
+        evidence=candidate_evidence("message-2", "conversation-1", message),
+    )
+
+    assert "memory.candidate_evidence_recorded" in caplog.text
+    assert "event=duplicate_conversation_ignored" in caplog.text
+    assert "evidence_count=1" in caplog.text
+    assert message not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_canonical_preference_promotes_only_after_two_conversations(memory_store):
     canonical_key = "learning_preference:abstract_concepts:concrete_examples"
     first_text = "我偏好用具體例子理解抽象概念。"

@@ -273,6 +273,21 @@ class MemoryStore:
                             pipe.multi()
                             pipe.set(key, json.dumps(candidates[-100:], ensure_ascii=False))
                             await pipe.execute()
+                            if duplicate_preference_conversation:
+                                event = "duplicate_conversation_ignored"
+                            elif evidence and message_id in existing_message_ids:
+                                event = "duplicate_message_ignored"
+                            else:
+                                event = "evidence_appended"
+                            logger.info(
+                                "memory.candidate_evidence_recorded user_id=%s candidate_id=%s category=%s event=%s evidence_count=%s distinct_conversation_count=%s",
+                                user_id,
+                                candidate_hash,
+                                category,
+                                event,
+                                len(candidate.get("evidence", [])),
+                                len(set(candidate.get("conversation_ids", []))),
+                            )
                             return candidate
 
                     # A semantic override may only select an already validated
@@ -312,11 +327,13 @@ class MemoryStore:
                     pipe.set(key, json.dumps(candidates[-100:], ensure_ascii=False))
                     await pipe.execute()
                     logger.info(
-                        "memory.candidate_created user_id=%s candidate_id=%s category=%s expires=%s",
+                        "memory.candidate_created user_id=%s candidate_id=%s category=%s expires=%s evidence_count=%s distinct_conversation_count=%s",
                         user_id,
                         candidate_hash,
                         category,
                         bool(expires_at),
+                        len(candidate["evidence"]),
+                        len(set(candidate["conversation_ids"])),
                     )
                     return candidate
                 except WatchError:
@@ -472,10 +489,12 @@ class MemoryStore:
                     pipe.set(working_key, json.dumps(working, ensure_ascii=False))
                     await pipe.execute()
                     logger.info(
-                        "memory.profile_promoted user_id=%s candidate_id=%s category=%s",
+                        "memory.profile_promoted user_id=%s candidate_id=%s category=%s evidence_count=%s distinct_conversation_count=%s",
                         user_id,
                         candidate_hash,
                         category,
+                        len(complete_evidence),
+                        len({item["conversation_id"] for item in complete_evidence}),
                     )
                     return candidate
                 except WatchError:
