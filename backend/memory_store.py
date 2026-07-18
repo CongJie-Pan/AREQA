@@ -784,7 +784,7 @@ class MemoryStore:
             )
 
     async def set_pending_alert(self, user_id: str, content: str):
-        logger.info(f"[EDF-LOG] set_pending_alert: setting alert for user '{user_id}': '{content}'")
+        logger.info("memory.pending_alert_set user_id=%s", user_id)
         alert_key = f"pending_alert_{user_id}"
         await self.update_hot_memory(user_id, alert_key, content)
         
@@ -812,7 +812,7 @@ class MemoryStore:
                     pipe.set(mem_key, serialized)
                     await pipe.execute()
                     
-                    logger.info(f"[EDF-LOG] get_and_clear_pending_alert: retrieved and clearing alert for '{user_id}': '{content}'")
+                    logger.info("memory.pending_alert_cleared user_id=%s", user_id)
                     return content
                 except WatchError:
                     continue
