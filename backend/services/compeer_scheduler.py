@@ -536,22 +536,42 @@ async def set_last_interaction_time(user_id: str, timestamp: float):
 
 
 async def _process_proactive_user(store, user_id: str) -> None:
-    """Process one user without owning the scheduler-cycle failure boundary."""
+    """Process one user and emit a safe proactive-scheduling preflight event.
+
+    The scheduler records only eligibility metadata so operators can correlate a
+    later mailbox task without exposing hot-memory or generated-message content.
+    """
 
     trigger_proactive = False
     avatar_summon = False
     learner_state = "STARTING"
     active_avatar = None
+    cooldown_active = False
 
     async with _flag_lock:
         hot_mem = await store.get_hot_memory(user_id)
         if hot_mem.get("avatar_summon_pending"):
             avatar_summon = True
             active_avatar = hot_mem.get("active_avatar")
-        elif hot_mem.get("trigger_proactive") and not await is_in_cooldown(user_id):
-            trigger_proactive = True
-            learner_state = hot_mem.get("current_learner_state", "STARTING")
-            active_avatar = hot_mem.get("active_avatar")
+        else:
+            cooldown_active = await is_in_cooldown(user_id)
+            if hot_mem.get("trigger_proactive") and not cooldown_active:
+                trigger_proactive = True
+                learner_state = hot_mem.get("current_learner_state", "STARTING")
+                active_avatar = hot_mem.get("active_avatar")
+
+    logger.info(
+        "compeer.preflight_evaluated user_id=%s trigger_present=%s avatar_pending=%s cooldown_active=%s",
+        user_id,
+        bool(hot_mem.get("trigger_proactive")),
+        avatar_summon,
+        cooldown_active,
+    )
+    if hot_mem.get("trigger_proactive") and cooldown_active:
+        logger.info(
+            "compeer.preflight_blocked user_id=%s reason=cooldown_active",
+            user_id,
+        )
 
     if avatar_summon and active_avatar:
         from gum_integration import (
