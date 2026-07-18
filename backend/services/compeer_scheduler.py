@@ -123,9 +123,26 @@ def _log_proactive_preflight(
     iteration_id: str,
     preflight: ProactivePreflight,
 ) -> None:
-    """Emit the allowlisted result of one scheduler preflight."""
+    """Emit the allowlisted result of one scheduler preflight.
 
-    logger.info(
+    Ordinary idle polling for users with no usable trigger is intentionally
+    debug-level noise. INFO is reserved for actionable states: visible evidence,
+    eligibility, scheduling, cooldown, failures, or non-empty behavior signals.
+    """
+
+    log_level = logging.INFO
+    if (
+        preflight.block_reason in {"absent_trigger", "inactivity_threshold"}
+        and preflight.scroll_count == 0
+        and not preflight.trigger_present
+        and not preflight.avatar_pending
+        and not preflight.existing_pending_task
+        and preflight.scheduling_succeeded is None
+    ):
+        log_level = logging.DEBUG
+
+    logger.log(
+        log_level,
         "compeer.preflight_evaluated user_id=%s iteration_id=%s "
         "trigger_present=%s avatar_pending=%s cooldown_active=%s "
         "inactive_seconds=%s scroll_count=%s importance_passed=%s "
@@ -158,7 +175,8 @@ def _log_proactive_preflight(
         preflight.task_id or "none",
     )
     if preflight.block_reason:
-        logger.info(
+        logger.log(
+            log_level,
             "compeer.preflight_blocked user_id=%s iteration_id=%s reason=%s",
             user_id,
             iteration_id,
@@ -903,7 +921,9 @@ async def _process_proactive_user(store, user_id: str) -> None:
         scroll_count = len(legacy_scroll_keys)
         signal_source = "legacy_hot_memory"
 
-    logger.info(
+    behavior_eval_level = logging.INFO if scroll_count > 0 else logging.DEBUG
+    logger.log(
+        behavior_eval_level,
         "compeer.behavior_signals_evaluated user_id=%s iteration_id=%s "
         "signal_source=%s behavior_signal_count=%s recent_scroll_count=%s "
         "legacy_scroll_count=%s scroll_count=%s delivery_delay_seconds=%s",

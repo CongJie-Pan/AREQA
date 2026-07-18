@@ -75,6 +75,27 @@ def test_preflight_log_contains_only_safe_metadata(caplog):
     assert "content=" not in caplog.text
 
 
+def test_empty_absent_trigger_preflight_is_debug_noise(caplog):
+    result = compeer.evaluate_proactive_preflight(
+        trigger_present=False,
+        inactive_seconds=90,
+        scroll_count=0,
+    )
+
+    with caplog.at_level("INFO"):
+        compeer._log_proactive_preflight("user-1", "iteration-1", result)
+
+    assert "compeer.preflight_evaluated" not in caplog.text
+    assert "reason=absent_trigger" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level("DEBUG"):
+        compeer._log_proactive_preflight("user-1", "iteration-1", result)
+
+    assert "compeer.preflight_evaluated" in caplog.text
+    assert "reason=absent_trigger" in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_scheduler_isolates_each_user_failure(caplog):
     store = MagicMock()
@@ -439,6 +460,35 @@ async def test_behavior_signals_below_threshold_do_not_schedule(mock_store, capl
     assert "signal_source=behavior_signals" in caplog.text
     assert "recent_scroll_count=5" in caplog.text
     assert "reason=insufficient_scroll_evidence" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_empty_behavior_polling_is_debug_noise(mock_store, caplog):
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch.object(
+        compeer,
+        "get_last_interaction_time",
+        new=AsyncMock(return_value=time.time() - 120),
+    ), patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(return_value=False),
+    ), patch.object(
+        compeer,
+        "tick_proactive_schedule",
+        new=AsyncMock(),
+    ), patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ):
+        with caplog.at_level("INFO"):
+            await compeer._process_proactive_user(mock_store, "default_user")
+
+    scheduled.assert_not_awaited()
+    assert "compeer.behavior_signals_evaluated" not in caplog.text
+    assert "reason=absent_trigger" not in caplog.text
 
 
 @pytest.mark.asyncio

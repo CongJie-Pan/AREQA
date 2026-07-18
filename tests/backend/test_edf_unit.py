@@ -61,12 +61,13 @@ def tmp_store():
 # U-01 to U-04: log_action API
 @pytest.mark.asyncio
 @patch("gum_integration.push_observation")
-async def test_log_action_valid_request(mock_push, tmp_store):
+async def test_log_action_valid_request(mock_push, tmp_store, caplog):
     store, fake_r = tmp_store
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        res = await ac.post("/api/v1/log_action", json={"action_type": "scroll", "timestamp": 12345, "context": {"duration_seconds": 3.0}})
-        await asyncio.sleep(0.1)
-        assert res.status_code == 200
+        with caplog.at_level("INFO"):
+            res = await ac.post("/api/v1/log_action", json={"action_type": "scroll", "timestamp": 12345, "context": {"duration_seconds": 3.0}})
+            await asyncio.sleep(0.1)
+            assert res.status_code == 200
         
     data = await fake_r.get("areqa:hot_memory:default_user")
     hot = json.loads(data) if data else {}
@@ -77,6 +78,10 @@ async def test_log_action_valid_request(mock_push, tmp_store):
     signals = json.loads(signals_data) if signals_data else []
     assert len(signals) == 1
     assert signals[0]["type"] == "scroll"
+    assert "client_action_logged" in caplog.text
+    assert "action_type=scroll" in caplog.text
+    assert "duration_seconds" not in caplog.text
+    assert "3.0" not in caplog.text
 
 @pytest.mark.asyncio
 async def test_log_action_missing_action_field(tmp_store):
