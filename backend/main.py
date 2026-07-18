@@ -627,6 +627,49 @@ async def _delete_explicit_profile_memory(store: Any, user_id: str, memory_id: s
     return True
 
 
+async def _update_explicit_profile_memory(
+    store: Any,
+    user_id: str,
+    memory_id: str,
+    text: str,
+) -> bool:
+    """Persist an explicit profile-memory correction before syncing its cache.
+
+    The Redis profile record is the durable source of truth.  The working-memory
+    mirror only improves prompt assembly, so a mirror failure is observable but
+    must not invalidate a correction that has already been persisted.
+    """
+    profile = await store.get_user_profile(user_id)
+    index = _find_profile_memory(profile, memory_id)
+    if index is None:
+        return False
+
+    explicit_memories = profile.setdefault("explicit_memories", [])
+    explicit_memories[index] = text
+    await store.redis.set(
+        f"areqa:user_profile:{user_id}",
+        json.dumps(profile, ensure_ascii=False),
+    )
+    logger.info(
+        "memory.correction_applied user_id=%s memory_id=%s operation=edit result=persisted",
+        user_id,
+        memory_id,
+    )
+    try:
+        await store.update_working_memory(
+            user_id=user_id,
+            updates={"explicit_memories": explicit_memories},
+        )
+    except Exception as exc:
+        logger.warning(
+            "memory.correction_sync_failed user_id=%s memory_id=%s operation=edit reason=%s",
+            user_id,
+            memory_id,
+            type(exc).__name__,
+        )
+    return True
+
+
 async def _get_candidate_by_memory_id(store: Any, user_id: str, memory_id: str) -> dict | None:
     candidates = await store.get_cold_candidates(user_id)
     return next(
@@ -753,12 +796,15 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user
     
     if mem_id.startswith("profile:explicit:"):
         store = get_global_store()
-        profile = await store.get_user_profile(current_user_id)
-        index = _find_profile_memory(profile, mem_id)
-        if index is not None:
-            profile["explicit_memories"][index] = req.text.strip()
-            await store.redis.set(f"areqa:user_profile:{current_user_id}", json.dumps(profile, ensure_ascii=False))
-            await store.update_working_memory(user_id=current_user_id, updates={"explicit_memories": profile["explicit_memories"]})
+        if not store:
+            raise HTTPException(status_code=503, detail="Memory store unavailable")
+        if not await _update_explicit_profile_memory(
+            store,
+            current_user_id,
+            mem_id,
+            req.text.strip(),
+        ):
+            raise HTTPException(status_code=404, detail="Memory not found")
     elif mem_id.startswith("candidate:"):
         store = get_global_store()
         candidates = await store.get_cold_candidates(current_user_id)

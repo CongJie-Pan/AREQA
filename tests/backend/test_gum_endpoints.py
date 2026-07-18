@@ -180,3 +180,38 @@ def test_edit_memory_endpoint():
         assert response.json() == {"status": "success"}
         mock_get_gum.assert_called_once_with("default_user")
         mock_gum_instance.update_text.assert_called_once_with(456, "Updated text")
+
+
+def test_edit_explicit_profile_memory_persists_when_working_sync_fails():
+    mock_store = AsyncMock()
+    original = "先給我一個具體例子"
+    replacement = "先給我生活化案例"
+    mock_store.get_user_profile.return_value = {"explicit_memories": [original]}
+    mock_store.update_working_memory.side_effect = RuntimeError("working cache unavailable")
+    memory_id = _memory_source_id("profile:explicit", original)
+
+    with patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.put(f"/api/v1/memory/{memory_id}", json={"text": replacement})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "success"}
+    persisted_profile = mock_store.redis.set.await_args.args[1]
+    assert replacement in persisted_profile
+    mock_store.update_working_memory.assert_awaited_once_with(
+        user_id="default_user",
+        updates={"explicit_memories": [replacement]},
+    )
+
+
+def test_edit_explicit_profile_memory_returns_404_when_id_is_unknown():
+    mock_store = AsyncMock()
+    mock_store.get_user_profile.return_value = {"explicit_memories": []}
+
+    with patch("memory_store.get_global_store", return_value=mock_store):
+        response = client.put(
+            "/api/v1/memory/profile:explicit:unknown",
+            json={"text": "replacement"},
+        )
+
+    assert response.status_code == 404
+    mock_store.redis.set.assert_not_awaited()
