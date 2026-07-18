@@ -103,7 +103,11 @@ class ConversationContextService:
 
         system_prompt += "\n\n【工具使用規則】你必須先用繁體中文完整回答使用者的問題，再選擇性提出已授權的工具請求。嚴禁只呼叫工具而不輸出任何文字回應。"
         system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
-        system_prompt += "\n【理解狀態規則】除非有獨立且已驗證的學習證據，否則將使用者的理解程度視為 unknown；不得聲稱使用者已理解、掌握或熟悉某個概念。"
+        system_prompt += (
+            "\n【使用者狀態規則】除非有獨立且已驗證的學習證據，否則將使用者的理解程度視為 unknown；"
+            "不得聲稱使用者已理解、掌握或熟悉某個概念。使用者提及成績、焦慮、困難或偏好時，"
+            "只能就當前需求提供協助，不得將其改寫成你對使用者能力、情緒、人格或學習進度的判定。"
+        )
 
         hot_snapshot = await snapshot_loader(
             user_id,
