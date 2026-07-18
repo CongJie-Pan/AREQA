@@ -1,78 +1,123 @@
 ---
 name: plan-write-agent
-description: 撰寫以 phase 為單位、可直接執行與驗證的軟體工程 plan。當使用者要求規劃功能開發、重構、除錯修復、架構調整或跨前後端變更，且需要先產生 plan 再實作時使用；每個 phase 必須說明「問題、假設、解方、實作、測試計畫」，並將單元測試與整合測試結果設為進入下一個 phase 的門控。
+description: Write reviewable, phase-based software implementation plans in English. Use when planning a feature, refactor, bug fix, architecture change, or cross-system change before implementation. Every phase defines the problem, assumptions, solution, implementation, expected file tree, checkbox work list, test plan, expected result, concise Act-based testing script, a mandatory test gate, and a phase-scoped Git commit.
 ---
 
 # Plan Write Agent
 
-## 目標
+Produce an implementation plan that another engineer can execute and verify without reconstructing the design decisions. Write in clear, natural, professional English unless the user explicitly requests another language. Use paragraphs for reasoning; use tables, lists, and trees only where they make execution or review clearer.
 
-你是負責把模糊需求轉成可審查、可分階段執行的工程 plan 的資深技術規劃者。輸出以段落敘述為主，列點與表格只用來整理檔案、依賴、驗收條件或測試矩陣；不可只給待辦清單，也不可把「之後再決定」當成實作細節。
+## Workflow
 
-## 工作流程
+1. Read the user request, relevant documentation, source entry points, callers, tests, configuration, and repository structure before drafting the plan.
+2. Identify the current behavior, target behavior, data flow, compatibility boundaries, dependencies, and regression risks. Treat unknown facts as assumptions, validation tasks, or risks; never present them as confirmed.
+3. Divide the work into dependency-ordered phases. Each phase must be independently implementable, verifiable, and committable. Resolve data ownership, invariants, failure handling, and terminal observability before larger structural refactors.
+4. Do not modify production code when the user asks only for a plan. Write the plan into the requested document and preserve unrelated user changes.
 
-先閱讀使用者需求、專案結構、相關程式碼、既有測試、設定檔與文件，確認現況及限制。若需求涉及既有行為，先找出入口、資料流、依賴方與回歸風險；若資訊不足，列出缺口並在合理範圍內提出明確假設，不得把未驗證的猜測寫成既定事實。
+## Required Phase Format
 
-接著將工作切成有依賴順序的 phases。Phase 應是可獨立實作、可獨立驗證且能產出可觀察成果的最小合理單位；通常先處理資料模型或核心邏輯，再處理介面、整合與清理，但需依專案實際架構調整。每個 phase 都必須包含以下五個小節，標題不可省略或改名：
-
-### Phase N：明確的階段名稱
-
-#### 問題
-
-說明本 phase 解決的具體問題、觸發原因、影響範圍，以及完成後應改變的可觀察行為。指出目前行為與目標行為的差異，必要時提供請求、資料或流程的例子。
-
-#### 假設
-
-列出本 phase 依賴的已知事實、待確認事項、相容性邊界、資料格式、錯誤處理與非目標。每個假設都要說明若不成立會造成什麼影響；無法確認時，將它轉成驗證步驟或風險，而不是默默採用。
-
-#### 解方
-
-用一至數段說明選擇的設計、責任邊界、資料流、控制流、與既有元件的整合方式，以及為何符合需求。若有替代方案，只保留會影響決策的方案，簡述取捨與不採用原因。
-
-#### 實作
-
-提供足夠讓另一位工程師直接執行的細節，至少涵蓋：預計修改或新增的檔案與符號、介面或 schema 變更、輸入輸出與型別、主要演算法或控制流程、錯誤與邊界情況、狀態及資料遷移、相容性、設定或環境變數、前後端/API/資料庫整合、以及實作順序。檔案路徑要盡量精確；不要捏造尚未存在的名稱，若需新增則明確標示。可用小表格整理檔案與責任，但核心設計必須用段落解釋。
-
-#### 測試計畫
-
-分別說明單元測試與整合測試的範圍、案例、測試資料、mock/fixture、驗收斷言與執行指令。測試案例需覆蓋成功路徑、失敗路徑、邊界條件及本 phase 最可能造成的回歸。若適用，再補充 API、端對端、型別、lint 或建置驗證；清楚區分必須通過的門控與可後續補強的測試。
-
-## Phase 間測試門控
-
-每個 phase 的實作完成後，必須依該 phase 的「測試計畫」執行單元測試與整合測試，並記錄實際指令、結果、失敗案例與修正內容。只有所有必要測試通過，且 lint、型別檢查或建置等列為門控的檢查也通過，才能開始下一個 phase。測試失敗時，流程停在目前 phase：先分析根因、修正實作或測試計畫，再重新執行完整門控；不可以跳過、降低斷言、標記 flaky 或只跑部分測試來繞過門控。
-
-在 plan 中於每個 phase 結尾加入「進入下一 Phase 的門控」段落，明列：必須通過的測試指令、成功判定、需保留的證據，以及失敗時的回退或處理方式。最後再加入跨 phase 的回歸測試與整體驗收門檻，確認各 phase 串接後仍符合原始需求。
-
-## 輸出格式
-
-開頭先用一段話總結目標、現況理解與規劃策略，再用下列格式輸出。phase 數量依需求決定，不為湊數拆分；若只有一個可驗證單位，仍使用 Phase 1。
-
-每個 phase 必須完整呈現：
+Start with one short paragraph summarizing the objective, current understanding, and why the phase order is appropriate. Then use the following structure for every phase. Do not omit or rename the required sections.
 
 ```markdown
-## Phase 1：...
+### Phase N: Clear Phase Name
 
-### 問題
-（段落）
+#### Problem
 
-### 假設
-（段落；必要時用短列點）
+Explain the current failure or limitation, trigger, affected behavior, and observable target state.
 
-### 解方
-（段落）
+#### Assumptions
 
-### 實作
-（段落；必要時用檔案/符號表格）
+State confirmed constraints, compatibility boundaries, unresolved decisions, and the consequence if an assumption is false.
 
-### 測試計畫
-（單元測試、整合測試、指令與驗收條件）
+#### Solution
 
-### 進入下一 Phase 的門控
-（必須通過的檢查、證據與失敗處理）
+Explain the selected design, ownership boundaries, data/control flow, and material tradeoffs.
+
+#### Implementation
+
+> Context: State the required code-commenting approach for this phase. Require Google-style docstrings for every new or materially changed public module, class, and function. Explain the non-obvious design rationale, invariants, ownership boundaries, compatibility constraints, failure semantics, and critical structured-log emissions that must be documented. Require inline comments at complex decisions or state transitions only when they explain *why* the code is written that way; never use comments to repeat obvious syntax, assignments, or control flow. Require enough meaningful documentation for a future maintainer to safely change the phase's highest-risk paths.
+
+Specify the intended files, symbols, interfaces, data/schema changes, error handling, migration/compatibility behavior, configuration, and implementation order. Clearly label files that will be added.
+
+#### Expected File Tree After Phase N
+
+Show only files expected to be added, modified, or removed by this phase. Mark entries as `[new]`, `[modified]`, or `[removed]`. State explicitly when the tree is cumulative.
+
+```text
+backend/
+├── existing_module.py                  [modified]
+└── services/
+    └── new_service.py                  [new]
+tests/
+└── test_new_service.py                 [new]
 ```
 
-結尾提供「跨 phase 回歸與最終驗收」，並列出尚待確認的問題、風險及其緩解方式。不要在使用此 skill 時直接修改程式碼，除非使用者另外明確要求同時進入實作；若使用者只要求 plan，應停在可供審核的 plan。
+#### Work List
 
-## 品質檢查
+Write an implementation checklist immediately after the file tree. Every top-level item must name the exact repository path and the affected existing function/class, or label a proposed new symbol explicitly; nested sub-work must name the symbol or code path it changes. State the intended code change, not merely an outcome such as "refactor memory" or "add tests." Make test tasks name the target test files and the behavior they protect. Use numbered top-level work items and nested checkbox sub-work only when a subtask is necessary. Keep items concrete, ordered, and traceable to the implementation and file tree. Use this format:
 
-交付前逐項確認：每個 phase 都有五個固定小節；實作細節能定位到檔案與符號；單元及整合測試都有具體案例、指令和通過條件；phase 依賴順序清楚；測試門控不可被跳過；需求外的工作被標為非目標；所有不確定性都已成為假設、驗證步驟或風險。若無法提供具體測試指令，必須說明原因並給出最接近的可執行替代方案。
+```markdown
+1. [ ] Create `backend/services/new_service.py`.
+   - [ ] Add the proposed `NewInput` type and `handle_new_input()` method.
+   - [ ] Update `ExistingService.execute()` in `backend/services/existing_service.py` to call it.
+2. [ ] Modify `backend/legacy_module.py`.
+   - [ ] Remove `LegacyDecision` only after migrating its callers.
+3. [ ] Extend `tests/backend/test_new_service.py` with the regression case for rejected input.
+```
+
+#### Test Plan
+
+Describe unit and integration coverage, including success, failure, and boundary cases. Name test files, fixtures/mocks, required assertions, and executable commands.
+
+#### Expected Output / Result
+
+State the observable behavior, persisted state, logs/events, API/SSE behavior, or UI outcome that proves the phase worked. Keep this distinct from the implementation steps and test commands.
+
+#### Testing Script
+
+Write a concise, sequential test scenario using Acts. Each Act must test one behavior, contain a precise input/action or setup, and finish with one clear pass condition. Use this format:
+
+##### Act 01: Short Behavior Title
+
+Describe the exact input, setup, or action.
+
+Pass condition: state the single observable result.
+
+Use as many Acts as necessary, but keep every Act narrow. Prefer realistic user input for user-facing behavior and deterministic setup for background jobs, recovery, or failure paths. Do not replace this script with a broad checklist or merely repeat automated test names.
+
+#### Gate to Enter the Next Phase
+
+List the exact commands and required checks. Define the success condition, evidence to retain, and required response to failure. The next phase must not start until every gate passes; do not weaken assertions, skip failing tests, or mark failures flaky to proceed.
+
+#### Phase Commit
+
+Define the Git commit created only after this phase's gate passes. Provide a concrete Conventional Commit-style message, the exact phase-owned paths or hunk boundaries to stage, and the commands used to verify the staged patch and resulting commit. Require the implementer to:
+
+1. Inspect `git status --short` and preserve unrelated user changes.
+2. Stage only this phase's files or explicitly identified hunks; never use a broad stage command when unrelated changes exist.
+3. Run `git diff --cached --check` and review `git diff --cached --stat` before committing.
+4. Create exactly one coherent phase commit unless the plan explicitly justifies smaller atomic commits.
+5. Confirm the commit with `git show --stat --oneline --summary HEAD` before entering the next phase.
+
+If a file is modified across multiple phases, identify which functions or hunks belong to each phase in advance. Keep every intermediate commit buildable and ensure its phase gate can run from that commit. Do not commit when the gate fails, do not amend or rewrite unrelated commits, and do not push unless the user explicitly requests it.
+```
+
+## Plan Quality Requirements
+
+- Keep phase scope coherent. Do not split work only to create more phases.
+- Keep phase commits coherent and dependency ordered. A later phase may build on an earlier commit, but no phase commit may depend on uncommitted code from a future phase.
+- Prefer existing project patterns, names, and tests. Do not invent files or APIs without marking them as proposed additions.
+- Make all external contracts explicit: API responses, SSE events, database records, queues, logs, configuration, and frontend behavior when relevant.
+- Define terminal observability for every changed critical path. Require structured logs through the project's existing logging abstraction, with stable event names, appropriate correlation IDs, state/result, and safe reason codes. Specify log levels for success, policy block/retry, and unexpected failure. Never require `print` statements or human-only free-form logs.
+- Treat logs as a privacy boundary. Exclude raw user text, prompts, model output, credentials, tokens, sensitive labels, and other unnecessary personal data. Require tests to capture critical events and assert event names plus safe metadata rather than formatted log sentences.
+- For migrations, describe treatment of legacy records, incomplete provenance, retries, idempotency, rollback, and fail-closed behavior where applicable.
+- Make test coverage proportional to risk. Shared data paths, background jobs, public streaming contracts, and user profile writes require focused regression and integration tests.
+- Begin every Implementation section with a phase-specific `> Context:` block defining the required Google-style docstrings, rationale-focused inline comments, and critical structured-log documentation. Put expected file trees, detailed file/function-level checkbox work lists, expected results, Act-based scripts, test gates, and phase commit instructions in every phase. For critical state transitions, include safe structured-log work and test assertions. These are mandatory review artifacts, not optional additions.
+
+## Cross-Phase Regression and Final Acceptance
+
+End every plan with `### Cross-Phase Regression and Final Acceptance`. Include the full regression command, focused commands omitted from the full suite, the end-to-end or manual rerun scenario, concrete acceptance outcomes, remaining risks, and mitigations. Require a final `git status --short` and ordered `git log --oneline` review proving that every phase commit exists and no planned changes remain uncommitted. State any unresolved product or deployment decisions explicitly.
+
+## Final Review
+
+Before delivering, confirm that every phase has all eleven required sections: Problem, Assumptions, Solution, Implementation, Expected File Tree, Work List, Test Plan, Expected Output / Result, Testing Script, Gate, and Phase Commit. Confirm that each Implementation heading is immediately followed by a phase-specific `> Context:` block; the output is English; every work-list item names a file and symbol or explicitly proposed new symbol; test work names test files; file paths and commands are concrete; Act scripts are concise; each commit message and staged scope are explicit; and no phase can be committed or followed by the next phase until its verification gate passes.

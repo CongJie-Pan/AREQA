@@ -3,6 +3,23 @@ import { saveAs } from 'file-saver';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
 import type { DisplayMessage } from '@/store/chat';
 
+export const formatSourcesForMarkdown = (message: DisplayMessage): string => {
+  if (!message.sources?.length) return '';
+  const lines = message.sources
+    .map((source, index) => {
+      const url = source.url || (source.chunk_id?.startsWith('http') ? source.chunk_id : '');
+      let domain = '';
+      try {
+        domain = url ? new URL(url).hostname : '';
+      } catch {
+        domain = '';
+      }
+      const label = source.title || domain || `來源 ${index + 1}`;
+      return url ? `${index + 1}. [${label}](${url})` : `${index + 1}. ${label}`;
+    });
+  return `#### 文獻來源\n\n${lines.join('\n')}\n\n`;
+};
+
 export const exportToMarkdown = (messages: DisplayMessage[]) => {
   let content = '# AREQA 對話紀錄\n\n';
   
@@ -14,7 +31,9 @@ export const exportToMarkdown = (messages: DisplayMessage[]) => {
       content += `> **🤔 思考過程：**\n> \n> ${msg.reasoning.content.split('\n').join('\n> ')}\n\n`;
     }
     
-    content += `${msg.content}\n\n---\n\n`;
+    content += `${msg.content}\n\n`;
+    content += formatSourcesForMarkdown(msg);
+    content += '---\n\n';
   });
 
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
@@ -56,6 +75,21 @@ export const exportToDocx = async (messages: DisplayMessage[]) => {
         })
       );
     });
+
+    if (msg.sources?.length) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '文獻來源', bold: true, size: 24 })],
+        spacing: { before: 120, after: 80 },
+      }));
+      msg.sources.forEach((source, index) => {
+        const url = source.url || (source.chunk_id?.startsWith('http') ? source.chunk_id : '');
+        const label = source.title || `來源 ${index + 1}`;
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `${index + 1}. ${label}${url ? ` — ${url}` : ''}`, size: 20 })],
+          spacing: { after: 60 },
+        }));
+      });
+    }
 
     // Add separator
     children.push(

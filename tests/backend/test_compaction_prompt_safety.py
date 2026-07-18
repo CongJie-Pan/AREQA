@@ -1,6 +1,7 @@
 import inspect
 
 from backend.compaction import generate_stitch_tags
+from backend.gum_integration import run_compaction
 
 
 def test_stitch_prompt_example_uses_domain_neutral_content():
@@ -11,3 +12,11 @@ def test_stitch_prompt_example_uses_domain_neutral_content():
     assert "妙玉" not in source
     assert "香菱" not in source
     assert "概念A" in source
+
+
+def test_hot_compaction_has_no_direct_cold_retriever_write():
+    source = inspect.getsource(run_compaction)
+
+    assert "ColdMemoryRetriever" not in source
+    assert "insert_memory" not in source
+    assert "create_memory_ingestion_service" in source

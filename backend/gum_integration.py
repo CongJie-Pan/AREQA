@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 import asyncio
 import inspect
+import logging
 import os
 from datetime import datetime
 import json
@@ -14,6 +15,8 @@ if str(gum_dir) not in sys.path:
 from gum.gum import gum
 from gum.observers import Observer
 from gum.schemas import Update
+
+logger = logging.getLogger(__name__)
 
 class TextObserver(Observer):
     def __init__(self, name="TextChatObserver"):
@@ -454,84 +457,110 @@ async def schedule_compaction(user_id: str) -> str | None:
     return job_id
 
 async def run_compaction(user_id: str):
-    from memory_store import get_global_store, MemoryBudgetExceeded
-    from compaction import calculate_activation_score, generate_stitch_tags, is_user_profile
-    from cold_memory import ColdMemoryRetriever
-    import os
-    from pathlib import Path
+    """Expire typed hot state without bypassing trusted memory ingestion.
+
+    Compaction is a storage-lifecycle operation, not an authority for durable
+    memory.  User evidence is retained until the ingestion service can evaluate
+    it; legacy and inferred values are never re-labelled for export.
+    """
+
+    from memory_store import get_global_store
+    from services.hot_memory_service import (
+        TYPED_ENTRIES_KEY,
+        cold_export_entries,
+        get_typed_entries,
+        is_expired,
+        remove_typed_entry,
+    )
+    from services.memory_ingestion_service import (
+        MemoryEligibilityState,
+        UserEvidence,
+        create_memory_ingestion_service,
+    )
     
     store = get_global_store()
-    gum_instance, _ = await get_gum_instance(user_id)
-    if not store or not gum_instance: return
+    if not store:
+        return
     
     hot_mem = await store.get_hot_memory(user_id)
     serialized = json.dumps(hot_mem, ensure_ascii=False)
     
-    if len(serialized) > store.budget_limit:
-        print(f"[Compaction] Budget exceeded ({len(serialized)} > {store.budget_limit}). Starting compaction...")
-        # Calculate scores
-        scores = []
-        for k, v in hot_mem.items():
-            if is_user_profile(k):
-                continue
-            if isinstance(v, dict) and "timestamp" in v:
-                age_days = (datetime.now().timestamp() - v["timestamp"]) / 86400.0
-                score = calculate_activation_score(v.get("confidence", 5.0), v.get("decay", 5.0), age_days)
-                scores.append((k, score, v))
-            else:
-                scores.append((k, 0.0, v))
-                
-        # Sort by score ascending (lowest first)
-        scores.sort(key=lambda x: x[1])
-        
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        cold_retriever = ColdMemoryRetriever("", api_key)
-        
-        # Evict lowest scored items until under budget
-        current_len = len(serialized)
-        for k, score, v in scores:
-            if current_len <= store.budget_limit * 0.8: # Evict down to 80%
-                break
-                
-            if not isinstance(v, dict) or v.get("source") not in {"user_message", "verified_user_evidence"}:
-                continue
-            source_text = str(v.get("source_text") or v.get("text") or "").strip()
-            if not source_text:
-                continue
+    if len(serialized) <= store.budget_limit:
+        return
 
-            print(f"[Compaction] Evicting {k} (score: {score:.4f})")
+    logger.info(
+        "hot_memory.compaction_started user_id=%s size=%s budget=%s",
+        user_id,
+        len(serialized),
+        store.budget_limit,
+    )
+    typed_entries = get_typed_entries(hot_mem)
+    for key, entry in typed_entries.items():
+        if is_expired(entry):
+            remove_typed_entry(hot_mem, key)
+            logger.info("hot_memory.expired user_id=%s key=%s kind=%s", user_id, key, entry.kind)
 
-            # STITCH supplies retrieval metadata; it does not replace the source text.
-            text_to_tag = source_text
-            tags = await generate_stitch_tags(gum_instance.client, gum_instance.model, text_to_tag)
-            if not hasattr(cold_retriever, "get_embedding") or not hasattr(cold_retriever, "insert_memory"):
-                print("[Compaction] Cold memory writer unavailable; retaining hot memory entry.")
-                continue
-            embed = await cold_retriever.get_embedding(source_text)
-            if not embed:
-                continue
-            import uuid
-            inserted_id = await cold_retriever.insert_memory(
-                user_id=user_id,
-                source_text=source_text,
-                reasoning=json.dumps({"source": "hot_memory_compaction", "stitch": tags}, ensure_ascii=False),
-                context_scope=(tags.get("selected_context_scopes") or [None])[0],
-                event_types=tags.get("selected_event_types", []),
-                target=(tags.get("selected_targets") or [None])[0],
-                functional_type_seeds=tags.get("selected_functional_type_seeds", []),
-                confidence=float(v.get("confidence", 8.0)),
-                decay=float(v.get("decay", 5.0)),
-                embedding=embed,
-                revision_group=str(uuid.uuid4()),
+    # Phase 2 consumes this validated list through the same ingestion boundary.
+    # Merely finding eligible evidence must never trigger a direct cold write.
+    eligible = cold_export_entries(hot_mem)
+    semantic_client = None
+    from config import settings
+    if settings.memory_semantic_analysis_enabled:
+        gum_instance, _ = await get_gum_instance(user_id)
+        semantic_client = getattr(gum_instance, "client", None) if gum_instance else None
+    ingestion = create_memory_ingestion_service(store, client=semantic_client)
+    for key, _, entry in eligible:
+        provenance = entry.provenance or {}
+        try:
+            result = await ingestion.ingest_user_evidence(
+                UserEvidence(
+                    user_id=user_id,
+                    message_id=str(provenance["message_id"]),
+                    conversation_id=str(provenance["conversation_id"]),
+                    timestamp=str(provenance["timestamp"]),
+                    raw_message_text=str(provenance["raw_user_text"]),
+                    source_role=str(provenance["source_role"]),
+                )
             )
-            if inserted_id is not None:
-                del hot_mem[k]
-                current_len = len(json.dumps(hot_mem, ensure_ascii=False))
-            
-        # Write back hot memory
-        if getattr(store, "redis", None) is not None:
-            await store.redis.set(f"areqa:hot_memory:{user_id}", json.dumps(hot_mem, ensure_ascii=False))
-        print("[Compaction] Finished.")
+        except Exception as exc:
+            logger.exception(
+                "hot_memory.export_handoff_failed user_id=%s key=%s reason=%s retained=true",
+                user_id,
+                key,
+                type(exc).__name__,
+            )
+            continue
+        consumed = result.state in {
+            MemoryEligibilityState.CANDIDATE,
+            MemoryEligibilityState.PROMOTION_ELIGIBLE,
+            MemoryEligibilityState.WORKING_CONTEXT_ONLY,
+        } or (
+            result.state is MemoryEligibilityState.REJECTED
+            and result.reason_code != "candidate_persistence_rejected"
+        )
+        if consumed:
+            # Only terminal policy outcomes or confirmed persistence consume
+            # the hot copy; retryable storage rejection retains provenance.
+            remove_typed_entry(hot_mem, key)
+        logger.info(
+            "hot_memory.export_handed_off user_id=%s key=%s state=%s reason=%s",
+            user_id,
+            key,
+            result.state.value,
+            result.reason_code,
+        )
+
+    if getattr(store, "redis", None) is not None:
+        await store.redis.set(
+            f"areqa:hot_memory:{user_id}",
+            json.dumps(hot_mem, ensure_ascii=False),
+        )
+    logger.info(
+        "hot_memory.compaction_finished user_id=%s eligible_held=%s typed_entries=%s",
+        user_id,
+        len(eligible),
+        len(hot_mem.get(TYPED_ENTRIES_KEY, {})),
+    )
 
 async def push_observation(
     user_id: str,
@@ -759,6 +788,12 @@ async def get_hot_memory_snapshot(
             if memory:
                 working_parts.append(f"Explicit memory: {memory}")
         for point in recent_points[-8:]:
+            if isinstance(point, dict) and point.get("prompt_safe") is False:
+                logger.info(
+                    "hot_memory.snapshot_excluded user_id=%s reason=not_prompt_safe",
+                    user_id,
+                )
+                continue
             if isinstance(point, dict) and point.get("text"):
                 working_parts.append(point["text"])
             elif isinstance(point, str):
@@ -834,7 +869,14 @@ async def async_evaluate_and_update_state(
     chat_history,
     user_id: str = "default_user",
     conversation_id: str = "",
+    ingest_memory: bool = False,
 ):
+    """Evaluate EDF state without creating profile-memory evidence.
+
+    ``ingest_memory`` remains temporarily for worker compatibility, but is
+    intentionally ignored. Exact user evidence enters memory only through
+    ``TurnIntakeService`` and ``MemoryIngestionService``.
+    """
     from compaction import evaluate_student_state
     from memory_store import get_global_store
     
@@ -858,46 +900,12 @@ async def async_evaluate_and_update_state(
         if state_res.get("memory_operations"):
             print("[EDF-LOG] Ignored legacy memory_operations from state evaluation")
 
-        # Candidate extraction is evidence-based and only receives user-role
-        # messages. Its output cannot directly mutate the profile.
-        try:
-            from config import settings
-            from memory_gate import evaluate_memory_retention_policy, extract_user_memory_candidates
-
-            candidates = await extract_user_memory_candidates(client, model, chat_history)
-            for extracted in candidates:
-                candidate = await store.append_cold_candidate(
-                    user_id,
-                    extracted["text"],
-                    category=extracted["category"],
-                    source="user_message",
-                    reason="user_evidence_candidate",
-                    confidence=float(extracted["confidence"]) * 10.0,
-                    normalized_text=extracted["normalized_text"],
-                    evidence=extracted["evidence"],
-                    source_text=extracted["evidence"].get("message", ""),
-                    conversation_id=conversation_id,
-                    requires_confirmation=bool(extracted["requires_confirmation"]),
-                )
-                if not candidate:
-                    continue
-                policy = evaluate_memory_retention_policy(extracted)
-                candidate["policy_decision"] = policy.action
-                candidate["policy_reason"] = policy.reason
-                if policy.expires_in_seconds:
-                    candidate["expires_in_seconds"] = policy.expires_in_seconds
-                if policy.action != "allow" or candidate.get("requires_confirmation"):
-                    await store.update_cold_candidate(candidate)
-                    continue
-                if len(candidate.get("conversation_ids", [])) < settings.memory_candidate_auto_promote_conversations:
-                    continue
-                await store.promote_cold_candidate(
-                    user_id,
-                    candidate["hash"],
-                    source="automatic_candidate_promotion",
-                )
-        except Exception as exc:
-            print(f"[MemoryCandidate] Persistence failed: {type(exc).__name__}")
+        if ingest_memory:
+            logger.warning(
+                "memory.ingestion_skipped user_id=%s conversation_id=%s reason=edf_boundary",
+                user_id,
+                conversation_id,
+            )
 
 
 async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str) -> dict:

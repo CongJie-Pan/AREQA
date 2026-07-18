@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Test Script Agent"
+  short_description: "Write traceable manual test scripts"
+  default_prompt: "Use $write-test-script-agent to write a Traditional Chinese manual test script with acts, inputs, expected outputs, backend checks, and pass criteria."

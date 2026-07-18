@@ -4,3 +4,6 @@ args = ["-y", "driftdetect-mcp", "start"]
 
 [mcp_servers.drift.tools.drift_env]
 approval_mode = "approve"
+
+[mcp_servers.drift.tools.drift_status]
+approval_mode = "approve"

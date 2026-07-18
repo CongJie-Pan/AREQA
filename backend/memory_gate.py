@@ -1,4 +1,19 @@
-import json
+"""
+Memory Gate Module.
+
+This module is responsible for analyzing and classifying incoming user messages, client telemetry actions,
+and LLM-generated reflection insights. It serves as the primary "gatekeeper" (Memory Gate) that decides whether
+a piece of information should be:
+- Retained in working memory as the current conversation focus.
+- Promoted to long-term explicit or cold storage.
+- Discarded or treated as a low-information greeting.
+- Evaluated for sensitive context or cross-conversation episodic recall.
+
+It implements conservative, deterministic policies for memory retention, avoiding over-reliance on LLM
+advisory outputs for critical storage decisions, and applying rules like TTL expirations for time-bound
+or sensitive context.
+"""
+
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -6,6 +21,18 @@ from typing import Any, Dict, Optional
 
 @dataclass(frozen=True)
 class MemoryGateDecision:
+    """
+    Represents a decision made by the memory gate regarding how to process a message or observation.
+
+    Attributes:
+        category (str): The category of the memory decision (e.g., 'explicit_memory', 'current_focus').
+        should_prompt (bool): Whether the memory should be visible in the prompt context.
+        should_cold_store (bool): Whether the memory should be stored in cold (long-term) storage.
+        ttl_seconds (Optional[int]): Time-to-live for the memory in seconds, or None for indefinite.
+        proposition (str): The extracted or generated proposition text.
+        reason (str): The reason for the memory gate decision.
+        weight (float): The importance or confidence weight of the memory, defaults to 1.0.
+    """
     category: str
     should_prompt: bool
     should_cold_store: bool
@@ -13,15 +40,6 @@ class MemoryGateDecision:
     proposition: str
     reason: str
     weight: float = 1.0
-
-
-@dataclass(frozen=True)
-class MemoryRetentionDecision:
-    """Server-owned retention decision; model output is advisory only."""
-
-    action: str
-    reason: str
-    expires_in_seconds: Optional[int] = None
 
 
 _TEMPORAL_MARKERS = ("今天", "昨天", "這週", "下週", "目前", "現在", "最近", "這次")
@@ -41,9 +59,14 @@ BEHAVIOR_ACTIONS = {
 
 EXPLICIT_MEMORY_PATTERNS = [
     r"(?:請你|麻煩你)?(?:記住|記得)(?:一下)?(?P<fact>.+)",
+]
+PASSIVE_PREFERENCE_PATTERNS = [
+    r"(?:我(?:真的)?(?:比較)?喜歡|我不喜歡|我討厭|我偏好)(?P<fact>.+)",
+    r"(?:學|理解|讀書|練習).*(?:我希望|我想要|我習慣)(?P<fact>.+)",
+]
+STABLE_FACT_PATTERNS = [
     r"(?:我的名字|我叫)(?P<fact>.+)",
     r"(?:我是|我目前是)(?P<fact>.+)",
-    r"(?:我喜歡|我不喜歡|我討厭|我偏好)(?P<fact>.+)",
 ]
 
 ROLEPLAY_KEYWORDS = ("扮演", "假扮", "飾演", "角色扮演")
@@ -65,36 +88,33 @@ SENSITIVE_CONTEXT_KEYWORDS = (
     "健康", "生病", "焦慮", "憂鬱", "自殺", "心理", "家庭", "父親", "母親", "財務", "債務",
 )
 EXPLICIT_RECALL_KEYWORDS = ("延續", "接續", "之前", "上次", "昨天", "前一個對話", "結合先前")
+TEMPORARY_GOAL_COMPLETION_MARKERS = ("已經完成", "完成了", "不要再提醒", "不用再提醒", "停止提醒")
+TEMPORARY_GOAL_CONTEXT_MARKERS = ("目標", "複習", "學習計畫", "讀書計畫")
 
 
 def _clean_text(value: str) -> str:
+    """
+    Clean and normalize text by stripping leading/trailing whitespace and condensing multiple spaces.
+
+    Args:
+        value (str): The raw text to clean.
+
+    Returns:
+        str: The cleaned and normalized text.
+    """
     return re.sub(r"\s+", " ", (value or "").strip())
 
 
-def evaluate_memory_retention_policy(candidate: Dict[str, Any]) -> MemoryRetentionDecision:
-    """Apply conservative, domain-neutral rules after LLM candidate extraction."""
-    text = _clean_text(
-        " ".join(
-            str(candidate.get(key, ""))
-            for key in ("text", "normalized_text", "evidence_quote")
-        )
-    ).lower()
-    category = _clean_text(str(candidate.get("category", ""))).lower()
-
-    if not text:
-        return MemoryRetentionDecision("deny", "empty_candidate")
-    if any(marker in text for marker in SENSITIVE_CONTEXT_KEYWORDS):
-        return MemoryRetentionDecision("deny", "sensitive_or_high_impact_context")
-    if any(marker in text for marker in _NEGATIVE_MARKERS):
-        return MemoryRetentionDecision("deny", "negative_capability_label")
-    if any(marker in text for marker in _TEMPORAL_MARKERS):
-        return MemoryRetentionDecision("allow_with_expiry", "time_bound_context", 30 * 86400)
-    if category in {"preference", "goal", "background", "stable_preference", "recurring_goal"}:
-        return MemoryRetentionDecision("allow", "stable_user_evidence")
-    return MemoryRetentionDecision("candidate_only", "requires_more_policy_evidence")
-
-
 def _extract_explicit_fact(message: str) -> str:
+    """
+    Extract an explicitly stated fact from a user message based on predefined patterns.
+
+    Args:
+        message (str): The user message to analyze.
+
+    Returns:
+        str: The extracted explicit fact, or an empty string if no pattern matches or if roleplay is detected.
+    """
     text = _clean_text(message)
     if any(keyword in text for keyword in ROLEPLAY_KEYWORDS):
         return ""
@@ -107,7 +127,50 @@ def _extract_explicit_fact(message: str) -> str:
     return ""
 
 
+def _extract_pattern_fact(message: str, patterns: list[str]) -> str:
+    """Extract a declarative fact from one allowlisted pattern group."""
+
+    for pattern in patterns:
+        match = re.search(pattern, message)
+        if match:
+            return _clean_text(match.group("fact")).strip("：:，,。 ")
+    return ""
+
+
+def _is_interrogative(message: str) -> bool:
+    """Detect questions before any preference or memory keyword matching."""
+
+    text = _clean_text(message)
+    if text.endswith(("?", "？")):
+        return True
+    markers = ("什麼", "為什麼", "怎麼", "如何", "哪個", "是否", "嗎", "呢")
+    return any(marker in text for marker in markers)
+
+
+def _is_temporary_goal_completion(message: str) -> bool:
+    """Return whether a message explicitly retires a temporary learning goal.
+
+    Completion evidence changes lifecycle state; it is not a durable learner
+    fact. Requiring both a completion command and goal context prevents an
+    ordinary statement such as completing one exercise from retiring memory.
+    """
+
+    text = _clean_text(message)
+    has_completion = any(marker in text for marker in TEMPORARY_GOAL_COMPLETION_MARKERS)
+    has_goal_context = any(marker in text for marker in TEMPORARY_GOAL_CONTEXT_MARKERS)
+    return has_completion and has_goal_context
+
+
 def classify_user_message(message: str) -> MemoryGateDecision:
+    """
+    Classify a user message to determine its memory category and retention properties.
+
+    Args:
+        message (str): The user message to classify.
+
+    Returns:
+        MemoryGateDecision: The decision detailing how the message should be processed in memory.
+    """
     text = _clean_text(message)
     if not text:
         return MemoryGateDecision(
@@ -131,6 +194,43 @@ def classify_user_message(message: str) -> MemoryGateDecision:
             weight=0.0,
         )
 
+    # Speech act is authoritative: wording such as "我偏好什麼方法？"
+    # remains a question even though it contains a preference marker.
+    if _is_interrogative(text):
+        return MemoryGateDecision(
+            category="current_focus",
+            should_prompt=True,
+            should_cold_store=False,
+            ttl_seconds=3600,
+            proposition=text,
+            reason="interrogative_not_memory_evidence",
+            weight=1.0,
+        )
+
+    if any(keyword in text for keyword in ROLEPLAY_KEYWORDS):
+        return MemoryGateDecision(
+            category="current_focus",
+            should_prompt=True,
+            should_cold_store=False,
+            ttl_seconds=3600,
+            proposition=text,
+            reason="roleplay_not_memory_evidence",
+            weight=1.0,
+        )
+
+    # Lifecycle commands must be classified before preference/fact patterns;
+    # the completion statement retires state and must not create new memory.
+    if _is_temporary_goal_completion(text):
+        return MemoryGateDecision(
+            category="temporary_goal_completed",
+            should_prompt=True,
+            should_cold_store=False,
+            ttl_seconds=0,
+            proposition=text,
+            reason="temporary_goal_completion_request",
+            weight=1.0,
+        )
+
     explicit_fact = _extract_explicit_fact(text)
     if explicit_fact:
         return MemoryGateDecision(
@@ -140,6 +240,41 @@ def classify_user_message(message: str) -> MemoryGateDecision:
             ttl_seconds=None,
             proposition=explicit_fact,
             reason="explicit_user_memory_request",
+            weight=1.0,
+        )
+
+    preference = _extract_pattern_fact(text, PASSIVE_PREFERENCE_PATTERNS)
+    if preference:
+        return MemoryGateDecision(
+            category="passive_preference",
+            should_prompt=True,
+            should_cold_store=True,
+            ttl_seconds=90 * 86400,
+            proposition=text,
+            reason="declarative_low_risk_preference",
+            weight=1.0,
+        )
+
+    stable_fact = _extract_pattern_fact(text, STABLE_FACT_PATTERNS)
+    if stable_fact:
+        return MemoryGateDecision(
+            category="stable_fact_candidate",
+            should_prompt=True,
+            should_cold_store=True,
+            ttl_seconds=None,
+            proposition=text,
+            reason="stable_fact_requires_supported_category",
+            weight=1.0,
+        )
+
+    if any(marker in text for marker in ("這個月我想", "這週我想", "下週我想", "目前目標", "學習目標")):
+        return MemoryGateDecision(
+            category="temporary_goal",
+            should_prompt=True,
+            should_cold_store=True,
+            ttl_seconds=30 * 86400,
+            proposition=text,
+            reason="explicit_temporary_learning_goal",
             weight=1.0,
         )
 
@@ -155,18 +290,44 @@ def classify_user_message(message: str) -> MemoryGateDecision:
 
 
 def is_sensitive_context_query(message: str) -> bool:
-    """Return whether cross-conversation episodic recall should be conservative."""
+    """
+    Return whether cross-conversation episodic recall should be conservative due to sensitive keywords.
+
+    Args:
+        message (str): The user message to analyze.
+
+    Returns:
+        bool: True if the message contains sensitive keywords, False otherwise.
+    """
     text = _clean_text(message).lower()
     return any(keyword in text for keyword in SENSITIVE_CONTEXT_KEYWORDS)
 
 
 def requests_cross_conversation_recall(message: str) -> bool:
-    """Return whether the user explicitly asks to reuse earlier context."""
+    """
+    Return whether the user explicitly asks to reuse earlier context across conversations.
+
+    Args:
+        message (str): The user message to analyze.
+
+    Returns:
+        bool: True if the user asks for cross-conversation recall, False otherwise.
+    """
     text = _clean_text(message).lower()
     return any(keyword in text for keyword in EXPLICIT_RECALL_KEYWORDS)
 
 
 def classify_action(action_type: str, context: Any) -> MemoryGateDecision:
+    """
+    Classify a client telemetry action to determine its memory gating decision.
+
+    Args:
+        action_type (str): The type of action performed by the client (e.g., 'scroll', 'focus').
+        context (Any): Additional context associated with the action.
+
+    Returns:
+        MemoryGateDecision: The decision detailing how the action should be recorded.
+    """
     normalized = _clean_text(action_type).lower()
     weight = 0.2 if normalized in {"scroll", "focus", "blur"} else 1.0
     category = "behavior_signal" if normalized in BEHAVIOR_ACTIONS else "behavior_signal"
@@ -182,6 +343,15 @@ def classify_action(action_type: str, context: Any) -> MemoryGateDecision:
 
 
 def classify_learning_observation(text: str) -> MemoryGateDecision:
+    """
+    Classify a learning observation to determine its memory gating decision.
+
+    Args:
+        text (str): The text of the learning observation or user action.
+
+    Returns:
+        MemoryGateDecision: The decision detailing how the observation should be stored.
+    """
     cleaned = _clean_text(text)
     if not cleaned:
         return MemoryGateDecision("empty", False, False, 0, "", "empty_observation")
@@ -207,6 +377,15 @@ def classify_learning_observation(text: str) -> MemoryGateDecision:
 
 
 def classify_reflection_insight(insight: str) -> MemoryGateDecision:
+    """
+    Classify a reflection insight to determine its memory gating decision.
+
+    Args:
+        insight (str): The insight generated during a reflection process.
+
+    Returns:
+        MemoryGateDecision: The decision detailing how the insight should be stored.
+    """
     cleaned = _clean_text(insight)
     if not cleaned:
         return MemoryGateDecision("empty", False, False, 0, "", "empty_reflection")
@@ -221,28 +400,19 @@ def classify_reflection_insight(insight: str) -> MemoryGateDecision:
     )
 
 
-async def apply_user_message_gate(store: Any, user_id: str, message: str, conversation_id: str = "") -> MemoryGateDecision:
-    decision = classify_user_message(message)
-    if not store or not decision.proposition:
-        return decision
-
-    if decision.category == "explicit_memory":
-        await store.perform_memory_operation(
-            user_id,
-            "user",
-            "add",
-            decision.proposition,
-            source="explicit_user_request",
-        )
-    elif decision.should_prompt:
-        updates = {"current_focus": decision.proposition}
-        if conversation_id:
-            updates["current_focus_conversation_id"] = conversation_id
-        await store.update_working_memory(user_id, updates)
-    return decision
-
-
 async def apply_action_gate(store: Any, user_id: str, action_type: str, context: Dict[str, Any]) -> MemoryGateDecision:
+    """
+    Apply the memory gate to a client action, appending it to the memory store if applicable.
+
+    Args:
+        store (Any): The memory store instance for persistence.
+        user_id (str): The ID of the user.
+        action_type (str): The type of action performed.
+        context (Dict[str, Any]): Additional context data for the action.
+
+    Returns:
+        MemoryGateDecision: The memory decision generated for the action.
+    """
     decision = classify_action(action_type, context)
     if store and decision.category == "behavior_signal":
         await store.append_behavior_signal(user_id, action_type, context, weight=decision.weight)
@@ -256,6 +426,18 @@ async def apply_reflection_gate(
     *,
     conversation_id: str = "",
 ) -> MemoryGateDecision:
+    """
+    Apply the memory gate to a reflection insight, updating observations and working memory.
+
+    Args:
+        store (Any): The memory store instance for persistence.
+        user_id (str): The ID of the user.
+        insight (str): The reflection insight to process.
+        conversation_id (str, optional): The ID of the current conversation. Defaults to "".
+
+    Returns:
+        MemoryGateDecision: The memory decision generated for the reflection insight.
+    """
     decision = classify_reflection_insight(insight)
     if store and decision.should_prompt:
         await store.append_learning_observation(
@@ -277,72 +459,3 @@ async def apply_reflection_gate(
             summary_update["session_summary_conversation_id"] = conversation_id
         await store.update_working_memory(user_id, summary_update)
     return decision
-
-
-async def extract_user_memory_candidates(
-    client: Any,
-    model: str,
-    messages: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Extract candidate memories from user-originated text with evidence only."""
-    user_messages = [
-        str(message.get("content", "")).strip()
-        for message in messages
-        if message.get("role") == "user" and str(message.get("content", "")).strip()
-    ]
-    if not client or not user_messages:
-        return []
-
-    prompt = f"""Analyze only the user messages below. Extract durable memory candidates that may be useful across future conversations.
-
-User messages (numbered):
-{json.dumps(user_messages, ensure_ascii=False)}
-
-This policy is domain-neutral. Do not rely on topic keywords. A candidate must describe a stable preference, recurring goal, background fact, or enduring context explicitly supported by a user message. Do not infer a fact from an assistant answer, a teaching outcome, a guessed personality trait, or a one-off question. Mark information as sensitive when retaining it long term should require the user's approval.
-
-Return JSON with a `candidates` list. Every item must contain: `text`, `normalized_text`, `category`, `confidence` (0 to 1), `requires_confirmation`, `evidence_index`, and `evidence_quote`. The evidence quote must be copied from the referenced user message. Return an empty list when there is no durable candidate."""
-    try:
-        from pydantic import BaseModel, Field
-
-        class Candidate(BaseModel):
-            text: str
-            normalized_text: str
-            category: str
-            confidence: float = Field(ge=0.0, le=1.0)
-            requires_confirmation: bool
-            evidence_index: int = Field(ge=0)
-            evidence_quote: str
-
-        class CandidateResponse(BaseModel):
-            candidates: list[Candidate]
-
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "memory_candidate_response",
-                    "schema": CandidateResponse.model_json_schema(),
-                },
-            },
-            temperature=0.0,
-        )
-        payload = json.loads(response.choices[0].message.content)
-        result = []
-        for candidate in payload.get("candidates", []):
-            index = candidate.get("evidence_index")
-            quote = _clean_text(candidate.get("evidence_quote", ""))
-            if not isinstance(index, int) or index >= len(user_messages) or not quote:
-                continue
-            evidence_text = user_messages[index]
-            if quote not in evidence_text:
-                continue
-            result.append({
-                **candidate,
-                "evidence": {"message": evidence_text, "quote": quote, "message_index": index},
-            })
-        return result
-    except Exception as exc:
-        print(f"[MemoryCandidate] Extraction failed: {type(exc).__name__}")
-        return []

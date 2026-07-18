@@ -42,6 +42,7 @@ async def test_student_state_schema_does_not_request_memory_operations():
 async def test_legacy_edf_memory_operations_are_ignored():
     store = MagicMock()
     store.update_learner_state_snapshot = AsyncMock()
+    store.update_working_memory = AsyncMock()
     store.perform_memory_operation = AsyncMock()
 
     state_result = {
@@ -85,58 +86,56 @@ async def test_profile_memory_rejects_inferred_source_at_storage_boundary():
 
 
 @pytest.mark.asyncio
-async def test_non_sensitive_candidate_with_cross_conversation_evidence_is_promoted():
+async def test_edf_cannot_reingest_declarative_preference():
     store = MagicMock()
     store.update_learner_state_snapshot = AsyncMock()
+    store.update_working_memory = AsyncMock()
+    store.get_cold_candidates = AsyncMock(return_value=[])
     store.append_cold_candidate = AsyncMock(return_value={
         "hash": "candidate-hash",
-        "conversation_ids": ["conv-a", "conv-b"],
+        "conversation_ids": ["conv-b"],
         "requires_confirmation": False,
     })
-    store.promote_cold_candidate = AsyncMock()
-
-    candidate = {
-        "text": "使用者偏好以具體案例理解概念",
-        "normalized_text": "偏好以具體案例理解概念",
-        "category": "preference",
-        "confidence": 0.9,
-        "requires_confirmation": False,
-        "evidence": {"message": "請用一個例子說明", "quote": "用一個例子", "message_index": 0},
-    }
+    store.promote_cold_candidate = AsyncMock(return_value=None)
     state_result = {"learner_state": "TINKERING", "pedagogical_strategy": "引導", "trigger_proactive": False}
 
     with patch("backend.compaction.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
-         patch("memory_store.get_global_store", return_value=store), \
-         patch("memory_gate.extract_user_memory_candidates", new=AsyncMock(return_value=[candidate])):
-        await async_evaluate_and_update_state(MagicMock(), "test-model", [{"role": "user", "content": "請用一個例子說明"}], "u1", "conv-b")
+         patch("memory_store.get_global_store", return_value=store):
+        await async_evaluate_and_update_state(
+            MagicMock(),
+            "test-model",
+            [{"role": "user", "content": "我偏好用具體例子理解抽象概念。"}],
+            "u1",
+            "conv-b",
+            ingest_memory=True,
+        )
 
-    store.append_cold_candidate.assert_awaited_once()
-    store.promote_cold_candidate.assert_awaited_once_with("u1", "candidate-hash", source="automatic_candidate_promotion")
+    store.append_cold_candidate.assert_not_awaited()
+    store.promote_cold_candidate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_sensitive_candidate_never_auto_promotes():
     store = MagicMock()
     store.update_learner_state_snapshot = AsyncMock()
+    store.get_cold_candidates = AsyncMock(return_value=[])
     store.append_cold_candidate = AsyncMock(return_value={
         "hash": "candidate-hash",
         "conversation_ids": ["conv-a", "conv-b"],
         "requires_confirmation": True,
     })
     store.promote_cold_candidate = AsyncMock()
-    candidate = {
-        "text": "使用者描述了需確認的個人情況",
-        "normalized_text": "需確認的個人情況",
-        "category": "personal_context",
-        "confidence": 0.9,
-        "requires_confirmation": True,
-        "evidence": {"message": "這是我的個人情況", "quote": "個人情況", "message_index": 0},
-    }
     state_result = {"learner_state": "STARTING", "pedagogical_strategy": "引導", "trigger_proactive": False}
 
     with patch("backend.compaction.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
-         patch("memory_store.get_global_store", return_value=store), \
-         patch("memory_gate.extract_user_memory_candidates", new=AsyncMock(return_value=[candidate])):
-        await async_evaluate_and_update_state(MagicMock(), "test-model", [{"role": "user", "content": "這是我的個人情況"}], "u1", "conv-b")
+         patch("memory_store.get_global_store", return_value=store):
+        await async_evaluate_and_update_state(
+            MagicMock(),
+            "test-model",
+            [{"role": "user", "content": "我最近很焦慮，請記住這件事。"}],
+            "u1",
+            "conv-b",
+        )
 
+    store.append_cold_candidate.assert_not_awaited()
     store.promote_cold_candidate.assert_not_awaited()

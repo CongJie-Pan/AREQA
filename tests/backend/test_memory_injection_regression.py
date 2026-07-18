@@ -227,6 +227,23 @@ class TestGetHotMemorySnapshot:
         assert "User Action" not in result
 
     @pytest.mark.asyncio
+    async def test_snapshot_excludes_typed_model_and_operational_state(self, memory_store):
+        await memory_store.update_learner_state_snapshot(
+            "default_user",
+            learner_state="MASTERY",
+            strategy="PUSH_LIMIT",
+            trigger_proactive=True,
+        )
+
+        import backend.gum_integration as gi
+        with patch("memory_store.get_global_store", return_value=memory_store):
+            result = await gi.get_hot_memory_snapshot("default_user")
+
+        assert "MASTERY" not in result
+        assert "PUSH_LIMIT" not in result
+        assert "trigger_proactive" not in result
+
+    @pytest.mark.asyncio
     async def test_cold_candidates_are_deduplicated_by_hash(self, memory_store):
         """Reflection-first cold candidates should keep source metadata and dedupe repeats."""
         first = await memory_store.append_cold_candidate(
@@ -250,6 +267,132 @@ class TestGetHotMemorySnapshot:
         assert len(candidates) == 1
         assert candidates[0]["seen_count"] == 2
         assert candidates[0]["source"] == "reflection"
+
+
+@pytest.mark.asyncio
+async def test_manual_act_06_completion_removes_goal_from_active_prompt_state(memory_store):
+    """The manual temporary-goal sequence must retire, clear, and never promote."""
+
+    from backend.services.memory_ingestion_service import (
+        MemoryIngestionService,
+        build_user_evidence,
+    )
+
+    service = MemoryIngestionService(memory_store, semantic_enabled=False)
+    created = await service.ingest_user_evidence(
+        build_user_evidence(
+            "default_user",
+            "conversation-e",
+            "這個月我想完成牛頓運動定律的複習，請在這段期間協助我安排練習。",
+            message_id="message-goal",
+        )
+    )
+    completed = await service.ingest_user_evidence(
+        build_user_evidence(
+            "default_user",
+            "conversation-e",
+            "我已經完成這個月的牛頓運動定律複習目標，請不要再提醒我。",
+            message_id="message-completed",
+        )
+    )
+
+    candidates = await memory_store.get_cold_candidates("default_user")
+    working = await memory_store.get_working_memory("default_user")
+    profile = await memory_store.get_user_profile("default_user")
+    promoted = await memory_store.promote_cold_candidate(
+        "default_user",
+        created.candidate_id,
+        source="automatic_candidate_promotion",
+    )
+    assert completed.reason_code == "temporary_goal_completed"
+    assert candidates[0]["status"] == "completed"
+    assert working["current_focus"] == ""
+    assert working["current_focus_conversation_id"] == ""
+    assert profile["explicit_memories"] == []
+    assert promoted is None
+
+
+@pytest.mark.asyncio
+async def test_manual_act_05_equivalent_preferences_promote_once(memory_store):
+    """Equivalent declarations need two independent conversations to promote."""
+
+    from backend.services.memory_ingestion_service import (
+        MemoryIngestionService,
+        build_user_evidence,
+    )
+
+    service = MemoryIngestionService(memory_store, semantic_enabled=False)
+    first = await service.ingest_user_evidence(
+        build_user_evidence(
+            "default_user",
+            "conversation-c",
+            "我偏好用具體例子理解抽象概念。",
+            message_id="message-preference-c",
+        )
+    )
+    second = await service.ingest_user_evidence(
+        build_user_evidence(
+            "default_user",
+            "conversation-d",
+            "學抽象概念時，我希望先看具體案例或實際情境，再理解原理。",
+            message_id="message-preference-d",
+        )
+    )
+    repeated = await service.ingest_user_evidence(
+        build_user_evidence(
+            "default_user",
+            "conversation-d",
+            "我真的比較喜歡用實際例子來學抽象概念。",
+            message_id="message-preference-d-repeat",
+        )
+    )
+
+    candidates = await memory_store.get_cold_candidates("default_user")
+    profile = await memory_store.get_user_profile("default_user")
+    assert first.promoted is False
+    assert second.promoted is True
+    assert repeated.promoted is False
+    assert first.candidate_id == second.candidate_id
+    assert len(candidates) == 1
+    assert len(candidates[0]["evidence"]) == 2
+    assert profile["explicit_memories"] == [
+        "學抽象概念時，我希望先看具體案例或實際情境，再理解原理。"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_manual_act_05_canonicalization_rejects_question_and_sensitive_text(
+    memory_store,
+):
+    """Unsafe or non-declarative text cannot enter canonical candidates."""
+
+    from backend.services.memory_ingestion_service import (
+        MemoryIngestionService,
+        build_user_evidence,
+    )
+
+    service = MemoryIngestionService(memory_store, semantic_enabled=False)
+    question = await service.ingest_user_evidence(
+        build_user_evidence(
+            "default_user",
+            "conversation-c",
+            "我偏好什麼學習方法？",
+            message_id="message-question",
+        )
+    )
+    sensitive = await service.ingest_user_evidence(
+        build_user_evidence(
+            "default_user",
+            "conversation-d",
+            "我最近很焦慮，但偏好用具體例子理解抽象概念。",
+            message_id="message-sensitive",
+        )
+    )
+
+    candidates = await memory_store.get_cold_candidates("default_user")
+    assert question.reason_code == "interrogative_not_memory_evidence"
+    assert sensitive.reason_code == "sensitive_content_not_durable"
+    assert candidates == []
 
 
 # ---------------------------------------------------------------------------

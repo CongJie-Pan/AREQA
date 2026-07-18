@@ -1,6 +1,7 @@
 import pytest
 import json
 import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.services.orchestration_service import OrchestrationService
@@ -39,8 +40,9 @@ def test_attachment_grounding_instruction_forbids_metadata_guessing():
 
 @pytest.mark.asyncio
 async def test_pdf_stream_uses_openrouter_native_parser(
-    mock_router, mock_rag, mock_suggestion, mock_client
+    mock_router, mock_rag, mock_suggestion, mock_client, caplog
 ):
+    caplog.set_level(logging.INFO)
     service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
     request = MagicMock()
     request.is_disconnected = AsyncMock(return_value=False)
@@ -66,6 +68,7 @@ async def test_pdf_stream_uses_openrouter_native_parser(
     assert kwargs["extra_body"]["plugins"] == [
         {"id": "file-parser", "pdf": {"engine": "native"}}
     ]
+    assert "orchestration.stream_started" in caplog.text
 
 @pytest.fixture
 def mock_router():
@@ -158,6 +161,42 @@ async def test_prompt_assembly_keeps_long_term_memory_for_substantive_query(
     assert "<memory>gum context</memory>" in system_prompt
     mock_cold.assert_awaited_once()
     mock_gum.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_first_newton_question_does_not_claim_verified_understanding(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+
+    with patch(
+        "backend.services.orchestration_service.get_hot_memory_snapshot",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_cold_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="",
+    ), patch(
+        "backend.services.orchestration_service.query_memory_for_context",
+        new_callable=AsyncMock,
+        return_value="",
+    ):
+        messages = await service._node_prompt_assembly(
+            user_id="new-user",
+            conversation_id="newton-conversation",
+            messages=[{"role": "user", "content": "請教我牛頓第一運動定律。"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="請教我牛頓第一運動定律。",
+        )
+
+    system_prompt = messages[0]["content"]
+    assert "理解程度視為 unknown" in system_prompt
+    assert "使用者目前已理解牛頓第一運動定律" not in system_prompt
+    assert "使用者已掌握慣性" not in system_prompt
 
 
 @pytest.mark.asyncio
@@ -267,12 +306,8 @@ async def test_execute_emits_visible_status_before_memory_work(
     service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
     request = MagicMock()
 
-    async def slow_gate(*args, **kwargs):
-        await asyncio.sleep(0.05)
-
     store = MagicMock()
     with patch("memory_store.get_global_store", return_value=store), \
-         patch("memory_gate.apply_user_message_gate", side_effect=slow_gate), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock):
         stream = service.execute(
@@ -498,7 +533,6 @@ async def test_durable_jobs_suppress_in_process_edf_and_reflection_tasks(
     service._node_llm_stream = llm_stream
 
     with patch("memory_store.get_global_store", return_value=memory_store), \
-         patch("memory_gate.apply_user_message_gate", new_callable=AsyncMock), \
          patch("job_store.get_agent_job_store", return_value=durable_store), \
          patch("gum_integration.push_reflection_observation", new_callable=AsyncMock) as reflection, \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
@@ -510,7 +544,7 @@ async def test_durable_jobs_suppress_in_process_edf_and_reflection_tasks(
             "durable-conv", False, False, False, 100, 0.7, 0.9, 1.0,
             request, "u1",
         )]
-        await asyncio.sleep(0)
+        await asyncio.gather(*tuple(service.post_turn_service._background_tasks))
 
     assert durable_store.schedule.await_count == 2
     reflection.assert_not_awaited()
