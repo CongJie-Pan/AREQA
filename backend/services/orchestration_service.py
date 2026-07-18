@@ -14,6 +14,7 @@ import re
 import time
 import logging
 from typing import AsyncGenerator, List, Dict, Any, Optional
+from urllib.parse import urlparse
 from fastapi import Request
 from openai import AsyncOpenAI
 
@@ -66,6 +67,40 @@ def reorder_for_attention(results):
     bottom = [results[1]]       
     middle = results[2:]       
     return top + middle + bottom
+
+
+def _build_valid_web_sources(results: List[Dict[str, Any]]) -> tuple[List[str], List[Dict[str, Any]]]:
+    """Build prompt context and structured source payload from valid web results.
+
+    Structured sources are the citation authority for the UI. Records without a
+    valid HTTP(S) URL are excluded before they can become clickable citations or
+    shift the visible source index mapping.
+    """
+
+    context_texts: List[str] = []
+    sources_payload: List[Dict[str, Any]] = []
+    for source_index, result in enumerate(results, 1):
+        title = str(result.get("title") or "").strip()
+        url = str(result.get("url") or "").strip()
+        snippet = str(result.get("snippet") or "").strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            logger.info(
+                "orchestration.web_source_omitted reason=invalid_url source_index=%s",
+                source_index,
+            )
+            continue
+
+        citation_index = len(sources_payload) + 1
+        context_texts.append(f"[文獻{citation_index}] {title}\nURL: {url}\n內容段落: {snippet}")
+        sources_payload.append({
+            "title": title,
+            "chunk_id": url,
+            "url": url,
+            "snippet": snippet,
+            "score": float(result.get("score", 1.0) or 1.0),
+        })
+    return context_texts, sources_payload
 
 async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dict[str, str]]:
     """
@@ -754,23 +789,8 @@ class OrchestrationService:
         )
         yield f"event: status\ndata: {json.dumps({'status': 'reranking', 'message': '⚡ 篩選與統整網路資訊...'}, ensure_ascii=False)}\n\n"
         
-        context_texts = []
-        sources_payload = []
-        if results:
-            for idx, r in enumerate(results, 1):
-                title = r.get("title", "")
-                url = r.get("url", "")
-                snippet = r.get("snippet", "")
-                context_texts.append(f"[文獻{idx}] {title}\nURL: {url}\n內容段落: {snippet}")
-                sources_payload.append({
-                    "title": title,
-                    "chunk_id": url,
-                    "url": url,
-                    "snippet": snippet,
-                    "score": float(r.get("score", 1.0) or 1.0),
-                })
-            
-            # Send structured sources event 
+        context_texts, sources_payload = _build_valid_web_sources(results)
+        if sources_payload:
             yield f"event: sources\ndata: {json.dumps(sources_payload, ensure_ascii=False)}\n\n"
             yield f"event: status\ndata: {json.dumps({'status': 'sources_ready', 'message': f'已取得 {len(sources_payload)} 筆網路文獻'}, ensure_ascii=False)}\n\n"
         

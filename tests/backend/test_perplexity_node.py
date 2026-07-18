@@ -89,6 +89,61 @@ async def test_perplexity_search_success(mock_orchestrator):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_perplexity_search_omits_sources_without_valid_url(mock_orchestrator):
+    import os
+    with patch.dict(os.environ, {
+        "PERPLEXITY_API_KEY": "dummy_api_key",
+        "ENABLE_WEB_QUERY_REWRITE": "",
+        "REDIS_URL": "redis://localhost:0",
+    }):
+        respx.post("https://api.perplexity.ai/search").respond(
+            status_code=200,
+            json={
+                "results": [
+                    {
+                        "title": "Missing URL",
+                        "url": "",
+                        "snippet": "This record must not become a citation.",
+                    },
+                    {
+                        "title": "Valid Source",
+                        "url": "https://example.com/valid",
+                        "snippet": "Usable source text.",
+                    },
+                    {
+                        "title": "Unsafe URL",
+                        "url": "javascript:alert(1)",
+                        "snippet": "Unsafe protocol.",
+                    },
+                ]
+            },
+        )
+
+        events = []
+        run_state = ConversationRunState()
+        async for event in mock_orchestrator._node_perplexity_search(
+            "測試問題",
+            "test_conv_id_malformed",
+            run_state=run_state,
+        ):
+            events.append(event)
+
+        sources_event = next(event for event in events if "event: sources" in event)
+        sources_payload = json.loads(sources_event.split("data: ")[1].strip())
+        assert sources_payload == [{
+            "title": "Valid Source",
+            "chunk_id": "https://example.com/valid",
+            "url": "https://example.com/valid",
+            "snippet": "Usable source text.",
+            "score": 1.0,
+        }]
+        assert "Missing URL" not in run_state.context_prompt
+        assert "javascript:alert" not in run_state.context_prompt
+        assert "[文獻1] Valid Source" in run_state.context_prompt
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_perplexity_search_api_failure(mock_orchestrator):
     import os
     with patch.dict(os.environ, {"PERPLEXITY_API_KEY": "dummy_api_key"}):
