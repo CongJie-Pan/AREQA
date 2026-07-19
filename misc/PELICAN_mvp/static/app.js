@@ -87,24 +87,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    resetBtn.addEventListener("click", async () => {
-        const messages = chatHistory.querySelectorAll('.message');
-        messages.forEach(m => m.remove());
-        showLoading(true);
-        try {
-            const res = await fetch("/api/reset", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ learner_id: LEARNER_ID })
-            });
-            const data = await res.json();
-            handleResponse(data);
-        } catch(err) {
-            console.error(err);
-        } finally {
-            showLoading(false);
-        }
-    });
+
 
 
     async function startSession() {
