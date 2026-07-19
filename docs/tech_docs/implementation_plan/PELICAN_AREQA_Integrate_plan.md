@@ -77,18 +77,18 @@ misc/PELICAN_mvp/
 
 #### Work List
 
-1. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/models.py` in `SessionState`, `to_dict()`, and `from_dict()`.
-   - [ ] Add proposed `PlanSource`, `LearningPlanSnapshot`, `EdfSnapshot`, and `LearningMemorySnapshot` serialization contracts.
-   - [ ] Add an `onboarding` phase and make a generated plan optional until intake completes.
-   - [ ] Preserve the existing `KnowledgeStatus`, `Evidence`, `NodeState`, and legacy `TurnRecord` fields needed by current fixture tests.
-2. [ ] Create `misc/PELICAN_mvp/pelican_mvp/observability.py`.
-   - [ ] Add proposed `get_logger()` and safe structured-event helpers with no raw learner content fields.
-3. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/state_store.py` in `load_or_create()`, `new_state()`, `save()`, and `reset()`.
-   - [ ] Resolve plan nodes from a persisted generated snapshot before falling back to an explicit `CURRICULUMS` fixture.
-   - [ ] Normalize legacy static records without changing their curriculum choice.
-   - [ ] Reject malformed generated plans with `StateStoreError` and a safe reason code.
-4. [ ] Extend `misc/PELICAN_mvp/tests/test_models.py` with round-trip cases for onboarding, generated-plan, and legacy session payloads.
-5. [ ] Extend `misc/PELICAN_mvp/tests/test_state_store.py` with persisted generated-plan reconciliation, explicit fixture compatibility, reset-to-onboarding, invalid-plan rejection, and safe-log capture assertions.
+1. [x] Modify `misc/PELICAN_mvp/pelican_mvp/models.py` in `SessionState`, `to_dict()`, and `from_dict()`.
+   - [x] Add proposed `PlanSource`, `LearningPlanSnapshot`, `EdfSnapshot`, and `LearningMemorySnapshot` serialization contracts.
+   - [x] Add an `onboarding` phase and make a generated plan optional until intake completes.
+   - [x] Preserve the existing `KnowledgeStatus`, `Evidence`, `NodeState`, and legacy `TurnRecord` fields needed by current fixture tests.
+2. [x] Create `misc/PELICAN_mvp/pelican_mvp/observability.py`.
+   - [x] Add proposed `get_logger()` and safe structured-event helpers with no raw learner content fields.
+3. [x] Modify `misc/PELICAN_mvp/pelican_mvp/state_store.py` in `load_or_create()`, `new_state()`, `save()`, and `reset()`.
+   - [x] Resolve plan nodes from a persisted generated snapshot before falling back to an explicit `CURRICULUMS` fixture.
+   - [x] Normalize legacy static records without changing their curriculum choice.
+   - [x] Reject malformed generated plans with `StateStoreError` and a safe reason code.
+4. [x] Extend `misc/PELICAN_mvp/tests/test_models.py` with round-trip cases for onboarding, generated-plan, and legacy session payloads.
+5. [x] Extend `misc/PELICAN_mvp/tests/test_state_store.py` with persisted generated-plan reconciliation, explicit fixture compatibility, reset-to-onboarding, invalid-plan rejection, and safe-log capture assertions.
 
 #### Test Plan
 
@@ -144,6 +144,26 @@ feat(pelican): add persisted dynamic learning-session contract
 ```
 
 Stage only `misc/PELICAN_mvp/pelican_mvp/models.py`, `observability.py`, `state_store.py`, `tests/test_models.py`, and `tests/test_state_store.py`. First inspect `git status --short` and preserve unrelated worktree files. Use `git add` with explicit paths, `git diff --cached --check`, and `git diff --cached --stat`; commit once; then confirm with `git show --stat --oneline --summary HEAD`. Do not use a broad stage command or proceed when the phase gate fails.
+
+#### Phase 1 Implementation Status
+
+Completed on 2026-07-19 in commit `fe9646e feat(pelican): add persisted dynamic learning-session contract`.
+
+Verification evidence retained from the phase gate:
+
+```bash
+cd misc/PELICAN_mvp
+python -m pytest tests/test_models.py tests/test_state_store.py -q
+# 16 passed
+
+python -m pytest tests/test_curriculum.py tests/test_diagnosis.py -q
+# 5 passed
+
+git diff --check
+# passed with no whitespace errors
+```
+
+The implementation follows the Phase 1 boundary: it updates only the MVP persisted-session contract, compatibility loading, safe local observability, and Phase 1 tests. Production AREQA `backend/` and `frontend/` remain untouched. Existing unrelated worktree changes were preserved and not staged into the Phase 1 commit.
 
 ### Phase 2: AI-Led Intake, Dynamic Knowledge Tree, and Learning Strategy Loop
 
