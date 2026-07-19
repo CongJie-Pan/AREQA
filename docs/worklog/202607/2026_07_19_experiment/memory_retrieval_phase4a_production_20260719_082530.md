@@ -1,0 +1,14 @@
+# AREQA Memory Retrieval Benchmark
+
+Samples: `1`
+Memory elapsed median: `2000.0 ms`
+Memory elapsed p95: `2000.0 ms`
+Timeout rate: `1.0`
+Retrieved rate: `0.0`
+Empty rate: `0.0`
+
+| Step | Samples | Median | P95 | Max |
+|---|---:|---:|---:|---:|
+| `working_memory` | 1 | 1056.00 ms | 1056.00 ms | 1056.00 ms |
+| `cold_memory_zpd_query` | 1 | 610.00 ms | 610.00 ms | 610.00 ms |
+| `cold_memory_learner_state` | 1 | 176.00 ms | 176.00 ms | 176.00 ms |

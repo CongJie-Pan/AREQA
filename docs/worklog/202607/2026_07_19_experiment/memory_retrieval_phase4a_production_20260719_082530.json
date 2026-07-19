@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "samples": 1,
+  "memory_elapsed_median_ms": 2000.0,
+  "memory_elapsed_p95_ms": 2000.0,
+  "timeout_rate": 1.0,
+  "retrieved_rate": 0.0,
+  "empty_rate": 0.0,
+  "outcomes": {
+    "timeout": 1
+  },
+  "cache_statuses": {
+    "timeout": 1
+  },
+  "steps": {
+    "cold_memory_learner_state": {
+      "samples": 1,
+      "median_ms": 176.0,
+      "p95_ms": 176.0,
+      "max_ms": 176.0
+    },
+    "cold_memory_zpd_query": {
+      "samples": 1,
+      "median_ms": 610.0,
+      "p95_ms": 610.0,
+      "max_ms": 610.0
+    },
+    "working_memory": {
+      "samples": 1,
+      "median_ms": 1056.0,
+      "p95_ms": 1056.0,
+      "max_ms": 1056.0
+    }
+  },
+  "top_steps_by_p95": [
+    {
+      "name": "working_memory",
+      "samples": 1,
+      "median_ms": 1056.0,
+      "p95_ms": 1056.0,
+      "max_ms": 1056.0
+    },
+    {
+      "name": "cold_memory_zpd_query",
+      "samples": 1,
+      "median_ms": 610.0,
+      "p95_ms": 610.0,
+      "max_ms": 610.0
+    },
+    {
+      "name": "cold_memory_learner_state",
+      "samples": 1,
+      "median_ms": 176.0,
+      "p95_ms": 176.0,
+      "max_ms": 176.0
+    }
+  ]
+}

@@ -1,0 +1,445 @@
+{
+  "schema_version": 1,
+  "mode": "live",
+  "generated_at_epoch": 1784449668,
+  "configuration": {
+    "runs": 20,
+    "warmup": 2
+  },
+  "summary": {
+    "baseline": {
+      "runs": 20,
+      "first_content_median_ms": 3691.2,
+      "first_content_p95_ms": 5610.73,
+      "completed_median_ms": 5714.61,
+      "completed_p95_ms": 8344.05,
+      "first_visible_status_median_ms": 722.9,
+      "avg_completion_calls": 0,
+      "avg_embedding_calls": 0,
+      "avg_memory_queries": 0,
+      "ttft_improvement_percent": 0.0
+    }
+  },
+  "runs": [
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "sensitive",
+      "first_event_ms": 1080.3251050001563,
+      "first_visible_status_ms": 1080.3325990000303,
+      "main_model_start_ms": null,
+      "first_content_ms": 4283.2052250014385,
+      "completed_ms": 6589.067416000034,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 9,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 780.6743860001006,
+      "first_visible_status_ms": 780.6792850005877,
+      "main_model_start_ms": null,
+      "first_content_ms": 3739.6945190012048,
+      "completed_ms": 5739.104711999971,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 8,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "explicit_recall",
+      "first_event_ms": 650.33980500084,
+      "first_visible_status_ms": 650.3470179995929,
+      "main_model_start_ms": null,
+      "first_content_ms": 4983.526031999645,
+      "completed_ms": 8094.838012999389,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 6,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "sensitive",
+      "first_event_ms": 1060.1882720002322,
+      "first_visible_status_ms": 1060.1963480003178,
+      "main_model_start_ms": null,
+      "first_content_ms": 3012.2678650004673,
+      "completed_ms": 5690.1178209991485,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 7,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 569.1531800002849,
+      "first_visible_status_ms": 569.1592210005183,
+      "main_model_start_ms": null,
+      "first_content_ms": 3174.7846779999236,
+      "completed_ms": 5235.3931609995925,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 6,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "explicit_recall",
+      "first_event_ms": 720.1106740012619,
+      "first_visible_status_ms": 720.1155929997185,
+      "main_model_start_ms": null,
+      "first_content_ms": 5078.204432000348,
+      "completed_ms": 6672.102160000577,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 5,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "sensitive",
+      "first_event_ms": 659.7897090014158,
+      "first_visible_status_ms": 744.356332001189,
+      "main_model_start_ms": null,
+      "first_content_ms": 2818.463262001387,
+      "completed_ms": 5092.552660000365,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 8,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 569.0363350004191,
+      "first_visible_status_ms": 652.0110340006795,
+      "main_model_start_ms": null,
+      "first_content_ms": 3642.7040039998246,
+      "completed_ms": 5685.394554000595,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 8,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "explicit_recall",
+      "first_event_ms": 1173.6662200000865,
+      "first_visible_status_ms": 1173.8315520015021,
+      "main_model_start_ms": null,
+      "first_content_ms": 5675.007767000352,
+      "completed_ms": 7227.313665000111,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 6,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "sensitive",
+      "first_event_ms": 549.2804979985522,
+      "first_visible_status_ms": 549.288231999526,
+      "main_model_start_ms": null,
+      "first_content_ms": 2278.8786349992733,
+      "completed_ms": 4570.251119999739,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 8,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 1066.4761360003467,
+      "first_visible_status_ms": 1066.482296999311,
+      "main_model_start_ms": null,
+      "first_content_ms": 3832.764965000024,
+      "completed_ms": 6147.258196000621,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 7,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "explicit_recall",
+      "first_event_ms": 725.6692379996821,
+      "first_visible_status_ms": 725.6775139994716,
+      "main_model_start_ms": null,
+      "first_content_ms": 5080.081177999091,
+      "completed_ms": 6680.734233999829,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 5,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "sensitive",
+      "first_event_ms": 652.7291780002997,
+      "first_visible_status_ms": 652.7362010001525,
+      "main_model_start_ms": null,
+      "first_content_ms": 2272.424217000662,
+      "completed_ms": 4445.697114000723,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 8,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 693.8847729998088,
+      "first_visible_status_ms": 693.8912250006979,
+      "main_model_start_ms": null,
+      "first_content_ms": 3079.209475001335,
+      "completed_ms": 5134.188459000143,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 6,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "explicit_recall",
+      "first_event_ms": 1061.7630409997219,
+      "first_visible_status_ms": 1061.7699849990458,
+      "main_model_start_ms": null,
+      "first_content_ms": 5607.345446000181,
+      "completed_ms": 8244.107059999806,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 4,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "sensitive",
+      "first_event_ms": 626.7615670003579,
+      "first_visible_status_ms": 626.7684089998511,
+      "main_model_start_ms": null,
+      "first_content_ms": 2372.6966029989853,
+      "completed_ms": 4392.6265299996885,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 9,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 636.9160029989871,
+      "first_visible_status_ms": 636.9214139995165,
+      "main_model_start_ms": null,
+      "first_content_ms": 3150.8442960002867,
+      "completed_ms": 5465.743254999325,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 7,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "explicit_recall",
+      "first_event_ms": 668.7210199997935,
+      "first_visible_status_ms": 668.7261200004286,
+      "main_model_start_ms": null,
+      "first_content_ms": 5206.362490000174,
+      "completed_ms": 6724.432191000233,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 4,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "sensitive",
+      "first_event_ms": 1143.8781920005567,
+      "first_visible_status_ms": 1143.8834110012976,
+      "main_model_start_ms": null,
+      "first_content_ms": 2952.5158460000966,
+      "completed_ms": 5096.28542000064,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 8,
+        "suggestions": 1,
+        "done": 1
+      }
+    },
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 735.299859999941,
+      "first_visible_status_ms": 735.3048089989898,
+      "main_model_start_ms": null,
+      "first_content_ms": 3781.3232659991627,
+      "completed_ms": 10242.972935999205,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 7,
+        "suggestions": 1,
+        "done": 1
+      }
+    }
+  ]
+}
