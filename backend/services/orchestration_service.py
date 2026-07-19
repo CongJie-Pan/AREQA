@@ -564,11 +564,6 @@ class OrchestrationService:
         if force_think:
             effective_max_tokens = 3200
 
-        yield sse_adapter.encode_legacy(
-            f"event: status\ndata: {json.dumps({'status': 'generating', 'message': '✨ 生成回答'}, ensure_ascii=False)}\n\n",
-            run_context.run_id,
-        )
-
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
         async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace):

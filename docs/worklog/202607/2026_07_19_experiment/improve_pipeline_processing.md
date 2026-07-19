@@ -982,29 +982,37 @@ git show --stat --oneline --summary HEAD
 
 Do not commit if the phase gate fails.
 
-### Phase 5: Bound Foreground Suggestion Latency
+### Phase 5: Bound Suggestion Tail And Reduce Provider First-Token Latency
 
-Status: implemented locally on 2026-07-19; production validation pending deployment. This phase is promoted ahead of Phase 4B because the latest production log and user feedback both indicate that the main answer feels fast enough, while the final completion phase can still pause for about `1s` to `2s`. The trace data matches that perception: `suggestions` runs after the main answer and before terminal completion, so slow suggestion generation can make the system feel like it is stuck at the end even when the answer has already streamed.
+Status: partially implemented locally on 2026-07-19. The first Phase 5 patch bounded foreground suggestion generation and removed the misleading `✨ 生成回答` status badge locally. Production validation then showed that suggestion latency is no longer the dominant issue in the copied trace: `suggestions=983 ms`, while `provider_first_token_ms=6269 ms`. Therefore the active Phase 5 target is now the main-model provider first-token wait, especially on `WEB_REQUIRED` turns.
 
 #### Problem
 
-In the Phase 3 production trace window, `suggestions` had median `4124 ms`, p95 `7213 ms`, and was the top phase in five of eight copied trace summaries. The latest Phase 4A production log has smaller but still visible suggestion costs: observed `suggestions` durations include about `793 ms`, `1073 ms`, `1094 ms`, `1127 ms`, `1178 ms`, `1217 ms`, and `2130 ms`. This matches the current user-perceived issue: the answer itself arrives acceptably fast, but the stream can wait at the end while suggestions finish.
+In the Phase 3 production trace window, `suggestions` had median `4124 ms`, p95 `7213 ms`, and was the top phase in five of eight copied trace summaries. The first Phase 5 implementation bounded that tail. The latest copied production log changed the diagnosis: a `WEB_REQUIRED` turn recorded `suggestions=983 ms`, but `provider_first_token_ms=6269 ms`, `main_model=7144 ms`, `search_routing=4489 ms`, and `web_search=2866 ms`. The user-visible pause now happens after pre-answer status events and before the first answer token, so it is not a suggestion-tail problem.
+
+The old `✨ 生成回答` badge made this worse by telling the user that answer generation had begun even though the system was still waiting for the provider's first streamed content. That badge should be removed or kept out of the foreground UX.
 
 #### Assumptions
 
-Suggestions must remain enabled and product-visible. The goal is not to remove suggestions; it is to prevent suggestions from becoming an unbounded foreground blocker. Existing SSE semantics must remain compatible: answer deltas still stream, suggestion events appear when available within the timeout, a compatible `event: done` is emitted even on fallback, and exactly one terminal `[DONE]` is emitted.
+Suggestions must remain enabled and product-visible, but they are no longer the primary target after the timeout/fallback patch. Existing SSE semantics must remain compatible: answer deltas still stream, suggestion events appear when available within the timeout, a compatible `event: done` is emitted even on fallback, and exactly one terminal `[DONE]` is emitted.
 
-This phase intentionally does not change the frontend/SSE contract and does not move suggestions after `[DONE]`. Async suggestions and main-model co-generation remain possible follow-up designs, but they are not required for this engineering fix. It is not acceptable for suggestion fallback to expose raw prompt/user text, duplicate terminal events, or silently break clients that expect a done event shape.
+Provider first-token latency cannot be fully controlled by application code because OpenRouter/Gemini queueing and provider prefill time are external. The system can still reduce it by avoiding unnecessary tool declarations, shrinking expensive web-context prompts, lowering answer token budgets where policy allows, and adding provider/model comparison telemetry. It is not acceptable to fake answer tokens, claim progress that has not happened, or remove required Web/search grounding for Web-required queries.
 
 #### Solution
 
-Add a bounded foreground suggestion path. `PostTurnService.suggestion_events()` enforces a configurable timeout around `SuggestionService.generate_suggestions()`. If the timeout is exceeded, the service emits a compatible empty suggestion `done` event, records timeout telemetry, and allows terminal completion to proceed. This is the lowest-risk engineering fix because it preserves current event order while capping the final post-answer wait.
+Keep the bounded foreground suggestion path already implemented. Then reduce the main-model first-token wait by addressing avoidable system-side contributors before blaming the provider:
+
+1. Remove the misleading pre-token `生成回答` status badge so the UI does not show a false progress state while waiting for first token.
+2. Send the `send_epistolary_letter` tool only when the current user request plausibly asks for avatar/letter scheduling. General answers should not pay tool-planning overhead.
+3. Add prompt-size and request-shape telemetry around the main model call: message count, approximate prompt characters, web-context result count, attachment parser flag, tool-enabled flag, max token budget, and provider first-token latency.
+4. For `WEB_REQUIRED` turns, cap or summarize web context before the main model call if traces show large prompt size correlates with slow first token.
+5. If provider first-token p95 remains high after request-shape reductions, run a model/provider comparison under the same prompt set before changing the production model.
 
 #### Implementation
 
 > Context: Add Google-style docstrings for every new or materially changed public module, class, and function. Document suggestion timeout semantics, fallback behavior, cache-key privacy, SSE compatibility boundaries, and terminal-event ownership. Inline comments should explain only non-obvious fallback and event-ordering decisions. Structured logs must include `run_id` or `conversation_id`, suggestion outcome, timeout/cache status, elapsed milliseconds, and safe fallback reason, while excluding raw user text, prompts, model output, suggestion text if unnecessary, credentials, and sensitive labels.
 
-Modify `Settings` in `backend/config.py` to add one suggestion latency control:
+Modify `Settings` in `backend/config.py` to keep the suggestion latency control:
 
 - `suggestion_generation_timeout_ms: int = 1000`.
 
@@ -1013,6 +1021,12 @@ Modify `PostTurnService.suggestion_events()` in `backend/services/post_turn_serv
 Modify `TurnLatencyTrace` only through existing milestone semantics. Existing `suggestions_started` and `suggestions_finished` marks remain stable; timeout uses `suggestions_timeout`, which is already compatible with phase-duration calculation.
 
 Modify `OrchestrationService._node_post_generation()` in `backend/services/orchestration_service.py` to pass the configured timeout into post-turn suggestion handling. Do not change answer streaming or terminal SSE ownership.
+
+Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py` to remove the pre-token `生成回答` status event. The first visible answer should come from the provider stream itself.
+
+Modify `ConversationStreamService.stream()` in `backend/services/conversation_stream_service.py` to make tool attachment conditional. Add a small deterministic helper, proposed `should_enable_letter_tool(last_user_msg: str) -> bool`, that returns true only for likely letter/avatar scheduling requests. When false, omit `tools` and `tool_choice` from the provider request instead of sending an always-available tool.
+
+Add safe request-shape logging in `ConversationStreamService.stream()` before the provider call. The event should be `orchestration.main_model_request_shape` and include `conversation_id`, `model`, `message_count`, `prompt_chars_bucket`, `web_context_result_count_bucket` if available, `tools_enabled`, `max_tokens`, `force_think`, and `attachment_parser`. Do not log raw message text, prompt text, web snippets, model output, credentials, or user identifiers beyond existing safe correlation IDs.
 
 #### Expected File Tree After Phase 5
 
@@ -1023,10 +1037,12 @@ backend/
 ├── config.py                            [modified]
 ├── services/
 │   ├── orchestration_service.py         [modified]
+│   ├── conversation_stream_service.py   [modified]
 │   └── post_turn_service.py             [modified]
 tests/
 └── backend/
     ├── test_config.py                   [modified]
+    ├── test_conversation_stream_service.py [new if no focused stream-service test exists]
     ├── test_orchestration_service.py    [modified]
     └── test_post_turn_service.py        [modified]
 ```
@@ -1044,25 +1060,36 @@ tests/
 3. [x] Modify `OrchestrationService._node_post_generation()` in `backend/services/orchestration_service.py`.
    - [x] Pass suggestion timeout settings into `PostTurnService.suggestion_events()`.
    - [x] Preserve current answer stream ordering and SSE terminal ownership.
-4. [x] Add or extend tests.
+4. [x] Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py`.
+   - [x] Remove the misleading pre-token `生成回答` status event.
+   - [x] Preserve prompt assembly, main stream, post-generation, and terminal `[DONE]` ordering.
+5. [ ] Modify `ConversationStreamService.stream()` in `backend/services/conversation_stream_service.py`.
+   - [ ] Add proposed helper `should_enable_letter_tool(last_user_msg: str) -> bool`.
+   - [ ] Omit `tools` and `tool_choice` for normal chat turns that are not likely letter/avatar scheduling requests.
+   - [ ] Preserve `send_epistolary_letter` tool execution for eligible letter/avatar requests.
+   - [ ] Add privacy-safe `orchestration.main_model_request_shape` logging.
+6. [ ] Add or extend tests.
    - [x] `tests/backend/test_config.py`: assert suggestion timeout default and env override.
    - [x] `tests/backend/test_post_turn_service.py`: assert slow suggestions time out and still emit compatible events.
-   - [x] Existing `tests/backend/test_orchestration_service.py` and `tests/backend/test_stream_endpoint.py`: preserve stream completion compatibility.
+   - [x] Existing `tests/backend/test_orchestration_service.py` and `tests/backend/test_stream_endpoint.py`: preserve stream completion compatibility after removing `生成回答`.
+   - [ ] `tests/backend/test_conversation_stream_service.py`: assert normal chat omits tools/tool_choice.
+   - [ ] `tests/backend/test_conversation_stream_service.py`: assert letter/avatar request includes `send_epistolary_letter`.
+   - [ ] `tests/backend/test_conversation_stream_service.py`: assert request-shape logs are privacy-safe.
 
 #### Test Plan
 
-Use mocked `SuggestionService.generate_suggestions()` calls to validate success, timeout, and failure behavior. Do not use live provider calls in unit tests. Existing accumulator and done-event tests must continue to pass because the user-facing SSE contract is the highest-risk compatibility boundary.
+Use mocked `SuggestionService.generate_suggestions()` calls to validate success, timeout, and failure behavior. Use mocked provider clients to validate conditional tool request shape and first-token telemetry without live provider calls. Existing accumulator and done-event tests must continue to pass because the user-facing SSE contract is the highest-risk compatibility boundary.
 
 Commands:
 
 ```bash
 PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_post_turn_service.py tests/backend/test_orchestration_service.py -q
-PYTHONPATH=. pytest tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
+PYTHONPATH=. pytest tests/backend/test_conversation_stream_service.py tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
 ```
 
 #### Expected Output / Result
 
-Suggestions remain enabled when they return within the configured budget, but they no longer block terminal completion beyond `suggestion_generation_timeout_ms`. Slow suggestions produce a compatible empty fallback and structured telemetry. Production completed-latency slow traces should no longer show `suggestions` exceeding the configured timeout budget.
+Suggestions remain enabled when they return within the configured budget, but they no longer block terminal completion beyond `suggestion_generation_timeout_ms`. Slow suggestions produce a compatible empty fallback and structured telemetry. The misleading `生成回答` badge is removed. Normal chat turns no longer send unnecessary tool definitions to the main model. Production traces should show request-shape metadata for first-token analysis, and provider first-token p95 should improve if tool-planning overhead was a contributor.
 
 #### Testing Script
 
@@ -1084,17 +1111,35 @@ Run the stream endpoint or orchestration path with a slow mocked suggestion serv
 
 Pass condition: answer deltas stream normally, suggestion fallback is compatible, and exactly one terminal `[DONE]` is emitted.
 
+##### Act 04: Normal Chat Omits Tools
+
+Run `ConversationStreamService.stream()` with a normal user question and a mocked provider client.
+
+Pass condition: the provider request does not include `tools` or `tool_choice`.
+
+##### Act 05: Letter Request Keeps Tool
+
+Run `ConversationStreamService.stream()` with a request that clearly asks to send or schedule an avatar letter.
+
+Pass condition: the provider request includes the `send_epistolary_letter` tool and keeps tool-call handling compatible.
+
+##### Act 06: Request-Shape Telemetry Is Safe
+
+Run a mocked stream with long prompt content and capture logs.
+
+Pass condition: `orchestration.main_model_request_shape` is emitted with bucketed/safe fields and no raw prompt, user text, web snippet, model output, token, or credential content.
+
 #### Gate to Enter the Next Phase
 
 This is the final implementation phase gate before cross-phase acceptance:
 
 ```bash
 PYTHONPATH=. pytest tests/backend/test_post_turn_service.py tests/backend/test_orchestration_service.py tests/backend/test_chat_latency_benchmark.py -q
-PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
+PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_conversation_stream_service.py tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
 python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --warmup 2 --output docs/worklog/202607/2026_07_19_experiment/production_latency_suggestion_timeout.json
 ```
 
-Retain evidence showing suggestion timeout behavior, SSE compatibility, and production trace outcomes. The phase passes only if copied production `turn_trace_summary` logs show `suggestions` no longer dominates completed latency past the configured timeout budget, or if timeout fallback is recorded and terminal completion remains compatible.
+Retain evidence showing suggestion timeout behavior, SSE compatibility, provider request-shape telemetry, and production trace outcomes. The phase passes only if copied production `turn_trace_summary` logs show `suggestions` no longer dominates completed latency past the configured timeout budget and `provider_first_token_ms` can be correlated with request shape. If provider first-token latency remains high after normal turns omit tools, the next step is a provider/model comparison rather than more local pipeline work.
 
 #### Phase Commit
 
@@ -1109,8 +1154,10 @@ Stage only Phase 5 files and hunks:
 ```text
 backend/config.py
 backend/services/orchestration_service.py
+backend/services/conversation_stream_service.py
 backend/services/post_turn_service.py
 tests/backend/test_config.py
+tests/backend/test_conversation_stream_service.py
 tests/backend/test_orchestration_service.py
 tests/backend/test_post_turn_service.py
 ```
