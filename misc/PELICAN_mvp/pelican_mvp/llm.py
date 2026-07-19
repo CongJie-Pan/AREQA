@@ -73,7 +73,9 @@ class LlmAdapter:
         if not self.available:
             return None
         payload = self._json(
-            "將學生回答分類成指定五類之一。只輸出 JSON。",
+            "將學生回答分類成指定五類之一。只輸出 JSON。\n"
+            "注意：若學生的回答包含了正確的概念、部分正確，或意思與標準答案相符（例如選擇題多選了合理選項），請寬容地分類為 correct。\n"
+            "若學生明確表達不知道，為 inability_to_respond；表達困惑則為 difficulty_in_understanding。",
             "題目：%s\n標準答案：%s\n學生回答：%s\n"
             "輸出 {\"category\": \"inability_to_respond|difficulty_in_understanding|correct|incorrect|other\"}"
             % (prompt, expected, answer),

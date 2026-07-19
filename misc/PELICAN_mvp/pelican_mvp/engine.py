@@ -184,7 +184,17 @@ class PelicanEngine:
         self._refresh_learning_context(answer, category)
         self.store.save(self.state)
         next_outcome = self._present_next_diagnostic()
-        message = f"診斷結果：{category.value}。\n" + next_outcome.message
+        
+        category_msg_map = {
+            ResponseCategory.CORRECT: "答對了，看來你對這個概念有基本掌握！",
+            ResponseCategory.INCORRECT: "這個答案不太對喔，我們晚點再詳細探討。",
+            ResponseCategory.DIFFICULTY: "這部分確實比較進階，不用擔心。",
+            ResponseCategory.INABILITY: "沒關係，學習本來就是一步步來的。",
+            ResponseCategory.OTHER: "收到你的回覆了。"
+        }
+        prefix = category_msg_map.get(category, f"診斷結果：{category.value}。")
+        message = f"{prefix}\n\n{next_outcome.message}"
+        
         return TurnOutcome(message, next_outcome.node_id, category, None, tuple(changes), next_outcome.next_reason)
 
     def _handle_tutoring(self, answer: str) -> TurnOutcome:
