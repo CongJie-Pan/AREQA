@@ -9,6 +9,7 @@ from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_fo
 from .llm import LlmAdapter, LlmUnavailable
 from .models import (
     KnowledgeStatus,
+    PlanSource,
     ResponseCategory,
     SessionState,
     TurnOutcome,
@@ -18,6 +19,11 @@ from .models import (
 from typing import Any
 from .state_store import StateStore
 from .tutoring import rule_tutor_message, select_strategy
+from .planner import LearningPlanner
+from .edf_simulator import EdfSimulator
+from .learning_memory import LearningMemorySimulator
+from .curriculum import Curriculum
+from .observability import log_event
 
 
 class PelicanEngine:
@@ -25,17 +31,40 @@ class PelicanEngine:
         if mode is not None and mode not in {"rule", "llm"}:
             raise ValueError("mode must be 'rule' or 'llm'")
         self.store = StateStore(data_dir)
-        # Phase 1 introduces onboarding state persistence; the existing fixture-only
-        # engine remains explicitly bound to CNN until Phase 2 owns onboarding flow.
-        fixture_curriculum_id = curriculum_id or "cnn"
-        self.state = self.store.load_or_create(learner_id, mode or "rule", fixture_curriculum_id)
+        # Session defaults to onboarding if no curriculum_id is provided
+        self.state = self.store.load_or_create(learner_id, mode or "rule", curriculum_id)
         if mode is not None:
             self.state.mode = mode
             self.store.save(self.state)
-        self.curriculum = CURRICULUMS[self.state.curriculum_id]
+        self.curriculum = self._resolve_curriculum()
         self.llm = LlmAdapter()
+        self.planner = LearningPlanner(self.llm)
+        self.edf = EdfSimulator()
+        self.memory = LearningMemorySimulator()
+
+    def _resolve_curriculum(self) -> Curriculum | None:
+        if self.state.plan_source == PlanSource.FIXTURE and self.state.curriculum_id:
+            return CURRICULUMS.get(self.state.curriculum_id)
+        if self.state.learning_plan:
+            plan = self.state.learning_plan
+            return Curriculum(
+                name=plan.topic,
+                nodes={n.node_id: n for n in plan.nodes},
+                diagnostics={d.node_id: d for d in plan.diagnostics},
+                task_steps=plan.task_steps,
+                answer_aliases={},
+                tutor_hints={},
+                completion_message=f"答對了！{plan.topic} 原題完成。"
+            )
+        return None
 
     def start(self) -> TurnOutcome:
+        if self.state.phase == "onboarding":
+            log_event("pelican_intake_received", learner_id=self.state.learner_id, phase="onboarding")
+            return TurnOutcome(
+                "歡迎！你想學什麼？（例如：我想了解二元搜尋法、我的 Python 字典一直用錯...）",
+                None, None, None, (), "開始學習意圖收集"
+            )
         if self.state.completed:
             return TurnOutcome("此學習者已完成原題；輸入 reset 可重新開始。", None, None, None, (), "已完成")
         if self.state.phase == "diagnosis":
@@ -48,9 +77,27 @@ class PelicanEngine:
             return self._show_answer()
         if not answer:
             return TurnOutcome("請輸入你的答案、困難點，或使用 CLI 指令。", self.state.current_node_id, None, None, (), "等待學生回應")
+
+        if self.state.phase == "onboarding":
+            return self._handle_onboarding(answer)
         if self.state.phase == "diagnosis":
             return self._handle_diagnostic(answer)
         return self._handle_tutoring(answer)
+
+    def _handle_onboarding(self, answer: str) -> TurnOutcome:
+        log_event("pelican_intake_received", learner_id=self.state.learner_id, phase="onboarding")
+        plan = self.planner.create_plan(answer)
+        self.state.learning_plan = plan
+        self.state.phase = "diagnosis"
+        self.store.save(self.state)
+        self.curriculum = self._resolve_curriculum()
+        log_event(
+            "pelican_phase_transition",
+            learner_id=self.state.learner_id,
+            phase="diagnosis",
+            plan_source=self.state.plan_source.value,
+        )
+        return self._present_next_diagnostic()
 
     def switch_mode(self, mode: str) -> TurnOutcome:
         if mode not in {"rule", "llm"}:
@@ -62,8 +109,9 @@ class PelicanEngine:
 
     def reset(self, curriculum_id: str | None = None) -> TurnOutcome:
         target_curriculum = curriculum_id or self.state.curriculum_id
+        # Reset creates a new state. If target_curriculum is None, it defaults to onboarding
         self.state = self.store.reset(self.state.learner_id, self.state.mode, target_curriculum)
-        self.curriculum = CURRICULUMS[self.state.curriculum_id]
+        self.curriculum = self._resolve_curriculum()
         return self.start()
 
     def tree_summary(self) -> str:
@@ -121,6 +169,7 @@ class PelicanEngine:
         category = self._classify(answer)
         changes = apply_diagnostic_result(self.state, node_id, answer, category, self.curriculum)
         self._record(answer, category, None, changes)
+        self._refresh_learning_context(answer, category)
         self.store.save(self.state)
         next_outcome = self._present_next_diagnostic()
         message = f"診斷結果：{category.value}。\n" + next_outcome.message
@@ -138,6 +187,7 @@ class PelicanEngine:
             )
             changes.append(f"{self.curriculum.nodes[node_id].label}: mastered（原題直接證據）")
             self._record(answer, category, TutoringStrategy.CONFIRMATION, changes)
+            self._refresh_learning_context(answer, category)
             step = self.curriculum.next_task_step(step_id)
             if step is None:
                 self.state.completed = True
@@ -162,13 +212,23 @@ class PelicanEngine:
                 evidence=self._evidence(answer, category),
             )
             changes.append(f"{self.curriculum.nodes[node_id].label}: not_mastered（原題直接證據）")
-        strategy, reason = select_strategy(category, rounds)
+        strategy, reason = select_strategy(category, rounds, self.state.edf_snapshot.pedagogical_strategy)
         message, source = self._tutor_message(strategy, node_id)
         self._record(answer, category, strategy, changes)
+        self._refresh_learning_context(answer, category)
         self.state.current_prompt = message
         self.state.current_prompt_source = source
         self.store.save(self.state)
         return TurnOutcome(message, node_id, category, strategy, tuple(changes), reason)
+
+    def _refresh_learning_context(self, answer: str, category: ResponseCategory) -> None:
+        self.memory.record_direct_evidence(self.state, answer, category)
+        self.state.edf_snapshot = self.edf.evaluate(self.state)
+        log_event(
+            "pelican_diagnosis_updated",
+            learner_id=self.state.learner_id,
+            category=category.value,
+        )
 
     def _present_current_step(self, reason: str) -> TurnOutcome:
         return TurnOutcome(self.state.current_prompt, self.state.current_node_id, None, None, (), reason)

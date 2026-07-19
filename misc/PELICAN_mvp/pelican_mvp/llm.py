@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from .models import DiagnosticQuestion, ResponseCategory, TutoringStrategy
+from .models import DiagnosticQuestion, KnowledgeNode, LearningPlanSnapshot, ResponseCategory, TutoringStrategy
 
 
 class LlmUnavailable(RuntimeError):
@@ -94,6 +94,60 @@ class LlmAdapter:
         )
         response = str(payload.get("response", "")).strip()
         return response or None
+
+    def generate_learning_plan(self, topic: str) -> LearningPlanSnapshot | None:
+        if not self.available:
+            return None
+        import uuid
+        payload = self._json(
+            "你是一個課程規劃師。請根據主題產生一份包含知識點、診斷題與任務步驟的 JSON 計畫。",
+            f"主題：{topic}\n"
+            "輸出 JSON 格式如下：\n"
+            "{\n"
+            "  \"goal_summary\": \"...\",\n"
+            "  \"nodes\": [{\"node_id\": \"n1\", \"label\": \"...\", \"prerequisites\": [], \"priority\": 2}],\n"
+            "  \"diagnostics\": [{\"node_id\": \"n1\", \"prompt\": \"...\", \"expected_answer\": \"...\"}],\n"
+            "  \"task_steps\": [{\"step_id\": \"s1\", \"node_id\": \"n1\", \"label\": \"...\", \"prompt\": \"...\", \"expected\": \"...\"}]\n"
+            "}"
+        )
+
+        nodes = tuple(
+            KnowledgeNode(
+                node_id=n["node_id"],
+                label=n["label"],
+                prerequisites=tuple(n.get("prerequisites", [])),
+                priority=n.get("priority", 0)
+            )
+            for n in payload.get("nodes", [])
+        )
+        diagnostics = tuple(
+            DiagnosticQuestion(
+                node_id=d["node_id"],
+                prompt=d["prompt"],
+                expected_answer=d["expected_answer"],
+                source="llm"
+            )
+            for d in payload.get("diagnostics", [])
+        )
+        task_steps = tuple(
+            {
+                "step_id": s["step_id"],
+                "node_id": s["node_id"],
+                "label": s.get("label", ""),
+                "prompt": s["prompt"],
+                "expected": s["expected"]
+            }
+            for s in payload.get("task_steps", [])
+        )
+
+        return LearningPlanSnapshot(
+            plan_id=str(uuid.uuid4()),
+            topic=topic,
+            goal_summary=payload.get("goal_summary", f"學習 {topic}"),
+            nodes=nodes,
+            diagnostics=diagnostics,
+            task_steps=task_steps
+        )
 
     def _json(self, system: str, user: str) -> dict[str, Any]:
         if not self.config:

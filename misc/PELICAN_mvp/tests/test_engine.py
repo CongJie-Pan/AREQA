@@ -6,7 +6,8 @@ from pelican_mvp.models import KnowledgeStatus, ResponseCategory, TutoringStrate
 
 
 def test_unknown_student_is_diagnosed_before_original_problem(tmp_path: Path) -> None:
-    engine = PelicanEngine(tmp_path)
+    # Fixture explicitly selected
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
     outcome = engine.start()
 
     assert engine.state.phase == "diagnosis"
@@ -14,8 +15,22 @@ def test_unknown_student_is_diagnosed_before_original_problem(tmp_path: Path) ->
     assert "診斷題" in outcome.message
 
 
-def test_rule_mode_completes_problem_and_persists(tmp_path: Path) -> None:
+def test_default_intake_path(tmp_path: Path) -> None:
     engine = PelicanEngine(tmp_path)
+    outcome = engine.start()
+
+    assert engine.state.phase == "onboarding"
+    assert "你想學什麼" in outcome.message
+
+    # Respond to intake
+    outcome = engine.respond("我想學 SQL JOIN")
+    assert engine.state.phase == "diagnosis"
+    assert engine.state.learning_plan is not None
+    assert engine.state.learning_plan.topic == "我想學 SQL JOIN"
+
+
+def test_rule_mode_completes_problem_and_persists(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
     engine.start()
     engine.respond("8")
     engine.respond("不會")
@@ -35,7 +50,7 @@ def test_rule_mode_completes_problem_and_persists(tmp_path: Path) -> None:
 
 
 def test_show_answer_does_not_change_mastery(tmp_path: Path) -> None:
-    engine = PelicanEngine(tmp_path)
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
     engine.start()
     engine.respond("8")
     engine.respond("不會")
@@ -48,7 +63,7 @@ def test_show_answer_does_not_change_mastery(tmp_path: Path) -> None:
 
 
 def test_persistent_failure_activates_slow_thinking(tmp_path: Path) -> None:
-    engine = PelicanEngine(tmp_path)
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
     engine.start()
     engine.respond("8")
     engine.respond("不會")
@@ -65,7 +80,7 @@ def test_llm_mode_without_key_uses_reviewed_rule_question(tmp_path: Path, monkey
     import dotenv
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    engine = PelicanEngine(tmp_path, mode="llm")
+    engine = PelicanEngine(tmp_path, mode="llm", curriculum_id="cnn")
 
     outcome = engine.start()
 
@@ -73,20 +88,20 @@ def test_llm_mode_without_key_uses_reviewed_rule_question(tmp_path: Path, monkey
     assert "診斷題" in outcome.message
 
 def test_start_when_completed(tmp_path: Path) -> None:
-    engine = PelicanEngine(tmp_path)
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
     engine.state.completed = True
     outcome = engine.start()
-    
+
     assert "已完成" in outcome.message
 
 def test_llm_mode_fallback_on_respond(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import dotenv
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    
-    engine = PelicanEngine(tmp_path, mode="llm")
+
+    engine = PelicanEngine(tmp_path, mode="llm", curriculum_id="cnn")
     engine.start()
     outcome = engine.respond("100")
-    
+
     assert outcome is not None
 

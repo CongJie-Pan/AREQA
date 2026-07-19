@@ -15,21 +15,34 @@ FAST_STRATEGIES = {
 }
 
 
-def select_strategy(category: ResponseCategory, rounds: int) -> tuple[TutoringStrategy, str]:
+def select_strategy(category: ResponseCategory, rounds: int, pedagogical_policy: str | None = None) -> tuple[TutoringStrategy, str]:
     if rounds < 2:
         return FAST_STRATEGIES[category], "fast-thinking：依本回合回答類別選擇策略"
-    candidates = _slow_candidates(category)
+    candidates = _slow_candidates(category, pedagogical_policy)
     scored = [(strategy, _simulation_score(strategy, category)) for strategy in candidates]
     strategy, score = max(scored, key=lambda item: item[1])
     return strategy, f"slow-thinking：模擬 {len(candidates)} 條策略路徑後選擇最高分 {score:.2f}"
 
 
-def _slow_candidates(category: ResponseCategory) -> tuple[TutoringStrategy, TutoringStrategy]:
+def _slow_candidates(category: ResponseCategory, pedagogical_policy: str | None = None) -> tuple[TutoringStrategy, ...]:
+    candidates = []
     if category in (ResponseCategory.INABILITY, ResponseCategory.DIFFICULTY):
-        return (TutoringStrategy.DECOMPOSITION, TutoringStrategy.SIMPLIFICATION)
-    if category is ResponseCategory.INCORRECT:
-        return (TutoringStrategy.CORRECTION, TutoringStrategy.DECOMPOSITION)
-    return (TutoringStrategy.OPEN_QUESTION, TutoringStrategy.CONFIRMATION)
+        candidates = [TutoringStrategy.DECOMPOSITION, TutoringStrategy.SIMPLIFICATION]
+    elif category is ResponseCategory.INCORRECT:
+        candidates = [TutoringStrategy.CORRECTION, TutoringStrategy.DECOMPOSITION]
+    else:
+        candidates = [TutoringStrategy.OPEN_QUESTION, TutoringStrategy.CONFIRMATION]
+
+    if pedagogical_policy == "simplify_or_decompose":
+        candidates = [c for c in candidates if c in (TutoringStrategy.SIMPLIFICATION, TutoringStrategy.DECOMPOSITION)]
+    elif pedagogical_policy == "correct_and_explain":
+        candidates = [c for c in candidates if c in (TutoringStrategy.CORRECTION, TutoringStrategy.EXPLANATION)]
+    elif pedagogical_policy == "confirm_and_suggest_action":
+        candidates = [c for c in candidates if c in (TutoringStrategy.CONFIRMATION, TutoringStrategy.CLOSED_QUESTION)]
+    elif pedagogical_policy == "challenge_or_fade":
+        candidates = [c for c in candidates if c in (TutoringStrategy.OPEN_QUESTION, TutoringStrategy.CONFIRMATION)]
+
+    return tuple(candidates) if candidates else (TutoringStrategy.EXPLANATION,)
 
 
 def _simulation_score(strategy: TutoringStrategy, category: ResponseCategory, discount: float = 0.2) -> float:

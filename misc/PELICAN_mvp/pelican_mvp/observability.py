@@ -14,12 +14,17 @@ _SAFE_FIELDS = frozenset({
     "plan_source",
     "node_count",
     "reason_code",
+    "category",
+    "strategy",
+    "learner_state",
+    "evidence_count",
+    "working_context_count",
 })
 
 
-def get_logger() -> logging.Logger:
+def get_logger(name: str | None = None) -> logging.Logger:
     """Return the package logger without configuring global logging handlers."""
-    return logging.getLogger(LOGGER_NAME)
+    return logging.getLogger(name or LOGGER_NAME)
 
 
 def learner_token(learner_id: str) -> str:
@@ -27,7 +32,7 @@ def learner_token(learner_id: str) -> str:
     return hashlib.sha256(learner_id.encode("utf-8")).hexdigest()[:12]
 
 
-def log_event(event: str, learner_id: str, *, level: int = logging.INFO, **fields: Any) -> None:
+def log_event(event: str, learner_id: str | None = None, *, level: int = logging.INFO, **fields: Any) -> None:
     """Emit an allow-listed structured event without raw learner content.
 
     This boundary intentionally ignores unknown fields so callers cannot accidentally
@@ -38,8 +43,11 @@ def log_event(event: str, learner_id: str, *, level: int = logging.INFO, **field
         for key, value in fields.items()
         if key in _SAFE_FIELDS and isinstance(value, (str, int, float, bool, type(None)))
     }
+    extra_fields = {"event": event, **safe_fields}
+    if learner_id:
+        extra_fields["learner_token"] = learner_token(learner_id)
     get_logger().log(
         level,
         event,
-        extra={"event": event, "learner_token": learner_token(learner_id), **safe_fields},
+        extra=extra_fields,
     )
