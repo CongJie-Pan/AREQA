@@ -50,7 +50,8 @@ class LlmAdapter:
         if not self.available:
             return None
         teacher = self._json(
-            "你是教師。只產生一題繁體中文的單一概念診斷題，並附簡短標準答案。",
+            "你是教師。只產生一題繁體中文的單一概念診斷題，並附簡短標準答案。\n"
+            "警告：千萬不能把答案洩漏在 prompt 欄位中，prompt 欄位只能有純題目。",
             f"目標知識點：{node_label}\n輸出 JSON：{{\"prompt\": str, \"expected_answer\": str}}",
         )
         prompt = str(teacher.get("prompt", "")).strip()
@@ -102,7 +103,8 @@ class LlmAdapter:
             return None
         import uuid
         payload = self._json(
-            "你是一個課程規劃師。請根據主題產生一份包含知識點、診斷題與任務步驟的 JSON 計畫。",
+            "你是一個課程規劃師。請根據主題產生一份包含知識點、診斷題與任務步驟的 JSON 計畫。\n"
+            "警告：所有物件的 prompt 欄位只能包含純題目，千萬不能把答案寫進 prompt 裡，答案只能寫在 expected_answer 或 expected 欄位。",
             f"主題：{topic}\n"
             "輸出 JSON 格式如下：\n"
             "{\n"
