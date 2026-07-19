@@ -1,16 +1,14 @@
 # PELICAN CLI MVP
 
-這是 PELICAN 論文方法的可觀察最小實作，使用深度學習卷積神經網路(CNN)的知識點作為範例：
+這是 PELICAN 論文方法的可觀察最小實作，作為獨立的 AI 驅動學習引擎與認知診斷模擬沙盒。
 
-```text
-設計一個 CNN 模型來處理 28x28 的灰階影像：
-1. 第一層使用 3x3 的卷積核，步幅(stride)=1，無填充(padding=0)。
-2. 接著通過 ReLU 激活函數。
-3. 最後使用 2x2 的最大池化(Max Pooling)，步幅=2。
-求最後輸出的特徵圖(Feature Map)尺寸。
-```
+### 工作流程 (Intake-to-Diagnosis Workflow)
 
-它先用 successor-first 進行協作式認知診斷，再依學生回應更新知識狀態，最後以快/慢思考選擇教學策略。它不會把使用者程度當成已知，也不會在未完成當前知識節點時隨意跳到無關問題。
+1. **Onboarding (意圖收集)**: 引擎啟動後預設進入此階段，等待學習者輸入想學習的主題（例如：「我想了解二元搜尋法」或「SQL Left Join 一直搞混」）。
+2. **Dynamic Planning (動態學習地圖)**: 根據學習者的目標，系統會自動生成或回退 (Fallback) 到預設的學習診斷樹 (Learning Plan)。
+3. **Diagnosis & Tutoring (診斷與輔導)**: 系統使用 successor-first (後繼者優先) 的方式進行協作式認知診斷，並依學生回應更新知識狀態，最後根據 EDF (Epistemic Development Framework) 狀態與學習記憶 (Learning Memory) 選擇教學策略。
+
+它不會把使用者程度當成已知，也不會在未完成當前知識節點時隨意跳到無關問題。引擎的資料狀態（含 EDF 與 Memory 計數）均不會與主系統產生耦合，為完全獨立的實驗場域。
 
 ## Quick Start
 
@@ -22,7 +20,12 @@ pip install -r requirements.txt
 python -m pelican_mvp
 ```
 
-預設為完全離線、可重現的規則模式。學習狀態存放於 `data/demo_student.json`，可使用 `reset` 清除。
+預設為完全離線、可重現的規則模式 (Deterministic Fallback)。
+學習狀態存放於 `data/demo_student.json`，可使用 `reset` 清除以重新啟動 `onboarding` 流程。
+
+### 開發與測試相容性
+- **Fixture Curriculum Compatibility**: 為相容先前的回歸測試，直接在 API 傳入 `curriculum_id` (例如 `cnn` 或 `chinese_history`) 即可直接繞過 Onboarding 進入固定課綱診斷。
+- **邊界聲明**: 本模組為非正式生產環境之模擬層。所有的 EDF (Epistemic Development Framework) 與 GUM (Generative User Model) 推論皆僅在 `misc/PELICAN_mvp` 內運行，絕對不會影響 `backend/` 主系統的運作。
 
 ## CLI Commands
 

@@ -472,13 +472,13 @@ misc/PELICAN_mvp/
 
 #### Work List
 
-1. [ ] Modify `misc/PELICAN_mvp/README.md`.
-   - [ ] Replace the fixed-CNN-first description with the intake-to-diagnosis learning-engine workflow.
-   - [ ] Document fixture-curriculum compatibility, deterministic fallback, state-file handling, and the explicit non-production EDF/GUM boundary.
-2. [ ] Create `docs/tech_docs/PELICAN_AREQA_learning_engine_experiment_test.md`.
-   - [ ] Add proposed manual experiment Acts, capture fields, success/failure criteria, and a promotion decision checklist.
+1. [x] Modify `misc/PELICAN_mvp/README.md`.
+   - [x] Replace the fixed-CNN-first description with the intake-to-diagnosis learning-engine workflow.
+   - [x] Document fixture-curriculum compatibility, deterministic fallback, state-file handling, and the explicit non-production EDF/GUM boundary.
+2. [x] Create `docs/tech_docs/PELICAN_AREQA_learning_engine_experiment_test.md`.
+   - [x] Add proposed manual experiment Acts, capture fields, success/failure criteria, and a promotion decision checklist.
 3. [x] Extend `misc/PELICAN_mvp/tests/test_e2e.py`.
-   - [ ] Add a complete offline learning trace that asserts onboarding, generated-plan validation, successor-first diagnosis, EDF policy update, source-safe memory, reset, and fixture compatibility.
+   - [x] Add a complete offline learning trace that asserts onboarding, generated-plan validation, successor-first diagnosis, EDF policy update, source-safe memory, reset, and fixture compatibility.
 
 #### Test Plan
 
