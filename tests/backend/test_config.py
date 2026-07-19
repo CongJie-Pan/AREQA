@@ -29,6 +29,7 @@ def test_settings_loads_defaults():
     assert s.explicit_recall_memory_timeout_ms == 2000
     assert s.enable_explicit_recall_memory_cache is True
     assert s.explicit_recall_memory_cache_ttl_seconds == 120
+    assert s.suggestion_generation_timeout_ms == 1000
 
 def test_settings_can_be_overridden_by_env():
     """Settings 應能透過環境變數覆寫，確保不 Hardcoding。"""
@@ -44,6 +45,7 @@ def test_settings_can_be_overridden_by_env():
         'TURN_TRACE_SLOW_TOTAL_THRESHOLD_MS': '9000',
         'EXPLICIT_RECALL_MEMORY_TIMEOUT_MS': '1500',
         'ENABLE_EXPLICIT_RECALL_MEMORY_CACHE': 'false',
+        'SUGGESTION_GENERATION_TIMEOUT_MS': '750',
     }):
         from backend.config import Settings
         s = Settings()
@@ -58,3 +60,4 @@ def test_settings_can_be_overridden_by_env():
         assert s.turn_trace_slow_total_threshold_ms == 9000
         assert s.explicit_recall_memory_timeout_ms == 1500
         assert s.enable_explicit_recall_memory_cache is False
+        assert s.suggestion_generation_timeout_ms == 750

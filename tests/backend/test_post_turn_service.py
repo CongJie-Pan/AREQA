@@ -56,3 +56,38 @@ async def test_suggestion_events_record_trace_markers():
     assert "suggestions_started" in phase_names
     assert "suggestions_finished" in phase_names
     assert snapshot["model_calls"] == {"suggestions": 1}
+
+
+@pytest.mark.asyncio
+async def test_suggestion_events_timeout_returns_compatible_done(caplog):
+    """Slow suggestions must fall back without blocking terminal completion."""
+
+    caplog.set_level(logging.WARNING)
+    blocker = asyncio.Event()
+    suggestion_service = AsyncMock()
+
+    async def slow_suggestions(**_kwargs):
+        await blocker.wait()
+        return ["太晚的問題？"]
+
+    suggestion_service.generate_suggestions.side_effect = slow_suggestions
+    service = PostTurnService(suggestion_service)
+    trace = TurnLatencyTrace(run_id="run-1", conversation_id="conversation-1")
+
+    events = await service.suggestion_events(
+        last_user_msg="請解釋 dependency injection",
+        answer_text="answer",
+        context_results_obj=None,
+        use_rag=False,
+        use_web_search=False,
+        timeout_ms=1,
+        trace=trace,
+    )
+
+    joined = "".join(events)
+    phase_names = [phase["name"] for phase in trace.snapshot()["phases"]]
+    assert "event: suggestions" not in joined
+    assert 'event: done\ndata: {"suggestions": []}' in joined
+    assert "suggestions_started" in phase_names
+    assert "suggestions_timeout" in phase_names
+    assert "orchestration.suggestions_timeout" in caplog.text

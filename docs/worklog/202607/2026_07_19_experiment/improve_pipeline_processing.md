@@ -4,7 +4,7 @@
 
 This plan improves AREQA chat response speed without removing the product pipeline the user wants to keep. The current code shows that `/api/v1/stream` enters `OrchestrationService.execute()` and then synchronously performs routing, turn intake, optional policy classification, optional RAG/Web work, prompt assembly with hot and long-term memory, main LLM streaming, synchronous suggestions, and post-turn durable job dispatch. Internal RAG is already disabled unless `ENABLE_INTERNAL_RAG=true`, and the user confirmed RAG is not part of the current product path. Therefore, this plan optimizes the non-RAG path first, preserves Web Search when policy requires it, preserves behavior analysis and suggestions in the foreground, and keeps learner-state updates, reflection, compaction, and long-term organization in durable background work.
 
-The phase order is deliberate: first add measurement, then introduce a deterministic turn plan and model-call budget, then run baseline-versus-TurnPlan experiments, then optimize the measured long-term-memory bottleneck before refining memory quality and retrieval policy. Phase 3 must not be treated as a speculative rewrite or broad parallelization phase. It should be driven by Phase 1 and Phase 2 evidence: the production trace showed that slow `prompt_assembly` was dominated by synchronous `long_term_memory`, while provider first token was fast. This avoids guessing where latency comes from and avoids over-agentification. The existing `ConversationRuntime`, `RunContext`, `ConversationRunState`, `SearchPolicy`, `MemoryPolicy`, `TutorAgent`, `ToolRegistry`, `ToolBudgetTracker`, and latency benchmark script should be reused rather than replaced.
+The phase order is deliberate: first add measurement, then introduce a deterministic turn plan and model-call budget, then run baseline-versus-TurnPlan experiments, then bound explicit-recall memory latency, then use production evidence to choose the next user-visible bottleneck. Phase 3 must not be treated as a speculative rewrite or broad parallelization phase. It should be driven by Phase 1 and Phase 2 evidence: the production trace showed that slow `prompt_assembly` was dominated by synchronous `long_term_memory`, while provider first token was fast. Phase 4A then added long-term-memory profiling, but the latest production log and user feedback show the next practical bottleneck is the final 1-2 second wait after the main answer, which aligns with synchronous suggestion generation. This avoids guessing where latency comes from and avoids over-agentification. The existing `ConversationRuntime`, `RunContext`, `ConversationRunState`, `SearchPolicy`, `MemoryPolicy`, `TutorAgent`, `ToolRegistry`, `ToolBudgetTracker`, and latency benchmark script should be reused rather than replaced.
 
 ## Experiment-First Execution Rule
 
@@ -20,7 +20,7 @@ TurnPlan enabled Web-required route, if Web credentials are available
 
 The comparison must include TTFT, total completion latency, main-model-start latency, suggestion latency, foreground model-call count, memory-query count, Web/tool count, cache status, and safe fallback reason codes. Phase 3 work items must cite the measured bottlenecks they address. If Phase 1/2 data does not show a meaningful preflight bottleneck, Phase 3 should be narrowed to duplicate-read removal and task ownership hardening instead of broad concurrency changes.
 
-2026-07-19 production trace update: the first deployed trace review identified the slow tail as explicit memory recall waiting on synchronous long-term memory inside prompt assembly. The reviewed slow traces had `provider_first_token_ms` below `500 ms`, while `long_term_memory` took about `3.9s` to `4.1s` and `prompt_assembly` took about `4.4s` to `4.6s`. Therefore Phase 3 should be a bounded explicit-recall memory timeout/cache experiment before any broad foreground parallelization. Suggestions remain enabled and observed, but they are not an optimization target in this plan revision.
+2026-07-19 production trace update: the first deployed trace review identified the slow tail as explicit memory recall waiting on synchronous long-term memory inside prompt assembly. The reviewed slow traces had `provider_first_token_ms` below `500 ms`, while `long_term_memory` took about `3.9s` to `4.1s` and `prompt_assembly` took about `4.4s` to `4.6s`. Therefore Phase 3 became a bounded explicit-recall memory timeout/cache experiment before any broad foreground parallelization. After Phase 3 and Phase 4A deployment, product feedback indicates the answer path now feels acceptable, while the final completion wait remains visible. Suggestions are therefore promoted to the next optimization target.
 
 ## 2026-07-19 Experiment Update
 
@@ -41,8 +41,8 @@ The next phases are updated accordingly:
 
 - Phase 3 should first bound and cache explicit-recall long-term memory, because that is the measured p95/root-cause path.
 - Phase 4A should instrument and benchmark long-term memory retrieval itself, because Phase 3 bounded the wait but did not prove memory can usually complete within the foreground budget.
-- Phase 4B should optimize long-term memory retrieval based on the Phase 4A experiment results, so changes target the measured bottleneck instead of guessing.
-- Phase 5 should improve synchronous suggestion latency, because Phase 3 production trace shows completed-latency slow traces are dominated by `suggestions` after the main answer path starts.
+- Phase 4B should be suspended for now. Phase 4A produced useful instrumentation, but the current product feedback says explicit-recall first-answer latency feels acceptable enough to defer deeper long-term-memory retrieval optimization.
+- Phase 5 should become the next implementation priority and improve synchronous suggestion latency, because production trace and user-perceived behavior both point to the final post-answer wait as the current issue.
 - Broad preflight parallelization remains a later option only if new traces show independent required tasks are still the top bottleneck after memory timeout/cache.
 
 Phase 3 production validation update: the deployed timeout/cache change improved the user-visible first-answer path but did not improve end-to-end completion latency. Compared with the 20-run TurnPlan + trace run, first-content median improved from `3289.88 ms` to `3131.11 ms`, first-content p95 improved from `7237.36 ms` to `5989.32 ms`, and first visible status median improved from `983.50 ms` to `746.02 ms`. However, completed median regressed from `5421.39 ms` to `7251.20 ms`, and completed p95 regressed from `8808.76 ms` to `10997.05 ms`. This means Phase 3 passed its memory-specific gate but only partially passed the broader user-visible latency gate.
@@ -621,7 +621,7 @@ Do not commit if the phase gate fails.
 
 ### Phase 4A: Profile Long-Term Memory Retrieval Efficiency
 
-Status: implemented locally on 2026-07-19; production profiling pending deployment. Local gate evidence: `phase4a_gate_output.txt` recorded `16 passed, 4 warnings` for trace/context tests and `17 passed` for memory-policy/runtime tests; `phase4a_memory_regression_output.txt` recorded `43 passed` for memory regression coverage. Phase 4A is experiment-only: it adds measurement, runs controlled benchmarks, and produces a report. It must not make retrieval-speed optimizations beyond instrumentation.
+Status: implemented locally and partially production-verified on 2026-07-19. Local gate evidence: `phase4a_gate_output.txt` recorded `16 passed, 4 warnings` for trace/context tests and `17 passed` for memory-policy/runtime tests; `phase4a_memory_regression_output.txt` recorded `43 passed` for memory regression coverage. Production profiling evidence exists but is under-sampled: the copied complete backend log contains `2` memory retrieval summaries, both timed out around the `2000 ms` foreground memory budget. Completed sub-step medians across those two samples were approximately `working_memory=1143 ms`, `cold_memory_zpd_query=751 ms`, and `cold_memory_learner_state=175 ms`. Phase 4A is experiment-only: it adds measurement, runs controlled benchmarks, and produces a report. It must not make retrieval-speed optimizations beyond instrumentation.
 
 #### Problem
 
@@ -763,7 +763,9 @@ PYTHONPATH=. pytest tests/backend/test_memory_query_tool.py tests/backend/test_c
 python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --warmup 2 --output docs/worklog/202607/2026_07_19_experiment/production_latency_memory_efficiency.json
 ```
 
-Retain evidence showing memory sub-step attribution, timeout rate, cache-hit rate, empty-result rate, and successful recall proxy. The phase passes only if the report identifies a concrete Phase 4B target or explicitly states why the result is inconclusive and what extra instrumentation is required. Do not lower the timeout as a substitute for retrieval efficiency.
+Retain evidence showing memory sub-step attribution, timeout rate, cache-hit rate, empty-result rate, and successful recall proxy. The phase passes only if the report identifies a concrete Phase 4B target or explicitly states why the result is inconclusive and what extra instrumentation or samples are required. Do not lower the timeout as a substitute for retrieval efficiency.
+
+Current production profiling result: two deployed summary events prove the instrumentation works, but the sample is still insufficient for Phase 4B target selection. Because Phase 4B is now suspended by product prioritization, the next active latency work should target suggestion completion latency. If Phase 4B is resumed later, collect an explicit-recall-heavy benchmark to produce enough samples for p50/p95 sub-step attribution.
 
 #### Phase Commit
 
@@ -805,17 +807,19 @@ Do not commit if the phase gate fails.
 
 ### Phase 4B: Optimize Measured Long-Term Memory Bottleneck
 
-Status: pending. This phase must start only after Phase 4A produces `memory_retrieval_efficiency_report.md` with a concrete bottleneck target. Phase 4B is implementation-focused: it changes the retrieval path based on Phase 4A evidence and validates that memory retrieval becomes faster without weakening recall quality, timeout honesty, or privacy boundaries.
+Status: suspended on 2026-07-19 by product prioritization. Phase 4A instrumentation is implemented and partially production-verified, but the current production log and user feedback indicate that explicit-recall first-answer latency is acceptable enough to defer deeper long-term-memory retrieval optimization. This phase should remain in the plan as a future retrieval-quality/efficiency track, but it is not the next implementation priority.
+
+Do not start Phase 4B unless product feedback changes or production traces show explicit-recall first-answer latency has again become the dominant user-visible problem. The next active implementation phase is Phase 5, which targets the final post-answer wait caused by synchronous suggestion generation.
 
 #### Problem
 
-Phase 4A is expected to reveal where long-term memory retrieval spends time. Until that evidence exists, likely fixes such as embedding cache, intent-label cache, STITCH short-circuiting, candidate caps, or vector index tuning are only hypotheses. Implementing several at once would make the result hard to attribute and could degrade recall quality while appearing faster.
+Phase 4A is expected to reveal where long-term memory retrieval spends time. The currently available production evidence is useful but under-sampled; likely fixes such as embedding cache, intent-label cache, STITCH short-circuiting, candidate caps, or vector index tuning are still hypotheses. Implementing several at once would make the result hard to attribute and could degrade recall quality while appearing faster.
 
 The product problem remains that explicit recall should usually retrieve useful memory within the foreground budget. Phase 3 protects the answer when retrieval is slow, but if Phase 4A shows a high timeout rate or expensive sub-step, users still lose personalization on recall questions.
 
 #### Assumptions
 
-Phase 4A produced enough evidence to rank at least one dominant bottleneck. If Phase 4A is inconclusive, Phase 4B must not guess; it should first add the missing instrumentation as a small follow-up to Phase 4A.
+Phase 4A must produce enough evidence to rank at least one dominant bottleneck before this suspended phase can resume. If Phase 4A remains inconclusive, Phase 4B must not guess; it should first add the missing instrumentation or samples as a small follow-up to Phase 4A.
 
 Only one primary optimization should be implemented in Phase 4B unless the Phase 4A report proves two changes are tightly coupled. Memory quality is part of the gate: lower latency is not sufficient if successful recall rate drops, empty-result rate rises unexpectedly, or timeout fallback becomes misleading.
 
@@ -933,9 +937,9 @@ Run the same explicit-recall benchmark prompt set from Phase 4A after deployment
 
 Pass condition: the report shows before/after memory p50, p95, timeout rate, and recall-success proxy with no privacy-sensitive log content.
 
-#### Gate to Enter the Next Phase
+#### Gate to Resume This Phase
 
-The next phase must not start until these commands pass:
+This suspended phase must not resume until these commands pass:
 
 ```bash
 PYTHONPATH=. pytest tests/backend/test_memory_query_tool.py tests/backend/test_conversation_context_service.py tests/backend/test_memory_policy.py tests/backend/test_turn_latency_trace.py -q
@@ -980,44 +984,35 @@ Do not commit if the phase gate fails.
 
 ### Phase 5: Bound Foreground Suggestion Latency
 
-Status: pending. This phase should start after Phase 4B improves or at least explains long-term memory retrieval efficiency, because Phase 3 production trace also showed completed-latency slow traces dominated by synchronous suggestions after the main answer path.
+Status: implemented locally on 2026-07-19; production validation pending deployment. This phase is promoted ahead of Phase 4B because the latest production log and user feedback both indicate that the main answer feels fast enough, while the final completion phase can still pause for about `1s` to `2s`. The trace data matches that perception: `suggestions` runs after the main answer and before terminal completion, so slow suggestion generation can make the system feel like it is stuck at the end even when the answer has already streamed.
 
 #### Problem
 
-In the Phase 3 production trace window, `suggestions` had median `4124 ms`, p95 `7213 ms`, and was the top phase in five of eight copied trace summaries. One explicit-recall timeout run had `long_term_memory=2000 ms`, `main_model=1302 ms`, but `suggestions=6977 ms`. Because suggestions are foreground and terminal completion waits for them, users may receive answer text reasonably quickly but still wait many seconds for final completion.
+In the Phase 3 production trace window, `suggestions` had median `4124 ms`, p95 `7213 ms`, and was the top phase in five of eight copied trace summaries. The latest Phase 4A production log has smaller but still visible suggestion costs: observed `suggestions` durations include about `793 ms`, `1073 ms`, `1094 ms`, `1127 ms`, `1178 ms`, `1217 ms`, and `2130 ms`. This matches the current user-perceived issue: the answer itself arrives acceptably fast, but the stream can wait at the end while suggestions finish.
 
 #### Assumptions
 
-Suggestions must remain enabled and product-visible. The goal is not to remove suggestions; it is to prevent suggestions from becoming an unbounded foreground blocker. Existing SSE semantics must remain compatible: answer deltas still stream, suggestion events still appear when available, and exactly one terminal `[DONE]` is emitted.
+Suggestions must remain enabled and product-visible. The goal is not to remove suggestions; it is to prevent suggestions from becoming an unbounded foreground blocker. Existing SSE semantics must remain compatible: answer deltas still stream, suggestion events appear when available within the timeout, a compatible `event: done` is emitted even on fallback, and exactly one terminal `[DONE]` is emitted.
 
-It is acceptable for suggestions to use a timeout fallback, cached result, or cheaper deterministic/default suggestion set when the model-backed suggestion call is slow or fails. It is not acceptable for suggestion fallback to expose raw prompt/user text, duplicate terminal events, or silently break clients that expect a suggestion event shape. If product later decides that suggestions may arrive after terminal completion as an asynchronous mailbox/event update, that should be a separate phase because it changes the client contract.
+This phase intentionally does not change the frontend/SSE contract and does not move suggestions after `[DONE]`. Async suggestions and main-model co-generation remain possible follow-up designs, but they are not required for this engineering fix. It is not acceptable for suggestion fallback to expose raw prompt/user text, duplicate terminal events, or silently break clients that expect a done event shape.
 
 #### Solution
 
-Add a bounded foreground suggestion path. `PostTurnService.suggestion_events()` should enforce a configurable timeout around `SuggestionService.generate_suggestions()`. If the timeout is exceeded, the service should emit a safe fallback suggestion set or a compatible empty suggestion event, record timeout telemetry, and allow terminal completion to proceed.
-
-Add a short-lived suggestion cache for repeat prompts or repeated benchmark route prompts when safe. The cache key must use hashed/fingerprinted identifiers and must not log raw user text, prompt text, answer content, credentials, or sensitive labels. The cached value should contain only the final suggestion payload already permitted by the current client contract.
-
-Keep the first version conservative: bound the existing foreground suggestion call and preserve the current event contract. Do not convert suggestions into a fully asynchronous after-`[DONE]` workflow unless there is a product/client decision approving that behavior.
+Add a bounded foreground suggestion path. `PostTurnService.suggestion_events()` enforces a configurable timeout around `SuggestionService.generate_suggestions()`. If the timeout is exceeded, the service emits a compatible empty suggestion `done` event, records timeout telemetry, and allows terminal completion to proceed. This is the lowest-risk engineering fix because it preserves current event order while capping the final post-answer wait.
 
 #### Implementation
 
 > Context: Add Google-style docstrings for every new or materially changed public module, class, and function. Document suggestion timeout semantics, fallback behavior, cache-key privacy, SSE compatibility boundaries, and terminal-event ownership. Inline comments should explain only non-obvious fallback and event-ordering decisions. Structured logs must include `run_id` or `conversation_id`, suggestion outcome, timeout/cache status, elapsed milliseconds, and safe fallback reason, while excluding raw user text, prompts, model output, suggestion text if unnecessary, credentials, and sensitive labels.
 
-Modify `Settings` in `backend/config.py` to add suggestion latency controls:
+Modify `Settings` in `backend/config.py` to add one suggestion latency control:
 
-- `suggestion_generation_timeout_ms: int = 2000`.
-- `enable_suggestion_cache: bool = True`.
-- `suggestion_cache_ttl_seconds: int = 120`.
-- Optional `enable_suggestion_timeout_fallback: bool = True` if a rollout switch is useful.
+- `suggestion_generation_timeout_ms: int = 1000`.
 
 Modify `PostTurnService.suggestion_events()` in `backend/services/post_turn_service.py` to apply the configured timeout around `SuggestionService.generate_suggestions()`. On success, emit the existing suggestion event shape. On timeout or unexpected failure, emit a compatible fallback event and proceed to terminal completion. The fallback must be deterministic, safe, and easy for clients to handle.
 
-Add a proposed `backend/services/suggestion_cache.py` if extraction keeps the code clearer. Use a bounded in-process TTL cache unless the project already has a suitable cache abstraction. Build cache keys from safe stable identifiers such as `user_id`, `conversation_id`, route, and a hashed/fingerprinted answer or prompt signature. Do not log raw text.
+Modify `TurnLatencyTrace` only through existing milestone semantics. Existing `suggestions_started` and `suggestions_finished` marks remain stable; timeout uses `suggestions_timeout`, which is already compatible with phase-duration calculation.
 
-Modify `TurnLatencyTrace` in `backend/services/turn_latency_trace.py` only if needed to record suggestion cache/timeout outcomes. Existing `suggestions_started` and `suggestions_finished` marks should remain stable. Production `turn_trace_summary` should make suggestion timeout/cache behavior visible through safe counters or cache statuses.
-
-Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py` only to pass settings/trace into post-turn suggestion handling if not already available. Do not change answer streaming or terminal SSE ownership.
+Modify `OrchestrationService._node_post_generation()` in `backend/services/orchestration_service.py` to pass the configured timeout into post-turn suggestion handling. Do not change answer streaming or terminal SSE ownership.
 
 #### Expected File Tree After Phase 5
 
@@ -1028,65 +1023,46 @@ backend/
 ├── config.py                            [modified]
 ├── services/
 │   ├── orchestration_service.py         [modified]
-│   ├── post_turn_service.py             [modified]
-│   ├── suggestion_cache.py              [new if cache is extracted]
-│   └── turn_latency_trace.py            [modified if suggestion summary changes]
+│   └── post_turn_service.py             [modified]
 tests/
 └── backend/
     ├── test_config.py                   [modified]
     ├── test_orchestration_service.py    [modified]
-    ├── test_post_turn_service.py        [modified]
-    ├── test_suggestion_cache.py         [new if cache is extracted]
-    └── test_turn_latency_trace.py       [modified if suggestion summary changes]
+    └── test_post_turn_service.py        [modified]
 ```
 
 #### Work List
 
-1. [ ] Modify `Settings` in `backend/config.py`.
-   - [ ] Add `suggestion_generation_timeout_ms`.
-   - [ ] Add `enable_suggestion_cache`.
-   - [ ] Add `suggestion_cache_ttl_seconds`.
-   - [ ] Add `enable_suggestion_timeout_fallback` only if a separate rollout switch is needed.
-2. [ ] Modify `PostTurnService.suggestion_events()` in `backend/services/post_turn_service.py`.
-   - [ ] Wrap `SuggestionService.generate_suggestions()` in a timeout using the configured value.
-   - [ ] Emit existing suggestion event shape on normal success.
-   - [ ] Emit a compatible fallback event on timeout or unexpected failure.
-   - [ ] Record safe structured logs for `orchestration.suggestions_timeout`, `orchestration.suggestions_cache_hit`, and `orchestration.suggestions_cache_miss` as applicable.
-   - [ ] Preserve terminal completion behavior and avoid duplicate `[DONE]`.
-3. [ ] Add proposed `SuggestionCache` in `backend/services/suggestion_cache.py` if extraction is chosen.
-   - [ ] Add safe hashed cache-key construction.
-   - [ ] Add bounded TTL get/set behavior.
-   - [ ] Store only client-permitted suggestion payloads.
-4. [ ] Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py`.
-   - [ ] Pass suggestion timeout/cache settings and trace into `PostTurnService.suggestion_events()` if needed.
-   - [ ] Preserve current answer stream ordering and SSE terminal ownership.
-5. [ ] Modify `TurnLatencyTrace` in `backend/services/turn_latency_trace.py` if suggestion summary changes.
-   - [ ] Record suggestion timeout and cache status through existing safe counters or cache statuses.
-   - [ ] Keep `turn_trace_summary` privacy-safe.
-6. [ ] Add or extend tests.
-   - [ ] `tests/backend/test_config.py`: assert suggestion timeout/cache defaults and env override.
-   - [ ] `tests/backend/test_post_turn_service.py`: assert slow suggestions time out and still emit compatible events.
-   - [ ] `tests/backend/test_post_turn_service.py`: assert suggestion failure fallback preserves terminal compatibility.
-   - [ ] `tests/backend/test_suggestion_cache.py`: assert TTL behavior and cache-key privacy if cache is extracted.
-   - [ ] `tests/backend/test_orchestration_service.py`: assert runtime settings are passed into suggestion handling.
-   - [ ] `tests/backend/test_turn_latency_trace.py`: assert suggestion timeout/cache fields remain safe if added.
+1. [x] Modify `Settings` in `backend/config.py`.
+   - [x] Add `suggestion_generation_timeout_ms`.
+2. [x] Modify `PostTurnService.suggestion_events()` in `backend/services/post_turn_service.py`.
+   - [x] Wrap `SuggestionService.generate_suggestions()` in a timeout using the configured value.
+   - [x] Emit existing suggestion event shape on normal success.
+   - [x] Emit a compatible empty `event: done` payload on timeout or unexpected failure.
+   - [x] Record safe structured log `orchestration.suggestions_timeout`.
+   - [x] Preserve terminal completion behavior and avoid duplicate `[DONE]`.
+3. [x] Modify `OrchestrationService._node_post_generation()` in `backend/services/orchestration_service.py`.
+   - [x] Pass suggestion timeout settings into `PostTurnService.suggestion_events()`.
+   - [x] Preserve current answer stream ordering and SSE terminal ownership.
+4. [x] Add or extend tests.
+   - [x] `tests/backend/test_config.py`: assert suggestion timeout default and env override.
+   - [x] `tests/backend/test_post_turn_service.py`: assert slow suggestions time out and still emit compatible events.
+   - [x] Existing `tests/backend/test_orchestration_service.py` and `tests/backend/test_stream_endpoint.py`: preserve stream completion compatibility.
 
 #### Test Plan
 
-Use mocked `SuggestionService.generate_suggestions()` calls to validate success, timeout, failure, and cache-hit behavior. Do not use live provider calls in unit tests. Existing accumulator and done-event tests must continue to pass because the user-facing SSE contract is the highest-risk compatibility boundary.
+Use mocked `SuggestionService.generate_suggestions()` calls to validate success, timeout, and failure behavior. Do not use live provider calls in unit tests. Existing accumulator and done-event tests must continue to pass because the user-facing SSE contract is the highest-risk compatibility boundary.
 
 Commands:
 
 ```bash
-PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_post_turn_service.py tests/backend/test_orchestration_service.py tests/backend/test_turn_latency_trace.py -q
+PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_post_turn_service.py tests/backend/test_orchestration_service.py -q
 PYTHONPATH=. pytest tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
 ```
 
-Add `PYTHONPATH=. pytest tests/backend/test_suggestion_cache.py -q` if `backend/services/suggestion_cache.py` is extracted.
-
 #### Expected Output / Result
 
-Suggestions remain enabled, but they no longer block terminal completion beyond the configured foreground timeout. Slow suggestions produce safe fallback behavior and structured telemetry. Production completed-latency slow traces should no longer be dominated by `suggestions` exceeding the timeout budget.
+Suggestions remain enabled when they return within the configured budget, but they no longer block terminal completion beyond `suggestion_generation_timeout_ms`. Slow suggestions produce a compatible empty fallback and structured telemetry. Production completed-latency slow traces should no longer show `suggestions` exceeding the configured timeout budget.
 
 #### Testing Script
 
@@ -1102,13 +1078,7 @@ Mock `SuggestionService.generate_suggestions()` to sleep longer than `suggestion
 
 Pass condition: a compatible fallback event is emitted, `orchestration.suggestions_timeout` is logged once with safe metadata, and terminal completion proceeds.
 
-##### Act 03: Suggestion Cache Hit
-
-Run two equivalent suggestion generations with cache enabled and a stable safe fingerprint.
-
-Pass condition: the second run records cache-hit status and does not call `SuggestionService.generate_suggestions()` a second time.
-
-##### Act 04: SSE Completion Remains Compatible
+##### Act 03: SSE Completion Remains Compatible
 
 Run the stream endpoint or orchestration path with a slow mocked suggestion service.
 
@@ -1124,7 +1094,7 @@ PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_runtime_cont
 python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --warmup 2 --output docs/worklog/202607/2026_07_19_experiment/production_latency_suggestion_timeout.json
 ```
 
-Retain evidence showing suggestion timeout/cache behavior, SSE compatibility, and production trace outcomes. The phase passes only if copied production `turn_trace_summary` logs show `suggestions` no longer dominates completed latency past the configured timeout budget, or if timeout fallback is recorded and terminal completion remains compatible.
+Retain evidence showing suggestion timeout behavior, SSE compatibility, and production trace outcomes. The phase passes only if copied production `turn_trace_summary` logs show `suggestions` no longer dominates completed latency past the configured timeout budget, or if timeout fallback is recorded and terminal completion remains compatible.
 
 #### Phase Commit
 
@@ -1140,13 +1110,9 @@ Stage only Phase 5 files and hunks:
 backend/config.py
 backend/services/orchestration_service.py
 backend/services/post_turn_service.py
-backend/services/suggestion_cache.py
-backend/services/turn_latency_trace.py
 tests/backend/test_config.py
 tests/backend/test_orchestration_service.py
 tests/backend/test_post_turn_service.py
-tests/backend/test_suggestion_cache.py
-tests/backend/test_turn_latency_trace.py
 ```
 
 Inspect `git status --short`, preserve unrelated user changes, stage only phase-owned paths or hunks, then run:
@@ -1185,9 +1151,9 @@ Acceptance outcomes:
 - Explicit-recall timeout fallback does not claim retrieved long-term memory when the query exceeded the configured timeout.
 - General turns use hot/working memory by default and avoid unnecessary long-term memory retrieval.
 - Production trace validates Phase 3 memory behavior: explicit-recall `long_term_memory` is bounded around the configured timeout instead of the pre-Phase-3 `3.9s` to `4.1s` range.
-- Phase 4A production evidence shows long-term memory retrieval sub-step attribution and a concrete Phase 4B bottleneck target.
-- Phase 4B production evidence shows a measured reduction in the selected long-term memory retrieval bottleneck without degrading recall-quality proxies.
-- Suggestions remain enabled and compatible, and Phase 5 bounds their foreground wait with timeout/cache/fallback behavior.
+- Phase 4A production evidence shows long-term memory retrieval sub-step attribution and records that Phase 4B is suspended until explicit-recall first-answer latency becomes the dominant user-visible problem again.
+- Phase 4B production evidence is required only if the suspended long-term-memory optimization phase is later resumed.
+- Suggestions remain enabled and compatible, and Phase 5 bounds their foreground wait with timeout/fallback behavior.
 - Production trace after Phase 5 should show `suggestions` no longer dominates completed latency past the configured suggestion timeout budget.
 - `search_mode=never` still performs zero external search calls.
 - `search_mode=auto` and Web-required queries still respect `SearchPolicy`/`TutorAgent` and `ToolBudgetTracker`.

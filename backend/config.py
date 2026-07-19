@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     explicit_recall_memory_timeout_ms: int = 2000
     enable_explicit_recall_memory_cache: bool = True
     explicit_recall_memory_cache_ttl_seconds: int = 120
+    suggestion_generation_timeout_ms: int = 1000
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.

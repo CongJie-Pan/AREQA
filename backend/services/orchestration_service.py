@@ -1013,12 +1013,15 @@ class OrchestrationService:
         Yields:
             str: SSE formatted events containing suggestions or completion signals.
         """
+        from config import settings
+
         events = await self.post_turn_service.suggestion_events(
             last_user_msg=last_user_msg,
             answer_text=answer_content_accumulator,
             context_results_obj=context_results_obj,
             use_rag=use_rag,
             use_web_search=use_web_search,
+            timeout_ms=settings.suggestion_generation_timeout_ms,
             trace=trace,
         )
         for event in events:

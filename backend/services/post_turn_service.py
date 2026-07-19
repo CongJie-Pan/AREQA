@@ -167,11 +167,25 @@ class PostTurnService:
         context_results_obj: Any,
         use_rag: bool,
         use_web_search: bool,
+        timeout_ms: int | None = None,
         trace: Any = None,
     ) -> List[str]:
-        """Generate legacy-compatible suggestion and completion events."""
+        """Generate legacy-compatible suggestion and completion events.
+
+        The suggestion model is a non-critical enrichment after the main answer.
+        A bounded wait preserves the existing SSE contract while preventing slow
+        suggestion generation from holding terminal completion indefinitely.
+        """
         if not self.suggestion_service:
             return []
+        if timeout_ms is None:
+            try:
+                from config import settings
+
+                timeout_ms = settings.suggestion_generation_timeout_ms
+            except Exception:
+                timeout_ms = 1000
+        timeout_seconds = max(0.001, timeout_ms / 1000)
         try:
             if trace:
                 trace.mark_once("suggestions_started")
@@ -181,10 +195,13 @@ class PostTurnService:
                 if use_rag and not use_web_search and context_results_obj
                 else []
             )
-            suggestions = await self.suggestion_service.generate_suggestions(
-                user_query=last_user_msg,
-                answer_text=answer_text,
-                reranked_results=reranked_results,
+            suggestions = await asyncio.wait_for(
+                self.suggestion_service.generate_suggestions(
+                    user_query=last_user_msg,
+                    answer_text=answer_text,
+                    reranked_results=reranked_results,
+                ),
+                timeout=timeout_seconds,
             )
             events = []
             if suggestions:
@@ -197,6 +214,18 @@ class PostTurnService:
             if trace:
                 trace.mark_once("suggestions_finished")
             return events
+        except TimeoutError:
+            if trace:
+                trace.mark_once("suggestions_timeout")
+            logger.warning(
+                "orchestration.suggestions_timeout run_id=%s conversation_id=%s timeout_ms=%s",
+                getattr(trace, "run_id", ""),
+                getattr(trace, "conversation_id", ""),
+                timeout_ms,
+            )
+            return [
+                f"event: done\ndata: {json.dumps({'suggestions': []}, ensure_ascii=False)}\n\n"
+            ]
         except Exception as exc:
             if trace:
                 trace.mark_once("suggestions_failed")
