@@ -51,7 +51,7 @@ def test_api_mode_switching_400_format() -> None:
     assert response.status_code == 400
     data = response.json()
     assert "detail" in data
-    assert "invalid" in data["detail"].lower() or "mode" in data["detail"].lower()
+    assert "validation error" in data["detail"].lower()
 
 def test_api_reset_phase() -> None:
     # First advance it

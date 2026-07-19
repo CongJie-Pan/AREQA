@@ -97,7 +97,17 @@ class PelicanEngine:
             phase="diagnosis",
             plan_source=self.state.plan_source.value,
         )
-        return self._present_next_diagnostic()
+        outcome = self._present_next_diagnostic()
+        topic = plan.topic if plan else "這個主題"
+        friendly_prefix = f"太好了，我們來一起學習「{topic}」吧！\n為了能更好地根據你目前的程度來安排教學，我會先問你一個前測問題。如果你還不知道答案，完全沒關係，直接告訴我「不知道」就好：\n\n"
+        return TurnOutcome(
+            friendly_prefix + outcome.message,
+            outcome.node_id,
+            outcome.category,
+            outcome.strategy,
+            outcome.state_changes,
+            outcome.next_reason
+        )
 
     def switch_mode(self, mode: str) -> TurnOutcome:
         if mode not in {"rule", "llm"}:
