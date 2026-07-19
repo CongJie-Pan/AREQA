@@ -9,7 +9,9 @@ understanding as unknown.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
+import json
 import logging
 import re
 from typing import Any, Awaitable, Callable, Dict, List
@@ -252,6 +254,10 @@ class ConversationContextService:
         if trace:
             trace.mark("long_term_memory_started")
 
+        from services.memory_retrieval_trace import MemoryRetrievalTrace
+
+        retrieval_trace = MemoryRetrievalTrace(route_reason=decision.reason_code)
+
         async def execute_memory_query() -> Any:
             return await self.memory_query_tool.execute(
                 user_id=user_id,
@@ -259,6 +265,7 @@ class ConversationContextService:
                 decision=decision,
                 client=client,
                 model=model,
+                retrieval_trace=retrieval_trace,
             )
 
         try:
@@ -270,6 +277,11 @@ class ConversationContextService:
             else:
                 memory_result = await execute_memory_query()
         except asyncio.TimeoutError:
+            retrieval_trace.finish(
+                outcome="timeout",
+                cache_status="timeout",
+                result_count=0,
+            )
             if trace:
                 trace.mark("long_term_memory_timeout")
                 trace.increment_tool_call("memory_query", "timeout")
@@ -279,6 +291,11 @@ class ConversationContextService:
                 decision.reason_code,
                 timeout_ms,
             )
+            logger.info(
+                "orchestration.long_term_memory_retrieval_summary conversation_id=%s summary=%s",
+                conversation_id,
+                json.dumps(retrieval_trace.snapshot(), ensure_ascii=False, sort_keys=True),
+            )
             return {"cold": "", "working": "", "_status": "timeout"}
 
         if trace:
@@ -286,6 +303,16 @@ class ConversationContextService:
             trace.increment_tool_call(
                 "memory_query",
                 "cache_miss" if is_explicit_recall and cache_enabled else "not_applicable",
+            )
+
+        retrieval_summary = None
+        if isinstance(getattr(memory_result, "metadata", None), Mapping):
+            retrieval_summary = memory_result.metadata.get("memory_retrieval")
+        if retrieval_summary:
+            logger.info(
+                "orchestration.long_term_memory_retrieval_summary conversation_id=%s summary=%s",
+                conversation_id,
+                json.dumps(retrieval_summary, ensure_ascii=False, sort_keys=True),
             )
 
         content = {

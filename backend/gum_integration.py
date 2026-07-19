@@ -825,7 +825,16 @@ Return ONLY the refined query string without any quotes or explanations."""
         print(f"[ZPD Query Gen] Error: {e}")
         return original_query
 
-async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5, client=None, model=None) -> str:
+async def query_cold_memory_for_context(
+    user_id: str,
+    query: str,
+    top_k: int = 5,
+    client=None,
+    model=None,
+    memory_trace=None,
+) -> str:
+    """Return prompt-safe cold memory context with optional safe trace metadata."""
+
     from cold_memory import ColdMemoryRetriever
     from memory_store import get_global_store
     import os
@@ -838,7 +847,11 @@ async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5
         
     try:
         store = get_global_store()
-        learner_state = await store.get_learner_state(user_id) if store else "STARTING"
+        if memory_trace:
+            async with memory_trace.measure("cold_memory_learner_state"):
+                learner_state = await store.get_learner_state(user_id) if store else "STARTING"
+        else:
+            learner_state = await store.get_learner_state(user_id) if store else "STARTING"
         
         c = client
         from config import settings
@@ -847,13 +860,28 @@ async def query_cold_memory_for_context(user_id: str, query: str, top_k: int = 5
             from openai import AsyncOpenAI
             c = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
             
-        zpd_query = await generate_zpd_query_via_llm(c, m, query, learner_state)
+        if memory_trace:
+            async with memory_trace.measure("cold_memory_zpd_query"):
+                zpd_query = await generate_zpd_query_via_llm(c, m, query, learner_state)
+        else:
+            zpd_query = await generate_zpd_query_via_llm(c, m, query, learner_state)
         
         cold_retriever = ColdMemoryRetriever(db_path, api_key)
-        results = await cold_retriever.search(zpd_query, user_id=user_id, top_k=top_k)
+        if memory_trace:
+            async with memory_trace.measure("cold_memory_search"):
+                results = await cold_retriever.search(
+                    zpd_query,
+                    user_id=user_id,
+                    top_k=top_k,
+                    memory_trace=memory_trace,
+                )
+        else:
+            results = await cold_retriever.search(zpd_query, user_id=user_id, top_k=top_k)
         if not results:
             return ""
             
+        if memory_trace:
+            memory_trace.record_step("cold_memory_results", 0, outcome=f"count_{min(len(results), 6)}")
         parts = ["【檢索到的長尾記憶 (Cold Memory)】"]
         for r in results:
             parts.append(f"- {r['text']}")

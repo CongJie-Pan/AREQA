@@ -116,7 +116,7 @@ async def test_context_plan_allows_explicit_long_term_memory():
 
 @pytest.mark.asyncio
 async def test_explicit_recall_memory_timeout_falls_back_without_retrieved_memory(caplog):
-    caplog.set_level(logging.WARNING)
+    caplog.set_level(logging.INFO)
     memory_policy = AsyncMock()
     memory_policy.evaluate = lambda _: SimpleNamespace(
         allow_long_term_query=True,
@@ -159,6 +159,8 @@ async def test_explicit_recall_memory_timeout_falls_back_without_retrieved_memor
     assert "長期記憶查詢逾時" in result.messages[0]["content"]
     assert "不得聲稱已成功回查長期記憶" in result.messages[0]["content"]
     assert "orchestration.long_term_memory_timeout" in caplog.text
+    assert "orchestration.long_term_memory_retrieval_summary" in caplog.text
+    assert '"outcome": "timeout"' in caplog.text
     assert "你還記得我的偏好嗎" not in caplog.text
 
 

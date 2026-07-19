@@ -1,6 +1,7 @@
 import os
 import json
 import httpx
+import time
 from typing import List, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import text
@@ -109,7 +110,15 @@ class ColdMemoryRetriever:
                 )
                 return int(proposition_id)
 
-    async def search(self, query: str, user_id: str = "default_user", top_k: int = 5) -> List[Dict[str, Any]]:
+    async def search(
+        self,
+        query: str,
+        user_id: str = "default_user",
+        top_k: int = 5,
+        memory_trace=None,
+    ) -> List[Dict[str, Any]]:
+        """Search cold memory while optionally recording safe sub-step timings."""
+
         # Hybrid Search: Vector KNN + BM25 + RRF
         engine = get_engine()
 
@@ -147,11 +156,19 @@ class ColdMemoryRetriever:
                 logger.warning("[ColdMemory] PostgreSQL table vec_memory is missing; vector cold memory search disabled.")
             return _table_availability
 
-        tables = await _get_table_availability()
+        if memory_trace:
+            async with memory_trace.measure("cold_memory_table_availability"):
+                tables = await _get_table_availability()
+        else:
+            tables = await _get_table_availability()
         if not tables["propositions"]:
             return []
 
-        query_embedding = await self.get_embedding(query) if tables["vec_memory"] else []
+        if memory_trace and tables["vec_memory"]:
+            async with memory_trace.measure("cold_memory_embedding"):
+                query_embedding = await self.get_embedding(query)
+        else:
+            query_embedding = await self.get_embedding(query) if tables["vec_memory"] else []
 
         async def _fetch_vector_results() -> List[Tuple[int, float]]:
             if not tables["vec_memory"] or not query_embedding:
@@ -197,10 +214,17 @@ class ColdMemoryRetriever:
                 logger.error(f"[ColdMemory] BM25 search failed: {e}")
                 return []
 
-        vec_results = await _fetch_vector_results()
-        bm25_results = await _fetch_bm25_results()
+        if memory_trace:
+            async with memory_trace.measure("cold_memory_vector_search"):
+                vec_results = await _fetch_vector_results()
+            async with memory_trace.measure("cold_memory_bm25_search"):
+                bm25_results = await _fetch_bm25_results()
+        else:
+            vec_results = await _fetch_vector_results()
+            bm25_results = await _fetch_bm25_results()
 
         # RRF Fusion
+        rrf_started = time.monotonic()
         rrf_scores = {}
         k_const = 60
 
@@ -213,8 +237,15 @@ class ColdMemoryRetriever:
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0) + (1.0 / (k_const + rank + 1))
 
         sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        if memory_trace:
+            memory_trace.record_step(
+                "cold_memory_rrf_fusion",
+                int((time.monotonic() - rrf_started) * 1000),
+                outcome=f"count_{min(len(sorted_docs), 6)}",
+            )
 
         final_results = []
+        fetch_started = time.monotonic()
         async with AsyncSession(engine) as session:
             async with session.begin():
                 await session.execute(text(
@@ -233,5 +264,11 @@ class ColdMemoryRetriever:
                             final_results.append({"id": doc_id, "text": row[0], "rrf_score": score})
                     except Exception:
                         pass
+        if memory_trace:
+            memory_trace.record_step(
+                "cold_memory_fetch_documents",
+                int((time.monotonic() - fetch_started) * 1000),
+                outcome=f"count_{min(len(final_results), 6)}",
+            )
 
         return final_results

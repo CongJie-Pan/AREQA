@@ -11,6 +11,8 @@ ToolHandler = Callable[[Mapping[str, Any]], Awaitable["ToolResult"]]
 
 @dataclass(frozen=True, slots=True)
 class ToolResult:
+    """Result returned by a tool without exposing provider-private payloads."""
+
     tool_name: str
     status: str
     content: Any
@@ -19,6 +21,7 @@ class ToolResult:
     truncated: bool = False
     latency_ms: int = 0
     cache_status: str = "not_applicable"
+    metadata: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)

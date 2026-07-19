@@ -40,7 +40,8 @@ The 20-run result shows that TurnPlan reduced normal latency and did not reprodu
 The next phases are updated accordingly:
 
 - Phase 3 should first bound and cache explicit-recall long-term memory, because that is the measured p95/root-cause path.
-- Phase 4 should optimize long-term memory retrieval itself, because Phase 3 bounded the wait but did not prove memory can usually complete within the foreground budget.
+- Phase 4A should instrument and benchmark long-term memory retrieval itself, because Phase 3 bounded the wait but did not prove memory can usually complete within the foreground budget.
+- Phase 4B should optimize long-term memory retrieval based on the Phase 4A experiment results, so changes target the measured bottleneck instead of guessing.
 - Phase 5 should improve synchronous suggestion latency, because Phase 3 production trace shows completed-latency slow traces are dominated by `suggestions` after the main answer path starts.
 - Broad preflight parallelization remains a later option only if new traces show independent required tasks are still the top bottleneck after memory timeout/cache.
 
@@ -618,9 +619,9 @@ git show --stat --oneline --summary HEAD
 
 Do not commit if the phase gate fails.
 
-### Phase 4: Optimize Long-Term Memory Retrieval Efficiency
+### Phase 4A: Profile Long-Term Memory Retrieval Efficiency
 
-Status: pending. This phase should start after Phase 3's production trace validation, because Phase 3 proved explicit-recall long-term memory is now bounded at about `2000 ms`, but it did not prove long-term memory retrieval itself is fast enough or reliable enough to finish inside that budget.
+Status: implemented locally on 2026-07-19; production profiling pending deployment. Local gate evidence: `phase4a_gate_output.txt` recorded `16 passed, 4 warnings` for trace/context tests and `17 passed` for memory-policy/runtime tests; `phase4a_memory_regression_output.txt` recorded `43 passed` for memory regression coverage. Phase 4A is experiment-only: it adds measurement, runs controlled benchmarks, and produces a report. It must not make retrieval-speed optimizations beyond instrumentation.
 
 #### Problem
 
@@ -636,42 +637,45 @@ Memory quality and speed must both be measured. A lower timeout is not a success
 
 #### Solution
 
-Add sub-step tracing inside the long-term memory retrieval path, then optimize the measured bottleneck. The first implementation should expose safe internal timings for `MemoryQueryTool.execute()` and its downstream GUM/cold/working memory calls. Once attribution is visible, optimize the highest-cost step with targeted changes such as query normalization cache, embedding/intent-label cache, concurrent working/cold retrieval review, candidate-count limits, rerank/filter short-circuiting, and database/index tuning.
+Add sub-step tracing inside the long-term memory retrieval path and run a controlled memory-focused experiment. The implementation should expose safe internal timings for `MemoryQueryTool.execute()` and its downstream GUM/cold/working memory calls. Phase 4A should identify whether the dominant cost is query normalization, working memory, cold memory, embedding, intent labeling, STITCH filtering, vector search, reranking, result formatting, network/database calls, or GUM background contention.
 
-This phase should keep the Phase 3 timeout in place as a guardrail while improving the underlying retrieval path. The success criterion is not merely that timeout fires; success means most explicit-recall requests either retrieve useful memory before timeout or fail quickly with a clearly measured reason.
+This phase should keep the Phase 3 timeout in place as a guardrail while making the underlying retrieval path measurable. The success criterion is not lower latency yet; success means every explicit-recall run has enough attribution to choose a Phase 4B optimization safely.
 
-The initial SLO targets should be reviewed after the first profiling run, but a reasonable starting point is: memory retrieval p50 below `500 ms`, p95 below `1500 ms`, timeout rate below `5%` for explicit recall, and no regression in safe fallback behavior.
+The experiment report should recommend SLO targets for Phase 4B. A reasonable starting point to evaluate is: memory retrieval p50 below `500 ms`, p95 below `1500 ms`, timeout rate below `5%` for explicit recall, and no regression in safe fallback behavior.
 
 #### Implementation
 
 > Context: Add Google-style docstrings for every new or materially changed public module, class, and function. Document memory sub-step trace semantics, retrieval success/failure definitions, timeout interaction with Phase 3, cache-key privacy, and memory quality metrics. Inline comments should explain only non-obvious retrieval short-circuits, cache invalidation, and privacy boundaries. Structured logs must include `run_id` or `conversation_id`, route, memory outcome, sub-step durations, cache status, timeout status, result count bucket, and safe fallback reason, while excluding raw user text, prompts, memory contents, model output, credentials, and sensitive labels.
 
-Modify `backend/services/memory_query_tool.py` and downstream memory integration boundaries to emit safe sub-step timings. If the existing tool already queries working and cold memory concurrently, preserve that behavior and measure each branch separately. Add a small internal trace object if `TurnLatencyTrace` is too orchestration-focused.
+Modify `backend/tools/memory_query.py` and downstream memory integration boundaries to emit safe sub-step timings. If the existing tool already queries working and cold memory concurrently, preserve that behavior and measure each branch separately. Add a small internal trace object if `TurnLatencyTrace` is too orchestration-focused.
 
 Modify `backend/services/conversation_context_service.py` to propagate the memory sub-step trace outcome into `TurnLatencyTrace` or structured logs. Keep the Phase 3 timeout/cache behavior intact.
 
-Add targeted caches only after the measured slow step is known. Likely candidates are an explicit-recall query normalization/intent cache and an embedding/label cache around GUM/STITCH calls. Use hashed keys and bounded TTLs. Avoid caching raw memory evidence unless the existing memory boundary explicitly permits it.
-
-Add limits or short-circuits where profiling proves they help, such as candidate-count caps before expensive rerank/filtering, skipping rerank when there are zero or one candidates, or returning working-memory results immediately when they satisfy explicit recall with sufficient confidence.
-
 Modify `scripts/performance/benchmark_chat_latency.py` or add a memory-focused benchmark script if needed to run repeated explicit-recall scenarios with stable prompts and capture memory outcome distribution. The script should report timeout rate, cache-hit rate, success/empty result counts, and memory sub-step latency percentiles.
+
+Add or update `docs/worklog/202607/2026_07_19_experiment/memory_retrieval_efficiency_report.md` with the experiment setup, raw artifact links, sub-step distribution, timeout rate, recall-success proxy, and recommended Phase 4B optimization target.
 
 Do not change SSE wire format in this phase.
 
-#### Expected File Tree After Phase 4
+#### Expected File Tree After Phase 4A
 
-Cumulative tree after Phase 4:
+Cumulative tree after Phase 4A:
 
 ```text
 backend/
 ├── services/
 │   ├── conversation_context_service.py  [modified]
-│   ├── memory_query_tool.py             [modified]
+│   ├── memory_query.py                  [modified]
 │   ├── memory_retrieval_trace.py        [new if trace is extracted]
 │   └── turn_latency_trace.py            [modified if memory summary changes]
 scripts/
 └── performance/
     └── benchmark_memory_retrieval.py    [new if dedicated benchmark is needed]
+docs/
+└── worklog/
+    └── 202607/
+        └── 2026_07_19_experiment/
+            └── memory_retrieval_efficiency_report.md [new]
 tests/
 └── backend/
     ├── test_conversation_context_service.py [modified]
@@ -682,31 +686,30 @@ tests/
 
 #### Work List
 
-1. [ ] Modify `MemoryQueryTool.execute()` in `backend/services/memory_query_tool.py`.
-   - [ ] Add safe sub-step timing for working memory lookup.
-   - [ ] Add safe sub-step timing for cold memory lookup.
-   - [ ] Add safe sub-step timing around embedding, intent labeling, STITCH filtering, rerank, and result formatting when those boundaries are locally observable.
-   - [ ] Emit one privacy-safe memory retrieval summary with outcome, elapsed milliseconds, result count bucket, timeout status, and cache status.
-2. [ ] Add proposed `MemoryRetrievalTrace` in `backend/services/memory_retrieval_trace.py` if extraction is chosen.
-   - [ ] Add stable sub-step names and elapsed timing snapshots.
-   - [ ] Add result outcome fields such as `retrieved`, `empty`, `timeout`, `error`, and `cache_hit`.
-   - [ ] Exclude raw query text and memory content from snapshots.
-3. [ ] Modify `ConversationContextService._query_long_term_memory()` in `backend/services/conversation_context_service.py`.
-   - [ ] Preserve Phase 3 timeout/cache behavior.
-   - [ ] Attach memory retrieval sub-step summaries to the existing trace/log path.
-   - [ ] Keep timeout fallback honest and unchanged.
-4. [ ] Optimize the measured slow memory sub-step in `backend/services/memory_query_tool.py` or the relevant downstream integration file.
-   - [ ] Add query normalization, intent-label, or embedding cache only if profiling identifies that step as slow.
-   - [ ] Add candidate-count caps or rerank/filter short-circuits only if profiling identifies that step as slow.
-   - [ ] Keep memory quality metrics visible when applying speed optimizations.
-5. [ ] Add or extend performance tooling.
-   - [ ] Modify `scripts/performance/benchmark_chat_latency.py` or add proposed `scripts/performance/benchmark_memory_retrieval.py` to report memory timeout rate, success rate, empty-result rate, cache-hit rate, and sub-step latency percentiles.
-6. [ ] Add or extend tests.
-   - [ ] `tests/backend/test_memory_query_tool.py`: assert sub-step trace fields are emitted without raw user text or memory content.
-   - [ ] `tests/backend/test_memory_query_tool.py`: assert zero/one-candidate fast paths preserve results.
-   - [ ] `tests/backend/test_conversation_context_service.py`: assert Phase 3 timeout fallback remains unchanged after memory tracing.
-   - [ ] `tests/backend/test_memory_retrieval_trace.py`: assert trace snapshot timing, outcome, and privacy if extraction is chosen.
-   - [ ] `tests/backend/test_turn_latency_trace.py`: assert memory summary fields remain safe if added.
+1. [x] Modify `MemoryQueryTool.execute()` in `backend/tools/memory_query.py`.
+   - [x] Add safe sub-step timing for working memory lookup.
+   - [x] Add safe sub-step timing for cold memory lookup.
+   - [x] Add safe sub-step timing around learner-state lookup, ZPD query generation, embedding, vector search, BM25 search, RRF fusion, document fetch, and result formatting when those boundaries are locally observable.
+   - [x] Emit one privacy-safe memory retrieval summary with outcome, elapsed milliseconds, result count bucket, timeout status, and cache status.
+2. [x] Add proposed `MemoryRetrievalTrace` in `backend/services/memory_retrieval_trace.py`.
+   - [x] Add stable sub-step names and elapsed timing snapshots.
+   - [x] Add result outcome fields such as `retrieved`, `empty`, `timeout`, `error`, and `cache_hit`.
+   - [x] Exclude raw query text and memory content from snapshots.
+3. [x] Modify `ConversationContextService._query_long_term_memory()` in `backend/services/conversation_context_service.py`.
+   - [x] Preserve Phase 3 timeout/cache behavior.
+   - [x] Attach memory retrieval sub-step summaries to the existing trace/log path.
+   - [x] Keep timeout fallback honest and unchanged.
+4. [x] Add or extend performance tooling.
+   - [x] Add proposed `scripts/performance/benchmark_memory_retrieval.py` to report memory timeout rate, success rate, empty-result rate, cache-hit rate, and sub-step latency percentiles from backend logs.
+5. [x] Add `docs/worklog/202607/2026_07_19_experiment/memory_retrieval_efficiency_report.md`.
+   - [x] Record experiment setup, prompt set, environment, and commands.
+   - [ ] Record production memory sub-step latency distribution and timeout/cache/success/empty rates after deployment.
+   - [ ] Name one recommended Phase 4B bottleneck target after production profiling.
+6. [x] Add or extend tests.
+   - [x] `tests/backend/test_memory_query_tool.py`: assert sub-step trace fields are emitted without raw user text or memory content.
+   - [x] `tests/backend/test_conversation_context_service.py`: assert Phase 3 timeout fallback remains unchanged after memory tracing.
+   - [x] `tests/backend/test_memory_retrieval_trace.py`: assert trace snapshot timing, outcome, and privacy.
+   - [x] `tests/backend/test_turn_latency_trace.py`: existing trace summary tests continue to pass.
 
 #### Test Plan
 
@@ -723,7 +726,7 @@ Add `PYTHONPATH=. pytest tests/backend/test_memory_retrieval_trace.py -q` if `ba
 
 #### Expected Output / Result
 
-Long-term memory retrieval becomes measurable at the sub-step level and materially faster on the measured bottleneck. Explicit-recall requests should show fewer timeouts, lower `long_term_memory` p95, and stable or improved successful recall rate. The Phase 3 timeout remains as a safety boundary, but it should fire less often.
+Long-term memory retrieval becomes measurable at the sub-step level. The experiment report identifies the highest-confidence bottleneck and recommends a Phase 4B optimization. The Phase 3 timeout remains as a safety boundary and is not weakened.
 
 #### Testing Script
 
@@ -739,11 +742,11 @@ Mock a long-term memory query that exceeds the Phase 3 timeout.
 
 Pass condition: the prompt still uses the honest timeout fallback, `memory_query:timeout` is recorded, and the stream can continue.
 
-##### Act 03: Optimize Measured Slow Step
+##### Act 03: Produce Memory Retrieval Report
 
-Enable the selected cache or fast path for the measured slow sub-step with deterministic mocked inputs.
+Run the memory-focused benchmark and collect backend trace logs.
 
-Pass condition: the second equivalent retrieval avoids the expensive mocked call and preserves the same safe result envelope.
+Pass condition: `memory_retrieval_efficiency_report.md` records sub-step p50/p95, timeout rate, cache-hit rate, empty-result rate, and a recommended Phase 4B target.
 
 ##### Act 04: Production Memory Retrieval Benchmark
 
@@ -760,25 +763,29 @@ PYTHONPATH=. pytest tests/backend/test_memory_query_tool.py tests/backend/test_c
 python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --warmup 2 --output docs/worklog/202607/2026_07_19_experiment/production_latency_memory_efficiency.json
 ```
 
-Retain evidence showing memory sub-step attribution, optimization effect, timeout rate, cache-hit rate, empty-result rate, and successful recall rate. The phase passes only if the measured slow memory sub-step improves without degrading timeout fallback safety or privacy-safe logging. If live memory still times out frequently, document the remaining bottleneck and do not lower the timeout as a substitute for retrieval efficiency.
+Retain evidence showing memory sub-step attribution, timeout rate, cache-hit rate, empty-result rate, and successful recall proxy. The phase passes only if the report identifies a concrete Phase 4B target or explicitly states why the result is inconclusive and what extra instrumentation is required. Do not lower the timeout as a substitute for retrieval efficiency.
 
 #### Phase Commit
 
 Commit message:
 
 ```text
-feat(backend): optimize long-term memory retrieval
+feat(backend): profile long-term memory retrieval
 ```
 
-Stage only Phase 4 files and hunks:
+Stage only Phase 4A files and hunks:
 
 ```text
 backend/services/conversation_context_service.py
-backend/services/memory_query_tool.py
+backend/tools/memory_query.py
 backend/services/memory_retrieval_trace.py
 backend/services/turn_latency_trace.py
+backend/tools/registry.py
+backend/gum_integration.py
+backend/cold_memory.py
 scripts/performance/benchmark_chat_latency.py
 scripts/performance/benchmark_memory_retrieval.py
+docs/worklog/202607/2026_07_19_experiment/memory_retrieval_efficiency_report.md
 tests/backend/test_conversation_context_service.py
 tests/backend/test_memory_query_tool.py
 tests/backend/test_memory_retrieval_trace.py
@@ -790,7 +797,182 @@ Inspect `git status --short`, preserve unrelated user changes, stage only phase-
 ```bash
 git diff --cached --check
 git diff --cached --stat
-git commit -m "feat(backend): optimize long-term memory retrieval"
+git commit -m "feat(backend): profile long-term memory retrieval"
+git show --stat --oneline --summary HEAD
+```
+
+Do not commit if the phase gate fails.
+
+### Phase 4B: Optimize Measured Long-Term Memory Bottleneck
+
+Status: pending. This phase must start only after Phase 4A produces `memory_retrieval_efficiency_report.md` with a concrete bottleneck target. Phase 4B is implementation-focused: it changes the retrieval path based on Phase 4A evidence and validates that memory retrieval becomes faster without weakening recall quality, timeout honesty, or privacy boundaries.
+
+#### Problem
+
+Phase 4A is expected to reveal where long-term memory retrieval spends time. Until that evidence exists, likely fixes such as embedding cache, intent-label cache, STITCH short-circuiting, candidate caps, or vector index tuning are only hypotheses. Implementing several at once would make the result hard to attribute and could degrade recall quality while appearing faster.
+
+The product problem remains that explicit recall should usually retrieve useful memory within the foreground budget. Phase 3 protects the answer when retrieval is slow, but if Phase 4A shows a high timeout rate or expensive sub-step, users still lose personalization on recall questions.
+
+#### Assumptions
+
+Phase 4A produced enough evidence to rank at least one dominant bottleneck. If Phase 4A is inconclusive, Phase 4B must not guess; it should first add the missing instrumentation as a small follow-up to Phase 4A.
+
+Only one primary optimization should be implemented in Phase 4B unless the Phase 4A report proves two changes are tightly coupled. Memory quality is part of the gate: lower latency is not sufficient if successful recall rate drops, empty-result rate rises unexpectedly, or timeout fallback becomes misleading.
+
+#### Solution
+
+Implement the smallest targeted optimization that addresses the Phase 4A top bottleneck. Examples:
+
+- If embedding or intent labeling dominates, add a bounded hashed cache for normalized explicit-recall queries.
+- If STITCH filtering or rerank dominates, add zero/one-candidate short-circuits and measured candidate-count limits.
+- If cold memory dominates network/database time, tune the query shape, index path, or concurrent branch behavior.
+- If result formatting dominates, reduce redundant transformations and avoid repeated serialization work.
+- If working memory already satisfies recall with high confidence, return it early while optionally letting cold memory become a non-blocking enrichment path in a later phase.
+
+The optimization must keep Phase 3 timeout/cache behavior in place. It should make timeout less frequent, not hide timeouts.
+
+#### Implementation
+
+> Context: Add Google-style docstrings for every new or materially changed public module, class, and function. Document the Phase 4A evidence that justifies the selected optimization, the cache/short-circuit/index invariants, recall-quality risk, and rollback behavior. Inline comments should explain why the selected optimization is safe for memory quality and privacy. Structured logs must include `run_id` or `conversation_id`, selected optimization outcome, cache/short-circuit status, elapsed milliseconds, result count bucket, and safe fallback reason, while excluding raw user text, prompts, memory contents, model output, credentials, and sensitive labels.
+
+Modify only the files required by the selected Phase 4A bottleneck. If a cache is added, prefer a bounded TTL cache with hashed keys and no raw text in logs. If a short-circuit is added, preserve the previous result shape and add tests proving zero/one-candidate and multi-candidate behavior. If a query/index path is changed, keep compatibility with existing memory records and incomplete provenance.
+
+Update `scripts/performance/benchmark_memory_retrieval.py` or the selected benchmark command to compare before/after results using the same prompt set from Phase 4A. Update `memory_retrieval_efficiency_report.md` with the Phase 4B result table and conclusion.
+
+Do not change SSE wire format in this phase.
+
+#### Expected File Tree After Phase 4B
+
+Cumulative tree after Phase 4B:
+
+```text
+backend/
+├── services/
+│   ├── conversation_context_service.py  [modified if selected bottleneck requires it]
+│   ├── memory_query.py                  [modified if selected bottleneck requires it]
+│   ├── memory_retrieval_trace.py        [modified if trace outcome changes]
+│   └── explicit_memory_cache.py         [modified if cache behavior changes]
+scripts/
+└── performance/
+    └── benchmark_memory_retrieval.py    [modified if dedicated benchmark exists]
+docs/
+└── worklog/
+    └── 202607/
+        └── 2026_07_19_experiment/
+            └── memory_retrieval_efficiency_report.md [modified]
+tests/
+└── backend/
+    ├── test_conversation_context_service.py [modified if context behavior changes]
+    ├── test_memory_query_tool.py        [modified]
+    ├── test_memory_retrieval_trace.py   [modified if trace outcome changes]
+    └── test_explicit_memory_cache.py    [new if cache behavior is expanded]
+```
+
+#### Work List
+
+1. [ ] Read `docs/worklog/202607/2026_07_19_experiment/memory_retrieval_efficiency_report.md`.
+   - [ ] Select exactly one primary bottleneck target for Phase 4B.
+   - [ ] Record the chosen target and expected mechanism in the report before editing code.
+2. [ ] Modify the selected memory retrieval file.
+   - [ ] If the bottleneck is in `MemoryQueryTool.execute()` in `backend/tools/memory_query.py`, add the selected cache, fast path, or query-shape change there.
+   - [ ] If the bottleneck is in `ConversationContextService._query_long_term_memory()` in `backend/services/conversation_context_service.py`, add only the required orchestration-level change there.
+   - [ ] If the bottleneck is in cache behavior, modify `backend/services/explicit_memory_cache.py` or add a clearly scoped new helper.
+3. [ ] Preserve observability.
+   - [ ] Update `backend/services/memory_retrieval_trace.py` or existing trace fields if the optimization adds a new safe outcome.
+   - [ ] Ensure production logs can distinguish cache hit, short-circuit, optimized query path, timeout, empty result, and retrieved result.
+4. [ ] Extend tests.
+   - [ ] `tests/backend/test_memory_query_tool.py`: assert optimized path preserves result shape and avoids the measured expensive call when eligible.
+   - [ ] `tests/backend/test_conversation_context_service.py`: assert timeout fallback and honest prompt state remain unchanged.
+   - [ ] `tests/backend/test_explicit_memory_cache.py`: assert TTL/privacy behavior if cache behavior changes.
+   - [ ] `tests/backend/test_memory_retrieval_trace.py`: assert new optimization outcome is privacy-safe if trace changes.
+5. [ ] Update experiment evidence.
+   - [ ] Re-run the same benchmark prompt set used in Phase 4A.
+   - [ ] Update `memory_retrieval_efficiency_report.md` with before/after p50, p95, timeout rate, success/empty rate, cache-hit rate, and conclusion.
+
+#### Test Plan
+
+Use mocked tests for the selected optimization and a repeated benchmark for the same explicit-recall prompt set from Phase 4A. The test plan must cover success, timeout, empty result, cache/short-circuit eligibility, and non-eligibility. Do not use live memory stores in unit tests.
+
+Commands:
+
+```bash
+PYTHONPATH=. pytest tests/backend/test_memory_query_tool.py tests/backend/test_conversation_context_service.py tests/backend/test_memory_policy.py -q
+PYTHONPATH=. pytest tests/backend/test_turn_latency_trace.py tests/backend/test_runtime_contracts.py -q
+python scripts/performance/benchmark_memory_retrieval.py --runs 20 --output docs/worklog/202607/2026_07_19_experiment/production_latency_memory_efficiency_optimized.json
+```
+
+If no dedicated memory benchmark exists, use the equivalent `benchmark_chat_latency.py` live explicit-recall subset and document the limitation in the report.
+
+#### Expected Output / Result
+
+The selected memory retrieval bottleneck improves in the same benchmark shape used by Phase 4A. Explicit-recall timeout rate should decrease, `long_term_memory` p95 should decrease, and successful recall or non-empty result rate should not regress. Logs remain privacy-safe and keep Phase 3 timeout behavior visible.
+
+#### Testing Script
+
+##### Act 01: Selected Optimization Is Used
+
+Run the eligible mocked memory query identified by Phase 4A.
+
+Pass condition: the optimized path is recorded and the expensive mocked sub-step is skipped or reduced.
+
+##### Act 02: Non-Eligible Query Uses Normal Path
+
+Run a mocked memory query that should not use the optimization.
+
+Pass condition: the normal path still executes and returns the same result shape as before.
+
+##### Act 03: Timeout Fallback Remains Honest
+
+Force the optimized path and downstream memory query to exceed the Phase 3 timeout.
+
+Pass condition: `memory_query:timeout` is recorded and the prompt does not claim successful long-term recall.
+
+##### Act 04: Before/After Benchmark Comparison
+
+Run the same explicit-recall benchmark prompt set from Phase 4A after deployment.
+
+Pass condition: the report shows before/after memory p50, p95, timeout rate, and recall-success proxy with no privacy-sensitive log content.
+
+#### Gate to Enter the Next Phase
+
+The next phase must not start until these commands pass:
+
+```bash
+PYTHONPATH=. pytest tests/backend/test_memory_query_tool.py tests/backend/test_conversation_context_service.py tests/backend/test_memory_policy.py tests/backend/test_turn_latency_trace.py -q
+python scripts/performance/benchmark_memory_retrieval.py --runs 20 --output docs/worklog/202607/2026_07_19_experiment/production_latency_memory_efficiency_optimized.json
+```
+
+Retain the updated experiment report and benchmark artifacts. The phase passes only if the selected bottleneck improves and memory quality proxy does not regress. If the optimization fails, revert or disable only the Phase 4B optimization path and keep Phase 4A instrumentation.
+
+#### Phase Commit
+
+Commit message:
+
+```text
+feat(backend): optimize measured memory retrieval bottleneck
+```
+
+Stage only Phase 4B files and hunks selected by the Phase 4A report:
+
+```text
+backend/services/conversation_context_service.py
+backend/tools/memory_query.py
+backend/services/memory_retrieval_trace.py
+backend/services/explicit_memory_cache.py
+scripts/performance/benchmark_memory_retrieval.py
+docs/worklog/202607/2026_07_19_experiment/memory_retrieval_efficiency_report.md
+tests/backend/test_conversation_context_service.py
+tests/backend/test_memory_query_tool.py
+tests/backend/test_memory_retrieval_trace.py
+tests/backend/test_explicit_memory_cache.py
+```
+
+Inspect `git status --short`, preserve unrelated user changes, stage only phase-owned paths or hunks, then run:
+
+```bash
+git diff --cached --check
+git diff --cached --stat
+git commit -m "feat(backend): optimize measured memory retrieval bottleneck"
 git show --stat --oneline --summary HEAD
 ```
 
@@ -798,7 +980,7 @@ Do not commit if the phase gate fails.
 
 ### Phase 5: Bound Foreground Suggestion Latency
 
-Status: pending. This phase should start after Phase 4 improves or at least explains long-term memory retrieval efficiency, because Phase 3 production trace also showed completed-latency slow traces dominated by synchronous suggestions after the main answer path.
+Status: pending. This phase should start after Phase 4B improves or at least explains long-term memory retrieval efficiency, because Phase 3 production trace also showed completed-latency slow traces dominated by synchronous suggestions after the main answer path.
 
 #### Problem
 
@@ -1003,7 +1185,8 @@ Acceptance outcomes:
 - Explicit-recall timeout fallback does not claim retrieved long-term memory when the query exceeded the configured timeout.
 - General turns use hot/working memory by default and avoid unnecessary long-term memory retrieval.
 - Production trace validates Phase 3 memory behavior: explicit-recall `long_term_memory` is bounded around the configured timeout instead of the pre-Phase-3 `3.9s` to `4.1s` range.
-- Phase 4 production evidence shows long-term memory retrieval sub-step attribution and a measured reduction in the dominant memory retrieval bottleneck.
+- Phase 4A production evidence shows long-term memory retrieval sub-step attribution and a concrete Phase 4B bottleneck target.
+- Phase 4B production evidence shows a measured reduction in the selected long-term memory retrieval bottleneck without degrading recall-quality proxies.
 - Suggestions remain enabled and compatible, and Phase 5 bounds their foreground wait with timeout/cache/fallback behavior.
 - Production trace after Phase 5 should show `suggestions` no longer dominates completed latency past the configured suggestion timeout budget.
 - `search_mode=never` still performs zero external search calls.
@@ -1027,7 +1210,7 @@ Final repository checks:
 
 ```bash
 git status --short
-git log --oneline -5
+git log --oneline -6
 ```
 
 The final status must show no planned implementation files left unstaged or uncommitted, except unrelated user changes that were intentionally preserved. The log must contain the phase commits in order:
@@ -1036,7 +1219,8 @@ The final status must show no planned implementation files left unstaged or unco
 feat(backend): add chat turn latency tracing
 feat(backend): add deterministic chat turn planning
 feat(backend): bound explicit recall memory latency
-feat(backend): optimize long-term memory retrieval
+feat(backend): profile long-term memory retrieval
+feat(backend): optimize measured memory retrieval bottleneck
 feat(backend): bound foreground suggestion latency
 ```
 
