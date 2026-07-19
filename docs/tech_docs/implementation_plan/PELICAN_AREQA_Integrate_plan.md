@@ -218,26 +218,26 @@ misc/PELICAN_mvp/
 
 #### Work List
 
-1. [ ] Create `misc/PELICAN_mvp/pelican_mvp/planner.py`.
-   - [ ] Add proposed `LearningPlanner.create_plan()` and `validate_learning_plan()` for LLM and deterministic sources.
-   - [ ] Add topic sanitization and a deterministic fallback plan generator that does not depend on `curriculum.py` fixtures.
-2. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/llm.py` in `LlmAdapter`.
-   - [ ] Add proposed `generate_learning_plan()` with strict structured parsing and `LlmUnavailable`/validation fallback behavior.
-3. [ ] Create `misc/PELICAN_mvp/pelican_mvp/edf_simulator.py`.
-   - [ ] Add proposed `EdfSimulator.evaluate()` and its deterministic learner-state and policy mapping.
-4. [ ] Create `misc/PELICAN_mvp/pelican_mvp/learning_memory.py`.
-   - [ ] Add proposed `LearningMemorySimulator.record_direct_evidence()` and bounded `working_context()`.
-   - [ ] Prevent EDF-derived or planner-derived claims from being written as direct learner evidence.
-5. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` in `start()`, `respond()`, `reset()`, `_handle_diagnostic()`, `_handle_tutoring()`, `_record()`, and the proposed `_handle_onboarding()` / `_refresh_learning_context()` helpers.
-   - [ ] Implement the full onboarding/planning/diagnosis/tutoring/completed transition table.
-   - [ ] Use successor-first logic against generated plans without changing `diagnosis.py` fixture behavior unless a plan-agnostic interface is required.
-   - [ ] Evaluate EDF and update local memory after every accepted learner response; attach only safe summaries to the response.
-6. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/tutoring.py` in `select_strategy()` and/or a proposed policy resolver.
-   - [ ] Resolve conflicts so an EDF policy constrains candidate strategies while existing fast/slow strategy logic remains observable.
-7. [ ] Create `misc/PELICAN_mvp/tests/test_planner.py` covering validated LLM-shaped plans, deterministic fallback, invalid graph rejection, and no-static-fixture default dependency.
-8. [ ] Create `misc/PELICAN_mvp/tests/test_edf_simulator.py` for early uncertainty, repeated failure, direct correct evidence, sustained mastery, and unknown-state tolerance.
-9. [ ] Create `misc/PELICAN_mvp/tests/test_learning_memory.py` for direct-evidence-only storage, bounded eviction, and EDF inference non-promotion.
-10. [ ] Extend `misc/PELICAN_mvp/tests/test_engine.py`, `test_llm.py`, and `test_tutoring.py` with the default intake path, LLM-unavailable fallback, generated successor-first routing, phase persistence, strategy trace, and fixture regression cases.
+1. [x] Create `misc/PELICAN_mvp/pelican_mvp/planner.py`.
+   - [x] Add proposed `LearningPlanner.create_plan()` and `validate_learning_plan()` for LLM and deterministic sources.
+   - [x] Add topic sanitization and a deterministic fallback plan generator that does not depend on `curriculum.py` fixtures.
+2. [x] Modify `misc/PELICAN_mvp/pelican_mvp/llm.py` in `LlmAdapter`.
+   - [x] Add proposed `generate_learning_plan()` with strict structured parsing and `LlmUnavailable`/validation fallback behavior.
+3. [x] Create `misc/PELICAN_mvp/pelican_mvp/edf_simulator.py`.
+   - [x] Add proposed `EdfSimulator.evaluate()` and its deterministic learner-state and policy mapping.
+4. [x] Create `misc/PELICAN_mvp/pelican_mvp/learning_memory.py`.
+   - [x] Add proposed `LearningMemorySimulator.record_direct_evidence()` and bounded `working_context()`.
+   - [x] Prevent EDF-derived or planner-derived claims from being written as direct learner evidence.
+5. [x] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` in `start()`, `respond()`, `reset()`, `_handle_diagnostic()`, `_handle_tutoring()`, `_record()`, and the proposed `_handle_onboarding()` / `_refresh_learning_context()` helpers.
+   - [x] Implement the full onboarding/planning/diagnosis/tutoring/completed transition table.
+   - [x] Use successor-first logic against generated plans without changing `diagnosis.py` fixture behavior unless a plan-agnostic interface is required.
+   - [x] Evaluate EDF and update local memory after every accepted learner response; attach only safe summaries to the response.
+6. [x] Modify `misc/PELICAN_mvp/pelican_mvp/tutoring.py` in `select_strategy()` and/or a proposed policy resolver.
+   - [x] Resolve conflicts so an EDF policy constrains candidate strategies while existing fast/slow strategy logic remains observable.
+7. [x] Create `misc/PELICAN_mvp/tests/test_planner.py` covering validated LLM-shaped plans, deterministic fallback, invalid graph rejection, and no-static-fixture default dependency.
+8. [x] Create `misc/PELICAN_mvp/tests/test_edf_simulator.py` for early uncertainty, repeated failure, direct correct evidence, sustained mastery, and unknown-state tolerance.
+9. [x] Create `misc/PELICAN_mvp/tests/test_learning_memory.py` for direct-evidence-only storage, bounded eviction, and EDF inference non-promotion.
+10. [x] Extend `misc/PELICAN_mvp/tests/test_engine.py`, `test_llm.py`, and `test_tutoring.py` with the default intake path, LLM-unavailable fallback, generated successor-first routing, phase persistence, strategy trace, and fixture regression cases.
 
 #### Test Plan
 
@@ -300,6 +300,27 @@ feat(pelican): add dynamic learning strategy engine
 ```
 
 Stage only Phase 2 paths and the Phase 2 hunks in `engine.py`, `llm.py`, and `tutoring.py`; do not stage Phase 1 or unrelated edits again. Inspect `git status --short`, use explicit `git add` paths/hunks, run `git diff --cached --check` and `git diff --cached --stat`, commit once, and confirm with `git show --stat --oneline --summary HEAD`.
+
+#### Phase 2 Implementation Status
+
+Completed on 2026-07-19 in commit `b473e8e feat(pelican): add ai-led learning strategy loop`.
+
+Verification evidence retained from the phase gate:
+
+```bash
+cd misc/PELICAN_mvp
+python -m pytest tests/test_planner.py tests/test_edf_simulator.py tests/test_learning_memory.py tests/test_engine.py tests/test_llm.py tests/test_tutoring.py -q
+# 26 passed
+
+python -m pytest tests/test_curriculum.py tests/test_diagnosis.py tests/test_chinese_history.py -q
+# 7 passed
+
+python -m pytest -q
+# Note: full pytest fails during collection due to missing playwright dependency in test_e2e.py, which is a known environment issue.
+
+git diff --check
+# passed with no whitespace errors
+```
 
 ### Phase 3: MVP API Contract and Learning-Mode Experiment UI
 
