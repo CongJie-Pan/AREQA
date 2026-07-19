@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "baseline_file": "docs/worklog/202607/2026_07_19_experiment/production_latency.json",
+  "turnplan_enabled_file": "docs/worklog/202607/2026_07_19_experiment/production_latency_turnplan_enabled.json",
+  "metrics": {
+    "Baseline": {
+      "runs": 5,
+      "first_content_median_ms": 7102.62,
+      "first_content_p95_ms": 7948.35,
+      "completed_median_ms": 8814.57,
+      "completed_p95_ms": 9727.81,
+      "first_visible_status_median_ms": 910.08,
+      "avg_completion_calls": 0,
+      "avg_embedding_calls": 0,
+      "avg_memory_queries": 0,
+      "ttft_improvement_percent": 0.0
+    },
+    "TurnPlan enabled": {
+      "runs": 5,
+      "first_content_median_ms": 3404.74,
+      "first_content_p95_ms": 11877.9,
+      "completed_median_ms": 5359.88,
+      "completed_p95_ms": 13683.75,
+      "first_visible_status_median_ms": 1021.4,
+      "avg_completion_calls": 0,
+      "avg_embedding_calls": 0,
+      "avg_memory_queries": 0,
+      "ttft_improvement_percent": 0.0
+    }
+  },
+  "improvement_percent": {
+    "first_content_median": 52.06,
+    "first_content_p95": -49.44,
+    "completed_median": 39.19,
+    "completed_p95": -40.67,
+    "visible_status_median": -12.23
+  }
+}
