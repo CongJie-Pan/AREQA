@@ -2,8 +2,10 @@ import pytest
 import json
 import asyncio
 import logging
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.services.conversation_context_service import ConversationContext
 from backend.services.orchestration_service import OrchestrationService
 from unittest.mock import patch
 
@@ -492,6 +494,48 @@ async def test_turn_plan_disabled_keeps_legacy_policy_classifier(
 
     mock_policy.assert_awaited_once()
     assert prompt_assembly.await_args.kwargs["turn_plan"] is None
+
+
+@pytest.mark.asyncio
+async def test_prompt_assembly_passes_explicit_recall_memory_runtime_settings(
+    mock_router, mock_rag, mock_client, monkeypatch
+):
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "explicit_recall_memory_timeout_ms", 1234)
+    monkeypatch.setattr(runtime_config.settings, "enable_explicit_recall_memory_cache", True)
+    monkeypatch.setattr(runtime_config.settings, "explicit_recall_memory_cache_ttl_seconds", 77)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    service.context_service.build_conversation_context = AsyncMock(
+        return_value=ConversationContext(
+            messages=[{"role": "user", "content": "answer"}],
+            learner_understanding="unknown",
+            retrieved_memory=False,
+        )
+    )
+    turn_plan = SimpleNamespace(
+        allow_long_term_memory_query=True,
+        reason_code="EXPLICIT_RECALL_REQUEST",
+    )
+
+    with patch("memory_store.get_global_store", return_value=None):
+        await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="explicit-conv",
+            messages=[{"role": "user", "content": "你還記得我的偏好嗎？"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="你還記得我的偏好嗎？",
+            turn_plan=turn_plan,
+        )
+
+    kwargs = service.context_service.build_conversation_context.await_args.kwargs
+    assert kwargs["explicit_recall_memory_timeout_ms"] == 1234
+    assert kwargs["enable_explicit_recall_memory_cache"] is True
+    assert kwargs["explicit_recall_memory_cache_ttl_seconds"] == 77
+    assert kwargs["memory_skip_reason"] == "EXPLICIT_RECALL_REQUEST"
 
 
 @pytest.mark.asyncio

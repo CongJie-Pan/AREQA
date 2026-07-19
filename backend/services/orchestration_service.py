@@ -922,6 +922,7 @@ class OrchestrationService:
         Returns:
             List[Dict[str, str]]: The finalized list of messages ready to be sent to the LLM.
         """
+        from config import settings
         from memory_store import get_global_store
 
         context = await self.context_service.build_conversation_context(
@@ -949,6 +950,9 @@ class OrchestrationService:
                 if turn_plan is not None
                 else ""
             ),
+            explicit_recall_memory_timeout_ms=settings.explicit_recall_memory_timeout_ms,
+            enable_explicit_recall_memory_cache=settings.enable_explicit_recall_memory_cache,
+            explicit_recall_memory_cache_ttl_seconds=settings.explicit_recall_memory_cache_ttl_seconds,
         )
         logger.info(
             "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s",

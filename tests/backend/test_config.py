@@ -26,6 +26,9 @@ def test_settings_loads_defaults():
     assert s.turn_trace_slow_total_threshold_ms == 8000
     assert s.turn_trace_slow_first_token_threshold_ms == 5000
     assert s.turn_trace_top_phase_count == 5
+    assert s.explicit_recall_memory_timeout_ms == 2000
+    assert s.enable_explicit_recall_memory_cache is True
+    assert s.explicit_recall_memory_cache_ttl_seconds == 120
 
 def test_settings_can_be_overridden_by_env():
     """Settings 應能透過環境變數覆寫，確保不 Hardcoding。"""
@@ -39,6 +42,8 @@ def test_settings_can_be_overridden_by_env():
         'ENABLE_TURN_PLAN_RUNTIME': 'true',
         'FOREGROUND_MODEL_CALL_BUDGET_GENERAL': '4',
         'TURN_TRACE_SLOW_TOTAL_THRESHOLD_MS': '9000',
+        'EXPLICIT_RECALL_MEMORY_TIMEOUT_MS': '1500',
+        'ENABLE_EXPLICIT_RECALL_MEMORY_CACHE': 'false',
     }):
         from backend.config import Settings
         s = Settings()
@@ -51,3 +56,5 @@ def test_settings_can_be_overridden_by_env():
         assert s.enable_turn_plan_runtime is True
         assert s.foreground_model_call_budget_general == 4
         assert s.turn_trace_slow_total_threshold_ms == 9000
+        assert s.explicit_recall_memory_timeout_ms == 1500
+        assert s.enable_explicit_recall_memory_cache is False

@@ -410,6 +410,8 @@ Do not commit if the gate fails.
 
 ### Phase 3: Bound Explicit-Recall Long-Term Memory Before Main Answer
 
+Status: implemented locally on 2026-07-19; production validation pending deployment. Local gate evidence: `pytest tests/backend/test_config.py tests/backend/test_conversation_context_service.py tests/backend/test_orchestration_service.py tests/backend/test_turn_latency_trace.py tests/backend/test_memory_query_tool.py tests/backend/test_memory_policy.py -q` produced `41 passed, 2 skipped`.
+
 #### Problem
 
 The 2026-07-19 production trace showed that the remaining slow tail is not a general provider first-token problem. Slow requests were `EXPLICIT_MEMORY_RECALL` routes where prompt assembly waited for synchronous long-term memory. The slow examples had `time_to_first_answer_ms` around `6054 ms` to `6537 ms`, while `provider_first_token_ms` stayed below `500 ms`. In those same traces, `long_term_memory` took `3914 ms` to `4127 ms`, and `prompt_assembly` took `4439 ms` to `4647 ms`.
@@ -470,31 +472,33 @@ tests/
 
 #### Work List
 
-1. [ ] Modify `Settings` in `backend/config.py`.
-   - [ ] Add `explicit_recall_memory_timeout_ms`.
-   - [ ] Add `enable_explicit_recall_memory_cache`.
-   - [ ] Add `explicit_recall_memory_cache_ttl_seconds`.
-2. [ ] Modify `ConversationContextService.build_conversation_context()` in `backend/services/conversation_context_service.py`.
-   - [ ] Wrap allowed long-term memory query in a route-aware timeout.
-   - [ ] Continue prompt assembly with safe fallback when timeout occurs.
-   - [ ] Log `orchestration.long_term_memory_timeout` with safe metadata only.
-   - [ ] Preserve explicit recall permission when memory returns within the timeout.
-3. [ ] Add `backend/services/explicit_memory_cache.py` if extraction is chosen.
-   - [ ] Add proposed `ExplicitMemoryCache` with safe hashed key construction.
-   - [ ] Add TTL get/set behavior for explicit-recall memory results.
-   - [ ] Add safe cache status values `hit`, `miss`, `bypass`, and `expired`.
-4. [ ] Modify `TurnLatencyTrace` in `backend/services/turn_latency_trace.py`.
-   - [ ] Record memory timeout and cache status counters if not already covered by tool counters.
-   - [ ] Ensure `turn_trace_summary` exposes memory timeout/cache outcomes.
-5. [ ] Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py`.
-   - [ ] Pass route-specific timeout/cache configuration to prompt assembly or context service.
-   - [ ] Preserve current SSE event ordering and terminal behavior.
-6. [ ] Extend tests.
-   - [ ] `tests/backend/test_config.py`: assert new defaults and env override.
-   - [ ] `tests/backend/test_conversation_context_service.py`: assert timeout fallback continues without retrieved memory.
-   - [ ] `tests/backend/test_conversation_context_service.py`: assert cache hit avoids a second memory tool call.
-   - [ ] `tests/backend/test_orchestration_service.py`: assert explicit-recall timeout still emits answer content and terminal completion.
-   - [ ] `tests/backend/test_turn_latency_trace.py`: assert timeout/cache markers remain privacy-safe if trace fields change.
+1. [x] Modify `Settings` in `backend/config.py`.
+   - [x] Add `explicit_recall_memory_timeout_ms`.
+   - [x] Add `enable_explicit_recall_memory_cache`.
+   - [x] Add `explicit_recall_memory_cache_ttl_seconds`.
+2. [x] Modify `ConversationContextService.build_conversation_context()` in `backend/services/conversation_context_service.py`.
+   - [x] Wrap allowed long-term memory query in a route-aware timeout.
+   - [x] Continue prompt assembly with safe fallback when timeout occurs.
+   - [x] Log `orchestration.long_term_memory_timeout` with safe metadata only.
+   - [x] Preserve explicit recall permission when memory returns within the timeout.
+   - [x] Add an honest system-prompt state when long-term memory times out.
+3. [x] Add `backend/services/explicit_memory_cache.py` if extraction is chosen.
+   - [x] Add proposed `ExplicitMemoryCache` with safe hashed key construction.
+   - [x] Add TTL get/set behavior for explicit-recall memory results.
+   - [x] Add safe cache status values `hit`, `miss`, and expired handling.
+4. [x] Modify `TurnLatencyTrace` in `backend/services/turn_latency_trace.py`.
+   - [x] Record memory timeout and cache status through existing phase marks and tool cache statuses.
+   - [x] Ensure `turn_trace_summary` exposes memory timeout/cache outcomes through phases and cache statuses.
+5. [x] Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py`.
+   - [x] Pass route-specific timeout/cache configuration to prompt assembly or context service.
+   - [x] Preserve current SSE event ordering and terminal behavior.
+6. [x] Extend tests.
+   - [x] `tests/backend/test_config.py`: assert new defaults and env override.
+   - [x] `tests/backend/test_conversation_context_service.py`: assert timeout fallback continues without retrieved memory.
+   - [x] `tests/backend/test_conversation_context_service.py`: assert cache hit avoids a second memory tool call.
+   - [x] `tests/backend/test_conversation_context_service.py`: assert cache key privacy.
+   - [x] `tests/backend/test_orchestration_service.py`: assert explicit-recall runtime timeout/cache settings are passed into prompt assembly.
+   - [x] `tests/backend/test_turn_latency_trace.py`: existing summary tests cover privacy-safe trace output; no trace schema change was required.
 
 #### Test Plan
 
@@ -549,6 +553,8 @@ python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --war
 ```
 
 Retain the test output, live benchmark output, and copied production `orchestration.turn_trace_summary` / `orchestration.turn_trace_slow` logs. The phase passes only if explicit-recall slow traces show bounded `long_term_memory` wait or safe timeout fallback, and SSE completion remains compatible.
+
+Local implementation gate passed on 2026-07-19 with `41 passed, 2 skipped`. The live benchmark and production trace gate remain pending until this change is deployed.
 
 #### Phase Commit
 

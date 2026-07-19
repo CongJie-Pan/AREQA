@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     turn_trace_slow_total_threshold_ms: int = 8000
     turn_trace_slow_first_token_threshold_ms: int = 5000
     turn_trace_top_phase_count: int = 5
+    explicit_recall_memory_timeout_ms: int = 2000
+    enable_explicit_recall_memory_cache: bool = True
+    explicit_recall_memory_cache_ttl_seconds: int = 120
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.
