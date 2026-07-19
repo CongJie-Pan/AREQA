@@ -33,14 +33,30 @@ Observed client-visible production latency improved after TurnPlan rollout:
 | Original production baseline | 5 | `7102.62 ms` | `7948.35 ms` | `8814.57 ms` | `9727.81 ms` |
 | TurnPlan initial production run | 5 | `3404.74 ms` | `11877.90 ms` | `5359.88 ms` | `13683.75 ms` |
 | TurnPlan + production trace run | 20 | `3289.88 ms` | `7237.36 ms` | `5421.39 ms` | `8808.76 ms` |
+| Phase 3 memory timeout/cache production run | 20 | `3131.11 ms` | `5989.32 ms` | `7251.20 ms` | `10997.05 ms` |
 
 The 20-run result shows that TurnPlan reduced normal latency and did not reproduce the initial small-sample p95 regression. Server-side production trace then identified the remaining slow tail as route-specific: `EXPLICIT_MEMORY_RECALL` requests waited for synchronous long-term memory inside prompt assembly. In the copied log window, slow explicit-recall traces had `time_to_first_answer_ms` around `6054 ms` to `6537 ms`, but `provider_first_token_ms` stayed low at `395 ms` to `497 ms`; the answer model was not the dominant delay.
 
 The next phases are updated accordingly:
 
 - Phase 3 should first bound and cache explicit-recall long-term memory, because that is the measured p95/root-cause path.
-- Phase 4 should refine long-term memory quality and retrieval policy, because `prompt_assembly` is only expensive when it blocks on long-term memory; suggestions remain enabled but are not optimized in this plan revision.
+- Phase 4 should optimize long-term memory retrieval itself, because Phase 3 bounded the wait but did not prove memory can usually complete within the foreground budget.
+- Phase 5 should improve synchronous suggestion latency, because Phase 3 production trace shows completed-latency slow traces are dominated by `suggestions` after the main answer path starts.
 - Broad preflight parallelization remains a later option only if new traces show independent required tasks are still the top bottleneck after memory timeout/cache.
+
+Phase 3 production validation update: the deployed timeout/cache change improved the user-visible first-answer path but did not improve end-to-end completion latency. Compared with the 20-run TurnPlan + trace run, first-content median improved from `3289.88 ms` to `3131.11 ms`, first-content p95 improved from `7237.36 ms` to `5989.32 ms`, and first visible status median improved from `983.50 ms` to `746.02 ms`. However, completed median regressed from `5421.39 ms` to `7251.20 ms`, and completed p95 regressed from `8808.76 ms` to `10997.05 ms`. This means Phase 3 passed its memory-specific gate but only partially passed the broader user-visible latency gate.
+
+Phase 3 production trace validation later confirmed the memory-specific behavior. The copied deployed trace in `temp/log.md` contains two explicit-recall timeout runs. Both recorded `memory_query:timeout`, and their `long_term_memory` durations were bounded at `2049 ms` and `2000 ms`, down from the pre-Phase-3 slow traces where `long_term_memory` took `3914 ms` to `4127 ms`. Their `prompt_assembly` durations were `2572 ms` and `2524 ms`, down from `4439 ms` to `4647 ms`. Therefore the long-term-memory bottleneck was bounded as intended.
+
+Per-route production split:
+
+| Route | Before Phase 3 first median | After Phase 3 first median | Before Phase 3 completed median | After Phase 3 completed median |
+|---|---:|---:|---:|---:|
+| `explicit_recall` | `7117.75 ms` | `5356.67 ms` | `8548.30 ms` | `7961.18 ms` |
+| `general` | `3313.10 ms` | `3208.14 ms` | `5418.08 ms` | `6482.48 ms` |
+| `sensitive` | `2521.37 ms` | `2307.63 ms` | `4634.09 ms` | `4788.64 ms` |
+
+The split supports the Phase 3 diagnosis: explicit recall first-answer latency improved substantially. The new risk is completion latency after first answer, where `general` and `sensitive` also show slower tails. The production trace points to synchronous suggestions as the most likely completed-latency driver: across eight copied trace summaries, `suggestions` had median `4124 ms`, p95 `7213 ms`, and was the top phase in five of eight runs. The slowest explicit-recall timeout run spent `6977 ms` in `suggestions` after the main answer had already started and finished.
 
 ## Current Code Findings
 
@@ -410,7 +426,7 @@ Do not commit if the gate fails.
 
 ### Phase 3: Bound Explicit-Recall Long-Term Memory Before Main Answer
 
-Status: implemented locally on 2026-07-19; production validation pending deployment. Local gate evidence: `pytest tests/backend/test_config.py tests/backend/test_conversation_context_service.py tests/backend/test_orchestration_service.py tests/backend/test_turn_latency_trace.py tests/backend/test_memory_query_tool.py tests/backend/test_memory_policy.py -q` produced `41 passed, 2 skipped`.
+Status: implemented, committed, deployed, production-benchmarked, and production-trace-validated on 2026-07-19. Local gate evidence: `pytest tests/backend/test_config.py tests/backend/test_conversation_context_service.py tests/backend/test_orchestration_service.py tests/backend/test_turn_latency_trace.py tests/backend/test_memory_query_tool.py tests/backend/test_memory_policy.py -q` produced `41 passed, 2 skipped`. Production memory-specific gate passed: explicit-recall long-term memory was bounded by timeout. Broader completed-latency gate is still partial because suggestions dominated several slow completed traces.
 
 #### Problem
 
@@ -554,7 +570,20 @@ python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --war
 
 Retain the test output, live benchmark output, and copied production `orchestration.turn_trace_summary` / `orchestration.turn_trace_slow` logs. The phase passes only if explicit-recall slow traces show bounded `long_term_memory` wait or safe timeout fallback, and SSE completion remains compatible.
 
-Local implementation gate passed on 2026-07-19 with `41 passed, 2 skipped`. The live benchmark and production trace gate remain pending until this change is deployed.
+Local implementation gate passed on 2026-07-19 with `41 passed, 2 skipped`. Live production benchmark after deployment was written to `docs/worklog/202607/2026_07_19_experiment/production_latency_memory_timeout_20260719_072029.json` and summarized in `docs/worklog/202607/2026_07_19_experiment/production_latency_memory_timeout_20260719_072029.md`. Client-visible first-answer latency improved versus the prior 20-run trace-enabled run:
+
+- Overall first-content median: `3289.88 ms` to `3131.11 ms`.
+- Overall first-content p95: `7237.36 ms` to `5989.32 ms`.
+- Explicit-recall first-content median: `7117.75 ms` to `5356.67 ms`.
+- Explicit-recall completed median: `8548.30 ms` to `7961.18 ms`.
+
+Production server-side trace confirmation was added from `temp/log.md` for the same benchmark window. The memory-specific gate passed:
+
+- Explicit-recall timeout run `latency-benchmark-1784445736527`: `memory_query:timeout`, `long_term_memory=2049 ms`, `prompt_assembly=2572 ms`, `time_to_first_answer_ms=4452`.
+- Explicit-recall timeout run `latency-benchmark-1784445765402`: `memory_query:timeout`, `long_term_memory=2000 ms`, `prompt_assembly=2524 ms`, `time_to_first_answer_ms=4202`.
+- Previous slow explicit-recall traces had `long_term_memory=3914 ms` to `4127 ms` and `prompt_assembly=4439 ms` to `4647 ms`.
+
+The broader completed-latency gate remains partial because overall completed median regressed from `5421.39 ms` to `7251.20 ms`. The same production trace window shows the completed-latency regression is most likely suggestion-driven: copied trace summaries had `suggestions` median `4124 ms`, p95 `7213 ms`, and `top_phase:suggestions` in the slow completed traces.
 
 #### Phase Commit
 
@@ -589,54 +618,45 @@ git show --stat --oneline --summary HEAD
 
 Do not commit if the phase gate fails.
 
-### Phase 4: Refine Long-Term Memory Quality And Retrieval Policy
+### Phase 4: Optimize Long-Term Memory Retrieval Efficiency
 
-Status: pending. This phase should start only after Phase 3 proves explicit-recall memory timeout/cache reduces the slow first-answer path. Suggestions remain part of the current turn and are intentionally not optimized in this plan revision. Today’s trace shows suggestions are a secondary completion-latency cost, but the measured blocking problem is long-term memory retrieval inside prompt assembly.
+Status: pending. This phase should start after Phase 3's production trace validation, because Phase 3 proved explicit-recall long-term memory is now bounded at about `2000 ms`, but it did not prove long-term memory retrieval itself is fast enough or reliable enough to finish inside that budget.
 
 #### Problem
 
-`prompt_assembly` appeared to be the longest phase in production traces, but the detailed trace shows that most of that duration is synchronous `long_term_memory`. The prompt string construction itself appears to be roughly hundreds of milliseconds, while long-term memory contributes about `3.9s` to `4.1s` in slow explicit-recall traces.
+Phase 3 added a guardrail: explicit-recall memory no longer blocks the main answer beyond the configured timeout. That protects user-visible response speed, but it may simply fail fast. The deployed trace showed `memory_query:timeout` for explicit-recall runs, which means the system did not successfully retrieve long-term memory inside the foreground budget.
 
-After Phase 3 bounds the speed problem, the next risk is quality and policy drift: the system needs a clear rule for when long-term memory should be retrieved, when hot/short-term memory is enough, how low-confidence or timed-out memory should affect the prompt, and how the answer should honestly describe memory availability. Without this policy, future changes may either over-retrieve memory and reintroduce latency, or under-retrieve memory and degrade personalization.
+The current trace only measures `long_term_memory` as one phase. It does not show whether time is spent in working memory, cold memory, embedding, intent labeling, STITCH label filtering, vector search, reranking, result formatting, network/database calls, or GUM background contention. Without sub-step attribution, a fixed `2000 ms` timeout is too blunt: it protects latency but cannot improve successful recall quality.
 
 #### Assumptions
 
-Suggestions remain foreground and unchanged unless later traces prove they become the top business-critical bottleneck. Long-term memory should not be retrieved for every question. Hot memory, current conversation context, and short-term working memory should satisfy most normal turns. Long-term memory retrieval should be reserved for explicit recall, durable preference personalization, or routes where memory materially changes the answer.
+Explicit recall remains a foreground product capability. The target is not to remove long-term memory or shorten the timeout blindly. The target is to make successful long-term memory retrieval complete faster and more predictably within the current timeout budget.
 
-Memory quality must be explicit. The prompt and answer should distinguish retrieved long-term memory, hot/current state, low-confidence memory, memory-not-found, and timeout fallback. The system must not claim to remember something when the query timed out or returned insufficient evidence.
+Memory quality and speed must both be measured. A lower timeout is not a success if recall success rate drops. This phase must track timeout rate, successful recall rate, empty-result rate, cache-hit rate, and sub-step latency. Logs must remain privacy-safe and must not include raw user text, memory content, prompts, model output, credentials, or sensitive labels.
 
 #### Solution
 
-Add a memory retrieval policy layer that makes long-term memory use route-specific, confidence-aware, and observable. This can be implemented by extending `TurnPlan` or adding a dedicated `MemoryRetrievalPlan` with fields such as `memory_tier`, `max_wait_ms`, `requires_long_term_memory`, `fallback_behavior`, and `minimum_confidence`.
+Add sub-step tracing inside the long-term memory retrieval path, then optimize the measured bottleneck. The first implementation should expose safe internal timings for `MemoryQueryTool.execute()` and its downstream GUM/cold/working memory calls. Once attribution is visible, optimize the highest-cost step with targeted changes such as query normalization cache, embedding/intent-label cache, concurrent working/cold retrieval review, candidate-count limits, rerank/filter short-circuiting, and database/index tuning.
 
-The policy should use a tiered retrieval model:
+This phase should keep the Phase 3 timeout in place as a guardrail while improving the underlying retrieval path. The success criterion is not merely that timeout fires; success means most explicit-recall requests either retrieve useful memory before timeout or fail quickly with a clearly measured reason.
 
-- `HOT_ONLY`: current conversation and hot memory only.
-- `WORKING_MEMORY`: short-term or current-session memory.
-- `LONG_TERM_BOUNDED`: long-term memory with Phase 3 timeout/cache.
-- `DEEP_RECALL_BACKGROUND`: optional deeper retrieval that must not block the first answer.
-
-Prompt assembly should consume the memory plan and memory result envelope, not raw implicit service behavior. The prompt should know whether memory was retrieved, skipped, timed out, cache-hit, or low-confidence, and should apply an honest response instruction for each state.
+The initial SLO targets should be reviewed after the first profiling run, but a reasonable starting point is: memory retrieval p50 below `500 ms`, p95 below `1500 ms`, timeout rate below `5%` for explicit recall, and no regression in safe fallback behavior.
 
 #### Implementation
 
-> Context: Add Google-style docstrings for every new or materially changed public module, class, and function. Document memory-tier semantics, confidence thresholds, fallback wording boundaries, privacy constraints, and prompt assembly ownership. Inline comments should explain only non-obvious memory-scope decisions and why specific routes do or do not retrieve long-term memory. Structured logs must include `run_id` or `conversation_id`, route, memory tier, retrieval outcome, confidence bucket, elapsed milliseconds, and safe fallback reason, while excluding raw user text, prompts, memory contents, model output, credentials, and sensitive labels.
+> Context: Add Google-style docstrings for every new or materially changed public module, class, and function. Document memory sub-step trace semantics, retrieval success/failure definitions, timeout interaction with Phase 3, cache-key privacy, and memory quality metrics. Inline comments should explain only non-obvious retrieval short-circuits, cache invalidation, and privacy boundaries. Structured logs must include `run_id` or `conversation_id`, route, memory outcome, sub-step durations, cache status, timeout status, result count bucket, and safe fallback reason, while excluding raw user text, prompts, memory contents, model output, credentials, and sensitive labels.
 
-Modify `TurnPlan` or add `MemoryRetrievalPlan` in `backend/services/turn_plan_service.py`. The plan should decide memory tier and wait budget from deterministic route signals, not from an unbounded model call. It should preserve explicit recall and sensitive-memory protections.
+Modify `backend/services/memory_query_tool.py` and downstream memory integration boundaries to emit safe sub-step timings. If the existing tool already queries working and cold memory concurrently, preserve that behavior and measure each branch separately. Add a small internal trace object if `TurnLatencyTrace` is too orchestration-focused.
 
-Modify `ConversationContextService.build_conversation_context()` in `backend/services/conversation_context_service.py` to accept a memory plan and return a structured memory result envelope. The envelope should separate:
+Modify `backend/services/conversation_context_service.py` to propagate the memory sub-step trace outcome into `TurnLatencyTrace` or structured logs. Keep the Phase 3 timeout/cache behavior intact.
 
-- retrieved memory included.
-- memory skipped by route.
-- memory timed out.
-- memory found but below confidence threshold.
-- memory cache hit or miss.
+Add targeted caches only after the measured slow step is known. Likely candidates are an explicit-recall query normalization/intent cache and an embedding/label cache around GUM/STITCH calls. Use hashed keys and bounded TTLs. Avoid caching raw memory evidence unless the existing memory boundary explicitly permits it.
 
-Modify prompt assembly in `backend/services/orchestration_service.py` or `ConversationContextService` so the system prompt receives clear memory-state instructions. Timeout or low-confidence memory should produce honest answer guidance rather than silently pretending recall succeeded.
+Add limits or short-circuits where profiling proves they help, such as candidate-count caps before expensive rerank/filtering, skipping rerank when there are zero or one candidates, or returning working-memory results immediately when they satisfy explicit recall with sufficient confidence.
 
-Extend `TurnLatencyTrace` only if needed to include memory tier and memory result counters in `turn_trace_summary`. Do not add user-visible SSE changes.
+Modify `scripts/performance/benchmark_chat_latency.py` or add a memory-focused benchmark script if needed to run repeated explicit-recall scenarios with stable prompts and capture memory outcome distribution. The script should report timeout rate, cache-hit rate, success/empty result counts, and memory sub-step latency percentiles.
 
-Add tests for route-to-memory-tier decisions, low-confidence fallback, timeout fallback copy boundaries, and prompt content boundaries.
+Do not change SSE wire format in this phase.
 
 #### Expected File Tree After Phase 4
 
@@ -646,113 +666,122 @@ Cumulative tree after Phase 4:
 backend/
 ├── services/
 │   ├── conversation_context_service.py  [modified]
-│   ├── orchestration_service.py         [modified]
-│   ├── turn_plan_service.py             [modified]
+│   ├── memory_query_tool.py             [modified]
+│   ├── memory_retrieval_trace.py        [new if trace is extracted]
 │   └── turn_latency_trace.py            [modified if memory summary changes]
+scripts/
+└── performance/
+    └── benchmark_memory_retrieval.py    [new if dedicated benchmark is needed]
 tests/
 └── backend/
     ├── test_conversation_context_service.py [modified]
-    ├── test_orchestration_service.py    [modified]
-    ├── test_turn_plan_service.py        [modified]
+    ├── test_memory_query_tool.py        [modified]
+    ├── test_memory_retrieval_trace.py   [new if trace is extracted]
     └── test_turn_latency_trace.py       [modified if memory summary changes]
 ```
 
 #### Work List
 
-1. [ ] Modify `TurnPlan` or add proposed `MemoryRetrievalPlan` in `backend/services/turn_plan_service.py`.
-   - [ ] Add proposed memory tiers `HOT_ONLY`, `WORKING_MEMORY`, `LONG_TERM_BOUNDED`, and `DEEP_RECALL_BACKGROUND`.
-   - [ ] Map general chat to `HOT_ONLY` or `WORKING_MEMORY`.
-   - [ ] Map explicit recall to `LONG_TERM_BOUNDED`.
-   - [ ] Preserve sensitive no-recall behavior.
-2. [ ] Modify `ConversationContextService.build_conversation_context()` in `backend/services/conversation_context_service.py`.
-   - [ ] Accept the memory retrieval plan.
-   - [ ] Return a structured memory result envelope with retrieval outcome and confidence bucket.
-   - [ ] Exclude low-confidence or timed-out memory from prompt evidence.
-3. [ ] Modify prompt assembly in `backend/services/orchestration_service.py` or `ConversationContextService`.
-   - [ ] Add honest prompt instructions for `retrieved`, `skipped`, `timeout`, `not_found`, and `low_confidence` memory states.
-   - [ ] Preserve current answer and SSE behavior.
-4. [ ] Modify `TurnLatencyTrace` in `backend/services/turn_latency_trace.py` if memory summary changes.
-   - [ ] Record memory tier and retrieval outcome counters.
-   - [ ] Keep production summary privacy-safe.
-5. [ ] Add or extend tests.
-   - [ ] `tests/backend/test_turn_plan_service.py`: assert route-to-memory-tier mapping.
-   - [ ] `tests/backend/test_conversation_context_service.py`: assert low-confidence and timeout memory are not injected as retrieved evidence.
-   - [ ] `tests/backend/test_orchestration_service.py`: assert prompt assembly receives honest memory-state instructions.
-   - [ ] `tests/backend/test_turn_latency_trace.py`: assert memory tier/outcome fields remain safe if added.
+1. [ ] Modify `MemoryQueryTool.execute()` in `backend/services/memory_query_tool.py`.
+   - [ ] Add safe sub-step timing for working memory lookup.
+   - [ ] Add safe sub-step timing for cold memory lookup.
+   - [ ] Add safe sub-step timing around embedding, intent labeling, STITCH filtering, rerank, and result formatting when those boundaries are locally observable.
+   - [ ] Emit one privacy-safe memory retrieval summary with outcome, elapsed milliseconds, result count bucket, timeout status, and cache status.
+2. [ ] Add proposed `MemoryRetrievalTrace` in `backend/services/memory_retrieval_trace.py` if extraction is chosen.
+   - [ ] Add stable sub-step names and elapsed timing snapshots.
+   - [ ] Add result outcome fields such as `retrieved`, `empty`, `timeout`, `error`, and `cache_hit`.
+   - [ ] Exclude raw query text and memory content from snapshots.
+3. [ ] Modify `ConversationContextService._query_long_term_memory()` in `backend/services/conversation_context_service.py`.
+   - [ ] Preserve Phase 3 timeout/cache behavior.
+   - [ ] Attach memory retrieval sub-step summaries to the existing trace/log path.
+   - [ ] Keep timeout fallback honest and unchanged.
+4. [ ] Optimize the measured slow memory sub-step in `backend/services/memory_query_tool.py` or the relevant downstream integration file.
+   - [ ] Add query normalization, intent-label, or embedding cache only if profiling identifies that step as slow.
+   - [ ] Add candidate-count caps or rerank/filter short-circuits only if profiling identifies that step as slow.
+   - [ ] Keep memory quality metrics visible when applying speed optimizations.
+5. [ ] Add or extend performance tooling.
+   - [ ] Modify `scripts/performance/benchmark_chat_latency.py` or add proposed `scripts/performance/benchmark_memory_retrieval.py` to report memory timeout rate, success rate, empty-result rate, cache-hit rate, and sub-step latency percentiles.
+6. [ ] Add or extend tests.
+   - [ ] `tests/backend/test_memory_query_tool.py`: assert sub-step trace fields are emitted without raw user text or memory content.
+   - [ ] `tests/backend/test_memory_query_tool.py`: assert zero/one-candidate fast paths preserve results.
+   - [ ] `tests/backend/test_conversation_context_service.py`: assert Phase 3 timeout fallback remains unchanged after memory tracing.
+   - [ ] `tests/backend/test_memory_retrieval_trace.py`: assert trace snapshot timing, outcome, and privacy if extraction is chosen.
+   - [ ] `tests/backend/test_turn_latency_trace.py`: assert memory summary fields remain safe if added.
 
 #### Test Plan
 
-Use mocked memory-policy and memory-query results to validate route-to-tier mapping, confidence gating, timeout outcome handling, and prompt-state wording. Do not use live memory stores in unit tests. Existing accumulator, suggestions, and done-event tests must continue to pass because suggestions are intentionally preserved.
+Use mocked memory dependencies to validate sub-step trace emission, privacy, timeout behavior, cache behavior, empty-result handling, and fast-path correctness. Do not use live memory stores in unit tests. Use production-like live validation only after the focused unit gate passes.
 
 Commands:
 
 ```bash
-PYTHONPATH=. pytest tests/backend/test_turn_plan_service.py tests/backend/test_conversation_context_service.py tests/backend/test_orchestration_service.py tests/backend/test_turn_latency_trace.py -q
-PYTHONPATH=. pytest tests/backend/test_post_turn_service.py tests/backend/test_runtime_contracts.py -q
+PYTHONPATH=. pytest tests/backend/test_memory_query_tool.py tests/backend/test_conversation_context_service.py tests/backend/test_turn_latency_trace.py -q
+PYTHONPATH=. pytest tests/backend/test_memory_policy.py tests/backend/test_runtime_contracts.py -q
 ```
 
-Skip `tests/backend/test_turn_latency_trace.py` only if no trace schema changes are made.
+Add `PYTHONPATH=. pytest tests/backend/test_memory_retrieval_trace.py -q` if `backend/services/memory_retrieval_trace.py` is extracted.
 
 #### Expected Output / Result
 
-Long-term memory retrieval becomes explicit, tiered, confidence-aware, and honest in prompt assembly. General turns should avoid unnecessary long-term memory retrieval, explicit recall should use bounded retrieval from Phase 3, and timeout/low-confidence states should not be presented as successful recall. Suggestions remain unchanged and foreground-compatible.
+Long-term memory retrieval becomes measurable at the sub-step level and materially faster on the measured bottleneck. Explicit-recall requests should show fewer timeouts, lower `long_term_memory` p95, and stable or improved successful recall rate. The Phase 3 timeout remains as a safety boundary, but it should fire less often.
 
 #### Testing Script
 
-##### Act 01: General Turn Uses Fast Memory Tier
+##### Act 01: Trace Memory Sub-Steps
 
-Create a general non-RAG turn plan for a normal explanatory question.
+Run an explicit-recall memory query with mocked working and cold memory branches.
 
-Pass condition: the memory tier is `HOT_ONLY` or `WORKING_MEMORY`, and long-term memory is not required.
+Pass condition: the memory retrieval trace records safe sub-step durations and does not include raw user text or memory content.
 
-##### Act 02: Explicit Recall Uses Bounded Long-Term Memory
+##### Act 02: Preserve Timeout Fallback
 
-Create an explicit-recall turn plan for a recall-like question.
+Mock a long-term memory query that exceeds the Phase 3 timeout.
 
-Pass condition: the memory tier is `LONG_TERM_BOUNDED`, and the wait budget comes from Phase 3 configuration.
+Pass condition: the prompt still uses the honest timeout fallback, `memory_query:timeout` is recorded, and the stream can continue.
 
-##### Act 03: Low-Confidence Memory Is Not Injected
+##### Act 03: Optimize Measured Slow Step
 
-Mock a memory result below the confidence threshold.
+Enable the selected cache or fast path for the measured slow sub-step with deterministic mocked inputs.
 
-Pass condition: prompt assembly does not include it as retrieved evidence and records a safe low-confidence reason.
+Pass condition: the second equivalent retrieval avoids the expensive mocked call and preserves the same safe result envelope.
 
-##### Act 04: Suggestions Remain Compatible
+##### Act 04: Production Memory Retrieval Benchmark
 
-Run the existing post-turn suggestion path without changing suggestion strategy.
+Run a 20-run live explicit-recall benchmark after deployment and collect backend trace logs.
 
-Pass condition: current suggestion events and terminal completion behavior remain unchanged.
+Pass condition: memory timeout rate, successful recall rate, and `long_term_memory` p50/p95 are recorded and compared against the Phase 3 production trace window.
 
 #### Gate to Enter the Next Phase
 
-This is the final implementation phase gate before cross-phase acceptance:
+The next phase must not start until these commands pass:
 
 ```bash
-PYTHONPATH=. pytest tests/backend/test_post_turn_service.py tests/backend/test_orchestration_service.py tests/backend/test_chat_latency_benchmark.py -q
-PYTHONPATH=. pytest tests/backend/test_turn_plan_service.py tests/backend/test_conversation_context_service.py tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
-python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --warmup 2 --output docs/worklog/202607/2026_07_19_experiment/production_latency_memory_policy.json
+PYTHONPATH=. pytest tests/backend/test_memory_query_tool.py tests/backend/test_conversation_context_service.py tests/backend/test_memory_policy.py tests/backend/test_turn_latency_trace.py -q
+python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --warmup 2 --output docs/worklog/202607/2026_07_19_experiment/production_latency_memory_efficiency.json
 ```
 
-Retain evidence showing route-to-memory-tier behavior, honest fallback prompt behavior, suggestion compatibility, and production trace memory outcomes. If memory quality requirements conflict with speed limits, document the route-specific tradeoff before changing the retrieval policy.
+Retain evidence showing memory sub-step attribution, optimization effect, timeout rate, cache-hit rate, empty-result rate, and successful recall rate. The phase passes only if the measured slow memory sub-step improves without degrading timeout fallback safety or privacy-safe logging. If live memory still times out frequently, document the remaining bottleneck and do not lower the timeout as a substitute for retrieval efficiency.
 
 #### Phase Commit
 
 Commit message:
 
 ```text
-feat(backend): refine long-term memory retrieval policy
+feat(backend): optimize long-term memory retrieval
 ```
 
 Stage only Phase 4 files and hunks:
 
 ```text
 backend/services/conversation_context_service.py
-backend/services/orchestration_service.py
-backend/services/turn_plan_service.py
+backend/services/memory_query_tool.py
+backend/services/memory_retrieval_trace.py
 backend/services/turn_latency_trace.py
+scripts/performance/benchmark_chat_latency.py
+scripts/performance/benchmark_memory_retrieval.py
 tests/backend/test_conversation_context_service.py
-tests/backend/test_orchestration_service.py
-tests/backend/test_turn_plan_service.py
+tests/backend/test_memory_query_tool.py
+tests/backend/test_memory_retrieval_trace.py
 tests/backend/test_turn_latency_trace.py
 ```
 
@@ -761,7 +790,189 @@ Inspect `git status --short`, preserve unrelated user changes, stage only phase-
 ```bash
 git diff --cached --check
 git diff --cached --stat
-git commit -m "feat(backend): refine long-term memory retrieval policy"
+git commit -m "feat(backend): optimize long-term memory retrieval"
+git show --stat --oneline --summary HEAD
+```
+
+Do not commit if the phase gate fails.
+
+### Phase 5: Bound Foreground Suggestion Latency
+
+Status: pending. This phase should start after Phase 4 improves or at least explains long-term memory retrieval efficiency, because Phase 3 production trace also showed completed-latency slow traces dominated by synchronous suggestions after the main answer path.
+
+#### Problem
+
+In the Phase 3 production trace window, `suggestions` had median `4124 ms`, p95 `7213 ms`, and was the top phase in five of eight copied trace summaries. One explicit-recall timeout run had `long_term_memory=2000 ms`, `main_model=1302 ms`, but `suggestions=6977 ms`. Because suggestions are foreground and terminal completion waits for them, users may receive answer text reasonably quickly but still wait many seconds for final completion.
+
+#### Assumptions
+
+Suggestions must remain enabled and product-visible. The goal is not to remove suggestions; it is to prevent suggestions from becoming an unbounded foreground blocker. Existing SSE semantics must remain compatible: answer deltas still stream, suggestion events still appear when available, and exactly one terminal `[DONE]` is emitted.
+
+It is acceptable for suggestions to use a timeout fallback, cached result, or cheaper deterministic/default suggestion set when the model-backed suggestion call is slow or fails. It is not acceptable for suggestion fallback to expose raw prompt/user text, duplicate terminal events, or silently break clients that expect a suggestion event shape. If product later decides that suggestions may arrive after terminal completion as an asynchronous mailbox/event update, that should be a separate phase because it changes the client contract.
+
+#### Solution
+
+Add a bounded foreground suggestion path. `PostTurnService.suggestion_events()` should enforce a configurable timeout around `SuggestionService.generate_suggestions()`. If the timeout is exceeded, the service should emit a safe fallback suggestion set or a compatible empty suggestion event, record timeout telemetry, and allow terminal completion to proceed.
+
+Add a short-lived suggestion cache for repeat prompts or repeated benchmark route prompts when safe. The cache key must use hashed/fingerprinted identifiers and must not log raw user text, prompt text, answer content, credentials, or sensitive labels. The cached value should contain only the final suggestion payload already permitted by the current client contract.
+
+Keep the first version conservative: bound the existing foreground suggestion call and preserve the current event contract. Do not convert suggestions into a fully asynchronous after-`[DONE]` workflow unless there is a product/client decision approving that behavior.
+
+#### Implementation
+
+> Context: Add Google-style docstrings for every new or materially changed public module, class, and function. Document suggestion timeout semantics, fallback behavior, cache-key privacy, SSE compatibility boundaries, and terminal-event ownership. Inline comments should explain only non-obvious fallback and event-ordering decisions. Structured logs must include `run_id` or `conversation_id`, suggestion outcome, timeout/cache status, elapsed milliseconds, and safe fallback reason, while excluding raw user text, prompts, model output, suggestion text if unnecessary, credentials, and sensitive labels.
+
+Modify `Settings` in `backend/config.py` to add suggestion latency controls:
+
+- `suggestion_generation_timeout_ms: int = 2000`.
+- `enable_suggestion_cache: bool = True`.
+- `suggestion_cache_ttl_seconds: int = 120`.
+- Optional `enable_suggestion_timeout_fallback: bool = True` if a rollout switch is useful.
+
+Modify `PostTurnService.suggestion_events()` in `backend/services/post_turn_service.py` to apply the configured timeout around `SuggestionService.generate_suggestions()`. On success, emit the existing suggestion event shape. On timeout or unexpected failure, emit a compatible fallback event and proceed to terminal completion. The fallback must be deterministic, safe, and easy for clients to handle.
+
+Add a proposed `backend/services/suggestion_cache.py` if extraction keeps the code clearer. Use a bounded in-process TTL cache unless the project already has a suitable cache abstraction. Build cache keys from safe stable identifiers such as `user_id`, `conversation_id`, route, and a hashed/fingerprinted answer or prompt signature. Do not log raw text.
+
+Modify `TurnLatencyTrace` in `backend/services/turn_latency_trace.py` only if needed to record suggestion cache/timeout outcomes. Existing `suggestions_started` and `suggestions_finished` marks should remain stable. Production `turn_trace_summary` should make suggestion timeout/cache behavior visible through safe counters or cache statuses.
+
+Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py` only to pass settings/trace into post-turn suggestion handling if not already available. Do not change answer streaming or terminal SSE ownership.
+
+#### Expected File Tree After Phase 5
+
+Cumulative tree after Phase 5:
+
+```text
+backend/
+├── config.py                            [modified]
+├── services/
+│   ├── orchestration_service.py         [modified]
+│   ├── post_turn_service.py             [modified]
+│   ├── suggestion_cache.py              [new if cache is extracted]
+│   └── turn_latency_trace.py            [modified if suggestion summary changes]
+tests/
+└── backend/
+    ├── test_config.py                   [modified]
+    ├── test_orchestration_service.py    [modified]
+    ├── test_post_turn_service.py        [modified]
+    ├── test_suggestion_cache.py         [new if cache is extracted]
+    └── test_turn_latency_trace.py       [modified if suggestion summary changes]
+```
+
+#### Work List
+
+1. [ ] Modify `Settings` in `backend/config.py`.
+   - [ ] Add `suggestion_generation_timeout_ms`.
+   - [ ] Add `enable_suggestion_cache`.
+   - [ ] Add `suggestion_cache_ttl_seconds`.
+   - [ ] Add `enable_suggestion_timeout_fallback` only if a separate rollout switch is needed.
+2. [ ] Modify `PostTurnService.suggestion_events()` in `backend/services/post_turn_service.py`.
+   - [ ] Wrap `SuggestionService.generate_suggestions()` in a timeout using the configured value.
+   - [ ] Emit existing suggestion event shape on normal success.
+   - [ ] Emit a compatible fallback event on timeout or unexpected failure.
+   - [ ] Record safe structured logs for `orchestration.suggestions_timeout`, `orchestration.suggestions_cache_hit`, and `orchestration.suggestions_cache_miss` as applicable.
+   - [ ] Preserve terminal completion behavior and avoid duplicate `[DONE]`.
+3. [ ] Add proposed `SuggestionCache` in `backend/services/suggestion_cache.py` if extraction is chosen.
+   - [ ] Add safe hashed cache-key construction.
+   - [ ] Add bounded TTL get/set behavior.
+   - [ ] Store only client-permitted suggestion payloads.
+4. [ ] Modify `OrchestrationService.execute()` in `backend/services/orchestration_service.py`.
+   - [ ] Pass suggestion timeout/cache settings and trace into `PostTurnService.suggestion_events()` if needed.
+   - [ ] Preserve current answer stream ordering and SSE terminal ownership.
+5. [ ] Modify `TurnLatencyTrace` in `backend/services/turn_latency_trace.py` if suggestion summary changes.
+   - [ ] Record suggestion timeout and cache status through existing safe counters or cache statuses.
+   - [ ] Keep `turn_trace_summary` privacy-safe.
+6. [ ] Add or extend tests.
+   - [ ] `tests/backend/test_config.py`: assert suggestion timeout/cache defaults and env override.
+   - [ ] `tests/backend/test_post_turn_service.py`: assert slow suggestions time out and still emit compatible events.
+   - [ ] `tests/backend/test_post_turn_service.py`: assert suggestion failure fallback preserves terminal compatibility.
+   - [ ] `tests/backend/test_suggestion_cache.py`: assert TTL behavior and cache-key privacy if cache is extracted.
+   - [ ] `tests/backend/test_orchestration_service.py`: assert runtime settings are passed into suggestion handling.
+   - [ ] `tests/backend/test_turn_latency_trace.py`: assert suggestion timeout/cache fields remain safe if added.
+
+#### Test Plan
+
+Use mocked `SuggestionService.generate_suggestions()` calls to validate success, timeout, failure, and cache-hit behavior. Do not use live provider calls in unit tests. Existing accumulator and done-event tests must continue to pass because the user-facing SSE contract is the highest-risk compatibility boundary.
+
+Commands:
+
+```bash
+PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_post_turn_service.py tests/backend/test_orchestration_service.py tests/backend/test_turn_latency_trace.py -q
+PYTHONPATH=. pytest tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
+```
+
+Add `PYTHONPATH=. pytest tests/backend/test_suggestion_cache.py -q` if `backend/services/suggestion_cache.py` is extracted.
+
+#### Expected Output / Result
+
+Suggestions remain enabled, but they no longer block terminal completion beyond the configured foreground timeout. Slow suggestions produce safe fallback behavior and structured telemetry. Production completed-latency slow traces should no longer be dominated by `suggestions` exceeding the timeout budget.
+
+#### Testing Script
+
+##### Act 01: Suggestions Return Quickly
+
+Mock `SuggestionService.generate_suggestions()` to return before the timeout.
+
+Pass condition: `PostTurnService.suggestion_events()` emits the existing suggestion event shape and no timeout log is emitted.
+
+##### Act 02: Suggestions Time Out
+
+Mock `SuggestionService.generate_suggestions()` to sleep longer than `suggestion_generation_timeout_ms`.
+
+Pass condition: a compatible fallback event is emitted, `orchestration.suggestions_timeout` is logged once with safe metadata, and terminal completion proceeds.
+
+##### Act 03: Suggestion Cache Hit
+
+Run two equivalent suggestion generations with cache enabled and a stable safe fingerprint.
+
+Pass condition: the second run records cache-hit status and does not call `SuggestionService.generate_suggestions()` a second time.
+
+##### Act 04: SSE Completion Remains Compatible
+
+Run the stream endpoint or orchestration path with a slow mocked suggestion service.
+
+Pass condition: answer deltas stream normally, suggestion fallback is compatible, and exactly one terminal `[DONE]` is emitted.
+
+#### Gate to Enter the Next Phase
+
+This is the final implementation phase gate before cross-phase acceptance:
+
+```bash
+PYTHONPATH=. pytest tests/backend/test_post_turn_service.py tests/backend/test_orchestration_service.py tests/backend/test_chat_latency_benchmark.py -q
+PYTHONPATH=. pytest tests/backend/test_config.py tests/backend/test_runtime_contracts.py tests/backend/test_stream_endpoint.py -q
+python scripts/performance/benchmark_chat_latency.py --mode live --runs 20 --warmup 2 --output docs/worklog/202607/2026_07_19_experiment/production_latency_suggestion_timeout.json
+```
+
+Retain evidence showing suggestion timeout/cache behavior, SSE compatibility, and production trace outcomes. The phase passes only if copied production `turn_trace_summary` logs show `suggestions` no longer dominates completed latency past the configured timeout budget, or if timeout fallback is recorded and terminal completion remains compatible.
+
+#### Phase Commit
+
+Commit message:
+
+```text
+feat(backend): bound foreground suggestion latency
+```
+
+Stage only Phase 5 files and hunks:
+
+```text
+backend/config.py
+backend/services/orchestration_service.py
+backend/services/post_turn_service.py
+backend/services/suggestion_cache.py
+backend/services/turn_latency_trace.py
+tests/backend/test_config.py
+tests/backend/test_orchestration_service.py
+tests/backend/test_post_turn_service.py
+tests/backend/test_suggestion_cache.py
+tests/backend/test_turn_latency_trace.py
+```
+
+Inspect `git status --short`, preserve unrelated user changes, stage only phase-owned paths or hunks, then run:
+
+```bash
+git diff --cached --check
+git diff --cached --stat
+git commit -m "feat(backend): bound foreground suggestion latency"
 git show --stat --oneline --summary HEAD
 ```
 
@@ -776,7 +987,7 @@ PYTHONPATH=. pytest tests/backend/test_turn_latency_trace.py tests/backend/test_
 python scripts/performance/benchmark_chat_latency.py --mode mocked --runs 10 --warmup 2 --output /tmp/areqa-pipeline-improvement.json
 ```
 
-If no separate `backend/services/explicit_memory_cache.py` exists because the implementation stayed inside existing services, omit only that nonexistent file and document why.
+If no separate `backend/services/explicit_memory_cache.py` or `backend/services/suggestion_cache.py` exists because the implementation stayed inside existing services, omit only that nonexistent file and document why.
 
 For live validation, run only in an environment with a test account and configured backend URL/token:
 
@@ -791,21 +1002,24 @@ Acceptance outcomes:
 - Explicit recall still allows memory query through deterministic `MemoryPolicy`, but the foreground wait is bounded by timeout/cache policy.
 - Explicit-recall timeout fallback does not claim retrieved long-term memory when the query exceeded the configured timeout.
 - General turns use hot/working memory by default and avoid unnecessary long-term memory retrieval.
-- Low-confidence memory is not injected into prompts as retrieved evidence.
-- Suggestions remain enabled and compatible, but are not a planned optimization target in this revision.
+- Production trace validates Phase 3 memory behavior: explicit-recall `long_term_memory` is bounded around the configured timeout instead of the pre-Phase-3 `3.9s` to `4.1s` range.
+- Phase 4 production evidence shows long-term memory retrieval sub-step attribution and a measured reduction in the dominant memory retrieval bottleneck.
+- Suggestions remain enabled and compatible, and Phase 5 bounds their foreground wait with timeout/cache/fallback behavior.
+- Production trace after Phase 5 should show `suggestions` no longer dominates completed latency past the configured suggestion timeout budget.
 - `search_mode=never` still performs zero external search calls.
 - `search_mode=auto` and Web-required queries still respect `SearchPolicy`/`TutorAgent` and `ToolBudgetTracker`.
 - Greeting/static low-information behavior still short-circuits safely.
 - SSE remains compatible: metadata/status/action events can appear early, answer deltas stream, suggestions/done remain valid, and exactly one terminal `data: [DONE]` is emitted.
 - Structured logs are privacy-safe and contain safe reason codes, phase timings, route, model-call budget, and fallback outcomes.
 - Mock benchmark shows expected TTFT and completion-time improvement; live benchmark provides production evidence before rollout.
-- Production trace should show explicit-recall `long_term_memory` no longer blocks `time_to_first_answer_ms` past the configured fallback window.
+- Production trace should show explicit-recall `long_term_memory` no longer blocks `time_to_first_answer_ms` past the configured fallback window, and synchronous suggestions no longer block terminal completion past the configured suggestion fallback window.
 
 Remaining risks and mitigations:
 
 - Memory recall completeness may drop on timeout. Mitigate by honest fallback copy, short-lived cache, and optional follow-up memory enrichment when late memory arrives.
 - Disabling general foreground long-term memory may reduce personalization for some questions. Mitigate with explicit recall detection, hot-memory snapshots, and trace-backed rollout.
-- Memory retrieval policy may become too conservative. Mitigate with route-specific metrics for memory hit rate, timeout rate, and user-visible recall accuracy.
+- Suggestion fallback quality may be lower than model-generated suggestions. Mitigate with conservative default suggestions, short TTL caching, timeout metrics, and a product review of fallback wording.
+- Suggestion cache keys may accidentally include sensitive text if implemented carelessly. Mitigate with hashed/fingerprinted keys and tests asserting raw text is absent from logs/cache metadata.
 - Later parallel foreground work can introduce task leaks or cancellation bugs. Mitigate with explicit task ownership tests and runtime-contract tests only if that later work is reintroduced.
 - Model-call budgets can underfit future product requirements. Mitigate by making budgets configurable and logging budget exhaustion with safe reason codes.
 
@@ -813,7 +1027,7 @@ Final repository checks:
 
 ```bash
 git status --short
-git log --oneline -4
+git log --oneline -5
 ```
 
 The final status must show no planned implementation files left unstaged or uncommitted, except unrelated user changes that were intentionally preserved. The log must contain the phase commits in order:
@@ -822,7 +1036,8 @@ The final status must show no planned implementation files left unstaged or unco
 feat(backend): add chat turn latency tracing
 feat(backend): add deterministic chat turn planning
 feat(backend): bound explicit recall memory latency
-feat(backend): refine long-term memory retrieval policy
+feat(backend): optimize long-term memory retrieval
+feat(backend): bound foreground suggestion latency
 ```
 
 No phase may be considered complete without its gate evidence and phase commit.
