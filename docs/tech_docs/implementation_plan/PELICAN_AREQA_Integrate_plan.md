@@ -377,7 +377,7 @@ misc/PELICAN_mvp/
    - [ ] Render phase-aware input placeholders and safe structured response fields through `textContent`.
 4. [ ] Modify `misc/PELICAN_mvp/static/styles.css` to lay out the new side information surfaces responsively without overlap or layout shift.
 5. [ ] Extend `misc/PELICAN_mvp/tests/test_server.py` with dynamic-start, response schema, reset-to-onboarding, explicit-fixture compatibility, and safe error-contract cases.
-6. [ ] Extend `misc/PELICAN_mvp/tests/test_e2e.py` with an API/browser-compatible dynamic intake-to-diagnosis scenario and UI static-asset assertions if Playwright remains available.
+6. [x] Extend `misc/PELICAN_mvp/tests/test_e2e.py` with an API/browser-compatible dynamic intake-to-diagnosis scenario and UI static-asset assertions if Playwright remains available.
 
 #### Test Plan
 
@@ -477,7 +477,7 @@ misc/PELICAN_mvp/
    - [ ] Document fixture-curriculum compatibility, deterministic fallback, state-file handling, and the explicit non-production EDF/GUM boundary.
 2. [ ] Create `docs/tech_docs/PELICAN_AREQA_learning_engine_experiment_test.md`.
    - [ ] Add proposed manual experiment Acts, capture fields, success/failure criteria, and a promotion decision checklist.
-3. [ ] Extend `misc/PELICAN_mvp/tests/test_e2e.py`.
+3. [x] Extend `misc/PELICAN_mvp/tests/test_e2e.py`.
    - [ ] Add a complete offline learning trace that asserts onboarding, generated-plan validation, successor-first diagnosis, EDF policy update, source-safe memory, reset, and fixture compatibility.
 
 #### Test Plan

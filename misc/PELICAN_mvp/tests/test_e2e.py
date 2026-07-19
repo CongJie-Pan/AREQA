@@ -12,6 +12,12 @@ class UvicornTestServer(uvicorn.Server):
     def install_signal_handlers(self) -> None:
         pass
 
+from pelican_mvp.llm import LlmConfig
+
+# Monkey patch LlmConfig to force rule mode in E2E tests
+_original_from_env = LlmConfig.from_environment
+LlmConfig.from_environment = classmethod(lambda cls: None) # type: ignore
+
 @pytest.fixture(scope="module", autouse=True)
 def run_server() -> None:
     config = uvicorn.Config(app=app, host="127.0.0.1", port=PORT, log_level="error")
@@ -32,7 +38,7 @@ def test_homepage_loads(page: Page) -> None:
     expect(page).to_have_title("PELICAN Knowledge Tracing MVP")
     expect(page.locator(".sidebar h2")).to_have_text("PELICAN MVP")
 
-def test_diagnosis_flow_and_tree_updates(page: Page) -> None:
+def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     page.goto(URL)
     
     # Wait for initial page load and message
@@ -40,18 +46,24 @@ def test_diagnosis_flow_and_tree_updates(page: Page) -> None:
     
     # Ensure clean state and rule mode
     page.select_option("#mode-select", "rule")
-    time.sleep(0.5)
     page.click("#reset-btn")
     time.sleep(0.5)
     
-    # Check tree is visible
+    # Check that phase is onboarding
+    expect(page.locator("#phase-display")).to_have_text("onboarding", ignore_case=True)
+    
+    # Send an onboarding query
+    page.fill("#chat-input", "I want to understand why binary search needs sorted data; I get confused about the boundaries.")
+    page.click(".send-btn")
+    
+    # Wait for the diagnostic question (first successor node in deterministic plan)
+    page.wait_for_selector(".tree-node")
     expect(page.locator(".tree-node").first).to_be_visible()
+    expect(page.locator("#phase-display")).to_have_text("diagnosis", ignore_case=True)
+    expect(page.locator("#plan-source-display")).to_have_text("generated", ignore_case=True)
     
-    # Wait for the teacher to ask the first diagnostic question
-    expect(page.locator(".message.teacher").first).to_contain_text("診斷題：輸入圖片為 10x10")
-    
-    # Answer the first question correctly (8)
-    page.fill("#chat-input", "8")
+    # Answer the first question correctly
+    page.fill("#chat-input", "進階答案")
     page.click(".send-btn")
     
     # Check that tree updates the node to mastered

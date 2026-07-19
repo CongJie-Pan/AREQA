@@ -108,13 +108,13 @@ class PelicanEngine:
         return TurnOutcome(f"模式切換為 {mode}；{availability}。", self.state.current_node_id, None, None, (), "模式已更新")
 
     def reset(self, curriculum_id: str | None = None) -> TurnOutcome:
-        target_curriculum = curriculum_id or self.state.curriculum_id
-        # Reset creates a new state. If target_curriculum is None, it defaults to onboarding
-        self.state = self.store.reset(self.state.learner_id, self.state.mode, target_curriculum)
+        self.state = self.store.reset(self.state.learner_id, self.state.mode, curriculum_id)
         self.curriculum = self._resolve_curriculum()
         return self.start()
 
     def tree_summary(self) -> str:
+        if not self.curriculum:
+            return "尚無知識狀態樹（收集意圖中）。"
         lines = ["知識狀態樹（綠=mastered，紅=not_mastered，灰=undiagnosed）"]
         for node in sorted(self.curriculum.nodes.values(), key=lambda item: item.priority, reverse=True):
             status = self.state.nodes[node.node_id].status.value
@@ -123,6 +123,8 @@ class PelicanEngine:
         return "\n".join(lines)
 
     def tree_state(self) -> list[dict[str, Any]]:
+        if not self.curriculum:
+            return []
         return [
             {
                 "id": node.node_id,

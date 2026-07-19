@@ -13,10 +13,17 @@
         <aside class="sidebar">
             <h2>PELICAN MVP</h2>
             <div class="controls">
-                <label for="curriculum-select">教學主題 (Topic):</label>
-                <select id="curriculum-select">
-                    <!-- Populated by JS -->
-                </select>
+                <div class="learning-info">
+                    <div><strong>Phase:</strong> <span id="phase-display">Onboarding</span></div>
+                    <div><strong>Topic:</strong> <span id="topic-display">--</span></div>
+                    <div><strong>Plan Source:</strong> <span id="plan-source-display">--</span></div>
+                </div>
+                <div class="learning-info">
+                    <div><strong>EDF State:</strong> <span id="edf-state-display">--</span></div>
+                    <div><strong>EDF Policy:</strong> <span id="edf-policy-display">--</span></div>
+                    <div><strong>Evidence:</strong> <span id="evidence-count-display">0</span></div>
+                    <div><strong>Context:</strong> <span id="context-count-display">0</span></div>
+                </div>
                 <label for="mode-select">教學模式 (Mode):</label>
                 <select id="mode-select">
                     <option value="rule">Rule-based (規則引擎)</option>

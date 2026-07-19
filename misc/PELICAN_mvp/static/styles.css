@@ -61,6 +61,22 @@ body {
     color: var(--text-secondary);
 }
 
+.learning-info {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.learning-info strong {
+    color: var(--text-secondary);
+}
+
+
 .controls select, .controls button {
     padding: 10px;
     border-radius: 6px;

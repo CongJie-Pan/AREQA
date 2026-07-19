@@ -6,12 +6,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     const chatInput = document.getElementById("chat-input");
     const treeContainer = document.getElementById("tree");
     const modeSelect = document.getElementById("mode-select");
-    const curriculumSelect = document.getElementById("curriculum-select");
+    const phaseDisplay = document.getElementById("phase-display");
+    const topicDisplay = document.getElementById("topic-display");
+    const planSourceDisplay = document.getElementById("plan-source-display");
+    const edfStateDisplay = document.getElementById("edf-state-display");
+    const edfPolicyDisplay = document.getElementById("edf-policy-display");
+    const evidenceCountDisplay = document.getElementById("evidence-count-display");
+    const contextCountDisplay = document.getElementById("context-count-display");
     const resetBtn = document.getElementById("reset-btn");
     const loadingUI = document.getElementById("loading");
 
     // Initialize
-    await loadCurriculums();
     startSession();
 
     chatForm.addEventListener("submit", async (e) => {
@@ -38,11 +43,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    curriculumSelect.addEventListener("change", async (e) => {
-        const newCurriculum = e.target.value;
-        curriculumSelect.disabled = true;
+    resetBtn.addEventListener("click", async () => {
         chatInput.disabled = true;
-        
         const messages = chatHistory.querySelectorAll('.message');
         messages.forEach(m => m.remove());
         showLoading(true);
@@ -50,7 +52,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const res = await fetch("/api/reset", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ learner_id: LEARNER_ID, curriculum_id: newCurriculum })
+                body: JSON.stringify({ learner_id: LEARNER_ID }) // no curriculum_id means fallback to onboarding
             });
             const data = await res.json();
             handleResponse(data);
@@ -58,7 +60,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             console.error(err);
         } finally {
             showLoading(false);
-            curriculumSelect.disabled = false;
             chatInput.disabled = false;
             chatInput.focus();
         }
@@ -105,21 +106,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    async function loadCurriculums() {
-        try {
-            const res = await fetch("/api/curriculums");
-            const curriculums = await res.json();
-            curriculumSelect.innerHTML = "";
-            for (const [key, name] of Object.entries(curriculums)) {
-                const option = document.createElement("option");
-                option.value = key;
-                option.textContent = name;
-                curriculumSelect.appendChild(option);
-            }
-        } catch(err) {
-            console.error("無法載入課程列表:", err);
-        }
-    }
 
     async function startSession() {
         showLoading(true);
@@ -130,9 +116,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 body: JSON.stringify({ learner_id: LEARNER_ID })
             });
             const data = await res.json();
-            modeSelect.value = data.mode;
-            if (data.curriculum_id) {
-                curriculumSelect.value = data.curriculum_id;
+            if (data.mode) {
+                modeSelect.value = data.mode;
             }
             handleResponse(data);
         } catch(err) {
@@ -152,8 +137,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (data.mode) {
             modeSelect.value = data.mode;
         }
-        if (data.curriculum_id && curriculumSelect.value !== data.curriculum_id) {
-            curriculumSelect.value = data.curriculum_id;
+        if (data.learning) {
+            phaseDisplay.textContent = data.learning.phase;
+            topicDisplay.textContent = data.learning.topic || "--";
+            planSourceDisplay.textContent = data.learning.plan_source;
+            edfStateDisplay.textContent = data.learning.edf_state;
+            edfPolicyDisplay.textContent = data.learning.edf_policy;
+            evidenceCountDisplay.textContent = data.learning.evidence_count;
+            contextCountDisplay.textContent = data.learning.context_count;
+            
+            if (data.learning.phase === "onboarding") {
+                chatInput.placeholder = "請輸入您想學習的主題或困難點...";
+            } else {
+                chatInput.placeholder = "請輸入您的答案...";
+            }
         }
     }
 
