@@ -366,17 +366,17 @@ misc/PELICAN_mvp/
 
 #### Work List
 
-1. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/server.py` in `BaseRequest`, `_serialize_response()`, `start()`, `respond()`, `reset()`, and `set_mode()`.
-   - [ ] Add a versioned `learning` response object with phase, plan source, EDF display contract, and memory summary counters.
-   - [ ] Preserve explicit fixture selection only as a developer/test compatibility parameter.
-   - [ ] Map `StateStoreError`, plan validation failures, and invalid request state to safe HTTP responses.
-2. [ ] Modify `misc/PELICAN_mvp/static/index.html`.
-   - [ ] Replace `#curriculum-select` with learning-session, EDF, and evidence-summary regions labelled for accessible updates.
-3. [ ] Modify `misc/PELICAN_mvp/static/app.js` in initialization, `startSession()`, reset handling, `handleResponse()`, and rendering helpers.
-   - [ ] Stop calling `/api/curriculums` for the default path.
-   - [ ] Render phase-aware input placeholders and safe structured response fields through `textContent`.
-4. [ ] Modify `misc/PELICAN_mvp/static/styles.css` to lay out the new side information surfaces responsively without overlap or layout shift.
-5. [ ] Extend `misc/PELICAN_mvp/tests/test_server.py` with dynamic-start, response schema, reset-to-onboarding, explicit-fixture compatibility, and safe error-contract cases.
+1. [x] Modify `misc/PELICAN_mvp/pelican_mvp/server.py` in `BaseRequest`, `_serialize_response()`, `start()`, `respond()`, `reset()`, and `set_mode()`.
+   - [x] Add a versioned `learning` response object with phase, plan source, EDF display contract, and memory summary counters.
+   - [x] Preserve explicit fixture selection only as a developer/test compatibility parameter.
+   - [x] Map `StateStoreError`, plan validation failures, and invalid request state to safe HTTP responses.
+2. [x] Modify `misc/PELICAN_mvp/static/index.html`.
+   - [x] Replace `#curriculum-select` with learning-session, EDF, and evidence-summary regions labelled for accessible updates.
+3. [x] Modify `misc/PELICAN_mvp/static/app.js` in initialization, `startSession()`, reset handling, `handleResponse()`, and rendering helpers.
+   - [x] Stop calling `/api/curriculums` for the default path.
+   - [x] Render phase-aware input placeholders and safe structured response fields through `textContent`.
+4. [x] Modify `misc/PELICAN_mvp/static/styles.css` to lay out the new side information surfaces responsively without overlap or layout shift.
+5. [x] Extend `misc/PELICAN_mvp/tests/test_server.py` with dynamic-start, response schema, reset-to-onboarding, explicit-fixture compatibility, and safe error-contract cases.
 6. [x] Extend `misc/PELICAN_mvp/tests/test_e2e.py` with an API/browser-compatible dynamic intake-to-diagnosis scenario and UI static-asset assertions if Playwright remains available.
 
 #### Test Plan
