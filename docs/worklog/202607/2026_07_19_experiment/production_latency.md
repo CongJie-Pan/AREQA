@@ -1,0 +1,10 @@
+# AREQA Chat Latency Benchmark
+
+Mode: `live`  
+Measured runs: `5`
+
+| Variant | Runs | First content median | First content p95 | Completed median | Visible status | TTFT improvement |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 5 | 7102.62 ms | 7948.35 ms | 8814.57 ms | 910.08 ms | 0.00% |
+
+> Live results measure client-visible SSE timings; internal phase attribution requires server instrumentation.

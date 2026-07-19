@@ -2,7 +2,7 @@
 
 Summary:
 
-This experiment executed the Phase 1 latency-tracing code and the Phase 2 deterministic TurnPlan code for the AREQA non-RAG chat pipeline. The code-level gates passed, the local trace probe confirmed that TurnPlan-enabled general chat skipped the foreground policy classifier and synchronous long-term memory query, and the mocked latency benchmark continued to show that policy waiting and cold/long-term memory are high-value optimization targets. The overall verdict is partially successful: Phase 1/2 behavior is verified in local controlled execution, but production/live provider latency is not verified because this run did not call real external LLM, Redis/GUM, Web Search, or deployment infrastructure.
+This experiment executed the Phase 1 latency-tracing code and the Phase 2 deterministic TurnPlan code for the AREQA non-RAG chat pipeline. The code-level gates passed, the local trace probe confirmed that TurnPlan-enabled general chat skipped the foreground policy classifier and synchronous long-term memory query, and the mocked latency benchmark continued to show that policy waiting and cold/long-term memory are high-value optimization targets. A production live benchmark was also executed after deployment credentials became available. The overall verdict is partially successful: Phase 1/2 behavior is verified in local controlled execution, and one production baseline latency sample set is recorded, but production baseline-versus-TurnPlan comparison is not yet verified because this benchmark measured only the currently deployed backend configuration.
 
 ---
 
@@ -56,7 +56,7 @@ The raw probe logs also show the route decision and memory skip reason: `route=G
 | Act 03: Combined regression | Phase 1/2 focused regression passes together | `47 passed, 2 skipped` | Pass | [combined_regression_output.txt](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/combined_regression_output.txt:32) |
 | Act 04: Mock latency benchmark | Experiment model identifies policy and memory as likely latency targets | `no_policy_wait` improved TTFT by `34.61%`; `no_cold_memory` by `51.63%` | Pass for mock mechanics; Not verified for production latency | [phase2_mock_latency.md](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/phase2_mock_latency.md:9), [phase2_mock_latency.md](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/phase2_mock_latency.md:10), [phase2_mock_latency.md](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/phase2_mock_latency.md:13) |
 | Act 05: TurnPlan trace probe | General non-RAG route skips unnecessary foreground policy and memory work when enabled | Completion calls dropped from `2` to `1`; policy classifier skipped; memory tool calls dropped from `1` to `0` | Pass for controlled local runtime path | [turn_plan_trace_probe.json](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/turn_plan_trace_probe.json:6), [turn_plan_trace_probe.json](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/turn_plan_trace_probe.json:135), [turn_plan_trace_probe.json](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/turn_plan_trace_probe.json:232), [turn_plan_trace_probe.json](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/turn_plan_trace_probe.json:236) |
-| Act 06: Live production latency | Real backend/provider latency improves under TurnPlan | No live backend/provider benchmark was run | Not verified | No `--mode live` output exists in the experiment directory |
+| Act 06: Live production latency baseline | Client-visible production SSE latency is measured | 5 live runs: first-content median `7102.62 ms`, first-content p95 `7948.35 ms`, completed median `8814.57 ms`, visible status median `910.08 ms` | Pass for single-configuration production baseline; Not verified for TurnPlan comparison | [production_latency.md](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/production_latency.md:8), [production_latency.md](/workspaces/AREQA/docs/worklog/202607/2026_07_19_experiment/production_latency.md:10) |
 
 ### Actual Data Flow (Mermaid)
 
@@ -70,9 +70,12 @@ flowchart TD
     F --> G["Policy classifier and memory query recorded"]
     A --> H["Trace probe with TurnPlan enabled"]
     H --> I["Policy classifier skipped and memory query omitted"]
+    A --> L["Production live benchmark"]
+    L --> M["Client-visible baseline latency recorded"]
     C --> J["Code-level behavior verified locally"]
-    E --> K["Production latency remains unverified"]
+    E --> K["Production TurnPlan comparison remains unverified"]
     I --> J
+    M --> K
 ```
 
 ## 3. Hypotheses About the Causes
@@ -81,17 +84,17 @@ The strongest supported hypothesis is that Phase 2 successfully reduces unnecess
 
 The second hypothesis is that policy classification and long-term memory are likely meaningful preflight bottlenecks in realistic turns. The mocked benchmark supports this direction because removing policy wait reduced mocked TTFT by `34.61%`, and removing cold memory reduced mocked TTFT by `51.63%`. However, this is not proof of production latency behavior because the benchmark is explicitly a controlled mock experiment, not a live backend measurement.
 
-The third hypothesis is that Phase 3 should target preflight execution order only after a live or higher-fidelity trace confirms which phase dominates. The enabled trace probe showed `main_model_started` at `2 ms`, but the mocked main stream finished at `334 ms`. Because that probe used controlled external dependencies and a mocked streaming response, the total elapsed time should not be interpreted as provider latency. The reliable result from that probe is the route/counter difference, not absolute end-to-end speed.
+The third hypothesis is that Phase 3 should target preflight execution order only after a live or higher-fidelity trace confirms which phase dominates. The enabled trace probe showed `main_model_started` at `2 ms`, but the mocked main stream finished at `334 ms`. Because that probe used controlled external dependencies and a mocked streaming response, the total elapsed time should not be interpreted as provider latency. The reliable result from that probe is the route/counter difference, not absolute end-to-end speed. The production live benchmark now gives a client-visible baseline, but it does not expose internal phase attribution; therefore it cannot yet tell whether production time is dominated by preflight, provider streaming, suggestions, or deployment/runtime overhead.
 
 The fourth hypothesis is that the observability boundary is now sufficient for the next experiment. The trace records phase names and counters, and the tests assert safe metadata behavior. This is supported by the passing Phase 1 gate, but production log safety remains not verified until trace logs are reviewed in the deployment environment.
 
 ## 4. Solutions
 
-The immediate next step is to preserve the Phase 1/2 code and run a higher-fidelity benchmark before broad Phase 3 parallelization. The trace probe already shows that TurnPlan changes foreground model/tool counters for a general non-RAG route. The next experiment should run the same route set against a local or staging backend with real provider calls if credentials are available.
+The immediate next step is to preserve the Phase 1/2 code and run a higher-fidelity baseline-versus-TurnPlan benchmark before broad Phase 3 parallelization. The trace probe already shows that TurnPlan changes foreground model/tool counters for a general non-RAG route, and the production benchmark recorded the currently deployed client-visible baseline. The next experiment should run the same route set twice against staging or production: once with `ENABLE_TURN_PLAN_RUNTIME=false`, once with `ENABLE_TURN_PLAN_RUNTIME=true`.
 
 Phase 3 should cite this experiment's evidence but should not overgeneralize it. Based on current data, the first Phase 3 candidates are policy-classifier waiting and synchronous long-term memory work, because both are verified as removable from the general route and are supported by the mock benchmark. If production traces instead show suggestions or provider streaming dominate latency, Phase 3 should narrow parallelization and move attention to bounded suggestions or provider behavior.
 
-The benchmark script should be extended or paired with a small trace parser so live runs can compare `main_model_started`, `first_answer_delta`, `suggestions_finished`, foreground model calls, memory-query count, and terminal completion under TurnPlan disabled and enabled. This would convert the current local proof into deployable performance evidence.
+The benchmark script should be extended or paired with a small trace parser so live runs can compare `main_model_started`, `first_answer_delta`, `suggestions_finished`, foreground model calls, memory-query count, and terminal completion under TurnPlan disabled and enabled. The current live benchmark measured first event, first visible status, first content, and completed time, but not internal server phase timings.
 
 The report also recommends keeping the compatibility flag default off until a live or staging run verifies the same safety properties with real Redis/GUM, OpenRouter, and suggestion service behavior. The tests prove code-level behavior, not production operational behavior.
 
@@ -99,6 +102,6 @@ The report also recommends keeping the compatibility flag default off until a li
 
 The experiment is partially successful. Phase 1 is verified locally: the trace and compatibility tests passed, and the runtime emitted safe phase/counter data in the trace probe. Phase 2 is verified locally: deterministic TurnPlan routing passed tests and changed the general non-RAG runtime path as intended, skipping foreground policy classification and synchronous long-term memory while preserving terminal completion.
 
-The most important measured result is the local trace probe: TurnPlan disabled produced two completion create calls and one memory query; TurnPlan enabled produced one completion create call and zero memory tool calls for the same general non-RAG route. The most important limitation is that production latency was not measured. The mock benchmark is useful for experiment mechanics and prioritization, but it is not a live performance result.
+The most important measured local result is the trace probe: TurnPlan disabled produced two completion create calls and one memory query; TurnPlan enabled produced one completion create call and zero memory tool calls for the same general non-RAG route. The most important measured production result is the live client-visible baseline: first-content median `7102.62 ms` and completed median `8814.57 ms` across 5 measured runs. The most important limitation is that production baseline-versus-TurnPlan comparison was not measured. The mock benchmark is useful for experiment mechanics and prioritization, but it is not a live performance result.
 
 The next required validation before broad Phase 3 work is a live or staging trace run with real provider and storage dependencies, using the same baseline-versus-TurnPlan comparison described in the implementation plan.
