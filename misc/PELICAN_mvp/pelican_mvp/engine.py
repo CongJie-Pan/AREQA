@@ -260,7 +260,7 @@ class PelicanEngine:
         self.state.current_node_id = step["node_id"]
         self.state.current_prompt = step["prompt"]
         self.state.current_expected_answer = step["expected"]
-        self.state.current_prompt_source = "rule"
+        self.state.current_prompt_source = "llm" if self.state.plan_source.value == "llm" else "rule"
 
     def _classify(self, answer: str) -> ResponseCategory:
         if self.state.mode == "llm" and self.state.current_prompt_source == "llm":

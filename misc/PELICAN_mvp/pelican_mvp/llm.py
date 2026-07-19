@@ -92,7 +92,8 @@ class LlmAdapter:
         if not self.available:
             return None
         payload = self._json(
-            "你是繁體中文家教。一次只處理一個概念、只問一個問題，不能直接給原題最終答案。",
+            "你是繁體中文家教。一次只處理一個概念、只問一個問題，必須以循循善誘的口吻引導學生思考。\n"
+            "警告：絕對不能直接把定義或標準答案複製貼上，請給予提示或引導式反問。",
             f"策略：{strategy.value}\n知識點：{node_label}\n目前題目：{prompt}\n輸出 {{\"response\": str}}",
         )
         response = str(payload.get("response", "")).strip()
