@@ -13,11 +13,15 @@
 ## Quick Start
 
 ```bash
-cd misc/PELICAN_mvp
-python -m venv .venv
-.venv\Scripts\activate
+# 1. 啟動 AREQA 後端虛擬環境
+source /workspaces/AREQA/backend/.venv/bin/activate
+
+# 2. 安裝相依套件（若尚未安裝）並啟動伺服器
+cd /workspaces/AREQA/misc/PELICAN_mvp
 pip install -r requirements.txt
 python -m pelican_mvp
+
+# 3. 在瀏覽器開啟 http://127.0.0.1:8000
 ```
 
 預設為完全離線、可重現的規則模式 (Deterministic Fallback)。
