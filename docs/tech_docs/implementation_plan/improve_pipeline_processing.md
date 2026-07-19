@@ -20,6 +20,8 @@ TurnPlan enabled Web-required route, if Web credentials are available
 
 The comparison must include TTFT, total completion latency, main-model-start latency, suggestion latency, foreground model-call count, memory-query count, Web/tool count, cache status, and safe fallback reason codes. Phase 3 work items must cite the measured bottlenecks they address. If Phase 1/2 data does not show a meaningful preflight bottleneck, Phase 3 should be narrowed to duplicate-read removal and task ownership hardening instead of broad concurrency changes.
 
+2026-07-19 production trace update: the first deployed trace review identified the slow tail as explicit memory recall waiting on synchronous long-term memory inside prompt assembly. The reviewed slow traces had `provider_first_token_ms` below `500 ms`, while `long_term_memory` took about `3.9s` to `4.1s` and `prompt_assembly` took about `4.4s` to `4.6s`. Therefore the next Phase 3 candidate should be a bounded explicit-recall memory timeout/cache experiment before broad foreground parallelization. Suggestions remain a secondary completion-latency target because reviewed traces commonly spent about `0.8s` to `1.2s` after the main answer.
+
 ## Current Code Findings
 
 - `backend/main.py` defaults `ChatRequest.use_rag` to `False`; `init_rag_service()` only initializes local RAG when `ENABLE_INTERNAL_RAG=true`.
