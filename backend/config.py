@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     foreground_model_call_budget_learning: int = 3
     enable_policy_classifier_for_general_chat: bool = False
     enable_sync_long_term_memory_for_general_chat: bool = False
+    enable_production_turn_trace_summary: bool = True
+    turn_trace_slow_total_threshold_ms: int = 8000
+    turn_trace_slow_first_token_threshold_ms: int = 5000
+    turn_trace_top_phase_count: int = 5
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.

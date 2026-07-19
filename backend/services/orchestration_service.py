@@ -247,12 +247,31 @@ class OrchestrationService:
             if trace_logged:
                 return
             trace_logged = True
+            trace_summary = trace.diagnostic_summary(
+                slow_total_threshold_ms=settings.turn_trace_slow_total_threshold_ms,
+                slow_first_token_threshold_ms=settings.turn_trace_slow_first_token_threshold_ms,
+                top_phase_count=settings.turn_trace_top_phase_count,
+            )
             logger.info(
                 "orchestration.turn_trace_completed run_id=%s conversation_id=%s trace=%s",
                 run_context.run_id,
                 run_context.conversation_id,
                 trace.snapshot(),
             )
+            if settings.enable_production_turn_trace_summary:
+                logger.info(
+                    "orchestration.turn_trace_summary run_id=%s conversation_id=%s summary=%s",
+                    run_context.run_id,
+                    run_context.conversation_id,
+                    json.dumps(trace_summary, ensure_ascii=False, sort_keys=True),
+                )
+                if trace_summary["is_slow"]:
+                    logger.warning(
+                        "orchestration.turn_trace_slow run_id=%s conversation_id=%s summary=%s",
+                        run_context.run_id,
+                        run_context.conversation_id,
+                        json.dumps(trace_summary, ensure_ascii=False, sort_keys=True),
+                    )
 
         # Send a user-visible event before memory and policy work enters the
         # critical path. This keeps the transport responsive even when an

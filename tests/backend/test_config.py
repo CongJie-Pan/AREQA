@@ -22,6 +22,10 @@ def test_settings_loads_defaults():
     assert s.foreground_model_call_budget_learning == 3
     assert s.enable_policy_classifier_for_general_chat is False
     assert s.enable_sync_long_term_memory_for_general_chat is False
+    assert s.enable_production_turn_trace_summary is True
+    assert s.turn_trace_slow_total_threshold_ms == 8000
+    assert s.turn_trace_slow_first_token_threshold_ms == 5000
+    assert s.turn_trace_top_phase_count == 5
 
 def test_settings_can_be_overridden_by_env():
     """Settings 應能透過環境變數覆寫，確保不 Hardcoding。"""
@@ -34,6 +38,7 @@ def test_settings_can_be_overridden_by_env():
         'MEMORY_SEMANTIC_ANALYSIS_ENABLED': 'true',
         'ENABLE_TURN_PLAN_RUNTIME': 'true',
         'FOREGROUND_MODEL_CALL_BUDGET_GENERAL': '4',
+        'TURN_TRACE_SLOW_TOTAL_THRESHOLD_MS': '9000',
     }):
         from backend.config import Settings
         s = Settings()
@@ -45,3 +50,4 @@ def test_settings_can_be_overridden_by_env():
         assert s.memory_semantic_analysis_enabled is True
         assert s.enable_turn_plan_runtime is True
         assert s.foreground_model_call_budget_general == 4
+        assert s.turn_trace_slow_total_threshold_ms == 9000

@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from backend.services.turn_latency_trace import TurnLatencyTrace
+from backend.services.turn_latency_trace import PhaseTiming, TurnLatencyTrace
 
 
 def test_turn_latency_trace_snapshot_uses_safe_metadata_only():
@@ -31,6 +31,43 @@ def test_turn_latency_trace_mark_once_records_first_occurrence_only():
 
     phases = [phase["name"] for phase in trace.snapshot()["phases"]]
     assert phases == ["first_answer_delta"]
+
+
+def test_turn_latency_trace_diagnostic_summary_identifies_slow_phase():
+    trace = TurnLatencyTrace(run_id="run-1", conversation_id="conversation-1")
+    trace._phases = [
+        PhaseTiming("request_accepted", 0),
+        PhaseTiming("prompt_assembly_started", 100),
+        PhaseTiming("long_term_memory_started", 150),
+        PhaseTiming("long_term_memory_finished", 2300),
+        PhaseTiming("prompt_assembly_finished", 2400),
+        PhaseTiming("main_model_started", 2500),
+        PhaseTiming("first_answer_delta", 7200),
+        PhaseTiming("main_model_finished", 7800),
+        PhaseTiming("terminal_sent", 8200),
+    ]
+    trace.increment_model_call("main_answer")
+    trace.increment_tool_call("memory_query")
+
+    summary = trace.diagnostic_summary(
+        slow_total_threshold_ms=8000,
+        slow_first_token_threshold_ms=5000,
+        top_phase_count=2,
+    )
+
+    assert summary["time_to_first_answer_ms"] == 7200
+    assert summary["provider_first_token_ms"] == 4700
+    assert summary["phase_durations_ms"]["prompt_assembly"] == 2300
+    assert summary["phase_durations_ms"]["long_term_memory"] == 2150
+    assert summary["phase_durations_ms"]["main_model"] == 5300
+    assert summary["top_phase_durations"][0] == {
+        "name": "main_model",
+        "duration_ms": 5300,
+    }
+    assert summary["model_calls"] == {"main_answer": 1}
+    assert summary["tool_calls"] == {"memory_query": 1}
+    assert summary["is_slow"] is True
+    assert "total_elapsed" in summary["slow_reasons"]
 
 
 @pytest.mark.asyncio

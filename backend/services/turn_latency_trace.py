@@ -140,6 +140,99 @@ class TurnLatencyTrace:
             "cache_statuses": dict(sorted(self.counters.cache_statuses.items())),
         }
 
+    def phase_durations_ms(self) -> dict[str, int]:
+        """Return safe durations for completed phase start/end pairs."""
+
+        started_by_phase: dict[str, int] = {}
+        durations: dict[str, int] = {}
+        terminal_suffixes = ("_finished", "_failed", "_timeout")
+        for phase in self._phases:
+            if phase.name.endswith("_started"):
+                started_by_phase[phase.name.removesuffix("_started")] = phase.elapsed_ms
+                continue
+
+            for suffix in terminal_suffixes:
+                if not phase.name.endswith(suffix):
+                    continue
+                base_name = phase.name.removesuffix(suffix)
+                started_at = started_by_phase.get(base_name)
+                if started_at is None:
+                    break
+                durations[base_name] = max(0, phase.elapsed_ms - started_at)
+                break
+
+        return dict(sorted(durations.items()))
+
+    def milestone_elapsed_ms(self, name: str) -> int | None:
+        """Return the first elapsed time for one safe milestone."""
+
+        safe_name = _safe_key(name)
+        for phase in self._phases:
+            if phase.name == safe_name:
+                return phase.elapsed_ms
+        return None
+
+    def diagnostic_summary(
+        self,
+        *,
+        slow_total_threshold_ms: int,
+        slow_first_token_threshold_ms: int,
+        top_phase_count: int = 5,
+    ) -> dict[str, object]:
+        """Return a compact production-friendly latency summary."""
+
+        phase_durations = self.phase_durations_ms()
+        top_phase_durations = [
+            {"name": name, "duration_ms": duration_ms}
+            for name, duration_ms in sorted(
+                phase_durations.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[: max(1, top_phase_count)]
+        ]
+        first_answer_delta_ms = self.milestone_elapsed_ms("first_answer_delta")
+        main_model_started_ms = self.milestone_elapsed_ms("main_model_started")
+        terminal_sent_ms = self.milestone_elapsed_ms("terminal_sent")
+        elapsed_ms = terminal_sent_ms if terminal_sent_ms is not None else self.elapsed_ms()
+
+        provider_first_token_ms = None
+        if first_answer_delta_ms is not None and main_model_started_ms is not None:
+            provider_first_token_ms = max(0, first_answer_delta_ms - main_model_started_ms)
+
+        slow_reasons: list[str] = []
+        if elapsed_ms >= slow_total_threshold_ms:
+            slow_reasons.append("total_elapsed")
+        if (
+            first_answer_delta_ms is not None
+            and first_answer_delta_ms >= slow_first_token_threshold_ms
+        ):
+            slow_reasons.append("time_to_first_answer")
+        if (
+            provider_first_token_ms is not None
+            and provider_first_token_ms >= slow_first_token_threshold_ms
+        ):
+            slow_reasons.append("provider_first_token")
+        is_slow = bool(slow_reasons)
+        if is_slow and top_phase_durations:
+            slow_reasons.append(f"top_phase:{top_phase_durations[0]['name']}")
+
+        return {
+            "run_id": self.run_id,
+            "conversation_id": self.conversation_id,
+            "elapsed_ms": elapsed_ms,
+            "terminal_sent_ms": terminal_sent_ms,
+            "time_to_first_answer_ms": first_answer_delta_ms,
+            "main_model_started_ms": main_model_started_ms,
+            "provider_first_token_ms": provider_first_token_ms,
+            "phase_durations_ms": phase_durations,
+            "top_phase_durations": top_phase_durations,
+            "model_calls": dict(sorted(self.counters.model_calls.items())),
+            "tool_calls": dict(sorted(self.counters.tool_calls.items())),
+            "cache_statuses": dict(sorted(self.counters.cache_statuses.items())),
+            "is_slow": is_slow,
+            "slow_reasons": slow_reasons,
+        }
+
 
 def _safe_key(value: str) -> str:
     """Normalize a log key without preserving arbitrary raw content."""

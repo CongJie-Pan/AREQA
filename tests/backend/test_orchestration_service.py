@@ -409,6 +409,9 @@ async def test_execute_logs_safe_turn_latency_trace(
 
     assert events[-1] == "data: [DONE]\n\n"
     assert "orchestration.turn_trace_completed" in caplog.text
+    assert "orchestration.turn_trace_summary" in caplog.text
+    assert "time_to_first_answer_ms" in caplog.text
+    assert "phase_durations_ms" in caplog.text
     assert "prompt_assembly_started" in caplog.text
     assert "terminal_sent" in caplog.text
     assert "請解釋 dependency injection" not in caplog.text
