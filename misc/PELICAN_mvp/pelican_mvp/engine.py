@@ -25,7 +25,10 @@ class PelicanEngine:
         if mode is not None and mode not in {"rule", "llm"}:
             raise ValueError("mode must be 'rule' or 'llm'")
         self.store = StateStore(data_dir)
-        self.state = self.store.load_or_create(learner_id, mode or "rule", curriculum_id)
+        # Phase 1 introduces onboarding state persistence; the existing fixture-only
+        # engine remains explicitly bound to CNN until Phase 2 owns onboarding flow.
+        fixture_curriculum_id = curriculum_id or "cnn"
+        self.state = self.store.load_or_create(learner_id, mode or "rule", fixture_curriculum_id)
         if mode is not None:
             self.state.mode = mode
             self.store.save(self.state)
