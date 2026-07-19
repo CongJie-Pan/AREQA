@@ -167,11 +167,15 @@ class PostTurnService:
         context_results_obj: Any,
         use_rag: bool,
         use_web_search: bool,
+        trace: Any = None,
     ) -> List[str]:
         """Generate legacy-compatible suggestion and completion events."""
         if not self.suggestion_service:
             return []
         try:
+            if trace:
+                trace.mark_once("suggestions_started")
+                trace.increment_model_call("suggestions")
             reranked_results = (
                 context_results_obj.final_results
                 if use_rag and not use_web_search and context_results_obj
@@ -190,8 +194,12 @@ class PostTurnService:
             events.append(
                 f"event: done\ndata: {json.dumps({'suggestions': suggestions or []}, ensure_ascii=False)}\n\n"
             )
+            if trace:
+                trace.mark_once("suggestions_finished")
             return events
         except Exception as exc:
+            if trace:
+                trace.mark_once("suggestions_failed")
             logger.warning("orchestration.suggestions_failed reason=%s", type(exc).__name__)
             return [
                 f"event: done\ndata: {json.dumps({'suggestions': []}, ensure_ascii=False)}\n\n"

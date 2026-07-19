@@ -1,0 +1,240 @@
+[
+  {
+    "turn_plan_enabled": false,
+    "terminal_done": true,
+    "event_count": 13,
+    "completion_create_calls": 2,
+    "trace": {
+      "run_id": "acf81f38d7f84645bcbf94507536dff1",
+      "conversation_id": "trace-probe-False",
+      "elapsed_ms": 307,
+      "phases": [
+        {
+          "name": "request_accepted",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_started",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_finished",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_plan_general_chat",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_started",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_finished",
+          "elapsed_ms": 17,
+          "occurrence": 1
+        },
+        {
+          "name": "policy_classifier_started",
+          "elapsed_ms": 19,
+          "occurrence": 1
+        },
+        {
+          "name": "rag_skipped",
+          "elapsed_ms": 19,
+          "occurrence": 1
+        },
+        {
+          "name": "policy_classifier_finished",
+          "elapsed_ms": 21,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_started",
+          "elapsed_ms": 23,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_started",
+          "elapsed_ms": 305,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_finished",
+          "elapsed_ms": 305,
+          "occurrence": 1
+        },
+        {
+          "name": "long_term_memory_started",
+          "elapsed_ms": 305,
+          "occurrence": 1
+        },
+        {
+          "name": "long_term_memory_finished",
+          "elapsed_ms": 305,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_finished",
+          "elapsed_ms": 305,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_started",
+          "elapsed_ms": 306,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_finished",
+          "elapsed_ms": 306,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_started",
+          "elapsed_ms": 307,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_finished",
+          "elapsed_ms": 307,
+          "occurrence": 1
+        },
+        {
+          "name": "post_turn_queued",
+          "elapsed_ms": 307,
+          "occurrence": 1
+        },
+        {
+          "name": "terminal_sent",
+          "elapsed_ms": 307,
+          "occurrence": 1
+        }
+      ],
+      "model_calls": {
+        "main_answer": 1,
+        "policy_classifier": 1,
+        "suggestions": 1
+      },
+      "tool_calls": {
+        "memory_query": 1
+      },
+      "cache_statuses": {
+        "memory_query:not_applicable": 1
+      }
+    }
+  },
+  {
+    "turn_plan_enabled": true,
+    "terminal_done": true,
+    "event_count": 13,
+    "completion_create_calls": 1,
+    "trace": {
+      "run_id": "3375598f5afc474ba05a248e1b1482f3",
+      "conversation_id": "trace-probe-True",
+      "elapsed_ms": 335,
+      "phases": [
+        {
+          "name": "request_accepted",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_started",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_finished",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_plan_general_chat",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_started",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_finished",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "policy_classifier_skipped",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "rag_skipped",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_started",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_started",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_finished",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_finished",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_started",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_finished",
+          "elapsed_ms": 334,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_started",
+          "elapsed_ms": 335,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_finished",
+          "elapsed_ms": 335,
+          "occurrence": 1
+        },
+        {
+          "name": "post_turn_queued",
+          "elapsed_ms": 335,
+          "occurrence": 1
+        },
+        {
+          "name": "terminal_sent",
+          "elapsed_ms": 335,
+          "occurrence": 1
+        }
+      ],
+      "model_calls": {
+        "main_answer": 1,
+        "suggestions": 1
+      },
+      "tool_calls": {},
+      "cache_statuses": {}
+    }
+  }
+]

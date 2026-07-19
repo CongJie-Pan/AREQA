@@ -9,10 +9,12 @@ understanding as unknown.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import re
 from typing import Any, Awaitable, Callable, Dict, List
 
 
+logger = logging.getLogger(__name__)
 SnapshotLoader = Callable[..., Awaitable[str]]
 
 
@@ -48,6 +50,9 @@ class ConversationContextService:
         snapshot_loader: SnapshotLoader,
         store: Any,
         chat_avatar_key: str,
+        trace: Any = None,
+        allow_long_term_memory_query: bool | None = None,
+        memory_skip_reason: str = "",
     ) -> ConversationContext:
         """Build the final prompt from independently policy-checked sources.
 
@@ -109,15 +114,21 @@ class ConversationContextService:
             "只能就當前需求提供協助，不得將其改寫成你對使用者能力、情緒、人格或學習進度的判定。"
         )
 
+        if trace:
+            trace.mark("hot_memory_snapshot_started")
         hot_snapshot = await snapshot_loader(
             user_id,
             conversation_id=conversation_id,
             include_cross_conversation_focus=False,
         )
+        if trace:
+            trace.mark("hot_memory_snapshot_finished")
         if hot_snapshot:
             system_prompt += f"\n\n<working_memory>\n{hot_snapshot}\n</working_memory>"
 
         if hot_snapshot and store:
+            if trace:
+                trace.increment_tool_call("hot_memory", "not_applicable")
             hot_memory = await store.get_hot_memory(user_id)
             learner_state = hot_memory.get("current_learner_state", "")
             system_prompt += self._learner_state_instruction(learner_state)
@@ -127,7 +138,13 @@ class ConversationContextService:
 
         retrieved_memory = False
         memory_decision = self.memory_policy.evaluate(last_user_msg)
-        if memory_decision.allow_long_term_query:
+        can_query_long_term = memory_decision.allow_long_term_query
+        if allow_long_term_memory_query is not None:
+            can_query_long_term = can_query_long_term and allow_long_term_memory_query
+        if can_query_long_term:
+            if trace:
+                trace.mark("long_term_memory_started")
+                trace.increment_tool_call("memory_query", "not_applicable")
             memory_result = await self.memory_query_tool.execute(
                 user_id=user_id,
                 query=last_user_msg,
@@ -135,6 +152,8 @@ class ConversationContextService:
                 client=client,
                 model=settings.model_policy_classifier,
             )
+            if trace:
+                trace.mark("long_term_memory_finished")
             cold_context = memory_result.content["cold"]
             working_context = memory_result.content["working"]
             if cold_context:
@@ -142,6 +161,12 @@ class ConversationContextService:
                 retrieved_memory = True
             if working_context:
                 system_prompt += working_context
+        elif memory_decision.allow_long_term_query and allow_long_term_memory_query is False:
+            logger.info(
+                "orchestration.long_term_memory_skipped reason=%s memory_reason=%s",
+                memory_skip_reason or "turn_plan_denied",
+                memory_decision.reason_code,
+            )
 
         if force_think:
             system_prompt += "\n【重要指令】你的思考過程請務必簡明扼要（盡量控制在 500 字以內），不要把時間浪費在複述上下文，請把所有詳細的分析與長篇論述都放在 </think> 之後的正式回答中！"

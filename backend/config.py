@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     enable_tutor_shadow_routing: bool = False
     enable_agent_search_routing: bool = True
     agent_search_rollout_percentage: float = 100.0
+    enable_turn_plan_runtime: bool = False
+    foreground_model_call_budget_general: int = 2
+    foreground_model_call_budget_learning: int = 3
+    enable_policy_classifier_for_general_chat: bool = False
+    enable_sync_long_term_memory_for_general_chat: bool = False
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.

@@ -37,6 +37,8 @@ from services.query_policy_service import (
     classify_dialogue_policy_impl,
     parse_and_decompose_query_impl,
 )
+from services.turn_latency_trace import TurnLatencyTrace
+from services.turn_plan_service import TurnPlan, TurnPlanService
 from services.turn_intake_service import (
     TurnIntakeService,
     chat_avatar_key as _chat_avatar_key,
@@ -163,6 +165,7 @@ class OrchestrationService:
         )
         self.post_turn_service = PostTurnService(suggestion_service)
         self.turn_intake_service = TurnIntakeService(client)
+        self.turn_plan_service = TurnPlanService(self.memory_policy)
         self.web_search_tool = WebSearchTool()
         self.tool_registry = ToolRegistry()
         self.tool_registry.register(ToolDefinition(
@@ -232,6 +235,24 @@ class OrchestrationService:
         run_context = session.context
         sse_adapter = session.transport
         run_state = session.state
+        trace = TurnLatencyTrace(
+            run_id=run_context.run_id,
+            conversation_id=run_context.conversation_id,
+        )
+        trace.mark("request_accepted")
+        trace_logged = False
+
+        def log_trace() -> None:
+            nonlocal trace_logged
+            if trace_logged:
+                return
+            trace_logged = True
+            logger.info(
+                "orchestration.turn_trace_completed run_id=%s conversation_id=%s trace=%s",
+                run_context.run_id,
+                run_context.conversation_id,
+                trace.snapshot(),
+            )
 
         # Send a user-visible event before memory and policy work enters the
         # critical path. This keeps the transport responsive even when an
@@ -263,11 +284,13 @@ class OrchestrationService:
             3,
         ))
 
+        trace.mark("search_routing_started")
         if effective_search_mode == SearchMode.AUTO and has_attachments:
             # In AUTO mode the uploaded document is the primary source. Generic
             # search would answer from the filename/query instead of file content.
             search_decision = SearchDecision(False, SearchReason.ATTACHMENT_CONTEXT_PRIORITY)
         elif effective_search_mode == SearchMode.AUTO and auto_routing_enabled:
+            trace.increment_model_call("search_routing")
             search_decision = await self.tutor_agent.decide_search(
                 last_user_msg,
                 run_context,
@@ -283,6 +306,7 @@ class OrchestrationService:
             search_decision = self.tutor_agent.search_policy.evaluate(
                 last_user_msg, effective_search_mode
             )
+        trace.mark("search_routing_finished")
         use_web_search = search_decision.should_search
         if has_attachments and effective_search_mode == SearchMode.AUTO:
             use_rag = False
@@ -297,6 +321,25 @@ class OrchestrationService:
                 len(attachment_types),
                 attachment_types,
             )
+
+        turn_plan = self.turn_plan_service.plan(
+            user_message=last_user_msg,
+            use_rag=use_rag,
+            has_attachments=has_attachments,
+            search_decision=search_decision,
+            settings=settings,
+        )
+        turn_plan_enabled = bool(settings.enable_turn_plan_runtime)
+        trace.mark(f"turn_plan_{turn_plan.route.value.lower()}")
+        logger.info(
+            "orchestration.turn_plan_selected run_id=%s conversation_id=%s route=%s enabled=%s reason=%s max_foreground_model_calls=%s",
+            run_context.run_id,
+            run_context.conversation_id,
+            turn_plan.route.value,
+            turn_plan_enabled,
+            turn_plan.reason_code,
+            turn_plan.max_foreground_model_calls,
+        )
 
         if settings.enable_tutor_shadow_routing and not auto_routing_enabled and last_user_msg and not has_attachments:
             shadow_task = asyncio.create_task(
@@ -352,12 +395,14 @@ class OrchestrationService:
                     f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '📖 正在回顧你過去的學習紀錄'}, ensure_ascii=False)}\n\n",
                     run_context.run_id,
                 )
+            trace.mark("turn_intake_started")
             await self.turn_intake_service.process(
                 user_id=user_id,
                 conversation_id=conversation_id,
                 user_message=last_user_msg,
                 run_id=run_context.run_id,
             )
+            trace.mark("turn_intake_finished")
             if self.client:
                 yield sse_adapter.encode_legacy(
                     f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🎯 正在分析目前用戶的學習狀態'}, ensure_ascii=False)}\n\n",
@@ -370,6 +415,9 @@ class OrchestrationService:
                 f"data: {json.dumps({'choices': [{'delta': {'content': greeting_reply}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n",
                 run_context.run_id,
             )
+            trace.mark_once("first_answer_delta")
+            trace.mark("terminal_sent")
+            log_trace()
             yield sse_adapter.encode_legacy("data: [DONE]\n\n", run_context.run_id)
             return
 
@@ -380,15 +428,25 @@ class OrchestrationService:
 
         # Node 2 & 3: Parallel Tasks (HyDE & Policy)
         policy_task = None
-        if last_user_msg and self.client:
+        should_run_policy_classifier = (
+            last_user_msg
+            and self.client
+            and (not turn_plan_enabled or turn_plan.requires_policy_classifier)
+        )
+        if should_run_policy_classifier:
             from config import settings
+            trace.mark("policy_classifier_started")
+            trace.increment_model_call("policy_classifier")
             policy_task = asyncio.create_task(
                 classify_dialogue_policy(self.client, settings.model_policy_classifier, last_user_msg, messages)
             )
+        elif last_user_msg and self.client and turn_plan_enabled:
+            trace.mark("policy_classifier_skipped")
 
         rag_queries = []
         cached_results = None
         if use_rag and not use_web_search and self.rag and last_user_msg:
+            trace.mark("rag_started")
             from main import get_query_fingerprint, rag_cache
             fingerprint = get_query_fingerprint(last_user_msg)
             if rag_cache:
@@ -399,18 +457,23 @@ class OrchestrationService:
                     f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '🧩 正在拆解問題'}, ensure_ascii=False)}\n\n",
                     run_context.run_id,
                 )
+                trace.increment_model_call("query_decomposition")
                 rag_queries = await parse_and_decompose_query(last_user_msg, self.client)
             else:
                 rag_queries = None
+        else:
+            trace.mark("rag_skipped")
 
         # Node 4: RAG Retrieval
         context_results_obj = None
         if use_web_search and last_user_msg:
-            async for event in self._node_perplexity_search(last_user_msg, conversation_id, messages, run_state, user_id=user_id):
+            async for event in self._node_perplexity_search(last_user_msg, conversation_id, messages, run_state, user_id=user_id, trace=trace):
                 if event.startswith("event: results_obj"):
                     context_results_obj = run_state.context_results
                     continue
                 if event == "event: REFUSED\n\n":
+                    trace.mark("terminal_sent")
+                    log_trace()
                     yield sse_adapter.encode_legacy("data: [DONE]\n\n", run_context.run_id)
                     return
                 yield sse_adapter.encode_legacy(event, run_context.run_id)
@@ -420,6 +483,8 @@ class OrchestrationService:
                     context_results_obj = run_state.context_results
                     continue
                 if event == "event: REFUSED\n\n":
+                    trace.mark("terminal_sent")
+                    log_trace()
                     yield sse_adapter.encode_legacy("data: [DONE]\n\n", run_context.run_id)
                     return
                 yield sse_adapter.encode_legacy(event, run_context.run_id)
@@ -429,6 +494,7 @@ class OrchestrationService:
         if policy_task:
             try:
                 policy = await asyncio.wait_for(policy_task, timeout=1.5)
+                trace.mark("policy_classifier_finished")
                 logger.info(
                     "orchestration.dialogue_policy_selected conversation_id=%s policy=%s",
                     conversation_id,
@@ -436,6 +502,7 @@ class OrchestrationService:
                 )
             except asyncio.TimeoutError:
                 policy_task.cancel()
+                trace.mark("policy_classifier_timeout")
                 logger.warning(
                     "orchestration.dialogue_policy_timeout conversation_id=%s fallback=NORMAL",
                     conversation_id,
@@ -450,6 +517,7 @@ class OrchestrationService:
             run_context.run_id,
         )
 
+        trace.mark("prompt_assembly_started")
         final_messages = await self._node_prompt_assembly(
             user_id,
             conversation_id,
@@ -460,7 +528,10 @@ class OrchestrationService:
             context_results_obj,
             last_user_msg,
             context_prompt=run_state.context_prompt,
+            trace=trace,
+            turn_plan=turn_plan if turn_plan_enabled else None,
         )
+        trace.mark("prompt_assembly_finished")
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
         if has_attachments:
             final_messages = self._add_attachment_grounding_instruction(final_messages)
@@ -481,7 +552,7 @@ class OrchestrationService:
 
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
-        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget):
+        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace):
             if event.startswith("event: accumulator\n"):
                 try:
                     data_line = next(line for line in event.splitlines() if line.startswith("data: "))
@@ -492,7 +563,7 @@ class OrchestrationService:
             yield sse_adapter.encode_legacy(event, run_context.run_id)
 
         # Node 7: Post-generation
-        async for event in self._node_post_generation(last_user_msg, answer_content_accumulator, context_results_obj, use_rag, use_web_search):
+        async for event in self._node_post_generation(last_user_msg, answer_content_accumulator, context_results_obj, use_rag, use_web_search, trace=trace):
             yield sse_adapter.encode_legacy(event, run_context.run_id)
 
         if last_user_msg and self.client:
@@ -513,7 +584,10 @@ class OrchestrationService:
                 run_context.run_id,
                 conversation_id,
             )
+            trace.mark("post_turn_queued")
             
+        trace.mark("terminal_sent")
+        log_trace()
         yield sse_adapter.encode_legacy("data: [DONE]\n\n", run_context.run_id)
 
 
@@ -674,7 +748,7 @@ class OrchestrationService:
             run_state.context_prompt = context_prompt
             yield "event: results_obj\n\n"
 
-    async def _node_perplexity_search(self, last_user_msg: str, conversation_id: str, messages: List[Dict[str, str]] = None, run_state: Optional[ConversationRunState] = None, user_id: str = "") -> AsyncGenerator[str, None]:
+    async def _node_perplexity_search(self, last_user_msg: str, conversation_id: str, messages: List[Dict[str, str]] = None, run_state: Optional[ConversationRunState] = None, user_id: str = "", trace: Optional[TurnLatencyTrace] = None) -> AsyncGenerator[str, None]:
         """
         Execute the web search node using Perplexity or a configured web search tool.
 
@@ -695,6 +769,8 @@ class OrchestrationService:
             conversation_id,
             user_id,
         )
+        if trace:
+            trace.mark("web_search_started")
         yield f"event: status\ndata: {json.dumps({'status': 'searching_dense', 'message': '🌐 網路檢索中...'}, ensure_ascii=False)}\n\n"
 
         
@@ -713,6 +789,8 @@ class OrchestrationService:
         enable_query_rewrite = os.environ.get("ENABLE_WEB_QUERY_REWRITE", "true").lower() in {"1", "true", "yes", "on"}
         if enable_query_rewrite and self.client and messages:
             try:
+                if trace:
+                    trace.increment_model_call("web_query_rewrite")
                 history_str = "\n".join([f'{m["role"]}: {m["content"]}' for m in messages[-4:]])
                 rewrite_prompt = f"""請根據以下對話歷史，將最後一個使用者的提問重寫為適合在搜尋引擎上查詢的『獨立關鍵字』（Standalone Query）。同時請分析該問題的「複雜度」，並決定需要參考的文獻數量（3到20篇之間）。
 請嚴格以 JSON 格式回傳，格式如下：
@@ -768,6 +846,8 @@ class OrchestrationService:
                 },
                 run_state.tool_budget,
             )
+            if trace:
+                trace.increment_tool_call("web_search", tool_result.cache_status)
         except Exception as exc:
             logger.exception(
                 "orchestration.web_search_failed conversation_id=%s reason=%s",
@@ -801,9 +881,11 @@ class OrchestrationService:
             conversation_id,
             int((time.time() - node_start) * 1000),
         )
+        if trace:
+            trace.mark("web_search_finished")
         yield "event: results_obj\n\n"
 
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "") -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None) -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -837,6 +919,17 @@ class OrchestrationService:
             snapshot_loader=get_hot_memory_snapshot,
             store=get_global_store(),
             chat_avatar_key=_chat_avatar_key(conversation_id),
+            trace=trace,
+            allow_long_term_memory_query=(
+                turn_plan.allow_long_term_memory_query
+                if turn_plan is not None
+                else None
+            ),
+            memory_skip_reason=(
+                turn_plan.reason_code
+                if turn_plan is not None
+                else ""
+            ),
         )
         logger.info(
             "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s",
@@ -847,7 +940,7 @@ class OrchestrationService:
         return context.messages
 
 
-    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None) -> AsyncGenerator[str, None]:
+    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None, trace: Optional[TurnLatencyTrace] = None) -> AsyncGenerator[str, None]:
         """
         Execute the main LLM generation stream, handling tool calls and yielding tokens.
 
@@ -879,10 +972,11 @@ class OrchestrationService:
             repetition_penalty=repetition_penalty,
             request=request,
             tool_budget=tool_budget,
+            trace=trace,
         ):
             yield event
 
-    async def _node_post_generation(self, last_user_msg: str, answer_content_accumulator: str, context_results_obj: Any, use_rag: bool, use_web_search: bool) -> AsyncGenerator[str, None]:
+    async def _node_post_generation(self, last_user_msg: str, answer_content_accumulator: str, context_results_obj: Any, use_rag: bool, use_web_search: bool, trace: Optional[TurnLatencyTrace] = None) -> AsyncGenerator[str, None]:
         """
         Perform post-generation tasks such as generating follow-up suggestions.
 
@@ -902,6 +996,7 @@ class OrchestrationService:
             context_results_obj=context_results_obj,
             use_rag=use_rag,
             use_web_search=use_web_search,
+            trace=trace,
         )
         for event in events:
             yield event

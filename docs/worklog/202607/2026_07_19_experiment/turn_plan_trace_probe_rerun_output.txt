@@ -1,0 +1,253 @@
+Loaded environment variables from .env
+2026-07-19 04:46:09 [INFO] backend.services.orchestration_service: orchestration.context_prepared conversation_id=trace-probe-rerun-False learner_understanding=unknown retrieved_memory=False
+2026-07-19 04:46:09 [INFO] services.conversation_stream_service: orchestration.stream_started conversation_id=trace-probe-rerun-False model=google/gemini-3.1-flash-lite attachment_parser=False
+2026-07-19 04:46:09 [INFO] services.conversation_stream_service: orchestration.stream_completed conversation_id=trace-probe-rerun-False elapsed_ms=0
+2026-07-19 04:46:09 [INFO] backend.services.orchestration_service: orchestration.post_turn_queued run_id=e61ee0cc002946c2ac60c1ce3b706253 conversation_id=trace-probe-rerun-False
+2026-07-19 04:46:09 [INFO] backend.services.orchestration_service: orchestration.turn_trace_completed run_id=e61ee0cc002946c2ac60c1ce3b706253 conversation_id=trace-probe-rerun-False trace={'run_id': 'e61ee0cc002946c2ac60c1ce3b706253', 'conversation_id': 'trace-probe-rerun-False', 'elapsed_ms': 243, 'phases': [{'name': 'request_accepted', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_started', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_finished', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'turn_plan_general_chat', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'turn_intake_started', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'turn_intake_finished', 'elapsed_ms': 6, 'occurrence': 1}, {'name': 'policy_classifier_started', 'elapsed_ms': 6, 'occurrence': 1}, {'name': 'rag_skipped', 'elapsed_ms': 6, 'occurrence': 1}, {'name': 'policy_classifier_finished', 'elapsed_ms': 7, 'occurrence': 1}, {'name': 'prompt_assembly_started', 'elapsed_ms': 7, 'occurrence': 1}, {'name': 'hot_memory_snapshot_started', 'elapsed_ms': 241, 'occurrence': 1}, {'name': 'hot_memory_snapshot_finished', 'elapsed_ms': 241, 'occurrence': 1}, {'name': 'long_term_memory_started', 'elapsed_ms': 241, 'occurrence': 1}, {'name': 'long_term_memory_finished', 'elapsed_ms': 241, 'occurrence': 1}, {'name': 'prompt_assembly_finished', 'elapsed_ms': 241, 'occurrence': 1}, {'name': 'main_model_started', 'elapsed_ms': 242, 'occurrence': 1}, {'name': 'main_model_finished', 'elapsed_ms': 242, 'occurrence': 1}, {'name': 'suggestions_started', 'elapsed_ms': 243, 'occurrence': 1}, {'name': 'suggestions_finished', 'elapsed_ms': 243, 'occurrence': 1}, {'name': 'post_turn_queued', 'elapsed_ms': 243, 'occurrence': 1}, {'name': 'terminal_sent', 'elapsed_ms': 243, 'occurrence': 1}], 'model_calls': {'main_answer': 1, 'policy_classifier': 1, 'suggestions': 1}, 'tool_calls': {'memory_query': 1}, 'cache_statuses': {'memory_query:not_applicable': 1}}
+2026-07-19 04:46:09 [INFO] backend.services.orchestration_service: orchestration.turn_plan_selected run_id=fa29045919bd42cf89e1a8eacf190935 conversation_id=trace-probe-rerun-True route=GENERAL_CHAT enabled=True reason=GENERAL_CHAT max_foreground_model_calls=2
+2026-07-19 04:46:09 [INFO] services.conversation_context_service: orchestration.long_term_memory_skipped reason=GENERAL_CHAT memory_reason=SUBSTANTIVE_QUERY
+2026-07-19 04:46:09 [INFO] backend.services.orchestration_service: orchestration.context_prepared conversation_id=trace-probe-rerun-True learner_understanding=unknown retrieved_memory=False
+2026-07-19 04:46:09 [INFO] services.conversation_stream_service: orchestration.stream_started conversation_id=trace-probe-rerun-True model=google/gemini-3.1-flash-lite attachment_parser=False
+2026-07-19 04:46:09 [INFO] services.conversation_stream_service: orchestration.stream_completed conversation_id=trace-probe-rerun-True elapsed_ms=56
+2026-07-19 04:46:09 [INFO] backend.services.orchestration_service: orchestration.post_turn_queued run_id=fa29045919bd42cf89e1a8eacf190935 conversation_id=trace-probe-rerun-True
+2026-07-19 04:46:09 [INFO] backend.services.orchestration_service: orchestration.turn_trace_completed run_id=fa29045919bd42cf89e1a8eacf190935 conversation_id=trace-probe-rerun-True trace={'run_id': 'fa29045919bd42cf89e1a8eacf190935', 'conversation_id': 'trace-probe-rerun-True', 'elapsed_ms': 60, 'phases': [{'name': 'request_accepted', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_started', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_finished', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'turn_plan_general_chat', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'turn_intake_started', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'turn_intake_finished', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'policy_classifier_skipped', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'rag_skipped', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'prompt_assembly_started', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'hot_memory_snapshot_started', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'hot_memory_snapshot_finished', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'prompt_assembly_finished', 'elapsed_ms': 2, 'occurrence': 1}, {'name': 'main_model_started', 'elapsed_ms': 2, 'occurrence': 1}, {'name': 'main_model_finished', 'elapsed_ms': 59, 'occurrence': 1}, {'name': 'suggestions_started', 'elapsed_ms': 59, 'occurrence': 1}, {'name': 'suggestions_finished', 'elapsed_ms': 59, 'occurrence': 1}, {'name': 'post_turn_queued', 'elapsed_ms': 60, 'occurrence': 1}, {'name': 'terminal_sent', 'elapsed_ms': 60, 'occurrence': 1}], 'model_calls': {'main_answer': 1, 'suggestions': 1}, 'tool_calls': {}, 'cache_statuses': {}}
+[
+  {
+    "turn_plan_enabled": false,
+    "terminal_done": true,
+    "event_count": 13,
+    "completion_create_calls": 2,
+    "trace": {
+      "run_id": "e61ee0cc002946c2ac60c1ce3b706253",
+      "conversation_id": "trace-probe-rerun-False",
+      "elapsed_ms": 243,
+      "phases": [
+        {
+          "name": "request_accepted",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_started",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_finished",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_plan_general_chat",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_started",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_finished",
+          "elapsed_ms": 6,
+          "occurrence": 1
+        },
+        {
+          "name": "policy_classifier_started",
+          "elapsed_ms": 6,
+          "occurrence": 1
+        },
+        {
+          "name": "rag_skipped",
+          "elapsed_ms": 6,
+          "occurrence": 1
+        },
+        {
+          "name": "policy_classifier_finished",
+          "elapsed_ms": 7,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_started",
+          "elapsed_ms": 7,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_started",
+          "elapsed_ms": 241,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_finished",
+          "elapsed_ms": 241,
+          "occurrence": 1
+        },
+        {
+          "name": "long_term_memory_started",
+          "elapsed_ms": 241,
+          "occurrence": 1
+        },
+        {
+          "name": "long_term_memory_finished",
+          "elapsed_ms": 241,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_finished",
+          "elapsed_ms": 241,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_started",
+          "elapsed_ms": 242,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_finished",
+          "elapsed_ms": 242,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_started",
+          "elapsed_ms": 243,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_finished",
+          "elapsed_ms": 243,
+          "occurrence": 1
+        },
+        {
+          "name": "post_turn_queued",
+          "elapsed_ms": 243,
+          "occurrence": 1
+        },
+        {
+          "name": "terminal_sent",
+          "elapsed_ms": 243,
+          "occurrence": 1
+        }
+      ],
+      "model_calls": {
+        "main_answer": 1,
+        "policy_classifier": 1,
+        "suggestions": 1
+      },
+      "tool_calls": {
+        "memory_query": 1
+      },
+      "cache_statuses": {
+        "memory_query:not_applicable": 1
+      }
+    }
+  },
+  {
+    "turn_plan_enabled": true,
+    "terminal_done": true,
+    "event_count": 13,
+    "completion_create_calls": 1,
+    "trace": {
+      "run_id": "fa29045919bd42cf89e1a8eacf190935",
+      "conversation_id": "trace-probe-rerun-True",
+      "elapsed_ms": 60,
+      "phases": [
+        {
+          "name": "request_accepted",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_started",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "search_routing_finished",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_plan_general_chat",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_started",
+          "elapsed_ms": 0,
+          "occurrence": 1
+        },
+        {
+          "name": "turn_intake_finished",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "policy_classifier_skipped",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "rag_skipped",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_started",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_started",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "hot_memory_snapshot_finished",
+          "elapsed_ms": 1,
+          "occurrence": 1
+        },
+        {
+          "name": "prompt_assembly_finished",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_started",
+          "elapsed_ms": 2,
+          "occurrence": 1
+        },
+        {
+          "name": "main_model_finished",
+          "elapsed_ms": 59,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_started",
+          "elapsed_ms": 59,
+          "occurrence": 1
+        },
+        {
+          "name": "suggestions_finished",
+          "elapsed_ms": 59,
+          "occurrence": 1
+        },
+        {
+          "name": "post_turn_queued",
+          "elapsed_ms": 60,
+          "occurrence": 1
+        },
+        {
+          "name": "terminal_sent",
+          "elapsed_ms": 60,
+          "occurrence": 1
+        }
+      ],
+      "model_calls": {
+        "main_answer": 1,
+        "suggestions": 1
+      },
+      "tool_calls": {},
+      "cache_statuses": {}
+    }
+  }
+]

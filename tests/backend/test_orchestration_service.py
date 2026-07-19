@@ -377,6 +377,121 @@ async def test_execute_passes_accumulated_answer_to_suggestions(
 
 
 @pytest.mark.asyncio
+async def test_execute_logs_safe_turn_latency_trace(
+    mock_router, mock_rag, mock_suggestion, caplog
+):
+    caplog.set_level(logging.INFO)
+    service = OrchestrationService(mock_router, mock_rag, None, None)
+    request = MagicMock()
+
+    async def llm_stream(*args, **kwargs):
+        yield 'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "請解釋 dependency injection"}],
+            "trace-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    assert events[-1] == "data: [DONE]\n\n"
+    assert "orchestration.turn_trace_completed" in caplog.text
+    assert "prompt_assembly_started" in caplog.text
+    assert "terminal_sent" in caplog.text
+    assert "請解釋 dependency injection" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_turn_plan_enabled_skips_general_policy_classifier(
+    mock_router, mock_rag, mock_client, monkeypatch
+):
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_policy_classifier_for_general_chat", False)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    request = MagicMock()
+
+    async def llm_stream(*args, **kwargs):
+        yield 'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock) as mock_policy, \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]) as prompt_assembly:
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "這部電影的節奏很奇怪"}],
+            "turn-plan-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    mock_policy.assert_not_awaited()
+    assert prompt_assembly.await_args.kwargs["turn_plan"].route.value == "GENERAL_CHAT"
+    assert "data: [DONE]" in events[-1]
+
+
+@pytest.mark.asyncio
+async def test_turn_plan_disabled_keeps_legacy_policy_classifier(
+    mock_router, mock_rag, mock_client, monkeypatch
+):
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", False)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    request = MagicMock()
+
+    async def llm_stream(*args, **kwargs):
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL") as mock_policy, \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]) as prompt_assembly:
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": "這部電影的節奏很奇怪"}],
+            "legacy-turn-plan-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    mock_policy.assert_awaited_once()
+    assert prompt_assembly.await_args.kwargs["turn_plan"] is None
+
+
+@pytest.mark.asyncio
 async def test_prompt_assembly_keeps_concurrent_run_contexts_isolated(
     mock_router, mock_rag, mock_suggestion, mock_client
 ):

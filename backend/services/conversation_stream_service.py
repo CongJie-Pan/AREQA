@@ -52,6 +52,7 @@ class ConversationStreamService:
         repetition_penalty: float,
         request: Any,
         tool_budget: Any = None,
+        trace: Any = None,
     ) -> AsyncGenerator[str, None]:
         """Yield legacy-compatible SSE chunks and a final accumulator event."""
 
@@ -107,6 +108,9 @@ class ConversationStreamService:
             has_pdf,
         )
         try:
+            if trace:
+                trace.increment_model_call("main_answer")
+                trace.mark_once("main_model_started")
             generation = asyncio.create_task(
                 self.client.chat.completions.create(
                     model=target_model,
@@ -150,10 +154,14 @@ class ConversationStreamService:
                             reason,
                         )
                 if content:
+                    if trace:
+                        trace.mark_once("first_answer_delta")
                     accumulator += content
                     yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
                 await asyncio.sleep(0)
         except Exception as exc:
+            if trace:
+                trace.mark_once("main_model_failed")
             logger.exception("orchestration.stream_failed reason=%s", type(exc).__name__)
             error_message = "**[API Error]** 生成回答時發生錯誤，請稍後重試。"
             yield f"data: {json.dumps({'choices': [{'delta': {'content': error_message}, 'index': 0}]}, ensure_ascii=False)}\n\n"
@@ -185,6 +193,8 @@ class ConversationStreamService:
             conversation_id,
             int((time.time() - started_at) * 1000),
         )
+        if trace:
+            trace.mark_once("main_model_finished")
 
         if tool_call_name == "send_epistolary_letter" and tool_call_args:
             try:
