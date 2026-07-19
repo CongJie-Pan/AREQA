@@ -145,7 +145,7 @@ def set_mode(req: ModeRequest) -> dict[str, Any]:
             return _serialize_response(engine, msg)
         except ValueError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/mode", reason_code="validation_error")
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail="Validation error")
         except StateStoreError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/mode", reason_code="state_store_error")
             raise HTTPException(status_code=400, detail="Invalid session state")

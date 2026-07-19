@@ -1,6 +1,8 @@
 .env
 data/*.json
+data/tmp*
 !data/.gitkeep
 __pycache__/
 .pytest_cache/
 .venv/
+*.tmp
