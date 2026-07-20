@@ -23,6 +23,12 @@
 
 ```bash
 cd /workspaces/AREQA/misc/PELICAN_mvp
+
+# 創建.venv
+python -m venv .venv
+
+# 開啟 .venv
+
 pip install -r requirements.txt
 python -m pelican_mvp
 ```
