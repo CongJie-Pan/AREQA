@@ -1,5 +1,7 @@
 export type DateTimeInput = string | number | Date;
 
+export const APP_TIME_ZONE = 'Asia/Taipei';
+
 /**
  * Parse server timestamps consistently. ISO strings without an explicit offset
  * are treated as UTC because backend timestamps represent UTC instants.
@@ -17,11 +19,7 @@ export function parseServerDate(value: DateTimeInput): Date {
 
 /** Return the timezone configured by the user's browser. */
 export function getUserTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  } catch {
-    return 'UTC';
-  }
+  return APP_TIME_ZONE;
 }
 
 export function formatUserDate(

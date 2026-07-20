@@ -251,20 +251,25 @@ export function UserAuthUI() {
         onCancel={() => setIsFeedbackModalOpen(false)}
         okText="送出"
         cancelText="取消"
+        centered
         confirmLoading={isSubmittingFeedback}
         okButtonProps={{
           disabled: !feedbackText.trim(),
           style: { backgroundColor: '#d8a25c', color: 'black' }
         }}
       >
-        <Input.TextArea
-          value={feedbackText}
-          onChange={e => setFeedbackText(e.target.value)}
-          placeholder="請輸入你的問題、建議或遇到的狀況..."
-          autoSize={{ minRows: 4, maxRows: 8 }}
-          maxLength={2000}
-          showCount
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <Input.TextArea
+            value={feedbackText}
+            onChange={e => setFeedbackText(e.target.value)}
+            placeholder="請輸入你的問題、建議或遇到的狀況..."
+            autoSize={{ minRows: 4, maxRows: 8 }}
+            maxLength={2000}
+          />
+          <div style={{ textAlign: 'right', color: 'rgba(255, 255, 255, 0.45)', fontSize: '12px', lineHeight: '16px' }}>
+            {feedbackText.length} / 2000
+          </div>
+        </div>
       </Modal>
     </>
   );

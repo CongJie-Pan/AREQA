@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUserDate, parseServerDate } from '@/utils/dateTime';
+import { APP_TIME_ZONE, formatUserDate, getUserTimeZone, parseServerDate } from '@/utils/dateTime';
 
 describe('dateTime utilities', () => {
   it('treats timezone-less server timestamps as UTC', () => {
@@ -11,5 +11,13 @@ describe('dateTime utilities', () => {
 
     expect(formatUserDate(timestamp, { timeZone: 'Asia/Taipei', dateStyle: 'short' })).toBe('2026/7/12');
     expect(formatUserDate(timestamp, { timeZone: 'America/Los_Angeles', dateStyle: 'short' })).toBe('2026/7/11');
+  });
+
+  it('uses Taipei time as the app default timezone', () => {
+    const timestamp = '2026-07-11T16:30:00Z';
+
+    expect(APP_TIME_ZONE).toBe('Asia/Taipei');
+    expect(getUserTimeZone()).toBe('Asia/Taipei');
+    expect(formatUserDate(timestamp, { dateStyle: 'short' })).toBe('2026/7/12');
   });
 });

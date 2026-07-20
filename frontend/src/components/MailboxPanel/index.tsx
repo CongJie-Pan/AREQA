@@ -3,6 +3,7 @@ import { useMailboxStore, Mail } from '@/store/mailbox';
 import { useStyles } from './styles';
 import { X, Mail as MailIcon, Send, Inbox, ArrowLeft } from 'lucide-react';
 import { Input, Button, message } from 'antd';
+import { formatUserDate } from '@/utils/dateTime';
 
 export interface MailboxPanelProps {
   onClose?: () => void;
@@ -12,11 +13,12 @@ export interface MailboxPanelProps {
 const formatMailDate = (timestamp: number) => {
   const date = new Date(timestamp * 1000);
   const now = new Date();
-  const isToday = date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  const dateKeyOptions: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'numeric', day: 'numeric' };
+  const isToday = formatUserDate(date, dateKeyOptions) === formatUserDate(now, dateKeyOptions);
   if (isToday) {
-    return date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return formatUserDate(date, { hour: '2-digit', minute: '2-digit', hour12: false });
   }
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
+  return formatUserDate(date, { month: 'numeric', day: 'numeric' });
 };
 
 export const MailboxPanel: React.FC<MailboxPanelProps> = ({ onClose }) => {
@@ -165,7 +167,14 @@ export const MailboxPanel: React.FC<MailboxPanelProps> = ({ onClose }) => {
                   <div className={styles.messageMeta}>
                     <span>{isUser ? '我' : mail.sender}</span>
                     <span>•</span>
-                    <span>{new Date(mail.timestamp * 1000).toLocaleString('zh-TW')}</span>
+                    <span>{formatUserDate(mail.timestamp * 1000, {
+                      year: 'numeric',
+                      month: 'numeric',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false
+                    })}</span>
                   </div>
                   <div className={styles.messageBubble}>
                     {mail.content}
