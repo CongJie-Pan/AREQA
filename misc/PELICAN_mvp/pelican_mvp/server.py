@@ -68,6 +68,19 @@ def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
             "phase": engine.state.phase,
             "plan_source": engine.state.plan_source.value,
             "topic": engine.state.learning_plan.topic if engine.state.learning_plan else None,
+            "intake_turns": engine.state.intake_profile.intake_turns,
+            "intent": engine.state.intake_profile.intent.value,
+            "level_hint": engine.state.intake_profile.level_hint,
+            "domain_category": (
+                engine.state.learning_plan.domain_category
+                if engine.state.learning_plan and engine.state.learning_plan.domain_category
+                else engine.state.intake_profile.domain_category
+            ),
+            "skill_id": engine.state.learning_plan.skill_id if engine.state.learning_plan else engine.state.intake_profile.skill_id,
+            "skill_version": engine.state.learning_plan.skill_version if engine.state.learning_plan else engine.state.intake_profile.skill_version,
+            "skill_lifecycle": engine.state.learning_plan.skill_lifecycle if engine.state.learning_plan else engine.state.intake_profile.skill_lifecycle,
+            "model_route": engine.state.learning_plan.model_route if engine.state.learning_plan else engine.state.intake_profile.model_route,
+            "latest_signal": engine.state.direct_evidence[-1].signal if engine.state.direct_evidence else None,
             "edf_state": engine.state.edf_snapshot.learner_state if engine.state.edf_snapshot else "unknown",
             "edf_policy": engine.state.edf_snapshot.pedagogical_strategy if engine.state.edf_snapshot else "unknown",
             "evidence_count": engine.state.memory_snapshot.evidence_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,

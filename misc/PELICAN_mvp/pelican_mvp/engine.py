@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from .curriculum import CURRICULUMS
-from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node
+from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node, remediation_signal
 from .llm import LlmAdapter, LlmUnavailable
 from .models import (
     KnowledgeStatus,
+    LearnerIntakeProfile,
+    LearningIntent,
     PlanSource,
     ResponseCategory,
     SessionState,
@@ -18,7 +20,7 @@ from .models import (
 )
 from typing import Any
 from .state_store import StateStore
-from .tutoring import rule_tutor_message, select_strategy
+from .tutoring import rule_tutor_message, select_strategy, strategy_for_remediation_signal
 from .planner import LearningPlanner
 from .edf_simulator import EdfSimulator
 from .learning_memory import LearningMemorySimulator
@@ -60,7 +62,25 @@ class PelicanEngine:
 
     def start(self) -> TurnOutcome:
         if self.state.phase == "onboarding":
-            log_event("pelican_intake_received", learner_id=self.state.learner_id, phase="onboarding")
+            log_event("pelican_intake_progress", learner_id=self.state.learner_id, phase="onboarding", intake_decision="topic")
+            if self.state.intake_profile.intake_turns == 1:
+                return TurnOutcome(
+                    "你這次比較想怎麼學？請選一個方向回答：理解概念、程式實作、做小專案、準備考試/面試，或先解釋背景。",
+                    None,
+                    None,
+                    None,
+                    (),
+                    "恢復學習目標收集",
+                )
+            if self.state.intake_profile.intake_turns == 2:
+                return TurnOutcome(
+                    "你目前的基礎大概在哪裡？可以回答：完全沒有基礎、學過一點、能做簡單題、或已經有實作經驗。",
+                    None,
+                    None,
+                    None,
+                    (),
+                    "恢復程度與先備經驗收集",
+                )
             return TurnOutcome(
                 "歡迎！你想學什麼？（例如：我想了解二元搜尋法、我的 Python 字典一直用錯...）",
                 None, None, None, (), "開始學習意圖收集"
@@ -85,9 +105,91 @@ class PelicanEngine:
         return self._handle_tutoring(answer)
 
     def _handle_onboarding(self, answer: str) -> TurnOutcome:
-        log_event("pelican_intake_received", learner_id=self.state.learner_id, phase="onboarding")
-        plan = self.planner.create_plan(answer)
+        intake = self.state.intake_profile
+        if intake.intake_turns == 0:
+            from .domain_catalog import resolve_domain_category
+
+            resolution = resolve_domain_category(answer)
+            self.state.intake_profile = LearnerIntakeProfile(
+                topic=answer,
+                goal_summary=f"學習 {answer}",
+                intent=LearningIntent.UNKNOWN,
+                level_hint="unknown",
+                domain_category=resolution.category.value,
+                model_route=resolution.route_slug,
+                intake_turns=1,
+            )
+            self.store.save(self.state)
+            log_event(
+                "pelican_intake_progress",
+                learner_id=self.state.learner_id,
+                phase="onboarding",
+                domain_category=resolution.category.value,
+                route=resolution.route_slug,
+                intake_decision="goal",
+                reason_code=resolution.reason_code,
+            )
+            legal_note = "我可以協助法律知識教育，但不能提供個案法律諮詢。\n" if "法律" in answer else ""
+            return TurnOutcome(
+                legal_note + "你這次比較想怎麼學？請選一個方向回答：理解概念、程式實作、做小專案、準備考試/面試，或先解釋背景。",
+                None,
+                None,
+                None,
+                (),
+                "收集學習目標與意圖",
+            )
+        if intake.intake_turns == 1:
+            intent = _infer_learning_intent(answer)
+            self.state.intake_profile = LearnerIntakeProfile(
+                topic=intake.topic,
+                goal_summary=answer,
+                intent=intent,
+                level_hint=intake.level_hint,
+                domain_category=intake.domain_category,
+                model_route=intake.model_route,
+                intake_turns=2,
+            )
+            self.store.save(self.state)
+            log_event(
+                "pelican_intake_progress",
+                learner_id=self.state.learner_id,
+                phase="onboarding",
+                domain_category=intake.domain_category,
+                intake_decision="level",
+            )
+            return TurnOutcome(
+                "你目前的基礎大概在哪裡？可以回答：完全沒有基礎、學過一點、能做簡單題、或已經有實作經驗。",
+                None,
+                None,
+                None,
+                (),
+                "收集程度與先備經驗",
+            )
+
+        level_hint = _infer_level_hint(answer)
+        profile = LearnerIntakeProfile(
+            topic=intake.topic,
+            goal_summary=intake.goal_summary,
+            intent=intake.intent,
+            level_hint=level_hint,
+            domain_category=intake.domain_category,
+            model_route=intake.model_route,
+            intake_turns=3,
+        )
+        plan = self.planner.create_plan_for_profile(profile)
         self.state.learning_plan = plan
+        self.state.intake_profile = LearnerIntakeProfile(
+            topic=profile.topic,
+            goal_summary=profile.goal_summary,
+            intent=profile.intent,
+            level_hint=profile.level_hint,
+            domain_category=plan.domain_category or profile.domain_category,
+            skill_id=plan.skill_id,
+            skill_version=plan.skill_version,
+            skill_lifecycle=plan.skill_lifecycle,
+            model_route=plan.model_route or profile.model_route,
+            intake_turns=3,
+        )
         self.state.phase = "diagnosis"
         self.store.save(self.state)
         self.curriculum = self._resolve_curriculum()
@@ -99,7 +201,7 @@ class PelicanEngine:
         )
         outcome = self._present_next_diagnostic()
         topic = plan.topic if plan else "這個主題"
-        friendly_prefix = f"太好了，我們來一起學習「{topic}」吧！\n為了能更好地根據你目前的程度來安排教學，我會先問你一個前測問題。如果你還不知道答案，完全沒關係，直接告訴我「不知道」就好：\n\n"
+        friendly_prefix = f"太好了，我們來一起學習「{topic}」吧！\n我會先用一個低負荷的校準問題確認起點。如果不知道，直接說不知道就好：\n\n"
         return TurnOutcome(
             friendly_prefix + outcome.message,
             outcome.node_id,
@@ -178,7 +280,14 @@ class PelicanEngine:
 
     def _handle_diagnostic(self, answer: str) -> TurnOutcome:
         node_id = self._require_current_node()
+        signal = remediation_signal(answer)
+        if self.state.plan_source is PlanSource.GENERATED and signal in {"too_detailed", "too_difficult"}:
+            return self._handle_scope_mismatch(answer, signal)
+        if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
+            return self._handle_acceleration_request(answer)
         category = self._classify(answer)
+        if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
+            return self._handle_scaffold_request(answer, category)
         changes = apply_diagnostic_result(self.state, node_id, answer, category, self.curriculum)
         self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category)
@@ -196,6 +305,90 @@ class PelicanEngine:
         message = f"{prefix}\n\n{next_outcome.message}"
         
         return TurnOutcome(message, next_outcome.node_id, category, None, tuple(changes), next_outcome.next_reason)
+
+    def _handle_scope_mismatch(self, answer: str, signal: str) -> TurnOutcome:
+        """Record scope mismatch as direct evidence without treating it as mastery."""
+        node_id = self._require_current_node()
+        strategy = strategy_for_remediation_signal(signal) or TutoringStrategy.SIMPLIFICATION
+        self._record(answer, ResponseCategory.DIFFICULTY, strategy, [])
+        self._refresh_learning_context(answer, ResponseCategory.DIFFICULTY, signal)
+        self.state.current_prompt = (
+            "收到，剛才那題對目前起點太細了。我們先退回一層："
+            f"你可以用一句話說說你對「{self.curriculum.nodes[node_id].label}」目前的直覺嗎？不用精準。"
+        )
+        self.state.current_prompt_source = "rule"
+        self.store.save(self.state)
+        log_event(
+            "pelican_scope_mismatch",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            reason_code=signal,
+        )
+        return TurnOutcome(
+            self.state.current_prompt,
+            node_id,
+            ResponseCategory.DIFFICULTY,
+            strategy,
+            (),
+            "scope mismatch：重新校準抽象層級，不前進到無關節點",
+        )
+
+    def _handle_scaffold_request(self, answer: str, category: ResponseCategory) -> TurnOutcome:
+        """Scaffold the current prerequisite path instead of advancing diagnostics."""
+        node_id = self._require_current_node()
+        self.state.nodes[node_id].update(
+            KnowledgeStatus.NOT_MASTERED,
+            evidence=self._evidence(answer, category),
+        )
+        changes = [f"{self.curriculum.nodes[node_id].label}: not_mastered（直接證據）"]
+        strategy = strategy_for_remediation_signal("unknown") or TutoringStrategy.DECOMPOSITION
+        self._record(answer, category, strategy, changes)
+        self._refresh_learning_context(answer, category, "unknown")
+        prerequisite_id = self.curriculum.nodes[node_id].prerequisites[0] if self.curriculum.nodes[node_id].prerequisites else node_id
+        self.state.phase = "tutoring"
+        self.state.current_node_id = prerequisite_id
+        self.state.current_prompt = (
+            f"沒關係，我們先補「{self.curriculum.nodes[prerequisite_id].label}」。"
+            "請先用日常語言描述：你覺得這個概念想解決什麼問題？"
+        )
+        self.state.current_prompt_source = "rule"
+        self.store.save(self.state)
+        log_event(
+            "pelican_scaffold_selected",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            reason_code="unknown",
+        )
+        return TurnOutcome(
+            self.state.current_prompt,
+            prerequisite_id,
+            category,
+            strategy,
+            tuple(changes),
+            "unknown：先 scaffold prerequisite，不跳到下一個診斷題",
+        )
+
+    def _handle_acceleration_request(self, answer: str) -> TurnOutcome:
+        """Handle a too-easy signal by marking current concept as mastered evidence."""
+        node_id = self._require_current_node()
+        self.state.nodes[node_id].update(
+            KnowledgeStatus.MASTERED,
+            evidence=self._evidence(answer, ResponseCategory.CORRECT),
+        )
+        changes = [f"{self.curriculum.nodes[node_id].label}: mastered（學生要求加速的直接證據）"]
+        strategy = strategy_for_remediation_signal("too_easy") or TutoringStrategy.CONFIRMATION
+        self._record(answer, ResponseCategory.CORRECT, strategy, changes)
+        self._refresh_learning_context(answer, ResponseCategory.CORRECT, "too_easy")
+        self.store.save(self.state)
+        next_outcome = self._present_next_diagnostic()
+        return TurnOutcome(
+            "了解，我會加快節奏。\n\n" + next_outcome.message,
+            next_outcome.node_id,
+            ResponseCategory.CORRECT,
+            strategy,
+            tuple(changes),
+            "too_easy：加速到下一個仍需確認的概念",
+        )
 
     def _handle_tutoring(self, answer: str) -> TurnOutcome:
         node_id = self._require_current_node()
@@ -243,8 +436,8 @@ class PelicanEngine:
         self.store.save(self.state)
         return TurnOutcome(message, node_id, category, strategy, tuple(changes), reason)
 
-    def _refresh_learning_context(self, answer: str, category: ResponseCategory) -> None:
-        self.memory.record_direct_evidence(self.state, answer, category)
+    def _refresh_learning_context(self, answer: str, category: ResponseCategory, signal: str | None = None) -> None:
+        self.memory.record_direct_evidence(self.state, answer, category, signal=signal)
         self.state.edf_snapshot = self.edf.evaluate(self.state)
         log_event(
             "pelican_diagnosis_updated",
@@ -310,3 +503,29 @@ class PelicanEngine:
         from .models import Evidence
 
         return Evidence(response=answer, category=category.value, direct=True)
+
+
+def _infer_learning_intent(answer: str) -> LearningIntent:
+    if any(token in answer for token in ("專案", "project", "作品")):
+        return LearningIntent.PROJECT
+    if any(token in answer for token in ("考試", "面試", "測驗", "assessment")):
+        return LearningIntent.ASSESSMENT
+    if any(token in answer for token in ("實作", "程式", "coding", "code")):
+        return LearningIntent.IMPLEMENTATION
+    if any(token in answer for token in ("商業", "決策", "finance", "business")):
+        return LearningIntent.BUSINESS_DECISION
+    if any(token in answer for token in ("語言", "口說", "寫作")):
+        return LearningIntent.LANGUAGE_PRACTICE
+    if any(token in answer for token in ("背景", "解釋", "歷史")):
+        return LearningIntent.EXPLANATORY
+    return LearningIntent.CONCEPTUAL
+
+
+def _infer_level_hint(answer: str) -> str:
+    if any(token in answer for token in ("完全沒有", "零基礎", "沒有基礎", "beginner")):
+        return "beginner"
+    if any(token in answer for token in ("實作經驗", "做過", "熟", "advanced")):
+        return "advanced"
+    if any(token in answer for token in ("學過", "一點", "簡單題", "intermediate")):
+        return "intermediate"
+    return "unknown"

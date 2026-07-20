@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .models import LearningMemorySnapshot, ResponseCategory, SessionState
+from .models import LearningMemorySnapshot, MemoryEvidenceRecord, ResponseCategory, SessionState
 from .observability import log_event
 
 
@@ -12,15 +12,35 @@ class LearningMemorySimulator:
     def __init__(self, max_context_size: int = 10):
         self.max_context_size = max_context_size
 
-    def record_direct_evidence(self, state: SessionState, answer: str, category: ResponseCategory) -> None:
-        """Update memory counters. Actual evidence is stored in node evidence and history."""
-        # Evidence is actually appended in engine, we just update memory metadata here
-        # to simulate GUM's direct evidence boundary.
+    def record_direct_evidence(
+        self,
+        state: SessionState,
+        answer: str,
+        category: ResponseCategory,
+        *,
+        signal: str | None = None,
+    ) -> None:
+        """Store bounded direct learner evidence without promoting EDF inference."""
+        state.direct_evidence.append(
+            MemoryEvidenceRecord(
+                source="user_message",
+                kind="USER_EVIDENCE",
+                text=answer,
+                prompt_safe=True,
+                cold_export_eligible=False,
+                confidence=1.0,
+                topic=state.learning_plan.topic if state.learning_plan else state.intake_profile.topic,
+                node_id=state.current_node_id,
+                signal=signal or category.value,
+            )
+        )
+        if len(state.direct_evidence) > self.max_context_size:
+            state.direct_evidence = state.direct_evidence[-self.max_context_size:]
 
-        # Calculate working context based on direct evidence only
         direct_evidence_count = 0
         for node in state.nodes.values():
             direct_evidence_count += sum(1 for e in node.evidence if e.direct)
+        direct_evidence_count = max(direct_evidence_count, len(state.direct_evidence))
 
         working_context_count = min(direct_evidence_count, self.max_context_size)
 
@@ -39,12 +59,9 @@ class LearningMemorySimulator:
         )
 
     def get_working_context(self, state: SessionState) -> list[str]:
-        """Return the most recent bounded direct evidence as working context."""
-        direct_evidence = []
-        for record in reversed(state.history):
-            if len(direct_evidence) >= self.max_context_size:
-                break
-            if record.category:
-                # In this MVP, user answers in history with a category are direct evidence
-                direct_evidence.append(f"Q: {record.prompt} | A: {record.response}")
-        return direct_evidence[::-1]
+        """Return bounded prompt-safe direct evidence, never EDF/model inference."""
+        return [
+            f"{record.topic or 'topic'}:{record.node_id or '-'}:{record.signal or record.kind}:{record.text}"
+            for record in state.direct_evidence[-self.max_context_size:]
+            if record.prompt_safe and record.kind == "USER_EVIDENCE"
+        ]

@@ -114,7 +114,7 @@ def _resolve_skill_intent(skill: DomainSkill, profile: LearnerIntakeProfile) -> 
 def _initial_path_for_profile(
     path: tuple[str, ...], profile: LearnerIntakeProfile, intent: IntentType
 ) -> tuple[str, ...]:
-    if profile.level_hint == "unknown" and profile.intake_turns == 0 and intent is IntentType.CONCEPTUAL:
+    if profile.level_hint in {"unknown", "beginner"} and intent is IntentType.CONCEPTUAL:
         return path[:1]
     return path
 

@@ -24,6 +24,17 @@ def select_strategy(category: ResponseCategory, rounds: int, pedagogical_policy:
     return strategy, f"slow-thinking：模擬 {len(candidates)} 條策略路徑後選擇最高分 {score:.2f}"
 
 
+def strategy_for_remediation_signal(signal: str | None) -> TutoringStrategy | None:
+    """Map domain-skill remediation signals to approved local tutoring moves."""
+    if signal in {"too_detailed", "too_difficult", "unknown"}:
+        return TutoringStrategy.DECOMPOSITION
+    if signal == "too_easy":
+        return TutoringStrategy.CONFIRMATION
+    if signal in {"project_goal", "assessment_goal"}:
+        return TutoringStrategy.OPEN_QUESTION
+    return None
+
+
 def _slow_candidates(category: ResponseCategory, pedagogical_policy: str | None = None) -> tuple[TutoringStrategy, ...]:
     candidates = []
     if category in (ResponseCategory.INABILITY, ResponseCategory.DIFFICULTY):

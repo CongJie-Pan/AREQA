@@ -52,18 +52,24 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     # Check that phase is onboarding
     expect(page.locator("#phase-display")).to_have_text("onboarding", ignore_case=True)
     
-    # Send an onboarding query
-    page.fill("#chat-input", "I want to understand why binary search needs sorted data; I get confused about the boundaries.")
+    # Complete calibration-first onboarding.
+    page.fill("#chat-input", "深度學習")
     page.click(".send-btn")
-    
-    # Wait for the diagnostic question (first successor node in deterministic plan)
+    expect(page.locator("#phase-display")).to_have_text("onboarding", ignore_case=True)
+    page.fill("#chat-input", "想理解原理")
+    page.click(".send-btn")
+    expect(page.locator("#phase-display")).to_have_text("onboarding", ignore_case=True)
+    page.fill("#chat-input", "完全沒有基礎")
+    page.click(".send-btn")
+
+    # Wait for the foundation-first diagnostic question.
     page.wait_for_selector(".tree-node")
     expect(page.locator(".tree-node").first).to_be_visible()
     expect(page.locator("#phase-display")).to_have_text("diagnosis", ignore_case=True)
     expect(page.locator("#plan-source-display")).to_have_text("generated", ignore_case=True)
     
     # Answer the first question correctly
-    page.fill("#chat-input", "進階答案")
+    page.fill("#chat-input", "用來衡量預測與目標之間的差距")
     page.click(".send-btn")
     
     # Check that tree updates the node to mastered

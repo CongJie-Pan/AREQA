@@ -49,6 +49,21 @@ def classify_response(answer: str, expected: str, curriculum: Curriculum) -> Res
     return ResponseCategory.INCORRECT
 
 
+def remediation_signal(answer: str) -> str | None:
+    """Detect skill-remediation signals without changing fixture classifications."""
+    if any(token in answer for token in ("太細", "太深入", "太進階")):
+        return "too_detailed"
+    if any(token in answer for token in ("太難", "看不懂")):
+        return "too_difficult"
+    if any(token in answer for token in ("太簡單", "太容易")):
+        return "too_easy"
+    if any(token in answer for token in ("專案", "project")):
+        return "project_goal"
+    if any(token in answer for token in ("考試", "面試", "測驗")):
+        return "assessment_goal"
+    return None
+
+
 def apply_diagnostic_result(
     state: SessionState, node_id: str, answer: str, category: ResponseCategory, curriculum: Curriculum
 ) -> list[str]:

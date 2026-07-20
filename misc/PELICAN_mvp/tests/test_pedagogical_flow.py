@@ -1,0 +1,94 @@
+from pathlib import Path
+
+from pelican_mvp.engine import PelicanEngine
+
+
+def calibrated_deep_learning_engine(tmp_path: Path) -> PelicanEngine:
+    engine = PelicanEngine(tmp_path)
+    engine.start()
+    engine.respond("深度學習")
+    engine.respond("想理解原理")
+    engine.respond("完全沒有基礎")
+    return engine
+
+
+def test_deep_learning_collects_goal_and_level_before_diagnosis(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path)
+    first = engine.start()
+    second = engine.respond("深度學習")
+    third = engine.respond("想理解原理")
+    diagnostic = engine.respond("完全沒有基礎")
+
+    assert "你想學什麼" in first.message
+    assert "怎麼學" in second.message
+    assert "基礎" in third.message
+    assert engine.state.phase == "diagnosis"
+    assert engine.state.intake_profile.intake_turns == 3
+    assert engine.state.intake_profile.intent.value == "conceptual"
+    assert engine.state.intake_profile.level_hint == "beginner"
+    assert diagnostic.node_id == "math_intuition"
+    assert "MLP" not in diagnostic.message
+
+
+def test_scope_mismatch_recalibrates_without_advancing_node(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    current_node = engine.state.current_node_id
+
+    outcome = engine.respond("這太細了吧，我不知道")
+
+    assert outcome.node_id == current_node
+    assert "太細" in outcome.message
+    assert "不前進" in outcome.next_reason
+    assert engine.state.current_node_id == current_node
+    assert engine.state.direct_evidence[-1].signal == "too_detailed"
+    assert engine.state.nodes[current_node].status.value == "undiagnosed"
+
+
+def test_unknown_scaffolds_current_prerequisite_not_unrelated_node(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    current_node = engine.state.current_node_id
+
+    outcome = engine.respond("不知道")
+
+    assert outcome.node_id == current_node
+    assert "先補" in outcome.message
+    assert "不跳到下一個診斷題" in outcome.next_reason
+    assert engine.state.phase == "tutoring"
+    assert engine.state.direct_evidence[-1].signal == "unknown"
+
+
+def test_too_easy_accelerates_to_next_concept(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+
+    outcome = engine.respond("太簡單了")
+
+    assert "加快節奏" in outcome.message
+    assert outcome.next_reason.startswith("too_easy")
+    assert engine.state.direct_evidence[-1].signal == "too_easy"
+
+
+def test_project_and_assessment_routes_compile_different_paths(tmp_path: Path) -> None:
+    project = PelicanEngine(tmp_path / "project")
+    project.start()
+    project.respond("深度學習")
+    project.respond("想做小專案")
+    project.respond("學過一點")
+
+    assessment = PelicanEngine(tmp_path / "assessment")
+    assessment.start()
+    assessment.respond("深度學習")
+    assessment.respond("準備考試")
+    assessment.respond("學過一點")
+
+    assert "project_workflow" in {node.node_id for node in project.state.learning_plan.nodes}
+    assert "assessment_review" in {node.node_id for node in assessment.state.learning_plan.nodes}
+
+
+def test_legal_knowledge_stays_educational_during_intake(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path)
+    engine.start()
+
+    outcome = engine.respond("法律知識，我想問個案怎麼判")
+
+    assert "不能提供個案法律諮詢" in outcome.message
+    assert engine.state.intake_profile.domain_category == "humanities"

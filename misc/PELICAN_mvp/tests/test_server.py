@@ -28,6 +28,25 @@ def test_api_start_dynamic() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["learning"]["phase"] == "onboarding"
+    assert data["learning"]["intake_turns"] == 0
+    assert data["learning"]["intent"] == "unknown"
+
+
+def test_api_dynamic_learning_metadata() -> None:
+    learner = "deep_learning_user"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解原理"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": "完全沒有基礎"})
+
+    assert response.status_code == 200
+    learning = response.json()["learning"]
+    assert learning["phase"] == "diagnosis"
+    assert learning["skill_id"] == "deep_learning"
+    assert learning["domain_category"] == "stem"
+    assert learning["intent"] == "conceptual"
+    assert learning["level_hint"] == "beginner"
+    assert "latest_signal" in learning
 
 
 def test_api_respond() -> None:

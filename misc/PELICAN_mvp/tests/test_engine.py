@@ -22,11 +22,19 @@ def test_default_intake_path(tmp_path: Path) -> None:
     assert engine.state.phase == "onboarding"
     assert "你想學什麼" in outcome.message
 
-    # Respond to intake
-    outcome = engine.respond("我想學 SQL JOIN")
+    outcome = engine.respond("深度學習")
+    assert engine.state.phase == "onboarding"
+    assert "怎麼學" in outcome.message
+
+    outcome = engine.respond("想理解原理")
+    assert engine.state.phase == "onboarding"
+    assert "基礎" in outcome.message
+
+    outcome = engine.respond("完全沒有基礎")
     assert engine.state.phase == "diagnosis"
     assert engine.state.learning_plan is not None
-    assert engine.state.learning_plan.topic == "我想學 SQL JOIN"
+    assert engine.state.learning_plan.topic == "深度學習"
+    assert engine.state.current_node_id == "math_intuition"
 
 
 def test_rule_mode_completes_problem_and_persists(tmp_path: Path) -> None:
@@ -104,4 +112,3 @@ def test_llm_mode_fallback_on_respond(tmp_path: Path, monkeypatch: pytest.Monkey
     outcome = engine.respond("100")
 
     assert outcome is not None
-
