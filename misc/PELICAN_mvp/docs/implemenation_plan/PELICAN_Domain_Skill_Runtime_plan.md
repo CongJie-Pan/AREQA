@@ -319,18 +319,18 @@ The generator must request an evidence-aware domain map, stable teaching methodo
 
 > Context: Add Google-style docstrings to every new or materially changed public module, class, and function. Document the compiler boundary, route selection precedence, retry/idempotency behavior, model-output privacy boundary, and why model reasoning is not persisted. Require structured events for route selection, generation attempt, validation rejection, retry, and fallback; events must contain only safe category/route/status/reason fields.
 
-1. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/llm.py` to add structured `generate_domain_skill()` support and preserve existing diagnostic/classification/tutor methods.
-   - [ ] Add category-specific model route resolution with environment overrides such as `PELICAN_STEM_MODEL` and `PELICAN_HUMANITIES_MODEL`.
-   - [ ] Keep timeout, JSON parsing, and `LlmUnavailable` behavior fail-safe.
-2. [ ] Create `misc/PELICAN_mvp/pelican_mvp/skill_generator.py` with proposed `DomainSkillGenerator.generate()`.
-   - [ ] Generate only the structured schema, bounded to one retry after validation failure.
-   - [ ] Load a checked-in skill before generation when one exists unless regeneration is explicitly requested.
-   - [ ] Set lifecycle/status metadata correctly and never auto-mark `approved`.
-3. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/planner.py` to call the skill generator only after catalog resolution and to compile validated output.
-4. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/models.py`/`state_store.py` to persist skill ID, version, lifecycle, category, and route metadata without persisting raw model reasoning.
-5. [ ] Add `misc/PELICAN_mvp/tests/test_skill_generator.py` and extend `misc/PELICAN_mvp/tests/test_llm.py` and `misc/PELICAN_mvp/tests/test_planner.py`.
-   - [ ] Mock route selection and model calls; assert STEM/humanities/business/language mapping.
-   - [ ] Assert invalid output retries once then falls back, and model text is absent from logs/state metadata.
+1. [x] Modify `misc/PELICAN_mvp/pelican_mvp/llm.py` to add structured `generate_domain_skill()` support and preserve existing diagnostic/classification/tutor methods.
+   - [x] Add category-specific model route resolution with environment overrides such as `PELICAN_STEM_MODEL` and `PELICAN_HUMANITIES_MODEL`.
+   - [x] Keep timeout, JSON parsing, and `LlmUnavailable` behavior fail-safe.
+2. [x] Create `misc/PELICAN_mvp/pelican_mvp/skill_generator.py` with proposed `DomainSkillGenerator.generate()`.
+   - [x] Generate only the structured schema, bounded to one retry after validation failure.
+   - [x] Load a checked-in skill before generation when one exists unless regeneration is explicitly requested.
+   - [x] Set lifecycle/status metadata correctly and never auto-mark `approved`.
+3. [x] Modify `misc/PELICAN_mvp/pelican_mvp/planner.py` to call the skill generator only after catalog resolution and to compile validated output.
+4. [x] Modify `misc/PELICAN_mvp/pelican_mvp/models.py`/`state_store.py` to persist skill ID, version, lifecycle, category, and route metadata without persisting raw model reasoning.
+5. [x] Add `misc/PELICAN_mvp/tests/test_skill_generator.py` and extend `misc/PELICAN_mvp/tests/test_llm.py` and `misc/PELICAN_mvp/tests/test_planner.py`.
+   - [x] Mock route selection and model calls; assert STEM/humanities/business/language mapping.
+   - [x] Assert invalid output retries once then falls back, and model text is absent from logs/state metadata.
 
 #### Expected File Tree After Phase 3
 
@@ -405,6 +405,26 @@ feat(pelican): add validated domain skill generation
 ```
 
 Inspect status, stage only Phase 3 paths/hunks, run cached diff checks and stat review, commit, and confirm with `git show --stat --oneline --summary HEAD`.
+
+#### Phase 3 Implementation Status
+
+Completed on 2026-07-20 in commit `0b3ee86 feat(pelican): add validated domain skill generation`.
+
+Verification evidence retained from the phase gate:
+
+```bash
+cd misc/PELICAN_mvp
+python -m pytest tests/test_llm.py tests/test_skill_generator.py tests/test_planner.py tests/test_skill_compiler.py -q
+# 24 passed
+
+python -m pytest tests/test_models.py tests/test_state_store.py tests/test_engine.py -q
+# 26 passed
+
+git diff --check
+# passed with no whitespace errors
+```
+
+The implementation follows the Phase 3 boundary: it adds category-aware model route selection, structured domain-skill generation, bounded validation retry, planner compilation from validated skills only, safe skill metadata persistence, and offline/mock tests. It preserves deterministic catalog behavior without credentials and does not begin calibration-first engine changes.
 
 ### Phase 4: Calibration-First Teaching Runtime and Educational Evaluation
 
