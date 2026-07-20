@@ -40,6 +40,107 @@ class PlanSource(str, Enum):
     GENERATED = "generated"
 
 
+class LearningIntent(str, Enum):
+    """Learner intent captured during intake before a skill is compiled."""
+
+    UNKNOWN = "unknown"
+    CONCEPTUAL = "conceptual"
+    PROCEDURAL = "procedural"
+    IMPLEMENTATION = "implementation"
+    PROJECT = "project"
+    ASSESSMENT = "assessment"
+    EXPLANATORY = "explanatory"
+    BUSINESS_DECISION = "business_decision"
+    LANGUAGE_PRACTICE = "language_practice"
+
+
+@dataclass(frozen=True)
+class LearnerIntakeProfile:
+    """Prompt-safe intake metadata used to choose a skill and route.
+
+    The profile may summarize a learner's stated goal, but it does not assert
+    mastery. Detailed evidence still belongs in direct-evidence records.
+    """
+
+    topic: str = ""
+    goal_summary: str = ""
+    intent: LearningIntent = LearningIntent.UNKNOWN
+    level_hint: str = "unknown"
+    domain_category: str = "unknown"
+    skill_id: str | None = None
+    skill_version: str | None = None
+    skill_lifecycle: str | None = None
+    model_route: str | None = None
+    intake_turns: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-safe intake profile."""
+        return {
+            "topic": self.topic,
+            "goal_summary": self.goal_summary,
+            "intent": self.intent.value,
+            "level_hint": self.level_hint,
+            "domain_category": self.domain_category,
+            "skill_id": self.skill_id,
+            "skill_version": self.skill_version,
+            "skill_lifecycle": self.skill_lifecycle,
+            "model_route": self.model_route,
+            "intake_turns": self.intake_turns,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "LearnerIntakeProfile":
+        """Deserialize intake metadata with schema-compatible defaults."""
+        return cls(
+            topic=payload.get("topic", ""),
+            goal_summary=payload.get("goal_summary", ""),
+            intent=LearningIntent(payload.get("intent", LearningIntent.UNKNOWN.value)),
+            level_hint=payload.get("level_hint", "unknown"),
+            domain_category=payload.get("domain_category", "unknown"),
+            skill_id=payload.get("skill_id"),
+            skill_version=payload.get("skill_version"),
+            skill_lifecycle=payload.get("skill_lifecycle"),
+            model_route=payload.get("model_route"),
+            intake_turns=int(payload.get("intake_turns", 0)),
+        )
+
+
+@dataclass(frozen=True)
+class MemoryEvidenceRecord:
+    """Session-local direct evidence record following AREQA's memory boundary."""
+
+    source: str
+    kind: str
+    text: str
+    prompt_safe: bool = True
+    cold_export_eligible: bool = False
+    confidence: float = 1.0
+    topic: str | None = None
+    node_id: str | None = None
+    signal: str | None = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-safe direct evidence record."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "MemoryEvidenceRecord":
+        """Deserialize a direct evidence record without promoting model inference."""
+        return cls(
+            source=payload.get("source", "user_message"),
+            kind=payload.get("kind", "USER_EVIDENCE"),
+            text=payload.get("text", ""),
+            prompt_safe=bool(payload.get("prompt_safe", True)),
+            cold_export_eligible=bool(payload.get("cold_export_eligible", False)),
+            confidence=float(payload.get("confidence", 1.0)),
+            topic=payload.get("topic"),
+            node_id=payload.get("node_id"),
+            signal=payload.get("signal"),
+            timestamp=payload.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        )
+
+
 @dataclass(frozen=True)
 class KnowledgeNode:
     node_id: str
@@ -208,6 +309,8 @@ class SessionState:
     history: list[TurnRecord] = field(default_factory=list)
     edf_snapshot: EdfSnapshot = field(default_factory=EdfSnapshot)
     memory_snapshot: LearningMemorySnapshot = field(default_factory=LearningMemorySnapshot)
+    intake_profile: LearnerIntakeProfile = field(default_factory=LearnerIntakeProfile)
+    direct_evidence: list[MemoryEvidenceRecord] = field(default_factory=list)
     completed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -236,6 +339,8 @@ class SessionState:
             "history": [asdict(item) for item in self.history],
             "edf_snapshot": asdict(self.edf_snapshot),
             "memory_snapshot": asdict(self.memory_snapshot),
+            "intake_profile": self.intake_profile.to_dict(),
+            "direct_evidence": [item.to_dict() for item in self.direct_evidence],
             "completed": self.completed,
         }
 
@@ -279,6 +384,11 @@ class SessionState:
             history=history,
             edf_snapshot=EdfSnapshot(**payload.get("edf_snapshot", {})),
             memory_snapshot=LearningMemorySnapshot(**payload.get("memory_snapshot", {})),
+            intake_profile=LearnerIntakeProfile.from_dict(payload.get("intake_profile", {})),
+            direct_evidence=[
+                MemoryEvidenceRecord.from_dict(item)
+                for item in payload.get("direct_evidence", [])
+            ],
             completed=bool(payload.get("completed", False)),
         )
 

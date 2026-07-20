@@ -3,7 +3,10 @@ from pelican_mvp.models import (
     DiagnosticQuestion,
     KnowledgeNode,
     KnowledgeStatus,
+    LearnerIntakeProfile,
+    LearningIntent,
     LearningPlanSnapshot,
+    MemoryEvidenceRecord,
     PlanSource,
     SessionState,
     TurnRecord,
@@ -85,3 +88,47 @@ def test_session_state_treats_legacy_curriculum_as_fixture() -> None:
 
     assert state.plan_source is PlanSource.FIXTURE
     assert state.phase == "diagnosis"
+
+
+def test_session_state_round_trips_intake_profile_and_direct_evidence() -> None:
+    state = SessionState(
+        learner_id="tester",
+        intake_profile=LearnerIntakeProfile(
+            topic="深度學習",
+            goal_summary="想先理解概念",
+            intent=LearningIntent.CONCEPTUAL,
+            level_hint="beginner",
+            domain_category="stem",
+            skill_id="deep_learning",
+            skill_version="0.1.0",
+            skill_lifecycle="validated_generated",
+            model_route="openrouter_gpt_5_5",
+            intake_turns=1,
+        ),
+        direct_evidence=[
+            MemoryEvidenceRecord(
+                source="user_message",
+                kind="USER_EVIDENCE",
+                text="使用者表示題目太細且不知道答案",
+                topic="深度學習",
+                node_id="mlp_implementation",
+                signal="too_detailed",
+            )
+        ],
+    )
+
+    restored = SessionState.from_dict(state.to_dict())
+
+    assert restored.intake_profile.intent is LearningIntent.CONCEPTUAL
+    assert restored.intake_profile.skill_id == "deep_learning"
+    assert restored.direct_evidence[0].kind == "USER_EVIDENCE"
+    assert restored.direct_evidence[0].cold_export_eligible is False
+    assert restored.direct_evidence[0].signal == "too_detailed"
+
+
+def test_session_state_legacy_payload_defaults_new_skill_fields() -> None:
+    state = SessionState.from_dict({"learner_id": "tester", "schema_version": 2})
+
+    assert state.intake_profile.intent is LearningIntent.UNKNOWN
+    assert state.intake_profile.domain_category == "unknown"
+    assert state.direct_evidence == []

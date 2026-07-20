@@ -19,6 +19,12 @@ _SAFE_FIELDS = frozenset({
     "learner_state",
     "evidence_count",
     "working_context_count",
+    "skill_id",
+    "skill_version",
+    "domain_category",
+    "intake_decision",
+    "route",
+    "skill_lifecycle",
 })
 
 
