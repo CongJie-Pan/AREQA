@@ -1,73 +1,201 @@
-# PELICAN CLI MVP
+# PELICAN Learning Engine MVP
 
-這是 PELICAN 論文方法的可觀察最小實作，作為獨立的 AI 驅動學習引擎與認知診斷模擬沙盒。
+## 1. 介紹
 
-### 工作流程 (Intake-to-Diagnosis Workflow)
+`misc/PELICAN_mvp` 是 AREQA 主系統外的一個獨立學習引擎實驗場。它用來驗證 PELICAN-style 知識樹診斷、AREQA-style EDF 教學決策、GUM-style 學習記憶邊界，以及新加入的 Domain Skill Runtime。
 
-1. **Onboarding (校準優先意圖收集)**: 引擎預設先問主題，再問學習方向（理解概念、程式實作、做小專案、準備考試/面試），最後問程度與先備經驗。未完成校準前不會進入診斷題。
-2. **Domain Skill Runtime (領域教學 Skill)**: 系統先解析或載入結構化 `skill.yaml`，驗證 prerequisite map、calibration、single-concept diagnostics、remediation paths、assessment policy，再編譯成 session-local learning plan。
-3. **Diagnosis & Tutoring (診斷與輔導)**: 系統使用 successor-first (後繼者優先) 進行協作式認知診斷，並依學生回應更新知識狀態，最後根據 EDF (Epistemic Development Framework) 狀態與學習記憶 (Learning Memory) 選擇教學策略。
+目前真實狀況：
 
-它不會把使用者程度當成已知，也不會在未完成當前知識節點時隨意跳到無關問題。使用者說「太細了」會觸發 scope mismatch 重新校準；說「不知道」會 scaffold prerequisite，而不是跳到另一個隨機診斷題。引擎的資料狀態（含 EDF 與 Memory 計數）均不會與主系統產生耦合，為完全獨立的實驗場域。
+- 預設新 session 不會直接問診斷題，而是走 calibration-first onboarding：先問主題，再問學習方向，再問程度與先備經驗。
+- 內建可執行 skill asset：`domain_skills/deep_learning.yaml`。
+- `深度學習` 會先載入並驗證 `deep_learning.yaml`，再由 skill compiler 產生 session-local knowledge tree。
+- 未校準或 beginner 的 conceptual deep-learning route 會 foundation-first，不會一開始問 MLP 權重參數這類過細問題。
+- 使用者說 `太細了` / `太難` 會觸發 scope mismatch，停在目前概念重新校準，不會跳到無關節點。
+- 使用者說 `不知道` 會觸發 prerequisite scaffold，不會繼續追問下一個隨機診斷題。
+- 使用者說 `太簡單了` 會觸發 acceleration。
+- LLM 只可用來產生 structured `DomainSkill` 或輔助診斷/教學；模型輸出必須通過 validator，不能直接進 diagnosis。
+- EDF learner state 與 model inference 不會被寫成 user-authored memory。local memory 只保存 bounded direct user evidence。
+- production AREQA `backend/` / `frontend/` 不被此 MVP runtime import 或修改；這裡是獨立 sandbox。
 
-### Supported Skill Categories
+支援邊界：
 
-- STEM conceptual/procedural/programming: 目前內建 `deep_learning.yaml`，其餘 STEM 主題可透過 validated generated skill 或 fallback 流程延伸。
-- Humanities/explanatory, business, and language learning: 已有 routing/category contract，完整 approved skill 資產仍是後續工作。
-- Legal knowledge is education-only. MVP intake will state that it cannot provide personalized legal advice.
+- STEM / humanities / business / language 的 category routing contract 已存在。
+- 目前 checked-in approved-like asset 只有 `deep_learning.yaml`，其他領域會走 validated generated skill 或 deterministic fallback。
+- 法律知識只做教育用途；runtime 會避免把回應呈現為個案法律諮詢。
 
-Skill lifecycle labels:
+## 2. 開啟方式
 
-- `runtime_generated`: 模型即時產生但未人工審核。
-- `validated_generated`: 通過 schema validator，可在 MVP 中執行。
-- `approved`: 未來人工審核或多輪測試後的可重用資產。
-
-## Quick Start
+從 repo root 執行：
 
 ```bash
-# 1. 啟動 AREQA 後端虛擬環境
-source /workspaces/AREQA/backend/.venv/bin/activate
-
-# 2. 安裝相依套件（若尚未安裝）並啟動伺服器
 cd /workspaces/AREQA/misc/PELICAN_mvp
 pip install -r requirements.txt
 python -m pelican_mvp
-
-# 3. 在瀏覽器開啟 http://127.0.0.1:8000
 ```
 
-預設為完全離線、可重現的規則模式 (Deterministic Fallback)。若沒有 API key，已存在的 catalog skill 仍可編譯；缺 skill 的主題會走安全 fallback 或要求澄清。
-學習狀態存放於 `data/demo_student.json`，可使用 `reset` 清除以重新啟動 `onboarding` 流程。
+瀏覽器開啟：
 
-### 開發與測試相容性
-- **Fixture Curriculum Compatibility**: 為相容先前的回歸測試，直接在 API 傳入 `curriculum_id` (例如 `cnn` 或 `chinese_history`) 即可直接繞過 Onboarding 進入固定課綱診斷。
-- **邊界聲明**: 本模組為非正式生產環境之模擬層。所有的 EDF (Epistemic Development Framework) 與 GUM (Generative User Model) 推論皆僅在 `misc/PELICAN_mvp` 內運行，絕對不會影響 `backend/` 主系統的運作。
+```text
+http://127.0.0.1:8000
+```
 
-## CLI Commands
+常用檢查：
 
-- `tree`: 顯示知識狀態樹。
-- `state`: 顯示完整持久化狀態。
-- `history`: 顯示每回合的分類與策略。
-- `mode rule` / `mode llm`: 切換模式。
-- `show answer`: 顯示當前步驟答案，但不會把學生標為已掌握。
-- `reset`: 重設目前學習者。
-- `quit`: 保存並離開。
+```bash
+python -m pelican_mvp --help
+python -m pytest -q
+```
 
-## Optional LLM Mode
-
-設定以下環境變數後，以 `mode llm` 切換：
+預設可完全離線執行。若要啟用 OpenRouter-compatible LLM：
 
 ```bash
 export OPENROUTER_API_KEY=your_key
-export PELICAN_LLM_MODEL=qwen/qwen-2.5-7b-instruct
-python -m pelican_mvp --mode llm
+export PELICAN_STEM_MODEL=openai/gpt-5.5
+export PELICAN_HUMANITIES_MODEL=~google/gemini-pro-latest
+export PELICAN_BUSINESS_MODEL=~google/gemini-pro-latest
+export PELICAN_LANGUAGE_MODEL=~google/gemini-pro-latest
+python -m pelican_mvp
 ```
 
-LLM 模式會執行 Teacher -> Assistant -> Verifier 的診斷題驗證，也可以在缺 catalog skill 時生成結構化 DomainSkill。模型輸出必須先通過 validator，才會交給 compiler 產生 learning plan；隱藏 reasoning 和 raw model output 不會寫入 state 或 log。若 API key 缺失、模型失敗或驗證不通過，系統會安全退回已審核的規則題庫或 deterministic fallback。
+`PELICAN_LLM_MODEL` 仍可作為全域相容 override。沒有 API key 時，existing catalog skill 仍可離線 compile。
 
-## Test
+## 3. Mermaid 系統架構圖
 
-```bash
-python -m pytest
-python -m pelican_mvp --help
+```mermaid
+flowchart TD
+    User["Learner / Browser UI"] --> API["FastAPI server.py"]
+    API --> Engine["PelicanEngine\ncalibration-first state machine"]
+
+    Engine --> Store["StateStore\nlocal JSON session persistence"]
+    Store --> State["SessionState\nphase, intake, plan, node states,\nEDF snapshot, direct evidence"]
+
+    Engine --> Intake["LearnerIntakeProfile\ntopic -> intent -> level"]
+    Intake --> Planner["LearningPlanner"]
+
+    Planner --> Generator["DomainSkillGenerator"]
+    Generator --> Catalog["domain_skills/*.yaml\nchecked-in executable skill assets"]
+    Generator --> LLM["LlmAdapter optional\nstructured DomainSkill generation"]
+
+    Catalog --> Validator["SkillValidator\nschema, graph, remediation,\nlegal education boundary"]
+    LLM --> Validator
+    Validator --> Compiler["SkillCompiler\nDomainSkill + Intake -> LearningPlanSnapshot"]
+    Compiler --> Plan["Session-local knowledge tree\nnodes, diagnostics, task steps"]
+
+    Plan --> Engine
+    Engine --> Diagnosis["diagnosis.py\nsuccessor-first + remediation signals"]
+    Diagnosis --> EDF["EdfSimulator\nteaching policy snapshot"]
+    Diagnosis --> Memory["LearningMemorySimulator\nbounded direct user evidence"]
+    EDF --> Tutor["tutoring.py\nstrategy selection"]
+    Memory --> Tutor
+    Tutor --> Engine
+    Engine --> API
+
+    subgraph Boundary["AREQA production boundary"]
+        Backend["backend/ reference only"]
+        Frontend["frontend/ untouched"]
+    end
+    Boundary -. no runtime import .- Engine
+```
+
+## 4. Mermaid 用戶流程圖
+
+```mermaid
+flowchart TD
+    Start["使用者開啟 MVP"] --> AskTopic["AI: 你想學什麼？"]
+    AskTopic --> UserTopic["User: 深度學習"]
+    UserTopic --> AskGoal["AI: 想理解概念、實作、專案、考試，或背景？"]
+    AskGoal --> UserGoal["User: 想理解原理"]
+    UserGoal --> AskLevel["AI: 目前基礎如何？"]
+    AskLevel --> UserLevel["User: 完全沒有基礎"]
+
+    UserLevel --> LoadSkill["載入 deep_learning.yaml"]
+    LoadSkill --> ValidateSkill{"Skill validation pass?"}
+    ValidateSkill -- yes --> Compile["Compile foundation-first plan"]
+    ValidateSkill -- no --> Fallback["Deterministic fallback / clarification"]
+
+    Compile --> FirstDiag["AI: low-load foundation diagnostic\nmath_intuition"]
+    FirstDiag --> UserAnswer{"使用者回應"}
+
+    UserAnswer -- correct --> MarkMastered["標記 direct mastered evidence"]
+    MarkMastered --> NextDiag["PELICAN successor-first next node"]
+
+    UserAnswer -- "不知道" --> Scaffold["Prerequisite scaffold\n不跳到無關節點"]
+    Scaffold --> TutorStep["Guided tutoring prompt"]
+
+    UserAnswer -- "太細/太難" --> Recalibrate["Scope mismatch\n回到較高層重新校準"]
+    Recalibrate --> TutorStep
+
+    UserAnswer -- "太簡單" --> Accelerate["Acceleration\n跳到下一個需確認概念"]
+    Accelerate --> NextDiag
+
+    TutorStep --> Evidence["Record direct user evidence only"]
+    NextDiag --> Evidence
+    Evidence --> EDF["Update EDF policy snapshot"]
+    EDF --> Continue["Continue diagnosis / tutoring"]
+```
+
+## 5. 檔案架構圖
+
+```text
+misc/PELICAN_mvp/
+├── README.md
+├── requirements.txt
+├── data/
+│   └── .gitkeep
+├── docs/
+│   ├── 11211_PELICAN_Personalized_Edu.md
+│   ├── 11211_PELICAN_Personalized_Edu.pdf
+│   ├── PELICAN_Graph.jpg
+│   ├── Qwen_Qwen3_235B_A22B_Instruct_2507_–_API_Quickstart_OpenRouter.md
+│   ├── 2026_07_18_experiment/
+│   │   └── PELICAN_Knowledge_Tracing_MVP.md
+│   └── implemenation_plan/
+│       └── PELICAN_Domain_Skill_Runtime_plan.md
+├── domain_skills/
+│   └── deep_learning.yaml
+├── pelican_mvp/
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── curriculum.py
+│   ├── diagnosis.py
+│   ├── domain_catalog.py
+│   ├── domain_skill.py
+│   ├── edf_simulator.py
+│   ├── engine.py
+│   ├── learning_memory.py
+│   ├── llm.py
+│   ├── models.py
+│   ├── observability.py
+│   ├── planner.py
+│   ├── server.py
+│   ├── skill_compiler.py
+│   ├── skill_generator.py
+│   ├── skill_loader.py
+│   ├── skill_validator.py
+│   ├── state_store.py
+│   └── tutoring.py
+├── static/
+│   ├── app.js
+│   ├── index.html
+│   └── styles.css
+└── tests/
+    ├── test_chinese_history.py
+    ├── test_curriculum.py
+    ├── test_diagnosis.py
+    ├── test_domain_skill.py
+    ├── test_e2e.py
+    ├── test_edf_simulator.py
+    ├── test_engine.py
+    ├── test_learning_memory.py
+    ├── test_llm.py
+    ├── test_models.py
+    ├── test_pedagogical_flow.py
+    ├── test_planner.py
+    ├── test_server.py
+    ├── test_skill_compiler.py
+    ├── test_skill_generator.py
+    ├── test_skill_loader.py
+    ├── test_skill_validator.py
+    ├── test_state_store.py
+    └── test_tutoring.py
 ```
