@@ -1,6 +1,8 @@
 import pytest
+from pelican_mvp.domain_skill import DomainCategory
 from pelican_mvp.llm import LlmAdapter, LlmConfig, LlmUnavailable
 from pelican_mvp.models import TutoringStrategy
+from test_domain_skill import valid_skill_payload
 
 def test_llm_adapter_no_config(monkeypatch: pytest.MonkeyPatch) -> None:
     import dotenv
@@ -50,3 +52,41 @@ def test_llm_adapter_valid_json_response() -> None:
     
     res = adapter.tutor_response(TutoringStrategy.EXPLANATION, "prompt", "label")
     assert res == "this is a mock response"
+
+
+def test_llm_category_model_route_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PELICAN_LLM_MODEL", raising=False)
+    monkeypatch.delenv("PELICAN_STEM_MODEL", raising=False)
+    config = LlmConfig(api_key="test", model="legacy", base_url="test")
+    adapter = LlmAdapter(config=config)
+
+    assert adapter.model_route_for_category(DomainCategory.STEM) == "openai/gpt-5.5"
+    assert adapter.model_route_for_category(DomainCategory.HUMANITIES) == "~google/gemini-pro-latest"
+
+    monkeypatch.setenv("PELICAN_LLM_MODEL", "global/model")
+    assert adapter.model_route_for_category(DomainCategory.BUSINESS) == "global/model"
+
+    monkeypatch.setenv("PELICAN_STEM_MODEL", "stem/model")
+    assert adapter.model_route_for_category(DomainCategory.STEM) == "stem/model"
+
+
+def test_generate_domain_skill_uses_requested_route() -> None:
+    payload = valid_skill_payload()
+    payload["lifecycle"] = "runtime_generated"
+
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.model_seen = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.model_seen = model
+            return payload
+
+    adapter = RecordingAdapter()
+    skill = adapter.generate_domain_skill("深度學習", DomainCategory.STEM, model_route="stem/model")
+
+    assert adapter.model_seen == "stem/model"
+    assert skill is not None
+    assert skill.skill_id == "deep_learning"
+    assert skill.lifecycle.value == "runtime_generated"

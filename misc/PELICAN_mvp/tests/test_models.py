@@ -68,6 +68,11 @@ def test_session_state_round_trips_generated_plan_snapshot() -> None:
         task_steps=(
             {"step_id": "apply", "node_id": "boundaries", "prompt": "Trace one step", "expected": "move low"},
         ),
+        skill_id="binary_search",
+        skill_version="0.1.0",
+        skill_lifecycle="validated_generated",
+        domain_category="stem",
+        model_route="catalog",
     )
     state = SessionState(
         learner_id="tester",
@@ -78,6 +83,8 @@ def test_session_state_round_trips_generated_plan_snapshot() -> None:
     restored = SessionState.from_dict(state.to_dict())
 
     assert restored.learning_plan == plan
+    assert restored.learning_plan.skill_id == "binary_search"
+    assert restored.learning_plan.model_route == "catalog"
     assert restored.plan_source is PlanSource.GENERATED
     assert restored.edf_snapshot.reason_code == "not_evaluated"
     assert restored.memory_snapshot.evidence_count == 0

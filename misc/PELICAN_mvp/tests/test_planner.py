@@ -128,6 +128,9 @@ def test_planner_uses_catalog_skill_before_llm_for_deep_learning(caplog):
     plan = planner.create_plan("深度學習")
 
     assert [node.node_id for node in plan.nodes] == ["math_intuition"]
+    assert plan.skill_id == "deep_learning"
+    assert plan.skill_lifecycle == "validated_generated"
+    assert plan.model_route == "catalog"
     assert mock_llm.generate_learning_plan.call_count == 0
     generated_logs = [r for r in caplog.records if r.message == "pelican_plan_generated"]
     assert generated_logs[-1].plan_source == "skill"

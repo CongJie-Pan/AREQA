@@ -177,6 +177,10 @@ class StateStore:
         """Validate the generated-plan graph before it becomes persistent session state."""
         if not all(isinstance(value, str) and value.strip() for value in (plan.plan_id, plan.topic, plan.goal_summary)):
             raise ValueError("generated plan requires non-empty identifiers and summaries")
+        for field_name in ("skill_id", "skill_version", "skill_lifecycle", "domain_category", "model_route"):
+            value = getattr(plan, field_name)
+            if value is not None and (not isinstance(value, str) or len(value) > 120):
+                raise ValueError(f"generated plan {field_name} must be bounded metadata")
         if not plan.nodes:
             raise ValueError("generated plan requires at least one node")
         node_ids = [node.node_id for node in plan.nodes]

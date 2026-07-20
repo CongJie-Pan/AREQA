@@ -84,6 +84,11 @@ def compile_learning_plan(skill: DomainSkill, profile: LearnerIntakeProfile) -> 
         nodes=tuple(nodes),
         diagnostics=tuple(compiled_diagnostics),
         task_steps=tuple(task_steps),
+        skill_id=skill.skill_id,
+        skill_version=skill.version,
+        skill_lifecycle=skill.lifecycle.value,
+        domain_category=skill.domain_category.value,
+        model_route=profile.model_route,
     )
     log_event(
         "pelican_skill_compiled",

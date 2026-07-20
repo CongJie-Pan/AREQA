@@ -10,7 +10,7 @@ from .llm import LlmAdapter, LlmUnavailable
 from .models import DiagnosticQuestion, KnowledgeNode, LearnerIntakeProfile, LearningIntent, LearningPlanSnapshot
 from .observability import log_event
 from .skill_compiler import SkillCompileError, compile_learning_plan
-from .skill_loader import SkillLoadError, load_catalog_skill
+from .skill_generator import DomainSkillGenerator, SkillGenerationError
 
 
 def validate_learning_plan(plan: LearningPlanSnapshot) -> None:
@@ -66,6 +66,7 @@ def validate_learning_plan(plan: LearningPlanSnapshot) -> None:
 class LearningPlanner:
     def __init__(self, llm: LlmAdapter | None = None):
         self.llm = llm or LlmAdapter()
+        self.skill_generator = DomainSkillGenerator(self.llm)
 
     def create_plan(self, topic: str) -> LearningPlanSnapshot:
         """Create a validated learning plan from a topic, falling back if necessary."""
@@ -86,8 +87,8 @@ class LearningPlanner:
         profile = _profile_with_defaults(profile, topic_clean)
 
         try:
-            skill = load_catalog_skill(topic_clean)
-            plan = compile_learning_plan(skill, profile)
+            skill, route = self.skill_generator.generate(topic_clean)
+            plan = compile_learning_plan(skill, _profile_with_route(profile, route))
             validate_learning_plan(plan)
             log_event(
                 "pelican_plan_generated",
@@ -97,9 +98,10 @@ class LearningPlanner:
                 skill_version=skill.version,
                 domain_category=skill.domain_category.value,
                 skill_lifecycle=skill.lifecycle.value,
+                route=route,
             )
             return plan
-        except (SkillLoadError, SkillCompileError, ValueError, KeyError, TypeError) as exc:
+        except (SkillGenerationError, SkillCompileError, ValueError, KeyError, TypeError) as exc:
             resolution = resolve_domain_category(topic_clean)
             log_event(
                 "pelican_plan_fallback",
@@ -184,5 +186,20 @@ def _profile_with_defaults(profile: LearnerIntakeProfile, topic: str) -> Learner
         skill_version=profile.skill_version,
         skill_lifecycle=profile.skill_lifecycle,
         model_route=profile.model_route,
+        intake_turns=profile.intake_turns,
+    )
+
+
+def _profile_with_route(profile: LearnerIntakeProfile, route: str) -> LearnerIntakeProfile:
+    return LearnerIntakeProfile(
+        topic=profile.topic,
+        goal_summary=profile.goal_summary,
+        intent=profile.intent,
+        level_hint=profile.level_hint,
+        domain_category=profile.domain_category,
+        skill_id=profile.skill_id,
+        skill_version=profile.skill_version,
+        skill_lifecycle=profile.skill_lifecycle,
+        model_route=route,
         intake_turns=profile.intake_turns,
     )

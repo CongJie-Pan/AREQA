@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from .domain_skill import DomainCategory, DomainSkill, SkillLifecycle
 from .models import DiagnosticQuestion, KnowledgeNode, LearningPlanSnapshot, ResponseCategory, TutoringStrategy
 
 
@@ -37,6 +38,21 @@ class LlmConfig:
         )
 
 
+DEFAULT_SKILL_MODEL_ROUTES = {
+    DomainCategory.STEM: "openai/gpt-5.5",
+    DomainCategory.HUMANITIES: "~google/gemini-pro-latest",
+    DomainCategory.BUSINESS: "~google/gemini-pro-latest",
+    DomainCategory.LANGUAGE: "~google/gemini-pro-latest",
+}
+
+MODEL_ROUTE_ENV = {
+    DomainCategory.STEM: "PELICAN_STEM_MODEL",
+    DomainCategory.HUMANITIES: "PELICAN_HUMANITIES_MODEL",
+    DomainCategory.BUSINESS: "PELICAN_BUSINESS_MODEL",
+    DomainCategory.LANGUAGE: "PELICAN_LANGUAGE_MODEL",
+}
+
+
 class LlmAdapter:
     def __init__(self, config: LlmConfig | None = None):
         self.config = config or LlmConfig.from_environment()
@@ -45,6 +61,25 @@ class LlmAdapter:
     @property
     def available(self) -> bool:
         return self.config is not None
+
+    def model_route_for_category(self, category: DomainCategory) -> str:
+        """Resolve the model route for structured skill generation.
+
+        Category-specific environment variables take precedence. The existing
+        ``PELICAN_LLM_MODEL`` setting remains a compatibility override for
+        deployments that only configure one model. Defaults come from the local
+        OpenRouter model documents and are treated as deployment-time routes, not
+        availability or pricing guarantees.
+        """
+        env_key = MODEL_ROUTE_ENV.get(category)
+        if env_key:
+            override = os.getenv(env_key, "").strip()
+            if override:
+                return override
+        global_override = os.getenv("PELICAN_LLM_MODEL", "").strip()
+        if global_override:
+            return global_override
+        return DEFAULT_SKILL_MODEL_ROUTES.get(category, self.config.model if self.config else "unknown")
 
     def verified_diagnostic(self, node_label: str) -> DiagnosticQuestion | None:
         if not self.available:
@@ -154,7 +189,34 @@ class LlmAdapter:
             task_steps=task_steps
         )
 
-    def _json(self, system: str, user: str) -> dict[str, Any]:
+    def generate_domain_skill(
+        self,
+        topic: str,
+        category: DomainCategory,
+        *,
+        model_route: str | None = None,
+    ) -> DomainSkill | None:
+        """Generate a structured domain skill without persisting model reasoning."""
+        if not self.available:
+            return None
+        route = model_route or self.model_route_for_category(category)
+        payload = self._json(
+            "你是領域教學設計師。只輸出 JSON，不要輸出推理過程、Markdown 或學生可見課程內容。\n"
+            "你的任務是產生一份可驗證的 DomainSkill schema，供教學引擎稍後編譯知識樹。\n"
+            "必須包含 intake calibration、prerequisite map、canonical_path、single-concept diagnostics、"
+            "teaching_moves、unknown/too_detailed/too_easy/project_goal/assessment_goal remediation，以及 assessment_policy。\n"
+            "診斷題 prompt 絕對不能包含 expected_answer。法律知識只能作教育用途，不可提供法律諮詢。",
+            f"topic: {topic}\ncategory: {category.value}\n"
+            "輸出 JSON 欄位：skill_id, version, title, domain_category, lifecycle, supported_topics, intent_types, "
+            "prerequisites, calibration_questions, canonical_path, diagnostic_rules, teaching_moves, remediation_paths, "
+            "assessment_policy, safety_notes。lifecycle 請用 runtime_generated。",
+            model=route,
+        )
+        payload["domain_category"] = category.value
+        payload["lifecycle"] = payload.get("lifecycle") or SkillLifecycle.RUNTIME_GENERATED.value
+        return DomainSkill.from_dict(payload)
+
+    def _json(self, system: str, user: str, *, model: str | None = None) -> dict[str, Any]:
         if not self.config:
             raise LlmUnavailable("OPENROUTER_API_KEY is not configured")
         try:
@@ -163,7 +225,7 @@ class LlmAdapter:
             if self._client is None:
                 self._client = OpenAI(api_key=self.config.api_key, base_url=self.config.base_url, timeout=15.0)
             response = self._client.chat.completions.create(
-                model=self.config.model,
+                model=model or self.config.model,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                 temperature=0,
                 response_format={"type": "json_object"},
@@ -175,4 +237,3 @@ class LlmAdapter:
             return parsed
         except Exception as exc:
             raise LlmUnavailable(f"LLM request failed: {type(exc).__name__}") from exc
-

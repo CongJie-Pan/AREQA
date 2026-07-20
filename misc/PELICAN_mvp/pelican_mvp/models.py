@@ -171,6 +171,11 @@ class LearningPlanSnapshot:
     nodes: tuple[KnowledgeNode, ...]
     diagnostics: tuple[DiagnosticQuestion, ...] = ()
     task_steps: tuple[dict[str, str], ...] = ()
+    skill_id: str | None = None
+    skill_version: str | None = None
+    skill_lifecycle: str | None = None
+    domain_category: str | None = None
+    model_route: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
@@ -198,6 +203,11 @@ class LearningPlanSnapshot:
                 for diagnostic in self.diagnostics
             ],
             "task_steps": [dict(step) for step in self.task_steps],
+            "skill_id": self.skill_id,
+            "skill_version": self.skill_version,
+            "skill_lifecycle": self.skill_lifecycle,
+            "domain_category": self.domain_category,
+            "model_route": self.model_route,
             "created_at": self.created_at,
         }
 
@@ -230,6 +240,11 @@ class LearningPlanSnapshot:
             nodes=nodes,
             diagnostics=diagnostics,
             task_steps=task_steps,
+            skill_id=payload.get("skill_id"),
+            skill_version=payload.get("skill_version"),
+            skill_lifecycle=payload.get("skill_lifecycle"),
+            domain_category=payload.get("domain_category"),
+            model_route=payload.get("model_route"),
             created_at=payload.get("created_at", datetime.now(timezone.utc).isoformat()),
         )
 
