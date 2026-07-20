@@ -1,2 +1,0 @@
-Benchmark failed: Client error '401 Unauthorized' for url 'https://areqa-backend.onrender.com/api/v1/stream'
-For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
