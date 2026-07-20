@@ -223,3 +223,80 @@ def test_explicit_recall_memory_cache_key_does_not_include_raw_query():
     assert "你還記得" not in key
     assert "user-1" not in key
     assert "conversation-cache" not in key
+
+
+@pytest.mark.asyncio
+async def test_recent_reading_question_allows_cross_conversation_hot_focus():
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(
+        allow_long_term_query=True,
+        reason_code="SUBSTANTIVE_QUERY",
+    )
+    memory_query_tool = AsyncMock()
+
+    async def snapshot_loader(*args, **kwargs):
+        if kwargs.get("include_cross_conversation_focus"):
+            return "【工作記憶 (Working Memory)】\n- Current focus: 我最近在讀夏目漱石的《三四郎》，目前讀到第四章。"
+        return ""
+
+    service = ConversationContextService(
+        memory_policy=memory_policy,
+        memory_query_tool=memory_query_tool,
+    )
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-b",
+        messages=[{"role": "user", "content": "我最近想讀村上春樹的遇見100%的女孩，和我最近讀的書有哪些共通處？"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="我最近想讀村上春樹的遇見100%的女孩，和我最近讀的書有哪些共通處？",
+        context_prompt="",
+        client=None,
+        snapshot_loader=snapshot_loader,
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-b",
+        allow_long_term_memory_query=False,
+        memory_skip_reason="GENERAL_CHAT",
+    )
+
+    memory_query_tool.execute.assert_not_awaited()
+    assert "三四郎" in result.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_sensitive_recent_question_keeps_cross_conversation_hot_focus_closed():
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(
+        allow_long_term_query=True,
+        reason_code="SUBSTANTIVE_QUERY",
+    )
+    memory_query_tool = AsyncMock()
+    snapshot_loader = AsyncMock(return_value="")
+    service = ConversationContextService(
+        memory_policy=memory_policy,
+        memory_query_tool=memory_query_tool,
+    )
+
+    await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-b",
+        messages=[{"role": "user", "content": "我最近家庭壓力和焦慮的事情，跟我之前讀的內容有關嗎？"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="我最近家庭壓力和焦慮的事情，跟我之前讀的內容有關嗎？",
+        context_prompt="",
+        client=None,
+        snapshot_loader=snapshot_loader,
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-b",
+        allow_long_term_memory_query=False,
+        memory_skip_reason="SENSITIVE_NO_RECALL",
+    )
+
+    memory_query_tool.execute.assert_not_awaited()
+    assert snapshot_loader.await_args.kwargs["include_cross_conversation_focus"] is False

@@ -16,6 +16,8 @@ import logging
 import re
 from typing import Any, Awaitable, Callable, Dict, List
 
+from memory_gate import is_sensitive_context_query, requests_recent_working_context_recall
+
 
 logger = logging.getLogger(__name__)
 SnapshotLoader = Callable[..., Awaitable[str]]
@@ -130,11 +132,23 @@ class ConversationContextService:
 
         if trace:
             trace.mark("hot_memory_snapshot_started")
+        # Keep the default conversation-focus boundary closed to avoid leaking
+        # transient or sensitive prior-turn context. Only recent-context recall
+        # uses the fast Redis hot-memory path; cold memory remains TurnPlan-gated.
+        include_cross_conversation_focus = (
+            requests_recent_working_context_recall(last_user_msg)
+            and not is_sensitive_context_query(last_user_msg)
+        )
         hot_snapshot = await snapshot_loader(
             user_id,
             conversation_id=conversation_id,
-            include_cross_conversation_focus=False,
+            include_cross_conversation_focus=include_cross_conversation_focus,
         )
+        if include_cross_conversation_focus:
+            logger.info(
+                "orchestration.hot_memory_cross_conversation_focus_allowed conversation_id=%s reason=recent_working_context_recall",
+                conversation_id,
+            )
         if trace:
             trace.mark("hot_memory_snapshot_finished")
         if hot_snapshot:

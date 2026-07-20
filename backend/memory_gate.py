@@ -88,6 +88,12 @@ SENSITIVE_CONTEXT_KEYWORDS = (
     "健康", "生病", "焦慮", "憂鬱", "自殺", "心理", "家庭", "父親", "母親", "財務", "債務",
 )
 EXPLICIT_RECALL_KEYWORDS = ("延續", "接續", "之前", "上次", "昨天", "前一個對話", "結合先前")
+RECENT_WORKING_CONTEXT_PATTERNS = (
+    r"最近(?:在)?(?:讀|看|提|聊|討論|問|學|研究|處理|做|寫)",
+    r"最近(?:讀|看|提|聊|討論|問|學|研究|處理|做|寫)(?:過)?(?:的)?(?:書|文章|作品|問題|主題|內容|事情|任務|專案)",
+    r"(?:我|我們)最近(?:讀|看|提|聊|討論|問|學|研究|處理|做|寫)(?:過)?(?:的)?",
+    r"(?:剛剛|前面)(?:提|聊|討論|問|說|講)(?:到|過)?",
+)
 TEMPORARY_GOAL_COMPLETION_MARKERS = ("已經完成", "完成了", "不要再提醒", "不用再提醒", "停止提醒")
 TEMPORARY_GOAL_CONTEXT_MARKERS = ("目標", "複習", "學習計畫", "讀書計畫")
 
@@ -315,6 +321,22 @@ def requests_cross_conversation_recall(message: str) -> bool:
     """
     text = _clean_text(message).lower()
     return any(keyword in text for keyword in EXPLICIT_RECALL_KEYWORDS)
+
+
+def requests_recent_working_context_recall(message: str) -> bool:
+    """Return whether a turn asks for recent prompt-safe working context.
+
+    This is intentionally narrower than long-term memory recall. It is a fast
+    hot-memory bridge for phrases like "我最近讀的書", not permission to run
+    cold-memory retrieval or inject arbitrary previous conversation focus.
+    """
+
+    text = _clean_text(message).lower()
+    if not text:
+        return False
+    if requests_cross_conversation_recall(text):
+        return True
+    return any(re.search(pattern, text) for pattern in RECENT_WORKING_CONTEXT_PATTERNS)
 
 
 def classify_action(action_type: str, context: Any) -> MemoryGateDecision:
