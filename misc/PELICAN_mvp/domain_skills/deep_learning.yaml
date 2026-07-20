@@ -1,0 +1,183 @@
+{
+  "skill_id": "deep_learning",
+  "version": "0.1.0",
+  "title": "Deep Learning Foundations",
+  "domain_category": "stem",
+  "lifecycle": "validated_generated",
+  "supported_topics": ["深度學習", "deep learning"],
+  "intent_types": ["conceptual", "implementation", "project", "assessment"],
+  "prerequisites": [
+    {
+      "concept_id": "math_intuition",
+      "label": "數學直覺與誤差觀念",
+      "prerequisites": [],
+      "description": "先理解模型、輸入、輸出、誤差之間的基本關係。"
+    },
+    {
+      "concept_id": "vectors_tensors",
+      "label": "向量與張量作為資料表示",
+      "prerequisites": ["math_intuition"],
+      "description": "理解深度學習如何把資料表示成可計算的數值結構。"
+    },
+    {
+      "concept_id": "functions_transformations",
+      "label": "函數與轉換",
+      "prerequisites": ["vectors_tensors"],
+      "description": "把神經網路看成把輸入逐步轉成輸出的函數。"
+    },
+    {
+      "concept_id": "forward_pass",
+      "label": "模型與前向傳播直覺",
+      "prerequisites": ["functions_transformations"],
+      "description": "理解資料如何經過模型得到預測。"
+    },
+    {
+      "concept_id": "loss_error",
+      "label": "損失函數與錯誤衡量",
+      "prerequisites": ["forward_pass"],
+      "description": "理解為什麼需要用 loss 衡量預測和目標之間的差距。"
+    },
+    {
+      "concept_id": "optimization",
+      "label": "優化與訓練迴圈",
+      "prerequisites": ["loss_error"],
+      "description": "理解訓練如何逐步調整參數，讓 loss 下降。"
+    },
+    {
+      "concept_id": "mlp_implementation",
+      "label": "多層感知機 MLP 實作",
+      "prerequisites": ["optimization"],
+      "description": "在理解訓練流程後，再進入層、權重、激活函數與程式實作。"
+    },
+    {
+      "concept_id": "project_workflow",
+      "label": "小型深度學習專案流程",
+      "prerequisites": ["optimization"],
+      "description": "把資料、模型、訓練、評估串成可執行的小專案。"
+    },
+    {
+      "concept_id": "assessment_review",
+      "label": "考試與面試型整理",
+      "prerequisites": ["optimization"],
+      "description": "用題型和概念辨識整理核心觀念。"
+    }
+  ],
+  "calibration_questions": [
+    {
+      "question_id": "goal_type",
+      "prompt": "你想先理解概念、做程式實作、完成小專案，還是準備考試或面試？",
+      "intent_targets": ["conceptual", "implementation", "project", "assessment"],
+      "level_targets": ["beginner", "intermediate"]
+    },
+    {
+      "question_id": "math_comfort",
+      "prompt": "你目前對向量、函數、微分這些數學工具的熟悉度大概如何？",
+      "intent_targets": ["conceptual", "implementation"],
+      "level_targets": ["beginner", "intermediate", "advanced"]
+    }
+  ],
+  "canonical_path": {
+    "conceptual": ["math_intuition", "vectors_tensors", "functions_transformations", "forward_pass", "loss_error", "optimization"],
+    "implementation": ["math_intuition", "vectors_tensors", "functions_transformations", "forward_pass", "loss_error", "optimization", "mlp_implementation"],
+    "project": ["math_intuition", "vectors_tensors", "forward_pass", "loss_error", "optimization", "project_workflow"],
+    "assessment": ["math_intuition", "vectors_tensors", "functions_transformations", "forward_pass", "loss_error", "optimization", "assessment_review"]
+  },
+  "diagnostic_rules": [
+    {
+      "rule_id": "diag_math_intuition",
+      "concept_id": "math_intuition",
+      "prompt": "如果一個模型做出預測後，我們想知道它離目標有多遠，為什麼需要一個錯誤衡量？",
+      "expected_answer": "用來衡量預測與目標之間的差距",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_vectors_tensors",
+      "concept_id": "vectors_tensors",
+      "prompt": "為什麼圖片、文字或表格資料通常要先轉成數值陣列，模型才容易處理？",
+      "expected_answer": "因為模型需要可計算的數值表示",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_functions_transformations",
+      "concept_id": "functions_transformations",
+      "prompt": "把神經網路看成函數時，它主要是在把輸入做什麼？",
+      "expected_answer": "把輸入轉換成輸出或預測",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_forward_pass",
+      "concept_id": "forward_pass",
+      "prompt": "前向傳播這個步驟主要是在訓練流程中產生什麼？",
+      "expected_answer": "產生模型預測",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_loss_error",
+      "concept_id": "loss_error",
+      "prompt": "訓練時觀察 loss 的主要目的，是幫助我們判斷模型哪一件事？",
+      "expected_answer": "判斷預測和目標的差距是否變小",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_optimization",
+      "concept_id": "optimization",
+      "prompt": "優化器在訓練過程中主要會調整模型的哪一類東西？",
+      "expected_answer": "調整模型參數",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_mlp_implementation",
+      "concept_id": "mlp_implementation",
+      "prompt": "實作 MLP 時，為什麼通常會把線性層和非線性激活函數交替使用？",
+      "expected_answer": "讓模型能表示非線性關係",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_project_workflow",
+      "concept_id": "project_workflow",
+      "prompt": "做一個小型深度學習專案時，為什麼要把訓練資料和測試資料分開？",
+      "expected_answer": "用未見資料評估泛化能力",
+      "tests_single_concept": true
+    },
+    {
+      "rule_id": "diag_assessment_review",
+      "concept_id": "assessment_review",
+      "prompt": "準備考試或面試時，為什麼要能分辨 forward pass、loss、optimization 各自負責的角色？",
+      "expected_answer": "因為它們對應訓練流程中的不同職責",
+      "tests_single_concept": true
+    }
+  ],
+  "teaching_moves": [
+    {
+      "move_id": "recalibrate",
+      "strategy": "recalibrate_level",
+      "description": "當題目太細或太難時，回到更高層的目標與程度校準。"
+    },
+    {
+      "move_id": "scaffold",
+      "strategy": "scaffold_prerequisite",
+      "description": "學生表示不知道時，先補前置概念再回到原節點。"
+    },
+    {
+      "move_id": "accelerate",
+      "strategy": "accelerate_or_skip",
+      "description": "學生覺得太簡單時，跳到下一個有依賴關係的節點。"
+    }
+  ],
+  "remediation_paths": [
+    {"signal": "unknown", "action": "scaffold_prerequisite", "target": "math_intuition"},
+    {"signal": "too_detailed", "action": "recalibrate_level", "target": "goal_type"},
+    {"signal": "too_easy", "action": "accelerate", "target": "optimization"},
+    {"signal": "project_goal", "action": "switch_path", "target": "project"},
+    {"signal": "assessment_goal", "action": "switch_path", "target": "assessment"}
+  ],
+  "assessment_policy": {
+    "mode": "formative",
+    "education_only": true,
+    "notes": "This MVP skill supports education and learning assessment only."
+  },
+  "safety_notes": [
+    "Broad beginner requests must not start with implementation-detail trivia.",
+    "MLP implementation is downstream of conceptual foundations and optimization."
+  ]
+}

@@ -1,5 +1,5 @@
 import pytest
-from pelican_mvp.models import DiagnosticQuestion, KnowledgeNode, LearningPlanSnapshot
+from pelican_mvp.models import DiagnosticQuestion, KnowledgeNode, LearnerIntakeProfile, LearningIntent, LearningPlanSnapshot
 from pelican_mvp.planner import LearningPlanner, validate_learning_plan
 from pelican_mvp.llm import LlmAdapter, LlmUnavailable
 from unittest.mock import Mock
@@ -115,4 +115,38 @@ def test_planner_llm_failure_triggers_fallback(caplog):
 
     fallback_warns = [r for r in caplog.records if r.message == "pelican_plan_fallback"]
     assert len(fallback_warns) > 0
-    assert fallback_warns[0].reason_code == "ValueError"
+    assert any(record.reason_code == "ValueError" for record in fallback_warns)
+
+
+def test_planner_uses_catalog_skill_before_llm_for_deep_learning(caplog):
+    import logging
+    caplog.set_level(logging.INFO)
+    mock_llm = Mock(spec=LlmAdapter)
+    mock_llm.available = True
+    planner = LearningPlanner(mock_llm)
+
+    plan = planner.create_plan("深度學習")
+
+    assert [node.node_id for node in plan.nodes] == ["math_intuition"]
+    assert mock_llm.generate_learning_plan.call_count == 0
+    generated_logs = [r for r in caplog.records if r.message == "pelican_plan_generated"]
+    assert generated_logs[-1].plan_source == "skill"
+    assert generated_logs[-1].skill_id == "deep_learning"
+
+
+def test_planner_profile_aware_method_selects_implementation_route() -> None:
+    mock_llm = Mock(spec=LlmAdapter)
+    mock_llm.available = False
+    planner = LearningPlanner(mock_llm)
+    profile = LearnerIntakeProfile(
+        topic="深度學習",
+        intent=LearningIntent.IMPLEMENTATION,
+        level_hint="beginner",
+        intake_turns=1,
+    )
+
+    plan = planner.create_plan_for_profile(profile)
+
+    node_ids = [node.node_id for node in plan.nodes]
+    assert "mlp_implementation" in node_ids
+    assert node_ids[0] == "math_intuition"

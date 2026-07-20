@@ -5,9 +5,12 @@ from __future__ import annotations
 import re
 import uuid
 
+from .domain_catalog import resolve_domain_category
 from .llm import LlmAdapter, LlmUnavailable
-from .models import DiagnosticQuestion, KnowledgeNode, LearningPlanSnapshot
+from .models import DiagnosticQuestion, KnowledgeNode, LearnerIntakeProfile, LearningIntent, LearningPlanSnapshot
 from .observability import log_event
+from .skill_compiler import SkillCompileError, compile_learning_plan
+from .skill_loader import SkillLoadError, load_catalog_skill
 
 
 def validate_learning_plan(plan: LearningPlanSnapshot) -> None:
@@ -67,6 +70,44 @@ class LearningPlanner:
     def create_plan(self, topic: str) -> LearningPlanSnapshot:
         """Create a validated learning plan from a topic, falling back if necessary."""
         topic_clean = re.sub(r"\s+", " ", topic).strip()[:100] or "預設主題"
+        profile = LearnerIntakeProfile(topic=topic_clean, goal_summary=f"學習 {topic_clean}")
+        return self.create_plan_for_profile(profile)
+
+    def create_plan_for_profile(self, profile: LearnerIntakeProfile) -> LearningPlanSnapshot:
+        """Create a plan from intake metadata using validated skills first.
+
+        Domain skills are deterministic teaching assets. They are attempted before
+        topic-level LLM planning so a broad subject such as deep learning starts
+        from a reviewed foundation route instead of arbitrary implementation
+        detail. Invalid skill assets fail closed and then use the old safe
+        fallback/LLM path without persisting partial skill output.
+        """
+        topic_clean = re.sub(r"\s+", " ", profile.topic).strip()[:100] or "預設主題"
+        profile = _profile_with_defaults(profile, topic_clean)
+
+        try:
+            skill = load_catalog_skill(topic_clean)
+            plan = compile_learning_plan(skill, profile)
+            validate_learning_plan(plan)
+            log_event(
+                "pelican_plan_generated",
+                plan_source="skill",
+                node_count=len(plan.nodes),
+                skill_id=skill.skill_id,
+                skill_version=skill.version,
+                domain_category=skill.domain_category.value,
+                skill_lifecycle=skill.lifecycle.value,
+            )
+            return plan
+        except (SkillLoadError, SkillCompileError, ValueError, KeyError, TypeError) as exc:
+            resolution = resolve_domain_category(topic_clean)
+            log_event(
+                "pelican_plan_fallback",
+                plan_source="fallback",
+                domain_category=resolution.category.value,
+                route=resolution.route_slug,
+                reason_code=type(exc).__name__,
+            )
 
         if self.llm.available:
             try:
@@ -128,3 +169,20 @@ class LearningPlanner:
             node_count=len(nodes),
         )
         return fallback_plan
+
+
+def _profile_with_defaults(profile: LearnerIntakeProfile, topic: str) -> LearnerIntakeProfile:
+    if profile.topic == topic and profile.intent is not LearningIntent.UNKNOWN:
+        return profile
+    return LearnerIntakeProfile(
+        topic=topic,
+        goal_summary=profile.goal_summary or f"學習 {topic}",
+        intent=profile.intent,
+        level_hint=profile.level_hint,
+        domain_category=profile.domain_category,
+        skill_id=profile.skill_id,
+        skill_version=profile.skill_version,
+        skill_lifecycle=profile.skill_lifecycle,
+        model_route=profile.model_route,
+        intake_turns=profile.intake_turns,
+    )
