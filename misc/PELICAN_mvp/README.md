@@ -2,26 +2,20 @@
 
 ## 1. 介紹
 
-`misc/PELICAN_mvp` 是 AREQA 主系統外的一個獨立學習引擎實驗場。它用來驗證 PELICAN-style 知識樹診斷、AREQA-style EDF 教學決策、GUM-style 學習記憶邊界，以及新加入的 Domain Skill Runtime。
+這是一個用來探索「AI 要如何真的教人」的學習引擎 MVP。它不是一般問答聊天，也不是把題目丟給語言模型直接回答；它會先了解使用者想學什麼、想怎麼學、目前大概在哪個程度，再安排合適的起點。
 
-目前真實狀況：
+目前最完整的展示主題是「深度學習」。當使用者輸入 `深度學習`，系統不會立刻丟出 MLP 權重數量、SGD 細節這類過細的前測題，而是先確認學習方向與基礎程度，再從更容易進入的概念開始。
 
-- 預設新 session 不會直接問診斷題，而是走 calibration-first onboarding：先問主題，再問學習方向，再問程度與先備經驗。
-- 內建可執行 skill asset：`domain_skills/deep_learning.yaml`。
-- `深度學習` 會先載入並驗證 `deep_learning.yaml`，再由 skill compiler 產生 session-local knowledge tree。
-- 未校準或 beginner 的 conceptual deep-learning route 會 foundation-first，不會一開始問 MLP 權重參數這類過細問題。
-- 使用者說 `太細了` / `太難` 會觸發 scope mismatch，停在目前概念重新校準，不會跳到無關節點。
-- 使用者說 `不知道` 會觸發 prerequisite scaffold，不會繼續追問下一個隨機診斷題。
-- 使用者說 `太簡單了` 會觸發 acceleration。
-- LLM 只可用來產生 structured `DomainSkill` 或輔助診斷/教學；模型輸出必須通過 validator，不能直接進 diagnosis。
-- EDF learner state 與 model inference 不會被寫成 user-authored memory。local memory 只保存 bounded direct user evidence。
-- production AREQA `backend/` / `frontend/` 不被此 MVP runtime import 或修改；這裡是獨立 sandbox。
+這個 MVP 特別想解決幾個教學痛點：
 
-支援邊界：
+- 避免一開始就問太細、太硬、太像考試的問題。
+- 讓學習路徑有固定骨架，而不是每次都隨機生成一棵知識樹。
+- 使用者說 `不知道` 時，系統會補前置概念，而不是繼續追問下一題。
+- 使用者說 `太細了` 或 `太難了` 時，系統會退回較高層重新校準。
+- 使用者說 `太簡單了` 時，系統可以加快節奏。
+- 學習過程會保留直接來自使用者的學習證據，但不會把模型推測當成使用者事實。
 
-- STEM / humanities / business / language 的 category routing contract 已存在。
-- 目前 checked-in approved-like asset 只有 `deep_learning.yaml`，其他領域會走 validated generated skill 或 deterministic fallback。
-- 法律知識只做教育用途；runtime 會避免把回應呈現為個案法律諮詢。
+這裡仍是獨立實驗場，不會改動 AREQA 主系統。它的目標是先把「學習模式的 engine」驗證清楚，再決定是否導入主系統。
 
 ## 2. 開啟方式
 
