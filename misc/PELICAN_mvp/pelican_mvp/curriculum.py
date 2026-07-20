@@ -7,6 +7,8 @@ from .models import DiagnosticQuestion, KnowledgeNode, TutoringStrategy
 
 @dataclass
 class Curriculum:
+    """Reviewed fixture or compiled generated curriculum used by diagnosis."""
+
     name: str
     nodes: dict[str, KnowledgeNode]
     diagnostics: dict[str, DiagnosticQuestion]
@@ -16,12 +18,15 @@ class Curriculum:
     completion_message: str
 
     def successors(self, node_id: str) -> tuple[str, ...]:
+        """Return child node IDs that depend on the given node."""
         return tuple(node.node_id for node in self.nodes.values() if node_id in node.prerequisites)
 
     def first_task_step(self) -> dict[str, str]:
+        """Return the first task step after diagnosis completes."""
         return self.task_steps[0]
 
     def next_task_step(self, step_id: str) -> dict[str, str] | None:
+        """Return the next task step or ``None`` when the task is complete."""
         for index, step in enumerate(self.task_steps):
             if step["step_id"] == step_id:
                 return self.task_steps[index + 1] if index + 1 < len(self.task_steps) else None

@@ -9,12 +9,16 @@ from typing import Any
 
 
 class KnowledgeStatus(str, Enum):
+    """Knowledge tracing status for each concept node."""
+
     UNDIAGNOSED = "undiagnosed"
     MASTERED = "mastered"
     NOT_MASTERED = "not_mastered"
 
 
 class ResponseCategory(str, Enum):
+    """Rule/LLM response labels used by diagnosis and tutoring."""
+
     INABILITY = "inability_to_respond"
     DIFFICULTY = "difficulty_in_understanding"
     CORRECT = "correct"
@@ -23,6 +27,8 @@ class ResponseCategory(str, Enum):
 
 
 class TutoringStrategy(str, Enum):
+    """Supported tutoring moves for the MVP strategy selector."""
+
     EXPLANATION = "explanation"
     CORRECTION = "correction"
     CONFIRMATION = "confirmation"
@@ -143,6 +149,8 @@ class MemoryEvidenceRecord:
 
 @dataclass(frozen=True)
 class KnowledgeNode:
+    """One node in a fixture or compiled PELICAN knowledge tree."""
+
     node_id: str
     label: str
     prerequisites: tuple[str, ...] = ()
@@ -151,6 +159,8 @@ class KnowledgeNode:
 
 @dataclass(frozen=True)
 class DiagnosticQuestion:
+    """One diagnostic prompt with answer kept separate from learner-facing text."""
+
     node_id: str
     prompt: str
     expected_answer: str
@@ -273,6 +283,8 @@ class LearningMemorySnapshot:
 
 @dataclass
 class Evidence:
+    """Evidence attached to a node-state update."""
+
     response: str
     category: str
     direct: bool
@@ -281,11 +293,14 @@ class Evidence:
 
 @dataclass
 class NodeState:
+    """Mutable knowledge-state record for one node in a learner session."""
+
     status: KnowledgeStatus = KnowledgeStatus.UNDIAGNOSED
     evidence: list[Evidence] = field(default_factory=list)
     updated_at: str | None = None
 
     def update(self, status: KnowledgeStatus, evidence: Evidence) -> None:
+        """Apply a status change and append its supporting evidence."""
         self.status = status
         self.evidence.append(evidence)
         self.updated_at = evidence.timestamp
@@ -293,6 +308,8 @@ class NodeState:
 
 @dataclass
 class TurnRecord:
+    """Persist one local turn for MVP auditability and tests."""
+
     prompt: str
     response: str
     phase: str
@@ -329,6 +346,7 @@ class SessionState:
     completed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the full local session without dropping compatibility fields."""
         return {
             "learner_id": self.learner_id,
             "schema_version": self.schema_version,
@@ -410,6 +428,8 @@ class SessionState:
 
 @dataclass(frozen=True)
 class TurnOutcome:
+    """Engine response returned to CLI/API callers after one state transition."""
+
     message: str
     node_id: str | None
     category: ResponseCategory | None

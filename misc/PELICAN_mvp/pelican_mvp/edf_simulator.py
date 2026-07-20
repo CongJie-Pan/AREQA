@@ -9,6 +9,8 @@ from .observability import log_event
 
 
 class EdfSimulator:
+    """Deterministic EDF-style evaluator for local teaching decisions."""
+
     def evaluate(self, state: SessionState) -> EdfSnapshot:
         """Evaluate learner state and determine a pedagogical policy."""
         total_evidence = sum(len(node.evidence) for node in state.nodes.values() if node.evidence)

@@ -29,7 +29,15 @@ from .observability import log_event
 
 
 class PelicanEngine:
+    """Coordinate intake, planning, diagnosis, tutoring, EDF, and memory state.
+
+    Default generated sessions use calibration-first onboarding before a skill is
+    compiled into a PELICAN knowledge tree. Explicit fixture sessions keep their
+    legacy direct-to-diagnosis behavior for regression compatibility.
+    """
+
     def __init__(self, data_dir: Path | str, learner_id: str = "demo_student", mode: str | None = None, curriculum_id: str | None = None):
+        """Load or create one learner session with isolated local persistence."""
         if mode is not None and mode not in {"rule", "llm"}:
             raise ValueError("mode must be 'rule' or 'llm'")
         self.store = StateStore(data_dir)
@@ -45,6 +53,7 @@ class PelicanEngine:
         self.memory = LearningMemorySimulator()
 
     def _resolve_curriculum(self) -> Curriculum | None:
+        """Return the active fixture or compiled generated curriculum."""
         if self.state.plan_source == PlanSource.FIXTURE and self.state.curriculum_id:
             return CURRICULUMS.get(self.state.curriculum_id)
         if self.state.learning_plan:
@@ -61,6 +70,7 @@ class PelicanEngine:
         return None
 
     def start(self) -> TurnOutcome:
+        """Resume the current phase without consuming learner evidence."""
         if self.state.phase == "onboarding":
             log_event("pelican_intake_progress", learner_id=self.state.learner_id, phase="onboarding", intake_decision="topic")
             if self.state.intake_profile.intake_turns == 1:
@@ -92,6 +102,7 @@ class PelicanEngine:
         return self._present_current_step("延續先前保存的學習路徑")
 
     def respond(self, answer: str) -> TurnOutcome:
+        """Advance the state machine from one learner response."""
         answer = answer.strip()
         if answer.lower() == "show answer":
             return self._show_answer()
@@ -105,6 +116,13 @@ class PelicanEngine:
         return self._handle_tutoring(answer)
 
     def _handle_onboarding(self, answer: str) -> TurnOutcome:
+        """Collect topic, intent, and level before compiling a generated plan.
+
+        The transition order is deliberately fixed: topic first, goal/intent
+        second, level third. This prevents a broad subject request from being
+        treated as evidence of mastery or from immediately triggering an
+        implementation-level diagnostic.
+        """
         intake = self.state.intake_profile
         if intake.intake_turns == 0:
             from .domain_catalog import resolve_domain_category
@@ -212,6 +230,7 @@ class PelicanEngine:
         )
 
     def switch_mode(self, mode: str) -> TurnOutcome:
+        """Switch between rule and optional LLM modes for this local session."""
         if mode not in {"rule", "llm"}:
             raise ValueError("mode must be 'rule' or 'llm'")
         self.state.mode = mode
@@ -220,11 +239,13 @@ class PelicanEngine:
         return TurnOutcome(f"模式切換為 {mode}；{availability}。", self.state.current_node_id, None, None, (), "模式已更新")
 
     def reset(self, curriculum_id: str | None = None) -> TurnOutcome:
+        """Reset the current learner into onboarding or an explicit fixture."""
         self.state = self.store.reset(self.state.learner_id, self.state.mode, curriculum_id)
         self.curriculum = self._resolve_curriculum()
         return self.start()
 
     def tree_summary(self) -> str:
+        """Render a compact CLI-oriented knowledge-state summary."""
         if not self.curriculum:
             return "尚無知識狀態樹（收集意圖中）。"
         lines = ["知識狀態樹（綠=mastered，紅=not_mastered，灰=undiagnosed）"]
@@ -235,6 +256,7 @@ class PelicanEngine:
         return "\n".join(lines)
 
     def tree_state(self) -> list[dict[str, Any]]:
+        """Return API-safe tree metadata without prompts or learner answers."""
         if not self.curriculum:
             return []
         return [
@@ -248,6 +270,7 @@ class PelicanEngine:
         ]
 
     def history_summary(self) -> str:
+        """Render a compact CLI-oriented turn history summary."""
         if not self.state.history:
             return "尚無互動紀錄。"
         return "\n".join(
@@ -256,6 +279,7 @@ class PelicanEngine:
         )
 
     def _present_next_diagnostic(self) -> TurnOutcome:
+        """Present the next successor-first diagnostic for the active curriculum."""
         node_id = next_diagnostic_node(self.state, self.curriculum)
         if node_id is None:
             self.state.phase = "tutoring"
@@ -279,8 +303,11 @@ class PelicanEngine:
         return TurnOutcome(question.prompt, node_id, None, None, (), "successor-first：先診斷尚未確認的葉節點")
 
     def _handle_diagnostic(self, answer: str) -> TurnOutcome:
+        """Handle a diagnostic answer with generated-skill remediation precedence."""
         node_id = self._require_current_node()
         signal = remediation_signal(answer)
+        # Remediation signals are control evidence, not mastery evidence; handle
+        # them before normal answer classification can advance successor-first.
         if self.state.plan_source is PlanSource.GENERATED and signal in {"too_detailed", "too_difficult"}:
             return self._handle_scope_mismatch(answer, signal)
         if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
@@ -391,6 +418,7 @@ class PelicanEngine:
         )
 
     def _handle_tutoring(self, answer: str) -> TurnOutcome:
+        """Handle practice-step tutoring after diagnosis has selected a path."""
         node_id = self._require_current_node()
         step_id = self.state.current_step_id or ""
         category = self._classify(answer)
@@ -437,6 +465,7 @@ class PelicanEngine:
         return TurnOutcome(message, node_id, category, strategy, tuple(changes), reason)
 
     def _refresh_learning_context(self, answer: str, category: ResponseCategory, signal: str | None = None) -> None:
+        """Update bounded direct evidence and keep EDF inference separate."""
         self.memory.record_direct_evidence(self.state, answer, category, signal=signal)
         self.state.edf_snapshot = self.edf.evaluate(self.state)
         log_event(
@@ -446,9 +475,11 @@ class PelicanEngine:
         )
 
     def _present_current_step(self, reason: str) -> TurnOutcome:
+        """Return the already persisted tutoring prompt."""
         return TurnOutcome(self.state.current_prompt, self.state.current_node_id, None, None, (), reason)
 
     def _set_current_step(self, step: dict[str, str]) -> None:
+        """Persist the active task step as the current tutor prompt."""
         self.state.current_step_id = step["step_id"]
         self.state.current_node_id = step["node_id"]
         self.state.current_prompt = step["prompt"]
@@ -456,6 +487,7 @@ class PelicanEngine:
         self.state.current_prompt_source = "llm" if self.state.plan_source.value == "llm" else "rule"
 
     def _classify(self, answer: str) -> ResponseCategory:
+        """Classify a learner answer with optional LLM fallback to rules."""
         if self.state.mode == "llm" and self.state.current_prompt_source == "llm":
             try:
                 category = self.llm.classify(
@@ -468,6 +500,7 @@ class PelicanEngine:
         return classify_response(answer, self.state.current_expected_answer, self.curriculum)
 
     def _tutor_message(self, strategy: TutoringStrategy, node_id: str) -> tuple[str, str]:
+        """Generate or select a tutor response without changing mastery state."""
         if self.state.mode == "llm":
             try:
                 generated = self.llm.tutor_response(strategy, self.state.current_prompt, self.curriculum.nodes[node_id].label)
@@ -478,9 +511,11 @@ class PelicanEngine:
         return rule_tutor_message(strategy, node_id, self.state.current_prompt, self.curriculum), "rule"
 
     def _show_answer(self) -> TurnOutcome:
+        """Reveal the expected answer without writing mastery evidence."""
         return TurnOutcome("提示答案：請直接輸入 expected answer 來通過測試。這是教師直接揭示，不會更新 mastery。", self.state.current_node_id, None, None, (), "教師揭示不等同學生掌握")
 
     def _record(self, answer: str, category: ResponseCategory, strategy: TutoringStrategy | None, changes: list[str]) -> None:
+        """Append a local turn record for auditability inside the MVP only."""
         self.state.history.append(
             TurnRecord(
                 prompt=self.state.current_prompt,
@@ -494,18 +529,21 @@ class PelicanEngine:
         )
 
     def _require_current_node(self) -> str:
+        """Return the selected node or fail when the state machine is inconsistent."""
         if not self.state.current_node_id:
             raise RuntimeError("No current knowledge node is selected")
         return self.state.current_node_id
 
     @staticmethod
     def _evidence(answer: str, category: ResponseCategory):
+        """Create direct node evidence from a learner answer."""
         from .models import Evidence
 
         return Evidence(response=answer, category=category.value, direct=True)
 
 
 def _infer_learning_intent(answer: str) -> LearningIntent:
+    """Infer a coarse intent label from onboarding text using deterministic rules."""
     if any(token in answer for token in ("專案", "project", "作品")):
         return LearningIntent.PROJECT
     if any(token in answer for token in ("考試", "面試", "測驗", "assessment")):
@@ -522,6 +560,7 @@ def _infer_learning_intent(answer: str) -> LearningIntent:
 
 
 def _infer_level_hint(answer: str) -> str:
+    """Infer a coarse level hint without treating it as mastery evidence."""
     if any(token in answer for token in ("完全沒有", "零基礎", "沒有基礎", "beginner")):
         return "beginner"
     if any(token in answer for token in ("實作經驗", "做過", "熟", "advanced")):

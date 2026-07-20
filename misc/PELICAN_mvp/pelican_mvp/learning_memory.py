@@ -9,7 +9,10 @@ from .observability import log_event
 
 
 class LearningMemorySimulator:
+    """Maintain bounded prompt-safe direct evidence for one local session."""
+
     def __init__(self, max_context_size: int = 10):
+        """Configure the maximum direct-evidence context window."""
         self.max_context_size = max_context_size
 
     def record_direct_evidence(

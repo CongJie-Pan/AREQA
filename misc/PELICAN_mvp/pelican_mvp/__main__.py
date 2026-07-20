@@ -1,3 +1,5 @@
+"""Command-line entry point for the PELICAN MVP web server."""
+
 import argparse
 
 import uvicorn

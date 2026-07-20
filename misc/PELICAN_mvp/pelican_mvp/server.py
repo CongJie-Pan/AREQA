@@ -1,3 +1,5 @@
+"""FastAPI adapter exposing the local PELICAN MVP learning engine."""
+
 import threading
 from pathlib import Path
 from typing import Any
@@ -37,25 +39,33 @@ static_dir.mkdir(exist_ok=True)
 
 
 class BaseRequest(BaseModel):
+    """Common request fields for the local MVP API."""
+
     learner_id: str = "demo_student"
     curriculum_id: str | None = None
 
 
 class RespondRequest(BaseRequest):
+    """Request body for one learner response."""
+
     answer: str
 
 
 class ModeRequest(BaseRequest):
+    """Request body for switching rule/LLM mode."""
+
     mode: str
 
 
 def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEngine:
+    """Create an engine using the process-global data directory and LLM adapter."""
     engine = PelicanEngine(data_dir, learner_id, curriculum_id=curriculum_id)
     engine.llm = llm_adapter
     return engine
 
 
 def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
+    """Serialize a turn response with safe learning metadata only."""
     return {
         "api_version": "v1",
         "message": msg.message,
@@ -91,11 +101,13 @@ def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
 
 @app.get("/api/curriculums")
 def get_curriculums() -> dict[str, str]:
+    """Return reviewed fixture curricula available for compatibility tests."""
     return {k: v.name for k, v in CURRICULUMS.items()}
 
 
 @app.post("/api/start")
 def start(req: BaseRequest) -> dict[str, Any]:
+    """Start or resume a learner session."""
     with state_lock:
         try:
             engine = _get_engine(req.learner_id, req.curriculum_id)
@@ -115,6 +127,7 @@ def start(req: BaseRequest) -> dict[str, Any]:
 
 @app.post("/api/respond")
 def respond(req: RespondRequest) -> dict[str, Any]:
+    """Process one learner answer through the PELICAN engine."""
     with state_lock:
         try:
             engine = _get_engine(req.learner_id)
@@ -131,6 +144,7 @@ def respond(req: RespondRequest) -> dict[str, Any]:
 
 @app.post("/api/reset")
 def reset(req: BaseRequest) -> dict[str, Any]:
+    """Reset a learner session to onboarding or an explicit fixture."""
     with state_lock:
         try:
             engine = _get_engine(req.learner_id)
@@ -147,6 +161,7 @@ def reset(req: BaseRequest) -> dict[str, Any]:
 
 @app.post("/api/mode")
 def set_mode(req: ModeRequest) -> dict[str, Any]:
+    """Switch a learner session between deterministic rule mode and LLM mode."""
     with state_lock:
         try:
             engine = _get_engine(req.learner_id)

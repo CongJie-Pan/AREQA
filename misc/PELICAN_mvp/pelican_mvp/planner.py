@@ -64,7 +64,10 @@ def validate_learning_plan(plan: LearningPlanSnapshot) -> None:
 
 
 class LearningPlanner:
+    """Create validated learning plans from intake topics or profiles."""
+
     def __init__(self, llm: LlmAdapter | None = None):
+        """Initialize planner dependencies with deterministic fallback behavior."""
         self.llm = llm or LlmAdapter()
         self.skill_generator = DomainSkillGenerator(self.llm)
 

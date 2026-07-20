@@ -25,10 +25,12 @@ def next_diagnostic_node(state: SessionState, curriculum: Curriculum) -> str | N
 
 
 def normalize_answer(text: str) -> str:
+    """Normalize short rule-mode answers for deterministic comparison."""
     return re.sub(r"\s+", "", text).replace("…", "...").lower()
 
 
 def is_correct(answer: str, expected: str, curriculum: Curriculum) -> bool:
+    """Evaluate rule-mode correctness using exact matches and aliases."""
     actual = normalize_answer(answer)
     target = normalize_answer(expected)
     if actual == target:
@@ -37,6 +39,7 @@ def is_correct(answer: str, expected: str, curriculum: Curriculum) -> bool:
 
 
 def classify_response(answer: str, expected: str, curriculum: Curriculum) -> ResponseCategory:
+    """Classify a learner response while keeping fixture behavior stable."""
     normalized = normalize_answer(answer)
     if not normalized:
         return ResponseCategory.OTHER
@@ -67,6 +70,7 @@ def remediation_signal(answer: str) -> str | None:
 def apply_diagnostic_result(
     state: SessionState, node_id: str, answer: str, category: ResponseCategory, curriculum: Curriculum
 ) -> list[str]:
+    """Apply diagnostic evidence and infer prerequisites only from correct answers."""
     status = KnowledgeStatus.MASTERED if category is ResponseCategory.CORRECT else KnowledgeStatus.NOT_MASTERED
     evidence = Evidence(response=answer, category=category.value, direct=True)
     state.nodes[node_id].update(status, evidence)
@@ -79,6 +83,7 @@ def apply_diagnostic_result(
 def _mark_prerequisites_mastered(
     state: SessionState, node_id: str, answer: str, category: ResponseCategory, curriculum: Curriculum
 ) -> list[str]:
+    """Recursively mark prerequisite mastery inferred from a mastered child."""
     changes: list[str] = []
     for prerequisite in curriculum.nodes[node_id].prerequisites:
         parent = state.nodes[prerequisite]
@@ -93,4 +98,5 @@ def _mark_prerequisites_mastered(
 
 
 def diagnostic_for(node_id: str, curriculum: Curriculum):
+    """Return the diagnostic question for a known curriculum node."""
     return curriculum.diagnostics[node_id]

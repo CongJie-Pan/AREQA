@@ -16,6 +16,7 @@ FAST_STRATEGIES = {
 
 
 def select_strategy(category: ResponseCategory, rounds: int, pedagogical_policy: str | None = None) -> tuple[TutoringStrategy, str]:
+    """Select a fast or slow tutoring strategy constrained by EDF policy."""
     if rounds < 2:
         return FAST_STRATEGIES[category], "fast-thinking：依本回合回答類別選擇策略"
     candidates = _slow_candidates(category, pedagogical_policy)
@@ -36,6 +37,7 @@ def strategy_for_remediation_signal(signal: str | None) -> TutoringStrategy | No
 
 
 def _slow_candidates(category: ResponseCategory, pedagogical_policy: str | None = None) -> tuple[TutoringStrategy, ...]:
+    """Return candidate strategies after repeated difficulty or failure."""
     candidates = []
     if category in (ResponseCategory.INABILITY, ResponseCategory.DIFFICULTY):
         candidates = [TutoringStrategy.DECOMPOSITION, TutoringStrategy.SIMPLIFICATION]
@@ -70,6 +72,7 @@ def _simulation_score(strategy: TutoringStrategy, category: ResponseCategory, di
 
 
 def rule_tutor_message(strategy: TutoringStrategy, node_id: str, prompt: str, curriculum: Curriculum) -> str:
+    """Render a deterministic tutor message for rule mode."""
     label = curriculum.nodes[node_id].label
     hint_template = curriculum.tutor_hints.get(strategy, "請只聚焦「{label}」：{prompt}")
     return hint_template.format(label=label, prompt=prompt)

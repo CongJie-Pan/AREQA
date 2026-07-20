@@ -17,12 +17,15 @@ class LlmUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class LlmConfig:
+    """OpenAI-compatible transport configuration for optional OpenRouter calls."""
+
     api_key: str
     model: str
     base_url: str
 
     @classmethod
     def from_environment(cls) -> "LlmConfig | None":
+        """Load optional LLM settings without making credentials mandatory."""
         try:
             from dotenv import load_dotenv
             load_dotenv()
@@ -54,12 +57,21 @@ MODEL_ROUTE_ENV = {
 
 
 class LlmAdapter:
+    """Small fail-safe wrapper around optional OpenAI-compatible model calls.
+
+    The adapter exposes structured generation and tutoring helpers, but every
+    caller must tolerate ``None`` or ``LlmUnavailable`` and keep deterministic
+    rule behavior available. Model reasoning is neither requested nor persisted.
+    """
+
     def __init__(self, config: LlmConfig | None = None):
+        """Create a lazily initialized client wrapper."""
         self.config = config or LlmConfig.from_environment()
         self._client: Any | None = None
 
     @property
     def available(self) -> bool:
+        """Return whether an API key/config is available."""
         return self.config is not None
 
     def model_route_for_category(self, category: DomainCategory) -> str:
@@ -82,6 +94,7 @@ class LlmAdapter:
         return DEFAULT_SKILL_MODEL_ROUTES.get(category, self.config.model if self.config else "unknown")
 
     def verified_diagnostic(self, node_label: str) -> DiagnosticQuestion | None:
+        """Generate a diagnostic only if an independent verifier accepts it."""
         if not self.available:
             return None
         teacher = self._json(
@@ -106,6 +119,7 @@ class LlmAdapter:
         return DiagnosticQuestion("", prompt, expected, source="llm")
 
     def classify(self, prompt: str, expected: str, answer: str) -> ResponseCategory | None:
+        """Classify a learner response with the optional LLM path."""
         if not self.available:
             return None
         payload = self._json(
@@ -124,6 +138,7 @@ class LlmAdapter:
     def tutor_response(
         self, strategy: TutoringStrategy, prompt: str, node_label: str
     ) -> str | None:
+        """Generate one tutor response for the selected pedagogical strategy."""
         if not self.available:
             return None
         payload = self._json(
@@ -135,6 +150,7 @@ class LlmAdapter:
         return response or None
 
     def generate_learning_plan(self, topic: str) -> LearningPlanSnapshot | None:
+        """Legacy topic-to-plan generation kept as a compatibility fallback."""
         if not self.available:
             return None
         import uuid
@@ -217,6 +233,7 @@ class LlmAdapter:
         return DomainSkill.from_dict(payload)
 
     def _json(self, system: str, user: str, *, model: str | None = None) -> dict[str, Any]:
+        """Call the configured model and require a JSON object response."""
         if not self.config:
             raise LlmUnavailable("OPENROUTER_API_KEY is not configured")
         try:
