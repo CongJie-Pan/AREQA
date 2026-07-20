@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Modal, Input, Dropdown, MenuProps, message, Button } from 'antd';
-import { User, LogOut, Edit3 } from 'lucide-react';
+import { User, LogOut, Edit3, MessageSquareText } from 'lucide-react';
 import { Auth as SupabaseAuth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/lib/supabase';
@@ -13,7 +13,10 @@ export function UserAuthUI() {
   const user = useAuthStore((state) => state.user);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const [feedbackText, setFeedbackText] = useState('');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
 
   useEffect(() => {
@@ -43,6 +46,32 @@ export function UserAuthUI() {
     }
   };
 
+  const handleSubmitFeedback = async () => {
+    const content = feedbackText.trim();
+    if (!user || !content || isSubmittingFeedback) return;
+
+    setIsSubmittingFeedback(true);
+    try {
+      const { error } = await supabase.from('feedback_submissions').insert({
+        user_id: user.id,
+        email: user.email ?? null,
+        display_name: displayName,
+        content,
+        page_path: typeof window !== 'undefined' ? window.location.pathname : null,
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      });
+
+      if (error) throw error;
+      message.success('意見已送出，謝謝你的回饋。');
+      setFeedbackText('');
+      setIsFeedbackModalOpen(false);
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '意見送出失敗');
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
+
   const displayName = user?.user_metadata?.username || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || '訪客';
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
 
@@ -55,6 +84,12 @@ export function UserAuthUI() {
         setNewUsername(displayName);
         setIsEditModalOpen(true);
       }
+    },
+    {
+      key: 'feedback',
+      icon: <MessageSquareText size={16} />,
+      label: '聯繫我們/意見回饋',
+      onClick: () => setIsFeedbackModalOpen(true)
     },
     {
       key: 'logout',
@@ -206,6 +241,29 @@ export function UserAuthUI() {
           onChange={e => setNewUsername(e.target.value)}
           placeholder="輸入新暱稱..."
           onPressEnter={handleUpdateUsername}
+        />
+      </Modal>
+
+      <Modal
+        title="聯繫我們/意見回饋"
+        open={isFeedbackModalOpen}
+        onOk={handleSubmitFeedback}
+        onCancel={() => setIsFeedbackModalOpen(false)}
+        okText="送出"
+        cancelText="取消"
+        confirmLoading={isSubmittingFeedback}
+        okButtonProps={{
+          disabled: !feedbackText.trim(),
+          style: { backgroundColor: '#d8a25c', color: 'black' }
+        }}
+      >
+        <Input.TextArea
+          value={feedbackText}
+          onChange={e => setFeedbackText(e.target.value)}
+          placeholder="請輸入你的問題、建議或遇到的狀況..."
+          autoSize={{ minRows: 4, maxRows: 8 }}
+          maxLength={2000}
+          showCount
         />
       </Modal>
     </>

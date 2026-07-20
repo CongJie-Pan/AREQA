@@ -5,6 +5,10 @@ import '@testing-library/jest-dom';
 import { UserAuthUI } from '@/components/Auth';
 import { supabase } from '@/lib/supabase';
 
+const supabaseMocks = vi.hoisted(() => ({
+  insertFeedback: vi.fn(),
+}));
+
 // Mock matchMedia for Ant Design Modal
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -36,6 +40,9 @@ vi.mock('@/lib/supabase', () => {
         signOut: vi.fn().mockResolvedValue({ error: null }),
         updateUser: vi.fn(),
       },
+      from: vi.fn(() => ({
+        insert: supabaseMocks.insertFeedback,
+      })),
       // Expose a helper to trigger auth state changes in tests
       _triggerAuthStateChange: (event: string, session: any) => {
         if (onAuthStateChangeCallback) {
@@ -73,6 +80,7 @@ Object.defineProperty(window, 'location', {
 describe('UserAuthUI Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    supabaseMocks.insertFeedback.mockResolvedValue({ error: null });
   });
 
   it('shows login button when not authenticated', async () => {
@@ -130,6 +138,41 @@ describe('UserAuthUI Component', () => {
     await waitFor(() => {
       expect(supabase.auth.signOut).toHaveBeenCalledOnce();
       expect(mockReload).not.toHaveBeenCalled();
+    });
+  });
+
+  it('submits contact feedback from the account dropdown', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: { user: { id: 'user_123', email: 'test@example.com', user_metadata: { username: 'testuser' } } } as any }
+    });
+    vi.mocked(supabase.auth.getUser).mockResolvedValueOnce({
+      data: { user: { id: 'user_123', email: 'test@example.com', user_metadata: { username: 'testuser' } } } as any,
+      error: null,
+    });
+
+    render(<UserAuthUI />);
+
+    await waitFor(() => {
+      expect(screen.getByText('testuser')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('testuser'));
+    fireEvent.click(await screen.findByText('聯繫我們/意見回饋'));
+    fireEvent.change(await screen.findByPlaceholderText('請輸入你的問題、建議或遇到的狀況...'), {
+      target: { value: '希望可以加入問題回報分類。' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /送\s*出/ }));
+
+    await waitFor(() => {
+      expect(supabase.from).toHaveBeenCalledWith('feedback_submissions');
+      expect(supabaseMocks.insertFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'user_123',
+          email: 'test@example.com',
+          display_name: 'testuser',
+          content: '希望可以加入問題回報分類。',
+        }),
+      );
     });
   });
 });
