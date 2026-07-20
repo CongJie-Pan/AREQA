@@ -80,3 +80,5 @@ data/complete_trainingSet_v4_B.jsonl
 misc/agent_mvp/.venv
 misc/AREQA_introPage/node_modules
 misc/AREQA_introPage
+
+supabase/.temp
