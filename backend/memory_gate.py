@@ -60,8 +60,11 @@ BEHAVIOR_ACTIONS = {
 EXPLICIT_MEMORY_PATTERNS = [
     r"(?:請你|麻煩你)?(?:記住|記得)(?:一下)?(?P<fact>.+)",
 ]
+EXPLICIT_SELF_REPORT_PATTERNS = [
+    r"^(?:我(?:真的)?(?:比較)?喜歡|我擅長|我不擅長|我習慣)(?P<fact>.+)",
+]
 PASSIVE_PREFERENCE_PATTERNS = [
-    r"(?:我(?:真的)?(?:比較)?喜歡|我不喜歡|我討厭|我偏好)(?P<fact>.+)",
+    r"(?:我不喜歡|我討厭|我偏好)(?P<fact>.+)",
     r"(?:學|理解|讀書|練習).*(?:我希望|我想要|我習慣)(?P<fact>.+)",
 ]
 STABLE_FACT_PATTERNS = [
@@ -246,6 +249,18 @@ def classify_user_message(message: str) -> MemoryGateDecision:
             ttl_seconds=None,
             proposition=explicit_fact,
             reason="explicit_user_memory_request",
+            weight=1.0,
+        )
+
+    self_report = _extract_pattern_fact(text, EXPLICIT_SELF_REPORT_PATTERNS)
+    if self_report:
+        return MemoryGateDecision(
+            category="explicit_self_report",
+            should_prompt=True,
+            should_cold_store=True,
+            ttl_seconds=None,
+            proposition=text,
+            reason="explicit_user_self_report",
             weight=1.0,
         )
 

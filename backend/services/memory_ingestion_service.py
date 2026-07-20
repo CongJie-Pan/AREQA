@@ -205,6 +205,38 @@ class MemoryIngestionService:
                 promoted=True,
             )
 
+        if decision.category == "explicit_self_report":
+            profile_text = self._rewrite_self_report_for_profile(decision.proposition)
+            canonical_key = self._canonicalize_passive_preference(
+                decision.proposition,
+                "passive_preference",
+            )
+            if canonical_key and await self._has_promoted_canonical_profile(
+                evidence.user_id,
+                canonical_key,
+            ):
+                return self._result(
+                    MemoryEligibilityState.PROMOTION_ELIGIBLE,
+                    "explicit_self_report_duplicate_profile",
+                    "explicit_self_report",
+                    evidence,
+                    promoted=False,
+                )
+            await self.store.perform_memory_operation(
+                evidence.user_id,
+                "user",
+                "add",
+                profile_text,
+                source="verified_user_evidence",
+            )
+            return self._result(
+                MemoryEligibilityState.PROMOTION_ELIGIBLE,
+                "explicit_self_report_promoted",
+                "explicit_self_report",
+                evidence,
+                promoted=True,
+            )
+
         route = {
             "passive_preference": ("passive_preference", 90, False),
             "temporary_goal": ("temporary_goal", 30, False),
@@ -513,6 +545,25 @@ class MemoryIngestionService:
         if len(completion_topic) < 2 or len(candidate_topic) < 2:
             return False
         return completion_topic in candidate_topic or candidate_topic in completion_topic
+
+    async def _has_promoted_canonical_profile(self, user_id: str, canonical_key: str) -> bool:
+        """Return whether an equivalent canonical preference is already promoted."""
+
+        candidates = await self.store.get_cold_candidates(user_id)
+        return any(
+            candidate.get("user_id") == user_id
+            and candidate.get("status") == "promoted"
+            and str(candidate.get("canonical_key") or "") == canonical_key
+            for candidate in candidates
+            if isinstance(candidate, dict)
+        )
+
+    @staticmethod
+    def _rewrite_self_report_for_profile(text: str) -> str:
+        """Convert exact first-person evidence into a concise profile statement."""
+
+        cleaned = re.sub(r"\s+", " ", (text or "").strip()).strip("。 ")
+        return re.sub(r"^我", "使用者", cleaned, count=1)
 
     @staticmethod
     def _evidence_record(evidence: UserEvidence) -> dict[str, str]:

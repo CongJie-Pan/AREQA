@@ -215,7 +215,8 @@ def attach_typed_entry(
         typed_entries = {}
         hot_memory[TYPED_ENTRIES_KEY] = typed_entries
     typed_entries[key] = entry.to_dict()
-    logger.info(
+    # logger.info(
+    logger.debug(
         "hot_memory.created key=%s kind=%s export_eligible=%s",
         key,
         entry.kind,

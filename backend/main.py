@@ -29,6 +29,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
+if os.environ.get("AREQA_VERBOSE_LOGS", "").lower() not in {"1", "true", "yes", "on"}:
+    # Keep noisy successful dependency logs available for local debugging, but
+    # hide them in production logs unless AREQA_VERBOSE_LOGS is enabled.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("gum").setLevel(logging.WARNING)
+    logging.getLogger("gum.batcher").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -1250,7 +1257,8 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
     """
     接收前端事件 (如點擊燈泡、UI 互動、語音打斷)
     """
-    logger.info(
+    # logger.info(
+    logger.debug(
         "client_action_logged user_id=%s action_type=%s",
         current_user_id,
         req.action_type,

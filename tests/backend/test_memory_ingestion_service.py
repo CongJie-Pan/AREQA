@@ -51,6 +51,48 @@ async def test_sensitive_explicit_request_is_not_durable():
 
 
 @pytest.mark.asyncio
+async def test_explicit_first_person_liking_promotes_to_profile_memory():
+    store = AsyncMock()
+    service = MemoryIngestionService(store)
+
+    result = await service.ingest_user_evidence(
+        evidence("我喜歡讀文學作品和賞析，也希望有人可以和我一起討論。")
+    )
+
+    assert result.state is MemoryEligibilityState.PROMOTION_ELIGIBLE
+    assert result.reason_code == "explicit_self_report_promoted"
+    assert result.category == "explicit_self_report"
+    assert result.promoted is True
+    store.perform_memory_operation.assert_awaited_once_with(
+        "user-a",
+        "user",
+        "add",
+        "使用者喜歡讀文學作品和賞析，也希望有人可以和我一起討論",
+        source="verified_user_evidence",
+    )
+    store.append_cold_candidate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_explicit_first_person_ability_promotes_to_profile_memory():
+    store = AsyncMock()
+    service = MemoryIngestionService(store)
+
+    result = await service.ingest_user_evidence(evidence("我擅長用比較的方式理解小說。"))
+
+    assert result.state is MemoryEligibilityState.PROMOTION_ELIGIBLE
+    assert result.reason_code == "explicit_self_report_promoted"
+    store.perform_memory_operation.assert_awaited_once_with(
+        "user-a",
+        "user",
+        "add",
+        "使用者擅長用比較的方式理解小說",
+        source="verified_user_evidence",
+    )
+    store.append_cold_candidate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_passive_preference_has_ninety_day_candidate_lifecycle():
     store = AsyncMock()
     store.get_cold_candidates.return_value = []

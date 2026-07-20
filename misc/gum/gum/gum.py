@@ -242,7 +242,8 @@ class gum:
             async with self._batch_processing_lock:
                 batch = self.batcher.pop_batch()
                 observer_names = [obs.get('observer_name', 'Unknown') for obs in batch]
-                self.logger.info(f"Processing batch of {len(batch)} observations from observers: {', '.join(observer_names)}")
+                # self.logger.info(f"Processing batch of {len(batch)} observations from observers: {', '.join(observer_names)}")
+                self.logger.debug(f"Processing batch of {len(batch)} observations from observers: {', '.join(observer_names)}")
                 await self._process_batch(batch)
 
     async def flush_pending_observations(self) -> int:
@@ -280,13 +281,15 @@ class gum:
                 pool = await self._generate_and_search(session, batched_observations)
                 identical, similar, different = await self._filter_propositions(pool)
 
-                self.logger.info("Applying proposition updates for batch...")
+                # self.logger.info("Applying proposition updates for batch...")
+                self.logger.debug("Applying proposition updates for batch...")
                 await self._handle_identical(session, identical, observations)
                 await self._handle_similar(session, similar, observations)
                 await self._handle_different(session, different, observations)
                 
                 # Observations are already removed from queue by pop_batch()
-                self.logger.info(f"Completed processing batch of {len(batched_observations)} observations")
+                # self.logger.info(f"Completed processing batch of {len(batched_observations)} observations")
+                self.logger.debug(f"Completed processing batch of {len(batched_observations)} observations")
                 
         except Exception as e:
             self.logger.error(f"Error processing batch: {e}")
@@ -837,7 +840,8 @@ class gum:
 
                 selected_labels = self._intent_cache.get(user_query)
                 if selected_labels is None:
-                    self.logger.info("[STITCH] Intent Cache Miss. Querying LLM for intent prediction...")
+                    # self.logger.info("[STITCH] Intent Cache Miss. Querying LLM for intent prediction...")
+                    self.logger.debug("[STITCH] Intent Cache Miss. Querying LLM for intent prediction...")
                     prompt = INTENT_SELECTION_PROMPT.format(
                         user_query=user_query,
                         context_scope_candidates=json.dumps(list(context_scopes)[:50], ensure_ascii=False),
@@ -853,9 +857,11 @@ class gum:
                     )
                     selected_labels = json.loads(rsp.choices[0].message.content)
                     self._intent_cache.put(user_query, selected_labels)
-                    self.logger.info(f"[STITCH] Predicted Labels: {json.dumps(selected_labels, ensure_ascii=False)}")
+                    # self.logger.info(f"[STITCH] Predicted Labels: {json.dumps(selected_labels, ensure_ascii=False)}")
+                    self.logger.debug(f"[STITCH] Predicted Labels: {json.dumps(selected_labels, ensure_ascii=False)}")
                 else:
-                    self.logger.info(f"[STITCH] Intent Cache Hit. Using cached labels for query: '{user_query}'")
+                    # self.logger.info(f"[STITCH] Intent Cache Hit. Using cached labels for query: '{user_query}'")
+                    self.logger.debug(f"[STITCH] Intent Cache Hit. Using cached labels for query: '{user_query}'")
 
             # 3. Perform BM25 search with Density Ranking
             return await search_propositions_bm25(

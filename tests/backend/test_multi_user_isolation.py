@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+from datetime import datetime, timedelta
 from unittest.mock import patch, AsyncMock, MagicMock
 from backend.gum_integration import (
     get_gum_instance,
@@ -17,9 +18,11 @@ def reset_gum_instances():
     gi.text_observers.clear()
     gi.importance_sums.clear()
     gi.interaction_counts.clear()
+    gi.last_interaction_times.clear()
     yield
     gi.gum_instances.clear()
     gi.text_observers.clear()
+    gi.last_interaction_times.clear()
 
 @pytest.mark.asyncio
 async def test_get_gum_instance_multi_user():
@@ -54,8 +57,6 @@ async def test_get_gum_instance_multi_user():
 
 @pytest.mark.asyncio
 async def test_batch_process_observations_multi_user_isolation():
-    gi.last_interaction_time = None
-    
     mock_instance = AsyncMock()
     mock_instance._process_batch = AsyncMock()
     mock_text_obs = AsyncMock()
@@ -83,6 +84,20 @@ async def test_batch_process_observations_multi_user_isolation():
         
         assert gi.importance_sums.get("user_a") == 5
         assert gi.interaction_counts.get("user_a") == 2
+        assert "user_a" in gi.last_interaction_times
+        assert "user_b" not in gi.last_interaction_times
+
+
+def test_idle_reflection_uses_per_user_interaction_time():
+    now = datetime.now()
+    gi.gum_instances["user_a"] = MagicMock()
+    gi.gum_instances["user_b"] = MagicMock()
+    gi.interaction_counts["user_a"] = 1
+    gi.interaction_counts["user_b"] = 1
+    gi.last_interaction_times["user_a"] = now - timedelta(minutes=31)
+    gi.last_interaction_times["user_b"] = now
+
+    assert gi._idle_users_for_reflection(now) == ["user_a"]
 
 @pytest.mark.asyncio
 async def test_stop_gum_instance_stops_all_users():

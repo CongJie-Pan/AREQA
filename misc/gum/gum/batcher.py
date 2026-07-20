@@ -31,14 +31,16 @@ class ObservationBatcher:
         
     async def start(self):
         """Start the batching system."""
-        self.logger.info(f"Started batcher with {self._queue.qsize()} items in queue")
+        # self.logger.info(f"Started batcher with {self._queue.qsize()} items in queue")
+        self.logger.debug(f"Started batcher with {self._queue.qsize()} items in queue")
         
         if self.should_process_batch():
             self._batch_ready_event.set()
         
     async def stop(self):
         """Stop the batching system."""
-        self.logger.info("Stopped batcher")
+        # self.logger.info("Stopped batcher")
+        self.logger.debug("Stopped batcher")
         
     def push(self, observer_name: str, content: str, content_type: str, user_id: str = "default_user") -> str:
         """Push an observation onto the queue.

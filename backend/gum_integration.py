@@ -42,7 +42,7 @@ gum_instances = {}
 text_observers = {}
 importance_sums = {}
 interaction_counts = {}
-last_interaction_time = None
+last_interaction_times: dict[str, datetime] = {}
 reflection_locks: dict[str, asyncio.Lock] = {}
 obs_worker = None
 _gum_init_locks = {}
@@ -116,7 +116,7 @@ async def get_gum_instance(user_id: str):
         return gum_instances[user_id], text_observers[user_id]
 
 async def stop_gum_instance():
-    global gum_instances, obs_worker, reflection_task
+    global gum_instances, obs_worker, reflection_task, last_interaction_times
     if obs_worker:
         await obs_worker.stop()
         obs_worker = None
@@ -135,6 +135,7 @@ async def stop_gum_instance():
                 await inst.batcher.stop()
     gum_instances.clear()
     text_observers.clear()
+    last_interaction_times.clear()
 
 async def clear_gum_memory(user_id: str = "default_user"):
     """Clear GUM memory from the database for a specific user."""
@@ -143,6 +144,7 @@ async def clear_gum_memory(user_id: str = "default_user"):
     # but for now we just reset them to prevent pending reflections
     importance_sums.pop(user_id, None)
     interaction_counts.pop(user_id, None)
+    last_interaction_times.pop(user_id, None)
     
     gum_instance, _ = await get_gum_instance(user_id)
     if gum_instance:
@@ -165,7 +167,7 @@ async def clear_gum_memory(user_id: str = "default_user"):
 
 importance_sums = {}
 interaction_counts = {}
-last_interaction_time = None
+last_interaction_times = {}
 
 def is_real_gum_batcher(gum_instance) -> bool:
     batcher = getattr(gum_instance, "batcher", None)
@@ -312,8 +314,8 @@ async def batch_process_observations(
     sync_to_working_memory: bool = True,
     conversation_id: str = "",
 ):
-    global importance_sums, interaction_counts, last_interaction_time
-    last_interaction_time = datetime.now()
+    global importance_sums, interaction_counts, last_interaction_times
+    last_interaction_times[user_id] = datetime.now()
     
     gum_instance, text_observer = await get_gum_instance(user_id)
     
@@ -365,7 +367,8 @@ async def batch_process_observations(
                     content = match.group(0)
                 decision = json.loads(content)
                 
-                print(f"[GUM Evolution] LLM decision: {decision}")
+                # print(f"[GUM Evolution] LLM decision: {decision}")
+                logger.debug("[GUM Evolution] LLM decision: %s", decision)
                 
                 importance_sums[user_id] = importance_sums.get(user_id, 0) + decision.get("importance_score", 5)
                 
@@ -598,18 +601,25 @@ async def push_reflection_observation(user_id: str, text: str, *, conversation_i
 
 async def run_reflection_loop():
     """Background task to run reflection if user is idle for 30 minutes."""
-    global last_interaction_time
     while True:
         await asyncio.sleep(300)  # Check every 5 minutes
-        if not gum_instances or last_interaction_time is None:
+        for user_id in _idle_users_for_reflection(datetime.now()):
+            print(f"Idle for 30 minutes, triggering session boundary reflection for {user_id}.")
+            await schedule_session_reflection(user_id)
+
+
+def _idle_users_for_reflection(now: datetime) -> list[str]:
+    """Return users whose own idle timer is eligible for reflection."""
+
+    result = []
+    for user_id in list(gum_instances.keys()):
+        last_seen = last_interaction_times.get(user_id)
+        if last_seen is None:
             continue
-        
-        idle_time = datetime.now() - last_interaction_time
-        if idle_time.total_seconds() > 1800:
-            for user_id in list(gum_instances.keys()):
-                if interaction_counts.get(user_id, 0) > 0:
-                    print(f"Idle for 30 minutes, triggering session boundary reflection for {user_id}.")
-                    await schedule_session_reflection(user_id)
+        idle_time = now - last_seen
+        if idle_time.total_seconds() > 1800 and interaction_counts.get(user_id, 0) > 0:
+            result.append(user_id)
+    return result
 
 reflection_task = None
 
@@ -789,7 +799,8 @@ async def get_hot_memory_snapshot(
                 working_parts.append(f"Explicit memory: {memory}")
         for point in recent_points[-8:]:
             if isinstance(point, dict) and point.get("prompt_safe") is False:
-                logger.info(
+                # logger.info(
+                logger.debug(
                     "hot_memory.snapshot_excluded user_id=%s reason=not_prompt_safe",
                     user_id,
                 )
