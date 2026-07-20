@@ -450,20 +450,20 @@ Define acceptance metrics: broad topics do not start with an advanced probe; int
 
 > Context: Add Google-style docstrings to every new or materially changed public module, class, and function. Document each onboarding transition, why mismatch is not mastery evidence, how scaffold selection follows the skill prerequisite map, and the separation between direct evidence and EDF inference. Add rationale comments only around transition precedence and fallback handling. Emit safe structured events for intake progress, scope mismatch, scaffold selection, route compilation, remediation, and phase transitions; never log raw learner text, prompts, answers, or generated teaching content.
 
-1. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` to implement calibration-first onboarding and skill-aware remediation.
-   - [ ] Add explicit intake progress handling for topic, goal/intent, and level/prior experience.
-   - [ ] Prevent `_present_next_diagnostic()` from running until the profile-aware plan is compiled.
-   - [ ] Add precedence for scope mismatch and inability before normal successor-first advancement.
-   - [ ] Preserve fixture curriculum paths and existing CLI commands.
-2. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/diagnosis.py` and `tutoring.py` to expose skill remediation signals and domain teaching moves without changing fixture classifications.
-3. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/learning_memory.py` and `models.py` to persist bounded direct-evidence records with `source`, `kind`, `prompt_safe`, `cold_export_eligible=False`, and learning context; keep EDF inference separate.
-4. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/server.py` to expose safe intake progress, skill metadata, and remediation state in the existing learning payload.
-5. [ ] Update `misc/PELICAN_mvp/README.md` with the calibration-first flow, supported categories, offline behavior, legal-education boundary, and lifecycle comments.
-6. [ ] Extend `misc/PELICAN_mvp/tests/test_engine.py`, `test_learning_memory.py`, `test_server.py`, and `test_e2e.py`; add `misc/PELICAN_mvp/tests/test_pedagogical_flow.py` for acceptance behavior.
-   - [ ] Cover `深度學習` -> goal/level intake -> foundation-first diagnostic.
-   - [ ] Cover `這太細了吧` -> scope mismatch and lower-level recalibration.
-   - [ ] Cover `不知道` -> prerequisite scaffold, not unrelated next-node advancement.
-   - [ ] Cover `太簡單了`, project, assessment, unknown domain, legal education disclaimer, persistence/restart, and evidence privacy.
+1. [x] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` to implement calibration-first onboarding and skill-aware remediation.
+   - [x] Add explicit intake progress handling for topic, goal/intent, and level/prior experience.
+   - [x] Prevent `_present_next_diagnostic()` from running until the profile-aware plan is compiled.
+   - [x] Add precedence for scope mismatch and inability before normal successor-first advancement.
+   - [x] Preserve fixture curriculum paths and existing CLI commands.
+2. [x] Modify `misc/PELICAN_mvp/pelican_mvp/diagnosis.py` and `tutoring.py` to expose skill remediation signals and domain teaching moves without changing fixture classifications.
+3. [x] Modify `misc/PELICAN_mvp/pelican_mvp/learning_memory.py` and `models.py` to persist bounded direct-evidence records with `source`, `kind`, `prompt_safe`, `cold_export_eligible=False`, and learning context; keep EDF inference separate.
+4. [x] Modify `misc/PELICAN_mvp/pelican_mvp/server.py` to expose safe intake progress, skill metadata, and remediation state in the existing learning payload.
+5. [x] Update `misc/PELICAN_mvp/README.md` with the calibration-first flow, supported categories, offline behavior, legal-education boundary, and lifecycle comments.
+6. [x] Extend `misc/PELICAN_mvp/tests/test_engine.py`, `test_learning_memory.py`, `test_server.py`, and `test_e2e.py`; add `misc/PELICAN_mvp/tests/test_pedagogical_flow.py` for acceptance behavior.
+   - [x] Cover `深度學習` -> goal/level intake -> foundation-first diagnostic.
+   - [x] Cover `這太細了吧` -> scope mismatch and lower-level recalibration.
+   - [x] Cover `不知道` -> prerequisite scaffold, not unrelated next-node advancement.
+   - [x] Cover `太簡單了`, project, assessment, unknown domain, legal education disclaimer, persistence/restart, and evidence privacy.
 
 #### Expected File Tree After Phase 4
 
@@ -557,6 +557,51 @@ feat(pelican): add calibration-first pedagogical runtime
 ```
 
 Inspect `git status --short` and preserve unrelated user changes. Stage only Phase 4 paths/hunks, run `git diff --cached --check` and review `git diff --cached --stat`, create one commit, and confirm with `git show --stat --oneline --summary HEAD`. Do not amend or push unrelated work.
+
+#### Phase 4 Implementation Status
+
+Completed on 2026-07-20 in commit `bf3d1cf feat(pelican): add calibration-first pedagogical runtime`.
+
+Verification evidence retained from the phase gate:
+
+```bash
+cd misc/PELICAN_mvp
+python -m pytest -q
+# 98 passed, 1 warning
+
+python -m pytest tests/test_pedagogical_flow.py tests/test_engine.py tests/test_learning_memory.py tests/test_server.py -q
+# 26 passed, 1 warning
+
+python -m pelican_mvp --help
+# argparse help printed successfully
+
+git diff --check
+# passed with no whitespace errors
+```
+
+Boundary verification:
+
+```bash
+git diff --name-only -- backend frontend
+# no output
+```
+
+Manual deep-learning replay:
+
+```text
+AI: 歡迎！你想學什麼？
+User: 深度學習
+AI: 你這次比較想怎麼學？
+User: 想理解原理
+AI: 你目前的基礎大概在哪裡？
+User: 完全沒有基礎
+AI: 太好了，我們來一起學習「深度學習」吧！
+User: 這太細了吧，我不知道
+AI: 收到，剛才那題對目前起點太細了。我們先退回一層...
+phase=diagnosis, node=math_intuition, signal=too_detailed, skill=deep_learning
+```
+
+The implementation follows the Phase 4 boundary: it adds calibration-first onboarding, skill-aware mismatch/scaffold/acceleration handling, safe learning metadata exposure, AREQA-aligned bounded direct evidence records, README documentation, and acceptance coverage. Fixture curricula still bypass onboarding when explicitly selected.
 
 ### Cross-Phase Regression and Final Acceptance
 
