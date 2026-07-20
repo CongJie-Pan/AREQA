@@ -1,5 +1,6 @@
 import pytest
 from pelican_mvp.models import (
+    ActivityEvent,
     DiagnosticQuestion,
     KnowledgeNode,
     KnowledgeStatus,
@@ -133,9 +134,30 @@ def test_session_state_round_trips_intake_profile_and_direct_evidence() -> None:
     assert restored.direct_evidence[0].signal == "too_detailed"
 
 
+def test_session_state_round_trips_activity_log() -> None:
+    state = SessionState(
+        learner_id="tester",
+        activity_log=[
+            ActivityEvent(
+                code="skill_loaded",
+                label="載入領域 Skill",
+                status="done",
+                detail="deep_learning",
+            )
+        ],
+    )
+
+    restored = SessionState.from_dict(state.to_dict())
+
+    assert restored.activity_log[0].code == "skill_loaded"
+    assert restored.activity_log[0].label == "載入領域 Skill"
+    assert restored.activity_log[0].detail == "deep_learning"
+
+
 def test_session_state_legacy_payload_defaults_new_skill_fields() -> None:
     state = SessionState.from_dict({"learner_id": "tester", "schema_version": 2})
 
     assert state.intake_profile.intent is LearningIntent.UNKNOWN
     assert state.intake_profile.domain_category == "unknown"
     assert state.direct_evidence == []
+    assert state.activity_log == []

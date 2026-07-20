@@ -281,6 +281,32 @@ class LearningMemorySnapshot:
     updated_at: str | None = None
 
 
+@dataclass(frozen=True)
+class ActivityEvent:
+    """Safe, user-visible system activity entry for observability UI."""
+
+    code: str
+    label: str
+    status: str = "done"
+    detail: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, str]:
+        """Return an API-safe activity entry without raw learner/model content."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "ActivityEvent":
+        """Deserialize an activity entry with bounded compatibility defaults."""
+        return cls(
+            code=str(payload.get("code", "unknown"))[:80],
+            label=str(payload.get("label", "Unknown activity"))[:120],
+            status=str(payload.get("status", "done"))[:40],
+            detail=str(payload.get("detail", ""))[:160],
+            timestamp=payload.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        )
+
+
 @dataclass
 class Evidence:
     """Evidence attached to a node-state update."""
@@ -343,6 +369,7 @@ class SessionState:
     memory_snapshot: LearningMemorySnapshot = field(default_factory=LearningMemorySnapshot)
     intake_profile: LearnerIntakeProfile = field(default_factory=LearnerIntakeProfile)
     direct_evidence: list[MemoryEvidenceRecord] = field(default_factory=list)
+    activity_log: list[ActivityEvent] = field(default_factory=list)
     completed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -374,6 +401,7 @@ class SessionState:
             "memory_snapshot": asdict(self.memory_snapshot),
             "intake_profile": self.intake_profile.to_dict(),
             "direct_evidence": [item.to_dict() for item in self.direct_evidence],
+            "activity_log": [item.to_dict() for item in self.activity_log],
             "completed": self.completed,
         }
 
@@ -421,6 +449,10 @@ class SessionState:
             direct_evidence=[
                 MemoryEvidenceRecord.from_dict(item)
                 for item in payload.get("direct_evidence", [])
+            ],
+            activity_log=[
+                ActivityEvent.from_dict(item)
+                for item in payload.get("activity_log", [])
             ],
             completed=bool(payload.get("completed", False)),
         )

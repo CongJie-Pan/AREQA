@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from .curriculum import Curriculum
-from .models import Evidence, KnowledgeStatus, ResponseCategory, SessionState
+from .models import Evidence, KnowledgeStatus, PlanSource, ResponseCategory, SessionState
 
 
 def next_diagnostic_node(state: SessionState, curriculum: Curriculum) -> str | None:
@@ -75,7 +75,7 @@ def apply_diagnostic_result(
     evidence = Evidence(response=answer, category=category.value, direct=True)
     state.nodes[node_id].update(status, evidence)
     changes = [f"{curriculum.nodes[node_id].label}: {status.value}（直接證據）"]
-    if status is KnowledgeStatus.MASTERED:
+    if status is KnowledgeStatus.MASTERED and state.plan_source is PlanSource.FIXTURE:
         changes.extend(_mark_prerequisites_mastered(state, node_id, answer, category, curriculum))
     return changes
 

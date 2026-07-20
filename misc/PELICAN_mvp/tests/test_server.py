@@ -47,6 +47,11 @@ def test_api_dynamic_learning_metadata() -> None:
     assert learning["intent"] == "conceptual"
     assert learning["level_hint"] == "beginner"
     assert "latest_signal" in learning
+    assert learning["current_activity"]["code"] == "diagnostic_selected"
+    activity_codes = [item["code"] for item in learning["activity_steps"]]
+    assert "skill_loaded" in activity_codes
+    assert "skill_validated" in activity_codes
+    assert "plan_compiled" in activity_codes
 
 
 def test_api_respond() -> None:

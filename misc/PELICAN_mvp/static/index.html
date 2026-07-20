@@ -13,6 +13,16 @@
         <aside class="sidebar">
             <h2>PELICAN MVP</h2>
             <div class="controls">
+                <section class="system-status-panel" aria-label="系統狀態">
+                    <div class="panel-title">系統狀態</div>
+                    <div id="current-activity-card" class="activity-card">
+                        <div class="activity-card-inner">
+                            <span id="activity-status-dot" class="activity-dot idle"></span>
+                            <span id="current-activity-label">等待學習主題</span>
+                        </div>
+                    </div>
+                    <div id="activity-badges" class="activity-badges"></div>
+                </section>
                 <div class="learning-info">
                     <div><strong>Phase:</strong> <span id="phase-display">Onboarding</span></div>
                     <div><strong>Topic:</strong> <span id="topic-display">--</span></div>

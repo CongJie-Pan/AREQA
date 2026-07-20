@@ -67,6 +67,22 @@ def test_too_easy_accelerates_to_next_concept(tmp_path: Path) -> None:
     assert engine.state.direct_evidence[-1].signal == "too_easy"
 
 
+def test_generated_plan_correct_leaf_does_not_infer_all_prerequisites(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path)
+    engine.start()
+    engine.respond("深度學習")
+    engine.respond("理解概念")
+    engine.respond("已經有實作經驗")
+
+    assert engine.state.current_node_id == "optimization"
+    outcome = engine.respond("調整模型參數")
+
+    assert all("由子節點推定" not in change for change in outcome.state_changes)
+    assert engine.state.nodes["optimization"].status.value == "mastered"
+    assert engine.state.nodes["math_intuition"].status.value == "undiagnosed"
+    assert engine.state.current_node_id == "loss_error"
+
+
 def test_project_and_assessment_routes_compile_different_paths(tmp_path: Path) -> None:
     project = PelicanEngine(tmp_path / "project")
     project.start()

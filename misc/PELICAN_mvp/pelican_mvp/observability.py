@@ -25,6 +25,11 @@ _SAFE_FIELDS = frozenset({
     "intake_decision",
     "route",
     "skill_lifecycle",
+    "activity_code",
+    "activity_status",
+    "node_id",
+    "step_id",
+    "detail_code",
 })
 
 

@@ -8,6 +8,7 @@ from .curriculum import CURRICULUMS
 from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node, remediation_signal
 from .llm import LlmAdapter, LlmUnavailable
 from .models import (
+    ActivityEvent,
     KnowledgeStatus,
     LearnerIntakeProfile,
     LearningIntent,
@@ -26,6 +27,9 @@ from .edf_simulator import EdfSimulator
 from .learning_memory import LearningMemorySimulator
 from .curriculum import Curriculum
 from .observability import log_event
+
+
+MAX_ACTIVITY_LOG = 16
 
 
 class PelicanEngine:
@@ -128,6 +132,12 @@ class PelicanEngine:
             from .domain_catalog import resolve_domain_category
 
             resolution = resolve_domain_category(answer)
+            self._record_activity("intake_topic", "接收學習主題", detail="topic_received")
+            self._record_activity(
+                "domain_resolved",
+                "判斷學習領域",
+                detail=f"{resolution.category.value}:{resolution.reason_code}",
+            )
             self.state.intake_profile = LearnerIntakeProfile(
                 topic=answer,
                 goal_summary=f"學習 {answer}",
@@ -158,6 +168,7 @@ class PelicanEngine:
             )
         if intake.intake_turns == 1:
             intent = _infer_learning_intent(answer)
+            self._record_activity("intent_detected", "判斷學習方向", detail=intent.value)
             self.state.intake_profile = LearnerIntakeProfile(
                 topic=intake.topic,
                 goal_summary=answer,
@@ -185,6 +196,7 @@ class PelicanEngine:
             )
 
         level_hint = _infer_level_hint(answer)
+        self._record_activity("level_detected", "判斷目前程度", detail=level_hint)
         profile = LearnerIntakeProfile(
             topic=intake.topic,
             goal_summary=intake.goal_summary,
@@ -195,6 +207,10 @@ class PelicanEngine:
             intake_turns=3,
         )
         plan = self.planner.create_plan_for_profile(profile)
+        if plan.skill_id:
+            self._record_activity("skill_loaded", "載入領域 Skill", detail=plan.skill_id)
+            self._record_activity("skill_validated", "驗證 Skill 規則", detail=plan.skill_lifecycle or "validated")
+        self._record_activity("plan_compiled", "編譯學習路徑", detail=f"{len(plan.nodes)} nodes")
         self.state.learning_plan = plan
         self.state.intake_profile = LearnerIntakeProfile(
             topic=profile.topic,
@@ -285,6 +301,7 @@ class PelicanEngine:
             self.state.phase = "tutoring"
             step = self.curriculum.first_task_step()
             self._set_current_step(step)
+            self._record_activity("tutoring_started", "進入教學引導", detail=step["node_id"])
             self.store.save(self.state)
             return self._present_current_step("診斷完成，依未掌握概念開始原題引導")
         question = diagnostic_for(node_id, self.curriculum)
@@ -299,6 +316,7 @@ class PelicanEngine:
         self.state.current_prompt = question.prompt
         self.state.current_expected_answer = question.expected_answer
         self.state.current_prompt_source = question.source
+        self._record_activity("diagnostic_selected", "選擇診斷概念", detail=node_id)
         self.store.save(self.state)
         return TurnOutcome(question.prompt, node_id, None, None, (), "successor-first：先診斷尚未確認的葉節點")
 
@@ -313,9 +331,11 @@ class PelicanEngine:
         if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
             return self._handle_acceleration_request(answer)
         category = self._classify(answer)
+        self._record_activity("response_classified", "分類學習者回應", detail=category.value)
         if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
             return self._handle_scaffold_request(answer, category)
         changes = apply_diagnostic_result(self.state, node_id, answer, category, self.curriculum)
+        self._record_activity("evidence_applied", "更新概念掌握狀態", detail=node_id)
         self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category)
         self.store.save(self.state)
@@ -337,6 +357,7 @@ class PelicanEngine:
         """Record scope mismatch as direct evidence without treating it as mastery."""
         node_id = self._require_current_node()
         strategy = strategy_for_remediation_signal(signal) or TutoringStrategy.SIMPLIFICATION
+        self._record_activity("scope_mismatch", "偵測題目層級不合", detail=signal)
         self._record(answer, ResponseCategory.DIFFICULTY, strategy, [])
         self._refresh_learning_context(answer, ResponseCategory.DIFFICULTY, signal)
         self.state.current_prompt = (
@@ -363,6 +384,7 @@ class PelicanEngine:
     def _handle_scaffold_request(self, answer: str, category: ResponseCategory) -> TurnOutcome:
         """Scaffold the current prerequisite path instead of advancing diagnostics."""
         node_id = self._require_current_node()
+        self._record_activity("scaffold_selected", "選擇前置概念補架", detail=node_id)
         self.state.nodes[node_id].update(
             KnowledgeStatus.NOT_MASTERED,
             evidence=self._evidence(answer, category),
@@ -398,6 +420,7 @@ class PelicanEngine:
     def _handle_acceleration_request(self, answer: str) -> TurnOutcome:
         """Handle a too-easy signal by marking current concept as mastered evidence."""
         node_id = self._require_current_node()
+        self._record_activity("acceleration_selected", "加快學習節奏", detail=node_id)
         self.state.nodes[node_id].update(
             KnowledgeStatus.MASTERED,
             evidence=self._evidence(answer, ResponseCategory.CORRECT),
@@ -467,7 +490,13 @@ class PelicanEngine:
     def _refresh_learning_context(self, answer: str, category: ResponseCategory, signal: str | None = None) -> None:
         """Update bounded direct evidence and keep EDF inference separate."""
         self.memory.record_direct_evidence(self.state, answer, category, signal=signal)
+        self._record_activity("memory_updated", "保存直接學習證據", detail=signal or category.value)
         self.state.edf_snapshot = self.edf.evaluate(self.state)
+        self._record_activity(
+            "edf_evaluated",
+            "更新 EDF 教學策略",
+            detail=self.state.edf_snapshot.pedagogical_strategy,
+        )
         log_event(
             "pelican_diagnosis_updated",
             learner_id=self.state.learner_id,
@@ -540,6 +569,24 @@ class PelicanEngine:
         from .models import Evidence
 
         return Evidence(response=answer, category=category.value, direct=True)
+
+    def _record_activity(self, code: str, label: str, *, status: str = "done", detail: str = "") -> None:
+        """Append a safe system activity entry and emit the matching log event."""
+        event = ActivityEvent(code=code, label=label, status=status, detail=detail)
+        self.state.activity_log.append(event)
+        if len(self.state.activity_log) > MAX_ACTIVITY_LOG:
+            self.state.activity_log = self.state.activity_log[-MAX_ACTIVITY_LOG:]
+        log_event(
+            "pelican_activity",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            plan_source=self.state.plan_source.value,
+            activity_code=code,
+            activity_status=status,
+            node_id=self.state.current_node_id,
+            detail_code=detail,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else self.state.intake_profile.skill_id,
+        )
 
 
 def _infer_learning_intent(answer: str) -> LearningIntent:

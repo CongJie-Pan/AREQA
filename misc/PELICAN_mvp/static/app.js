@@ -13,8 +13,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const edfPolicyDisplay = document.getElementById("edf-policy-display");
     const evidenceCountDisplay = document.getElementById("evidence-count-display");
     const contextCountDisplay = document.getElementById("context-count-display");
+    const currentActivityCard = document.getElementById("current-activity-card");
+    const currentActivityLabel = document.getElementById("current-activity-label");
+    const activityStatusDot = document.getElementById("activity-status-dot");
+    const activityBadges = document.getElementById("activity-badges");
     const resetBtn = document.getElementById("reset-btn");
     const loadingUI = document.getElementById("loading");
+    let lastActivityKey = "";
 
     // Initialize
     startSession();
@@ -128,6 +133,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             edfPolicyDisplay.textContent = data.learning.edf_policy;
             evidenceCountDisplay.textContent = data.learning.evidence_count;
             contextCountDisplay.textContent = data.learning.context_count;
+            renderActivityStatus(data.learning.current_activity, data.learning.activity_steps || []);
             
             if (data.learning.phase === "onboarding") {
                 chatInput.placeholder = "請輸入您想學習的主題或困難點...";
@@ -135,6 +141,61 @@ document.addEventListener("DOMContentLoaded", async () => {
                 chatInput.placeholder = "請輸入您的答案...";
             }
         }
+    }
+
+    function renderActivityStatus(currentActivity, steps) {
+        const activity = currentActivity || { code: "idle", label: "等待學習主題", status: "idle", detail: "" };
+        const key = `${activity.code}:${activity.status}:${activity.detail}`;
+        currentActivityLabel.textContent = activity.label || activityLabel(activity.code);
+        activityStatusDot.className = `activity-dot ${activity.status || "done"}`;
+        if (key !== lastActivityKey) {
+            currentActivityCard.classList.remove("flip");
+            void currentActivityCard.offsetWidth;
+            currentActivityCard.classList.add("flip");
+            lastActivityKey = key;
+        }
+
+        activityBadges.innerHTML = "";
+        const displaySteps = steps.length > 0 ? steps : [activity];
+        displaySteps.slice(-6).forEach(step => {
+            const badge = document.createElement("div");
+            badge.className = `activity-badge ${step.status || "done"}`;
+
+            const name = document.createElement("span");
+            name.className = "activity-badge-label";
+            name.textContent = step.label || activityLabel(step.code);
+
+            const detail = document.createElement("span");
+            detail.className = "activity-badge-detail";
+            detail.textContent = step.detail || step.code || "--";
+
+            badge.appendChild(name);
+            badge.appendChild(detail);
+            activityBadges.appendChild(badge);
+        });
+    }
+
+    function activityLabel(code) {
+        const labels = {
+            idle: "等待學習主題",
+            intake_topic: "接收學習主題",
+            domain_resolved: "判斷學習領域",
+            intent_detected: "判斷學習方向",
+            level_detected: "判斷目前程度",
+            skill_loaded: "載入領域 Skill",
+            skill_validated: "驗證 Skill 規則",
+            plan_compiled: "編譯學習路徑",
+            diagnostic_selected: "選擇診斷概念",
+            response_classified: "分類學習者回應",
+            evidence_applied: "更新概念掌握狀態",
+            scope_mismatch: "偵測題目層級不合",
+            scaffold_selected: "選擇前置概念補架",
+            acceleration_selected: "加快學習節奏",
+            memory_updated: "保存直接學習證據",
+            edf_evaluated: "更新 EDF 教學策略",
+            tutoring_started: "進入教學引導"
+        };
+        return labels[code] || "系統處理中";
     }
 
     function appendMessage(text, role, stateChanges = null) {

@@ -66,6 +66,7 @@ def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEng
 
 def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
     """Serialize a turn response with safe learning metadata only."""
+    activity_steps = [item.to_dict() for item in engine.state.activity_log[-8:]]
     return {
         "api_version": "v1",
         "message": msg.message,
@@ -91,6 +92,8 @@ def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
             "skill_lifecycle": engine.state.learning_plan.skill_lifecycle if engine.state.learning_plan else engine.state.intake_profile.skill_lifecycle,
             "model_route": engine.state.learning_plan.model_route if engine.state.learning_plan else engine.state.intake_profile.model_route,
             "latest_signal": engine.state.direct_evidence[-1].signal if engine.state.direct_evidence else None,
+            "current_activity": activity_steps[-1] if activity_steps else None,
+            "activity_steps": activity_steps,
             "edf_state": engine.state.edf_snapshot.learner_state if engine.state.edf_snapshot else "unknown",
             "edf_policy": engine.state.edf_snapshot.pedagogical_strategy if engine.state.edf_snapshot else "unknown",
             "evidence_count": engine.state.memory_snapshot.evidence_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
