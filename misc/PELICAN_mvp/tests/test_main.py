@@ -1,3 +1,4 @@
+import logging
 import signal
 
 import pelican_mvp.__main__ as main_module
@@ -48,3 +49,20 @@ def test_main_can_disable_cleanup(monkeypatch) -> None:
     main_module.main(["--no-cleanup-stale-server"])
 
     assert calls == ["uvicorn"]
+
+
+def test_safe_pelican_formatter_fills_missing_structured_fields() -> None:
+    formatter = main_module.SafePelicanFormatter(
+        "PELICAN %(levelname)s %(event)s phase=%(phase)s activity=%(activity_code)s detail=%(detail_code)s"
+    )
+    record = logging.LogRecord(
+        name="pelican_mvp",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="pelican_activity",
+        args=(),
+        exc_info=None,
+    )
+
+    assert formatter.format(record) == "PELICAN INFO - phase=- activity=- detail=-"

@@ -305,7 +305,8 @@ class PelicanEngine:
             self.store.save(self.state)
             return self._present_current_step("診斷完成，依未掌握概念開始原題引導")
         question = diagnostic_for(node_id, self.curriculum)
-        if self.state.mode == "llm":
+        skill_question_locked = self._uses_generated_skill_plan() and question.source == "skill"
+        if self.state.mode == "llm" and not skill_question_locked:
             try:
                 generated = self.llm.verified_diagnostic(self.curriculum.nodes[node_id].label)
                 if generated:
@@ -316,7 +317,7 @@ class PelicanEngine:
         self.state.current_prompt = question.prompt
         self.state.current_expected_answer = question.expected_answer
         self.state.current_prompt_source = question.source
-        self._record_activity("diagnostic_selected", "選擇診斷概念", detail=node_id)
+        self._record_activity("diagnostic_selected", "選擇診斷概念", detail=f"{question.source}:{node_id}")
         self.store.save(self.state)
         return TurnOutcome(question.prompt, node_id, None, None, (), "successor-first：先診斷尚未確認的葉節點")
 
@@ -338,6 +339,8 @@ class PelicanEngine:
         self._record_activity("evidence_applied", "更新概念掌握狀態", detail=node_id)
         self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category)
+        if self._uses_generated_skill_plan() and category in (ResponseCategory.INCORRECT, ResponseCategory.DIFFICULTY):
+            return self._remediate_current_skill_diagnostic(answer, category, changes)
         self.store.save(self.state)
         next_outcome = self._present_next_diagnostic()
         
@@ -352,6 +355,43 @@ class PelicanEngine:
         message = f"{prefix}\n\n{next_outcome.message}"
         
         return TurnOutcome(message, next_outcome.node_id, category, None, tuple(changes), next_outcome.next_reason)
+
+    def _uses_generated_skill_plan(self) -> bool:
+        """Return whether this session is backed by a validated generated skill."""
+        return self.state.plan_source is PlanSource.GENERATED and bool(
+            self.state.learning_plan and self.state.learning_plan.skill_id
+        )
+
+    def _remediate_current_skill_diagnostic(
+        self,
+        answer: str,
+        category: ResponseCategory,
+        changes: list[str],
+    ) -> TurnOutcome:
+        """Keep generated-skill learners on the current concept after missed evidence."""
+        node_id = self._require_current_node()
+        label = self.curriculum.nodes[node_id].label
+        strategy = (
+            TutoringStrategy.CORRECTION
+            if category is ResponseCategory.INCORRECT
+            else TutoringStrategy.SIMPLIFICATION
+        )
+        self._record_activity("remediation_selected", "停在當前概念補架", detail=node_id)
+        self.state.phase = "tutoring"
+        self.state.current_prompt = (
+            f"我們先停在「{label}」。剛才那題先不往下推。\n\n"
+            f"我換成更清楚的方式：請用一句話說，{label} 在整個學習中主要幫我們做什麼？"
+        )
+        self.state.current_prompt_source = "rule"
+        self.store.save(self.state)
+        return TurnOutcome(
+            self.state.current_prompt,
+            node_id,
+            category,
+            strategy,
+            tuple(changes),
+            "skill remediation：回答未通過，停在目前概念補架，不跳下一題",
+        )
 
     def _handle_scope_mismatch(self, answer: str, signal: str) -> TurnOutcome:
         """Record scope mismatch as direct evidence without treating it as mastery."""

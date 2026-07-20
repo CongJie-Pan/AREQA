@@ -1,6 +1,7 @@
 """Command-line entry point for the PELICAN MVP web server."""
 
 import argparse
+import logging
 import os
 import signal
 import socket
@@ -12,6 +13,25 @@ import uvicorn
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROC_ROOT = Path("/proc")
+LOG_FIELDS = (
+    "event",
+    "phase",
+    "activity_code",
+    "activity_status",
+    "detail_code",
+    "skill_id",
+    "node_id",
+)
+
+
+class SafePelicanFormatter(logging.Formatter):
+    """Fill structured log defaults so local activity logs never break formatting."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        for field in LOG_FIELDS:
+            if not hasattr(record, field) or getattr(record, field) is None:
+                setattr(record, field, "-")
+        return super().format(record)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -25,9 +45,27 @@ def main(argv: list[str] | None = None) -> None:
         help="Do not terminate an older PELICAN MVP process already bound to this host/port.",
     )
     args = parser.parse_args(argv)
+    configure_runtime_logging()
     if not args.no_cleanup_stale_server:
         cleanup_stale_pelican_server(args.host, args.port)
     uvicorn.run("pelican_mvp.server:app", host=args.host, port=args.port)
+
+
+def configure_runtime_logging() -> None:
+    """Print safe PELICAN activity events beside uvicorn access logs."""
+    logger = logging.getLogger("pelican_mvp")
+    logger.setLevel(logging.INFO)
+    if not any(getattr(handler, "_pelican_cli_handler", False) for handler in logger.handlers):
+        handler = logging.StreamHandler()
+        handler._pelican_cli_handler = True  # type: ignore[attr-defined]
+        handler.setFormatter(
+            SafePelicanFormatter(
+                "PELICAN %(levelname)s %(event)s phase=%(phase)s activity=%(activity_code)s "
+                "status=%(activity_status)s detail=%(detail_code)s skill=%(skill_id)s node=%(node_id)s"
+            )
+        )
+        logger.addHandler(handler)
+    logger.propagate = False
 
 
 def cleanup_stale_pelican_server(host: str, port: int) -> list[int]:
