@@ -23,6 +23,8 @@ _SAFE_FIELDS = frozenset({
     "skill_version",
     "domain_category",
     "intake_decision",
+    "semantic_intent",
+    "semantic_confidence",
     "route",
     "skill_lifecycle",
     "activity_code",

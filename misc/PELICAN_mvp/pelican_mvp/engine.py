@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .curriculum import CURRICULUMS
 from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node, remediation_signal
 from .domain_skill import DomainCategory
-from .llm import LlmAdapter, LlmUnavailable
+from .llm import IntakeSemanticSignal, LlmAdapter, LlmUnavailable
 from .models import (
     ActivityEvent,
     KnowledgeStatus,
@@ -171,6 +172,9 @@ class PelicanEngine:
                 "收集學習目標與意圖",
             )
         if intake.intake_turns == 1:
+            semantic_signal = self._classify_intake_semantics(answer, "goal")
+            if semantic_signal.intent == "topic_revision" and semantic_signal.confidence >= 0.72 and semantic_signal.new_topic:
+                return self._handle_topic_revision(semantic_signal)
             intent = _infer_learning_intent(answer)
             self._record_activity("intent_detected", "判斷學習方向", detail=intent.value)
             self.state.intake_profile = LearnerIntakeProfile(
@@ -200,6 +204,10 @@ class PelicanEngine:
                 (),
                 "收集程度與先備經驗",
             )
+
+        semantic_signal = self._classify_intake_semantics(answer, "level")
+        if semantic_signal.intent == "topic_revision" and semantic_signal.confidence >= 0.72 and semantic_signal.new_topic:
+            return self._handle_topic_revision(semantic_signal)
 
         level_hint = _infer_level_hint(answer)
         self._record_activity("level_detected", "判斷目前程度", detail=level_hint)
@@ -252,6 +260,109 @@ class PelicanEngine:
             outcome.strategy,
             outcome.state_changes,
             outcome.next_reason
+        )
+
+    def _classify_intake_semantics(self, answer: str, stage: str) -> IntakeSemanticSignal:
+        """Classify onboarding replies before deterministic state transitions.
+
+        The LLM only returns a bounded semantic signal; it never mutates session
+        state or decides the next engine phase. The stable structured event
+        ``pelican_intake_semantic_classified`` logs the signal intent,
+        confidence, source, and reason code without raw learner text or model
+        output. If LLM classification is unavailable, a narrow rule fallback only
+        catches explicit correction patterns so the system remains usable
+        offline without becoming a hard-coded semantic engine.
+        """
+        intake = self.state.intake_profile
+        category = _domain_category_from_value(intake.domain_category)
+        source = "rule"
+        if self.state.mode == "llm" and self.llm.available and hasattr(self.llm, "classify_intake_semantics"):
+            try:
+                signal = self.llm.classify_intake_semantics(
+                    current_topic=intake.topic,
+                    answer=answer,
+                    stage=stage,
+                    domain_category=category,
+                )
+                source = "llm"
+            except LlmUnavailable as exc:
+                log_event(
+                    "pelican_intake_semantic_fallback",
+                    learner_id=self.state.learner_id,
+                    phase=self.state.phase,
+                    domain_category=category.value,
+                    route=intake.model_route,
+                    intake_decision=stage,
+                    intake_source="llm_failed",
+                    reason_code="|".join(exc.reason_codes or ("llm_unavailable",)),
+                    api_status_code=exc.api_status_code,
+                    api_error_type=exc.api_error_type,
+                )
+                signal = _rule_intake_semantic_signal(answer)
+        else:
+            signal = _rule_intake_semantic_signal(answer)
+        log_event(
+            "pelican_intake_semantic_classified",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            domain_category=category.value,
+            route=intake.model_route,
+            intake_decision=stage,
+            intake_source=source,
+            semantic_intent=signal.intent,
+            semantic_confidence=round(signal.confidence, 3),
+            reason_code=signal.reason_code,
+        )
+        return signal
+
+    def _handle_topic_revision(self, signal: IntakeSemanticSignal) -> TurnOutcome:
+        """Apply a confirmed topic correction and restart goal calibration.
+
+        Topic revisions reset only onboarding-derived topic/goal/level metadata.
+        They do not let the model mutate the knowledge tree, phase, or learning
+        evidence. The previous partial intake is discarded because keeping a goal
+        or level answer collected for the wrong topic would compile a misleading
+        skill plan.
+        """
+        from .domain_catalog import resolve_domain_category
+
+        new_topic = signal.new_topic.strip()[:100]
+        resolution = resolve_domain_category(new_topic)
+        self._record_activity("topic_revised", "更新學習主題", detail=resolution.category.value)
+        self._record_activity(
+            "domain_resolved",
+            "判斷學習領域",
+            detail=f"{resolution.category.value}:{resolution.reason_code}",
+        )
+        self.state.intake_profile = LearnerIntakeProfile(
+            topic=new_topic,
+            goal_summary=f"學習 {new_topic}",
+            intent=LearningIntent.UNKNOWN,
+            level_hint="unknown",
+            domain_category=resolution.category.value,
+            model_route=resolution.route_slug,
+            intake_turns=1,
+        )
+        self.store.save(self.state)
+        log_event(
+            "pelican_topic_revised",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            domain_category=resolution.category.value,
+            route=resolution.route_slug,
+            intake_decision="topic_revision",
+            semantic_intent=signal.intent,
+            semantic_confidence=round(signal.confidence, 3),
+            reason_code=signal.reason_code,
+        )
+        question, _source = self._next_intake_question("goal")
+        return TurnOutcome(
+            f"了解，我把主題改成「{new_topic}」。\n\n{question}",
+            None,
+            None,
+            None,
+            (),
+            "topic revision：重新收集學習目標與意圖",
         )
 
     def _next_intake_question(self, stage: str) -> tuple[str, str]:
@@ -766,6 +877,38 @@ def _infer_level_hint(answer: str) -> str:
     if any(token in answer for token in ("學過", "一點", "簡單題", "intermediate")):
         return "intermediate"
     return "unknown"
+
+
+def _rule_intake_semantic_signal(answer: str) -> IntakeSemanticSignal:
+    """Return a conservative offline semantic signal for explicit corrections.
+
+    This fallback intentionally handles only high-precision correction language.
+    Rich interpretation belongs to ``LlmAdapter.classify_intake_semantics`` so
+    the rule path does not become an ever-growing hard-coded language parser.
+    """
+    normalized = answer.strip()
+    patterns = (
+        r"(?:我說錯了|說錯了|其實是|應該是|改成|換成)(?P<topic>.+)",
+        r"不是.+?是(?P<topic>.+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized)
+        if not match:
+            continue
+        topic = match.group("topic").strip(" ，。,.：:「」")
+        topic = re.sub(r"^(?:是|為|成為)", "", topic).strip(" ，。,.：:「」")
+        if topic:
+            return IntakeSemanticSignal(
+                intent="topic_revision",
+                confidence=0.78,
+                reason_code="explicit_correction_rule",
+                new_topic=topic[:100],
+            )
+    return IntakeSemanticSignal(
+        intent="normal_answer",
+        confidence=0.55,
+        reason_code="rule_no_revision",
+    )
 
 
 def _domain_category_from_value(value: str) -> DomainCategory:

@@ -50,6 +50,22 @@ class LlmHealth:
 
 
 @dataclass(frozen=True)
+class IntakeSemanticSignal:
+    """Structured semantic signal for onboarding state transitions.
+
+    The language model is allowed to classify and extract bounded fields, but it
+    is not allowed to perform the state transition itself. ``PelicanEngine``
+    remains the owner of topic changes, intake reset, domain routing, and
+    follow-up question selection.
+    """
+
+    intent: str
+    confidence: float
+    reason_code: str
+    new_topic: str = ""
+
+
+@dataclass(frozen=True)
 class LlmConfig:
     """OpenAI-compatible transport configuration for optional OpenRouter calls."""
 
@@ -286,6 +302,69 @@ class LlmAdapter:
         question = str(payload.get("question", "")).strip()
         return question[:500] if question else None
 
+    def classify_intake_semantics(
+        self,
+        *,
+        current_topic: str,
+        answer: str,
+        stage: str,
+        domain_category: DomainCategory,
+        model_route: str | None = None,
+    ) -> IntakeSemanticSignal:
+        """Classify one onboarding answer into a bounded semantic control signal.
+
+        Args:
+            current_topic: Topic currently stored in the intake profile.
+            answer: Learner's latest onboarding reply.
+            stage: Current onboarding stage, such as ``goal`` or ``level``.
+            domain_category: Resolved current domain category for context.
+            model_route: Optional route override for tests/deployments.
+
+        Returns:
+            A bounded semantic signal. Supported intents are
+            ``topic_revision``, ``goal_revision``, ``level_answer``,
+            ``normal_answer``, and ``ambiguous``.
+
+        Raises:
+            LlmUnavailable: If the model route cannot return valid JSON.
+
+        Privacy:
+            The result contains only classification metadata and an optional
+            bounded replacement topic. Callers log the intent, confidence, and
+            reason code, not the raw answer or model output.
+        """
+        if not self.available:
+            raise LlmUnavailable(
+                "OPENROUTER_API_KEY is not configured",
+                reason_codes=("llm_missing_api_key",),
+            )
+        route = model_route or self.tutor_model_route()
+        payload = self._json(
+            "你是學習系統的語意分類器。只輸出 JSON，不要教學、不要改寫流程、不要輸出推理。\n"
+            "你的任務是判斷使用者在 onboarding 階段的回覆是否要改變系統狀態。\n"
+            "intent 只能是 topic_revision, goal_revision, level_answer, normal_answer, ambiguous。\n"
+            "若使用者表示先前主題說錯、想改成另一個主題、不是目前主題而是新主題，請用 topic_revision 並抽取 new_topic。\n"
+            "若不確定，請用 ambiguous 並給低 confidence。",
+            f"current_topic: {current_topic}\nstage: {stage}\ndomain_category: {domain_category.value}\n"
+            f"learner_answer: {answer}\n"
+            "輸出 JSON：{\"intent\": str, \"new_topic\": str, \"confidence\": number, \"reason_code\": str}",
+            model=route,
+        )
+        intent = _bounded_choice(
+            str(payload.get("intent", "normal_answer")),
+            {"topic_revision", "goal_revision", "level_answer", "normal_answer", "ambiguous"},
+            "normal_answer",
+        )
+        confidence = _bounded_confidence(payload.get("confidence", 0.0))
+        reason_code = _slug_reason(str(payload.get("reason_code", intent)))
+        new_topic = str(payload.get("new_topic", "")).strip()[:100]
+        return IntakeSemanticSignal(
+            intent=intent,
+            confidence=confidence,
+            reason_code=reason_code,
+            new_topic=new_topic,
+        )
+
     def generate_learning_plan(self, topic: str) -> LearningPlanSnapshot | None:
         """Legacy topic-to-plan generation kept as a compatibility fallback."""
         if not self.available:
@@ -500,6 +579,20 @@ def _safe_llm_reason_codes(exc: Exception, status_code: int | None, error_type: 
     if error_type and error_type != _slug_reason(type(exc).__name__):
         codes.append(f"llm_api_error_{error_type}")
     return tuple(dict.fromkeys(codes))
+
+
+def _bounded_choice(value: str, allowed: set[str], default: str) -> str:
+    """Return a model-selected enum value only when it is explicitly allowed."""
+    return value if value in allowed else default
+
+
+def _bounded_confidence(value: Any) -> float:
+    """Clamp a model confidence score to the ``0.0`` to ``1.0`` range."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, parsed))
 
 
 def _slug_reason(value: str) -> str:

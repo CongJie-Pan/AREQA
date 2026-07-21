@@ -2,6 +2,8 @@ import pytest
 from pathlib import Path
 
 from pelican_mvp.engine import PelicanEngine
+from pelican_mvp.domain_skill import DomainCategory
+from pelican_mvp.llm import IntakeSemanticSignal
 from pelican_mvp.models import KnowledgeStatus, ResponseCategory, TutoringStrategy
 
 
@@ -35,6 +37,56 @@ def test_default_intake_path(tmp_path: Path) -> None:
     assert engine.state.learning_plan is not None
     assert engine.state.learning_plan.topic == "深度學習"
     assert engine.state.current_node_id == "math_intuition"
+
+
+def test_llm_intake_topic_revision_resets_onboarding_topic(tmp_path: Path) -> None:
+    class SemanticLlm:
+        available = True
+
+        def intake_question(self, *, topic: str, domain_category: DomainCategory, stage: str, model_route=None):
+            return f"{topic} 的 {stage} 問題？"
+
+        def classify_intake_semantics(
+            self,
+            *,
+            current_topic: str,
+            answer: str,
+            stage: str,
+            domain_category: DomainCategory,
+            model_route=None,
+        ):
+            return IntakeSemanticSignal(
+                intent="topic_revision",
+                confidence=0.94,
+                reason_code="explicit_correction",
+                new_topic="春秋時期歷史",
+            )
+
+    engine = PelicanEngine(tmp_path, mode="llm")
+    engine.llm = SemanticLlm()
+    engine.start()
+    engine.respond("明朝歷史")
+
+    outcome = engine.respond("哦哦 我說錯了是春秋時期的歷史")
+
+    assert "春秋時期歷史" in outcome.message
+    assert engine.state.phase == "onboarding"
+    assert engine.state.intake_profile.topic == "春秋時期歷史"
+    assert engine.state.intake_profile.intake_turns == 1
+    assert engine.state.intake_profile.intent.value == "unknown"
+    assert engine.state.learning_plan is None
+
+
+def test_rule_intake_topic_revision_fallback_when_llm_unavailable(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path)
+    engine.start()
+    engine.respond("明朝歷史")
+
+    outcome = engine.respond("我說錯了是春秋時期歷史")
+
+    assert "春秋時期歷史" in outcome.message
+    assert engine.state.intake_profile.topic == "春秋時期歷史"
+    assert engine.state.intake_profile.intake_turns == 1
 
 
 def test_rule_mode_completes_problem_and_persists(tmp_path: Path) -> None:

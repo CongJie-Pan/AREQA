@@ -181,3 +181,34 @@ def test_intake_question_uses_domain_route() -> None:
 
     assert adapter.model_seen == "humanities/model"
     assert question == "你想從朝代脈絡、人物事件，還是制度文化開始？"
+
+
+def test_classify_intake_semantics_returns_bounded_signal() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.model_seen = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.model_seen = model
+            return {
+                "intent": "topic_revision",
+                "new_topic": "春秋時期歷史",
+                "confidence": 1.8,
+                "reason_code": "explicit_correction",
+            }
+
+    adapter = RecordingAdapter()
+    signal = adapter.classify_intake_semantics(
+        current_topic="明朝歷史",
+        answer="我說錯了，是春秋時期歷史",
+        stage="level",
+        domain_category=DomainCategory.HUMANITIES,
+        model_route="humanities/model",
+    )
+
+    assert adapter.model_seen == "humanities/model"
+    assert signal.intent == "topic_revision"
+    assert signal.new_topic == "春秋時期歷史"
+    assert signal.confidence == 1.0
+    assert signal.reason_code == "explicit_correction"
