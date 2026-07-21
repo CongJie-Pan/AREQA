@@ -2,20 +2,29 @@
 
 ## 1. 介紹
 
-這是一個用來探索「AI 要如何真的教人」的學習引擎 MVP。它不是一般問答聊天，也不是把題目丟給語言模型直接回答；它會先了解使用者想學什麼、想怎麼學、目前大概在哪個程度，再安排合適的起點。
+PELICAN MVP 是 AREQA 主系統外的一個學習引擎實驗場。它的目的不是做一般聊天問答，而是驗證一套更像「教學策略 engine」的流程：先理解學習者想學什麼、想用什麼角度學、目前背景在哪裡，再把主題轉成可診斷、可補架、可追蹤的知識狀態樹。
 
-目前最完整的展示主題是「深度學習」。當使用者輸入 `深度學習`，系統不會立刻丟出 MLP 權重數量、SGD 細節這類過細的前測題，而是先確認學習方向與基礎程度，再從更容易進入的概念開始。
+目前最穩定的展示主題是 `深度學習`。這個主題有 checked-in catalog skill：`domain_skills/deep_learning.yaml`，可以離線載入、驗證、編譯成 foundation-first 的學習路徑。系統會避免一開始就問 MLP 權重數量、SGD 細節這類過細題目，而是先做 goal/level onboarding，再從較低負荷的概念開始診斷。
 
-這個 MVP 特別想解決幾個教學痛點：
+目前系統已具備：
 
-- 避免一開始就問太細、太硬、太像考試的問題。
-- 讓學習路徑有固定骨架，而不是每次都隨機生成一棵知識樹。
-- 使用者說 `不知道` 時，系統會補前置概念，而不是繼續追問下一題。
-- 使用者說 `太細了` 或 `太難了` 時，系統會退回較高層重新校準。
-- 使用者說 `太簡單了` 時，系統可以加快節奏。
-- 學習過程會保留直接來自使用者的學習證據，但不會把模型推測當成使用者事實。
+- Calibration-first onboarding：先收集 topic、goal/intent、level/background。
+- Semantic Intake Classifier：在 LLM 模式下判斷 onboarding 回答是否是 topic revision、一般回答或其他語意訊號；狀態轉移仍由 engine 控制。
+- DomainSkill runtime：先找 catalog skill，再找 `data/generated_skills/validated` cache，再做 runtime skill generation/repair，最後才 fallback。
+- Skill validation：未通過 schema、graph、remediation、diagnostic safety 檢查的 skill 不會進入診斷。
+- Generic domain fallback：已知 domain 但 runtime skill 失敗時，會使用 generic STEM/humanities/business/language skill，而不是直接使用隨機 LLM plan。
+- EDF/GUM 模擬層：保留教學策略狀態、direct user evidence、working context count。
+- 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges 與翻牌動畫。
+- Markdown 匯出：可從 UI 匯出目前對話、session metadata、knowledge tree、recent activity。
+- 安全 structured logs：terminal 會顯示 safe metadata，例如 skill source、semantic intent、confidence、API health、reason code；不記錄 raw prompt、raw model output 或 API key。
 
-這裡仍是獨立實驗場，不會改動 AREQA 主系統。它的目標是先把「學習模式的 engine」驗證清楚，再決定是否導入主系統。
+目前仍需注意的限制：
+
+- `domain_skills/` 目前只有 `deep_learning.yaml` 是正式 catalog skill。
+- 中國歷史/思想史等主題目前主要依賴 runtime skill generation 或 fallback；若 OpenRouter/Gemini route 失敗，仍會掉回 generic humanities 或 legacy two-node fallback。
+- Semantic Intake Classifier 已能處理明確 topic revision，但目前仍可能把 topic refinement/background answer 判成 revision，造成 onboarding 反覆重問 goal/level。
+- Domain routing 對中國思想史仍不完整，例如 `諸子百家`、`思想史`、`春秋`、`戰國` 等 alias 尚需補齊，否則可能被判成 `unknown_domain`。
+- Runtime-generated skill 成功後會存在 `data/generated_skills/validated/`，不會自動寫入 `domain_skills/`；人工審核後才適合 promote 成 catalog skill。
 
 ## 2. 開啟方式
 
@@ -24,10 +33,8 @@
 ```bash
 cd /workspaces/AREQA/misc/PELICAN_mvp
 
-# 創建.venv
 python -m venv .venv
-
-# 開啟 .venv
+source .venv/bin/activate
 
 pip install -r requirements.txt
 python -m pelican_mvp
@@ -39,6 +46,12 @@ python -m pelican_mvp
 http://127.0.0.1:8000
 ```
 
+`python -m pelican_mvp` 啟動時會嘗試清掉仍占用同一 host/port 的舊 PELICAN MVP server process。如果不想自動清理，可以使用：
+
+```bash
+python -m pelican_mvp --no-cleanup-stale-server
+```
+
 常用檢查：
 
 ```bash
@@ -46,7 +59,7 @@ python -m pelican_mvp --help
 python -m pytest -q
 ```
 
-預設可完全離線執行。若要啟用 OpenRouter-compatible LLM：
+預設可離線執行。離線時仍可使用 checked-in catalog skill 與 deterministic fallback。若要啟用 OpenRouter-compatible LLM：
 
 ```bash
 export OPENROUTER_API_KEY=your_key
@@ -54,37 +67,61 @@ export PELICAN_STEM_MODEL=openai/gpt-5.5
 export PELICAN_HUMANITIES_MODEL=~google/gemini-pro-latest
 export PELICAN_BUSINESS_MODEL=~google/gemini-pro-latest
 export PELICAN_LANGUAGE_MODEL=~google/gemini-pro-latest
+export PELICAN_TUTOR_MODEL=google/gemini-3.1-flash-lite
 python -m pelican_mvp
 ```
 
-`PELICAN_LLM_MODEL` 仍可作為全域相容 override。沒有 API key 時，existing catalog skill 仍可離線 compile。
+相關 model route 行為：
+
+- `PELICAN_TUTOR_MODEL`：onboarding question、tutoring 等 learner-facing turns。
+- `PELICAN_SKILL_MODEL`：所有 domain skill generation 的全域 override。
+- `PELICAN_STEM_MODEL` / `PELICAN_HUMANITIES_MODEL` / `PELICAN_BUSINESS_MODEL` / `PELICAN_LANGUAGE_MODEL`：各 domain 的 skill generation route。
+- `PELICAN_LLM_MODEL`：舊版相容用的全域 override。
+
+Runtime artifacts：
+
+```text
+data/generated_skills/validated/   # 已通過 validator 的 runtime-generated skill cache
+data/generated_skills/failed/      # 失敗 metadata；只保存 safe reason/status/hash
+```
 
 ## 3. Mermaid 系統架構圖
 
 ```mermaid
 flowchart TD
-    User["Learner / Browser UI"] --> API["FastAPI server.py"]
+    User["Learner / Browser UI"] --> UI["Static UI\nchat, tree, badges, export"]
+    UI --> API["FastAPI server.py\n/api/start /respond /reset /mode /export"]
     API --> Engine["PelicanEngine\ncalibration-first state machine"]
 
     Engine --> Store["StateStore\nlocal JSON session persistence"]
-    Store --> State["SessionState\nphase, intake, plan, node states,\nEDF snapshot, direct evidence"]
+    Store --> State["SessionState\nphase, intake, plan, transcript,\nEDF snapshot, direct evidence"]
 
-    Engine --> Intake["LearnerIntakeProfile\ntopic -> intent -> level"]
-    Intake --> Planner["LearningPlanner"]
+    Engine --> Intake["Onboarding\n topic -> semantic classification -> goal -> level"]
+    Intake --> Semantic["Semantic Intake Classifier\nLLM structured JSON + rule fallback"]
+    Semantic --> Engine
 
+    Engine --> Planner["LearningPlanner"]
     Planner --> Generator["DomainSkillGenerator"]
-    Generator --> Catalog["domain_skills/*.yaml\nchecked-in executable skill assets"]
-    Generator --> LLM["LlmAdapter optional\nstructured DomainSkill generation"]
 
-    Catalog --> Validator["SkillValidator\nschema, graph, remediation,\nlegal education boundary"]
-    LLM --> Validator
+    Generator --> Catalog["domain_skills/*.yaml\nreviewed catalog skills"]
+    Generator --> Cache["data/generated_skills/validated\nvalidated runtime cache"]
+    Generator --> Health["LLM route health check\nsafe api_status/api_error logs"]
+    Health --> RuntimeLLM["LlmAdapter\nruntime DomainSkill generation + repair"]
+    RuntimeLLM --> Artifacts["data/generated_skills/failed\nsafe failed artifacts"]
+    Generator --> Generic["generic_skill.py\nknown-domain fallback skills"]
+
+    Catalog --> Validator["SkillValidator\nschema, graph, remediation,\nanswer-leak checks"]
+    Cache --> Validator
+    RuntimeLLM --> Validator
+    Generic --> Validator
+
     Validator --> Compiler["SkillCompiler\nDomainSkill + Intake -> LearningPlanSnapshot"]
     Compiler --> Plan["Session-local knowledge tree\nnodes, diagnostics, task steps"]
 
     Plan --> Engine
     Engine --> Diagnosis["diagnosis.py\nsuccessor-first + remediation signals"]
-    Diagnosis --> EDF["EdfSimulator\nteaching policy snapshot"]
-    Diagnosis --> Memory["LearningMemorySimulator\nbounded direct user evidence"]
+    Diagnosis --> EDF["EdfSimulator\nlearner_state + strategy"]
+    Diagnosis --> Memory["LearningMemorySimulator\ndirect evidence boundary"]
     EDF --> Tutor["tutoring.py\nstrategy selection"]
     Memory --> Tutor
     Tutor --> Engine
@@ -102,36 +139,53 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start["使用者開啟 MVP"] --> AskTopic["AI: 你想學什麼？"]
-    AskTopic --> UserTopic["User: 深度學習"]
-    UserTopic --> AskGoal["AI: 想理解概念、實作、專案、考試，或背景？"]
-    AskGoal --> UserGoal["User: 想理解原理"]
-    UserGoal --> AskLevel["AI: 目前基礎如何？"]
-    AskLevel --> UserLevel["User: 完全沒有基礎"]
+    AskTopic --> UserTopic["User: 深度學習 / 中國歷史 / 其他主題"]
 
-    UserLevel --> LoadSkill["載入 deep_learning.yaml"]
-    LoadSkill --> ValidateSkill{"Skill validation pass?"}
-    ValidateSkill -- yes --> Compile["Compile foundation-first plan"]
-    ValidateSkill -- no --> Fallback["Deterministic fallback / clarification"]
+    UserTopic --> Resolve["Resolve domain category"]
+    Resolve --> AskGoal["AI: 詢問學習目的或切入角度"]
+    AskGoal --> UserGoal["User: 目標、方向、或更正主題"]
 
-    Compile --> FirstDiag["AI: low-load foundation diagnostic\nmath_intuition"]
-    FirstDiag --> UserAnswer{"使用者回應"}
+    UserGoal --> SemanticGoal{"Semantic Intake Classifier"}
+    SemanticGoal -- topic_revision --> ReviseTopic["更新 topic\n重跑 domain resolve\n回到 goal question"]
+    ReviseTopic --> AskGoal
+    SemanticGoal -- normal_answer --> InferIntent["Infer learning intent"]
+    InferIntent --> AskLevel["AI: 詢問背景、程度、經驗"]
 
-    UserAnswer -- correct --> MarkMastered["標記 direct mastered evidence"]
-    MarkMastered --> NextDiag["PELICAN successor-first next node"]
+    AskLevel --> UserLevel["User: 背景、程度、或再次更正主題"]
+    UserLevel --> SemanticLevel{"Semantic Intake Classifier"}
+    SemanticLevel -- topic_revision --> ReviseTopic
+    SemanticLevel -- normal_answer --> CompileStart["Compile learning plan"]
 
-    UserAnswer -- "不知道" --> Scaffold["Prerequisite scaffold\n不跳到無關節點"]
-    Scaffold --> TutorStep["Guided tutoring prompt"]
+    CompileStart --> SkillRoute{"Skill source selection"}
+    SkillRoute -- catalog hit --> CatalogSkill["Load domain_skills/deep_learning.yaml"]
+    SkillRoute -- runtime cache hit --> RuntimeCache["Load data/generated_skills/validated"]
+    SkillRoute -- LLM available --> Health["Check model route health"]
+    Health -- healthy --> RuntimeGen["Generate/repair DomainSkill"]
+    Health -- failed --> GenericFallback["Known-domain generic fallback"]
+    RuntimeGen -- validated --> SaveCache["Save validated runtime skill"]
+    RuntimeGen -- failed --> FailedArtifact["Save failed artifact"]
+    FailedArtifact --> GenericFallback
+    SkillRoute -- unknown domain --> LegacyFallback["Legacy two-node fallback"]
 
-    UserAnswer -- "太細/太難" --> Recalibrate["Scope mismatch\n回到較高層重新校準"]
-    Recalibrate --> TutorStep
+    CatalogSkill --> Compile["Compile knowledge tree"]
+    RuntimeCache --> Compile
+    SaveCache --> Compile
+    GenericFallback --> Compile
+    LegacyFallback --> Compile
 
-    UserAnswer -- "太簡單" --> Accelerate["Acceleration\n跳到下一個需確認概念"]
-    Accelerate --> NextDiag
+    Compile --> Diagnostic["Present first diagnostic"]
+    Diagnostic --> Answer{"Learner response"}
+    Answer -- correct --> Mastered["Update direct mastered evidence"]
+    Answer -- unknown --> Scaffold["Scaffold prerequisite/current concept"]
+    Answer -- too_detailed/too_hard --> Recalibrate["Remediate level/scope"]
+    Answer -- too_easy --> Accelerate["Accelerate to next concept"]
 
-    TutorStep --> Evidence["Record direct user evidence only"]
-    NextDiag --> Evidence
-    Evidence --> EDF["Update EDF policy snapshot"]
-    EDF --> Continue["Continue diagnosis / tutoring"]
+    Mastered --> EDF["Update EDF/GUM metadata"]
+    Scaffold --> EDF
+    Recalibrate --> EDF
+    Accelerate --> EDF
+    EDF --> Continue["Continue diagnosis/tutoring"]
+    Continue --> Export["Optional: export Markdown transcript"]
 ```
 
 ## 5. 檔案架構圖
@@ -141,41 +195,53 @@ misc/PELICAN_mvp/
 ├── README.md
 ├── requirements.txt
 ├── data/
-│   └── .gitkeep
+│   ├── generated_skills/
+│   │   ├── validated/                  # runtime-generated skill cache
+│   │   └── failed/                     # safe failure metadata
+│   └── *.json                          # local learner session state
 ├── docs/
 │   ├── 11211_PELICAN_Personalized_Edu.md
 │   ├── 11211_PELICAN_Personalized_Edu.pdf
 │   ├── PELICAN_Graph.jpg
 │   ├── Qwen_Qwen3_235B_A22B_Instruct_2507_–_API_Quickstart_OpenRouter.md
+│   ├── Gemini_3.1_Flash_Lite_-_API_Pricing_&_Providers_OpenRouter.md
 │   ├── 2026_07_18_experiment/
 │   │   └── PELICAN_Knowledge_Tracing_MVP.md
-│   └── implemenation_plan/
-│       └── PELICAN_Domain_Skill_Runtime_plan.md
+│   ├── implemenation_plan/
+│   │   └── PELICAN_Domain_Skill_Runtime_plan.md
+│   └── worklog/
+│       └── 2026_07_20/
+│           ├── 2026_07_20.md
+│           ├── 2026_07_21.md
+│           ├── conversation.md
+│           └── terminal.md
 ├── domain_skills/
-│   └── deep_learning.yaml
+│   └── deep_learning.yaml              # current reviewed catalog skill
 ├── pelican_mvp/
 │   ├── __init__.py
-│   ├── __main__.py
-│   ├── curriculum.py
-│   ├── diagnosis.py
-│   ├── domain_catalog.py
-│   ├── domain_skill.py
-│   ├── edf_simulator.py
-│   ├── engine.py
-│   ├── learning_memory.py
-│   ├── llm.py
-│   ├── models.py
-│   ├── observability.py
-│   ├── planner.py
-│   ├── server.py
-│   ├── skill_compiler.py
-│   ├── skill_generator.py
-│   ├── skill_loader.py
-│   ├── skill_validator.py
-│   ├── state_store.py
-│   └── tutoring.py
+│   ├── __main__.py                     # CLI entry, stale-server cleanup, safe formatter
+│   ├── curriculum.py                   # reviewed fixture curricula
+│   ├── diagnosis.py                    # successor-first diagnosis
+│   ├── domain_catalog.py               # topic -> domain route
+│   ├── domain_skill.py                 # executable skill contract
+│   ├── edf_simulator.py                # EDF learner-state simulation
+│   ├── engine.py                       # main onboarding/diagnosis/tutoring state machine
+│   ├── generic_skill.py                # known-domain fallback skills
+│   ├── learning_memory.py              # bounded direct-evidence memory simulator
+│   ├── llm.py                          # OpenRouter-compatible LLM adapter
+│   ├── models.py                       # serializable state/domain models
+│   ├── observability.py                # safe structured logging allow-list
+│   ├── planner.py                      # profile-aware plan creation
+│   ├── server.py                       # FastAPI API + Markdown export
+│   ├── skill_artifacts.py              # validated/failed runtime skill artifacts
+│   ├── skill_compiler.py               # DomainSkill -> LearningPlanSnapshot
+│   ├── skill_generator.py              # catalog/cache/runtime/generic skill pipeline
+│   ├── skill_loader.py                 # catalog skill loader
+│   ├── skill_validator.py              # skill safety/shape validator
+│   ├── state_store.py                  # local JSON persistence
+│   └── tutoring.py                     # tutoring strategy templates
 ├── static/
-│   ├── app.js
+│   ├── app.js                          # chat UI, status badges, export action
 │   ├── index.html
 │   └── styles.css
 └── tests/
@@ -188,6 +254,7 @@ misc/PELICAN_mvp/
     ├── test_engine.py
     ├── test_learning_memory.py
     ├── test_llm.py
+    ├── test_main.py
     ├── test_models.py
     ├── test_pedagogical_flow.py
     ├── test_planner.py

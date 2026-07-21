@@ -1,10 +1,10 @@
 {
   "artifact_type": "failed_runtime_skill",
-  "created_at": "2026-07-21T03:18:09.788619+00:00",
+  "created_at": "2026-07-21T04:50:24.571191+00:00",
   "domain_category": "humanities",
   "payload_hash": null,
   "reason_codes": [
-    "DomainSkillError"
+    "LlmUnavailable"
   ],
   "route": "~google/gemini-pro-latest",
   "topic_slug": "中國歷史"
