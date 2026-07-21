@@ -82,3 +82,6 @@ misc/AREQA_introPage/node_modules
 misc/AREQA_introPage
 
 supabase/.temp
+
+misc/PELICAN_mvp/.drift
+misc/PELICAN_mvp/.driftignore
