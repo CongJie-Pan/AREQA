@@ -34,6 +34,8 @@ _SAFE_FIELDS = frozenset({
     "diagnostic_source",
     "intake_source",
     "model_route",
+    "api_status_code",
+    "api_error_type",
     "remediation_reason",
     "edf_transition",
     "memory_event",

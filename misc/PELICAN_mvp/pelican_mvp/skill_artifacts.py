@@ -131,8 +131,9 @@ def save_failed_skill_artifact(
             attempt. These are stable debugging handles, not raw model text.
         payload: Optional invalid JSON object used only to compute a short hash.
         attempts: Safe per-attempt metadata. Each item may contain the bounded
-            attempt number, stage, event name, and reason codes. Raw payload,
-            prompt, response, and exception text must not be included.
+            attempt number, stage, event name, reason codes, HTTP status code,
+            and safe provider error type. Raw payload, prompt, response, and
+            exception text must not be included.
         root: Optional test override for the artifact root directory.
 
     Returns:
@@ -182,7 +183,14 @@ def _safe_attempt(payload: dict[str, Any]) -> dict[str, Any]:
         "stage": str(payload.get("stage", "unknown"))[:40],
         "event": str(payload.get("event", "unknown"))[:80],
         "reason_codes": [str(item)[:80] for item in reasons[:8]],
+        "api_status_code": _safe_int(payload.get("api_status_code")),
+        "api_error_type": str(payload.get("api_error_type") or "")[:80] or None,
     }
+
+
+def _safe_int(value: Any) -> int | None:
+    """Return an integer metadata value when already type-safe."""
+    return value if isinstance(value, int) else None
 
 
 def _slug(value: str) -> str:

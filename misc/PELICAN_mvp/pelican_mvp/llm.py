@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,7 +13,40 @@ from .models import DiagnosticQuestion, KnowledgeNode, LearningPlanSnapshot, Res
 
 
 class LlmUnavailable(RuntimeError):
-    """Raised when optional LLM capabilities are unavailable or invalid."""
+    """Raised when optional LLM capabilities are unavailable or invalid.
+
+    Args:
+        message: Human-readable internal failure summary. This string is never
+            emitted directly through structured logs.
+        reason_codes: Stable safe reason codes suitable for logs/artifacts.
+        api_status_code: Optional HTTP status code from the OpenAI-compatible
+            provider. Response bodies and credentials are intentionally excluded.
+        api_error_type: Optional provider/openai exception class or safe error
+            type for debugging route availability.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_codes: tuple[str, ...] = (),
+        api_status_code: int | None = None,
+        api_error_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason_codes = reason_codes
+        self.api_status_code = api_status_code
+        self.api_error_type = api_error_type
+
+
+@dataclass(frozen=True)
+class LlmHealth:
+    """Safe health result for one configured model route."""
+
+    available: bool
+    reason_codes: tuple[str, ...]
+    api_status_code: int | None = None
+    api_error_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +152,39 @@ class LlmAdapter:
         if legacy_override:
             return legacy_override
         return DEFAULT_TUTOR_MODEL
+
+    def check_route_health(self, model_route: str) -> LlmHealth:
+        """Probe whether a model route can return a minimal JSON response.
+
+        Args:
+            model_route: OpenRouter/OpenAI-compatible model slug to check.
+
+        Returns:
+            Safe availability metadata. The probe returns only status, reason
+            codes, and optional HTTP status/error class. It never returns or logs
+            model content, response bodies, prompts, credentials, or API keys.
+
+        Raises:
+            This method never raises for provider failures; callers use the
+            returned health object to decide whether to attempt generation or
+            fail closed into deterministic fallback.
+        """
+        if not self.available:
+            return LlmHealth(False, ("llm_missing_api_key",))
+        try:
+            self._json(
+                "You are a health check endpoint. Return only JSON.",
+                'Return exactly {"ok": true}.',
+                model=model_route,
+            )
+            return LlmHealth(True, ("ok",))
+        except LlmUnavailable as exc:
+            return LlmHealth(
+                False,
+                exc.reason_codes or ("llm_unavailable",),
+                api_status_code=exc.api_status_code,
+                api_error_type=exc.api_error_type,
+            )
 
     def verified_diagnostic(self, node_label: str) -> DiagnosticQuestion | None:
         """Generate a diagnostic only if an independent verifier accepts it."""
@@ -369,7 +436,10 @@ class LlmAdapter:
     def _json(self, system: str, user: str, *, model: str | None = None) -> dict[str, Any]:
         """Call the configured model and require a JSON object response."""
         if not self.config:
-            raise LlmUnavailable("OPENROUTER_API_KEY is not configured")
+            raise LlmUnavailable(
+                "OPENROUTER_API_KEY is not configured",
+                reason_codes=("llm_missing_api_key",),
+            )
         try:
             from openai import OpenAI
 
@@ -387,4 +457,51 @@ class LlmAdapter:
                 raise ValueError("response is not a JSON object")
             return parsed
         except Exception as exc:
-            raise LlmUnavailable(f"LLM request failed: {type(exc).__name__}") from exc
+            status_code = _safe_status_code(exc)
+            error_type = _safe_error_type(exc)
+            raise LlmUnavailable(
+                f"LLM request failed: {type(exc).__name__}",
+                reason_codes=_safe_llm_reason_codes(exc, status_code, error_type),
+                api_status_code=status_code,
+                api_error_type=error_type,
+            ) from exc
+
+
+def _safe_status_code(exc: Exception) -> int | None:
+    """Extract an HTTP status code from provider exceptions without response text."""
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+    response = getattr(exc, "response", None)
+    response_status = getattr(response, "status_code", None)
+    return response_status if isinstance(response_status, int) else None
+
+
+def _safe_error_type(exc: Exception) -> str:
+    """Return a bounded provider error type for safe logs."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        nested_error = body.get("error")
+        if isinstance(nested_error, dict):
+            provider_type = nested_error.get("type") or nested_error.get("code")
+            if provider_type:
+                return _slug_reason(str(provider_type))
+        provider_type = body.get("type") or body.get("code")
+        if provider_type:
+            return _slug_reason(str(provider_type))
+    return _slug_reason(type(exc).__name__)
+
+
+def _safe_llm_reason_codes(exc: Exception, status_code: int | None, error_type: str) -> tuple[str, ...]:
+    """Build stable LLM failure reason codes from safe exception metadata."""
+    codes = ["llm_request_failed", f"llm_{_slug_reason(type(exc).__name__)}"]
+    if status_code is not None:
+        codes.append(f"llm_api_status_{status_code}")
+    if error_type and error_type != _slug_reason(type(exc).__name__):
+        codes.append(f"llm_api_error_{error_type}")
+    return tuple(dict.fromkeys(codes))
+
+
+def _slug_reason(value: str) -> str:
+    """Normalize provider exception labels into safe reason-code fragments."""
+    return re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")[:60] or "unknown"

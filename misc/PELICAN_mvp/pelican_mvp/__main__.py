@@ -28,6 +28,8 @@ LOG_FIELDS = (
     "diagnostic_source",
     "intake_source",
     "model_route",
+    "api_status_code",
+    "api_error_type",
     "remediation_reason",
     "learner_state",
     "strategy",
@@ -81,7 +83,8 @@ def configure_runtime_logging() -> None:
             SafePelicanFormatter(
                 "PELICAN %(levelname)s %(event)s phase=%(phase)s activity=%(activity_code)s "
                 "status=%(activity_status)s reason=%(reason_code)s detail=%(detail_code)s domain=%(domain_category)s "
-                "route=%(route)s skill=%(skill_id)s skill_source=%(skill_source)s "
+                "route=%(route)s api_status=%(api_status_code)s api_error=%(api_error_type)s "
+                "skill=%(skill_id)s skill_source=%(skill_source)s "
                 "intake_source=%(intake_source)s diagnostic_source=%(diagnostic_source)s "
                 "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "
                 "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s"

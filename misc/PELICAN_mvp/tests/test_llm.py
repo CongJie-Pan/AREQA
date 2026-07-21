@@ -34,6 +34,65 @@ def test_llm_adapter_import_error_fallback(monkeypatch: pytest.MonkeyPatch) -> N
     with pytest.raises(LlmUnavailable, match="LLM request failed: ImportError"):
         adapter._json("system", "user")
 
+
+def test_llm_adapter_preserves_safe_api_status_metadata() -> None:
+    class MockApiStatusError(Exception):
+        status_code = 404
+        body = {"error": {"type": "not_found"}}
+
+    class MockCompletions:
+        def create(self, *args, **kwargs):
+            raise MockApiStatusError()
+
+    class MockChat:
+        completions = MockCompletions()
+
+    class MockClient:
+        chat = MockChat()
+
+    config = LlmConfig(api_key="test", model="test", base_url="test")
+    adapter = LlmAdapter(config=config)
+    adapter._client = MockClient()
+
+    with pytest.raises(LlmUnavailable) as exc_info:
+        adapter._json("system", "user")
+
+    assert exc_info.value.api_status_code == 404
+    assert exc_info.value.api_error_type == "not_found"
+    assert exc_info.value.reason_codes == (
+        "llm_request_failed",
+        "llm_mockapistatuserror",
+        "llm_api_status_404",
+        "llm_api_error_not_found",
+    )
+
+
+def test_llm_route_health_returns_safe_failure_metadata() -> None:
+    class MockApiStatusError(Exception):
+        status_code = 402
+        body = {"error": {"type": "insufficient_credits"}}
+
+    class MockCompletions:
+        def create(self, *args, **kwargs):
+            raise MockApiStatusError()
+
+    class MockChat:
+        completions = MockCompletions()
+
+    class MockClient:
+        chat = MockChat()
+
+    config = LlmConfig(api_key="test", model="test", base_url="test")
+    adapter = LlmAdapter(config=config)
+    adapter._client = MockClient()
+
+    health = adapter.check_route_health("model")
+
+    assert health.available is False
+    assert health.api_status_code == 402
+    assert health.api_error_type == "insufficient_credits"
+    assert "llm_api_status_402" in health.reason_codes
+
 def test_llm_adapter_valid_json_response() -> None:
     class MockMessage:
         content = '{"response": "this is a mock response"}'

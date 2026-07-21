@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from pelican_mvp.domain_skill import DomainCategory, DomainSkill, SkillLifecycle
-from pelican_mvp.llm import LlmAdapter, LlmUnavailable
+from pelican_mvp.llm import LlmAdapter, LlmHealth, LlmUnavailable
 from pelican_mvp.skill_artifacts import save_validated_skill_artifact
 from pelican_mvp.skill_generator import DomainSkillGenerator, SkillGenerationError
 from test_domain_skill import valid_skill_payload
@@ -23,6 +23,9 @@ class FakeLlm(LlmAdapter):
 
     def model_route_for_category(self, category: DomainCategory) -> str:
         return f"route/{category.value}"
+
+    def check_route_health(self, model_route: str) -> LlmHealth:
+        return LlmHealth(True, ("ok",))
 
     def generate_domain_skill(self, topic: str, category: DomainCategory, *, model_route: str | None = None):
         self.calls.append((topic, category, model_route))
@@ -196,6 +199,35 @@ def test_generator_records_llm_failure_as_generation_failure(caplog, tmp_path: P
     assert failed["attempts"][0]["stage"] == "llm_request"
     assert "pelican_skill_generation_failed" in caplog.text
     assert "pelican_skill_validation_rejected" not in caplog.text
+
+
+def test_generator_checks_api_health_before_generation(caplog, tmp_path: Path) -> None:
+    class UnhealthyLlm(PayloadLlm):
+        def check_route_health(self, model_route: str) -> LlmHealth:
+            return LlmHealth(
+                False,
+                ("llm_request_failed", "llm_api_status_404"),
+                api_status_code=404,
+                api_error_type="not_found",
+            )
+
+    llm = UnhealthyLlm([valid_skill_payload()])
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        skill, route = generator.generate("中國歷史", force_regenerate=True)
+
+    failed = json.loads((tmp_path / "failed" / "中國歷史.failed.json").read_text(encoding="utf-8"))
+    assert skill.skill_id == "generic_humanities"
+    assert route == "generic:humanities"
+    assert llm.payload_calls == []
+    assert failed["reason_codes"] == ["llm_request_failed", "llm_api_status_404"]
+    assert failed["attempts"][0]["stage"] == "api_health"
+    assert failed["attempts"][0]["api_status_code"] == 404
+    assert failed["attempts"][0]["api_error_type"] == "not_found"
+    record = next(item for item in caplog.records if item.message == "pelican_skill_api_health_checked")
+    assert record.api_status_code == 404
+    assert record.api_error_type == "not_found"
 
 
 def test_generator_without_api_key_uses_generic_domain_skill() -> None:

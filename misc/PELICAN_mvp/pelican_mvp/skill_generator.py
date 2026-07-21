@@ -150,6 +150,36 @@ class DomainSkillGenerator:
             return self._generic_fallback(topic_clean, resolution.category, resolution.route_slug, ("llm_unavailable",))
 
         route = self.llm.model_route_for_category(resolution.category)
+        health = self.llm.check_route_health(route)
+        log_event(
+            "pelican_skill_api_health_checked",
+            domain_category=resolution.category.value,
+            route=route,
+            model_route=route,
+            skill_source="runtime_generation",
+            reason_code="|".join(health.reason_codes),
+            api_status_code=health.api_status_code,
+            api_error_type=health.api_error_type,
+        )
+        if not health.available:
+            failed_attempt = {
+                "attempt": 0,
+                "stage": "api_health",
+                "event": "pelican_skill_api_health_checked",
+                "reason_codes": health.reason_codes,
+                "api_status_code": health.api_status_code,
+                "api_error_type": health.api_error_type,
+            }
+            save_failed_skill_artifact(
+                topic=topic_clean,
+                category=resolution.category,
+                route=route,
+                reason_codes=health.reason_codes,
+                attempts=(failed_attempt,),
+                root=self.artifact_root,
+            )
+            return self._generic_fallback(topic_clean, resolution.category, route, health.reason_codes)
+
         last_reason_codes: tuple[str, ...] = ("unknown",)
         last_payload: dict | None = None
         failed_attempts: list[dict[str, object]] = []
@@ -200,6 +230,8 @@ class DomainSkillGenerator:
                         "stage": stage,
                         "event": event,
                         "reason_codes": last_reason_codes,
+                        "api_status_code": getattr(exc, "api_status_code", None),
+                        "api_error_type": getattr(exc, "api_error_type", None),
                     }
                 )
                 log_event(
@@ -210,6 +242,8 @@ class DomainSkillGenerator:
                     model_route=route,
                     skill_source="runtime_generation",
                     reason_code="|".join(last_reason_codes),
+                    api_status_code=getattr(exc, "api_status_code", None),
+                    api_error_type=getattr(exc, "api_error_type", None),
                 )
                 if attempt < self.max_retries:
                     log_event(
@@ -346,6 +380,8 @@ def _llm_reason_codes(exc: LlmUnavailable) -> tuple[str, ...]:
     errors, imports, timeouts, and JSON parse failures without exposing prompts,
     model output, API keys, or provider response bodies.
     """
+    if exc.reason_codes:
+        return exc.reason_codes
     message = str(exc)
     if "OPENROUTER_API_KEY is not configured" in message:
         return ("llm_missing_api_key",)
