@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROC_ROOT = Path("/proc")
 LOG_FIELDS = (
     "event",
+    "reason_code",
     "phase",
     "activity_code",
     "activity_status",
@@ -36,7 +37,14 @@ LOG_FIELDS = (
 
 
 class SafePelicanFormatter(logging.Formatter):
-    """Fill structured log defaults so local activity logs never break formatting."""
+    """Fill structured log defaults so local activity logs never break formatting.
+
+    The CLI formatter prints only allow-listed metadata from
+    ``pelican_mvp.observability.log_event``. Including ``reason_code`` is a
+    debugging boundary: it exposes stable failure handles such as
+    ``llm_request_failed`` or ``missing_remediation`` without printing raw
+    learner answers, prompts, model output, credentials, or exception messages.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         for field in LOG_FIELDS:
@@ -72,7 +80,7 @@ def configure_runtime_logging() -> None:
         handler.setFormatter(
             SafePelicanFormatter(
                 "PELICAN %(levelname)s %(event)s phase=%(phase)s activity=%(activity_code)s "
-                "status=%(activity_status)s detail=%(detail_code)s domain=%(domain_category)s "
+                "status=%(activity_status)s reason=%(reason_code)s detail=%(detail_code)s domain=%(domain_category)s "
                 "route=%(route)s skill=%(skill_id)s skill_source=%(skill_source)s "
                 "intake_source=%(intake_source)s diagnostic_source=%(diagnostic_source)s "
                 "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "

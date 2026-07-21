@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from pelican_mvp.domain_skill import DomainCategory, DomainSkill, SkillLifecycle
-from pelican_mvp.llm import LlmAdapter
+from pelican_mvp.llm import LlmAdapter, LlmUnavailable
 from pelican_mvp.skill_artifacts import save_validated_skill_artifact
 from pelican_mvp.skill_generator import DomainSkillGenerator, SkillGenerationError
 from test_domain_skill import valid_skill_payload
@@ -47,7 +47,10 @@ class PayloadLlm(FakeLlm):
         repair_issues=(),
     ):
         self.payload_calls.append((topic, category, model_route, tuple(repair_issues)))
-        return self.payloads.pop(0)
+        item = self.payloads.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
 
 def make_skill(**updates) -> DomainSkill:
@@ -173,7 +176,26 @@ def test_generator_uses_generic_skill_after_bounded_retry(tmp_path: Path) -> Non
     assert skill.skill_id == "generic_stem"
     assert route == "generic:stem"
     assert len(llm.calls) == 2
-    assert (tmp_path / "failed" / "機器學習.failed.json").exists()
+    failed = json.loads((tmp_path / "failed" / "機器學習.failed.json").read_text(encoding="utf-8"))
+    assert failed["reason_codes"] == ["missing_remediation"]
+    assert [item["stage"] for item in failed["attempts"]] == ["validation", "validation"]
+
+
+def test_generator_records_llm_failure_as_generation_failure(caplog, tmp_path: Path) -> None:
+    llm = PayloadLlm([LlmUnavailable("LLM request failed: JSONDecodeError")])
+    generator = DomainSkillGenerator(llm, max_retries=0, artifact_root=tmp_path)
+
+    with caplog.at_level(logging.WARNING, logger="pelican_mvp"):
+        skill, route = generator.generate("中國歷史", force_regenerate=True)
+
+    failed = json.loads((tmp_path / "failed" / "中國歷史.failed.json").read_text(encoding="utf-8"))
+    assert skill.skill_id == "generic_humanities"
+    assert route == "generic:humanities"
+    assert failed["reason_codes"] == ["llm_request_failed", "llm_jsondecodeerror"]
+    assert failed["attempts"][0]["event"] == "pelican_skill_generation_failed"
+    assert failed["attempts"][0]["stage"] == "llm_request"
+    assert "pelican_skill_generation_failed" in caplog.text
+    assert "pelican_skill_validation_rejected" not in caplog.text
 
 
 def test_generator_without_api_key_uses_generic_domain_skill() -> None:

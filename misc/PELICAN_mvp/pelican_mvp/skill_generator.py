@@ -152,6 +152,7 @@ class DomainSkillGenerator:
         route = self.llm.model_route_for_category(resolution.category)
         last_reason_codes: tuple[str, ...] = ("unknown",)
         last_payload: dict | None = None
+        failed_attempts: list[dict[str, object]] = []
         for attempt in range(self.max_retries + 1):
             log_event(
                 "pelican_skill_generation_attempt",
@@ -191,11 +192,23 @@ class DomainSkillGenerator:
                 return skill, route
             except (LlmUnavailable, SkillValidationError, DomainSkillError, ValueError, TypeError, SkillGenerationError) as exc:
                 last_reason_codes = _reason_codes_for(exc)
+                event = _failure_event_for(exc)
+                stage = _failure_stage_for(exc)
+                failed_attempts.append(
+                    {
+                        "attempt": attempt + 1,
+                        "stage": stage,
+                        "event": event,
+                        "reason_codes": last_reason_codes,
+                    }
+                )
                 log_event(
-                    "pelican_skill_validation_rejected",
+                    event,
                     level=logging.WARNING,
                     domain_category=resolution.category.value,
                     route=route,
+                    model_route=route,
+                    skill_source="runtime_generation",
                     reason_code="|".join(last_reason_codes),
                 )
                 if attempt < self.max_retries:
@@ -214,6 +227,7 @@ class DomainSkillGenerator:
             route=route,
             reason_codes=last_reason_codes,
             payload=last_payload,
+            attempts=tuple(failed_attempts),
             root=self.artifact_root,
         )
         return self._generic_fallback(topic_clean, resolution.category, route, last_reason_codes)
@@ -305,5 +319,56 @@ def _normalize_generated_skill(skill: DomainSkill, category: DomainCategory) -> 
 def _reason_codes_for(exc: Exception) -> tuple[str, ...]:
     """Extract stable safe reason codes from generation or validation errors."""
     if isinstance(exc, SkillValidationError):
-        return tuple(issue.reason_code for issue in exc.issues) or ("validation_failed",)
+        return _dedupe_reason_codes(tuple(issue.reason_code for issue in exc.issues)) or ("validation_failed",)
+    if isinstance(exc, LlmUnavailable):
+        return _llm_reason_codes(exc)
     return (type(exc).__name__,)
+
+
+def _dedupe_reason_codes(reason_codes: tuple[str, ...]) -> tuple[str, ...]:
+    """Return reason codes without duplicates while preserving first-seen order."""
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for code in reason_codes:
+        if code in seen:
+            continue
+        seen.add(code)
+        deduped.append(code)
+    return tuple(deduped)
+
+
+def _llm_reason_codes(exc: LlmUnavailable) -> tuple[str, ...]:
+    """Map LLM failures to safe stable reason codes for logs and artifacts.
+
+    The adapter intentionally hides raw exception text from structured logs. This
+    mapper only extracts the public failure class already produced by
+    ``LlmAdapter`` so operators can distinguish missing credentials, transport
+    errors, imports, timeouts, and JSON parse failures without exposing prompts,
+    model output, API keys, or provider response bodies.
+    """
+    message = str(exc)
+    if "OPENROUTER_API_KEY is not configured" in message:
+        return ("llm_missing_api_key",)
+    if message.startswith("LLM request failed:"):
+        failure_type = message.split(":", 1)[1].strip().lower()
+        failure_type = re.sub(r"[^a-z0-9_]+", "_", failure_type)[:60] or "unknown"
+        return ("llm_request_failed", f"llm_{failure_type}")
+    return ("llm_unavailable",)
+
+
+def _failure_event_for(exc: Exception) -> str:
+    """Return the structured event name for one failed generation attempt."""
+    if isinstance(exc, LlmUnavailable):
+        return "pelican_skill_generation_failed"
+    if isinstance(exc, SkillValidationError):
+        return "pelican_skill_validation_rejected"
+    return "pelican_skill_schema_rejected"
+
+
+def _failure_stage_for(exc: Exception) -> str:
+    """Return a safe stage label for failed runtime skill artifacts."""
+    if isinstance(exc, LlmUnavailable):
+        return "llm_request"
+    if isinstance(exc, SkillValidationError):
+        return "validation"
+    return "schema_parse"

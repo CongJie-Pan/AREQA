@@ -118,6 +118,7 @@ def save_failed_skill_artifact(
     route: str,
     reason_codes: tuple[str, ...],
     payload: dict[str, Any] | None = None,
+    attempts: tuple[dict[str, Any], ...] = (),
     root: Path | None = None,
 ) -> Path:
     """Save safe failure metadata without raw learner answers or model reasoning.
@@ -129,6 +130,9 @@ def save_failed_skill_artifact(
         reason_codes: Validator or transport reason codes from the final failed
             attempt. These are stable debugging handles, not raw model text.
         payload: Optional invalid JSON object used only to compute a short hash.
+        attempts: Safe per-attempt metadata. Each item may contain the bounded
+            attempt number, stage, event name, and reason codes. Raw payload,
+            prompt, response, and exception text must not be included.
         root: Optional test override for the artifact root directory.
 
     Returns:
@@ -149,6 +153,7 @@ def save_failed_skill_artifact(
         "domain_category": category.value,
         "route": route,
         "reason_codes": list(reason_codes),
+        "attempts": [_safe_attempt(item) for item in attempts],
         "payload_hash": _payload_hash(payload) if payload is not None else None,
         "created_at": _now(),
     }
@@ -165,6 +170,19 @@ def _payload_hash(payload: dict[str, Any]) -> str:
     """Return a short stable hash for invalid payload correlation."""
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def _safe_attempt(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return bounded per-attempt failure metadata for local RCA artifacts."""
+    reasons = payload.get("reason_codes", ())
+    if not isinstance(reasons, (list, tuple)):
+        reasons = ()
+    return {
+        "attempt": int(payload.get("attempt", 0)),
+        "stage": str(payload.get("stage", "unknown"))[:40],
+        "event": str(payload.get("event", "unknown"))[:80],
+        "reason_codes": [str(item)[:80] for item in reasons[:8]],
+    }
 
 
 def _slug(value: str) -> str:

@@ -66,3 +66,25 @@ def test_safe_pelican_formatter_fills_missing_structured_fields() -> None:
     )
 
     assert formatter.format(record) == "PELICAN INFO - phase=- activity=- detail=-"
+
+
+def test_safe_pelican_formatter_prints_safe_reason_code() -> None:
+    formatter = main_module.SafePelicanFormatter(
+        "PELICAN %(levelname)s %(event)s reason=%(reason_code)s"
+    )
+    record = logging.LogRecord(
+        name="pelican_mvp",
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="pelican_skill_generation_failed",
+        args=(),
+        exc_info=None,
+    )
+    record.event = "pelican_skill_generation_failed"
+    record.reason_code = "llm_request_failed|llm_jsondecodeerror"
+
+    assert formatter.format(record) == (
+        "PELICAN WARNING pelican_skill_generation_failed "
+        "reason=llm_request_failed|llm_jsondecodeerror"
+    )
