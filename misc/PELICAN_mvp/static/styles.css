@@ -207,6 +207,15 @@ body {
     margin-top: 10px;
 }
 .btn:hover { background: var(--accent-hover); }
+.btn.secondary {
+    background: rgba(15, 23, 42, 0.48);
+    border: 1px solid var(--border-color);
+}
+.btn.secondary:hover { background: rgba(59, 130, 246, 0.24); }
+.btn:disabled {
+    cursor: wait;
+    opacity: 0.72;
+}
 
 .tree-container {
     flex: 1;

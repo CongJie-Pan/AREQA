@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const activityStatusDot = document.getElementById("activity-status-dot");
     const activityBadges = document.getElementById("activity-badges");
     const resetBtn = document.getElementById("reset-btn");
+    const exportBtn = document.getElementById("export-btn");
     const loadingUI = document.getElementById("loading");
     let lastActivityKey = "";
 
@@ -96,7 +97,34 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-
+    exportBtn.addEventListener("click", async () => {
+        exportBtn.disabled = true;
+        renderPendingActivity("正在匯出對話紀錄", "export");
+        try {
+            const res = await fetch(`/api/export?learner_id=${encodeURIComponent(LEARNER_ID)}`);
+            if (!res.ok) {
+                throw new Error("匯出失敗");
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `pelican_${LEARNER_ID}.md`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            renderActivityStatus(
+                { code: "exported", label: "已匯出對話紀錄", status: "done", detail: "markdown" },
+                [{ code: "exported", label: "已匯出對話紀錄", status: "done", detail: "markdown" }]
+            );
+        } catch (err) {
+            appendMessage("匯出失敗：" + err.message, "teacher");
+            renderActivityStatus({ code: "error", label: "系統錯誤", status: "idle", detail: "export_failed" }, []);
+        } finally {
+            exportBtn.disabled = false;
+        }
+    });
 
 
     async function startSession() {
@@ -214,6 +242,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             tutoring_started: "進入教學引導",
             processing: "系統處理中",
             engine_processing: "等待後端決策",
+            exported: "已匯出對話紀錄",
             error: "系統錯誤"
         };
         return labels[code] || "系統處理中";

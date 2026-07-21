@@ -358,6 +358,41 @@ class TurnRecord:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+@dataclass(frozen=True)
+class TranscriptEntry:
+    """One exportable chat transcript entry for the local MVP session.
+
+    Transcript entries intentionally preserve learner-visible text because the
+    export feature is explicitly user-triggered and local to the MVP. They remain
+    separate from structured logs, which must never contain raw prompts or user
+    answers.
+    """
+
+    role: str
+    text: str
+    phase: str
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, str]:
+        """Return a JSON-safe transcript entry."""
+        return {
+            "role": self.role,
+            "text": self.text,
+            "phase": self.phase,
+            "timestamp": self.timestamp,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "TranscriptEntry":
+        """Deserialize a transcript entry with bounded compatibility defaults."""
+        return cls(
+            role=str(payload.get("role", "assistant"))[:32],
+            text=str(payload.get("text", ""))[:4000],
+            phase=str(payload.get("phase", "unknown"))[:80],
+            timestamp=payload.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        )
+
+
 @dataclass
 class SessionState:
     """Serialize the complete local state for one PELICAN learning session."""
@@ -382,6 +417,7 @@ class SessionState:
     intake_profile: LearnerIntakeProfile = field(default_factory=LearnerIntakeProfile)
     direct_evidence: list[MemoryEvidenceRecord] = field(default_factory=list)
     activity_log: list[ActivityEvent] = field(default_factory=list)
+    transcript: list[TranscriptEntry] = field(default_factory=list)
     completed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -414,6 +450,7 @@ class SessionState:
             "intake_profile": self.intake_profile.to_dict(),
             "direct_evidence": [item.to_dict() for item in self.direct_evidence],
             "activity_log": [item.to_dict() for item in self.activity_log],
+            "transcript": [item.to_dict() for item in self.transcript],
             "completed": self.completed,
         }
 
@@ -465,6 +502,10 @@ class SessionState:
             activity_log=[
                 ActivityEvent.from_dict(item)
                 for item in payload.get("activity_log", [])
+            ],
+            transcript=[
+                TranscriptEntry.from_dict(item)
+                for item in payload.get("transcript", [])
             ],
             completed=bool(payload.get("completed", False)),
         )

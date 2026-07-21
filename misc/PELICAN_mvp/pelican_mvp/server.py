@@ -6,13 +6,14 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .curriculum import CURRICULUMS
 from .engine import PelicanEngine
 from .llm import LlmAdapter
+from .models import TranscriptEntry
 from .planner import LearningPlanner
 from .state_store import StateStore, StateStoreError
 from .observability import log_event
@@ -77,9 +78,18 @@ def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEng
     return engine
 
 
-def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
-    """Serialize a turn response with safe learning metadata only."""
-    activity_steps = [item.to_dict() for item in engine.state.activity_log[-8:]]
+def _learning_metadata(engine: PelicanEngine, activity_steps: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build safe learning metadata shared by JSON responses and exports.
+
+    Args:
+        engine: Active learning engine.
+        activity_steps: Already serialized activity events to expose to the UI
+            or Markdown export.
+
+    Returns:
+        Metadata about the teaching engine state. This deliberately excludes raw
+        learner answers so it can be reused by logs and UI status displays.
+    """
     skill_id = engine.state.learning_plan.skill_id if engine.state.learning_plan else engine.state.intake_profile.skill_id
     skill_version = engine.state.learning_plan.skill_version if engine.state.learning_plan else engine.state.intake_profile.skill_version
     skill_lifecycle = engine.state.learning_plan.skill_lifecycle if engine.state.learning_plan else engine.state.intake_profile.skill_lifecycle
@@ -90,6 +100,31 @@ def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
     )
     model_route = engine.state.learning_plan.model_route if engine.state.learning_plan else engine.state.intake_profile.model_route
     return {
+        "phase": engine.state.phase,
+        "plan_source": engine.state.plan_source.value,
+        "topic": engine.state.learning_plan.topic if engine.state.learning_plan else None,
+        "intake_turns": engine.state.intake_profile.intake_turns,
+        "intent": engine.state.intake_profile.intent.value,
+        "level_hint": engine.state.intake_profile.level_hint,
+        "domain_category": domain_category,
+        "skill_id": skill_id,
+        "skill_version": skill_version,
+        "skill_lifecycle": skill_lifecycle,
+        "model_route": model_route,
+        "latest_signal": engine.state.direct_evidence[-1].signal if engine.state.direct_evidence else None,
+        "current_activity": activity_steps[-1] if activity_steps else None,
+        "activity_steps": activity_steps,
+        "edf_state": engine.state.edf_snapshot.learner_state if engine.state.edf_snapshot else "unknown",
+        "edf_policy": engine.state.edf_snapshot.pedagogical_strategy if engine.state.edf_snapshot else "unknown",
+        "evidence_count": engine.state.memory_snapshot.evidence_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
+        "context_count": engine.state.memory_snapshot.working_context_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
+    }
+
+
+def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
+    """Serialize a turn response with safe learning metadata only."""
+    activity_steps = [item.to_dict() for item in engine.state.activity_log[-8:]]
+    return {
         "api_version": "v1",
         "message": msg.message,
         "mode": engine.state.mode,
@@ -97,26 +132,7 @@ def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
         "node_id": engine.state.current_node_id,
         "tree": engine.tree_state(),
         "state_changes": list(msg.state_changes),
-        "learning": {
-            "phase": engine.state.phase,
-            "plan_source": engine.state.plan_source.value,
-            "topic": engine.state.learning_plan.topic if engine.state.learning_plan else None,
-            "intake_turns": engine.state.intake_profile.intake_turns,
-            "intent": engine.state.intake_profile.intent.value,
-            "level_hint": engine.state.intake_profile.level_hint,
-            "domain_category": domain_category,
-            "skill_id": skill_id,
-            "skill_version": skill_version,
-            "skill_lifecycle": skill_lifecycle,
-            "model_route": model_route,
-            "latest_signal": engine.state.direct_evidence[-1].signal if engine.state.direct_evidence else None,
-            "current_activity": activity_steps[-1] if activity_steps else None,
-            "activity_steps": activity_steps,
-            "edf_state": engine.state.edf_snapshot.learner_state if engine.state.edf_snapshot else "unknown",
-            "edf_policy": engine.state.edf_snapshot.pedagogical_strategy if engine.state.edf_snapshot else "unknown",
-            "evidence_count": engine.state.memory_snapshot.evidence_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
-            "context_count": engine.state.memory_snapshot.working_context_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
-        }
+        "learning": _learning_metadata(engine, activity_steps),
     }
 
 
@@ -142,6 +158,92 @@ def _log_api_event(event: str, learner_id: str, engine: PelicanEngine, **fields:
     )
 
 
+def _record_transcript(engine: PelicanEngine, role: str, text: str) -> None:
+    """Persist one user-visible chat entry for explicit Markdown export.
+
+    Args:
+        engine: Active session engine whose state will receive the transcript.
+        role: ``user`` or ``assistant`` style chat role.
+        text: Learner-visible message text. This is saved only in the local
+            session state and is not emitted through structured logs.
+
+    Side Effects:
+        Appends to ``SessionState.transcript`` and saves the session. The list is
+        capped to keep local MVP state bounded during repeated experiments.
+    """
+    if not text.strip():
+        return
+    normalized_text = text.strip()
+    if (
+        engine.state.transcript
+        and engine.state.transcript[-1].role == role
+        and engine.state.transcript[-1].text == normalized_text
+    ):
+        return
+    engine.state.transcript.append(
+        TranscriptEntry(role=role, text=normalized_text, phase=engine.state.phase)
+    )
+    if len(engine.state.transcript) > 200:
+        engine.state.transcript = engine.state.transcript[-200:]
+    engine.store.save(engine.state)
+
+
+def _markdown_export(engine: PelicanEngine) -> str:
+    """Render the current session as a Markdown conversation export.
+
+    Returns:
+        Markdown containing learner-visible transcript plus safe engine metadata.
+        It intentionally includes the transcript text because export is an
+        explicit user action, while logs continue to use safe metadata only.
+    """
+    activity_steps = [item.to_dict() for item in engine.state.activity_log[-12:]]
+    learning = _learning_metadata(engine, activity_steps)
+    lines = [
+        "# PELICAN MVP Conversation Export",
+        "",
+        "## Session",
+        "",
+        f"- Learner: `{engine.state.learner_id}`",
+        f"- Phase: `{learning['phase']}`",
+        f"- Topic: `{learning['topic'] or engine.state.intake_profile.topic or '-'}`",
+        f"- Domain: `{learning['domain_category']}`",
+        f"- Skill: `{learning['skill_id'] or '-'}`",
+        f"- Skill lifecycle: `{learning['skill_lifecycle'] or '-'}`",
+        f"- Model route: `{learning['model_route'] or '-'}`",
+        f"- EDF state: `{learning['edf_state']}`",
+        f"- EDF policy: `{learning['edf_policy']}`",
+        f"- Evidence count: `{learning['evidence_count']}`",
+        "",
+        "## Conversation",
+        "",
+    ]
+    if engine.state.transcript:
+        for entry in engine.state.transcript:
+            speaker = "User" if entry.role == "user" else "AI"
+            lines.extend([f"### {speaker}", "", entry.text, ""])
+    else:
+        lines.extend(["_No transcript entries recorded yet._", ""])
+
+    lines.extend(["## Knowledge Tree", ""])
+    tree = engine.tree_state()
+    if tree:
+        for node in tree:
+            marker = "-> " if node["id"] == engine.state.current_node_id else ""
+            lines.append(f"- {marker}{node['label']}: `{node['status']}`")
+    else:
+        lines.append("_No knowledge tree has been compiled yet._")
+
+    lines.extend(["", "## Recent Engine Activity", ""])
+    if engine.state.activity_log:
+        for item in engine.state.activity_log[-12:]:
+            detail = f" - `{item.detail}`" if item.detail else ""
+            lines.append(f"- `{item.code}`: {item.label}{detail}")
+    else:
+        lines.append("_No engine activity recorded yet._")
+    lines.append("")
+    return "\n".join(lines)
+
+
 @app.get("/api/curriculums")
 def get_curriculums() -> dict[str, str]:
     """Return reviewed fixture curricula available for compatibility tests."""
@@ -158,6 +260,7 @@ def start(req: BaseRequest) -> dict[str, Any]:
                 engine.state.mode = "rule"
                 engine.store.save(engine.state)
             msg = engine.start()
+            _record_transcript(engine, "assistant", msg.message)
             _log_api_event("pelican_api_start", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except StateStoreError as e:
@@ -175,6 +278,8 @@ def respond(req: RespondRequest) -> dict[str, Any]:
         try:
             engine = _get_engine(req.learner_id)
             msg = engine.respond(req.answer)
+            _record_transcript(engine, "user", req.answer)
+            _record_transcript(engine, "assistant", msg.message)
             _log_api_event("pelican_api_response", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except StateStoreError as e:
@@ -192,6 +297,7 @@ def reset(req: BaseRequest) -> dict[str, Any]:
         try:
             engine = _get_engine(req.learner_id)
             msg = engine.reset(req.curriculum_id)
+            _record_transcript(engine, "assistant", msg.message)
             _log_api_event("pelican_api_reset", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except StateStoreError as e:
@@ -212,6 +318,7 @@ def set_mode(req: ModeRequest) -> dict[str, Any]:
             if mode == "llm" and not engine.llm.available:
                 raise HTTPException(status_code=400, detail="LLM 尚未設定或無法連線")
             msg = engine.switch_mode(mode)
+            _record_transcript(engine, "assistant", msg.message)
             _log_api_event("pelican_api_mode_changed", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except ValueError as e:
@@ -220,6 +327,35 @@ def set_mode(req: ModeRequest) -> dict[str, Any]:
         except StateStoreError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/mode", reason_code="state_store_error")
             raise HTTPException(status_code=400, detail="Invalid session state")
+
+
+@app.get("/api/export")
+def export_markdown(learner_id: str = "demo_student") -> Response:
+    """Export the current local session transcript as Markdown.
+
+    Args:
+        learner_id: Local learner/session identifier to export.
+
+    Returns:
+        Downloadable Markdown response containing transcript and safe metadata.
+    """
+    with state_lock:
+        try:
+            engine = _get_engine(learner_id)
+            markdown = _markdown_export(engine)
+            filename = f"pelican_{learner_id}.md"
+            _log_api_event("pelican_api_export", learner_id, engine)
+            return Response(
+                content=markdown,
+                media_type="text/markdown; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        except StateStoreError:
+            log_event("pelican_api_error", learner_id, endpoint="/api/export", reason_code="state_store_error")
+            raise HTTPException(status_code=400, detail="Invalid session state")
+        except ValueError:
+            log_event("pelican_api_error", learner_id, endpoint="/api/export", reason_code="validation_error")
+            raise HTTPException(status_code=400, detail="Validation error")
 
 
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")

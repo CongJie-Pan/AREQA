@@ -10,6 +10,7 @@ from pelican_mvp.models import (
     MemoryEvidenceRecord,
     PlanSource,
     SessionState,
+    TranscriptEntry,
     TurnRecord,
 )
 
@@ -152,6 +153,25 @@ def test_session_state_round_trips_activity_log() -> None:
     assert restored.activity_log[0].code == "skill_loaded"
     assert restored.activity_log[0].label == "載入領域 Skill"
     assert restored.activity_log[0].detail == "deep_learning"
+
+
+def test_session_state_round_trips_transcript() -> None:
+    state = SessionState(
+        learner_id="tester",
+        transcript=[
+            TranscriptEntry(
+                role="user",
+                text="中國歷史",
+                phase="onboarding",
+            )
+        ],
+    )
+
+    restored = SessionState.from_dict(state.to_dict())
+
+    assert restored.transcript[0].role == "user"
+    assert restored.transcript[0].text == "中國歷史"
+    assert restored.transcript[0].phase == "onboarding"
 
 
 def test_session_state_legacy_payload_defaults_new_skill_fields() -> None:

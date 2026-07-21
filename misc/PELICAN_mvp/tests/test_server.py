@@ -94,6 +94,24 @@ def test_api_reset_phase() -> None:
     engine = server_module._get_engine("test_user", "cnn")
     assert engine.state.phase == "diagnosis"
 
+
+def test_api_export_markdown_includes_transcript_and_metadata() -> None:
+    learner = "export_user"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+
+    response = client.get("/api/export", params={"learner_id": learner})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert "attachment" in response.headers["content-disposition"]
+    text = response.text
+    assert "# PELICAN MVP Conversation Export" in text
+    assert "深度學習" in text
+    assert "## Knowledge Tree" in text
+    assert "## Recent Engine Activity" in text
+
+
 def test_api_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:
     from pelican_mvp.engine import PelicanEngine
     from pelican_mvp.state_store import StateStoreError
