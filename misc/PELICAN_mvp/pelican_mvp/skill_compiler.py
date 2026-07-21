@@ -37,7 +37,7 @@ def compile_learning_plan(skill: DomainSkill, profile: LearnerIntakeProfile) -> 
     if not path:
         raise SkillCompileError("missing canonical path for intake intent")
 
-    selected_path = _initial_path_for_profile(path, profile, intent)
+    selected_path = _initial_path_for_profile(path, profile, intent, skill)
     prerequisites = {item.concept_id: item for item in skill.prerequisites}
     diagnostics = {item.concept_id: item for item in skill.diagnostic_rules}
     nodes: list[KnowledgeNode] = []
@@ -114,9 +114,17 @@ def _resolve_skill_intent(skill: DomainSkill, profile: LearnerIntakeProfile) -> 
 
 
 def _initial_path_for_profile(
-    path: tuple[str, ...], profile: LearnerIntakeProfile, intent: IntentType
+    path: tuple[str, ...], profile: LearnerIntakeProfile, intent: IntentType, skill: DomainSkill
 ) -> tuple[str, ...]:
-    if intent is IntentType.CONCEPTUAL:
+    """Select the first compiled path without asserting mastery from intake.
+
+    The deep-learning catalog seed keeps the earlier calibration-first behavior:
+    conceptual requests start with one foundation node so broad beginner prompts
+    never jump to implementation trivia. Runtime-generated and generic skills
+    keep their full path because truncating them would make missing-skill
+    fallbacks look like one-node trees again.
+    """
+    if intent is IntentType.CONCEPTUAL and skill.skill_id == "deep_learning":
         return path[:1]
     return path
 

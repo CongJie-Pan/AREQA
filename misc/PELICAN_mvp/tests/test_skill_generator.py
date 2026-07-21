@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +30,24 @@ class FakeLlm(LlmAdapter):
         return item
 
 
+class PayloadLlm(FakeLlm):
+    def __init__(self, payloads):
+        super().__init__([])
+        self.payloads = list(payloads)
+        self.payload_calls = []
+
+    def generate_domain_skill_payload(
+        self,
+        topic: str,
+        category: DomainCategory,
+        *,
+        model_route: str | None = None,
+        repair_issues=(),
+    ):
+        self.payload_calls.append((topic, category, model_route, tuple(repair_issues)))
+        return self.payloads.pop(0)
+
+
 def make_skill(**updates) -> DomainSkill:
     payload = valid_skill_payload()
     payload.update(updates)
@@ -46,10 +65,10 @@ def test_generator_prefers_catalog_skill_without_llm_call() -> None:
     assert llm.calls == []
 
 
-def test_generator_routes_missing_stem_skill_to_model() -> None:
+def test_generator_routes_missing_stem_skill_to_model(tmp_path: Path) -> None:
     skill = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
     llm = FakeLlm([skill])
-    generator = DomainSkillGenerator(llm)
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
 
     generated, route = generator.generate("機器學習", force_regenerate=True)
 
@@ -57,14 +76,15 @@ def test_generator_routes_missing_stem_skill_to_model() -> None:
     assert generated.lifecycle is SkillLifecycle.VALIDATED_GENERATED
     assert route == "route/stem"
     assert llm.calls == [("機器學習", DomainCategory.STEM, "route/stem")]
+    assert (tmp_path / "validated" / "機器學習.validated.json").exists()
 
 
-def test_generator_retries_once_after_invalid_skill() -> None:
+def test_generator_retries_once_after_invalid_skill(tmp_path: Path) -> None:
     invalid = make_skill()
     object.__setattr__(invalid, "remediation_paths", invalid.remediation_paths[:1])
     valid = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
     llm = FakeLlm([invalid, valid])
-    generator = DomainSkillGenerator(llm, max_retries=1)
+    generator = DomainSkillGenerator(llm, max_retries=1, artifact_root=tmp_path)
 
     skill, route = generator.generate("機器學習", force_regenerate=True)
 
@@ -73,31 +93,52 @@ def test_generator_retries_once_after_invalid_skill() -> None:
     assert len(llm.calls) == 2
 
 
-def test_generator_fails_after_bounded_retry() -> None:
+def test_generator_repairs_with_validation_reason_codes(tmp_path: Path) -> None:
+    invalid_payload = valid_skill_payload()
+    invalid_payload["remediation_paths"] = invalid_payload["remediation_paths"][:1]
+    valid_payload = valid_skill_payload()
+    valid_payload["skill_id"] = "machine_learning"
+    valid_payload["supported_topics"] = ["機器學習"]
+    llm = PayloadLlm([invalid_payload, valid_payload])
+    generator = DomainSkillGenerator(llm, max_retries=1, artifact_root=tmp_path)
+
+    skill, route = generator.generate("機器學習", force_regenerate=True)
+
+    assert skill.skill_id == "machine_learning"
+    assert route == "route/stem"
+    assert llm.payload_calls[0][3] == ()
+    assert "missing_remediation" in llm.payload_calls[1][3]
+
+
+def test_generator_uses_generic_skill_after_bounded_retry(tmp_path: Path) -> None:
     invalid = make_skill()
     object.__setattr__(invalid, "remediation_paths", invalid.remediation_paths[:1])
     llm = FakeLlm([invalid, invalid])
-    generator = DomainSkillGenerator(llm, max_retries=1)
+    generator = DomainSkillGenerator(llm, max_retries=1, artifact_root=tmp_path)
 
-    with pytest.raises(SkillGenerationError):
-        generator.generate("機器學習", force_regenerate=True)
+    skill, route = generator.generate("機器學習", force_regenerate=True)
 
+    assert skill.skill_id == "generic_stem"
+    assert route == "generic:stem"
     assert len(llm.calls) == 2
+    assert (tmp_path / "failed" / "機器學習.failed.json").exists()
 
 
-def test_generator_without_api_key_fails_for_missing_catalog() -> None:
+def test_generator_without_api_key_uses_generic_domain_skill() -> None:
     llm = FakeLlm([])
     llm._available = False
     generator = DomainSkillGenerator(llm)
 
-    with pytest.raises(SkillGenerationError, match="LLM unavailable"):
-        generator.generate("機器學習", force_regenerate=True)
+    skill, route = generator.generate("機器學習", force_regenerate=True)
+
+    assert skill.skill_id == "generic_stem"
+    assert route == "generic:stem"
 
 
-def test_generator_logs_safe_metadata_only(caplog) -> None:
+def test_generator_logs_safe_metadata_only(caplog, tmp_path: Path) -> None:
     skill = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
     llm = FakeLlm([skill])
-    generator = DomainSkillGenerator(llm)
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
     raw_model_text = "raw model output must not be logged"
 
     with caplog.at_level(logging.INFO, logger="pelican_mvp"):

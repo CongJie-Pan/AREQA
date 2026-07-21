@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from .curriculum import CURRICULUMS
 from .engine import PelicanEngine
 from .llm import LlmAdapter
+from .planner import LearningPlanner
 from .state_store import StateStore, StateStoreError
 from .observability import log_event
 
@@ -58,9 +59,21 @@ class ModeRequest(BaseRequest):
 
 
 def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEngine:
-    """Create an engine using the process-global data directory and LLM adapter."""
+    """Create an engine using the process-global data directory and LLM adapter.
+
+    Args:
+        learner_id: Local learner/session identifier.
+        curriculum_id: Optional fixture curriculum for compatibility tests.
+
+    Returns:
+        Engine wired to the same process-global ``LlmAdapter`` for onboarding,
+        tutoring, and planner skill generation. The planner is rebound after
+        replacing ``engine.llm`` so runtime skill generation cannot accidentally
+        use a stale adapter/config.
+    """
     engine = PelicanEngine(data_dir, learner_id, curriculum_id=curriculum_id)
     engine.llm = llm_adapter
+    engine.planner = LearningPlanner(engine.llm)
     return engine
 
 

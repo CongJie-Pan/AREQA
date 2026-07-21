@@ -47,6 +47,7 @@ DEFAULT_SKILL_MODEL_ROUTES = {
     DomainCategory.BUSINESS: "~google/gemini-pro-latest",
     DomainCategory.LANGUAGE: "~google/gemini-pro-latest",
 }
+DEFAULT_TUTOR_MODEL = "google/gemini-3.1-flash-lite"
 
 MODEL_ROUTE_ENV = {
     DomainCategory.STEM: "PELICAN_STEM_MODEL",
@@ -88,10 +89,35 @@ class LlmAdapter:
             override = os.getenv(env_key, "").strip()
             if override:
                 return override
+        skill_override = os.getenv("PELICAN_SKILL_MODEL", "").strip()
+        if skill_override:
+            return skill_override
         global_override = os.getenv("PELICAN_LLM_MODEL", "").strip()
         if global_override:
             return global_override
         return DEFAULT_SKILL_MODEL_ROUTES.get(category, self.config.model if self.config else "unknown")
+
+    def tutor_model_route(self) -> str:
+        """Resolve the default model for learner-facing intake and tutoring.
+
+        Returns:
+            OpenRouter model slug for fast learner-facing turns. The precedence
+            is ``PELICAN_TUTOR_MODEL``, legacy ``PELICAN_LLM_MODEL``, then the
+            Gemini Flash Lite default documented in the local OpenRouter notes.
+
+        Compatibility:
+            Skill generation intentionally uses ``model_route_for_category()``
+            instead. Keeping these routes separate lets structured skill
+            generation stay on a stronger model while chat/intake uses a cheaper
+            low-latency model.
+        """
+        override = os.getenv("PELICAN_TUTOR_MODEL", "").strip()
+        if override:
+            return override
+        legacy_override = os.getenv("PELICAN_LLM_MODEL", "").strip()
+        if legacy_override:
+            return legacy_override
+        return DEFAULT_TUTOR_MODEL
 
     def verified_diagnostic(self, node_label: str) -> DiagnosticQuestion | None:
         """Generate a diagnostic only if an independent verifier accepts it."""
@@ -101,6 +127,7 @@ class LlmAdapter:
             "你是教師。只產生一題繁體中文的單一概念診斷題，並附簡短標準答案。\n"
             "警告：千萬不能把答案洩漏在 prompt 欄位中，prompt 欄位只能有純題目。",
             f"目標知識點：{node_label}\n輸出 JSON：{{\"prompt\": str, \"expected_answer\": str}}",
+            model=self.tutor_model_route(),
         )
         prompt = str(teacher.get("prompt", "")).strip()
         expected = str(teacher.get("expected_answer", "")).strip()
@@ -109,10 +136,12 @@ class LlmAdapter:
         assistant = self._json(
             "你是獨立解題者。只回答題目的最終答案。",
             f"題目：{prompt}\n輸出 JSON：{{\"answer\": str}}",
+            model=self.tutor_model_route(),
         )
         verifier = self._json(
             "你是嚴格驗證器。比較教師標準答案與獨立答案，只在可判定兩者一致時接受。",
             f"教師答案：{expected}\n獨立答案：{assistant.get('answer', '')}\n輸出 JSON：{{\"accepted\": bool}}",
+            model=self.tutor_model_route(),
         )
         if verifier.get("accepted") is not True:
             return None
@@ -129,6 +158,7 @@ class LlmAdapter:
             "題目：%s\n標準答案：%s\n學生回答：%s\n"
             "輸出 {\"category\": \"inability_to_respond|difficulty_in_understanding|correct|incorrect|other\"}"
             % (prompt, expected, answer),
+            model=self.tutor_model_route(),
         )
         try:
             return ResponseCategory(payload["category"])
@@ -145,6 +175,7 @@ class LlmAdapter:
             "你是繁體中文家教。一次只處理一個概念、只問一個問題，必須以循循善誘的口吻引導學生思考。\n"
             "警告：絕對不能直接把定義或標準答案複製貼上，請給予提示或引導式反問。",
             f"策略：{strategy.value}\n知識點：{node_label}\n目前題目：{prompt}\n輸出 {{\"response\": str}}",
+            model=self.tutor_model_route(),
         )
         response = str(payload.get("response", "")).strip()
         return response or None
@@ -157,10 +188,26 @@ class LlmAdapter:
         stage: str,
         model_route: str | None = None,
     ) -> str | None:
-        """Generate one domain-aware onboarding question without persisting reasoning."""
+        """Generate one domain-aware onboarding question without persisting reasoning.
+
+        Args:
+            topic: Bounded learner topic from the onboarding state.
+            domain_category: Resolved teaching domain used to avoid STEM-shaped
+                questions for humanities, business, or language topics.
+            stage: Intake stage, currently ``goal`` or ``level``.
+            model_route: Optional explicit route for tests or deployments.
+
+        Returns:
+            A single bounded learner-facing question, or ``None`` when the model
+            is unavailable or returns an empty payload.
+
+        Privacy:
+            The method returns only the final question string. It does not expose
+            or persist model reasoning, and callers log only source/route codes.
+        """
         if not self.available:
             return None
-        route = model_route or self.model_route_for_category(domain_category)
+        route = model_route or self.tutor_model_route()
         payload = self._json(
             "你是繁體中文學習訪談主持人。請根據領域產生一題前置校準問題，只問一題。\n"
             "不要輸出推理、不要教學、不要診斷細節。問題必須適合該領域，不可把所有領域都問成理科或程式學習。",
@@ -234,27 +281,90 @@ class LlmAdapter:
         category: DomainCategory,
         *,
         model_route: str | None = None,
+        repair_issues: tuple[str, ...] = (),
     ) -> DomainSkill | None:
-        """Generate a structured domain skill without persisting model reasoning."""
+        """Generate a structured domain skill without persisting model reasoning.
+
+        Args:
+            topic: Topic to turn into a DomainSkill schema.
+            category: Resolved domain category; this is enforced back onto the
+                payload before parsing so model output cannot silently reroute.
+            model_route: Optional skill-generation model route.
+            repair_issues: Safe validator reason codes from a previous attempt.
+
+        Returns:
+            Parsed ``DomainSkill`` or ``None`` for unavailable model access.
+
+        Raises:
+            DomainSkillError: If the returned JSON cannot be represented by the
+                strict DomainSkill dataclasses.
+            LlmUnavailable: If the OpenAI-compatible request fails.
+        """
         if not self.available:
             return None
+        payload = self.generate_domain_skill_payload(topic, category, model_route=model_route, repair_issues=repair_issues)
+        payload["domain_category"] = category.value
+        payload["lifecycle"] = payload.get("lifecycle") or SkillLifecycle.RUNTIME_GENERATED.value
+        return DomainSkill.from_dict(payload)
+
+    def generate_domain_skill_payload(
+        self,
+        topic: str,
+        category: DomainCategory,
+        *,
+        model_route: str | None = None,
+        repair_issues: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        """Generate raw DomainSkill JSON for validation or bounded repair.
+
+        Args:
+            topic: Topic to send in the schema-generation prompt.
+            category: Resolved domain category.
+            model_route: Optional skill model override. ``None`` uses the
+                category-aware skill-generation route.
+            repair_issues: Validator reason codes from the previous attempt.
+                When present, the prompt asks for schema repair rather than a
+                brand-new lesson or Markdown response.
+
+        Returns:
+            JSON object emitted by the model. The caller owns parsing, validation,
+            artifact persistence, and safe fallback selection.
+
+        Raises:
+            LlmUnavailable: If credentials are absent or the transport/JSON parse
+                fails.
+
+        Privacy:
+            The payload is returned for validation only. Callers must not log raw
+            model output; failed artifacts store only a short hash and reason
+            codes.
+        """
+        if not self.available:
+            raise LlmUnavailable("OPENROUTER_API_KEY is not configured")
         route = model_route or self.model_route_for_category(category)
-        payload = self._json(
+        repair_instruction = ""
+        if repair_issues:
+            # Repair prompts carry validator reason codes only. This keeps retry
+            # context useful without feeding raw invalid output back through logs.
+            repair_instruction = (
+                "前一次輸出未通過驗證。請只修正 schema，不要改成課文或 Markdown。\n"
+                f"validation_reason_codes: {', '.join(repair_issues)}\n"
+            )
+        return self._json(
             "你是領域教學設計師。只輸出 JSON，不要輸出推理過程、Markdown 或學生可見課程內容。\n"
             "你的任務是產生一份可驗證的 DomainSkill schema，供教學引擎稍後編譯知識樹。\n"
             "必須包含 intake calibration、prerequisite map、canonical_path、single-concept diagnostics、"
             "teaching_moves、unknown/too_detailed/too_easy/project_goal/assessment_goal remediation、"
             "teaching_methodology、remediation_templates，以及 assessment_policy。\n"
-            "診斷題 prompt 絕對不能包含 expected_answer。法律知識只能作教育用途，不可提供法律諮詢。",
-            f"topic: {topic}\ncategory: {category.value}\n"
+            "硬性規則：canonical_path 只能引用 prerequisites 裡存在的 concept_id；每個 concept 必須有一個 diagnostic_rule；"
+            "diagnostic prompt 絕對不能包含 expected_answer；prerequisites 必須無循環；"
+            "remediation_templates 的 key 應對應 concept_id。法律知識只能作教育用途，不可提供法律諮詢。",
+            repair_instruction + f"topic: {topic}\ncategory: {category.value}\n"
             "輸出 JSON 欄位：skill_id, version, title, domain_category, lifecycle, supported_topics, intent_types, "
             "prerequisites, calibration_questions, canonical_path, diagnostic_rules, teaching_moves, remediation_paths, "
             "assessment_policy, teaching_methodology, remediation_templates, safety_notes。lifecycle 請用 runtime_generated。",
             model=route,
         )
-        payload["domain_category"] = category.value
-        payload["lifecycle"] = payload.get("lifecycle") or SkillLifecycle.RUNTIME_GENERATED.value
-        return DomainSkill.from_dict(payload)
 
     def _json(self, system: str, user: str, *, model: str | None = None) -> dict[str, Any]:
         """Call the configured model and require a JSON object response."""

@@ -56,18 +56,28 @@ def test_llm_adapter_valid_json_response() -> None:
 
 def test_llm_category_model_route_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PELICAN_LLM_MODEL", raising=False)
+    monkeypatch.delenv("PELICAN_SKILL_MODEL", raising=False)
+    monkeypatch.delenv("PELICAN_TUTOR_MODEL", raising=False)
     monkeypatch.delenv("PELICAN_STEM_MODEL", raising=False)
     config = LlmConfig(api_key="test", model="legacy", base_url="test")
     adapter = LlmAdapter(config=config)
 
     assert adapter.model_route_for_category(DomainCategory.STEM) == "openai/gpt-5.5"
     assert adapter.model_route_for_category(DomainCategory.HUMANITIES) == "~google/gemini-pro-latest"
+    assert adapter.tutor_model_route() == "google/gemini-3.1-flash-lite"
 
     monkeypatch.setenv("PELICAN_LLM_MODEL", "global/model")
     assert adapter.model_route_for_category(DomainCategory.BUSINESS) == "global/model"
+    assert adapter.tutor_model_route() == "global/model"
+
+    monkeypatch.setenv("PELICAN_SKILL_MODEL", "skill/model")
+    assert adapter.model_route_for_category(DomainCategory.BUSINESS) == "skill/model"
 
     monkeypatch.setenv("PELICAN_STEM_MODEL", "stem/model")
     assert adapter.model_route_for_category(DomainCategory.STEM) == "stem/model"
+
+    monkeypatch.setenv("PELICAN_TUTOR_MODEL", "tutor/model")
+    assert adapter.tutor_model_route() == "tutor/model"
 
 
 def test_generate_domain_skill_uses_requested_route() -> None:

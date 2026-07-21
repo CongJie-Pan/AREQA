@@ -6,7 +6,7 @@ import re
 import uuid
 
 from .domain_catalog import resolve_domain_category
-from .llm import LlmAdapter, LlmUnavailable
+from .llm import LlmAdapter
 from .models import DiagnosticQuestion, KnowledgeNode, LearnerIntakeProfile, LearningIntent, LearningPlanSnapshot
 from .observability import log_event
 from .skill_compiler import SkillCompileError, compile_learning_plan
@@ -72,7 +72,17 @@ class LearningPlanner:
         self.skill_generator = DomainSkillGenerator(self.llm)
 
     def create_plan(self, topic: str) -> LearningPlanSnapshot:
-        """Create a validated learning plan from a topic, falling back if necessary."""
+        """Create a validated learning plan from a topic.
+
+        Args:
+            topic: Learner-requested topic before full intake exists.
+
+        Returns:
+            A validated learning plan. Resolved domains should be skill-backed
+            through catalog, runtime generation, or generic domain fallback.
+            Unknown domains may still receive the deterministic two-node fallback
+            because the MVP has no safe category policy for them yet.
+        """
         topic_clean = re.sub(r"\s+", " ", topic).strip()[:100] or "預設主題"
         profile = LearnerIntakeProfile(topic=topic_clean, goal_summary=f"學習 {topic_clean}")
         return self.create_plan_for_profile(profile)
@@ -83,8 +93,8 @@ class LearningPlanner:
         Domain skills are deterministic teaching assets. They are attempted before
         topic-level LLM planning so a broad subject such as deep learning starts
         from a reviewed foundation route instead of arbitrary implementation
-        detail. Invalid skill assets fail closed and then use the old safe
-        fallback/LLM path without persisting partial skill output.
+        detail. Invalid runtime skill assets fail into a deterministic
+        skill-backed generic domain route, never the legacy topic-level LLM plan.
         """
         topic_clean = re.sub(r"\s+", " ", profile.topic).strip()[:100] or "預設主題"
         profile = _profile_with_defaults(profile, topic_clean)
@@ -116,27 +126,11 @@ class LearningPlanner:
                 skill_source="fallback",
             )
 
-        if self.llm.available:
-            try:
-                plan = self.llm.generate_learning_plan(topic_clean)
-                if plan:
-                    validate_learning_plan(plan)
-                    log_event(
-                        "pelican_plan_generated",
-                        plan_source="generated",
-                        node_count=len(plan.nodes),
-                        skill_source="legacy_llm_plan",
-                    )
-                    return plan
-            except (LlmUnavailable, ValueError, KeyError, TypeError) as exc:
-                log_event(
-                    "pelican_plan_fallback",
-                    plan_source="fallback",
-                    reason_code=type(exc).__name__,
-                    skill_source="fallback",
-                )
-
         # Deterministic fallback
+        # This path is intentionally reserved for unresolved/unknown domains or
+        # catastrophic skill pipeline failures. Known domains should recover in
+        # ``DomainSkillGenerator`` via generic skills so the engine remains
+        # skill-backed and does not recreate a silent one-node legacy plan.
         plan_id = str(uuid.uuid4())
         nodes = (
             KnowledgeNode(node_id="f1", label=f"{topic_clean} 基礎", priority=2),

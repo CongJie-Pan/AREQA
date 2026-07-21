@@ -71,51 +71,45 @@ def test_planner_fallback(caplog):
     assert fallback_logs[0].plan_source == "fallback"
 
 
-def test_planner_llm_success(caplog):
+def test_planner_no_longer_uses_legacy_llm_plan(caplog):
     import logging
     caplog.set_level(logging.INFO)
     mock_llm = Mock(spec=LlmAdapter)
     mock_llm.available = True
-    valid_plan = LearningPlanSnapshot(
-        plan_id="p1",
-        topic="test",
-        goal_summary="test",
-        nodes=(
-            KnowledgeNode(node_id="n1", label="1"),
-        ),
-        diagnostics=(
-            DiagnosticQuestion(node_id="n1", prompt="p", expected_answer="e"),
-        ),
-        task_steps=(
-            {"step_id": "s1", "node_id": "n1", "prompt": "p", "expected": "e"},
-        )
+    mock_llm.generate_learning_plan.return_value = LearningPlanSnapshot(
+        plan_id="legacy",
+        topic="legacy",
+        goal_summary="legacy",
+        nodes=(KnowledgeNode(node_id="n1", label="legacy"),),
     )
-    mock_llm.generate_learning_plan.return_value = valid_plan
     planner = LearningPlanner(mock_llm)
 
     plan = planner.create_plan("test")
-    assert plan == valid_plan
+    assert plan.plan_id != "legacy"
+    assert plan.nodes[0].node_id == "f1"
+    assert mock_llm.generate_learning_plan.call_count == 0
 
     generated_logs = [r for r in caplog.records if r.message == "pelican_plan_generated"]
     assert len(generated_logs) > 0
-    assert generated_logs[0].plan_source == "generated"
+    assert generated_logs[-1].plan_source == "fallback"
 
 
-def test_planner_llm_failure_triggers_fallback(caplog):
+def test_planner_runtime_failure_uses_generic_domain_skill(caplog):
     import logging
     caplog.set_level(logging.INFO)
     mock_llm = Mock(spec=LlmAdapter)
-    mock_llm.available = True
-    mock_llm.generate_learning_plan.side_effect = ValueError("Invalid structure")
+    mock_llm.available = False
     planner = LearningPlanner(mock_llm)
 
-    plan = planner.create_plan("test fallback")
-    assert plan.topic == "test fallback"
-    assert plan.nodes[0].node_id == "f1"
+    plan = planner.create_plan("中國歷史")
+    assert plan.topic == "中國歷史"
+    assert plan.skill_id == "generic_humanities"
+    assert len(plan.nodes) == 3
+    assert plan.nodes[0].node_id == "scope_context"
 
-    fallback_warns = [r for r in caplog.records if r.message == "pelican_plan_fallback"]
-    assert len(fallback_warns) > 0
-    assert any(record.reason_code == "ValueError" for record in fallback_warns)
+    generated_logs = [r for r in caplog.records if r.message == "pelican_plan_generated"]
+    assert generated_logs[-1].plan_source == "skill"
+    assert generated_logs[-1].skill_source == "generic:humanities"
 
 
 def test_planner_uses_catalog_skill_before_llm_for_deep_learning(caplog):
