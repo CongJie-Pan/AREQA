@@ -176,6 +176,21 @@
     "education_only": true,
     "notes": "This MVP skill supports education and learning assessment only."
   },
+  "teaching_methodology": {
+    "calibration": "先用高層直覺確認模型、資料、預測、誤差的關係，再逐步進入訓練流程。",
+    "conceptual": "每次只處理一個概念，先問用途，再補日常類比，最後才接正式術語。",
+    "implementation": "先確認概念角色，再把角色對應到張量、forward pass、loss、optimizer 與程式元件。",
+    "remediation": "答錯時停在目前概念，先換成更高層問題，不立刻跳到下一個診斷。"
+  },
+  "remediation_templates": {
+    "math_intuition": "我們先停在「{label}」。先不用談公式或梯度。請想像模型像是在做預測：如果它猜錯了，我們需要哪一種訊號告訴它錯得多嚴重？",
+    "vectors_tensors": "我們先停在「{label}」。先不要管 tensor 維度細節。請先想：為什麼模型不能直接理解一張圖片或一段文字，而需要把它變成數字？",
+    "functions_transformations": "我們先停在「{label}」。你可以先把神經網路想成一台轉換機：它接收輸入後，最後應該產生什麼？",
+    "forward_pass": "我們先停在「{label}」。先看資料流向就好：資料通過模型時，這一步主要會得到什麼結果？",
+    "loss_error": "我們先停在「{label}」。先不用背 MSE 公式。請先說說：loss 是幫我們比較哪兩個東西的差距？",
+    "optimization": "我們先停在「{label}」。先不談 SGD 細節。請先想：訓練時模型要調整什麼，才可能讓錯誤變小？",
+    "mlp_implementation": "我們先停在「{label}」。先不要算參數數量。請先說說：如果只有線性轉換，模型在表達複雜關係時會遇到什麼限制？"
+  },
   "safety_notes": [
     "Broad beginner requests must not start with implementation-detail trivia.",
     "MLP implementation is downstream of conceptual foundations and optimization."

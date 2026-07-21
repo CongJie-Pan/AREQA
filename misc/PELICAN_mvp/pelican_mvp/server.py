@@ -67,6 +67,15 @@ def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEng
 def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
     """Serialize a turn response with safe learning metadata only."""
     activity_steps = [item.to_dict() for item in engine.state.activity_log[-8:]]
+    skill_id = engine.state.learning_plan.skill_id if engine.state.learning_plan else engine.state.intake_profile.skill_id
+    skill_version = engine.state.learning_plan.skill_version if engine.state.learning_plan else engine.state.intake_profile.skill_version
+    skill_lifecycle = engine.state.learning_plan.skill_lifecycle if engine.state.learning_plan else engine.state.intake_profile.skill_lifecycle
+    domain_category = (
+        engine.state.learning_plan.domain_category
+        if engine.state.learning_plan and engine.state.learning_plan.domain_category
+        else engine.state.intake_profile.domain_category
+    )
+    model_route = engine.state.learning_plan.model_route if engine.state.learning_plan else engine.state.intake_profile.model_route
     return {
         "api_version": "v1",
         "message": msg.message,
@@ -82,15 +91,11 @@ def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
             "intake_turns": engine.state.intake_profile.intake_turns,
             "intent": engine.state.intake_profile.intent.value,
             "level_hint": engine.state.intake_profile.level_hint,
-            "domain_category": (
-                engine.state.learning_plan.domain_category
-                if engine.state.learning_plan and engine.state.learning_plan.domain_category
-                else engine.state.intake_profile.domain_category
-            ),
-            "skill_id": engine.state.learning_plan.skill_id if engine.state.learning_plan else engine.state.intake_profile.skill_id,
-            "skill_version": engine.state.learning_plan.skill_version if engine.state.learning_plan else engine.state.intake_profile.skill_version,
-            "skill_lifecycle": engine.state.learning_plan.skill_lifecycle if engine.state.learning_plan else engine.state.intake_profile.skill_lifecycle,
-            "model_route": engine.state.learning_plan.model_route if engine.state.learning_plan else engine.state.intake_profile.model_route,
+            "domain_category": domain_category,
+            "skill_id": skill_id,
+            "skill_version": skill_version,
+            "skill_lifecycle": skill_lifecycle,
+            "model_route": model_route,
             "latest_signal": engine.state.direct_evidence[-1].signal if engine.state.direct_evidence else None,
             "current_activity": activity_steps[-1] if activity_steps else None,
             "activity_steps": activity_steps,
@@ -100,6 +105,28 @@ def _serialize_response(engine: PelicanEngine, msg: Any) -> dict[str, Any]:
             "context_count": engine.state.memory_snapshot.working_context_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
         }
     }
+
+
+def _log_api_event(event: str, learner_id: str, engine: PelicanEngine, **fields: Any) -> None:
+    """Emit API logs with the active safe teaching metadata attached."""
+    log_event(
+        event,
+        learner_id,
+        phase=engine.state.phase,
+        plan_source=engine.state.plan_source.value,
+        skill_id=engine.state.learning_plan.skill_id if engine.state.learning_plan else engine.state.intake_profile.skill_id,
+        skill_version=engine.state.learning_plan.skill_version if engine.state.learning_plan else engine.state.intake_profile.skill_version,
+        skill_lifecycle=engine.state.learning_plan.skill_lifecycle if engine.state.learning_plan else engine.state.intake_profile.skill_lifecycle,
+        domain_category=(
+            engine.state.learning_plan.domain_category
+            if engine.state.learning_plan and engine.state.learning_plan.domain_category
+            else engine.state.intake_profile.domain_category
+        ),
+        route=engine.state.learning_plan.model_route if engine.state.learning_plan else engine.state.intake_profile.model_route,
+        learner_state=engine.state.edf_snapshot.learner_state,
+        strategy=engine.state.edf_snapshot.pedagogical_strategy,
+        **fields,
+    )
 
 
 @app.get("/api/curriculums")
@@ -118,7 +145,7 @@ def start(req: BaseRequest) -> dict[str, Any]:
                 engine.state.mode = "rule"
                 engine.store.save(engine.state)
             msg = engine.start()
-            log_event("pelican_api_start", req.learner_id, phase=engine.state.phase, plan_source=engine.state.plan_source.value)
+            _log_api_event("pelican_api_start", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except StateStoreError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/start", reason_code="state_store_error")
@@ -135,7 +162,7 @@ def respond(req: RespondRequest) -> dict[str, Any]:
         try:
             engine = _get_engine(req.learner_id)
             msg = engine.respond(req.answer)
-            log_event("pelican_api_response", req.learner_id, phase=engine.state.phase, plan_source=engine.state.plan_source.value)
+            _log_api_event("pelican_api_response", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except StateStoreError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/respond", reason_code="state_store_error")
@@ -152,7 +179,7 @@ def reset(req: BaseRequest) -> dict[str, Any]:
         try:
             engine = _get_engine(req.learner_id)
             msg = engine.reset(req.curriculum_id)
-            log_event("pelican_api_reset", req.learner_id, phase=engine.state.phase, plan_source=engine.state.plan_source.value)
+            _log_api_event("pelican_api_reset", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except StateStoreError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/reset", reason_code="state_store_error")
@@ -172,7 +199,7 @@ def set_mode(req: ModeRequest) -> dict[str, Any]:
             if mode == "llm" and not engine.llm.available:
                 raise HTTPException(status_code=400, detail="LLM 尚未設定或無法連線")
             msg = engine.switch_mode(mode)
-            log_event("pelican_api_mode_changed", req.learner_id, phase=engine.state.phase, plan_source=engine.state.plan_source.value)
+            _log_api_event("pelican_api_mode_changed", req.learner_id, engine)
             return _serialize_response(engine, msg)
         except ValueError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/mode", reason_code="validation_error")

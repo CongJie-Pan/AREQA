@@ -33,6 +33,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         chatInput.value = "";
         
         showLoading(true);
+        renderPendingActivity("正在分析教學決策", "respond");
         try {
             const res = await fetch("/api/respond", {
                 method: "POST",
@@ -43,6 +44,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             handleResponse(data);
         } catch (err) {
             appendMessage("系統錯誤：" + err.message, "teacher");
+            renderActivityStatus({ code: "error", label: "系統錯誤", status: "idle", detail: "request_failed" }, []);
         } finally {
             showLoading(false);
         }
@@ -53,6 +55,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const messages = chatHistory.querySelectorAll('.message');
         messages.forEach(m => m.remove());
         showLoading(true);
+        renderPendingActivity("正在重置學習狀態", "reset");
         try {
             const res = await fetch("/api/reset", {
                 method: "POST",
@@ -73,6 +76,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     modeSelect.addEventListener("change", async (e) => {
         const newMode = e.target.value;
         try {
+            renderPendingActivity("正在切換教學模式", "mode");
             const res = await fetch("/api/mode", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -97,6 +101,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     async function startSession() {
         showLoading(true);
+        renderPendingActivity("正在載入學習引擎", "start");
         try {
             const res = await fetch("/api/start", {
                 method: "POST",
@@ -175,6 +180,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
+    function renderPendingActivity(label, detail) {
+        const pending = {
+            code: "processing",
+            label,
+            status: "processing",
+            detail
+        };
+        renderActivityStatus(pending, [
+            pending,
+            { code: "engine_processing", label: "等待後端決策", status: "processing", detail: "skill/edf/gum" }
+        ]);
+    }
+
     function activityLabel(code) {
         const labels = {
             idle: "等待學習主題",
@@ -193,7 +211,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             acceleration_selected: "加快學習節奏",
             memory_updated: "保存直接學習證據",
             edf_evaluated: "更新 EDF 教學策略",
-            tutoring_started: "進入教學引導"
+            tutoring_started: "進入教學引導",
+            processing: "系統處理中",
+            engine_processing: "等待後端決策",
+            error: "系統錯誤"
         };
         return labels[code] || "系統處理中";
     }

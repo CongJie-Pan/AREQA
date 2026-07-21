@@ -17,6 +17,18 @@ class FakeDiagnosticLlm:
             source="llm",
         )
 
+    def intake_question(self, **kwargs) -> None:
+        return None
+
+
+class FakeIntakeLlm:
+    @property
+    def available(self) -> bool:
+        return True
+
+    def intake_question(self, **kwargs) -> str:
+        return "LLM 產生的中國歷史前置問題"
+
 
 def calibrated_deep_learning_engine(tmp_path: Path) -> PelicanEngine:
     engine = PelicanEngine(tmp_path)
@@ -151,3 +163,25 @@ def test_legal_knowledge_stays_educational_during_intake(tmp_path: Path) -> None
 
     assert "不能提供個案法律諮詢" in outcome.message
     assert engine.state.intake_profile.domain_category == "humanities"
+
+
+def test_humanities_onboarding_uses_domain_specific_questions(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path)
+    engine.start()
+
+    outcome = engine.respond("中國歷史")
+
+    assert "時代脈絡" in outcome.message
+    assert "程式實作" not in outcome.message
+    assert engine.state.activity_log[-1].detail == "rule:humanities:goal"
+
+
+def test_llm_mode_can_generate_domain_intake_question(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path, mode="llm")
+    engine.llm = FakeIntakeLlm()
+    engine.start()
+
+    outcome = engine.respond("中國歷史")
+
+    assert outcome.message == "LLM 產生的中國歷史前置問題"
+    assert engine.state.activity_log[-1].detail == "llm:goal"

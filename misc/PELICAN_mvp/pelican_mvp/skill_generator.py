@@ -38,18 +38,30 @@ class DomainSkillGenerator:
             "pelican_skill_route_selected",
             domain_category=resolution.category.value,
             route=resolution.route_slug,
+            model_route=self.llm.model_route_for_category(resolution.category) if self.llm.available else "offline",
             reason_code=resolution.reason_code,
         )
 
         if not force_regenerate:
             try:
                 skill = load_catalog_skill(topic_clean)
+                log_event(
+                    "pelican_skill_source_selected",
+                    skill_id=skill.skill_id,
+                    skill_version=skill.version,
+                    domain_category=skill.domain_category.value,
+                    skill_lifecycle=skill.lifecycle.value,
+                    route="catalog",
+                    skill_source="catalog",
+                    reason_code="catalog_skill_available",
+                )
                 return skill, "catalog"
             except SkillLoadError:
                 log_event(
                     "pelican_skill_generation_fallback",
                     domain_category=resolution.category.value,
                     route=resolution.route_slug,
+                    skill_source="catalog_unavailable",
                     reason_code="catalog_unavailable",
                 )
 
@@ -65,6 +77,8 @@ class DomainSkillGenerator:
                 "pelican_skill_generation_attempt",
                 domain_category=resolution.category.value,
                 route=route,
+                model_route=route,
+                skill_source="runtime_generation",
                 reason_code=f"attempt_{attempt + 1}",
             )
             try:
@@ -80,6 +94,8 @@ class DomainSkillGenerator:
                     skill_lifecycle=skill.lifecycle.value,
                     domain_category=skill.domain_category.value,
                     route=route,
+                    model_route=route,
+                    skill_source="runtime_generated",
                     reason_code="validated",
                 )
                 return skill, route

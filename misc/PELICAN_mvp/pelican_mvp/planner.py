@@ -102,6 +102,7 @@ class LearningPlanner:
                 domain_category=skill.domain_category.value,
                 skill_lifecycle=skill.lifecycle.value,
                 route=route,
+                skill_source=route,
             )
             return plan
         except (SkillGenerationError, SkillCompileError, ValueError, KeyError, TypeError) as exc:
@@ -112,6 +113,7 @@ class LearningPlanner:
                 domain_category=resolution.category.value,
                 route=resolution.route_slug,
                 reason_code=type(exc).__name__,
+                skill_source="fallback",
             )
 
         if self.llm.available:
@@ -123,6 +125,7 @@ class LearningPlanner:
                         "pelican_plan_generated",
                         plan_source="generated",
                         node_count=len(plan.nodes),
+                        skill_source="legacy_llm_plan",
                     )
                     return plan
             except (LlmUnavailable, ValueError, KeyError, TypeError) as exc:
@@ -130,6 +133,7 @@ class LearningPlanner:
                     "pelican_plan_fallback",
                     plan_source="fallback",
                     reason_code=type(exc).__name__,
+                    skill_source="fallback",
                 )
 
         # Deterministic fallback
@@ -172,6 +176,7 @@ class LearningPlanner:
             "pelican_plan_generated",
             plan_source="fallback",
             node_count=len(nodes),
+            skill_source="fallback",
         )
         return fallback_plan
 

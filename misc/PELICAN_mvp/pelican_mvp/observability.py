@@ -30,6 +30,13 @@ _SAFE_FIELDS = frozenset({
     "node_id",
     "step_id",
     "detail_code",
+    "skill_source",
+    "diagnostic_source",
+    "intake_source",
+    "model_route",
+    "remediation_reason",
+    "edf_transition",
+    "memory_event",
 })
 
 

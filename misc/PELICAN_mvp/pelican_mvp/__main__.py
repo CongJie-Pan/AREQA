@@ -21,6 +21,17 @@ LOG_FIELDS = (
     "detail_code",
     "skill_id",
     "node_id",
+    "domain_category",
+    "route",
+    "skill_source",
+    "diagnostic_source",
+    "intake_source",
+    "model_route",
+    "remediation_reason",
+    "learner_state",
+    "strategy",
+    "edf_transition",
+    "memory_event",
 )
 
 
@@ -61,7 +72,11 @@ def configure_runtime_logging() -> None:
         handler.setFormatter(
             SafePelicanFormatter(
                 "PELICAN %(levelname)s %(event)s phase=%(phase)s activity=%(activity_code)s "
-                "status=%(activity_status)s detail=%(detail_code)s skill=%(skill_id)s node=%(node_id)s"
+                "status=%(activity_status)s detail=%(detail_code)s domain=%(domain_category)s "
+                "route=%(route)s skill=%(skill_id)s skill_source=%(skill_source)s "
+                "intake_source=%(intake_source)s diagnostic_source=%(diagnostic_source)s "
+                "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "
+                "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s"
             )
         )
         logger.addHandler(handler)

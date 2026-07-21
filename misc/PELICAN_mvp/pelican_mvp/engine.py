@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .curriculum import CURRICULUMS
 from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node, remediation_signal
+from .domain_skill import DomainCategory
 from .llm import LlmAdapter, LlmUnavailable
 from .models import (
     ActivityEvent,
@@ -78,8 +79,9 @@ class PelicanEngine:
         if self.state.phase == "onboarding":
             log_event("pelican_intake_progress", learner_id=self.state.learner_id, phase="onboarding", intake_decision="topic")
             if self.state.intake_profile.intake_turns == 1:
+                question, _source = self._next_intake_question("goal")
                 return TurnOutcome(
-                    "你這次比較想怎麼學？請選一個方向回答：理解概念、程式實作、做小專案、準備考試/面試，或先解釋背景。",
+                    question,
                     None,
                     None,
                     None,
@@ -87,8 +89,9 @@ class PelicanEngine:
                     "恢復學習目標收集",
                 )
             if self.state.intake_profile.intake_turns == 2:
+                question, _source = self._next_intake_question("level")
                 return TurnOutcome(
-                    "你目前的基礎大概在哪裡？可以回答：完全沒有基礎、學過一點、能做簡單題、或已經有實作經驗。",
+                    question,
                     None,
                     None,
                     None,
@@ -158,8 +161,9 @@ class PelicanEngine:
                 reason_code=resolution.reason_code,
             )
             legal_note = "我可以協助法律知識教育，但不能提供個案法律諮詢。\n" if "法律" in answer else ""
+            question, _source = self._next_intake_question("goal")
             return TurnOutcome(
-                legal_note + "你這次比較想怎麼學？請選一個方向回答：理解概念、程式實作、做小專案、準備考試/面試，或先解釋背景。",
+                legal_note + question,
                 None,
                 None,
                 None,
@@ -184,10 +188,12 @@ class PelicanEngine:
                 learner_id=self.state.learner_id,
                 phase="onboarding",
                 domain_category=intake.domain_category,
+                route=intake.model_route,
                 intake_decision="level",
             )
+            question, _source = self._next_intake_question("level")
             return TurnOutcome(
-                "你目前的基礎大概在哪裡？可以回答：完全沒有基礎、學過一點、能做簡單題、或已經有實作經驗。",
+                question,
                 None,
                 None,
                 None,
@@ -207,11 +213,11 @@ class PelicanEngine:
             intake_turns=3,
         )
         plan = self.planner.create_plan_for_profile(profile)
+        self.state.learning_plan = plan
         if plan.skill_id:
             self._record_activity("skill_loaded", "載入領域 Skill", detail=plan.skill_id)
             self._record_activity("skill_validated", "驗證 Skill 規則", detail=plan.skill_lifecycle or "validated")
         self._record_activity("plan_compiled", "編譯學習路徑", detail=f"{len(plan.nodes)} nodes")
-        self.state.learning_plan = plan
         self.state.intake_profile = LearnerIntakeProfile(
             topic=profile.topic,
             goal_summary=profile.goal_summary,
@@ -232,6 +238,9 @@ class PelicanEngine:
             learner_id=self.state.learner_id,
             phase="diagnosis",
             plan_source=self.state.plan_source.value,
+            domain_category=plan.domain_category,
+            route=plan.model_route,
+            skill_id=plan.skill_id,
         )
         outcome = self._present_next_diagnostic()
         topic = plan.topic if plan else "這個主題"
@@ -244,6 +253,57 @@ class PelicanEngine:
             outcome.state_changes,
             outcome.next_reason
         )
+
+    def _next_intake_question(self, stage: str) -> tuple[str, str]:
+        """Return one domain-aware intake question and its safe source code."""
+        intake = self.state.intake_profile
+        category = _domain_category_from_value(intake.domain_category)
+        if self.state.mode == "llm" and self.llm.available:
+            try:
+                generated = self.llm.intake_question(
+                    topic=intake.topic,
+                    domain_category=category,
+                    stage=stage,
+                )
+                if generated:
+                    self._record_activity("intake_question_generated", "生成前置校準問題", detail=f"llm:{stage}")
+                    log_event(
+                        "pelican_intake_question_selected",
+                        learner_id=self.state.learner_id,
+                        phase=self.state.phase,
+                        domain_category=category.value,
+                        route=intake.model_route,
+                        intake_decision=stage,
+                        intake_source="llm",
+                        reason_code="llm_generated",
+                    )
+                    self.store.save(self.state)
+                    return generated, "llm"
+            except LlmUnavailable:
+                log_event(
+                    "pelican_intake_question_fallback",
+                    learner_id=self.state.learner_id,
+                    phase=self.state.phase,
+                    domain_category=category.value,
+                    route=intake.model_route,
+                    intake_decision=stage,
+                    intake_source="llm_failed",
+                    reason_code="llm_unavailable",
+                )
+        fallback = _rule_intake_question(category, stage)
+        self._record_activity("intake_question_generated", "產生前置校準問題", detail=f"rule:{category.value}:{stage}")
+        log_event(
+            "pelican_intake_question_selected",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            domain_category=category.value,
+            route=intake.model_route,
+            intake_decision=stage,
+            intake_source=f"rule_{category.value}",
+            reason_code="rule_fallback",
+        )
+        self.store.save(self.state)
+        return fallback, "rule"
 
     def switch_mode(self, mode: str) -> TurnOutcome:
         """Switch between rule and optional LLM modes for this local session."""
@@ -318,6 +378,16 @@ class PelicanEngine:
         self.state.current_expected_answer = question.expected_answer
         self.state.current_prompt_source = question.source
         self._record_activity("diagnostic_selected", "選擇診斷概念", detail=f"{question.source}:{node_id}")
+        log_event(
+            "pelican_diagnostic_source_selected",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            domain_category=self.state.learning_plan.domain_category if self.state.learning_plan else None,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            diagnostic_source=question.source,
+            node_id=node_id,
+            reason_code="skill_locked" if skill_question_locked else "mode_selected",
+        )
         self.store.save(self.state)
         return TurnOutcome(question.prompt, node_id, None, None, (), "successor-first：先診斷尚未確認的葉節點")
 
@@ -377,11 +447,17 @@ class PelicanEngine:
             else TutoringStrategy.SIMPLIFICATION
         )
         self._record_activity("remediation_selected", "停在當前概念補架", detail=node_id)
-        self.state.phase = "tutoring"
-        self.state.current_prompt = (
-            f"我們先停在「{label}」。剛才那題先不往下推。\n\n"
-            f"我換成更清楚的方式：請用一句話說，{label} 在整個學習中主要幫我們做什麼？"
+        log_event(
+            "pelican_remediation_selected",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            node_id=node_id,
+            remediation_reason=category.value,
+            reason_code="stay_on_current_concept",
         )
+        self.state.phase = "tutoring"
+        self.state.current_prompt = self._remediation_prompt(node_id, label)
         self.state.current_prompt_source = "rule"
         self.store.save(self.state)
         return TurnOutcome(
@@ -401,8 +477,8 @@ class PelicanEngine:
         self._record(answer, ResponseCategory.DIFFICULTY, strategy, [])
         self._refresh_learning_context(answer, ResponseCategory.DIFFICULTY, signal)
         self.state.current_prompt = (
-            "收到，剛才那題對目前起點太細了。我們先退回一層："
-            f"你可以用一句話說說你對「{self.curriculum.nodes[node_id].label}」目前的直覺嗎？不用精準。"
+            "收到，剛才那題對目前起點太細了。\n\n"
+            + self._remediation_prompt(node_id, self.curriculum.nodes[node_id].label)
         )
         self.state.current_prompt_source = "rule"
         self.store.save(self.state)
@@ -411,6 +487,7 @@ class PelicanEngine:
             learner_id=self.state.learner_id,
             phase=self.state.phase,
             reason_code=signal,
+            remediation_reason=signal,
         )
         return TurnOutcome(
             self.state.current_prompt,
@@ -437,8 +514,8 @@ class PelicanEngine:
         self.state.phase = "tutoring"
         self.state.current_node_id = prerequisite_id
         self.state.current_prompt = (
-            f"沒關係，我們先補「{self.curriculum.nodes[prerequisite_id].label}」。"
-            "請先用日常語言描述：你覺得這個概念想解決什麼問題？"
+            f"沒關係，我們先補「{self.curriculum.nodes[prerequisite_id].label}」。\n\n"
+            + self._remediation_prompt(prerequisite_id, self.curriculum.nodes[prerequisite_id].label)
         )
         self.state.current_prompt_source = "rule"
         self.store.save(self.state)
@@ -447,6 +524,7 @@ class PelicanEngine:
             learner_id=self.state.learner_id,
             phase=self.state.phase,
             reason_code="unknown",
+            remediation_reason="unknown",
         )
         return TurnOutcome(
             self.state.current_prompt,
@@ -529,7 +607,17 @@ class PelicanEngine:
 
     def _refresh_learning_context(self, answer: str, category: ResponseCategory, signal: str | None = None) -> None:
         """Update bounded direct evidence and keep EDF inference separate."""
+        previous_edf = self.state.edf_snapshot
         self.memory.record_direct_evidence(self.state, answer, category, signal=signal)
+        log_event(
+            "pelican_memory_evidence_recorded",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            node_id=self.state.current_node_id,
+            category=category.value,
+            memory_event="direct_evidence",
+            reason_code=signal or category.value,
+        )
         self._record_activity("memory_updated", "保存直接學習證據", detail=signal or category.value)
         self.state.edf_snapshot = self.edf.evaluate(self.state)
         self._record_activity(
@@ -541,6 +629,21 @@ class PelicanEngine:
             "pelican_diagnosis_updated",
             learner_id=self.state.learner_id,
             category=category.value,
+            learner_state=self.state.edf_snapshot.learner_state,
+            strategy=self.state.edf_snapshot.pedagogical_strategy,
+            edf_transition=f"{previous_edf.learner_state}->{self.state.edf_snapshot.learner_state}",
+            reason_code=f"{previous_edf.learner_state}->{self.state.edf_snapshot.learner_state}",
+        )
+
+    def _remediation_prompt(self, node_id: str, label: str) -> str:
+        """Return a skill-authored remediation prompt when available."""
+        if self.state.learning_plan:
+            template = self.state.learning_plan.remediation_templates.get(node_id)
+            if template:
+                return template.format(label=label)
+        return (
+            f"我們先停在「{label}」。剛才那題先不往下推。\n\n"
+            f"我換成更清楚的方式：請用一句話說，{label} 在整個學習中主要幫我們做什麼？"
         )
 
     def _present_current_step(self, reason: str) -> TurnOutcome:
@@ -626,6 +729,14 @@ class PelicanEngine:
             node_id=self.state.current_node_id,
             detail_code=detail,
             skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else self.state.intake_profile.skill_id,
+            skill_version=self.state.learning_plan.skill_version if self.state.learning_plan else self.state.intake_profile.skill_version,
+            skill_lifecycle=self.state.learning_plan.skill_lifecycle if self.state.learning_plan else self.state.intake_profile.skill_lifecycle,
+            domain_category=(
+                self.state.learning_plan.domain_category
+                if self.state.learning_plan and self.state.learning_plan.domain_category
+                else self.state.intake_profile.domain_category
+            ),
+            route=self.state.learning_plan.model_route if self.state.learning_plan else self.state.intake_profile.model_route,
         )
 
 
@@ -655,3 +766,38 @@ def _infer_level_hint(answer: str) -> str:
     if any(token in answer for token in ("學過", "一點", "簡單題", "intermediate")):
         return "intermediate"
     return "unknown"
+
+
+def _domain_category_from_value(value: str) -> DomainCategory:
+    """Convert persisted category text into a safe enum for routing decisions."""
+    try:
+        return DomainCategory(value)
+    except ValueError:
+        return DomainCategory.UNKNOWN
+
+
+def _rule_intake_question(category: DomainCategory, stage: str) -> str:
+    """Return a domain-aware fallback question when no LLM route is available."""
+    questions = {
+        DomainCategory.STEM: {
+            "goal": "你這次比較想怎麼學？請選一個方向回答：理解概念、程式實作、做小專案、準備考試/面試，或先解釋背景。",
+            "level": "你目前的基礎大概在哪裡？可以回答：完全沒有基礎、學過一點、能做簡單題、或已經有實作經驗。",
+        },
+        DomainCategory.HUMANITIES: {
+            "goal": "你想從哪個角度切入？可以回答：時代脈絡、人物事件、制度文化、思想觀念、史料閱讀，或考試整理。",
+            "level": "你目前對這個主題的熟悉度如何？可以回答：完全不熟、知道一些名詞、讀過入門內容、或能分析文本/事件。",
+        },
+        DomainCategory.BUSINESS: {
+            "goal": "你想用這個主題解決哪類問題？可以回答：理解概念、分析案例、做決策、看財務數字，或準備報告/面試。",
+            "level": "你目前相關經驗大概在哪裡？可以回答：完全沒有背景、看過一些案例、能做基本分析，或有實務經驗。",
+        },
+        DomainCategory.LANGUAGE: {
+            "goal": "你想優先練哪個能力？可以回答：聽力、口說、閱讀、寫作、文法、考試，或工作/旅遊情境。",
+            "level": "你目前程度大概在哪裡？可以回答：初學、能看簡單句、能日常溝通，或想修正進階表達。",
+        },
+    }
+    fallback = {
+        "goal": "你想從哪個角度學這個主題？可以說明目標、用途、想解決的困難，或是否為了考試/工作。",
+        "level": "你目前對這個主題的熟悉度如何？可以回答：完全不熟、學過一點、能做簡單應用，或已有實務經驗。",
+    }
+    return questions.get(category, fallback).get(stage, fallback["goal"])

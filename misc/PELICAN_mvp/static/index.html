@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PELICAN Knowledge Tracing MVP</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260721">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -13,16 +13,6 @@
         <aside class="sidebar">
             <h2>PELICAN MVP</h2>
             <div class="controls">
-                <section class="system-status-panel" aria-label="系統狀態">
-                    <div class="panel-title">系統狀態</div>
-                    <div id="current-activity-card" class="activity-card">
-                        <div class="activity-card-inner">
-                            <span id="activity-status-dot" class="activity-dot idle"></span>
-                            <span id="current-activity-label">等待學習主題</span>
-                        </div>
-                    </div>
-                    <div id="activity-badges" class="activity-badges"></div>
-                </section>
                 <div class="learning-info">
                     <div><strong>Phase:</strong> <span id="phase-display">Onboarding</span></div>
                     <div><strong>Topic:</strong> <span id="topic-display">--</span></div>
@@ -49,6 +39,15 @@
 
         <!-- Main Chat Area -->
         <main class="chat-container">
+            <section class="chat-engine-status" aria-label="系統狀態">
+                <div id="current-activity-card" class="activity-card">
+                    <div class="activity-card-inner">
+                        <span id="activity-status-dot" class="activity-dot idle"></span>
+                        <span id="current-activity-label">等待學習主題</span>
+                    </div>
+                </div>
+                <div id="activity-badges" class="activity-badges"></div>
+            </section>
             <div id="chat-history" class="chat-history"></div>
             
             <div id="loading" class="loading hidden">
@@ -63,6 +62,6 @@
             </form>
         </main>
     </div>
-    <script src="app.js"></script>
+    <script src="app.js?v=20260721"></script>
 </body>
 </html>

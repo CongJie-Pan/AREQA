@@ -181,6 +181,13 @@ class StateStore:
             value = getattr(plan, field_name)
             if value is not None and (not isinstance(value, str) or len(value) > 120):
                 raise ValueError(f"generated plan {field_name} must be bounded metadata")
+        for field_name in ("teaching_methodology", "remediation_templates"):
+            value = getattr(plan, field_name)
+            if not isinstance(value, dict):
+                raise ValueError(f"generated plan {field_name} must be metadata mapping")
+            for key, item in value.items():
+                if not isinstance(key, str) or not isinstance(item, str) or len(key) > 80 or len(item) > 800:
+                    raise ValueError(f"generated plan {field_name} entries must be bounded text")
         if not plan.nodes:
             raise ValueError("generated plan requires at least one node")
         node_ids = [node.node_id for node in plan.nodes]

@@ -246,6 +246,8 @@ class DomainSkill:
     remediation_paths: tuple[RemediationPath, ...]
     assessment_policy: AssessmentPolicy
     safety_notes: tuple[str, ...] = field(default_factory=tuple)
+    teaching_methodology: dict[str, str] = field(default_factory=dict)
+    remediation_templates: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "DomainSkill":
@@ -272,6 +274,8 @@ class DomainSkill:
             remediation_paths=tuple(RemediationPath.from_dict(item) for item in _required_list(payload, "remediation_paths")),
             assessment_policy=AssessmentPolicy.from_dict(_required_mapping(payload, "assessment_policy")),
             safety_notes=tuple(_bounded_text(item, "safety_notes") for item in payload.get("safety_notes", ())),
+            teaching_methodology=_optional_text_mapping(payload, "teaching_methodology"),
+            remediation_templates=_optional_text_mapping(payload, "remediation_templates"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -292,6 +296,8 @@ class DomainSkill:
             "remediation_paths": [item.to_dict() for item in self.remediation_paths],
             "assessment_policy": self.assessment_policy.to_dict(),
             "safety_notes": list(self.safety_notes),
+            "teaching_methodology": dict(self.teaching_methodology),
+            "remediation_templates": dict(self.remediation_templates),
         }
 
 
@@ -307,6 +313,16 @@ def _required_list(payload: dict[str, Any], field_name: str) -> list[Any]:
     if not isinstance(value, list) or not value:
         raise DomainSkillError(f"{field_name} must be a non-empty list")
     return value
+
+
+def _optional_text_mapping(payload: dict[str, Any], field_name: str) -> dict[str, str]:
+    value = payload.get(field_name, {})
+    if not isinstance(value, dict):
+        raise DomainSkillError(f"{field_name} must be an object")
+    return {
+        _bounded_id(str(key), field_name): _bounded_text(str(item), field_name)
+        for key, item in value.items()
+    }
 
 
 def _required_id(payload: dict[str, Any], field_name: str) -> str:

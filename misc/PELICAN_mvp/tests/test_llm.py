@@ -90,3 +90,25 @@ def test_generate_domain_skill_uses_requested_route() -> None:
     assert skill is not None
     assert skill.skill_id == "deep_learning"
     assert skill.lifecycle.value == "runtime_generated"
+
+
+def test_intake_question_uses_domain_route() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.model_seen = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.model_seen = model
+            return {"question": "你想從朝代脈絡、人物事件，還是制度文化開始？"}
+
+    adapter = RecordingAdapter()
+    question = adapter.intake_question(
+        topic="中國歷史",
+        domain_category=DomainCategory.HUMANITIES,
+        stage="goal",
+        model_route="humanities/model",
+    )
+
+    assert adapter.model_seen == "humanities/model"
+    assert question == "你想從朝代脈絡、人物事件，還是制度文化開始？"

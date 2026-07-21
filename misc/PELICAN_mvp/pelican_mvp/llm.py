@@ -149,6 +149,29 @@ class LlmAdapter:
         response = str(payload.get("response", "")).strip()
         return response or None
 
+    def intake_question(
+        self,
+        *,
+        topic: str,
+        domain_category: DomainCategory,
+        stage: str,
+        model_route: str | None = None,
+    ) -> str | None:
+        """Generate one domain-aware onboarding question without persisting reasoning."""
+        if not self.available:
+            return None
+        route = model_route or self.model_route_for_category(domain_category)
+        payload = self._json(
+            "你是繁體中文學習訪談主持人。請根據領域產生一題前置校準問題，只問一題。\n"
+            "不要輸出推理、不要教學、不要診斷細節。問題必須適合該領域，不可把所有領域都問成理科或程式學習。",
+            f"topic: {topic}\ndomain_category: {domain_category.value}\nstage: {stage}\n"
+            "stage=goal 時請詢問學習目的或角度；stage=level 時請詢問背景、經驗或熟悉度。\n"
+            "輸出 JSON：{\"question\": str}",
+            model=route,
+        )
+        question = str(payload.get("question", "")).strip()
+        return question[:500] if question else None
+
     def generate_learning_plan(self, topic: str) -> LearningPlanSnapshot | None:
         """Legacy topic-to-plan generation kept as a compatibility fallback."""
         if not self.available:
@@ -220,12 +243,13 @@ class LlmAdapter:
             "你是領域教學設計師。只輸出 JSON，不要輸出推理過程、Markdown 或學生可見課程內容。\n"
             "你的任務是產生一份可驗證的 DomainSkill schema，供教學引擎稍後編譯知識樹。\n"
             "必須包含 intake calibration、prerequisite map、canonical_path、single-concept diagnostics、"
-            "teaching_moves、unknown/too_detailed/too_easy/project_goal/assessment_goal remediation，以及 assessment_policy。\n"
+            "teaching_moves、unknown/too_detailed/too_easy/project_goal/assessment_goal remediation、"
+            "teaching_methodology、remediation_templates，以及 assessment_policy。\n"
             "診斷題 prompt 絕對不能包含 expected_answer。法律知識只能作教育用途，不可提供法律諮詢。",
             f"topic: {topic}\ncategory: {category.value}\n"
             "輸出 JSON 欄位：skill_id, version, title, domain_category, lifecycle, supported_topics, intent_types, "
             "prerequisites, calibration_questions, canonical_path, diagnostic_rules, teaching_moves, remediation_paths, "
-            "assessment_policy, safety_notes。lifecycle 請用 runtime_generated。",
+            "assessment_policy, teaching_methodology, remediation_templates, safety_notes。lifecycle 請用 runtime_generated。",
             model=route,
         )
         payload["domain_category"] = category.value

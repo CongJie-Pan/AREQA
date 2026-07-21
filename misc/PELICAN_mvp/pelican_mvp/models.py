@@ -186,6 +186,8 @@ class LearningPlanSnapshot:
     skill_lifecycle: str | None = None
     domain_category: str | None = None
     model_route: str | None = None
+    teaching_methodology: dict[str, str] = field(default_factory=dict)
+    remediation_templates: dict[str, str] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
@@ -218,6 +220,8 @@ class LearningPlanSnapshot:
             "skill_lifecycle": self.skill_lifecycle,
             "domain_category": self.domain_category,
             "model_route": self.model_route,
+            "teaching_methodology": dict(self.teaching_methodology),
+            "remediation_templates": dict(self.remediation_templates),
             "created_at": self.created_at,
         }
 
@@ -255,6 +259,14 @@ class LearningPlanSnapshot:
             skill_lifecycle=payload.get("skill_lifecycle"),
             domain_category=payload.get("domain_category"),
             model_route=payload.get("model_route"),
+            teaching_methodology={
+                str(key)[:80]: str(value)[:800]
+                for key, value in payload.get("teaching_methodology", {}).items()
+            },
+            remediation_templates={
+                str(key)[:80]: str(value)[:800]
+                for key, value in payload.get("remediation_templates", {}).items()
+            },
             created_at=payload.get("created_at", datetime.now(timezone.utc).isoformat()),
         )
 
