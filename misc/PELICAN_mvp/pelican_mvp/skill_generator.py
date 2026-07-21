@@ -12,7 +12,12 @@ from .domain_skill import DomainCategory, DomainSkill, DomainSkillError, SkillLi
 from .generic_skill import build_generic_domain_skill
 from .llm import LlmAdapter, LlmUnavailable
 from .observability import log_event
-from .skill_artifacts import save_failed_skill_artifact, save_validated_skill_artifact
+from .skill_artifacts import (
+    SkillArtifactError,
+    load_validated_skill_artifact,
+    save_failed_skill_artifact,
+    save_validated_skill_artifact,
+)
 from .skill_loader import SkillLoadError, load_catalog_skill
 from .skill_validator import SkillValidationError, validate_domain_skill
 
@@ -30,17 +35,21 @@ class DomainSkillGenerator:
     """Resolve, generate, and validate domain skills before compilation.
 
     Checked-in catalog assets are preferred because they are deterministic and
-    reviewable. Model generation is bounded to one retry after validation failure;
-    raw model output and hidden reasoning are never logged or persisted.
+    reviewable. Previously validated runtime artifacts are reused before a new
+    model call. Model generation is then bounded to a small repair loop after
+    validation failure; raw model output and hidden reasoning are never logged or
+    persisted.
     """
 
-    def __init__(self, llm: LlmAdapter | None = None, *, max_retries: int = 1, artifact_root: Path | None = None):
+    def __init__(self, llm: LlmAdapter | None = None, *, max_retries: int = 3, artifact_root: Path | None = None):
         """Initialize runtime skill generation dependencies.
 
         Args:
             llm: Optional adapter used for model-backed generation and repair.
             max_retries: Number of repair attempts after the first invalid
-                generation. The default allows one repair pass.
+                generation. The default allows three repair passes, which is
+                enough for schema correction while keeping latency and API cost
+                bounded.
             artifact_root: Optional test/deployment override for generated skill
                 artifacts. ``None`` uses the MVP local data directory.
         """
@@ -51,9 +60,10 @@ class DomainSkillGenerator:
     def generate(self, topic: str, *, force_regenerate: bool = False) -> tuple[DomainSkill, str]:
         """Return a validated skill and safe route slug for the learner topic.
 
-        The pipeline is catalog-first, then runtime generation with bounded
-        repair, then generic domain fallback. Critical structured logs emitted
-        here use event names such as ``pelican_skill_generation_attempt``,
+        The pipeline is catalog-first, cached validated runtime artifact, runtime
+        generation with bounded repair, then generic domain fallback. Critical
+        structured logs emitted here use event names such as
+        ``pelican_skill_cache_hit``, ``pelican_skill_generation_attempt``,
         ``pelican_skill_validation_rejected``, and
         ``pelican_skill_source_selected`` with safe category, route, source, and
         reason-code metadata only. Raw model output is never logged.
@@ -61,8 +71,9 @@ class DomainSkillGenerator:
         Args:
             topic: Learner-requested topic. It is normalized and bounded before
                 routing or artifact filename creation.
-            force_regenerate: When true, skip catalog lookup and exercise the
-                runtime generation path. Tests use this to verify repair logic.
+            force_regenerate: When true, skip catalog/cache lookup and exercise
+                the runtime generation path. Tests use this to verify repair
+                logic.
 
         Returns:
             A ``DomainSkill`` plus a safe source/route string such as
@@ -103,6 +114,32 @@ class DomainSkillGenerator:
                     route=resolution.route_slug,
                     skill_source="catalog_unavailable",
                     reason_code="catalog_unavailable",
+                )
+            try:
+                skill = load_validated_skill_artifact(topic=topic_clean, root=self.artifact_root)
+                skill = _normalize_generated_skill(skill, resolution.category)
+                validate_domain_skill(skill)
+                log_event(
+                    "pelican_skill_cache_hit",
+                    skill_id=skill.skill_id,
+                    skill_version=skill.version,
+                    domain_category=skill.domain_category.value,
+                    skill_lifecycle=skill.lifecycle.value,
+                    route="runtime_cache",
+                    skill_source="validated_runtime_cache",
+                    reason_code="validated_artifact_available",
+                )
+                return skill, "runtime_cache"
+            except (SkillArtifactError, SkillValidationError, DomainSkillError, ValueError, TypeError) as exc:
+                # Cache artifacts are an optimization, not an authority. If a
+                # persisted skill no longer passes the current validator, the
+                # generator repairs/regenerates instead of silently using it.
+                log_event(
+                    "pelican_skill_cache_miss",
+                    domain_category=resolution.category.value,
+                    route=resolution.route_slug,
+                    skill_source="validated_runtime_cache",
+                    reason_code=type(exc).__name__,
                 )
 
         if resolution.category is DomainCategory.UNKNOWN:
@@ -163,9 +200,11 @@ class DomainSkillGenerator:
                 )
                 if attempt < self.max_retries:
                     log_event(
-                        "pelican_skill_generation_retry",
+                        "pelican_skill_repair_attempt",
                         domain_category=resolution.category.value,
                         route=route,
+                        model_route=route,
+                        skill_source="runtime_generation",
                         reason_code="|".join(last_reason_codes),
                     )
 

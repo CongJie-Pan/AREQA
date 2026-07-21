@@ -1,10 +1,12 @@
 import logging
+import json
 from pathlib import Path
 
 import pytest
 
 from pelican_mvp.domain_skill import DomainCategory, DomainSkill, SkillLifecycle
 from pelican_mvp.llm import LlmAdapter
+from pelican_mvp.skill_artifacts import save_validated_skill_artifact
 from pelican_mvp.skill_generator import DomainSkillGenerator, SkillGenerationError
 from test_domain_skill import valid_skill_payload
 
@@ -79,6 +81,37 @@ def test_generator_routes_missing_stem_skill_to_model(tmp_path: Path) -> None:
     assert (tmp_path / "validated" / "機器學習.validated.json").exists()
 
 
+def test_generator_reuses_validated_runtime_skill_cache(tmp_path: Path) -> None:
+    cached = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
+    save_validated_skill_artifact(cached, topic="機器學習", route="route/stem", root=tmp_path)
+    llm = FakeLlm([])
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
+
+    skill, route = generator.generate("機器學習")
+
+    assert skill.skill_id == "machine_learning"
+    assert route == "runtime_cache"
+    assert llm.calls == []
+
+
+def test_generator_ignores_invalid_runtime_skill_cache(tmp_path: Path) -> None:
+    cached = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
+    save_validated_skill_artifact(cached, topic="機器學習", route="route/stem", root=tmp_path)
+    path = tmp_path / "validated" / "機器學習.validated.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["skill"]["remediation_paths"] = payload["skill"]["remediation_paths"][:1]
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    replacement = make_skill(skill_id="machine_learning_v2", supported_topics=["機器學習"])
+    llm = FakeLlm([replacement])
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
+
+    skill, route = generator.generate("機器學習")
+
+    assert skill.skill_id == "machine_learning_v2"
+    assert route == "route/stem"
+    assert len(llm.calls) == 1
+
+
 def test_generator_retries_once_after_invalid_skill(tmp_path: Path) -> None:
     invalid = make_skill()
     object.__setattr__(invalid, "remediation_paths", invalid.remediation_paths[:1])
@@ -91,6 +124,25 @@ def test_generator_retries_once_after_invalid_skill(tmp_path: Path) -> None:
     assert skill.skill_id == "machine_learning"
     assert route == "route/stem"
     assert len(llm.calls) == 2
+
+
+def test_generator_default_repair_loop_allows_three_repairs(tmp_path: Path) -> None:
+    invalid_payload = valid_skill_payload()
+    invalid_payload["remediation_paths"] = invalid_payload["remediation_paths"][:1]
+    valid_payload = valid_skill_payload()
+    valid_payload["skill_id"] = "machine_learning"
+    valid_payload["supported_topics"] = ["機器學習"]
+    llm = PayloadLlm([invalid_payload, invalid_payload, invalid_payload, valid_payload])
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
+
+    skill, route = generator.generate("機器學習", force_regenerate=True)
+
+    assert skill.skill_id == "machine_learning"
+    assert route == "route/stem"
+    assert len(llm.payload_calls) == 4
+    assert "missing_remediation" in llm.payload_calls[1][3]
+    assert "missing_remediation" in llm.payload_calls[2][3]
+    assert "missing_remediation" in llm.payload_calls[3][3]
 
 
 def test_generator_repairs_with_validation_reason_codes(tmp_path: Path) -> None:

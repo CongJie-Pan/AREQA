@@ -22,6 +22,10 @@ from .domain_skill import DomainCategory, DomainSkill
 ARTIFACT_ROOT = Path(__file__).resolve().parents[1] / "data" / "generated_skills"
 
 
+class SkillArtifactError(ValueError):
+    """Raised when a runtime skill artifact cannot be loaded safely."""
+
+
 def save_validated_skill_artifact(
     skill: DomainSkill,
     *,
@@ -61,6 +65,50 @@ def save_validated_skill_artifact(
     }
     _write_json(path, payload)
     return path
+
+
+def load_validated_skill_artifact(
+    *,
+    topic: str,
+    root: Path | None = None,
+) -> DomainSkill:
+    """Load a previously validated runtime skill artifact for a topic.
+
+    Args:
+        topic: Normalized learner topic used to derive the artifact filename.
+        root: Optional test/deployment override for generated skill artifacts.
+
+    Returns:
+        The persisted ``DomainSkill`` payload. The caller must still run the
+        current validator before use because validation rules can become stricter
+        after an artifact was written.
+
+    Raises:
+        SkillArtifactError: If the artifact is missing, malformed, or not a
+            validated runtime skill artifact.
+
+    Compatibility:
+        Runtime artifacts are local cache entries, not reviewed catalog assets.
+        They are intentionally loaded from ``data/generated_skills/validated``
+        instead of ``domain_skills`` so promotion remains a human review step.
+    """
+    artifact_root = root or ARTIFACT_ROOT
+    path = artifact_root / "validated" / f"{_slug(topic)}.validated.json"
+    if not path.exists():
+        raise SkillArtifactError("validated skill artifact not found")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SkillArtifactError("validated skill artifact is unreadable") from exc
+    if not isinstance(payload, dict) or payload.get("artifact_type") != "validated_runtime_skill":
+        raise SkillArtifactError("validated skill artifact has unexpected type")
+    skill_payload = payload.get("skill")
+    if not isinstance(skill_payload, dict):
+        raise SkillArtifactError("validated skill artifact is missing skill payload")
+    try:
+        return DomainSkill.from_dict(skill_payload)
+    except Exception as exc:
+        raise SkillArtifactError("validated skill artifact contains invalid skill payload") from exc
 
 
 def save_failed_skill_artifact(
