@@ -10,6 +10,10 @@ from backend.services.memory_ingestion_service import (
     UserEvidence,
     create_memory_ingestion_service,
 )
+from backend.services.memory_extraction_agent import (
+    MemoryCandidateDraft,
+    MemoryExtractionResult,
+)
 from backend.services.memory_semantic_analyzer import SemanticAnalysisResult
 
 
@@ -24,6 +28,14 @@ def evidence(text: str, *, conversation_id: str = "conv-a", message_id: str = "m
     )
 
 
+class FakeExtractionAgent:
+    def __init__(self, candidates):
+        self.candidates = candidates
+
+    async def extract_candidates(self, **kwargs):
+        return MemoryExtractionResult(candidates=self.candidates)
+
+
 @pytest.mark.asyncio
 async def test_question_never_reaches_candidate_storage():
     store = AsyncMock()
@@ -35,6 +47,128 @@ async def test_question_never_reaches_candidate_storage():
     assert result.reason_code == "interrogative_not_memory_evidence"
     store.append_cold_candidate.assert_not_awaited()
     store.perform_memory_operation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mixed_question_prompt_promotes_extracted_learning_preference(caplog):
+    caplog.set_level(logging.INFO)
+    store = AsyncMock()
+    extraction_agent = FakeExtractionAgent([
+        MemoryCandidateDraft(
+            candidate_type="temporary_context",
+            text="我是高一生，下週要考高一物理。",
+            durability="working_memory_only",
+            confidence=0.93,
+            reason_code="temporary_exam_context",
+        ),
+        MemoryCandidateDraft(
+            candidate_type="question",
+            text="你可以教我什麼是牛頓第一運動定律嗎？",
+            durability="do_not_store",
+            confidence=0.98,
+            reason_code="question_not_memory",
+        ),
+        MemoryCandidateDraft(
+            candidate_type="sensitive_context",
+            text="我之前連國中理化都一直不及格，現在好焦慮。",
+            durability="do_not_store",
+            confidence=0.96,
+            reason_code="negative_learning_state_sensitive",
+        ),
+        MemoryCandidateDraft(
+            candidate_type="learning_preference",
+            text="我偏好你先給我一個具體例子，再解釋抽象概念。",
+            durability="profile_memory",
+            confidence=0.96,
+            reason_code="explicit_learning_preference",
+        ),
+    ])
+    service = MemoryIngestionService(store, extraction_agent=extraction_agent)
+
+    raw_text = (
+        "我是高一生，我下週要考高一物理了，但我之前連國中理化都一直不及格，現在好焦慮。\n"
+        "你可以教我什麼是牛頓第一運動定律嗎？\n"
+        "我偏好你先給我一個具體例子，再解釋抽象概念。"
+    )
+
+    result = await service.ingest_user_evidence(evidence(raw_text))
+
+    assert result.state is MemoryEligibilityState.PROMOTION_ELIGIBLE
+    assert result.reason_code == "extracted_learning_preference_promoted"
+    assert result.category == "learning_preference"
+    store.perform_memory_operation.assert_awaited_once_with(
+        "user-a",
+        "user",
+        "add",
+        "我偏好你先給我一個具體例子，再解釋抽象概念。",
+        source="verified_user_evidence",
+    )
+    store.append_cold_candidate.assert_not_awaited()
+    assert "memory.extraction_started" in caplog.text
+    assert "memory.extraction_received" in caplog.text
+    assert "memory.extraction_candidate_skipped" in caplog.text
+    assert "reason=non_learning_preference" in caplog.text
+    assert "memory.extraction_candidate_promoted" in caplog.text
+    assert raw_text not in caplog.text
+    assert "我偏好你先給我一個具體例子" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_extraction_does_not_store_question_or_sensitive_candidate(caplog):
+    caplog.set_level(logging.INFO)
+    store = AsyncMock()
+    extraction_agent = FakeExtractionAgent([
+        MemoryCandidateDraft(
+            candidate_type="question",
+            text="我偏好什麼學習方法？",
+            durability="profile_memory",
+            confidence=0.99,
+            reason_code="question_not_memory",
+        ),
+        MemoryCandidateDraft(
+            candidate_type="learning_preference",
+            text="我最近很焦慮。",
+            durability="profile_memory",
+            confidence=0.99,
+            reason_code="sensitive_candidate",
+        ),
+    ])
+    service = MemoryIngestionService(store, extraction_agent=extraction_agent)
+
+    result = await service.ingest_user_evidence(
+        evidence("我偏好什麼學習方法？我最近很焦慮。")
+    )
+
+    assert result.state is MemoryEligibilityState.REJECTED
+    assert result.reason_code == "sensitive_content_not_durable"
+    store.perform_memory_operation.assert_not_awaited()
+    store.append_cold_candidate.assert_not_awaited()
+    assert "memory.extraction_candidate_blocked" in caplog.text
+    assert "reason=sensitive_candidate" in caplog.text
+    assert "memory.extraction_no_promotion" in caplog.text
+    assert "我最近很焦慮" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_extracted_preference_falls_back_to_existing_policy():
+    store = AsyncMock()
+    extraction_agent = FakeExtractionAgent([
+        MemoryCandidateDraft(
+            candidate_type="learning_preference",
+            text="我偏好你先給我一個具體例子，再解釋抽象概念。",
+            durability="profile_memory",
+            confidence=0.20,
+            reason_code="weak_signal",
+        )
+    ])
+    service = MemoryIngestionService(store, extraction_agent=extraction_agent)
+
+    result = await service.ingest_user_evidence(evidence("你可以教我什麼是牛頓第一運動定律嗎？"))
+
+    assert result.state is MemoryEligibilityState.WORKING_CONTEXT_ONLY
+    assert result.reason_code == "interrogative_not_memory_evidence"
+    store.perform_memory_operation.assert_not_awaited()
+    store.append_cold_candidate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -434,3 +568,20 @@ def test_external_semantic_processing_requires_explicit_deployment_acknowledgeme
 
     assert service.semantic_enabled is False
     assert service.semantic_analyzer is None
+
+
+def test_memory_extraction_defaults_to_local_agent_without_external_acknowledgement(
+    monkeypatch,
+):
+    from backend.services import memory_ingestion_service as module
+
+    monkeypatch.setattr(module.settings, "memory_extraction_agent_enabled", True)
+    monkeypatch.setattr(
+        module.settings,
+        "memory_semantic_external_processing_acknowledged",
+        False,
+    )
+
+    service = create_memory_ingestion_service(AsyncMock(), client=AsyncMock())
+
+    assert service.extraction_agent.__class__.__name__ == "LocalMemoryExtractionAgent"

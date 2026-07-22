@@ -1257,8 +1257,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
     """
     接收前端事件 (如點擊燈泡、UI 互動、語音打斷)
     """
-    # logger.info(
-    logger.debug(
+    logger.info(
         "client_action_logged user_id=%s action_type=%s",
         current_user_id,
         req.action_type,
