@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Walkthrough Agent"
+  short_description: "Draft evidence-backed engineering walkthroughs"
+  default_prompt: "Use $write-walkthrough-agent to document this bug fix and validation evidence as a walkthrough."
