@@ -9,9 +9,116 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-07-13（依目前 frontend / backend 實際代碼與測試結果校正）
+> **最後更新**：2026-07-22（依目前 GitHub Codespace、frontend / backend 實際代碼與腳本校正）
 
 > 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 與 `backend/main.py` 的實際 route 為準。
+
+---
+
+## Codespace 快速開始
+
+目前 Codespace 由 `.devcontainer/devcontainer.json` 建立，基底是 `mcr.microsoft.com/devcontainers/base:ubuntu`，並透過 devcontainer features 安裝：
+
+- Node.js 20（目前工作區驗證為 `v20.20.2`，npm `10.8.2`）
+- Python 3.11（目前 `backend/.venv/bin/python` 為 `3.11.15`）
+- Git LFS
+- VS Code Python / Pylance / Codex extension
+
+`postCreateCommand` 會執行 `.devcontainer/setup.sh`，負責：
+
+- `git lfs install --skip-smudge` 與 `git lfs pull`
+- 安裝 Antigravity CLI (`agy`)
+- 安裝 Drift (`drift`, `driftdetect-mcp`)
+- 安裝 Codex CLI (`codex`)
+- 建立 `backend/.venv` 並安裝 `backend/requirements.txt`
+- 安裝 `frontend/node_modules`
+- 在 shell 啟動時自動啟用 `backend/.venv`
+
+`postAttachCommand` 會執行 `.devcontainer/on-attach.sh`，負責檢查 `agy` / `drift` / `codex`，必要時初始化 `.drift`，並嘗試啟動 Redis。注意：目前這個 Codespace 映像沒有 `redis-server` service / `redis-cli`，因此 `on-attach.sh` 可能顯示 Redis 啟動失敗；若功能需要 Redis，請設定外部 `REDIS_URL`，或在 Codespace 中自行安裝並啟動 Redis。
+
+### 啟動完整開發服務
+
+從專案根目錄執行：
+
+```bash
+npm run dev
+```
+
+這會同時啟動：
+
+- FastAPI backend: `0.0.0.0:8000`
+- Next.js frontend: `0.0.0.0:3000`
+
+Codespaces 會將 port 3000 與 8000 轉發到瀏覽器可開啟的 URL。主要使用前端 port 3000；FastAPI Swagger UI 在 backend port 8000 的 `/docs`。
+
+若根目錄 `node_modules` 不存在，先執行：
+
+```bash
+npm install
+```
+
+若前端依賴不存在或 lockfile 更新，執行：
+
+```bash
+npm ci --prefix frontend
+```
+
+若後端虛擬環境不存在或套件過期，執行：
+
+```bash
+python3.11 -m venv backend/.venv
+./backend/.venv/bin/pip install --upgrade pip setuptools wheel
+./backend/.venv/bin/pip install -r backend/requirements.txt
+```
+
+### 常用指令
+
+```bash
+# 同時啟動 backend + frontend
+npm run dev
+
+# 只啟動 backend
+./backend/.venv/bin/python -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
+
+# 只啟動 frontend
+npm run dev --prefix frontend
+
+# 前端 production build
+npm run build
+
+# 測試
+npm run test:frontend
+npm run test:backend
+npm run test:all
+
+# 前端 lint / typecheck 報告
+npm run lint:report
+npm run typecheck:report
+npm run check:report:strict
+
+# Drift 重新掃描
+drift scan backend frontend --force
+```
+
+### Codespace 環境變數
+
+目前程式會從專案根目錄 `.env` 載入後端設定；前端 `predev` / `prebuild` 會自動把根目錄 `.env.local` 或 `.env` 複製到 `frontend/.env.local`。請不要把真實金鑰提交到 Git。
+
+完整聊天與記憶功能通常需要：
+
+- `OPENROUTER_API_KEY`: 主 LLM、標題生成、GUM、記憶總結、建議問題與 embedding / retrieval 相關流程。
+- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 與後端 JWKS 驗證來源。
+- `JWT_SECRET`: Supabase HS 系列 JWT 驗證；若 JWT 演算法不是 HS 系列，後端會改走 Supabase JWKS。
+- `REDIS_URL`: hot memory、user profile、working memory、mailbox cache、RAG cache 與 WS ticket。預設為 `redis://localhost:6379`，但目前 Codespace 沒有可用的本機 Redis service。
+- `DATABASE_URL`: PostgreSQL / pgvector，供 GUM、cold memory、agent jobs 使用。
+- `PERPLEXITY_API_KEY`: Web search；未設定時 web search 會回退到一般對話。
+
+選配：
+
+- `GUM_DATABASE_URL`: GUM 專用資料庫 URL，優先於 `DATABASE_URL`。
+- `MAILBOX_DATABASE_URL`: mailbox 專用資料庫 URL，優先於 `DATABASE_URL`；失敗時回退到 Redis。
+- `NEXT_PUBLIC_BACKEND_URL`: 前端直連 FastAPI 的 base URL，預設使用 `http://localhost:8000` 或 `http://127.0.0.1:8000`。
+- `ENABLE_INTERNAL_RAG=true`: 啟用本地文件 RAG，需另備 `data/rag/faiss_index/` 與 `data/rag/bm25_index/`。
 
 ---
 
@@ -26,6 +133,7 @@ backend/
 ├── auth.py                         # Supabase JWT 驗證與 current_user 依賴
 ├── job_store.py                    # 背景工作佇列 / agent job worker
 ├── redis_client.py                 # Redis 連線封裝
+├── memory_gate.py                  # 使用者訊息記憶資格與低資訊訊息分類
 ├── gum_integration.py              # GUM 長期記憶框架整合層
 │                                   #   TextObserver / init_gum_instance
 │                                   #   push_observation / query_cold_memory_for_context
@@ -51,15 +159,24 @@ backend/
 ├── agents/                         # agent runtime 與 tutor agent
 │
 ├── services/
-│   ├── orchestration_service.py    # 7 節點串流編排器 (OrchestrationService)
-│   │                               #   Node 1: Intent Routing (停用)
-│   │                               #   Node 2: HyDE 查詢分解
-│   │                               #   Node 3: Policy Classifier (EDF)
-│   │                               #   Node 4A: RAG Retrieval (FAISS+BM25+RRF)
-│   │                               #   Node 4B: Perplexity Web Search
-│   │                               #   Node 5: Prompt Assembly (記憶注入)
-│   │                               #   Node 6: LLM 串流生成 + Function Calling
-│   │                               #   Node 7: Post-generation (Suggestions)
+│   ├── orchestration_service.py    # 串流總編排器 (turn plan / context / retrieval / stream)
+│   ├── turn_plan_service.py        # 前景路由與模型呼叫預算規劃
+│   ├── turn_intake_service.py      # 角色扮演入口、停止角色扮演與 turn intake
+│   ├── conversation_context_service.py
+│   │                               # working memory / long-term memory / EDF context 組裝
+│   ├── conversation_stream_service.py
+│   │                               # OpenRouter SSE 串流、tool calls、public output filter
+│   ├── post_turn_service.py        # 回答後建議問題與背景 side effects
+│   ├── query_policy_service.py     # HyDE 查詢拆解與 dialogue policy classifier
+│   ├── attachment_service.py       # multipart 附件驗證、文字/圖片內容抽取
+│   ├── memory_ingestion_service.py # user evidence → candidate/profile/cold memory 政策
+│   ├── hot_memory_service.py       # typed hot memory entries 與 provenance helper
+│   ├── memory_semantic_analyzer.py # 選配 OpenRouter 語意候選分析
+│   ├── explicit_memory_cache.py    # explicit recall memory 的 in-process TTL cache
+│   ├── response_boundary_validator.py
+│   │                               # 串流回答邊界檢查，避免模型代替使用者自述
+│   ├── memory_retrieval_trace.py   # memory retrieval timing / diagnostic trace
+│   ├── turn_latency_trace.py       # turn latency、model/tool call 計數與慢查診斷
 │   ├── cache_service.py            # Redis RAG 快取服務 (RagCacheService)
 │   ├── connection_manager.py       # WebSocket 連線管理 (ConnectionManager)
 │   │                               #   broadcast_mail_alert
@@ -120,6 +237,7 @@ frontend/src/
 │   └── index.ts                    # Barrel export
 │
 ├── store/                          # Zustand 狀態管理
+│   ├── auth/                       # Supabase session / auth state
 │   ├── chat/                       # 對話狀態
 │   │   ├── store.ts                # useChatStore (串流 / 思考 / Citations)
 │   │   ├── selectors.ts            # 選擇器 (isStreaming / thinkingContent...)
@@ -183,7 +301,7 @@ frontend/src/
 └─────────────────────────┬───────────────────────────────────┘
                           │  HTTP SSE / WebSocket
 ┌─────────────────────────▼───────────────────────────────────┐
-│  Backend  (FastAPI · Python 3.10.12+)                        │
+│  Backend  (FastAPI · Python 3.11 in Codespace)                │
 │  Port 8000                                                   │
 │  ┌──────────────┬──────────────┬─────────────┬───────────┐  │
 │  │Orchestration │  GUM / Memory │  Mailbox   │ ComPeer   │  │
@@ -227,17 +345,18 @@ flowchart TD
     end
 
     subgraph API_A ["⚡ POST /api/v1/stream  ·  main.py"]
+        Intake["parse_stream_request\nJSON 或 multipart/form-data\nattachments → attachment_service"]
         Orchestrator["OrchestrationService\nservices/orchestration_service.py"]
 
-        subgraph ORCH_NODES ["7個節點 (Nodes)"]
-            N1["① Intent Routing\n(目前已停用 DISABLED)"]
-            N2["② HyDE 查詢分解 LLM\nparse_and_decompose_query\nexact_entity / abstract_concept"]
-            N3["③ Policy Classifier LLM\nclassify_dialogue_policy\nPROBE / SUGGEST / PUSH / NORMAL"]
+        subgraph ORCH_NODES ["目前 turn pipeline"]
+            N1["① Runtime Session\nConversationRuntime\nRunContext / SSEAdapter / RunState"]
+            N2["② Turn Intake\nTurnIntakeService\n低資訊問候 / conversation-scoped avatar"]
+            N3["③ Search & Turn Plan\nTutorAgent + SearchPolicy\nTurnPlanService\nroute + foreground model budget"]
             N4A["④-A 文件 RAG Retrieval（選配）\nENABLE_INTERNAL_RAG=true\nFAISS + BM25 + RRF Fusion\n+ Reranker + 注意力重排"]
-            N4B["④-B Perplexity Web Search\n/search API · 動態 max_results\nQuery Rewrite + Redis 快取 (24h)"]
-            N5["⑤ Prompt Assembly\n注入 working_memory (熱記憶)\n+ retrieved_memory (冷記憶語意搜尋)\n+ EDF learner_state 限制\n+ conversation-scoped chat_avatar\n+ <context> RAG/Web 文獻"]
-            N6["⑥ 主 LLM 串流生成 (SSE)\nmodel_main_thinking (force_think)\nmodel_main_instruct (一般)\nFunction Calling: update_memory\n<think> 區塊分離 · OpenCC 繁體轉換"]
-            N7["⑦ Post-generation\nSuggestionService 推薦問題\nevent: suggestions / done"]
+            N4B["④-B Web Search Tool\nPerplexity / web_search\nsearch_mode: auto / always / never\nRedis 快取"]
+            N5["⑤ Context Assembly\nConversationContextService\nworking memory / explicit recall\ncold memory / learner_state\nattachments grounding"]
+            N6["⑥ LLM Streaming\nConversationStreamService\nOpenRouter SSE + tool registry\nweb_search / schedule_letter\n<think> 分離 · OpenCC 繁體轉換"]
+            N7["⑦ Post-turn Work\nPostTurnService\nSuggestionService event\n記憶寫入與背景 side effects"]
             N1 --> N2
             N2 --> N3
             N3 --> N4A
@@ -249,15 +368,16 @@ flowchart TD
         end
     end
 
-    UI_Chat -->|"① 發送提問 (SSE)"| Orchestrator
+    UI_Chat -->|"① 發送提問 (SSE / multipart)"| Intake
+    Intake --> Orchestrator
     Orchestrator --- ORCH_NODES
-    N2 -->|"cache miss → HyDE 拆解"| RedisCache
-    RedisCache -->|"cache hit → 直接返回"| N5
+    N3 -->|"HyDE / policy classifier 由 plan 決定是否執行"| RedisCache
+    RedisCache -->|"cache hit → 節省 retrieval / web search"| N5
     N4A -->|"寫入 RAG 快取"| RedisCache
     HotMem -->|"讀取 working_memory\n+ learner_state + chat_avatar:{conversation_id}"| N5
-    ColdMem -->|"語義搜尋 retrieved_memory (top_k=5)"| N5
+    ColdMem -->|"依 MemoryPolicy 查詢 retrieved_memory"| N5
     N6 -->|"串流 SSE · event: sources/suggestions/done"| UI_Chat
-    N7 -.->|"update_memory Tool Call"| HotMem
+    N7 -.->|"user evidence / memory ingestion"| HotMem
     Config -.->|"提供模型名稱 / RAG 閾值"| ORCH_NODES
 ```
 
@@ -393,6 +513,9 @@ flowchart TD
 - **注意力重排序 (Lost in the Middle Reordering)**: 將最高關聯度文獻置首尾，優化 LLM 長上下文注意力。
 - **Perplexity 聯網檢索**: 整合 Perplexity Search API (`/search` 端點)，動態決定 `max_results (3~20)`，並以對話 ID + 問題的 MD5 雜湊進行 Redis 快取（TTL 24小時）。
 - **HyDE 查詢分解**: 使用 LLM 將使用者問題拆解為 `exact_entity` / `abstract_concept` 兩類子查詢，提升混合檢索的召回率。
+- **Search Mode 與 Agent Routing**: `/api/v1/stream` 支援 `search_mode: auto | always | never`。`SearchPolicy` 與 `TutorAgent` 會在 rollout 設定允許時決定是否進行外部搜尋；`TurnPlanService` 再把 search decision 轉成前景執行計畫與模型呼叫預算。
+- **Tool Registry**: `ConversationStreamService` 透過 `ToolRegistry` 管理前景工具，目前包含 `web_search` 與 `schedule_letter`。外部工具呼叫會受到 `ToolBudgetTracker` 約束。
+- **附件 Grounding**: `/api/v1/stream` 可接收 JSON 或 `multipart/form-data`。附件由 `attachment_service.py` 驗證總大小、類型與內容，文字/圖片內容會作為 request-scoped grounding 注入當輪上下文，不寫入長期記憶。
 - **文獻渲染與防閃爍**: 前端以卡片網格展示引用文獻，支援 favicon、一鍵跳轉。使用 `remend` 自癒 Markdown 解析與 `useDeferredValue`，確保串流過程畫面不閃爍。行內引用為金色圓角標籤（Golden Citation Chips），點擊彈出對應 Modal。
 
 ### 2. 教育認知與 EDF 教學策略模組
@@ -401,14 +524,17 @@ flowchart TD
   - `NOT_STARTED` / `STARTING` / `TINKERING` / `RUN_REPEAT` / `GIVING_UP` / `MASTERY` / `CHITCHAT`
 - **動態 System Prompt 組裝**: 依學習狀態動態調整表達難度限制（如 STARTING 禁用艱澀術語）。
 - **明確角色扮演模式 (Conversation-scoped Chat Avatar)**: 只有使用者明確要求「請你扮演 X 跟我對話」時，系統才在當前 `conversation_id` 內切換第一人稱角色語境；「請 X 寫信」只會排信，不會污染一般聊天人格。
-- **Policy Classifier**: LLM 判定 `PROBE_UNDERSTANDING` / `SUGGEST_ACTION` / `PUSH_LIMIT` / `NORMAL`，動態調整 `max_tokens`。
-- **Function Calling (update_memory)**: LLM 可在回答後呼叫 `update_memory` Tool，自動將使用者偏好資訊寫入 Redis 中的 user profile。
+- **Turn Planning**: `TurnPlanService` 會依低資訊問候、附件、有無 RAG、search decision、敏感記憶政策等因素產生 `STATIC_GREETING`、`GENERAL_CHAT`、`LEARNING_HELP`、`EXPLICIT_MEMORY_RECALL`、`SENSITIVE_NO_RECALL`、`WEB_REQUIRED`、`ATTACHMENT_GROUNDED`、`RAG_EXPLICIT` 等 route。
+- **Policy Classifier**: LLM 判定 `PROBE_UNDERSTANDING` / `SUGGEST_ACTION` / `PUSH_LIMIT` / `NORMAL`，但是否前景執行由 turn plan 與設定旗標控制，避免一般聊天無限制增加模型呼叫。
+- **回答邊界保護**: `response_boundary_validator.py` 與 public output filter 會在串流輸出階段檢查模型是否越界代替使用者自述，降低記憶污染與角色污染風險。
 
 ### 3. 記憶管理系統 (GUM + MemoryStore)
 
 - **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`current_focus` 與每筆 `recent_learning_points` 都綁定 `conversation_id`；主聊天路徑只注入目前 conversation 的暫時脈絡，legacy unscoped points 不會進入新對話。
 - **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`。Observation 正常以 17 筆批次處理，閒置 reflection 或 `POST /api/v1/memory/flush` 也能處理未滿批次的 pending observations。
 - **記憶來源與保留政策**: 候選記憶保留原始使用者訊息作為 evidence，不把模型回答當成使用者事實。穩定偏好、背景與目標可自動保留；敏感或明顯負面能力判斷會拒絕自動升級；短期內容可附帶 30 天期限。模型抽取仍是候選產生器，最終是否寫入由 `backend/memory_gate.py` 的確定性政策再次判定。
+- **Memory Ingestion Service**: `memory_ingestion_service.py` 將 user evidence 轉成候選、profile 或 cold memory 操作，並保留 provenance；`memory_semantic_analyzer.py` 可在設定啟用時做語意候選分析，預設仍受 deterministic policy 約束。
+- **Explicit Recall Cache**: `explicit_memory_cache.py` 為明確記憶召回提供短 TTL in-process cache，減少同一 conversation 內重複查詢長期記憶的成本。
 - **Hot Memory compact / STITCH**: 目前只有來源為 `user_message` 或 `verified_user_evidence` 的 hot item 才能進入 compact。寫入 PostgreSQL 前保留使用者原文，STITCH tags 只作為 metadata；只有 `insert_memory` 成功後才刪除 hot item，避免寫入失敗造成資料遺失。這不是把所有 hot memory 無條件轉成 cold memory。
 - **記憶頁資料範圍**: `GET /api/v1/memory` 與 `GumPanel` 只顯示 Redis user profile 中的明確記憶，以及被標記為正式 `cold_memory` 的 PostgreSQL propositions。候選記憶、learning state、一般 hot/working memory 與既有 `legacy_unverified` propositions 不會顯示在記憶頁；既有 legacy 資料目前不會被自動清除。
 - **敏感脈絡保護**: 健康、心理、家庭與財務類問題預設不自動檢索跨對話 episodic memory，避免弱相關舊內容主導目前回答；durable user profile 仍可供一般個人化使用。
@@ -461,7 +587,7 @@ flowchart TD
 
 | 方法 | 端點 | 說明 |
 |------|------|------|
-| `POST` | `/api/v1/stream` | 主串流對話 (SSE) |
+| `POST` | `/api/v1/stream` | 主串流對話 (SSE)，支援 JSON 與 multipart attachments |
 | `POST` | `/api/v1/generate-title` | 對話標題生成 (SSE) |
 | `GET` | `/api/v1/retrieve` | RAG 純查詢 (Debug/Citation) |
 | `GET` | `/api/v1/memory` | 讀取長期記憶列表 |
@@ -483,32 +609,21 @@ flowchart TD
 
 > 多數後端端點透過 `Depends(get_current_user)` 驗證 Supabase JWT，呼叫時需帶 `Authorization: Bearer <token>`；`/api/v1/ws/notifications` 則先以 Bearer token 呼叫 `/api/v1/ws/ticket`，再用 ticket 建立 WebSocket。
 
+> `/api/v1/stream` 使用 `get_optional_current_user`。未登入請求可進行 ephemeral guest chat，但會使用 `guest:{uuid}` 作為當輪 user id，不應依賴持久個人化記憶。
+
+> `/api/v1/stream` 的 multipart 請求可附帶 `attachments`；後端限制單次請求總大小為 30MB，並由 `attachment_service.py` 做類型與內容驗證。
+
 > 補充：前端 `useGumStore.fetchSuggestions()` 目前仍會請求 `/api/v1/suggestions`，但後端 `main.py` 尚未提供這個 route；現有建議問題主要透過 `/api/v1/stream` 的 `event: suggestions` 與 `event: done` SSE 事件傳回。
 
 ---
 
 ## 🛠️ 建置與運行環境
 
-AREQA 分為 Python 後端與 Next.js 前端，兩端均支援並推薦使用環境變數設定。
+AREQA 分為 FastAPI 後端與 Next.js 前端。Codespace 的完整啟動方式請優先看本文件開頭的「Codespace 快速開始」；本節保留較細的 runtime 說明。
 
 ### 1. 環境變數配置
 
-目前程式會從專案根目錄的 `.env` 或 `.env.local` 載入設定；前端 `predev` / `prebuild` 會自動把根目錄 `.env.local` 或 `.env` 複製到 `frontend/.env.local`。
-
-主要變數說明：
-- `OPENROUTER_API_KEY`: 呼叫主 LLM、標題生成、記憶總結、GUM、agent job worker、建議問題與部分檢索相關流程的密鑰。
-- `PERPLEXITY_API_KEY`: Perplexity 網路搜尋服務的 API 密鑰；未設定時 web search 會回退到一般對話。
-- `REDIS_URL`: Redis 連線位址（預設 `redis://localhost:6379`），用於 hot memory、user profile、working memory、mailbox cache、RAG cache 與 WS ticket。
-- `JWT_SECRET`: 後端驗證 Supabase JWT 所需密鑰；若缺少會使 `get_current_user` 直接回 500。若 JWT 演算法不是 HS 系列，後端會改走 Supabase JWKS。
-- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 使用，後端 JWKS 來源也依賴 `NEXT_PUBLIC_SUPABASE_URL`。
-- `NEXT_PUBLIC_BACKEND_URL`: 前端直連 FastAPI 的 base URL；本地預設 `http://localhost:8000` 或 `http://127.0.0.1:8000`。
-- `NEXT_PUBLIC_CHAT_API_ENDPOINT`: 前端 chat service endpoint，預設 `/api/chat`，由 Next.js BFF 代理到 FastAPI。
-- `NEXT_PUBLIC_API_TIMEOUT` / `NEXT_PUBLIC_MAX_MESSAGE_LENGTH` / `NEXT_PUBLIC_PARSER_MAX_BUFFER`: 前端 API timeout、訊息長度與 SSE parser buffer 設定。
-- `ENABLE_INTERNAL_RAG`: 設為 `true` 才會載入本地文件 RAG 的 FAISS/BM25 index；否則 `/api/v1/retrieve` 會回傳 internal RAG disabled。這不控制 GUM/cold memory 是否啟用。
-- `DATABASE_URL`: PostgreSQL 連線位址，供 GUM / cold memory / agent jobs 使用；cold memory 依賴 `propositions`，並可使用 `vec_memory` + pgvector 做向量檢索。
-- `GUM_DATABASE_URL`: GUM 專用資料庫 URL；若設定，優先於 `DATABASE_URL`。
-- `MAILBOX_DATABASE_URL`: mailbox 專用資料庫 URL；若設定，優先於 `DATABASE_URL`。若資料表不存在或連線失敗，mailbox 會回退到 Redis。
-- `HF_TOKEN` / `HF_ENDPOINT_URL` / `HF_REPO_ID`: Hugging Face 或外部 embedding / reranking 端點相關設定。
+目前程式會從專案根目錄的 `.env` 載入後端設定；前端 `predev` / `prebuild` 會自動把根目錄 `.env.local` 或 `.env` 複製到 `frontend/.env.local`。主要變數請見「Codespace 環境變數」。
 
 前端聊天請求的實際路徑：
 ```text
@@ -526,32 +641,31 @@ Conversation Store → /api/title
 
 記憶、信箱與 WebSocket 相關功能不經 `/api/chat`，會依 `NEXT_PUBLIC_BACKEND_URL` 直接呼叫 FastAPI。WebSocket 連線流程為：先以 Bearer token 呼叫 `/api/v1/ws/ticket` 取得 30 秒一次性 ticket，再連 `/api/v1/ws/notifications?ticket=...`。
 
-### 2. 後端運行步驟 (Python 3.10.12+)
+### 2. 後端運行步驟 (Codespace Python 3.11)
 
-後端使用 FastAPI 提供高效非同步 SSE 串流服務，並使用 Redis 進行 RAG 快取。`backend/requirements.txt` 已包含後端執行與測試所需的主要依賴，包含 `aiosqlite`、`respx`、`faiss-cpu`、`jieba` 等。
+後端使用 FastAPI 提供非同步 SSE 串流服務，並使用 Redis / PostgreSQL 作為記憶、信箱與快取資料層。`backend/requirements.txt` 已包含後端執行與測試所需的主要依賴。
+
+在 Codespace 中，`setup.sh` 會建立 `backend/.venv`；只啟動後端時可執行：
+
 ```bash
-cd backend
-pip install -r requirements.txt
-# 啟動 Redis 服務 (預設 redis://localhost:6379)
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+./backend/.venv/bin/python -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
 ```
 
 > 後端受保護端點需要 Supabase Bearer token 與 `JWT_SECRET`。若只測試服務啟動，FastAPI 可啟動；但 chat、memory、mailbox、proactive、WebSocket ticket 等 API 都會進入認證流程。
 
-> 本地文件 RAG 是選配。若要啟用，需設定 `ENABLE_INTERNAL_RAG=true`，並準備 `data/rag/faiss_index/chunks*.index`、`data/rag/faiss_index/index_metadata*.json` 與 `data/rag/bm25_index/`。這與 GUM / PostgreSQL cold memory 是不同路徑；若索引不存在，系統會降級為非本地 RAG 路徑。
+> 本地文件 RAG 是選配。若要啟用，需設定 `ENABLE_INTERNAL_RAG=true`，並準備 `data/rag/faiss_index/chunks*.index`、`data/rag/faiss_index/index_metadata*.json` 與 `data/rag/bm25_index/`。這與 GUM / PostgreSQL cold memory 是不同路徑。
 
 ### 3. 前端運行步驟 (Node.js v20+)
 
 前端基於 Next.js 16.0.7 App Router 建立，`predev` 腳本會自動從根目錄複製 `.env` 或 `.env.local` 至 `frontend/.env.local`。
+
 ```bash
-cd frontend
-npm install
-npm run dev
+npm run dev --prefix frontend
 ```
 
 Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設走 Next.js API Route 代理；記憶、信箱與 WebSocket 相關功能會依 `NEXT_PUBLIC_BACKEND_URL` 直接呼叫 FastAPI。
 
-從專案根目錄執行 `npm run dev` 會同時啟動後端 Uvicorn 與前端 Next.js；這是目前最接近完整本地工作流的啟動方式。
+從專案根目錄執行 `npm run dev` 會同時啟動後端 Uvicorn 與前端 Next.js；這是目前最接近完整 Codespace 工作流的啟動方式。
 
 ---
 
@@ -582,12 +696,11 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   - 前端 `Supabase Auth UI`、`fake-indexeddb` 與部分 WebSocket 行為在測試環境中使用本地 mocks，以避免 jsdom 與外部登入流量造成不穩定。
   - `syncService` 在有資料變更時會延遲觸發 reload，測試需等待該延遲行為。
   - `tests/backend/test_rag_pipeline.py` 使用 synthetic fixture 驗證 RAG pipeline 的融合與過濾邏輯，不依賴大型離線 FAISS / BM25 產物；若要在實際服務啟用本地 RAG，仍需準備對應索引檔。
-- **最近一次完整驗證結果 (2026-07-13)**:
-  - `pytest -q tests/backend`: `313 passed, 3 skipped`。
-  - `npm test --prefix frontend -- --reporter=dot`: `106 passed`。
-  - `npm run build --prefix frontend`: Next.js production build 成功。
-  - `python -m compileall -q backend`: 通過。
-  - 測試涵蓋記憶來源保留政策、Cold Memory compact、記憶頁只顯示正式 Cold Memory、ComPeer delayed mailbox delivery，以及 mailbox flow 的瀏覽器環境清理。
+- **目前 Codespace 輕量驗證 (2026-07-22)**:
+  - Node.js `v20.20.2`、npm `10.8.2`、`backend/.venv/bin/python` `3.11.15`。
+  - 根目錄與前端 npm scripts 已確認存在。
+  - 目前 Codespace 沒有可用的本機 Redis service；需要 Redis 功能時請設定外部 `REDIS_URL` 或自行安裝 Redis。
+  - 本次 README 更新未重跑完整 `npm run test:all`、前端 build 或後端 pytest；上述指令仍是目前建議的完整驗證入口。
 - **人工回歸驗證建議**:
   1. `DELETE /api/v1/memory/working`
   2. 新 conversation 只送 `你好`，確認回覆是固定寒暄，且不會帶出 README / React / 文言文脈絡
