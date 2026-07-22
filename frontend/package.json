@@ -26,6 +26,7 @@
     "@supabase/supabase-js": "^2.109.0",
     "antd": "^6.0.1",
     "antd-style": "^3.7.1",
+    "areqa-root": "file:..",
     "dexie": "^4.2.1",
     "dexie-react-hooks": "^4.2.0",
     "docx": "^9.7.1",
