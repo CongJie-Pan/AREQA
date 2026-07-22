@@ -19,7 +19,7 @@ def test_settings_loads_defaults():
     assert s.memory_semantic_shadow_mode is True
     assert s.memory_semantic_match_min_confidence == 0.85
     assert s.memory_semantic_external_processing_acknowledged is False
-    assert s.enable_turn_plan_runtime is False
+    assert s.enable_turn_plan_runtime is True
     assert s.foreground_model_call_budget_general == 2
     assert s.foreground_model_call_budget_learning == 3
     assert s.enable_policy_classifier_for_general_chat is False

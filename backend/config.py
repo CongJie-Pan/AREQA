@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     enable_tutor_shadow_routing: bool = False
     enable_agent_search_routing: bool = True
     agent_search_rollout_percentage: float = 100.0
-    enable_turn_plan_runtime: bool = False
+    enable_turn_plan_runtime: bool = True
     foreground_model_call_budget_general: int = 2
     foreground_model_call_budget_learning: int = 3
     enable_policy_classifier_for_general_chat: bool = False
@@ -60,6 +60,6 @@ class Settings(BaseSettings):
     compeer_daily_proactive_limit: int = 2
     enable_compeer_dev_controls: bool = False
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
 settings = Settings()
