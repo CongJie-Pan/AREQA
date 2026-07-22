@@ -5,6 +5,8 @@ from typing import List, Dict, Any, Optional
 import opencc
 from openai import AsyncOpenAI
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
 # Artificial few-shot examples as "Dynamic Context" seeds
@@ -43,7 +45,17 @@ SUGGESTION_SYSTEM_PROMPT = f"""你是一位博學廣識的引導型學習助手�
 現在請根據以下資訊生成延伸問題："""
 
 class SuggestionService:
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        """Initialize the follow-up question generator.
+
+        Args:
+            api_key: Optional OpenRouter key override for tests or alternate
+                deployment wiring.
+            model: Optional model override. Defaults to the central
+                `model_suggestion` setting so deployments can tune latency
+                without changing service code.
+        """
+
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         if not self.api_key:
             logger.warning("OPENROUTER_API_KEY not found. SuggestionService will be limited.")
@@ -54,7 +66,7 @@ class SuggestionService:
                 base_url="https://openrouter.ai/api/v1",
                 timeout=10.0
             )
-        self.model = "qwen/qwen-2.5-7b-instruct"
+        self.model = model or settings.model_suggestion
         # s2twp: Simplified Chinese to Traditional Chinese (Taiwan Standard, with phrase conversion)
         self.converter = opencc.OpenCC('s2twp')
 

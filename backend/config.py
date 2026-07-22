@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_main_thinking: str = "google/gemini-3.1-flash-lite"
     model_gum: str = "google/gemini-3.1-flash-lite"
     model_zpd_query: str = "google/gemini-3.1-flash-lite"
+    model_suggestion: str = "google/gemini-2.5-flash-lite"
     model_memory_semantic_analyzer: str = "google/gemini-2.5-flash-lite"
 
     # RAG Parameters

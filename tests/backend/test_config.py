@@ -12,6 +12,7 @@ def test_settings_loads_defaults():
     assert s.rag_reranker_threshold == 0.35
     assert s.model_policy_classifier == "google/gemini-3.1-flash-lite"
     assert s.model_zpd_query == "google/gemini-3.1-flash-lite"
+    assert s.model_suggestion == "google/gemini-2.5-flash-lite"
     assert s.model_memory_semantic_analyzer == "google/gemini-2.5-flash-lite"
     assert s.memory_semantic_analysis_enabled is False
     assert s.memory_semantic_shadow_mode is True
@@ -38,6 +39,7 @@ def test_settings_can_be_overridden_by_env():
         'RAG_SCORE_DROP_TOLERANCE': '0.5',
         'MODEL_POLICY_CLASSIFIER': 'openai/gpt-4o',
         'MODEL_ZPD_QUERY': 'google/gemini-3.1-flash-lite',
+        'MODEL_SUGGESTION': 'google/gemini-2.5-flash-lite',
         'MODEL_MEMORY_SEMANTIC_ANALYZER': 'google/gemini-2.5-flash-lite',
         'MEMORY_SEMANTIC_ANALYSIS_ENABLED': 'true',
         'ENABLE_TURN_PLAN_RUNTIME': 'true',
@@ -53,6 +55,7 @@ def test_settings_can_be_overridden_by_env():
         assert s.rag_score_drop_tolerance == 0.5
         assert s.model_policy_classifier == 'openai/gpt-4o'
         assert s.model_zpd_query == 'google/gemini-3.1-flash-lite'
+        assert s.model_suggestion == 'google/gemini-2.5-flash-lite'
         assert s.model_memory_semantic_analyzer == 'google/gemini-2.5-flash-lite'
         assert s.memory_semantic_analysis_enabled is True
         assert s.enable_turn_plan_runtime is True
