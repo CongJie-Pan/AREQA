@@ -5,7 +5,7 @@
  * Main container that assembles the complete chat interface
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Menu, X, AlertCircle, MoreVertical, FileText, FileImage, FileCode } from 'lucide-react';
 import { App, Dropdown } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
@@ -83,6 +83,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [isChatReady, setIsChatReady] = useState(false);
   const user = useAuthStore((state) => state.user);
   const isAuthInitialized = useAuthStore((state) => state.isInitialized);
   const validateSession = useAuthStore((state) => state.validateSession);
@@ -100,6 +101,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const activeConversationId = useConversationStore(
     (state) => state.activeConversationId
   );
+  const landingPromptSent = useRef(false);
 
   // Resolve authentication before loading any user-owned history.
   useEffect(() => {
@@ -124,6 +126,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     if (!isAuthInitialized) return;
 
     let cancelled = false;
+    setIsChatReady(false);
 
     const loadAuthenticatedHistory = async () => {
       if (!user) {
@@ -137,6 +140,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
             console.error('Failed to clear legacy guest history:', error);
           }
         }
+        if (!cancelled) setIsChatReady(true);
         return;
       }
 
@@ -146,6 +150,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
         if (!cancelled) await initializeChatService(user.id);
       } catch (error) {
         console.error('Failed to initialize authenticated history:', error);
+      } finally {
+        if (!cancelled) setIsChatReady(true);
       }
     };
 
@@ -227,6 +233,22 @@ export function ChatContainer({ className }: ChatContainerProps) {
     },
     [activeConversationId, antMessageApi]
   );
+
+  // A prompt supplied by the landing page starts a new chat automatically.
+  // Remove it from the address bar first so refreshing the page never resends it.
+  useEffect(() => {
+    if (!isChatReady || landingPromptSent.current) return;
+
+    const url = new URL(window.location.href);
+    const prompt = url.searchParams.get('prompt')?.trim();
+    if (!prompt) return;
+
+    landingPromptSent.current = true;
+    url.searchParams.delete('prompt');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+
+    void handleSend(prompt).catch(() => undefined);
+  }, [handleSend, isChatReady]);
 
   // Handle conversation selection
   const handleConversationSelect = useCallback(() => {
