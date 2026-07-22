@@ -13,6 +13,7 @@ def test_settings_loads_defaults():
     assert s.model_policy_classifier == "google/gemini-3.1-flash-lite"
     assert s.model_zpd_query == "google/gemini-3.1-flash-lite"
     assert s.model_suggestion == "google/gemini-2.5-flash-lite"
+    assert s.model_cold_memory_embedding == "openai/text-embedding-3-small"
     assert s.model_memory_semantic_analyzer == "google/gemini-2.5-flash-lite"
     assert s.memory_semantic_analysis_enabled is False
     assert s.memory_semantic_shadow_mode is True
@@ -30,6 +31,7 @@ def test_settings_loads_defaults():
     assert s.explicit_recall_memory_timeout_ms == 2000
     assert s.enable_explicit_recall_memory_cache is True
     assert s.explicit_recall_memory_cache_ttl_seconds == 120
+    assert s.cold_memory_embedding_timeout_ms == 1500
     assert s.suggestion_generation_timeout_ms == 1000
 
 def test_settings_can_be_overridden_by_env():
@@ -40,6 +42,7 @@ def test_settings_can_be_overridden_by_env():
         'MODEL_POLICY_CLASSIFIER': 'openai/gpt-4o',
         'MODEL_ZPD_QUERY': 'google/gemini-3.1-flash-lite',
         'MODEL_SUGGESTION': 'google/gemini-2.5-flash-lite',
+        'MODEL_COLD_MEMORY_EMBEDDING': 'openai/text-embedding-3-small',
         'MODEL_MEMORY_SEMANTIC_ANALYZER': 'google/gemini-2.5-flash-lite',
         'MEMORY_SEMANTIC_ANALYSIS_ENABLED': 'true',
         'ENABLE_TURN_PLAN_RUNTIME': 'true',
@@ -47,6 +50,7 @@ def test_settings_can_be_overridden_by_env():
         'TURN_TRACE_SLOW_TOTAL_THRESHOLD_MS': '9000',
         'EXPLICIT_RECALL_MEMORY_TIMEOUT_MS': '1500',
         'ENABLE_EXPLICIT_RECALL_MEMORY_CACHE': 'false',
+        'COLD_MEMORY_EMBEDDING_TIMEOUT_MS': '900',
         'SUGGESTION_GENERATION_TIMEOUT_MS': '750',
     }):
         from backend.config import Settings
@@ -56,6 +60,7 @@ def test_settings_can_be_overridden_by_env():
         assert s.model_policy_classifier == 'openai/gpt-4o'
         assert s.model_zpd_query == 'google/gemini-3.1-flash-lite'
         assert s.model_suggestion == 'google/gemini-2.5-flash-lite'
+        assert s.model_cold_memory_embedding == 'openai/text-embedding-3-small'
         assert s.model_memory_semantic_analyzer == 'google/gemini-2.5-flash-lite'
         assert s.memory_semantic_analysis_enabled is True
         assert s.enable_turn_plan_runtime is True
@@ -63,4 +68,5 @@ def test_settings_can_be_overridden_by_env():
         assert s.turn_trace_slow_total_threshold_ms == 9000
         assert s.explicit_recall_memory_timeout_ms == 1500
         assert s.enable_explicit_recall_memory_cache is False
+        assert s.cold_memory_embedding_timeout_ms == 900
         assert s.suggestion_generation_timeout_ms == 750

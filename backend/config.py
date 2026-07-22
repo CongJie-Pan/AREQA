@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_gum: str = "google/gemini-3.1-flash-lite"
     model_zpd_query: str = "google/gemini-3.1-flash-lite"
     model_suggestion: str = "google/gemini-2.5-flash-lite"
+    model_cold_memory_embedding: str = "openai/text-embedding-3-small"
     model_memory_semantic_analyzer: str = "google/gemini-2.5-flash-lite"
 
     # RAG Parameters
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
     explicit_recall_memory_timeout_ms: int = 2000
     enable_explicit_recall_memory_cache: bool = True
     explicit_recall_memory_cache_ttl_seconds: int = 120
+    cold_memory_embedding_timeout_ms: int = 1500
     suggestion_generation_timeout_ms: int = 1000
 
     # Candidate memory promotion policy. Values are intentionally configurable

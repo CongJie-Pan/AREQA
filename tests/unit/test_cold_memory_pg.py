@@ -1,6 +1,8 @@
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from backend.cold_memory import ColdMemoryRetriever
+from backend.services.memory_retrieval_trace import MemoryRetrievalTrace
 
 @pytest.mark.asyncio
 async def test_cold_memory_search_pg():
@@ -59,3 +61,34 @@ async def test_cold_memory_search_pg():
                 set_config_called = True
                 assert call[0][1]["uid"] == "user_123"
         assert set_config_called
+
+
+@pytest.mark.asyncio
+async def test_cold_memory_embedding_timeout_returns_no_memory(monkeypatch):
+    import backend.cold_memory as cold_memory
+
+    monkeypatch.setattr(cold_memory.settings, "cold_memory_embedding_timeout_ms", 1)
+    monkeypatch.setattr(
+        cold_memory,
+        "_table_availability",
+        {"propositions": True, "vec_memory": True},
+    )
+    retriever = ColdMemoryRetriever(db_path="", openrouter_api_key="test_key")
+
+    async def slow_embedding(_query):
+        await asyncio.sleep(0.05)
+        return [0.1] * 1536
+
+    retriever.get_embedding = slow_embedding
+    trace = MemoryRetrievalTrace(route_reason="SUBSTANTIVE_QUERY")
+
+    with patch("backend.cold_memory.get_engine", return_value=MagicMock()):
+        results = await retriever.search(
+            "test query",
+            user_id="user_123",
+            top_k=5,
+            memory_trace=trace,
+        )
+
+    assert results == []
+    assert trace.has_step_outcome("cold_memory_embedding", {"timeout"}) is True

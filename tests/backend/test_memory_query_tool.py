@@ -65,6 +65,29 @@ async def test_memory_query_tool_reports_privacy_safe_substep_trace():
 
 
 @pytest.mark.asyncio
+async def test_memory_query_tool_suppresses_memory_when_cold_embedding_falls_back():
+    async def cold_query(user_id, query, *, top_k, client, model, memory_trace):
+        memory_trace.record_step("cold_memory_embedding", 1501, outcome="timeout")
+        return "late cold memory"
+
+    working = AsyncMock(return_value="working memory")
+    tool = MemoryQueryTool(cold_query, working)
+    decision = MemoryDecision(MemoryScope.ALLOW_AGENT_QUERY, True, "SUBSTANTIVE_QUERY")
+
+    result = await tool.execute(
+        user_id="user-1",
+        query="question",
+        decision=decision,
+        client=None,
+        model="model",
+    )
+
+    assert result.content == {"cold": "", "working": "", "_status": "fallback"}
+    assert result.metadata["memory_retrieval"]["outcome"] == "fallback"
+    assert result.metadata["memory_retrieval"]["result_count_bucket"] == "0"
+
+
+@pytest.mark.asyncio
 async def test_memory_query_tool_keeps_legacy_cold_query_signature_compatible():
     async def cold_query(user_id, query, *, top_k, client, model):
         return "cold memory"

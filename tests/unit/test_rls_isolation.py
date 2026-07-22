@@ -21,7 +21,7 @@ async def test_rls_isolation_context_injection():
         MockAsyncSession.return_value.__aenter__.return_value = mock_async_session_instance
         
         retriever = ColdMemoryRetriever(db_path="", openrouter_api_key="test_key")
-        retriever.get_embedding = AsyncMock(return_value=None)
+        retriever.get_embedding = AsyncMock(return_value=[0.1] * 1536)
         
         # Search as user A
         await retriever.search("query", user_id="user_A", top_k=5)

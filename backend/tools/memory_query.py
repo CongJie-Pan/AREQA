@@ -61,7 +61,17 @@ class MemoryQueryTool:
                 trace=memory_trace,
             ),
         )
-        content = {"cold": cold or "", "working": working or ""}
+        cold_embedding_degraded = memory_trace.has_step_outcome(
+            "cold_memory_embedding",
+            {"timeout", "error", "fallback"},
+        )
+        if cold_embedding_degraded:
+            # Treat partial cold-memory retrieval as no long-term memory usage.
+            # This keeps prompt behavior honest when vector retrieval was not
+            # available within the foreground latency budget.
+            content = {"cold": "", "working": "", "_status": "fallback"}
+        else:
+            content = {"cold": cold or "", "working": working or ""}
         serialized_length = len(content["cold"]) + len(content["working"])
         truncated = serialized_length > self._max_content_chars
         if truncated:
@@ -71,7 +81,11 @@ class MemoryQueryTool:
             content["working"] = content["working"][:max(remaining, 0)]
         result_count = int(bool(content["cold"])) + int(bool(content["working"]))
         memory_trace.finish(
-            outcome="retrieved" if result_count else "empty",
+            outcome=(
+                "fallback"
+                if cold_embedding_degraded
+                else "retrieved" if result_count else "empty"
+            ),
             result_count=result_count,
             truncated=truncated,
         )

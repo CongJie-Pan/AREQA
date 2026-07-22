@@ -60,6 +60,26 @@ class MemoryRetrievalTrace:
             )
         )
 
+    def has_step_outcome(self, name: str, outcomes: set[str]) -> bool:
+        """Return whether a safe step ended with one of the expected outcomes.
+
+        Args:
+            name: Stable step name to inspect.
+            outcomes: Stable outcome keys that should be treated as a match.
+
+        Returns:
+            True when the trace contains the step/outcome pair. This is used by
+            orchestration code to choose safe prompt fallbacks without reading
+            raw queries, prompts, model output, memory text, or credentials.
+        """
+
+        safe_name = _safe_key(name)
+        safe_outcomes = {_safe_key(outcome) for outcome in outcomes}
+        return any(
+            step.name == safe_name and step.outcome in safe_outcomes
+            for step in self._steps
+        )
+
     def finish(
         self,
         *,

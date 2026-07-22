@@ -157,11 +157,52 @@ async def test_explicit_recall_memory_timeout_falls_back_without_retrieved_memor
     assert result.retrieved_memory is False
     assert "late memory" not in result.messages[0]["content"]
     assert "長期記憶查詢逾時" in result.messages[0]["content"]
-    assert "不得聲稱已成功回查長期記憶" in result.messages[0]["content"]
+    assert "本回合沒有使用到長期記憶" in result.messages[0]["content"]
     assert "orchestration.long_term_memory_timeout" in caplog.text
     assert "orchestration.long_term_memory_retrieval_summary" in caplog.text
     assert '"outcome": "timeout"' in caplog.text
     assert "你還記得我的偏好嗎" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cold_memory_embedding_fallback_prompts_visible_no_long_term_memory_notice():
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(
+        allow_long_term_query=True,
+        reason_code="SUBSTANTIVE_QUERY",
+    )
+    memory_query_tool = AsyncMock()
+    memory_query_tool.execute.return_value.content = {
+        "cold": "",
+        "working": "",
+        "_status": "fallback",
+    }
+    service = ConversationContextService(
+        memory_policy=memory_policy,
+        memory_query_tool=memory_query_tool,
+    )
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-fallback",
+        messages=[{"role": "user", "content": "請解釋牛頓第一運動定律"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="請解釋牛頓第一運動定律",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-fallback",
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert result.retrieved_memory is False
+    assert "長期記憶查詢已降級" in system_prompt
+    assert "本回合沒有使用到長期記憶" in system_prompt
+    assert "<retrieved_memory>" not in system_prompt
 
 
 @pytest.mark.asyncio

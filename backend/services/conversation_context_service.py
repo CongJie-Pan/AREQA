@@ -199,7 +199,12 @@ class ConversationContextService:
             if memory_content.get("_status") == "timeout":
                 system_prompt += (
                     "\n\n【長期記憶狀態】：本回合長期記憶查詢逾時。"
-                    "請只根據目前對話與可用工作記憶回答；不得聲稱已成功回查長期記憶。"
+                    "請只根據目前對話回答；最終回覆必須明確說「本回合沒有使用到長期記憶」。"
+                )
+            elif memory_content.get("_status") == "fallback":
+                system_prompt += (
+                    "\n\n【長期記憶狀態】：本回合長期記憶查詢已降級，未注入長期記憶內容。"
+                    "請只根據目前對話回答；最終回覆必須明確說「本回合沒有使用到長期記憶」。"
                 )
             if cold_context:
                 system_prompt += f"\n\n<retrieved_memory>\n{cold_context}\n</retrieved_memory>"
@@ -332,7 +337,11 @@ class ConversationContextService:
         content = {
             "cold": str(memory_result.content.get("cold") or ""),
             "working": str(memory_result.content.get("working") or ""),
-            "_status": "retrieved",
+            "_status": (
+                "fallback"
+                if memory_result.content.get("_status") == "fallback"
+                else "retrieved"
+            ),
         }
         if is_explicit_recall and cache_enabled and (content["cold"] or content["working"]):
             from services.explicit_memory_cache import explicit_memory_cache

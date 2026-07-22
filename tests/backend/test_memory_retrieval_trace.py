@@ -14,3 +14,12 @@ def test_memory_retrieval_trace_snapshot_is_privacy_safe():
     assert snapshot["steps"][0]["name"] == "cold_memory___embedding"
     assert "你還記得" not in str(snapshot)
     assert "memory text" not in str(snapshot)
+
+
+def test_memory_retrieval_trace_can_match_safe_step_outcomes():
+    trace = MemoryRetrievalTrace(route_reason="SUBSTANTIVE_QUERY")
+
+    trace.record_step("cold_memory_embedding", 1501, outcome="timeout")
+
+    assert trace.has_step_outcome("cold_memory_embedding", {"timeout"}) is True
+    assert trace.has_step_outcome("cold_memory_embedding", {"completed"}) is False

@@ -1,11 +1,17 @@
 import os
 import json
+import asyncio
 import httpx
 import time
 from typing import List, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import text
 import logging
+
+try:
+    from config import settings
+except ModuleNotFoundError:
+    from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +33,38 @@ def get_engine():
     return global_engine
 
 class ColdMemoryRetriever:
-    def __init__(self, db_path: str, openrouter_api_key: str):
+    def __init__(
+        self,
+        db_path: str,
+        openrouter_api_key: str,
+        *,
+        embedding_model: str | None = None,
+    ):
+        """Initialize the OpenRouter-backed cold-memory retriever.
+
+        Args:
+            db_path: Legacy constructor argument retained for caller
+                compatibility. PostgreSQL connection details come from
+                `DATABASE_URL`.
+            openrouter_api_key: API key used for embedding requests.
+            embedding_model: Optional model override for tests or deployment
+                experiments. Defaults to the central cold-memory embedding
+                setting so slow providers can be replaced without code edits.
+        """
+
         self.api_key = openrouter_api_key
-        self.embedding_model = "qwen/qwen3-embedding-8b"
+        self.embedding_model = embedding_model or settings.model_cold_memory_embedding
         self.embedding_url = "https://openrouter.ai/api/v1/embeddings"
 
     async def get_embedding(self, text_str: str) -> List[float]:
+        """Return an embedding vector for cold-memory search.
+
+        The public method keeps legacy compatibility by returning an empty list
+        on provider failures. Foreground search wraps this call with a shorter
+        timeout and trace attribution so slow embedding providers cannot block
+        the answer stream.
+        """
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -164,11 +196,65 @@ class ColdMemoryRetriever:
         if not tables["propositions"]:
             return []
 
-        if memory_trace and tables["vec_memory"]:
-            async with memory_trace.measure("cold_memory_embedding"):
-                query_embedding = await self.get_embedding(query)
-        else:
-            query_embedding = await self.get_embedding(query) if tables["vec_memory"] else []
+        async def _get_query_embedding() -> List[float]:
+            if not tables["vec_memory"]:
+                return []
+
+            embedding_started = time.monotonic()
+            timeout_ms = max(0, int(settings.cold_memory_embedding_timeout_ms))
+            try:
+                if timeout_ms > 0:
+                    query_embedding = await asyncio.wait_for(
+                        self.get_embedding(query),
+                        timeout=timeout_ms / 1000,
+                    )
+                else:
+                    query_embedding = await self.get_embedding(query)
+            except asyncio.TimeoutError:
+                elapsed_ms = int((time.monotonic() - embedding_started) * 1000)
+                if memory_trace:
+                    memory_trace.record_step(
+                        "cold_memory_embedding",
+                        elapsed_ms,
+                        outcome="timeout",
+                    )
+                logger.warning(
+                    "cold_memory.embedding_timeout model=%s timeout_ms=%s",
+                    self.embedding_model,
+                    timeout_ms,
+                )
+                return []
+            except Exception as e:
+                elapsed_ms = int((time.monotonic() - embedding_started) * 1000)
+                if memory_trace:
+                    memory_trace.record_step(
+                        "cold_memory_embedding",
+                        elapsed_ms,
+                        outcome="error",
+                    )
+                logger.warning(
+                    "cold_memory.embedding_fallback model=%s reason=provider_error error_type=%s",
+                    self.embedding_model,
+                    type(e).__name__,
+                )
+                return []
+
+            elapsed_ms = int((time.monotonic() - embedding_started) * 1000)
+            if memory_trace:
+                memory_trace.record_step(
+                    "cold_memory_embedding",
+                    elapsed_ms,
+                    outcome="completed" if query_embedding else "fallback",
+                )
+            return query_embedding
+
+        query_embedding = await _get_query_embedding()
+        if tables["vec_memory"] and not query_embedding:
+            # A missing vector query means cold-memory retrieval is degraded.
+            # Return no cold context so the answer can explicitly say that
+            # long-term memory was not used instead of silently using partial
+            # retrieval.
+            return []
 
         async def _fetch_vector_results() -> List[Tuple[int, float]]:
             if not tables["vec_memory"] or not query_embedding:
