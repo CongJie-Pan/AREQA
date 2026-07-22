@@ -104,11 +104,11 @@ async def test_mixed_question_prompt_promotes_extracted_learning_preference(capl
         source="verified_user_evidence",
     )
     store.append_cold_candidate.assert_not_awaited()
-    assert "memory.extraction_started" in caplog.text
-    assert "memory.extraction_received" in caplog.text
-    assert "memory.extraction_candidate_skipped" in caplog.text
-    assert "reason=non_learning_preference" in caplog.text
     assert "memory.extraction_candidate_promoted" in caplog.text
+    assert "memory.extraction_started" not in caplog.text
+    assert "memory.extraction_received" not in caplog.text
+    assert "memory.extraction_candidate_skipped" not in caplog.text
+    assert "reason=non_learning_preference" not in caplog.text
     assert raw_text not in caplog.text
     assert "我偏好你先給我一個具體例子" not in caplog.text
 
@@ -145,7 +145,7 @@ async def test_extraction_does_not_store_question_or_sensitive_candidate(caplog)
     store.append_cold_candidate.assert_not_awaited()
     assert "memory.extraction_candidate_blocked" in caplog.text
     assert "reason=sensitive_candidate" in caplog.text
-    assert "memory.extraction_no_promotion" in caplog.text
+    assert "memory.extraction_no_promotion" not in caplog.text
     assert "我最近很焦慮" not in caplog.text
 
 

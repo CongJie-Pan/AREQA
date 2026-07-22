@@ -199,7 +199,7 @@ class OpenRouterMemoryExtractionAgent:
             )
             return MemoryExtractionResult()
 
-        logger.info(
+        logger.debug(
             "memory.extraction_completed user_id=%s message_id=%s conversation_id=%s model=%s candidate_count=%s candidate_type_counts=%s",
             user_id,
             message_id,
@@ -286,7 +286,7 @@ class LocalMemoryExtractionAgent:
                     )
                 )
 
-        logger.info(
+        logger.debug(
             "memory.local_extraction_completed user_id=%s message_id=%s conversation_id=%s candidate_count=%s candidate_type_counts=%s",
             user_id,
             message_id,

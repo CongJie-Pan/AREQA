@@ -35,7 +35,7 @@ class FakeClient:
 
 @pytest.mark.asyncio
 async def test_local_memory_extraction_agent_splits_mixed_prompt_without_provider(caplog):
-    caplog.set_level("INFO")
+    caplog.set_level("DEBUG")
     agent = LocalMemoryExtractionAgent()
     raw_text = (
         "我是高一生，我下週要考高一物理了，但我之前連國中理化都一直不及格，現在好焦慮。\n"
@@ -63,7 +63,7 @@ async def test_local_memory_extraction_agent_splits_mixed_prompt_without_provide
 
 @pytest.mark.asyncio
 async def test_memory_extraction_agent_returns_learning_preference_candidate(caplog):
-    caplog.set_level("INFO")
+    caplog.set_level("DEBUG")
     payload = MemoryExtractionResult(
         candidates=[
             {

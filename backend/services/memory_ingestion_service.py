@@ -512,7 +512,7 @@ class MemoryIngestionService:
         if self.extraction_agent is None:
             return None
         agent_name = self.extraction_agent.__class__.__name__
-        logger.info(
+        logger.debug(
             "memory.extraction_started user_id=%s message_id=%s conversation_id=%s agent=%s whole_message_reason=%s",
             evidence.user_id,
             evidence.message_id,
@@ -537,7 +537,7 @@ class MemoryIngestionService:
             )
             return None
 
-        logger.info(
+        logger.debug(
             "memory.extraction_received user_id=%s message_id=%s conversation_id=%s agent=%s candidate_count=%s",
             evidence.user_id,
             evidence.message_id,
@@ -549,7 +549,7 @@ class MemoryIngestionService:
         for index, draft in enumerate(extraction.candidates):
             rejection_reason = self._profile_learning_preference_rejection_reason(draft)
             if rejection_reason:
-                logger.info(
+                logger.debug(
                     "memory.extraction_candidate_skipped user_id=%s message_id=%s conversation_id=%s agent=%s candidate_index=%s candidate_type=%s durability=%s reason=%s",
                     evidence.user_id,
                     evidence.message_id,
@@ -580,7 +580,7 @@ class MemoryIngestionService:
                 "passive_preference",
             )
             if draft_decision.category != "passive_preference" or not canonical_key:
-                logger.info(
+                logger.debug(
                     "memory.extraction_candidate_blocked user_id=%s message_id=%s conversation_id=%s agent=%s candidate_index=%s candidate_type=%s deterministic_category=%s reason=deterministic_validation_failed",
                     evidence.user_id,
                     evidence.message_id,
@@ -616,7 +616,7 @@ class MemoryIngestionService:
                 evidence,
                 promoted=True,
             )
-        logger.info(
+        logger.debug(
             "memory.extraction_no_promotion user_id=%s message_id=%s conversation_id=%s agent=%s candidate_count=%s reason=no_valid_learning_preference",
             evidence.user_id,
             evidence.message_id,
@@ -813,7 +813,7 @@ def create_memory_ingestion_service(
             settings.model_memory_semantic_analyzer,
             timeout_seconds=settings.memory_extraction_timeout_seconds,
         )
-        logger.info(
+        logger.debug(
             "memory.extraction_agent_configured mode=external model=%s timeout_seconds=%s min_confidence=%s privacy_acknowledged=%s client_available=%s",
             settings.model_memory_semantic_analyzer,
             settings.memory_extraction_timeout_seconds,
@@ -825,7 +825,7 @@ def create_memory_ingestion_service(
         from services.memory_extraction_agent import LocalMemoryExtractionAgent
 
         extraction_agent = LocalMemoryExtractionAgent()
-        logger.info(
+        logger.debug(
             "memory.extraction_agent_configured mode=local model=none timeout_seconds=%s min_confidence=%s privacy_acknowledged=%s client_available=%s",
             settings.memory_extraction_timeout_seconds,
             settings.memory_extraction_min_confidence,
@@ -833,7 +833,7 @@ def create_memory_ingestion_service(
             client is not None,
         )
     else:
-        logger.info(
+        logger.debug(
             "memory.extraction_agent_configured mode=disabled model=none timeout_seconds=%s min_confidence=%s privacy_acknowledged=%s client_available=%s",
             settings.memory_extraction_timeout_seconds,
             settings.memory_extraction_min_confidence,
