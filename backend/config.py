@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     memory_extraction_timeout_seconds: float = 3.0
     memory_extraction_min_confidence: float = 0.85
     compeer_delivery_delay_seconds: int = 120
-    compeer_cooldown_override_seconds: int | None = None
+    compeer_cooldown_override_seconds: int | None = 120
+    compeer_proactive_mail_min_interval_seconds: int = 21600
     compeer_daily_proactive_limit: int = 2
     enable_compeer_dev_controls: bool = False
 

@@ -225,6 +225,33 @@ async def test_record_daily_proactive_send_sets_expiry_on_first_send():
 
 
 @pytest.mark.asyncio
+async def test_record_proactive_mail_scheduled_sets_six_hour_interval():
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+
+        await compeer.record_proactive_mail_scheduled("default_user")
+
+    mock_redis.setex.assert_awaited_once_with(
+        "areqa:compeer_last_proactive_mail:default_user",
+        21600,
+        "1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_proactive_mail_interval_remaining_reads_ttl():
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.ttl.return_value = 1234
+        mock_get_redis.return_value = mock_redis
+
+        remaining = await compeer.get_proactive_mail_interval_remaining_seconds("default_user")
+
+    assert remaining == 1234
+
+
+@pytest.mark.asyncio
 async def test_set_cooldown_stores_correct_timestamp(mock_store):
     with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
         mock_redis = AsyncMock()
@@ -234,6 +261,21 @@ async def test_set_cooldown_stores_correct_timestamp(mock_store):
         
         mock_redis.setex.assert_called_once()
         mock_store.update_hot_memory_async.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_set_cooldown_defaults_to_two_minutes(mock_store):
+    with patch("backend.services.compeer_scheduler.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+
+        await compeer.set_cooldown("default_user", state="TINKERING")
+
+        mock_redis.setex.assert_awaited_once_with(
+            "areqa:cooldown:default_user",
+            120,
+            "1",
+        )
 
 
 @pytest.mark.asyncio
@@ -582,6 +624,50 @@ async def test_behavior_signals_do_not_schedule_after_daily_limit(mock_store, ca
     assert "reason=daily_limit_reached" in caplog.text
     assert "daily_sent_count=2" in caplog.text
     assert "daily_send_limit=2" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_behavior_signals_do_not_schedule_within_proactive_mail_interval(
+    mock_store,
+    caplog,
+):
+    mock_store.behavior_signals.extend(_recent_scroll_signals(6))
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch.object(
+        compeer,
+        "get_last_interaction_time",
+        new=AsyncMock(return_value=time.time() - 120),
+    ), patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(return_value=False),
+    ), patch.object(
+        compeer,
+        "tick_proactive_schedule",
+        new=AsyncMock(),
+    ), patch.object(
+        compeer,
+        "get_proactive_mail_interval_remaining_seconds",
+        new=AsyncMock(return_value=3600),
+    ), patch(
+        "gum_integration.detect_proactive_event_via_llm",
+        new=AsyncMock(),
+    ) as detect_event, patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ):
+        with caplog.at_level("INFO"):
+            await compeer._process_proactive_user(mock_store, "default_user")
+
+    scheduled.assert_not_awaited()
+    detect_event.assert_not_awaited()
+    mock_store.consume_behavior_signals.assert_not_awaited()
+    assert "compeer.proactive_mail_interval_blocked" in caplog.text
+    assert "source=behavior_signal" in caplog.text
+    assert "reason=proactive_mail_interval_active" in caplog.text
+    assert "proactive_mail_interval_remaining_seconds=3600" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,7 @@ class ProactivePreflight:
     legacy_scroll_count: int = 0
     delivery_delay_seconds: int | None = None
     cooldown_remaining_seconds: int | None = None
+    proactive_mail_interval_remaining_seconds: int | None = None
     daily_sent_count: int | None = None
     daily_send_limit: int | None = None
     importance_passed: bool | None = None
@@ -75,6 +76,7 @@ def evaluate_proactive_preflight(
     legacy_scroll_count: int = 0,
     delivery_delay_seconds: int | None = None,
     cooldown_remaining_seconds: int | None = None,
+    proactive_mail_interval_remaining_seconds: int | None = None,
     daily_sent_count: int | None = None,
     daily_send_limit: int | None = None,
     importance_passed: bool | None = None,
@@ -92,6 +94,11 @@ def evaluate_proactive_preflight(
     reason = None
     if existing_pending_task:
         reason = "existing_pending_task"
+    elif (
+        proactive_mail_interval_remaining_seconds is not None
+        and proactive_mail_interval_remaining_seconds > 0
+    ):
+        reason = "proactive_mail_interval_active"
     elif avatar_pending:
         reason = None
     elif (
@@ -126,6 +133,7 @@ def evaluate_proactive_preflight(
         legacy_scroll_count=legacy_scroll_count,
         delivery_delay_seconds=delivery_delay_seconds,
         cooldown_remaining_seconds=cooldown_remaining_seconds,
+        proactive_mail_interval_remaining_seconds=proactive_mail_interval_remaining_seconds,
         daily_sent_count=daily_sent_count,
         daily_send_limit=daily_send_limit,
         importance_passed=importance_passed,
@@ -164,7 +172,8 @@ def _log_proactive_preflight(
         "inactive_seconds=%s scroll_count=%s importance_passed=%s "
         "signal_source=%s behavior_signal_count=%s recent_scroll_count=%s "
         "legacy_scroll_count=%s delivery_delay_seconds=%s "
-        "cooldown_remaining_seconds=%s daily_sent_count=%s daily_send_limit=%s "
+        "cooldown_remaining_seconds=%s proactive_mail_interval_remaining_seconds=%s "
+        "daily_sent_count=%s daily_send_limit=%s "
         "existing_pending_task=%s scheduling_succeeded=%s task_id=%s",
         user_id,
         iteration_id,
@@ -193,6 +202,11 @@ def _log_proactive_preflight(
             else "not_evaluated"
         ),
         (
+            preflight.proactive_mail_interval_remaining_seconds
+            if preflight.proactive_mail_interval_remaining_seconds is not None
+            else "not_evaluated"
+        ),
+        (
             preflight.daily_sent_count
             if preflight.daily_sent_count is not None
             else "not_evaluated"
@@ -210,13 +224,19 @@ def _log_proactive_preflight(
         logger.log(
             log_level,
             "compeer.preflight_blocked user_id=%s iteration_id=%s reason=%s "
-            "cooldown_remaining_seconds=%s daily_sent_count=%s daily_send_limit=%s",
+            "cooldown_remaining_seconds=%s proactive_mail_interval_remaining_seconds=%s "
+            "daily_sent_count=%s daily_send_limit=%s",
             user_id,
             iteration_id,
             preflight.block_reason,
             (
                 preflight.cooldown_remaining_seconds
                 if preflight.cooldown_remaining_seconds is not None
+                else "not_evaluated"
+            ),
+            (
+                preflight.proactive_mail_interval_remaining_seconds
+                if preflight.proactive_mail_interval_remaining_seconds is not None
                 else "not_evaluated"
             ),
             (
@@ -292,6 +312,12 @@ def _compeer_daily_counter_key(user_id: str, now: datetime | None = None) -> str
     return f"areqa:compeer_daily_count:{current.strftime('%Y-%m-%d')}:{user_id}"
 
 
+def _compeer_proactive_mail_interval_key(user_id: str) -> str:
+    """Return the Redis key that gates proactive mail frequency."""
+
+    return f"areqa:compeer_last_proactive_mail:{user_id}"
+
+
 def _seconds_until_next_utc_day(now: datetime | None = None) -> int:
     """Return seconds until the next UTC day boundary."""
 
@@ -337,6 +363,56 @@ async def record_daily_proactive_send(user_id: str) -> int:
         count,
     )
     return int(count)
+
+
+async def get_proactive_mail_interval_remaining_seconds(user_id: str) -> int | None:
+    """Return remaining seconds before another proactive mail may be scheduled.
+
+    This helper observes only a Redis TTL. Callers may log the safe remaining
+    seconds and source path, but must not log raw hot memory, event summaries,
+    generated mail content, prompts, or model output.
+    """
+
+    from config import settings
+
+    interval_seconds = max(0, int(settings.compeer_proactive_mail_min_interval_seconds))
+    if interval_seconds <= 0:
+        return None
+
+    redis = get_redis()
+    ttl_fn = getattr(redis, "ttl", None)
+    if ttl_fn is None:
+        return None
+    ttl = await ttl_fn(_compeer_proactive_mail_interval_key(user_id))
+    return ttl if isinstance(ttl, int) and ttl > 0 else None
+
+
+async def record_proactive_mail_scheduled(user_id: str) -> None:
+    """Record that one proactive mail intent was durably scheduled.
+
+    This gate is intentionally separate from the short ComPeer cooldown. The
+    cooldown controls near-term interaction churn, while this key enforces the
+    user-facing product rule that proactive mailbox letters must be spaced out.
+    """
+
+    from config import settings
+
+    interval_seconds = max(0, int(settings.compeer_proactive_mail_min_interval_seconds))
+    if interval_seconds <= 0:
+        return
+
+    redis = get_redis()
+    key = _compeer_proactive_mail_interval_key(user_id)
+    setex_fn = getattr(redis, "setex", None)
+    if setex_fn is not None:
+        await setex_fn(key, interval_seconds, "1")
+    else:
+        await redis.set(key, "1")
+    logger.info(
+        "compeer.proactive_mail_interval_recorded user_id=%s interval_seconds=%s",
+        user_id,
+        interval_seconds,
+    )
 
 
 async def set_cooldown(user_id: str, state: str = "default") -> None:
@@ -988,6 +1064,26 @@ async def _process_proactive_user(store, user_id: str) -> None:
         await tick_proactive_schedule(user_id)
         return
     elif trigger_proactive:
+        interval_remaining_seconds = await get_proactive_mail_interval_remaining_seconds(user_id)
+        if interval_remaining_seconds:
+            logger.info(
+                "compeer.proactive_mail_interval_blocked user_id=%s "
+                "remaining_seconds=%s source=explicit_trigger",
+                user_id,
+                interval_remaining_seconds,
+            )
+            _log_proactive_preflight(
+                user_id,
+                iteration_id,
+                evaluate_proactive_preflight(
+                    trigger_present=True,
+                    cooldown_active=False,
+                    proactive_mail_interval_remaining_seconds=interval_remaining_seconds,
+                ),
+            )
+            await tick_proactive_schedule(user_id)
+            return
+
         daily_limit_reached, daily_sent_count, daily_send_limit = (
             await has_reached_daily_proactive_limit(user_id)
         )
@@ -1029,6 +1125,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
         )
         if task_id:
             await record_daily_proactive_send(user_id)
+            await record_proactive_mail_scheduled(user_id)
             await _clear_persisted_trigger(store, user_id, "trigger_proactive")
             await set_cooldown(user_id, state=learner_state)
         preflight = evaluate_proactive_preflight(
@@ -1148,6 +1245,34 @@ async def _process_proactive_user(store, user_id: str) -> None:
         )
         return
 
+    interval_remaining_seconds = await get_proactive_mail_interval_remaining_seconds(user_id)
+    if interval_remaining_seconds:
+        logger.info(
+            "compeer.proactive_mail_interval_blocked user_id=%s "
+            "remaining_seconds=%s source=behavior_signal",
+            user_id,
+            interval_remaining_seconds,
+        )
+        _log_proactive_preflight(
+            user_id,
+            iteration_id,
+            evaluate_proactive_preflight(
+                trigger_present=False,
+                cooldown_active=False,
+                inactive_seconds=inactive_seconds,
+                scroll_count=scroll_count,
+                signal_source=signal_source,
+                behavior_signal_count=len(behavior_signals),
+                recent_scroll_count=len(recent_scroll_signals),
+                legacy_scroll_count=len(legacy_scroll_keys),
+                delivery_delay_seconds=settings.compeer_delivery_delay_seconds,
+                proactive_mail_interval_remaining_seconds=interval_remaining_seconds,
+                daily_sent_count=daily_sent_count,
+                daily_send_limit=daily_send_limit,
+            ),
+        )
+        return
+
     from gum_integration import (
         detect_proactive_event_via_llm,
         get_hot_memory_snapshot,
@@ -1213,6 +1338,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
     )
     if task_id:
         await record_daily_proactive_send(user_id)
+        await record_proactive_mail_scheduled(user_id)
         # Consume only after the delayed mailbox intent is durable; otherwise
         # retry needs the same behavior evidence to remain available.
         if signal_source == "behavior_signals":

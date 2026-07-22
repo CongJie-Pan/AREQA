@@ -33,6 +33,10 @@ def test_settings_loads_defaults():
     assert s.explicit_recall_memory_cache_ttl_seconds == 120
     assert s.cold_memory_embedding_timeout_ms == 1500
     assert s.suggestion_generation_timeout_ms == 1000
+    assert s.compeer_delivery_delay_seconds == 120
+    assert s.compeer_cooldown_override_seconds == 120
+    assert s.compeer_proactive_mail_min_interval_seconds == 21600
+    assert s.compeer_daily_proactive_limit == 2
 
 def test_settings_can_be_overridden_by_env():
     """Settings 應能透過環境變數覆寫，確保不 Hardcoding。"""
@@ -52,6 +56,8 @@ def test_settings_can_be_overridden_by_env():
         'ENABLE_EXPLICIT_RECALL_MEMORY_CACHE': 'false',
         'COLD_MEMORY_EMBEDDING_TIMEOUT_MS': '900',
         'SUGGESTION_GENERATION_TIMEOUT_MS': '750',
+        'COMPEER_COOLDOWN_OVERRIDE_SECONDS': '30',
+        'COMPEER_PROACTIVE_MAIL_MIN_INTERVAL_SECONDS': '3600',
     }):
         from backend.config import Settings
         s = Settings()
@@ -70,3 +76,5 @@ def test_settings_can_be_overridden_by_env():
         assert s.enable_explicit_recall_memory_cache is False
         assert s.cold_memory_embedding_timeout_ms == 900
         assert s.suggestion_generation_timeout_ms == 750
+        assert s.compeer_cooldown_override_seconds == 30
+        assert s.compeer_proactive_mail_min_interval_seconds == 3600
