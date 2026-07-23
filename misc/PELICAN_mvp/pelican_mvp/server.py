@@ -162,6 +162,49 @@ def _tutor_proposal_trace(engine: PelicanEngine) -> list[dict[str, Any]]:
     ][-6:]
 
 
+def _agent_executor_trace(engine: PelicanEngine) -> list[dict[str, Any]]:
+    """Return safe proposal-adoption rows for the methodology agent executors.
+
+    The trace intentionally exposes references and bounded summaries only:
+    proposal ids, role/stage labels, artifact refs, validation status, reason
+    codes, and learner-visible previews after validation. Raw learner answers,
+    prompts, model bodies, credentials, and hidden reasoning are excluded.
+    """
+    rows: list[dict[str, Any]] = []
+    events = engine.state.methodology_events
+    for proposal in engine.state.agent_proposals[-24:]:
+        adopted_event = next(
+            (
+                event
+                for event in events
+                if event.sequence >= proposal.sequence
+                and event.stage == proposal.stage
+                and (proposal.node_id is None or event.node_id in {None, proposal.node_id})
+            ),
+            None,
+        )
+        rows.append(
+            {
+                "proposal_id": proposal.proposal_id,
+                "sequence": proposal.sequence,
+                "role": proposal.role.value,
+                "stage": proposal.stage.value,
+                "input_ref": proposal.payload_ref.to_dict(),
+                "proposal_artifact": {
+                    "artifact_type": proposal.artifact_type,
+                    "artifact_ref": proposal.payload_ref.to_dict(),
+                    "display_summary": proposal.display_summary,
+                    "pedagogical_move": proposal.pedagogical_move,
+                },
+                "validation_status": proposal.validation_status.value,
+                "reason_code": proposal.reason_code,
+                "adopted_output_ref": adopted_event.output_ref.to_dict() if adopted_event and adopted_event.output_ref else None,
+                "final_effect": proposal.final_message_preview or proposal.display_summary or proposal.reason_code,
+            }
+        )
+    return rows[-12:]
+
+
 def _evidence_response_trace(engine: PelicanEngine) -> list[dict[str, Any]]:
     """Build safe evidence-to-response trace rows for paper-aligned export.
 
@@ -230,6 +273,7 @@ def _learning_metadata(engine: PelicanEngine, activity_steps: list[dict[str, Any
         "progress_snapshot": engine.state.learner_progress.to_dict(),
         "skill_artifact_summary": _skill_artifact_summary(engine),
         "agent_proposals": [item.to_dict() for item in engine.state.agent_proposals[-8:]],
+        "agent_executor_trace": _agent_executor_trace(engine),
         "tutor_proposal_trace": _tutor_proposal_trace(engine),
         "evidence_response_trace": _evidence_response_trace(engine),
         "methodology_stages": [stage.value for stage in MethodologyStage],
@@ -401,6 +445,27 @@ def _markdown_export(engine: PelicanEngine) -> str:
             )
     else:
         lines.append("_No agent proposals recorded yet._")
+
+    lines.extend(["", "## Agent Executor Trace", ""])
+    if learning["agent_executor_trace"]:
+        for row in learning["agent_executor_trace"]:
+            input_ref = row.get("input_ref") or {}
+            output_ref = row.get("adopted_output_ref") or {}
+            artifact = row.get("proposal_artifact") or {}
+            lines.append(
+                "- `{seq}` `{role}` `{status}`: input `{input}` → artifact `{artifact}` "
+                "→ adopted `{output}` → {effect}".format(
+                    seq=row.get("sequence"),
+                    role=row.get("role"),
+                    status=row.get("validation_status"),
+                    input=input_ref.get("label") or input_ref.get("ref_type") or "-",
+                    artifact=artifact.get("artifact_type") or "-",
+                    output=output_ref.get("label") or "-",
+                    effect=row.get("final_effect") or row.get("reason_code") or "-",
+                )
+            )
+    else:
+        lines.append("_No agent executor trace recorded yet._")
 
     lines.extend(["", "## Recent Evidence-to-Response Trace", ""])
     if learning["evidence_response_trace"]:

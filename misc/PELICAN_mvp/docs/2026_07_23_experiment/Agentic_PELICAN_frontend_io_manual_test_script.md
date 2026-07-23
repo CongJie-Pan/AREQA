@@ -208,6 +208,7 @@ Markdown 應包含：
 - Session metadata。
 - Conversation transcript。
 - Skill Artifact Summary。
+- Agent Executor Trace。
 - Recent Evidence-to-Response Trace。
 - Methodology Events。
 - Agent/Tutor Proposals。
@@ -242,6 +243,7 @@ debug logger 足以支援後續 debug，但不破壞 privacy boundary。
 
 - 前端對話體驗不是固定 template baseline。
 - skill artifact 與 tutor proposal trace 都能被使用者觀察。
+- Agent Executor Trace 可看出每個 stage 的 input ref、proposal artifact、validation status 與 adopted output/effect。
 - `correct`、`unknown`、`too_detailed` 導致不同的 state/strategy/final response。
 - Markdown export 可以重建 evidence → state → EDF/GUM → proposal → response。
 - logs 與 UI 都維持 safe metadata boundary。

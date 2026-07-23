@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const methodologyStages = document.getElementById("methodology-stages");
     const skillArtifactSummary = document.getElementById("skill-artifact-summary");
     const methodologySubsystemEvents = document.getElementById("methodology-subsystem-events");
+    const agentExecutorTrace = document.getElementById("agent-executor-trace");
     const agentProposals = document.getElementById("agent-proposals");
     const tutorProposalTrace = document.getElementById("tutor-proposal-trace");
     const learnerProgressSnapshot = document.getElementById("learner-progress-snapshot");
@@ -196,6 +197,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             );
             renderSkillArtifactSummary(data.learning.skill_artifact_summary || null);
             renderSubsystemEvents(data.learning.methodology_events || [], data.learning.current_cycle_id || null);
+            renderAgentExecutorTrace(data.learning.agent_executor_trace || []);
             renderAgentProposals(data.learning.agent_proposals || []);
             renderTutorProposalTrace(data.learning.tutor_proposal_trace || []);
             renderLearnerProgress(data.learning.progress_snapshot || null);
@@ -347,6 +349,40 @@ document.addEventListener("DOMContentLoaded", async () => {
             const move = proposal.pedagogical_move ? ` / ${proposal.pedagogical_move}` : "";
             row.textContent = `${proposal.role}: ${proposal.validation_status}${move} / ${proposal.reason_code || "recorded"}`;
             agentProposals.appendChild(row);
+        });
+    }
+
+    function renderAgentExecutorTrace(rows) {
+        agentExecutorTrace.innerHTML = "";
+        appendListTitle(agentExecutorTrace, "Agent Executor Trace");
+        const recent = rows.slice(-6);
+        if (recent.length === 0) {
+            appendEmptyLine(agentExecutorTrace, "No executor trace");
+            return;
+        }
+        recent.forEach(row => {
+            const item = document.createElement("div");
+            item.className = "executor-trace-row";
+
+            const head = document.createElement("div");
+            head.className = "executor-trace-head";
+            head.textContent = `${row.role || "--"} · ${row.validation_status || "--"} · ${row.reason_code || "recorded"}`;
+
+            const artifact = row.proposal_artifact || {};
+            const inputRef = row.input_ref || {};
+            const outputRef = row.adopted_output_ref || {};
+            const detail = document.createElement("div");
+            detail.className = "executor-trace-detail";
+            detail.textContent = `input: ${inputRef.label || inputRef.ref_type || "--"} → artifact: ${artifact.artifact_type || "--"} → adopted: ${outputRef.label || "--"}`;
+
+            const effect = document.createElement("div");
+            effect.className = "executor-trace-effect";
+            effect.textContent = row.final_effect || artifact.display_summary || "--";
+
+            item.appendChild(head);
+            item.appendChild(detail);
+            item.appendChild(effect);
+            agentExecutorTrace.appendChild(item);
         });
     }
 

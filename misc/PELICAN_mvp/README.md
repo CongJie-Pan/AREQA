@@ -15,12 +15,13 @@ PELICAN MVP 是 AREQA 主系統外的一個學習引擎實驗場。它的目的�
 - Generic domain fallback：已知 domain 但 runtime skill 失敗時，會使用 generic STEM/humanities/business/language skill，而不是直接使用隨機 LLM plan。
 - EDF/GUM 模擬層：保留教學策略狀態、direct user evidence、working context count。
 - Agentic methodology runtime：以 turn/cycle ID 串接六個核心 stage、GUM subsystem event、learner interaction event、typed agent proposals。
+- Agent executor runtime：Intake、Skill、Diagnosis、State、Policy、Fast Tutor、Slow Simulator 都有具體 executor wrapper；每個 executor 先產生 bounded proposal，`PelicanEngine` 再採納並更新 session state。
 - Causal tutoring transaction：目前 learner evidence 會先更新 knowledge state、GUM 與 EDF，再由更新後的 context 選 tutor strategy。
 - Bounded tutor proposal path：LLM mode 會先產生受 EDF/GUM 約束的 tutor proposal，通過 validator 後才成為 final tutor response；LLM 不可用或 proposal 不合格時會明確標示 fallback，而不是假裝 agentic generation 成功。
 - Remediation-first tutoring：進入 tutoring 後仍會優先處理 `我不知道`、`太細了`、`太難`、`太簡單` 這類 learner control signals，不會把已掌握的概念誤降級。
 - Learner progress snapshot：前端/API 顯示 direct/inferred progress、status 與 confidence，而不是只顯示 raw mastery tree。
-- 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges、methodology graph、skill artifact summary、agent proposals、tutor proposal trace 與 learner progress。
-- Markdown 匯出：可從 UI 匯出目前對話、session metadata、skill artifact summary、knowledge tree、recent activity、methodology events、agent proposals、evidence-to-response trace、tutor proposal trace、progress snapshot。
+- 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges、methodology graph、skill artifact summary、agent executor trace、agent proposals、tutor proposal trace 與 learner progress。
+- Markdown 匯出：可從 UI 匯出目前對話、session metadata、skill artifact summary、knowledge tree、recent activity、methodology events、agent executor trace、agent proposals、evidence-to-response trace、tutor proposal trace、progress snapshot。
 - 安全 structured logs：terminal 會顯示 safe metadata，例如 `channel`、`endpoint`、learner token、skill source、semantic intent、confidence、API health、reason code；不記錄 raw learner answer、raw prompt、raw model output 或 API key。
 
 目前仍需注意的限制：
@@ -127,7 +128,7 @@ npm run check:report:strict
 docs/2026_07_23_experiment/Agentic_PELICAN_frontend_io_manual_test_script.md
 ```
 
-該劇本要求 agentic/LLM run 顯示 skill artifact、tutor proposal trace、evidence-to-response trace，並明確拒絕只靠固定 template 通過的結果。若 LLM 不可用，run 應標示為 fallback run，不應宣稱符合 paper-aligned agentic tutoring 驗收。
+該劇本要求 agentic/LLM run 顯示 skill artifact、agent executor trace、tutor proposal trace、evidence-to-response trace，並明確拒絕只靠固定 template 通過的結果。若 LLM 不可用，run 應標示為 fallback run，不應宣稱符合 paper-aligned agentic tutoring 驗收。
 
 預設可離線執行。離線時仍可使用 checked-in catalog skill 與 deterministic fallback。若要啟用 OpenRouter-compatible LLM：
 

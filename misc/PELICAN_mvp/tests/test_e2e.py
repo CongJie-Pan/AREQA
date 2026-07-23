@@ -88,6 +88,7 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     expect(page.locator("#plan-source-display")).to_have_text("generated", ignore_case=True)
     expect(page.locator(".methodology-stage-name")).to_contain_text(["Goal", "Skill", "Diagnosis", "State", "EDF", "Tutor"])
     expect(page.locator("#skill-artifact-summary")).to_contain_text("deep_learning")
+    expect(page.locator("#agent-executor-trace")).to_contain_text("skill_agent")
     
     # Answer the first question correctly
     page.fill("#chat-input", "用來衡量預測與目標之間的差距")
@@ -96,10 +97,12 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     # Check that tree updates the node to mastered
     expect(page.locator(".tree-node.mastered").first).to_be_visible()
     expect(page.locator("#agent-proposals")).to_contain_text("state_agent")
+    expect(page.locator("#agent-executor-trace")).to_contain_text("state_agent")
     expect(page.locator("#learner-progress-snapshot")).to_contain_text("mastered")
     page.fill("#chat-input", "我不知道")
     page.click(".send-btn")
     expect(page.locator("#tutor-proposal-trace")).to_contain_text("scaffold")
+    expect(page.locator("#agent-executor-trace")).to_contain_text("slow_simulator_agent")
 
 
 def test_methodology_panel_mobile_layout(page: Page) -> None:
@@ -109,6 +112,7 @@ def test_methodology_panel_mobile_layout(page: Page) -> None:
 
     expect(page.locator("#methodology-stages")).to_be_visible()
     expect(page.locator("#skill-artifact-summary")).to_be_visible()
+    expect(page.locator("#agent-executor-trace")).to_be_visible()
     expect(page.locator("#tutor-proposal-trace")).to_be_visible()
     expect(page.locator("#chat-input")).to_be_visible()
     expect(page.locator(".send-btn")).to_be_visible()

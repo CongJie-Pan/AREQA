@@ -1,5 +1,7 @@
 # Agentic PELICAN Agent Executor Implementation Plan
 
+Status on 2026-07-23: completed across Phase 1 through Phase 5. The implementation uses bounded executor proposals for Intake, Skill, Diagnosis, State, Policy, Fast Tutor, and Slow Simulator agents; `PelicanEngine` remains the final session mutation owner; UI/API/Markdown expose safe agent executor trace metadata.
+
 The current MVP already records agent roles and bounded proposals, but most roles are still labels emitted by `PelicanEngine` around service/helper calls. The target is to align the implementation with the methodology figure: each agent owns a bounded subtask, produces a proposal artifact, and lets the learning-system pipeline validate/adopt/reject the proposal. The phase order first stabilizes contracts and observability, then extracts `SkillAgent` because skill construction is the most important domain-generalization boundary, and then migrates the remaining agents without breaking the existing manual experiment flow.
 
 ### Phase 1: Define the Agent Proposal Runtime Contract

@@ -253,6 +253,10 @@ body {
     gap: 5px;
 }
 
+.methodology-list.wide {
+    grid-column: span 2;
+}
+
 .methodology-list-title {
     color: #bae6fd;
     font-size: 0.72rem;
@@ -278,6 +282,34 @@ body {
 
 .methodology-row.empty {
     color: #64748b;
+}
+
+.executor-trace-row {
+    display: grid;
+    gap: 3px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    padding-top: 5px;
+}
+
+.executor-trace-row:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.executor-trace-head {
+    color: #e0f2fe;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.executor-trace-detail,
+.executor-trace-effect {
+    color: #cbd5e1;
+    font-size: 0.7rem;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 
@@ -573,6 +605,10 @@ body {
     .methodology-stages,
     .methodology-detail-grid {
         grid-template-columns: 1fr;
+    }
+
+    .methodology-list.wide {
+        grid-column: auto;
     }
 
     .methodology-stage {

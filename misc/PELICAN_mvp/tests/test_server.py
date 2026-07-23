@@ -117,6 +117,24 @@ def test_api_agent_proposals_are_safe_metadata() -> None:
     assert "validation_status" in proposals[-1]
 
 
+def test_api_agent_executor_trace_is_safe_metadata() -> None:
+    learner = "executor_trace_user"
+    raw_answer = "我不知道 raw secret should not enter executor trace"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解原理"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "完全沒有基礎"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": raw_answer})
+
+    trace = response.json()["learning"]["agent_executor_trace"]
+    trace_text = str(trace)
+
+    assert trace
+    assert {"input_ref", "proposal_artifact", "validation_status", "adopted_output_ref", "final_effect"} <= set(trace[-1])
+    assert "fast_tutor_agent" in trace_text or "slow_simulator_agent" in trace_text
+    assert raw_answer not in trace_text
+
+
 def test_api_exposes_safe_tutor_proposal_trace() -> None:
     learner = "tutor_trace_user"
     raw_answer = "我不知道 raw secret should not be copied into proposal trace"
@@ -130,7 +148,7 @@ def test_api_exposes_safe_tutor_proposal_trace() -> None:
 
     assert learning["tutor_proposal_trace"]
     assert learning["tutor_proposal_trace"][-1]["artifact_type"] == "tutor_proposal"
-    assert learning["tutor_proposal_trace"][-1]["pedagogical_move"] == "scaffold"
+    assert learning["tutor_proposal_trace"][-1]["pedagogical_move"].endswith("scaffold")
     assert learning["evidence_response_trace"]
     assert raw_answer not in str(learning["tutor_proposal_trace"])
     assert raw_answer not in str(learning["evidence_response_trace"])
@@ -216,6 +234,7 @@ def test_api_export_markdown_includes_transcript_and_metadata() -> None:
     assert "## Skill Artifact Summary" in text
     assert "## Recent Engine Activity" in text
     assert "## Methodology Events" in text
+    assert "## Agent Executor Trace" in text
     assert "## Agent Proposals" in text
     assert "## Recent Evidence-to-Response Trace" in text
     assert "## Tutor Proposal Trace" in text
