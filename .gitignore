@@ -85,3 +85,5 @@ supabase/.temp
 
 misc/PELICAN_mvp/.drift
 misc/PELICAN_mvp/.driftignore
+
+/video
