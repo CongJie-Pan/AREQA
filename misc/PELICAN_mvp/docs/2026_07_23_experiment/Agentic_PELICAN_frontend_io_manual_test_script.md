@@ -1,335 +1,247 @@
-# Agentic PELICAN 人工測試劇本：前端輸入輸出驗收
+# Agentic PELICAN 人工測試劇本：paper-aligned 前端輸入輸出驗收
 
-本劇本用來驗收依照 `docs/implemenation_plan/Agentic_PELICAN_Methods_Blueprint_Implementation_plan.md` 完成實作後，前端使用者看到的學習流程是否符合預期。人工驗證只檢查畫面上的輸入與輸出是否 match；後端狀態、事件順序、proposal validation、schema migration、privacy 邊界與 smoke/integration checks，應由 implementation plan 內各 phase 的 gate 與自動測試負責。
+本劇本用來驗收 PELICAN MVP 是否符合 `docs/paper_draft/paper.md` 描述的 agentic tutoring loop。人工測試不接受只靠固定 template 或 rule fallback 產生的「看起來有回覆」；必須能在前端與匯出紀錄中看到：
+
+```text
+Goal framing
+→ Skill construction
+→ Cognitive diagnosis
+→ Knowledge-state update
+→ EDF/GUM strategy selection
+→ Bounded tutor proposal
+→ Final tutor response
+```
 
 ## 測試前置條件
 
-- 使用已完成 revised implementation plan 的版本。
-- 使用乾淨 learner session，建議 learner id 使用 `manual_agentic_pelican_20260723`。
-- 啟動 rule mode，避免 LLM nondeterminism 影響人工驗收。
-- 啟動服務：
+- 使用乾淨 learner session，建議 learner id：`manual_agentic_pelican_20260723`。
+- 啟動 agentic/LLM mode；若 LLM 不可用，測試應明確標示為 fallback run，不可宣稱通過 paper-aligned agentic 驗收。
+- 啟動 safe debug logger：
 
 ```bash
 cd /workspaces/AREQA/misc/PELICAN_mvp
-python -m pelican_mvp --port 8000
+python -m pelican_mvp --port 8000 --pelican-log debug --pelican-log-channels api,skill,diagnosis,edf,memory,tutor,methodology
 ```
 
-- 開啟瀏覽器頁面：
+- 開啟：
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8000/?learner_id=manual_agentic_pelican_20260723
 ```
 
-- 若頁面已有舊紀錄，先按 `Reset`。
-- 後端預期結果不在本人工劇本內手動查核；請以 implementation plan 的 phase gate、integration test、smoke test 驗證。
+- 若頁面已有紀錄，先按 `Reset`。
 
-## 第一幕：初始頁面與乾淨狀態
+## 不可接受的通過條件
+
+以下任一情況都視為未通過：
+
+- tutor response 多輪重複固定句型，例如每次都導向「我們先停在某概念」。
+- 前端只顯示 agent role/status，沒有 skill artifact 或 tutor proposal trace。
+- `unknown` 與 `too_detailed` 產生幾乎相同的教學回覆。
+- 匯出檔無法追蹤 evidence → state → EDF/GUM → proposal → final response。
+- log、proposal 或 UI 顯示 raw prompt、raw model output、API key、provider response body，或完整 learner answer payload。
+
+## Act 1：初始頁面與乾淨狀態
 
 ### 輸入
 
-測試者開啟頁面，選擇 rule mode，按下 `Reset`，等待 1 秒。
+開啟頁面，切換到 LLM-based mode，按 `Reset`。
 
 ### 預期輸出
 
-- 畫面顯示聊天介面。
-- phase 顯示為 `onboarding`。
-- 老的聊天內容、舊的 methodology stage 狀態、舊 agent proposal、舊 learner progress 不應殘留成已完成狀態。
-- 若有 methodology panel，六個核心 stage 應存在但尚未全部顯示 completed。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 1 gate 檢查 session reset、turn/cycle ID、schema migration 與 resume 不重複事件。
+- phase 顯示 `onboarding`。
+- 六個核心 methodology stages 存在，但不應殘留前一輪 completed 狀態。
+- Skill Artifact Summary、Tutor Proposal Trace 可以是空狀態，但容器應可見或有明確空訊息。
 
 ### 成功標準
 
-Reset 後，前端呈現乾淨 onboarding 狀態，且沒有上一輪學習流程殘留成目前進度。
+頁面乾淨，且後續驗收會以 agentic trace 為通過標準。
 
-## 第二幕：輸入學習主題後進入目標校準
+## Act 2：輸入 broad topic 後進入 goal framing
 
 ### 輸入
-
-在聊天輸入框輸入：
 
 ```text
 深度學習
 ```
 
-按送出。
-
 ### 預期輸出
 
-- 系統不應直接跳到很細的 MLP、參數、程式實作題。
-- 系統應詢問學習目標或學習方向，例如概念理解、實作、小專案、考試面試等。
-- phase 應仍然顯示 `onboarding`。
-- 若 methodology panel 已實作，Goal Framing 應顯示目前已有進展。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 2、Phase 4 gate 檢查 Goal Framing event、turn/cycle correlation 與 safe metadata。
+- 系統詢問學習目標或學習角度，不直接跳進 MLP、activation、參數量等細節。
+- Goal Framing stage 有目前 cycle 的進展。
+- 不應出現 raw backend JSON、raw prompt、raw model output。
 
 ### 成功標準
 
-使用者輸入 broad topic 後，前端先進行校準，不直接丟出進階診斷題。
+系統先校準目標，而不是以固定深度學習模板直接開題。
 
-## 第三幕：輸入學習目標後繼續程度校準
+## Act 3：輸入學習目標後繼續程度校準
 
 ### 輸入
-
-在聊天輸入框輸入：
 
 ```text
 想理解原理
 ```
 
-按送出。
-
 ### 預期輸出
 
-- 系統應繼續詢問目前基礎或熟悉程度。
-- phase 應仍然顯示 `onboarding`。
-- 畫面不應出現診斷結果或 mastery 更新，因為尚未開始診斷。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 2 gate 檢查 learner profile calibration 與 progress 尚未誤判 mastery。
+- 系統詢問目前基礎或熟悉程度。
+- 尚未顯示 mastery 更新。
+- Goal Framing 仍屬於目前 cycle。
 
 ### 成功標準
 
-前端顯示的是程度校準問題，而不是直接進入診斷或教學回覆。
+前端仍在 onboarding calibration，不誤觸發診斷或掌握狀態。
 
-## 第四幕：輸入初學程度後產生基礎診斷
+## Act 4：輸入初學程度後產生 skill artifact 與 foundation-first 診斷
 
 ### 輸入
-
-在聊天輸入框輸入：
 
 ```text
 完全沒有基礎
 ```
 
-按送出。
-
 ### 預期輸出
 
-- phase 應變成 `diagnosis`。
-- 畫面應顯示深度學習相關的 foundation-first 診斷題。
-- 診斷題應偏向「模型、預測、目標、誤差」這類基礎概念。
-- 不應第一題就問 MLP 實作、activation function 細節、參數量計算或程式碼。
-- knowledge tree 或 progress panel 應顯示深度學習的基礎學習路徑。
-- 若 methodology panel 已實作，Skill Construction 與 Cognitive Diagnosis 應顯示目前進展。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 2、Phase 4、Phase 5 gate 檢查 generated plan、foundation-first route、methodology events 與 progress snapshot。
+- phase 進入 `diagnosis`。
+- 顯示深度學習 foundation-first 診斷題，主軸應接近「模型、預測、目標、誤差、資料表示」。
+- Skill Artifact Summary 顯示安全摘要，例如 skill id、domain、concept path、current diagnostic target、teaching moves。
+- Skill Construction 與 Cognitive Diagnosis stage 顯示目前 cycle 進展。
 
 ### 成功標準
 
-完成 onboarding 後，前端顯示的是基礎診斷題，而且學習路徑看起來符合初學者的深度學習入門順序。
+可以從畫面判斷系統真的產生/編譯 skill，而不是硬寫一題診斷題。
 
-## 第五幕：正確回答第一題後看到掌握與下一步
+## Act 5：正確回答第一題後看到狀態更新與 proposal trace
 
 ### 輸入
 
-若畫面問題為「如果一個模型做出預測後，我們想知道它離目標有多遠，為什麼需要一個錯誤衡量？」或語意相同的 foundation 題，輸入：
+若題目語意為「預測與目標的差距/錯誤衡量」，輸入：
 
 ```text
 用來衡量預測與目標之間的差距
 ```
 
-若畫面問題文字不同，但仍是 foundation 題，請輸入與題目相符的簡短正確答案。
+若題目不同，輸入與該 foundation 題相符的簡短正確答案。
 
 ### 預期輸出
 
-- 系統應判定回答正確或以正向方式確認理解。
-- knowledge tree 或 learner progress 應顯示目前 foundation node 已掌握、部分掌握，或有明確正向進展。
-- 系統應前往下一個合理的深度學習基礎概念，或進入 tutor response 說明下一步。
-- 若 methodology panel 已實作，Knowledge State Update、EDF Strategy Selection、Tutor Response 應在目前 cycle 顯示進展。
-- 畫面不應顯示 raw backend JSON、raw prompt、raw model output。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 2、Phase 3、Phase 4 gate 檢查 state update、EDF ordering、agent proposal before mutation 與 current-cycle event ledger。
+- Knowledge tree 或 progress panel 顯示目前 foundation node 有正向進展。
+- 系統前往下一個合理 foundation node，例如資料表示、函數轉換或相近概念。
+- Agent Proposals / Tutor Proposal Trace 顯示 safe proposal metadata，包括 role、validation status、strategy/reason code、node id。
+- Final tutor response 與 proposal trace 有可理解的連結。
 
 ### 成功標準
 
-正確回答 foundation 題後，前端立即反映學習進展，並給出合理下一步。
+正確回答會觸發 state update、EDF/GUM 更新與 tutor proposal，而不是只把下一題固定印出。
 
-## 第六幕：回答不知道後看到鷹架式回覆
+## Act 6：回答不知道後看到鷹架式 agentic tutor response
 
 ### 輸入
-
-在下一個診斷題或 tutor prompt 出現後，輸入：
 
 ```text
 我不知道
 ```
 
-按送出。
-
 ### 預期輸出
 
-- 系統不應只說錯誤或直接跳過。
-- 系統應給出較簡單的提示、拆解、補前置概念，或用更高層直覺重新說明。
-- EDF 或教學策略區塊若有顯示，應偏向 scaffold、decompose、simplify 或類似策略。
-- learner progress 不應把這次回答誤顯示成掌握。
-- 若 GUM subsystem 區塊已實作，可以顯示有學習記憶或 evidence 更新，但不應把 GUM 當成第七個核心 pipeline stage。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 2、Phase 4 gate 檢查 GUM evidence、EDF policy、strategy context 與 GUM subsystem event type。
+- 回覆應給出更簡單提示、拆解、補前置概念或引導式問題。
+- Tutor Proposal Trace 應顯示 strategy 接近 scaffold/decompose/simplify。
+- learner progress 不應把這次回答顯示為 mastered。
+- 回覆不應與 Act 7 的 too-detailed 回覆相同。
 
 ### 成功標準
 
-使用者表示不知道時，前端顯示的是補救式教學回覆，而不是無關跳題或錯誤懲罰。
+`unknown` 被視為學習證據與教學策略輸入，產生鷹架式 proposal 與 final response。
 
-## 第七幕：題目太細時重新校準難度
+## Act 7：題目太細時重新校準難度
 
 ### 輸入
-
-在診斷題或 tutor prompt 出現後，輸入：
 
 ```text
 這太細了，我完全沒有基礎
 ```
 
-按送出。
-
 ### 預期輸出
 
-- 系統應承認目前題目太細或需要降低抽象層級。
-- 系統應回到更基礎的說明、重新校準程度，或提供更簡單的問題。
-- 畫面不應繼續追問更細的實作或公式細節。
-- learner progress 應維持合理，不應因這句話被顯示成已掌握該概念。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 2、Phase 4 gate 檢查 response classification、EDF/GUM current-turn ordering 與 strategy selection。
+- 系統承認題目層級太細，降低抽象層級或接回更高層直覺。
+- Tutor Proposal Trace 應顯示 strategy/reason 接近 simplification、scope recalibration 或 level recalibration。
+- 不應繼續追問更細的公式、程式或實作細節。
+- 這輪 final response 不應重複 Act 6 的鷹架模板。
 
 ### 成功標準
 
-前端能從「太細」訊號調整教學難度，回到初學者可理解的路徑。
+`too_detailed` 會改變教學策略與 final response，而不是被視為一般錯誤答案。
 
-## 第八幕：目前 cycle 的 methodology graph 顯示正確
+## Act 8：methodology graph 維持六個核心 stage
 
 ### 輸入
 
-完成第二幕到第七幕後，不再輸入文字，觀察 methodology panel。
+完成 Act 2 到 Act 7 後，觀察 methodology panel。
 
 ### 預期輸出
 
-- 前端只應把以下六項顯示為核心 methodology stages：
+- 核心 stage 僅包含：
   - Goal Framing
   - Skill Construction
   - Cognitive Diagnosis
   - Knowledge State Update
   - EDF Strategy Selection
   - Tutor Response
-- GUM 可以顯示為 subsystem 或 supporting event，但不應顯示成第七個核心 stage。
-- Chat / learner interaction 可以顯示為 interaction 或 loop，但不應顯示成第七或第八個核心 stage。
-- stage 狀態應看起來屬於目前學習 cycle，不應混入 reset 前或上一輪 session 的完成狀態。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 4、Phase 5 gate 檢查 six-stage event ledger、current_cycle_id filtering 與 stale UI prevention。
+- GUM 顯示為 subsystem/supporting event，不可成為第七個核心 stage。
+- stage 狀態屬於目前 cycle，不混入 reset 前資料。
 
 ### 成功標準
 
-methodology graph 在前端呈現六個核心階段，且 GUM/chat 不被誤當成核心 pipeline stage。
+前端 presentation 與 paper 的六階段 pipeline 一致。
 
-## 第九幕：Agent proposals 顯示為安全摘要
+## Act 9：匯出 Markdown 驗證 paper-aligned trace
 
 ### 輸入
 
-完成至少一次 onboarding、一次 diagnostic answer、一次 tutor response 後，觀察 agent proposals 或 agent panel。
+按 `匯出對話 MD`。
 
 ### 預期輸出
 
-- 畫面應能看到近期 agent role，例如 Intake Agent、Skill Agent、Diagnosis Agent、State Agent、Policy Agent、Fast Tutor Agent 或 Slow Simulator Agent。
-- 每筆 proposal 應顯示角色、狀態、reason code 或安全 reference。
-- 不應顯示 raw LLM response、完整 prompt、API key、provider response body。
-- 不應把使用者完整原句當作 proposal payload 顯示。
+Markdown 應包含：
 
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 3、Phase 5 gate 檢查 typed proposal、validation status、rejected/fallback metadata 與 privacy tests。
+- Session metadata。
+- Conversation transcript。
+- Skill Artifact Summary。
+- Recent Evidence-to-Response Trace。
+- Methodology Events。
+- Agent/Tutor Proposals。
+- Learner Progress Snapshot。
 
 ### 成功標準
 
-前端能看出 agentic proposal layer 的存在，但只顯示安全、簡短、可理解的 metadata。
+匯出檔能支援實驗報告判斷「為何最後 tutor response 會這樣產生」。
 
-## 第十幕：匯出 Markdown 與畫面內容一致
+## Act 10：safe logger 驗證
 
 ### 輸入
 
-按下 Export 或開啟匯出功能。
+觀察啟動服務的 terminal log。
 
 ### 預期輸出
 
-- Markdown 匯出內容應包含本次學習主題、知識樹或 learner progress、methodology events、agent proposals 或相應安全摘要。
-- 匯出內容應與前端目前看到的學習狀態一致。
-- 匯出內容不應包含 API key、raw prompt、raw model output、provider response body。
-- 若使用者曾輸入 `這太細了，我完全沒有基礎`，匯出可以包含一般聊天記錄或可見 transcript，但 methodology/proposal 區塊不應把它當成 raw hidden payload。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 5 gate 檢查 Markdown export safety、API serialization 與 privacy boundaries。
+- 應看到 safe event，例如：
+  - `pelican_agent_proposal_recorded`
+  - `pelican_tutor_proposal_generated`
+  - `pelican_tutor_proposal_validated`
+  - `pelican_methodology_event_recorded`
+- 不應看到 raw prompt、raw model output、API key、provider body 或完整 learner answer。
 
 ### 成功標準
 
-匯出的 Markdown 與前端學習進度一致，且不洩漏隱藏 prompt、模型原文或敏感資料。
+debug logger 足以支援後續 debug，但不破壞 privacy boundary。
 
-## 第十一幕：手機寬度畫面不重疊
+## 最終驗收結論
 
-### 輸入
+只有在以下條件全部成立時，才可標記為通過：
 
-將瀏覽器調整到手機寬度，約 390px 到 430px，重新整理頁面，觀察聊天區、methodology panel、agent proposals、learner progress。
-
-### 預期輸出
-
-- 聊天輸入框可見且可輸入。
-- methodology panel 不應壓住聊天輸入框。
-- agent proposals 與 learner progress 文字不應互相重疊。
-- 按鈕文字不應超出按鈕邊界。
-- 使用者仍可送出一則訊息，例如：
-
-```text
-請用更簡單的方式說明
-```
-
-且畫面能正常出現回覆。
-
-### 後端查核
-
-- 不做人工後端查核。
-- 對應後端驗證應由 plan 的 Phase 5 Playwright / E2E gate 檢查 mobile viewport smoke test。
-
-### 成功標準
-
-手機寬度下仍可完成閱讀、輸入、送出與查看進度，不出現明顯重疊或不可操作區塊。
-
-## 最終判定
-
-所有幕次都必須通過，才算前端人工輸入/輸出驗收通過。若任一幕失敗，請記錄：
-
-- 失敗幕次
-- 測試時間
-- learner id
-- 瀏覽器與視窗尺寸
-- rule/llm mode
-- 送出的精確輸入
-- 畫面可見輸出
-- 截圖
-- 是否剛執行過 Reset
-- 若有匯出 Markdown，保留該檔案內容
-
-後端相關失敗不在本人工劇本中手動判定；請回到 implementation plan 對應 phase 的 gate、integration test 或 smoke test 補上可重現證據。
+- 前端對話體驗不是固定 template baseline。
+- skill artifact 與 tutor proposal trace 都能被使用者觀察。
+- `correct`、`unknown`、`too_detailed` 導致不同的 state/strategy/final response。
+- Markdown export 可以重建 evidence → state → EDF/GUM → proposal → response。
+- logs 與 UI 都維持 safe metadata boundary。
