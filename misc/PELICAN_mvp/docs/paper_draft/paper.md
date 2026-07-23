@@ -1,16 +1,42 @@
-Paper Title : 
-Keywords: 
+# Paper Title : Agentic PELICAN: A Skill-Grounded Learning Engine for Cognitive Diagnosis, Adaptive Tutoring, and Learner-State Memory
 
-Abstract : 
+Keywords: Personalized education; large language models; cognitive diagnosis; adaptive tutoring; agentic learning systems; Evidence-Decision-Feedback; general user models; knowledge tracing; scaffolding
 
-(#COMMENTS: Actually I'm wondering with this new agentic architecture, is this my creation? or the innovation is owned by the related work author? Am I have the right to publish this paper or research ?)
+## Abstract : 
 
-I. Introduction
+Large language models (LLMs) have created new opportunities for personalized education, but directly using an LLM as a tutor often produces generic explanations that are not grounded in a learner's evolving cognitive state. This paper proposes Agentic PELICAN, a prototype learning-engine architecture that treats PELICAN as the pedagogical control process and uses agentic LLM roles only as bounded proposal components. The system organizes learning into a closed loop of goal framing, skill construction, cognitive diagnosis, knowledge-state update, Evidence-Decision-Feedback (EDF) strategy selection, learner-memory update, and tutor response generation. Instead of allowing autonomous agents to control the tutoring process directly, the architecture requires generated artifacts such as skill files, diagnostic questions, remediation templates, semantic intake signals, and tutor responses to pass through deterministic validation and state-machine boundaries. A local MVP implementation demonstrates this architecture through a FastAPI-based chat tutor, a skill-backed knowledge tree, deterministic fallback behavior, EDF-style teaching-policy simulation, bounded learner evidence memory, and a browser interface that exposes phase, knowledge state, EDF policy, and activity metadata.
+  
+(## The contribution of this work is not a replacement for PELICAN, EDF, or general user modeling, but an integration architecture that operationalizes these ideas into a constrained, inspectable learning engine for agentic tutoring. This paper presents the system design, implementation rationale, and planned evaluation directions for measuring whether skill-grounded agentic tutoring improves personalization, interpretability, and pedagogical stability compared with direct LLM tutoring.)
 
-II. Related Work
-(#COMMENTS: - reference use APA 6 : misc/PELICAN_mvp/docs/references/11211_PELICAN_Personalized_Edu.pdf, misc/PELICAN_mvp/docs/references/Evidence-Decision-Feedback_EDF.pdf, misc/PELICAN_mvp/docs/references/Creating General User Models from Computer Use.pdf)
+### I. Introduction
 
-III. Methods
+Personalized education aims to adapt instruction to the learner's current goals, prior knowledge, misconceptions, and pace of progress. Recent large language models (LLMs) are capable of generating fluent explanations, examples, hints, and problem-solving steps, which makes them attractive as tutoring interfaces. However, a chat-based LLM tutor does not automatically become a personalized learning system. Without an explicit learner model and a pedagogical control process, the model may answer correctly while still failing to diagnose what the learner understands, when to scaffold, when to ask a question, or when to change instructional strategy.
+
+This limitation is especially important in multi-turn tutoring. A learner's answer is not only a message to respond to; it is evidence about the learner's current cognitive state. If the system treats every turn as an isolated prompt-response task, it may provide a useful explanation in the moment but fail to build a stable estimate of mastery over time. Effective tutoring therefore requires a closed loop: the system must diagnose the learner's current state, update that state from evidence, choose an appropriate pedagogical move, and generate feedback that matches both the concept being taught and the learner's demonstrated understanding.
+
+PELICAN provides a useful foundation for this problem because it couples collaborative cognitive diagnosis with adaptive tutoring. In PELICAN, knowledge points are organized as a knowledge-state tree, diagnostic questions are used to estimate mastery, and tutoring strategies are selected according to the learner's observed responses. This makes PELICAN more structured than direct LLM tutoring because the tutor does not simply generate an answer; it first reasons through the learner's position in a concept graph and then adapts instruction accordingly.
+
+At the same time, PELICAN alone does not fully specify how a general-purpose learning engine should handle arbitrary learner goals, runtime skill construction, persistent learner evidence, or agentic LLM components. A learner may enter the system with a broad goal such as "I want to learn deep learning" or "I want to understand Ming dynasty history," rather than a fixed textbook problem. The system must transform that raw goal into a teachable concept structure, choose diagnostic targets, and maintain a memory of direct learner evidence without allowing unvalidated model output to overwrite the pedagogical process.
+
+This paper proposes Agentic PELICAN, a skill-grounded learning-engine architecture that extends the PELICAN tutoring loop with bounded agentic roles. In the proposed method, agentic components are not autonomous controllers. Instead, they act as proposal generators for specific artifacts: intake interpretations, domain skill drafts, diagnostic prompts, remediation templates, teaching-strategy recommendations, and tutor responses. The learning engine remains responsible for validating these artifacts, updating the learner state, selecting the next phase, and preserving the tutoring loop.
+
+The prototype implementation demonstrates this architecture in a local web-based MVP. The system collects a learner topic, learning goal, and background level; resolves the domain category; loads or generates a validated domain skill; compiles it into a session-local knowledge tree; presents successor-first diagnostic questions; updates direct and inferred mastery states; evaluates an EDF-style learner state; records bounded GUM-style evidence memory; and returns adaptive tutor messages through a chat interface. The user interface exposes the current phase, knowledge-state tree, EDF policy, evidence count, and recent engine activity so that the adaptation process remains inspectable.
+
+The main contribution of this work is an integration architecture for agentic personalized tutoring. Rather than claiming to invent cognitive diagnosis, EDF, or general user modeling, this work investigates how these ideas can be composed into a practical learning-engine pipeline where LLMs contribute flexible pedagogical reasoning while deterministic validators and state boundaries preserve instructional control.
+
+### II. Related Work
+
+PELICAN and LLM-powered personalized tutoring. PELICAN proposes a framework for personalized education through LLM-powered cognitive diagnosis and adaptive tutoring (Anonymous, 2026). Its central motivation is that ordinary LLM responses often remain one-size-fits-all: they may provide correct explanations, but they do not necessarily adapt to the learner's cognitive state. PELICAN addresses this problem through two stages. First, collaborative cognitive diagnosis builds and updates a knowledge-state tree, using successor-first diagnosis and an expert-assistant-verifier pipeline to generate and validate diagnostic questions. Second, adaptive tutoring selects teaching strategies based on the estimated learner state and monitors student responses during problem solving. This work adopts PELICAN as the pedagogical skeleton, especially its coupling of diagnosis and tutoring. However, the present system differs by focusing on runtime learning-goal intake, skill-file construction, validated artifact boundaries, EDF-style decision metadata, and learner-memory integration in a local agentic learning engine.
+
+Evidence-Decision-Feedback for adaptive scaffolding. Cohn et al. (2026) introduce Evidence-Decision-Feedback (EDF) as a theory-driven framework for adaptive scaffolding with LLM agents. EDF organizes pedagogical agent behavior around three linked responsibilities: collecting evidence about learner understanding, making pedagogical decisions from that evidence, and generating adaptive feedback. This is closely aligned with the requirements of a learning engine because it prevents feedback generation from being separated from evidence and instructional intent. In Agentic PELICAN, EDF is used as the adaptive decision layer. Learner answers are first treated as evidence, the system updates a learner-state snapshot, and the tutor response is selected from a constrained strategy policy rather than produced as an unconstrained chat completion.
+
+General User Models and learner memory. Shaikh et al. (2025) propose General User Models (GUMs), which transform unstructured computer-use observations into structured, confidence-weighted propositions about a user's behavior, knowledge, beliefs, and preferences. Although GUMs are broader than education, their core idea is relevant to personalized tutoring: user-facing systems need memory structures that preserve useful context while remaining explicit about what is observed, inferred, and revisable. Agentic PELICAN adapts this idea in a narrower educational setting. The system stores direct learner evidence separately from inferred mastery or EDF policy state, so that a learner's answer can be used as grounded evidence without allowing the system to confuse inference with observed fact.
+
+Agentic architecture in education. Recent work on LLM-based educational agents shows that agentic workflows can improve flexibility, but they also introduce risks when models are allowed to plan, decide, and act without clear pedagogical constraints. In tutoring, an agent may generate plausible but poorly sequenced instruction, skip diagnosis, over-help the learner, or treat a learner's vague goal as proof of mastery. The architecture proposed here therefore uses agents as bounded roles rather than as an unconstrained multi-agent controller. Each role produces an artifact for one stage of the pipeline, and each artifact is validated or interpreted by deterministic system logic before it can affect learner state.
+
+Position of this work. The present work builds on PELICAN for cognitive diagnosis and adaptive tutoring, EDF for evidence-grounded scaffolding decisions, and GUM for structured user-memory principles. Its novelty lies in the composition of these ideas into a skill-grounded agentic learning engine. The system introduces a validated domain-skill layer between learner goals and diagnosis, separates direct evidence from inferred learner state, and constrains LLM outputs to proposal artifacts inside a transparent tutoring pipeline.
+
+### III. Methods
 
 ![Agentic PELICAN learning engine methodology](figures/agentic_pelican_learning_engine_methodology_v7.jpg)
 
@@ -35,4 +61,12 @@ The main methodological responsibilities are:
 - The Learning System Process Pipeline coordinates learner inputs, agent artifacts, EDF decisions, and GUM memory updates.
 
 
-IV. Experiments
+### IV. Experiments
+
+### References
+
+Anonymous. (2026). PELICAN: Personalized education via LLM-powered cognitive diagnosis and adaptive tutoring. Paper under review at ICLR 2026.
+
+Cohn, C., Guo, S., Rayala, S., Wang, H. D., Mohammed, N., Timalsina, U., Jain, S., Eeds, A., Deweese, M., Popp, P. J. O., Stanton, R., Walker, S., Ma, M., & Biswas, G. (2026). Evidence-Decision-Feedback: Theory-driven adaptive scaffolding for LLM agents. arXiv. https://doi.org/10.48550/arXiv.2602.01415
+
+Shaikh, O., Sapkota, S., Rizvi, S., Horvitz, E., Park, J. S., Yang, D., & Bernstein, M. S. (2025). Creating general user models from computer use. In Proceedings of the 38th Annual ACM Symposium on User Interface Software and Technology. https://doi.org/10.1145/3746059.3747722
