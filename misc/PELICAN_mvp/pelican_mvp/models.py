@@ -14,6 +14,9 @@ class KnowledgeStatus(str, Enum):
     UNDIAGNOSED = "undiagnosed"
     MASTERED = "mastered"
     NOT_MASTERED = "not_mastered"
+    PARTIALLY_MASTERED = "partially_mastered"
+    FRAGILE = "fragile"
+    INFERRED_MASTERED = "inferred_mastered"
 
 
 class ResponseCategory(str, Enum):
@@ -58,6 +61,302 @@ class LearningIntent(str, Enum):
     EXPLANATORY = "explanatory"
     BUSINESS_DECISION = "business_decision"
     LANGUAGE_PRACTICE = "language_practice"
+
+
+class MethodologyStage(str, Enum):
+    """Six core methodology stages from the Agentic PELICAN blueprint."""
+
+    GOAL_FRAMING = "goal_framing"
+    SKILL_CONSTRUCTION = "skill_construction"
+    COGNITIVE_DIAGNOSIS = "cognitive_diagnosis"
+    KNOWLEDGE_STATE_UPDATE = "knowledge_state_update"
+    EDF_STRATEGY_SELECTION = "edf_strategy_selection"
+    TUTOR_RESPONSE = "tutor_response"
+
+
+class MethodologyEventType(str, Enum):
+    """Event categories linked to a tutoring cycle."""
+
+    PIPELINE_STAGE = "pipeline_stage"
+    GUM_SUBSYSTEM = "gum_subsystem"
+    LEARNER_INTERACTION = "learner_interaction"
+    AGENT_PROPOSAL = "agent_proposal"
+
+
+class MethodologyStatus(str, Enum):
+    """Lifecycle status for methodology events and records."""
+
+    STARTED = "started"
+    COMPLETED = "completed"
+    REJECTED = "rejected"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class ProposalValidationStatus(str, Enum):
+    """Validation result for bounded agent proposals."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    FALLBACK_USED = "fallback_used"
+
+
+class AgentRole(str, Enum):
+    """Functional agent roles used by the proposal layer."""
+
+    INTAKE_AGENT = "intake_agent"
+    SKILL_AGENT = "skill_agent"
+    DIAGNOSIS_AGENT = "diagnosis_agent"
+    STATE_AGENT = "state_agent"
+    POLICY_AGENT = "policy_agent"
+    FAST_TUTOR_AGENT = "fast_tutor_agent"
+    SLOW_SIMULATOR_AGENT = "slow_simulator_agent"
+
+
+def _bounded_text(value: Any, limit: int = 160) -> str:
+    """Return bounded text for public metadata fields."""
+    return str(value or "")[:limit]
+
+
+def _utc_now() -> str:
+    """Return a timezone-aware ISO timestamp for serialized session records."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass(frozen=True)
+class MethodologyRef:
+    """Safe reference to an input or output artifact without raw payload content."""
+
+    ref_type: str
+    ref_id: str
+    label: str
+
+    def to_dict(self) -> dict[str, str]:
+        """Serialize the safe reference for API and persistence use."""
+        return {
+            "ref_type": _bounded_text(self.ref_type, 80),
+            "ref_id": _bounded_text(self.ref_id, 120),
+            "label": _bounded_text(self.label, 160),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> "MethodologyRef":
+        """Deserialize a reference, applying fail-closed bounded defaults."""
+        payload = payload or {}
+        return cls(
+            ref_type=_bounded_text(payload.get("ref_type", "unknown"), 80),
+            ref_id=_bounded_text(payload.get("ref_id", "unknown"), 120),
+            label=_bounded_text(payload.get("label", "unknown"), 160),
+        )
+
+
+@dataclass(frozen=True)
+class LearnerProgressNode:
+    """Learner-visible progress for one concept without exposing raw evidence."""
+
+    node_id: str
+    label: str
+    status: KnowledgeStatus
+    confidence: float
+    evidence_source: str
+    direct_evidence_count: int
+    inferred_from: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize one progress node for API display."""
+        return {
+            "node_id": _bounded_text(self.node_id, 120),
+            "label": _bounded_text(self.label, 160),
+            "status": self.status.value,
+            "confidence": max(0.0, min(1.0, float(self.confidence))),
+            "evidence_source": _bounded_text(self.evidence_source, 80),
+            "direct_evidence_count": max(0, int(self.direct_evidence_count)),
+            "inferred_from": [_bounded_text(item, 120) for item in self.inferred_from[:8]],
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "LearnerProgressNode":
+        """Deserialize progress metadata with enum validation."""
+        return cls(
+            node_id=_bounded_text(payload.get("node_id"), 120),
+            label=_bounded_text(payload.get("label"), 160),
+            status=KnowledgeStatus(payload.get("status", KnowledgeStatus.UNDIAGNOSED.value)),
+            confidence=max(0.0, min(1.0, float(payload.get("confidence", 0.0)))),
+            evidence_source=_bounded_text(payload.get("evidence_source", "none"), 80),
+            direct_evidence_count=max(0, int(payload.get("direct_evidence_count", 0))),
+            inferred_from=tuple(_bounded_text(item, 120) for item in payload.get("inferred_from", ())[:8]),
+        )
+
+
+@dataclass(frozen=True)
+class LearnerProgressSnapshot:
+    """Current learner progress snapshot derived from knowledge state."""
+
+    cycle_id: str | None
+    current_node_id: str | None
+    nodes: tuple[LearnerProgressNode, ...]
+    updated_at: str = field(default_factory=_utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize learner progress for API responses and exports."""
+        return {
+            "cycle_id": self.cycle_id,
+            "current_node_id": self.current_node_id,
+            "nodes": [item.to_dict() for item in self.nodes],
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> "LearnerProgressSnapshot":
+        """Deserialize learner progress, dropping malformed node entries safely."""
+        payload = payload or {}
+        nodes: list[LearnerProgressNode] = []
+        for item in payload.get("nodes", ())[:64]:
+            try:
+                nodes.append(LearnerProgressNode.from_dict(item))
+            except (TypeError, ValueError):
+                continue
+        return cls(
+            cycle_id=payload.get("cycle_id"),
+            current_node_id=payload.get("current_node_id"),
+            nodes=tuple(nodes),
+            updated_at=payload.get("updated_at", _utc_now()),
+        )
+
+
+@dataclass(frozen=True)
+class AgentProposal:
+    """Bounded agent proposal validated by the engine before state mutation."""
+
+    proposal_id: str
+    turn_id: str | None
+    cycle_id: str | None
+    sequence: int
+    role: AgentRole
+    stage: MethodologyStage
+    artifact_type: str
+    payload_ref: MethodologyRef
+    validation_status: ProposalValidationStatus
+    reason_code: str
+    node_id: str | None = None
+    strategy: str | None = None
+    skill_id: str | None = None
+    created_at: str = field(default_factory=_utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize a proposal without raw payloads."""
+        return {
+            "proposal_id": _bounded_text(self.proposal_id, 80),
+            "turn_id": self.turn_id,
+            "cycle_id": self.cycle_id,
+            "sequence": int(self.sequence),
+            "role": self.role.value,
+            "stage": self.stage.value,
+            "artifact_type": _bounded_text(self.artifact_type, 80),
+            "payload_ref": self.payload_ref.to_dict(),
+            "validation_status": self.validation_status.value,
+            "reason_code": _bounded_text(self.reason_code, 120),
+            "node_id": self.node_id,
+            "strategy": self.strategy,
+            "skill_id": self.skill_id,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "AgentProposal":
+        """Deserialize one proposal with strict enum validation."""
+        return cls(
+            proposal_id=_bounded_text(payload.get("proposal_id"), 80),
+            turn_id=payload.get("turn_id"),
+            cycle_id=payload.get("cycle_id"),
+            sequence=int(payload.get("sequence", 0)),
+            role=AgentRole(payload.get("role")),
+            stage=MethodologyStage(payload.get("stage")),
+            artifact_type=_bounded_text(payload.get("artifact_type"), 80),
+            payload_ref=MethodologyRef.from_dict(payload.get("payload_ref")),
+            validation_status=ProposalValidationStatus(payload.get("validation_status")),
+            reason_code=_bounded_text(payload.get("reason_code", "recorded"), 120),
+            node_id=payload.get("node_id"),
+            strategy=payload.get("strategy"),
+            skill_id=payload.get("skill_id"),
+            created_at=payload.get("created_at", _utc_now()),
+        )
+
+
+@dataclass(frozen=True)
+class MethodologyEvent:
+    """Cycle-grouped event describing the Figure 1 learning pipeline."""
+
+    event_id: str
+    turn_id: str | None
+    cycle_id: str | None
+    sequence: int
+    event_type: MethodologyEventType
+    stage: MethodologyStage | None
+    status: MethodologyStatus
+    source: str
+    input_ref: MethodologyRef | None
+    output_ref: MethodologyRef | None
+    node_id: str | None = None
+    strategy: str | None = None
+    reason_code: str = "recorded"
+    created_at: str = field(default_factory=_utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize safe methodology event metadata."""
+        return {
+            "event_id": _bounded_text(self.event_id, 80),
+            "turn_id": self.turn_id,
+            "cycle_id": self.cycle_id,
+            "sequence": int(self.sequence),
+            "event_type": self.event_type.value,
+            "stage": self.stage.value if self.stage else None,
+            "status": self.status.value,
+            "source": _bounded_text(self.source, 80),
+            "input_ref": self.input_ref.to_dict() if self.input_ref else None,
+            "output_ref": self.output_ref.to_dict() if self.output_ref else None,
+            "node_id": self.node_id,
+            "strategy": self.strategy,
+            "reason_code": _bounded_text(self.reason_code, 120),
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "MethodologyEvent":
+        """Deserialize one methodology event with bounded metadata."""
+        stage_value = payload.get("stage")
+        return cls(
+            event_id=_bounded_text(payload.get("event_id"), 80),
+            turn_id=payload.get("turn_id"),
+            cycle_id=payload.get("cycle_id"),
+            sequence=int(payload.get("sequence", 0)),
+            event_type=MethodologyEventType(payload.get("event_type")),
+            stage=MethodologyStage(stage_value) if stage_value else None,
+            status=MethodologyStatus(payload.get("status")),
+            source=_bounded_text(payload.get("source"), 80),
+            input_ref=MethodologyRef.from_dict(payload.get("input_ref")) if payload.get("input_ref") else None,
+            output_ref=MethodologyRef.from_dict(payload.get("output_ref")) if payload.get("output_ref") else None,
+            node_id=payload.get("node_id"),
+            strategy=payload.get("strategy"),
+            reason_code=_bounded_text(payload.get("reason_code", "recorded"), 120),
+            created_at=payload.get("created_at", _utc_now()),
+        )
+
+
+@dataclass(frozen=True)
+class TutoringContext:
+    """Current-turn context used by deterministic tutoring strategy selection."""
+
+    category: ResponseCategory
+    rounds: int
+    pedagogical_policy: str
+    learner_state: str
+    node_id: str | None
+    node_label: str
+    recent_signals: tuple[str, ...] = ()
+    plan_source: PlanSource = PlanSource.GENERATED
+    skill_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -398,7 +697,7 @@ class SessionState:
     """Serialize the complete local state for one PELICAN learning session."""
 
     learner_id: str
-    schema_version: int = 2
+    schema_version: int = 3
     plan_source: PlanSource = PlanSource.GENERATED
     curriculum_id: str | None = None
     learning_plan: LearningPlanSnapshot | None = None
@@ -418,6 +717,12 @@ class SessionState:
     direct_evidence: list[MemoryEvidenceRecord] = field(default_factory=list)
     activity_log: list[ActivityEvent] = field(default_factory=list)
     transcript: list[TranscriptEntry] = field(default_factory=list)
+    turn_id: str | None = None
+    cycle_id: str | None = None
+    methodology_sequence: int = 0
+    methodology_events: list[MethodologyEvent] = field(default_factory=list)
+    agent_proposals: list[AgentProposal] = field(default_factory=list)
+    learner_progress: LearnerProgressSnapshot = field(default_factory=lambda: LearnerProgressSnapshot(None, None, ()))
     completed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -451,6 +756,12 @@ class SessionState:
             "direct_evidence": [item.to_dict() for item in self.direct_evidence],
             "activity_log": [item.to_dict() for item in self.activity_log],
             "transcript": [item.to_dict() for item in self.transcript],
+            "turn_id": self.turn_id,
+            "cycle_id": self.cycle_id,
+            "methodology_sequence": self.methodology_sequence,
+            "methodology_events": [item.to_dict() for item in self.methodology_events[-64:]],
+            "agent_proposals": [item.to_dict() for item in self.agent_proposals[-48:]],
+            "learner_progress": self.learner_progress.to_dict(),
             "completed": self.completed,
         }
 
@@ -466,6 +777,18 @@ class SessionState:
             for node_id, value in payload.get("nodes", {}).items()
         }
         history = [TurnRecord(**item) for item in payload.get("history", [])]
+        methodology_events: list[MethodologyEvent] = []
+        for item in payload.get("methodology_events", [])[-64:]:
+            try:
+                methodology_events.append(MethodologyEvent.from_dict(item))
+            except (TypeError, ValueError):
+                continue
+        agent_proposals: list[AgentProposal] = []
+        for item in payload.get("agent_proposals", [])[-48:]:
+            try:
+                agent_proposals.append(AgentProposal.from_dict(item))
+            except (TypeError, ValueError):
+                continue
         curriculum_id = payload.get("curriculum_id")
         plan_source = PlanSource(payload.get(
             "plan_source",
@@ -507,6 +830,12 @@ class SessionState:
                 TranscriptEntry.from_dict(item)
                 for item in payload.get("transcript", [])
             ],
+            turn_id=payload.get("turn_id"),
+            cycle_id=payload.get("cycle_id"),
+            methodology_sequence=max(0, int(payload.get("methodology_sequence", 0))),
+            methodology_events=methodology_events,
+            agent_proposals=agent_proposals,
+            learner_progress=LearnerProgressSnapshot.from_dict(payload.get("learner_progress")),
             completed=bool(payload.get("completed", False)),
         )
 

@@ -41,6 +41,14 @@ _SAFE_FIELDS = frozenset({
     "remediation_reason",
     "edf_transition",
     "memory_event",
+    "turn_id",
+    "cycle_id",
+    "sequence",
+    "proposal_id",
+    "methodology_status",
+    "event_type",
+    "agent_role",
+    "validation_status",
 })
 
 

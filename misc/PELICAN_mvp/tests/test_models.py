@@ -1,6 +1,8 @@
 import pytest
 from pelican_mvp.models import (
     ActivityEvent,
+    AgentProposal,
+    AgentRole,
     DiagnosticQuestion,
     KnowledgeNode,
     KnowledgeStatus,
@@ -8,7 +10,13 @@ from pelican_mvp.models import (
     LearningIntent,
     LearningPlanSnapshot,
     MemoryEvidenceRecord,
+    MethodologyEvent,
+    MethodologyEventType,
+    MethodologyRef,
+    MethodologyStage,
+    MethodologyStatus,
     PlanSource,
+    ProposalValidationStatus,
     SessionState,
     TranscriptEntry,
     TurnRecord,
@@ -181,3 +189,71 @@ def test_session_state_legacy_payload_defaults_new_skill_fields() -> None:
     assert state.intake_profile.domain_category == "unknown"
     assert state.direct_evidence == []
     assert state.activity_log == []
+
+
+def test_session_state_schema_two_defaults_methodology_contract() -> None:
+    state = SessionState.from_dict({"learner_id": "tester", "schema_version": 2})
+
+    assert state.schema_version == 2
+    assert state.turn_id is None
+    assert state.cycle_id is None
+    assert state.methodology_sequence == 0
+    assert state.methodology_events == []
+    assert state.agent_proposals == []
+    assert state.learner_progress.nodes == ()
+    assert state.to_dict()["schema_version"] == 2
+
+
+def test_session_state_round_trips_methodology_records() -> None:
+    event = MethodologyEvent(
+        event_id="event_1",
+        turn_id="turn_1",
+        cycle_id="cycle_1",
+        sequence=1,
+        event_type=MethodologyEventType.PIPELINE_STAGE,
+        stage=MethodologyStage.GOAL_FRAMING,
+        status=MethodologyStatus.COMPLETED,
+        source="engine",
+        input_ref=MethodologyRef("learner_message", "turn_1", "topic"),
+        output_ref=MethodologyRef("intake_profile", "profile", "goal"),
+        reason_code="topic_received",
+    )
+    proposal = AgentProposal(
+        proposal_id="proposal_1",
+        turn_id="turn_1",
+        cycle_id="cycle_1",
+        sequence=2,
+        role=AgentRole.INTAKE_AGENT,
+        stage=MethodologyStage.GOAL_FRAMING,
+        artifact_type="goal_interpretation",
+        payload_ref=MethodologyRef("intake_profile", "profile", "goal"),
+        validation_status=ProposalValidationStatus.ACCEPTED,
+        reason_code="accepted",
+    )
+    state = SessionState(
+        learner_id="tester",
+        turn_id="turn_1",
+        cycle_id="cycle_1",
+        methodology_sequence=2,
+        methodology_events=[event],
+        agent_proposals=[proposal],
+    )
+
+    restored = SessionState.from_dict(state.to_dict())
+
+    assert restored.methodology_sequence == 2
+    assert restored.methodology_events[0].stage is MethodologyStage.GOAL_FRAMING
+    assert restored.agent_proposals[0].role is AgentRole.INTAKE_AGENT
+
+
+def test_session_state_drops_malformed_methodology_records() -> None:
+    state = SessionState.from_dict(
+        {
+            "learner_id": "tester",
+            "methodology_events": [{"event_type": "bad", "status": "completed"}],
+            "agent_proposals": [{"role": "bad", "stage": "goal_framing"}],
+        }
+    )
+
+    assert state.methodology_events == []
+    assert state.agent_proposals == []

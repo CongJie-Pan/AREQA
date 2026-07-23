@@ -18,7 +18,7 @@ class StateStoreError(RuntimeError):
     """Raised when a persisted learning state cannot be safely used."""
 
 
-SUPPORTED_SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSION = 3
 
 
 class StateStore:

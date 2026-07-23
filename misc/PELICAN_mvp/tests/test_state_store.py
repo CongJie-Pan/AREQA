@@ -105,8 +105,38 @@ def test_invalid_generated_plan_is_rejected_without_logging_raw_content(tmp_path
 
 def test_unsupported_future_schema_is_rejected(tmp_path: Path) -> None:
     store = StateStore(tmp_path)
-    payload = {"learner_id": "student", "schema_version": 3, "curriculum_id": "cnn"}
+    payload = {"learner_id": "student", "schema_version": 4, "curriculum_id": "cnn"}
     (tmp_path / "student.json").write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(StateStoreError, match="unsupported session schema version"):
         store.load_or_create("student")
+
+
+def test_schema_two_state_is_migrated_to_schema_three(tmp_path: Path) -> None:
+    store = StateStore(tmp_path)
+    payload = {"learner_id": "student", "schema_version": 2, "curriculum_id": "cnn"}
+    (tmp_path / "student.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = store.load_or_create("student")
+
+    assert loaded.schema_version == 3
+    assert loaded.methodology_events == []
+    assert loaded.agent_proposals == []
+    assert loaded.learner_progress.nodes == ()
+
+
+def test_malformed_methodology_entries_are_dropped_on_load(tmp_path: Path) -> None:
+    store = StateStore(tmp_path)
+    payload = {
+        "learner_id": "student",
+        "schema_version": 3,
+        "curriculum_id": "cnn",
+        "methodology_events": [{"event_type": "invalid"}],
+        "agent_proposals": [{"role": "invalid"}],
+    }
+    (tmp_path / "student.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = store.load_or_create("student")
+
+    assert loaded.methodology_events == []
+    assert loaded.agent_proposals == []
