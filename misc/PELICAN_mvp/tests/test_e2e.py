@@ -51,6 +51,7 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     
     # Check that phase is onboarding
     expect(page.locator("#phase-display")).to_have_text("onboarding", ignore_case=True)
+    expect(page.locator("#methodology-stages")).to_be_visible()
     
     # Complete calibration-first onboarding.
     page.fill("#chat-input", "深度學習")
@@ -67,6 +68,7 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     expect(page.locator(".tree-node").first).to_be_visible()
     expect(page.locator("#phase-display")).to_have_text("diagnosis", ignore_case=True)
     expect(page.locator("#plan-source-display")).to_have_text("generated", ignore_case=True)
+    expect(page.locator(".methodology-stage-name")).to_contain_text(["Goal", "Skill", "Diagnosis", "State", "EDF", "Tutor"])
     
     # Answer the first question correctly
     page.fill("#chat-input", "用來衡量預測與目標之間的差距")
@@ -74,6 +76,18 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     
     # Check that tree updates the node to mastered
     expect(page.locator(".tree-node.mastered").first).to_be_visible()
+    expect(page.locator("#agent-proposals")).to_contain_text("state_agent")
+    expect(page.locator("#learner-progress-snapshot")).to_contain_text("mastered")
+
+
+def test_methodology_panel_mobile_layout(page: Page) -> None:
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(URL)
+    page.wait_for_selector(".message.teacher")
+
+    expect(page.locator("#methodology-stages")).to_be_visible()
+    expect(page.locator("#chat-input")).to_be_visible()
+    expect(page.locator(".send-btn")).to_be_visible()
     
 def test_mode_switch(page: Page) -> None:
     page.goto(URL)

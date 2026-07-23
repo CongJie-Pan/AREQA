@@ -17,6 +17,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const currentActivityLabel = document.getElementById("current-activity-label");
     const activityStatusDot = document.getElementById("activity-status-dot");
     const activityBadges = document.getElementById("activity-badges");
+    const methodologyStages = document.getElementById("methodology-stages");
+    const methodologySubsystemEvents = document.getElementById("methodology-subsystem-events");
+    const agentProposals = document.getElementById("agent-proposals");
+    const learnerProgressSnapshot = document.getElementById("learner-progress-snapshot");
     const resetBtn = document.getElementById("reset-btn");
     const exportBtn = document.getElementById("export-btn");
     const loadingUI = document.getElementById("loading");
@@ -167,6 +171,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             evidenceCountDisplay.textContent = data.learning.evidence_count;
             contextCountDisplay.textContent = data.learning.context_count;
             renderActivityStatus(data.learning.current_activity, data.learning.activity_steps || []);
+            renderMethodologyStages(
+                data.learning.methodology_events || [],
+                data.learning.methodology_stages || [],
+                data.learning.current_cycle_id || null
+            );
+            renderSubsystemEvents(data.learning.methodology_events || [], data.learning.current_cycle_id || null);
+            renderAgentProposals(data.learning.agent_proposals || []);
+            renderLearnerProgress(data.learning.progress_snapshot || null);
             
             if (data.learning.phase === "onboarding") {
                 chatInput.placeholder = "請輸入您想學習的主題或困難點...";
@@ -248,6 +260,107 @@ document.addEventListener("DOMContentLoaded", async () => {
         return labels[code] || "系統處理中";
     }
 
+    function stageLabel(stage) {
+        const labels = {
+            goal_framing: "Goal",
+            skill_construction: "Skill",
+            cognitive_diagnosis: "Diagnosis",
+            knowledge_state_update: "State",
+            edf_strategy_selection: "EDF",
+            tutor_response: "Tutor"
+        };
+        return labels[stage] || stage || "--";
+    }
+
+    function renderMethodologyStages(events, stages, currentCycleId) {
+        methodologyStages.innerHTML = "";
+        const currentEvents = events.filter(event => !currentCycleId || event.cycle_id === currentCycleId);
+        stages.forEach(stage => {
+            const stageEvents = currentEvents.filter(event => event.event_type === "pipeline_stage" && event.stage === stage);
+            const latest = stageEvents[stageEvents.length - 1];
+            const item = document.createElement("div");
+            item.className = `methodology-stage ${latest ? latest.status || "completed" : "pending"}`;
+
+            const name = document.createElement("span");
+            name.className = "methodology-stage-name";
+            name.textContent = stageLabel(stage);
+
+            const detail = document.createElement("span");
+            detail.className = "methodology-stage-detail";
+            detail.textContent = latest ? latest.reason_code || latest.status || "completed" : "pending";
+
+            item.appendChild(name);
+            item.appendChild(detail);
+            methodologyStages.appendChild(item);
+        });
+    }
+
+    function renderSubsystemEvents(events, currentCycleId) {
+        methodologySubsystemEvents.innerHTML = "";
+        appendListTitle(methodologySubsystemEvents, "Subsystem");
+        const subsystem = events
+            .filter(event => (!currentCycleId || event.cycle_id === currentCycleId) && event.event_type !== "pipeline_stage")
+            .slice(-4);
+        if (subsystem.length === 0) {
+            appendEmptyLine(methodologySubsystemEvents, "No subsystem events");
+            return;
+        }
+        subsystem.forEach(event => {
+            const row = document.createElement("div");
+            row.className = "methodology-row";
+            row.textContent = `${event.event_type}: ${event.reason_code || event.status || "recorded"}`;
+            methodologySubsystemEvents.appendChild(row);
+        });
+    }
+
+    function renderAgentProposals(proposals) {
+        agentProposals.innerHTML = "";
+        appendListTitle(agentProposals, "Agent Proposals");
+        const recent = proposals.slice(-5);
+        if (recent.length === 0) {
+            appendEmptyLine(agentProposals, "No proposals");
+            return;
+        }
+        recent.forEach(proposal => {
+            const row = document.createElement("div");
+            row.className = "methodology-row";
+            row.textContent = `${proposal.role}: ${proposal.validation_status} / ${proposal.reason_code || "recorded"}`;
+            agentProposals.appendChild(row);
+        });
+    }
+
+    function renderLearnerProgress(snapshot) {
+        learnerProgressSnapshot.innerHTML = "";
+        appendListTitle(learnerProgressSnapshot, "Progress");
+        const nodes = snapshot && Array.isArray(snapshot.nodes) ? snapshot.nodes : [];
+        const visible = nodes.filter(node => node.status !== "undiagnosed").slice(0, 4);
+        if (visible.length === 0) {
+            appendEmptyLine(learnerProgressSnapshot, "No progress yet");
+            return;
+        }
+        visible.forEach(node => {
+            const row = document.createElement("div");
+            row.className = "methodology-row";
+            const confidence = Math.round((node.confidence || 0) * 100);
+            row.textContent = `${node.label}: ${node.status} (${confidence}%)`;
+            learnerProgressSnapshot.appendChild(row);
+        });
+    }
+
+    function appendListTitle(container, text) {
+        const title = document.createElement("div");
+        title.className = "methodology-list-title";
+        title.textContent = text;
+        container.appendChild(title);
+    }
+
+    function appendEmptyLine(container, text) {
+        const row = document.createElement("div");
+        row.className = "methodology-row empty";
+        row.textContent = text;
+        container.appendChild(row);
+    }
+
     function appendMessage(text, role, stateChanges = null) {
         const div = document.createElement("div");
         div.className = `message ${role}`;
@@ -307,6 +420,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             let statusText = "未診斷";
             if (node.status === "mastered") { icon = "✅"; statusText = "掌握"; }
             else if (node.status === "not_mastered") { icon = "❌"; statusText = "未掌握"; }
+            else if (node.status === "inferred_mastered") { icon = "◐"; statusText = "推定掌握"; }
+            else if (node.status === "partially_mastered") { icon = "◑"; statusText = "部分掌握"; }
+            else if (node.status === "fragile") { icon = "△"; statusText = "不穩定"; }
             
             status.textContent = `${icon} ${statusText}`;
 

@@ -14,8 +14,11 @@ PELICAN MVP 是 AREQA 主系統外的一個學習引擎實驗場。它的目的�
 - Skill validation：未通過 schema、graph、remediation、diagnostic safety 檢查的 skill 不會進入診斷。
 - Generic domain fallback：已知 domain 但 runtime skill 失敗時，會使用 generic STEM/humanities/business/language skill，而不是直接使用隨機 LLM plan。
 - EDF/GUM 模擬層：保留教學策略狀態、direct user evidence、working context count。
-- 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges 與翻牌動畫。
-- Markdown 匯出：可從 UI 匯出目前對話、session metadata、knowledge tree、recent activity。
+- Agentic methodology runtime：以 turn/cycle ID 串接六個核心 stage、GUM subsystem event、learner interaction event、typed agent proposals。
+- Causal tutoring transaction：目前 learner evidence 會先更新 knowledge state、GUM 與 EDF，再由更新後的 context 選 tutor strategy。
+- Learner progress snapshot：前端/API 顯示 direct/inferred progress、status 與 confidence，而不是只顯示 raw mastery tree。
+- 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges、methodology graph、agent proposals 與 learner progress。
+- Markdown 匯出：可從 UI 匯出目前對話、session metadata、knowledge tree、recent activity、methodology events、agent proposals、progress snapshot。
 - 安全 structured logs：terminal 會顯示 safe metadata，例如 skill source、semantic intent、confidence、API health、reason code；不記錄 raw prompt、raw model output 或 API key。
 
 目前仍需注意的限制：
