@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 from .curriculum import CURRICULUMS
+from .agents import AgentExecutionContext, SkillAgent, SkillAgentInput
 from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node, remediation_signal
 from .domain_skill import DomainCategory
 from .llm import IntakeSemanticSignal, LlmAdapter, LlmUnavailable
@@ -42,6 +43,7 @@ from .edf_simulator import EdfSimulator
 from .learning_memory import LearningMemorySimulator
 from .curriculum import Curriculum
 from .observability import log_event
+from .skill_generator import DomainSkillGenerator
 
 
 MAX_ACTIVITY_LOG = 16
@@ -70,6 +72,7 @@ class PelicanEngine:
         self.curriculum = self._resolve_curriculum()
         self.llm = LlmAdapter()
         self.planner = LearningPlanner(self.llm)
+        self.skill_agent = SkillAgent(DomainSkillGenerator(self.llm))
         self.edf = EdfSimulator()
         self.memory = LearningMemorySimulator()
 
@@ -422,27 +425,21 @@ class PelicanEngine:
             model_route=intake.model_route,
             intake_turns=3,
         )
-        plan = self.planner.create_plan_for_profile(profile)
-        skill_result = self.planner.last_skill_generation_result
-        if skill_result:
-            for attempt in skill_result.attempts:
-                self._record_agent_proposal(
-                    AgentRole.SKILL_AGENT,
-                    MethodologyStage.SKILL_CONSTRUCTION,
-                    "skill_generation",
-                    MethodologyRef("skill_route", attempt.route, "skill proposal attempt"),
-                    validation_status=attempt.validation_status,
-                    reason_code=attempt.reason_code,
-                    skill_id=skill_result.skill.skill_id,
-                )
-        else:
+        skill_proposal = self.skill_agent.propose_skill(
+            SkillAgentInput(profile),
+            context=self._agent_execution_context(),
+        )
+        plan = self.planner.compile_validated_skill(skill_proposal.skill, profile, skill_proposal.route)
+        for attempt in skill_proposal.attempts:
             self._record_agent_proposal(
-                AgentRole.SKILL_AGENT,
-                MethodologyStage.SKILL_CONSTRUCTION,
-                "skill_generation",
-                MethodologyRef("skill_route", "fallback", "fallback plan"),
-                validation_status=ProposalValidationStatus.FALLBACK_USED,
-                reason_code="planner_fallback",
+                attempt.role,
+                attempt.stage,
+                attempt.artifact_type,
+                attempt.artifact_ref,
+                validation_status=attempt.validation_status,
+                reason_code=attempt.reason_code,
+                skill_id=skill_proposal.skill.skill_id,
+                display_summary=attempt.display_summary,
             )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -490,6 +487,28 @@ class PelicanEngine:
             outcome.strategy,
             outcome.state_changes,
             outcome.next_reason
+        )
+
+    def _agent_execution_context(self) -> AgentExecutionContext:
+        """Build safe metadata for agent executor calls.
+
+        Returns:
+            Context containing correlation IDs and current safe strategy/state
+            labels. Raw learner answers, prompts, model output, and provider
+            payloads are intentionally excluded because agents must return only
+            bounded proposal metadata to the engine.
+        """
+        return AgentExecutionContext(
+            learner_id=self.state.learner_id,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            phase=self.state.phase,
+            mode=self.state.mode,
+            node_id=self.state.current_node_id,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            edf_state=self.state.edf_snapshot.learner_state,
+            edf_policy=self.state.edf_snapshot.pedagogical_strategy,
+            recent_safe_signals=self.memory.recent_safe_signals(self.state),
         )
 
     def _classify_intake_semantics(self, answer: str, stage: str) -> IntakeSemanticSignal:

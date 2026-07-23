@@ -178,6 +178,50 @@ class LearningPlanner:
         )
         return fallback_plan
 
+    def compile_validated_skill(
+        self,
+        skill,
+        profile: LearnerIntakeProfile,
+        route: str,
+    ) -> LearningPlanSnapshot:
+        """Compile an already validated Skill Agent proposal into a plan.
+
+        Args:
+            skill: Validated ``DomainSkill`` proposed by ``SkillAgent``.
+            profile: Calibrated learner intake profile.
+            route: Safe proposal source/route to persist on the plan snapshot.
+
+        Returns:
+            A validated session-owned ``LearningPlanSnapshot``.
+
+        Raises:
+            SkillCompileError: If the validated skill cannot be compiled for the
+                learner profile.
+            ValueError: If the compiled plan violates graph invariants.
+
+        Compatibility:
+            This method lets the engine adopt Skill Agent proposals without
+            asking ``LearningPlanner`` to perform skill generation itself. The
+            older ``create_plan_for_profile()`` remains for compatibility and
+            catastrophic fallback paths.
+        """
+        topic_clean = re.sub(r"\s+", " ", profile.topic).strip()[:100] or "預設主題"
+        profile = _profile_with_defaults(profile, topic_clean)
+        plan = compile_learning_plan(skill, _profile_with_route(profile, route))
+        validate_learning_plan(plan)
+        log_event(
+            "pelican_plan_generated",
+            plan_source="skill_agent",
+            node_count=len(plan.nodes),
+            skill_id=skill.skill_id,
+            skill_version=skill.version,
+            domain_category=skill.domain_category.value,
+            skill_lifecycle=skill.lifecycle.value,
+            route=route,
+            skill_source=route,
+        )
+        return plan
+
 
 def _profile_with_defaults(profile: LearnerIntakeProfile, topic: str) -> LearnerIntakeProfile:
     if profile.topic == topic and profile.intent is not LearningIntent.UNKNOWN:

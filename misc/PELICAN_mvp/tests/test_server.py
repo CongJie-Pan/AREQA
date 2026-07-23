@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from pelican_mvp.server import app
 import pelican_mvp.server as server_module
+from test_skill_agent import FakeSpringAutumnLlm
 
 @pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -55,6 +56,34 @@ def test_api_dynamic_learning_metadata() -> None:
     assert learning["skill_artifact_summary"]["skill_id"] == "deep_learning"
     assert learning["skill_artifact_summary"]["concept_path"]
     assert learning["skill_artifact_summary"]["current_diagnostic_target"]["node_id"] == "math_intuition"
+
+
+def test_api_spring_autumn_skill_artifact_is_history_specific(monkeypatch: pytest.MonkeyPatch) -> None:
+    learner = "spring_autumn_user"
+    monkeypatch.setattr(server_module, "llm_adapter", FakeSpringAutumnLlm())
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "中國春秋時期歷史"})
+    client.post(
+        "/api/respond",
+        json={"learner_id": learner, "answer": "想理解春秋時期的政治秩序和諸侯爭霸脈絡"},
+    )
+    response = client.post(
+        "/api/respond",
+        json={"learner_id": learner, "answer": "只有大概聽過春秋五霸，沒有系統學過"},
+    )
+
+    learning = response.json()["learning"]
+    skill_summary = learning["skill_artifact_summary"]
+    summary_text = str(skill_summary)
+
+    assert learning["domain_category"] == "humanities"
+    assert skill_summary["skill_id"] == "spring_autumn_history"
+    assert skill_summary["proposal_source"] in {"fake/humanities", "runtime_cache"}
+    assert skill_summary["used_fallback"] is False
+    assert "周王室權威" in summary_text
+    assert "諸侯爭霸" in summary_text
+    assert "深度學習" not in summary_text
+    assert "math_intuition" not in summary_text
 
 
 def test_api_progress_snapshot_is_safe_metadata() -> None:

@@ -1,7 +1,11 @@
 from pathlib import Path
 
+from pelican_mvp.agents import SkillAgent
 from pelican_mvp.engine import PelicanEngine
 from pelican_mvp.models import BoundedTutorProposal, DiagnosticQuestion
+from pelican_mvp.planner import LearningPlanner
+from pelican_mvp.skill_generator import DomainSkillGenerator
+from test_skill_agent import FakeSpringAutumnLlm
 
 
 class FakeDiagnosticLlm:
@@ -67,6 +71,18 @@ def calibrated_deep_learning_engine(tmp_path: Path) -> PelicanEngine:
     return engine
 
 
+def spring_autumn_engine(tmp_path: Path) -> PelicanEngine:
+    engine = PelicanEngine(tmp_path)
+    fake_llm = FakeSpringAutumnLlm()
+    engine.llm = fake_llm
+    engine.planner = LearningPlanner(engine.llm)
+    engine.skill_agent = SkillAgent(DomainSkillGenerator(engine.llm, artifact_root=tmp_path / "artifacts"))
+    engine.start()
+    engine.respond("中國春秋時期歷史")
+    engine.respond("想理解春秋時期的政治秩序和諸侯爭霸脈絡")
+    return engine
+
+
 def test_deep_learning_collects_goal_and_level_before_diagnosis(tmp_path: Path) -> None:
     engine = PelicanEngine(tmp_path)
     first = engine.start()
@@ -88,6 +104,24 @@ def test_deep_learning_collects_goal_and_level_before_diagnosis(tmp_path: Path) 
         "functions_transformations",
     ]
     assert "MLP" not in diagnostic.message
+
+
+def test_spring_autumn_skill_agent_flow_uses_history_diagnostic(tmp_path: Path) -> None:
+    engine = spring_autumn_engine(tmp_path)
+
+    diagnostic = engine.respond("只有大概聽過春秋五霸，沒有系統學過")
+
+    labels = " ".join(node.label for node in engine.state.learning_plan.nodes)
+    skill_proposals = [item for item in engine.state.agent_proposals if item.role.value == "skill_agent"]
+    assert diagnostic.node_id == "zhou_authority"
+    assert "春秋" in diagnostic.message
+    assert "周王室" in diagnostic.message
+    assert "周王室權威" in labels
+    assert "諸侯爭霸" in labels
+    assert "深度學習" not in diagnostic.message
+    assert "模型" not in diagnostic.message
+    assert skill_proposals
+    assert skill_proposals[-1].validation_status.value == "accepted"
 
 
 def test_scope_mismatch_recalibrates_without_advancing_node(tmp_path: Path) -> None:

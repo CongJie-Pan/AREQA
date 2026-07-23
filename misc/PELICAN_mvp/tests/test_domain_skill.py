@@ -100,6 +100,24 @@ def test_domain_catalog_routes_supported_and_unknown_topics() -> None:
     assert unknown.needs_clarification is True
 
 
+def test_domain_catalog_routes_spring_autumn_history_aliases_to_humanities() -> None:
+    aliases = [
+        "中國春秋時期歷史",
+        "春秋時期",
+        "春秋五霸",
+        "諸侯爭霸",
+        "周王室",
+        "尊王攘夷",
+        "禮崩樂壞",
+        "戰國",
+    ]
+
+    for topic in aliases:
+        resolution = resolve_domain_category(topic)
+        assert resolution.category is DomainCategory.HUMANITIES
+        assert resolution.route_slug == resolve_model_route(DomainCategory.HUMANITIES)
+
+
 def test_observability_allows_skill_metadata_but_redacts_raw_content(caplog) -> None:
     raw_topic = "private learner topic"
     with caplog.at_level(logging.INFO, logger="pelican_mvp"):

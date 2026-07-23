@@ -2,11 +2,15 @@
 
 from .base import AgentExecutionContext, AgentExecutionResult, BaseAgent
 from .artifacts import bound_agent_text, safe_artifact_ref
+from .skill_agent import SkillAgent, SkillAgentInput, SkillAgentProposal
 
 __all__ = [
     "AgentExecutionContext",
     "AgentExecutionResult",
     "BaseAgent",
+    "SkillAgent",
+    "SkillAgentInput",
+    "SkillAgentProposal",
     "bound_agent_text",
     "safe_artifact_ref",
 ]

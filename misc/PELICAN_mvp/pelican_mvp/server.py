@@ -16,6 +16,8 @@ from .llm import LlmAdapter
 from .models import TranscriptEntry
 from .models import MethodologyStage
 from .planner import LearningPlanner
+from .agents import SkillAgent
+from .skill_generator import DomainSkillGenerator
 from .state_store import StateStore, StateStoreError
 from .observability import log_event
 
@@ -76,6 +78,7 @@ def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEng
     engine = PelicanEngine(data_dir, learner_id, curriculum_id=curriculum_id)
     engine.llm = llm_adapter
     engine.planner = LearningPlanner(engine.llm)
+    engine.skill_agent = SkillAgent(DomainSkillGenerator(engine.llm))
     return engine
 
 
@@ -94,6 +97,14 @@ def _skill_artifact_summary(engine: PelicanEngine) -> dict[str, Any] | None:
     plan = engine.state.learning_plan
     if not plan:
         return None
+    latest_skill_proposal = next(
+        (
+            proposal
+            for proposal in reversed(engine.state.agent_proposals)
+            if proposal.role.value == "skill_agent" and proposal.artifact_type == "skill_generation"
+        ),
+        None,
+    )
     current_node_id = engine.state.current_node_id
     current_node = next((node for node in plan.nodes if node.node_id == current_node_id), None)
     diagnostics = {item.node_id: item for item in plan.diagnostics}
@@ -118,6 +129,13 @@ def _skill_artifact_summary(engine: PelicanEngine) -> dict[str, Any] | None:
         "model_route": plan.model_route,
         "topic": plan.topic,
         "goal_summary": plan.goal_summary,
+        "proposal_source": latest_skill_proposal.payload_ref.ref_id if latest_skill_proposal else plan.model_route,
+        "used_fallback": (
+            latest_skill_proposal.validation_status.value == "fallback_used"
+            if latest_skill_proposal
+            else False
+        ),
+        "final_reason_code": latest_skill_proposal.reason_code if latest_skill_proposal else "compiled",
         "concept_path": concept_path,
         "current_diagnostic_target": {
             "node_id": current_node.node_id,

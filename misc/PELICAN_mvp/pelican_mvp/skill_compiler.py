@@ -38,7 +38,7 @@ def compile_learning_plan(skill: DomainSkill, profile: LearnerIntakeProfile) -> 
         raise SkillCompileError("missing canonical path for intake intent")
 
     selected_path = _initial_path_for_profile(path, profile, intent, skill)
-    foundation_first = _uses_foundation_first_slice(intent, skill)
+    foundation_first = _uses_foundation_first_slice(intent, skill, profile)
     prerequisites = {item.concept_id: item for item in skill.prerequisites}
     diagnostics = {item.concept_id: item for item in skill.diagnostic_rules}
     nodes: list[KnowledgeNode] = []
@@ -129,21 +129,35 @@ def _initial_path_for_profile(
     full path because truncating them would make missing-skill fallbacks look
     like shallow catalog demos.
     """
-    if _uses_foundation_first_slice(intent, skill):
+    if _uses_foundation_first_slice(intent, skill, profile):
         return path[:3]
     return path
 
 
-def _uses_foundation_first_slice(intent: IntentType, skill: DomainSkill) -> bool:
-    """Return whether a catalog path should diagnose early foundations first.
+def _uses_foundation_first_slice(intent: IntentType, skill: DomainSkill, profile: LearnerIntakeProfile) -> bool:
+    """Return whether a path should diagnose early foundations first.
 
     The deep-learning conceptual catalog path is linear, so preserving its
     prerequisite edges inside a short demo slice would make successor-first
     diagnosis start at the deepest retained node. Flattening this MVP slice keeps
     the first user-facing diagnostic at the intended beginner foundation while
     still exposing multiple follow-up concepts in the session tree.
+
+    Runtime-generated beginner conceptual skills follow the same rule. A
+    validated humanities skill for a novice learner should begin with context
+    framing rather than the deepest dependent concept; otherwise the UI can look
+    like it is asking advanced detail before establishing historical order.
     """
-    return intent is IntentType.CONCEPTUAL and skill.skill_id == "deep_learning"
+    context_first_methodology = any(
+        "context" in key.lower() or "context" in value.lower()
+        for key, value in skill.teaching_methodology.items()
+    )
+    return intent is IntentType.CONCEPTUAL and (
+        skill.skill_id == "deep_learning"
+        or profile.level_hint == "beginner"
+        or context_first_methodology
+        or skill.domain_category.value == "humanities"
+    )
 
 
 def _normalized_topic(topic: str) -> str:
