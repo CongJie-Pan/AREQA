@@ -1,0 +1,53 @@
+{
+  "artifact_type": "failed_runtime_skill",
+  "attempts": [
+    {
+      "api_error_type": null,
+      "api_status_code": null,
+      "attempt": 1,
+      "event": "pelican_skill_schema_rejected",
+      "reason_codes": [
+        "DomainSkillError"
+      ],
+      "stage": "schema_parse"
+    },
+    {
+      "api_error_type": null,
+      "api_status_code": null,
+      "attempt": 2,
+      "event": "pelican_skill_schema_rejected",
+      "reason_codes": [
+        "DomainSkillError"
+      ],
+      "stage": "schema_parse"
+    },
+    {
+      "api_error_type": null,
+      "api_status_code": null,
+      "attempt": 3,
+      "event": "pelican_skill_schema_rejected",
+      "reason_codes": [
+        "DomainSkillError"
+      ],
+      "stage": "schema_parse"
+    },
+    {
+      "api_error_type": null,
+      "api_status_code": null,
+      "attempt": 4,
+      "event": "pelican_skill_schema_rejected",
+      "reason_codes": [
+        "DomainSkillError"
+      ],
+      "stage": "schema_parse"
+    }
+  ],
+  "created_at": "2026-07-23T07:50:16.563276+00:00",
+  "domain_category": "humanities",
+  "payload_hash": null,
+  "reason_codes": [
+    "DomainSkillError"
+  ],
+  "route": "~google/gemini-pro-latest",
+  "topic_slug": "中國明朝歷史"
+}
