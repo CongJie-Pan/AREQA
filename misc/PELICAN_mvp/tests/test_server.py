@@ -54,6 +54,59 @@ def test_api_dynamic_learning_metadata() -> None:
     assert "plan_compiled" in activity_codes
 
 
+def test_api_progress_snapshot_is_safe_metadata() -> None:
+    learner = "progress_user"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解原理"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "完全沒有基礎"})
+    response = client.post(
+        "/api/respond",
+        json={"learner_id": learner, "answer": "用來衡量預測與目標之間的差距"},
+    )
+
+    progress = response.json()["learning"]["progress_snapshot"]
+
+    assert progress["current_node_id"] is not None
+    assert progress["nodes"]
+    assert "用來衡量預測與目標之間的差距" not in str(progress)
+
+
+def test_api_agent_proposals_are_safe_metadata() -> None:
+    learner = "proposal_user"
+    raw_answer = "深度學習 raw secret should not become proposal payload"
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": raw_answer})
+
+    proposals = response.json()["learning"]["agent_proposals"]
+
+    assert proposals
+    assert raw_answer not in str(proposals)
+    assert "role" in proposals[-1]
+    assert "validation_status" in proposals[-1]
+
+
+def test_api_methodology_events_are_current_cycle_metadata() -> None:
+    learner = "methodology_user"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解原理"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": "完全沒有基礎"})
+
+    learning = response.json()["learning"]
+
+    assert learning["methodology_stages"] == [
+        "goal_framing",
+        "skill_construction",
+        "cognitive_diagnosis",
+        "knowledge_state_update",
+        "edf_strategy_selection",
+        "tutor_response",
+    ]
+    assert learning["current_cycle_id"]
+    assert learning["methodology_events"]
+    assert "深度學習" not in str(learning["methodology_events"])
+
+
 def test_api_respond() -> None:
     client.post("/api/start", json={"learner_id": "test_user", "curriculum_id": "cnn"})
     response = client.post(
@@ -110,6 +163,9 @@ def test_api_export_markdown_includes_transcript_and_metadata() -> None:
     assert "深度學習" in text
     assert "## Knowledge Tree" in text
     assert "## Recent Engine Activity" in text
+    assert "## Methodology Events" in text
+    assert "## Agent Proposals" in text
+    assert "## Learner Progress Snapshot" in text
 
 
 def test_api_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:

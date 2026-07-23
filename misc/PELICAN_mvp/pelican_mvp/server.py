@@ -14,6 +14,7 @@ from .curriculum import CURRICULUMS
 from .engine import PelicanEngine
 from .llm import LlmAdapter
 from .models import TranscriptEntry
+from .models import MethodologyStage
 from .planner import LearningPlanner
 from .state_store import StateStore, StateStoreError
 from .observability import log_event
@@ -118,6 +119,11 @@ def _learning_metadata(engine: PelicanEngine, activity_steps: list[dict[str, Any
         "edf_policy": engine.state.edf_snapshot.pedagogical_strategy if engine.state.edf_snapshot else "unknown",
         "evidence_count": engine.state.memory_snapshot.evidence_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
         "context_count": engine.state.memory_snapshot.working_context_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
+        "progress_snapshot": engine.state.learner_progress.to_dict(),
+        "agent_proposals": [item.to_dict() for item in engine.state.agent_proposals[-8:]],
+        "methodology_stages": [stage.value for stage in MethodologyStage],
+        "methodology_events": [item.to_dict() for item in engine.state.methodology_events[-16:]],
+        "current_cycle_id": engine.state.cycle_id,
     }
 
 
@@ -240,6 +246,34 @@ def _markdown_export(engine: PelicanEngine) -> str:
             lines.append(f"- `{item.code}`: {item.label}{detail}")
     else:
         lines.append("_No engine activity recorded yet._")
+
+    lines.extend(["", "## Methodology Events", ""])
+    if learning["methodology_events"]:
+        for event in learning["methodology_events"][-12:]:
+            stage = event.get("stage") or event.get("event_type")
+            reason = event.get("reason_code") or "recorded"
+            lines.append(f"- `{event.get('sequence')}` `{stage}`: `{reason}`")
+    else:
+        lines.append("_No methodology events recorded yet._")
+
+    lines.extend(["", "## Agent Proposals", ""])
+    if learning["agent_proposals"]:
+        for proposal in learning["agent_proposals"][-8:]:
+            lines.append(
+                f"- `{proposal.get('role')}` `{proposal.get('validation_status')}`: `{proposal.get('reason_code')}`"
+            )
+    else:
+        lines.append("_No agent proposals recorded yet._")
+
+    lines.extend(["", "## Learner Progress Snapshot", ""])
+    progress_nodes = learning["progress_snapshot"].get("nodes", [])
+    if progress_nodes:
+        for node in progress_nodes:
+            lines.append(
+                f"- {node.get('label')}: `{node.get('status')}` confidence `{node.get('confidence')}`"
+            )
+    else:
+        lines.append("_No learner progress snapshot recorded yet._")
     lines.append("")
     return "\n".join(lines)
 

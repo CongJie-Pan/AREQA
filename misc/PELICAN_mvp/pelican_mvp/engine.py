@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from pathlib import Path
 
 from .curriculum import CURRICULUMS
@@ -11,12 +12,23 @@ from .domain_skill import DomainCategory
 from .llm import IntakeSemanticSignal, LlmAdapter, LlmUnavailable
 from .models import (
     ActivityEvent,
+    AgentProposal,
+    AgentRole,
     KnowledgeStatus,
     LearnerIntakeProfile,
+    LearnerProgressNode,
+    LearnerProgressSnapshot,
     LearningIntent,
+    MethodologyEvent,
+    MethodologyEventType,
+    MethodologyRef,
+    MethodologyStage,
+    MethodologyStatus,
     PlanSource,
+    ProposalValidationStatus,
     ResponseCategory,
     SessionState,
+    TutoringContext,
     TurnOutcome,
     TurnRecord,
     TutoringStrategy,
@@ -32,6 +44,8 @@ from .observability import log_event
 
 
 MAX_ACTIVITY_LOG = 16
+MAX_METHODOLOGY_EVENTS = 64
+MAX_AGENT_PROPOSALS = 48
 
 
 class PelicanEngine:
@@ -117,11 +131,150 @@ class PelicanEngine:
         if not answer:
             return TurnOutcome("請輸入你的答案、困難點，或使用 CLI 指令。", self.state.current_node_id, None, None, (), "等待學生回應")
 
+        self._begin_turn()
         if self.state.phase == "onboarding":
             return self._handle_onboarding(answer)
         if self.state.phase == "diagnosis":
             return self._handle_diagnostic(answer)
         return self._handle_tutoring(answer)
+
+    def _begin_turn(self) -> None:
+        """Allocate correlation IDs for one accepted learner message.
+
+        This method is intentionally called only from ``respond()`` after empty
+        input validation. Resume paths such as ``start()`` can present existing
+        prompts, but they must not create a new learner turn or duplicate
+        methodology records for a historical cycle.
+        """
+        token = uuid.uuid4().hex[:12]
+        self.state.turn_id = f"turn_{token}"
+        self.state.cycle_id = f"cycle_{token}"
+        log_event(
+            "pelican_turn_started",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            sequence=self.state.methodology_sequence,
+            reason_code="learner_message_accepted",
+        )
+        self._record_methodology_event(
+            MethodologyEventType.LEARNER_INTERACTION,
+            source="respond",
+            input_ref=MethodologyRef("learner_turn", self.state.turn_id, "accepted learner message"),
+            output_ref=MethodologyRef("cycle", self.state.cycle_id, "active tutoring cycle"),
+            reason_code="learner_message_accepted",
+        )
+
+    def _next_methodology_sequence(self) -> int:
+        """Return the next monotonic methodology sequence number."""
+        self.state.methodology_sequence += 1
+        return self.state.methodology_sequence
+
+    def _bounded_append(self, collection_name: str, item: Any, limit: int) -> None:
+        """Append one bounded methodology record to a named session collection."""
+        collection = getattr(self.state, collection_name)
+        collection.append(item)
+        if len(collection) > limit:
+            setattr(self.state, collection_name, collection[-limit:])
+
+    def _record_agent_proposal(
+        self,
+        role: AgentRole,
+        stage: MethodologyStage,
+        artifact_type: str,
+        payload_ref: MethodologyRef,
+        *,
+        validation_status: ProposalValidationStatus = ProposalValidationStatus.ACCEPTED,
+        reason_code: str = "accepted",
+        node_id: str | None = None,
+        strategy: str | None = None,
+        skill_id: str | None = None,
+    ) -> AgentProposal:
+        """Record a bounded proposal before the engine applies its effect.
+
+        The record is proposal metadata only. It never contains raw learner text,
+        prompts, or model output; state mutation remains owned by ``PelicanEngine``.
+        """
+        proposal = AgentProposal(
+            proposal_id=f"proposal_{uuid.uuid4().hex[:12]}",
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            sequence=self._next_methodology_sequence(),
+            role=role,
+            stage=stage,
+            artifact_type=artifact_type,
+            payload_ref=payload_ref,
+            validation_status=validation_status,
+            reason_code=reason_code,
+            node_id=node_id,
+            strategy=strategy,
+            skill_id=skill_id,
+        )
+        self._bounded_append("agent_proposals", proposal, MAX_AGENT_PROPOSALS)
+        log_event(
+            "pelican_agent_proposal_recorded",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            sequence=proposal.sequence,
+            proposal_id=proposal.proposal_id,
+            agent_role=role.value,
+            validation_status=validation_status.value,
+            reason_code=reason_code,
+        )
+        return proposal
+
+    def _record_methodology_event(
+        self,
+        event_type: MethodologyEventType,
+        *,
+        stage: MethodologyStage | None = None,
+        status: MethodologyStatus = MethodologyStatus.COMPLETED,
+        source: str = "engine",
+        input_ref: MethodologyRef | None = None,
+        output_ref: MethodologyRef | None = None,
+        node_id: str | None = None,
+        strategy: str | None = None,
+        reason_code: str = "recorded",
+    ) -> MethodologyEvent:
+        """Record a safe, cycle-grouped methodology event.
+
+        Pipeline events are limited to the six Figure 1 stages. GUM updates and
+        learner messages use separate event types so UI rendering cannot inflate
+        the core methodology graph.
+        """
+        event = MethodologyEvent(
+            event_id=f"event_{uuid.uuid4().hex[:12]}",
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            sequence=self._next_methodology_sequence(),
+            event_type=event_type,
+            stage=stage,
+            status=status,
+            source=source,
+            input_ref=input_ref,
+            output_ref=output_ref,
+            node_id=node_id,
+            strategy=strategy,
+            reason_code=reason_code,
+        )
+        self._bounded_append("methodology_events", event, MAX_METHODOLOGY_EVENTS)
+        log_event(
+            "pelican_methodology_event_recorded",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            sequence=event.sequence,
+            event_type=event_type.value,
+            methodology_status=status.value,
+            node_id=node_id,
+            strategy=strategy,
+            reason_code=reason_code,
+        )
+        return event
 
     def _handle_onboarding(self, answer: str) -> TurnOutcome:
         """Collect topic, intent, and level before compiling a generated plan.
@@ -136,6 +289,20 @@ class PelicanEngine:
             from .domain_catalog import resolve_domain_category
 
             resolution = resolve_domain_category(answer)
+            self._record_agent_proposal(
+                AgentRole.INTAKE_AGENT,
+                MethodologyStage.GOAL_FRAMING,
+                "topic_interpretation",
+                MethodologyRef("learner_turn", self.state.turn_id or "turn", "topic answer"),
+                reason_code=resolution.reason_code,
+            )
+            self._record_methodology_event(
+                MethodologyEventType.PIPELINE_STAGE,
+                stage=MethodologyStage.GOAL_FRAMING,
+                input_ref=MethodologyRef("learner_turn", self.state.turn_id or "turn", "topic answer"),
+                output_ref=MethodologyRef("intake_profile", "topic", "scoped topic"),
+                reason_code=resolution.reason_code,
+            )
             self._record_activity("intake_topic", "接收學習主題", detail="topic_received")
             self._record_activity(
                 "domain_resolved",
@@ -176,6 +343,20 @@ class PelicanEngine:
             if semantic_signal.intent == "topic_revision" and semantic_signal.confidence >= 0.72 and semantic_signal.new_topic:
                 return self._handle_topic_revision(semantic_signal)
             intent = _infer_learning_intent(answer)
+            self._record_agent_proposal(
+                AgentRole.INTAKE_AGENT,
+                MethodologyStage.GOAL_FRAMING,
+                "goal_interpretation",
+                MethodologyRef("learner_turn", self.state.turn_id or "turn", "goal answer"),
+                reason_code=intent.value,
+            )
+            self._record_methodology_event(
+                MethodologyEventType.PIPELINE_STAGE,
+                stage=MethodologyStage.GOAL_FRAMING,
+                input_ref=MethodologyRef("learner_turn", self.state.turn_id or "turn", "goal answer"),
+                output_ref=MethodologyRef("intake_profile", "goal", "goal interpretation"),
+                reason_code=intent.value,
+            )
             self._record_activity("intent_detected", "判斷學習方向", detail=intent.value)
             self.state.intake_profile = LearnerIntakeProfile(
                 topic=intake.topic,
@@ -210,6 +391,20 @@ class PelicanEngine:
             return self._handle_topic_revision(semantic_signal)
 
         level_hint = _infer_level_hint(answer)
+        self._record_agent_proposal(
+            AgentRole.INTAKE_AGENT,
+            MethodologyStage.GOAL_FRAMING,
+            "level_interpretation",
+            MethodologyRef("learner_turn", self.state.turn_id or "turn", "level answer"),
+            reason_code=level_hint,
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.GOAL_FRAMING,
+            input_ref=MethodologyRef("learner_turn", self.state.turn_id or "turn", "level answer"),
+            output_ref=MethodologyRef("intake_profile", "level", "level interpretation"),
+            reason_code=level_hint,
+        )
         self._record_activity("level_detected", "判斷目前程度", detail=level_hint)
         profile = LearnerIntakeProfile(
             topic=intake.topic,
@@ -221,6 +416,34 @@ class PelicanEngine:
             intake_turns=3,
         )
         plan = self.planner.create_plan_for_profile(profile)
+        skill_result = self.planner.last_skill_generation_result
+        if skill_result:
+            for attempt in skill_result.attempts:
+                self._record_agent_proposal(
+                    AgentRole.SKILL_AGENT,
+                    MethodologyStage.SKILL_CONSTRUCTION,
+                    "skill_generation",
+                    MethodologyRef("skill_route", attempt.route, "skill proposal attempt"),
+                    validation_status=attempt.validation_status,
+                    reason_code=attempt.reason_code,
+                    skill_id=skill_result.skill.skill_id,
+                )
+        else:
+            self._record_agent_proposal(
+                AgentRole.SKILL_AGENT,
+                MethodologyStage.SKILL_CONSTRUCTION,
+                "skill_generation",
+                MethodologyRef("skill_route", "fallback", "fallback plan"),
+                validation_status=ProposalValidationStatus.FALLBACK_USED,
+                reason_code="planner_fallback",
+            )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.SKILL_CONSTRUCTION,
+            input_ref=MethodologyRef("intake_profile", "profile", "scoped learning goal"),
+            output_ref=MethodologyRef("learning_plan", plan.plan_id, "validated learning plan"),
+            reason_code=plan.skill_id or "fallback_plan",
+        )
         self.state.learning_plan = plan
         if plan.skill_id:
             self._record_activity("skill_loaded", "載入領域 Skill", detail=plan.skill_id)
@@ -473,6 +696,14 @@ class PelicanEngine:
             step = self.curriculum.first_task_step()
             self._set_current_step(step)
             self._record_activity("tutoring_started", "進入教學引導", detail=step["node_id"])
+            self._record_methodology_event(
+                MethodologyEventType.PIPELINE_STAGE,
+                stage=MethodologyStage.TUTOR_RESPONSE,
+                input_ref=MethodologyRef("task_step", step["step_id"], "first tutor step"),
+                output_ref=MethodologyRef("tutor_message", "rule", "tutor prompt"),
+                node_id=step["node_id"],
+                reason_code="diagnosis_complete",
+            )
             self.store.save(self.state)
             return self._present_current_step("診斷完成，依未掌握概念開始原題引導")
         question = diagnostic_for(node_id, self.curriculum)
@@ -484,6 +715,22 @@ class PelicanEngine:
                     question = generated.__class__(node_id, generated.prompt, generated.expected_answer, generated.source)
             except LlmUnavailable:
                 pass
+        self._record_agent_proposal(
+            AgentRole.DIAGNOSIS_AGENT,
+            MethodologyStage.COGNITIVE_DIAGNOSIS,
+            "diagnostic_selection",
+            MethodologyRef("diagnostic_node", node_id, "next diagnostic node"),
+            node_id=node_id,
+            reason_code="successor_first",
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.COGNITIVE_DIAGNOSIS,
+            input_ref=MethodologyRef("learning_plan", self.state.learning_plan.plan_id if self.state.learning_plan else self.state.curriculum_id or "fixture", "active curriculum"),
+            output_ref=MethodologyRef("diagnostic_node", node_id, "selected diagnostic"),
+            node_id=node_id,
+            reason_code="successor_first",
+        )
         self.state.current_node_id = node_id
         self.state.current_prompt = question.prompt
         self.state.current_expected_answer = question.expected_answer
@@ -516,6 +763,22 @@ class PelicanEngine:
         self._record_activity("response_classified", "分類學習者回應", detail=category.value)
         if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
             return self._handle_scaffold_request(answer, category)
+        self._record_agent_proposal(
+            AgentRole.STATE_AGENT,
+            MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+            "diagnostic_state_update",
+            MethodologyRef("diagnostic_evidence", node_id, "classified diagnostic evidence"),
+            node_id=node_id,
+            reason_code=category.value,
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+            input_ref=MethodologyRef("diagnostic_evidence", node_id, "classified evidence"),
+            output_ref=MethodologyRef("knowledge_state", node_id, "state update proposal"),
+            node_id=node_id,
+            reason_code=category.value,
+        )
         changes = apply_diagnostic_result(self.state, node_id, answer, category, self.curriculum)
         self._record_activity("evidence_applied", "更新概念掌握狀態", detail=node_id)
         self._record(answer, category, None, changes)
@@ -592,6 +855,15 @@ class PelicanEngine:
             + self._remediation_prompt(node_id, self.curriculum.nodes[node_id].label)
         )
         self.state.current_prompt_source = "rule"
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.TUTOR_RESPONSE,
+            input_ref=MethodologyRef("strategy", strategy.value, "scope remediation strategy"),
+            output_ref=MethodologyRef("tutor_message", "rule", "scope remediation response"),
+            node_id=node_id,
+            strategy=strategy.value,
+            reason_code=signal,
+        )
         self.store.save(self.state)
         log_event(
             "pelican_scope_mismatch",
@@ -613,13 +885,29 @@ class PelicanEngine:
         """Scaffold the current prerequisite path instead of advancing diagnostics."""
         node_id = self._require_current_node()
         self._record_activity("scaffold_selected", "選擇前置概念補架", detail=node_id)
+        self._record_agent_proposal(
+            AgentRole.STATE_AGENT,
+            MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+            "scaffold_state_update",
+            MethodologyRef("diagnostic_evidence", node_id, "unknown diagnostic evidence"),
+            node_id=node_id,
+            reason_code=category.value,
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+            input_ref=MethodologyRef("diagnostic_evidence", node_id, "unknown evidence"),
+            output_ref=MethodologyRef("knowledge_state", node_id, "scaffold state update"),
+            node_id=node_id,
+            reason_code=category.value,
+        )
         self.state.nodes[node_id].update(
             KnowledgeStatus.NOT_MASTERED,
             evidence=self._evidence(answer, category),
         )
         changes = [f"{self.curriculum.nodes[node_id].label}: not_mastered（直接證據）"]
         strategy = strategy_for_remediation_signal("unknown") or TutoringStrategy.DECOMPOSITION
-        self._record(answer, category, strategy, changes)
+        self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category, "unknown")
         prerequisite_id = self.curriculum.nodes[node_id].prerequisites[0] if self.curriculum.nodes[node_id].prerequisites else node_id
         self.state.phase = "tutoring"
@@ -629,6 +917,15 @@ class PelicanEngine:
             + self._remediation_prompt(prerequisite_id, self.curriculum.nodes[prerequisite_id].label)
         )
         self.state.current_prompt_source = "rule"
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.TUTOR_RESPONSE,
+            input_ref=MethodologyRef("strategy", strategy.value, "scaffold strategy"),
+            output_ref=MethodologyRef("tutor_message", "rule", "scaffold response"),
+            node_id=prerequisite_id,
+            strategy=strategy.value,
+            reason_code="unknown",
+        )
         self.store.save(self.state)
         log_event(
             "pelican_scaffold_selected",
@@ -650,6 +947,22 @@ class PelicanEngine:
         """Handle a too-easy signal by marking current concept as mastered evidence."""
         node_id = self._require_current_node()
         self._record_activity("acceleration_selected", "加快學習節奏", detail=node_id)
+        self._record_agent_proposal(
+            AgentRole.STATE_AGENT,
+            MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+            "acceleration_state_update",
+            MethodologyRef("diagnostic_evidence", node_id, "too easy signal"),
+            node_id=node_id,
+            reason_code="too_easy",
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+            input_ref=MethodologyRef("diagnostic_evidence", node_id, "acceleration evidence"),
+            output_ref=MethodologyRef("knowledge_state", node_id, "accelerated state update"),
+            node_id=node_id,
+            reason_code="too_easy",
+        )
         self.state.nodes[node_id].update(
             KnowledgeStatus.MASTERED,
             evidence=self._evidence(answer, ResponseCategory.CORRECT),
@@ -676,6 +989,22 @@ class PelicanEngine:
         category = self._classify(answer)
         changes: list[str] = []
         if category is ResponseCategory.CORRECT:
+            self._record_agent_proposal(
+                AgentRole.STATE_AGENT,
+                MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+                "tutoring_state_update",
+                MethodologyRef("practice_evidence", node_id, "correct practice evidence"),
+                node_id=node_id,
+                reason_code=category.value,
+            )
+            self._record_methodology_event(
+                MethodologyEventType.PIPELINE_STAGE,
+                stage=MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+                input_ref=MethodologyRef("practice_evidence", node_id, "correct practice evidence"),
+                output_ref=MethodologyRef("knowledge_state", node_id, "practice state update"),
+                node_id=node_id,
+                reason_code=category.value,
+            )
             self.state.nodes[node_id].update(
                 KnowledgeStatus.MASTERED,
                 evidence=self._evidence(answer, category),
@@ -696,21 +1025,66 @@ class PelicanEngine:
                     "全部子任務完成",
                 )
             self._set_current_step(step)
+            self._record_methodology_event(
+                MethodologyEventType.PIPELINE_STAGE,
+                stage=MethodologyStage.TUTOR_RESPONSE,
+                input_ref=MethodologyRef("task_step", step["step_id"], "next tutor step"),
+                output_ref=MethodologyRef("tutor_message", "rule", "next tutor prompt"),
+                node_id=step["node_id"],
+                strategy=TutoringStrategy.CONFIRMATION.value,
+                reason_code="next_step_unlocked",
+            )
             self.store.save(self.state)
             next_outcome = self._present_current_step("前一子任務已完成，解鎖下一步")
             return TurnOutcome(next_outcome.message, next_outcome.node_id, category, TutoringStrategy.CONFIRMATION, tuple(changes), next_outcome.next_reason)
         rounds = self.state.step_rounds.get(step_id, 0) + 1
         self.state.step_rounds[step_id] = rounds
         if category in (ResponseCategory.INCORRECT, ResponseCategory.INABILITY):
+            self._record_agent_proposal(
+                AgentRole.STATE_AGENT,
+                MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+                "tutoring_state_update",
+                MethodologyRef("practice_evidence", node_id, "practice evidence"),
+                node_id=node_id,
+                reason_code=category.value,
+            )
+            self._record_methodology_event(
+                MethodologyEventType.PIPELINE_STAGE,
+                stage=MethodologyStage.KNOWLEDGE_STATE_UPDATE,
+                input_ref=MethodologyRef("practice_evidence", node_id, "practice evidence"),
+                output_ref=MethodologyRef("knowledge_state", node_id, "practice state update"),
+                node_id=node_id,
+                reason_code=category.value,
+            )
             self.state.nodes[node_id].update(
                 KnowledgeStatus.NOT_MASTERED,
                 evidence=self._evidence(answer, category),
             )
             changes.append(f"{self.curriculum.nodes[node_id].label}: not_mastered（原題直接證據）")
-        strategy, reason = select_strategy(category, rounds, self.state.edf_snapshot.pedagogical_strategy)
-        message, source = self._tutor_message(strategy, node_id)
-        self._record(answer, category, strategy, changes)
+        self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category)
+        context = self._tutoring_context(category, rounds)
+        strategy, reason = select_strategy(context)
+        message, source = self._tutor_message(strategy, node_id)
+        tutor_role = AgentRole.SLOW_SIMULATOR_AGENT if "slow-thinking" in reason else AgentRole.FAST_TUTOR_AGENT
+        self._record_agent_proposal(
+            tutor_role,
+            MethodologyStage.TUTOR_RESPONSE,
+            "tutor_response",
+            MethodologyRef("tutor_message", source, "tutor response"),
+            node_id=node_id,
+            strategy=strategy.value,
+            reason_code="slow_strategy" if tutor_role is AgentRole.SLOW_SIMULATOR_AGENT else "fast_strategy",
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.TUTOR_RESPONSE,
+            input_ref=MethodologyRef("strategy", strategy.value, "selected strategy"),
+            output_ref=MethodologyRef("tutor_message", source, "tutor response"),
+            node_id=node_id,
+            strategy=strategy.value,
+            reason_code="slow_strategy" if tutor_role is AgentRole.SLOW_SIMULATOR_AGENT else "fast_strategy",
+        )
         self.state.current_prompt = message
         self.state.current_prompt_source = source
         self.store.save(self.state)
@@ -720,6 +1094,13 @@ class PelicanEngine:
         """Update bounded direct evidence and keep EDF inference separate."""
         previous_edf = self.state.edf_snapshot
         self.memory.record_direct_evidence(self.state, answer, category, signal=signal)
+        self._record_methodology_event(
+            MethodologyEventType.GUM_SUBSYSTEM,
+            input_ref=MethodologyRef("learner_evidence", self.state.turn_id or "turn", "direct evidence"),
+            output_ref=MethodologyRef("memory_snapshot", self.state.current_node_id or "node", "GUM memory snapshot"),
+            node_id=self.state.current_node_id,
+            reason_code=signal or category.value,
+        )
         log_event(
             "pelican_memory_evidence_recorded",
             learner_id=self.state.learner_id,
@@ -731,6 +1112,24 @@ class PelicanEngine:
         )
         self._record_activity("memory_updated", "保存直接學習證據", detail=signal or category.value)
         self.state.edf_snapshot = self.edf.evaluate(self.state)
+        self._refresh_learner_progress()
+        self._record_agent_proposal(
+            AgentRole.POLICY_AGENT,
+            MethodologyStage.EDF_STRATEGY_SELECTION,
+            "strategy_recommendation",
+            MethodologyRef("edf_snapshot", self.state.edf_snapshot.reason_code, "current EDF policy"),
+            node_id=self.state.current_node_id,
+            reason_code=self.state.edf_snapshot.reason_code,
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.EDF_STRATEGY_SELECTION,
+            input_ref=MethodologyRef("knowledge_state", self.state.current_node_id or "node", "updated state and GUM"),
+            output_ref=MethodologyRef("edf_snapshot", self.state.edf_snapshot.reason_code, "current EDF policy"),
+            node_id=self.state.current_node_id,
+            strategy=self.state.edf_snapshot.pedagogical_strategy,
+            reason_code=self.state.edf_snapshot.reason_code,
+        )
         self._record_activity(
             "edf_evaluated",
             "更新 EDF 教學策略",
@@ -744,6 +1143,76 @@ class PelicanEngine:
             strategy=self.state.edf_snapshot.pedagogical_strategy,
             edf_transition=f"{previous_edf.learner_state}->{self.state.edf_snapshot.learner_state}",
             reason_code=f"{previous_edf.learner_state}->{self.state.edf_snapshot.learner_state}",
+        )
+
+    def _refresh_learner_progress(self) -> None:
+        """Refresh learner-visible progress from current knowledge state.
+
+        The snapshot is derived metadata. It distinguishes direct evidence from
+        inferred prerequisite state and carries confidence values without adding
+        new mastery facts.
+        """
+        if not self.curriculum:
+            self.state.learner_progress = LearnerProgressSnapshot(self.state.cycle_id, None, ())
+            return
+        progress_nodes: list[LearnerProgressNode] = []
+        for node in sorted(self.curriculum.nodes.values(), key=lambda item: item.priority, reverse=True):
+            node_state = self.state.nodes[node.node_id]
+            direct_count = sum(1 for item in node_state.evidence if item.direct)
+            inferred_from = tuple(
+                evidence.response[:0] or node.node_id
+                for evidence in node_state.evidence
+                if not evidence.direct
+            )
+            if node_state.status is KnowledgeStatus.MASTERED:
+                confidence = 0.9
+                source = "direct" if direct_count else "inferred"
+            elif node_state.status is KnowledgeStatus.INFERRED_MASTERED:
+                confidence = 0.65
+                source = "inferred_prerequisite"
+            elif node_state.status is KnowledgeStatus.NOT_MASTERED:
+                confidence = 0.75
+                source = "direct"
+            elif node_state.status is KnowledgeStatus.FRAGILE:
+                confidence = 0.45
+                source = "mixed"
+            elif node_state.status is KnowledgeStatus.PARTIALLY_MASTERED:
+                confidence = 0.55
+                source = "partial"
+            else:
+                confidence = 0.0
+                source = "none"
+            progress_nodes.append(
+                LearnerProgressNode(
+                    node_id=node.node_id,
+                    label=node.label,
+                    status=node_state.status,
+                    confidence=confidence,
+                    evidence_source=source,
+                    direct_evidence_count=direct_count,
+                    inferred_from=inferred_from,
+                )
+            )
+        self.state.learner_progress = LearnerProgressSnapshot(
+            cycle_id=self.state.cycle_id,
+            current_node_id=self.state.current_node_id,
+            nodes=tuple(progress_nodes),
+        )
+
+    def _tutoring_context(self, category: ResponseCategory, rounds: int) -> TutoringContext:
+        """Build current-turn tutoring context after state, GUM, and EDF updates."""
+        node_id = self.state.current_node_id
+        label = self.curriculum.nodes[node_id].label if self.curriculum and node_id else ""
+        return TutoringContext(
+            category=category,
+            rounds=rounds,
+            pedagogical_policy=self.state.edf_snapshot.pedagogical_strategy,
+            learner_state=self.state.edf_snapshot.learner_state,
+            node_id=node_id,
+            node_label=label,
+            recent_signals=self.memory.recent_safe_signals(self.state),
+            plan_source=self.state.plan_source,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
         )
 
     def _remediation_prompt(self, node_id: str, label: str) -> str:
