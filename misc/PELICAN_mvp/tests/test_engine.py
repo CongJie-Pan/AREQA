@@ -230,6 +230,23 @@ def test_methodology_events_use_six_core_stages_and_subsystem_events(tmp_path: P
     assert None not in pipeline_stages
 
 
+def test_methodology_stage_agents_emit_executor_proposals(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path)
+    engine.start()
+    engine.respond("中國春秋時期歷史")
+    engine.respond("想理解春秋時期的政治秩序")
+    engine.respond("完全沒有基礎")
+    engine.respond("因為周王室控制力下降")
+
+    roles = {proposal.role for proposal in engine.state.agent_proposals}
+
+    assert AgentRole.INTAKE_AGENT in roles
+    assert AgentRole.SKILL_AGENT in roles
+    assert AgentRole.DIAGNOSIS_AGENT in roles
+    assert AgentRole.STATE_AGENT in roles
+    assert AgentRole.POLICY_AGENT in roles
+
+
 def test_llm_mode_without_key_uses_reviewed_rule_question(tmp_path: Path, monkeypatch) -> None:
     import dotenv
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: None)
