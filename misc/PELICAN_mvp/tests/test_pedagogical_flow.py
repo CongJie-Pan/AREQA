@@ -94,7 +94,7 @@ def test_too_easy_accelerates_to_next_concept(tmp_path: Path) -> None:
     assert engine.state.direct_evidence[-1].signal == "too_easy"
 
 
-def test_generated_plan_correct_leaf_does_not_infer_all_prerequisites(tmp_path: Path) -> None:
+def test_generated_plan_correct_leaf_infers_prerequisites_as_metadata(tmp_path: Path) -> None:
     engine = PelicanEngine(tmp_path)
     engine.start()
     engine.respond("深度學習")
@@ -104,10 +104,11 @@ def test_generated_plan_correct_leaf_does_not_infer_all_prerequisites(tmp_path: 
     assert engine.state.current_node_id == "mlp_implementation"
     outcome = engine.respond("讓模型能表示非線性關係")
 
-    assert all("由子節點推定" not in change for change in outcome.state_changes)
+    assert any("由子節點推定" in change for change in outcome.state_changes)
     assert engine.state.nodes["mlp_implementation"].status.value == "mastered"
-    assert engine.state.nodes["math_intuition"].status.value == "undiagnosed"
-    assert engine.state.current_node_id == "optimization"
+    assert engine.state.nodes["math_intuition"].status.value == "inferred_mastered"
+    assert engine.state.phase == "tutoring"
+    assert engine.state.current_node_id == "math_intuition"
 
 
 def test_skill_diagnostic_is_not_overridden_by_llm_mode(tmp_path: Path) -> None:

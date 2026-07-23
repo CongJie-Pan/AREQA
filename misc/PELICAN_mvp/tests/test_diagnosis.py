@@ -23,7 +23,7 @@ def test_correct_child_marks_prerequisite_mastered() -> None:
     changes = apply_diagnostic_result(state, "cnn_pool", "5", ResponseCategory.CORRECT, cnn)
 
     assert state.nodes["cnn_pool"].status is KnowledgeStatus.MASTERED
-    assert state.nodes["nn_basics"].status is KnowledgeStatus.MASTERED
+    assert state.nodes["nn_basics"].status is KnowledgeStatus.INFERRED_MASTERED
     assert any("由子節點推定" in change for change in changes)
 
 

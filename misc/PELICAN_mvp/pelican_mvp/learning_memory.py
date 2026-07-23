@@ -23,13 +23,19 @@ class LearningMemorySimulator:
         *,
         signal: str | None = None,
     ) -> None:
-        """Store bounded direct learner evidence without promoting EDF inference."""
+        """Store bounded direct learner evidence without promoting EDF inference.
+
+        Raw learner text is retained only as local direct evidence. It is marked
+        prompt-unsafe because bounded length alone does not make user text safe
+        for LLM prompt construction; tutoring strategy selection should consume
+        safe signal labels instead.
+        """
         state.direct_evidence.append(
             MemoryEvidenceRecord(
                 source="user_message",
                 kind="USER_EVIDENCE",
                 text=answer,
-                prompt_safe=True,
+                prompt_safe=False,
                 cold_export_eligible=False,
                 confidence=1.0,
                 topic=state.learning_plan.topic if state.learning_plan else state.intake_profile.topic,
@@ -64,7 +70,16 @@ class LearningMemorySimulator:
     def get_working_context(self, state: SessionState) -> list[str]:
         """Return bounded prompt-safe direct evidence, never EDF/model inference."""
         return [
-            f"{record.topic or 'topic'}:{record.node_id or '-'}:{record.signal or record.kind}:{record.text}"
+            f"{record.topic or 'topic'}:{record.node_id or '-'}:{record.signal or record.kind}:untrusted_user_evidence"
             for record in state.direct_evidence[-self.max_context_size:]
             if record.prompt_safe and record.kind == "USER_EVIDENCE"
         ]
+
+    def recent_safe_signals(self, state: SessionState, limit: int = 5) -> tuple[str, ...]:
+        """Return bounded learner evidence signal labels for strategy context."""
+        signals: list[str] = []
+        for record in state.direct_evidence[-limit:]:
+            if record.kind != "USER_EVIDENCE":
+                continue
+            signals.append((record.signal or "unknown")[:80])
+        return tuple(signals)

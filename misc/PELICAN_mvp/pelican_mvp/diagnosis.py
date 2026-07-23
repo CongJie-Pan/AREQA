@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from .curriculum import Curriculum
-from .models import Evidence, KnowledgeStatus, PlanSource, ResponseCategory, SessionState
+from .models import Evidence, KnowledgeStatus, ResponseCategory, SessionState
 
 
 def next_diagnostic_node(state: SessionState, curriculum: Curriculum) -> str | None:
@@ -70,12 +70,12 @@ def remediation_signal(answer: str) -> str | None:
 def apply_diagnostic_result(
     state: SessionState, node_id: str, answer: str, category: ResponseCategory, curriculum: Curriculum
 ) -> list[str]:
-    """Apply diagnostic evidence and infer prerequisites only from correct answers."""
+    """Apply diagnostic evidence and infer prerequisite state from correct answers."""
     status = KnowledgeStatus.MASTERED if category is ResponseCategory.CORRECT else KnowledgeStatus.NOT_MASTERED
     evidence = Evidence(response=answer, category=category.value, direct=True)
     state.nodes[node_id].update(status, evidence)
     changes = [f"{curriculum.nodes[node_id].label}: {status.value}（直接證據）"]
-    if status is KnowledgeStatus.MASTERED and state.plan_source is PlanSource.FIXTURE:
+    if status is KnowledgeStatus.MASTERED:
         changes.extend(_mark_prerequisites_mastered(state, node_id, answer, category, curriculum))
     return changes
 
@@ -87,12 +87,12 @@ def _mark_prerequisites_mastered(
     changes: list[str] = []
     for prerequisite in curriculum.nodes[node_id].prerequisites:
         parent = state.nodes[prerequisite]
-        if parent.status is not KnowledgeStatus.MASTERED:
+        if parent.status not in (KnowledgeStatus.MASTERED, KnowledgeStatus.INFERRED_MASTERED):
             parent.update(
-                KnowledgeStatus.MASTERED,
+                KnowledgeStatus.INFERRED_MASTERED,
                 Evidence(response=answer, category=category.value, direct=False),
             )
-            changes.append(f"{curriculum.nodes[prerequisite].label}: mastered（由子節點推定）")
+            changes.append(f"{curriculum.nodes[prerequisite].label}: inferred_mastered（由子節點推定）")
         changes.extend(_mark_prerequisites_mastered(state, prerequisite, answer, category, curriculum))
     return changes
 
