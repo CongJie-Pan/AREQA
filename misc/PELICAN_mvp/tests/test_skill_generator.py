@@ -7,6 +7,7 @@ import pytest
 from pelican_mvp.domain_skill import DomainCategory, DomainSkill, SkillLifecycle
 from pelican_mvp.llm import LlmAdapter, LlmHealth, LlmUnavailable
 from pelican_mvp.skill_artifacts import save_validated_skill_artifact
+from pelican_mvp.models import ProposalValidationStatus
 from pelican_mvp.skill_generator import DomainSkillGenerator, SkillGenerationError
 from test_domain_skill import valid_skill_payload
 
@@ -130,6 +131,32 @@ def test_generator_retries_once_after_invalid_skill(tmp_path: Path) -> None:
     assert skill.skill_id == "machine_learning"
     assert route == "route/stem"
     assert len(llm.calls) == 2
+
+
+def test_generate_with_result_exposes_rejected_attempts(tmp_path: Path) -> None:
+    invalid = make_skill()
+    object.__setattr__(invalid, "remediation_paths", invalid.remediation_paths[:1])
+    llm = FakeLlm([invalid])
+    generator = DomainSkillGenerator(llm, max_retries=0, artifact_root=tmp_path)
+
+    result = generator.generate_with_result("機器學習", force_regenerate=True)
+
+    assert result.used_fallback is True
+    assert result.skill.skill_id == "generic_stem"
+    assert result.attempts[0].validation_status is ProposalValidationStatus.REJECTED
+    assert result.attempts[-1].validation_status is ProposalValidationStatus.FALLBACK_USED
+    assert "missing_remediation" in result.final_reason_code
+
+
+def test_generate_preserves_tuple_contract(tmp_path: Path) -> None:
+    skill = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
+    llm = FakeLlm([skill])
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
+
+    generated, route = generator.generate("機器學習", force_regenerate=True)
+
+    assert generated.skill_id == "machine_learning"
+    assert route == "route/stem"
 
 
 def test_generator_default_repair_loop_allows_three_repairs(tmp_path: Path) -> None:

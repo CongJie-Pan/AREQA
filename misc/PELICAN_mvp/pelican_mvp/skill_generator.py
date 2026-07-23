@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .domain_catalog import resolve_domain_category
@@ -12,6 +12,7 @@ from .domain_skill import DomainCategory, DomainSkill, DomainSkillError, SkillLi
 from .generic_skill import build_generic_domain_skill
 from .llm import LlmAdapter, LlmUnavailable
 from .observability import log_event
+from .models import ProposalValidationStatus
 from .skill_artifacts import (
     SkillArtifactError,
     load_validated_skill_artifact,
@@ -26,9 +27,30 @@ class SkillGenerationError(RuntimeError):
     """Raised when a topic cannot safely enter skill generation.
 
     This exception is reserved for cases that should not receive a generic
-    fallback, such as an unknown domain requiring clarification. Known domains
-    recover to a generic skill-backed route instead of raising.
+        fallback, such as an unknown domain requiring clarification. Known domains
+        recover to a generic skill-backed route instead of raising.
     """
+
+
+@dataclass(frozen=True)
+class SkillGenerationAttempt:
+    """Safe metadata for one skill-generation proposal attempt."""
+
+    attempt_index: int
+    route: str
+    validation_status: ProposalValidationStatus
+    reason_code: str
+
+
+@dataclass(frozen=True)
+class SkillGenerationResult:
+    """Structured skill-generation result including safe attempt metadata."""
+
+    skill: DomainSkill
+    route: str
+    attempts: tuple[SkillGenerationAttempt, ...]
+    used_fallback: bool
+    final_reason_code: str
 
 
 class DomainSkillGenerator:
@@ -58,6 +80,11 @@ class DomainSkillGenerator:
         self.artifact_root = artifact_root
 
     def generate(self, topic: str, *, force_regenerate: bool = False) -> tuple[DomainSkill, str]:
+        """Return the historical tuple contract for existing planner callers."""
+        result = self.generate_with_result(topic, force_regenerate=force_regenerate)
+        return result.skill, result.route
+
+    def generate_with_result(self, topic: str, *, force_regenerate: bool = False) -> SkillGenerationResult:
         """Return a validated skill and safe route slug for the learner topic.
 
         The pipeline is catalog-first, cached validated runtime artifact, runtime
@@ -106,7 +133,15 @@ class DomainSkillGenerator:
                     skill_source="catalog",
                     reason_code="catalog_skill_available",
                 )
-                return skill, "catalog"
+                return SkillGenerationResult(
+                    skill=skill,
+                    route="catalog",
+                    attempts=(
+                        SkillGenerationAttempt(1, "catalog", ProposalValidationStatus.ACCEPTED, "catalog_skill_available"),
+                    ),
+                    used_fallback=False,
+                    final_reason_code="catalog_skill_available",
+                )
             except SkillLoadError:
                 log_event(
                     "pelican_skill_generation_fallback",
@@ -129,7 +164,15 @@ class DomainSkillGenerator:
                     skill_source="validated_runtime_cache",
                     reason_code="validated_artifact_available",
                 )
-                return skill, "runtime_cache"
+                return SkillGenerationResult(
+                    skill=skill,
+                    route="runtime_cache",
+                    attempts=(
+                        SkillGenerationAttempt(1, "runtime_cache", ProposalValidationStatus.ACCEPTED, "validated_artifact_available"),
+                    ),
+                    used_fallback=False,
+                    final_reason_code="validated_artifact_available",
+                )
             except (SkillArtifactError, SkillValidationError, DomainSkillError, ValueError, TypeError) as exc:
                 # Cache artifacts are an optimization, not an authority. If a
                 # persisted skill no longer passes the current validator, the
@@ -147,7 +190,16 @@ class DomainSkillGenerator:
         if not self.llm.available:
             # Known domains must stay skill-backed even offline; falling through
             # to the legacy planner would recreate the one-node-tree failure.
-            return self._generic_fallback(topic_clean, resolution.category, resolution.route_slug, ("llm_unavailable",))
+            skill, fallback_route = self._generic_fallback(topic_clean, resolution.category, resolution.route_slug, ("llm_unavailable",))
+            return SkillGenerationResult(
+                skill=skill,
+                route=fallback_route,
+                attempts=(
+                    SkillGenerationAttempt(1, resolution.route_slug, ProposalValidationStatus.FALLBACK_USED, "llm_unavailable"),
+                ),
+                used_fallback=True,
+                final_reason_code="llm_unavailable",
+            )
 
         route = self.llm.model_route_for_category(resolution.category)
         health = self.llm.check_route_health(route)
@@ -178,7 +230,16 @@ class DomainSkillGenerator:
                 attempts=(failed_attempt,),
                 root=self.artifact_root,
             )
-            return self._generic_fallback(topic_clean, resolution.category, route, health.reason_codes)
+            skill, fallback_route = self._generic_fallback(topic_clean, resolution.category, route, health.reason_codes)
+            return SkillGenerationResult(
+                skill=skill,
+                route=fallback_route,
+                attempts=(
+                    SkillGenerationAttempt(1, route, ProposalValidationStatus.FALLBACK_USED, "|".join(health.reason_codes)),
+                ),
+                used_fallback=True,
+                final_reason_code="|".join(health.reason_codes),
+            )
 
         last_reason_codes: tuple[str, ...] = ("unknown",)
         last_payload: dict | None = None
@@ -219,7 +280,16 @@ class DomainSkillGenerator:
                     skill_source="runtime_generated",
                     reason_code="validated",
                 )
-                return skill, route
+                attempts = _attempts_from_failed(failed_attempts, route) + (
+                    SkillGenerationAttempt(attempt + 1, route, ProposalValidationStatus.ACCEPTED, "validated"),
+                )
+                return SkillGenerationResult(
+                    skill=skill,
+                    route=route,
+                    attempts=attempts,
+                    used_fallback=False,
+                    final_reason_code="validated",
+                )
             except (LlmUnavailable, SkillValidationError, DomainSkillError, ValueError, TypeError, SkillGenerationError) as exc:
                 last_reason_codes = _reason_codes_for(exc)
                 event = _failure_event_for(exc)
@@ -264,7 +334,22 @@ class DomainSkillGenerator:
             attempts=tuple(failed_attempts),
             root=self.artifact_root,
         )
-        return self._generic_fallback(topic_clean, resolution.category, route, last_reason_codes)
+        skill, fallback_route = self._generic_fallback(topic_clean, resolution.category, route, last_reason_codes)
+        return SkillGenerationResult(
+            skill=skill,
+            route=fallback_route,
+            attempts=_attempts_from_failed(failed_attempts, route)
+            + (
+                SkillGenerationAttempt(
+                    len(failed_attempts) + 1,
+                    fallback_route,
+                    ProposalValidationStatus.FALLBACK_USED,
+                    "|".join(last_reason_codes),
+                ),
+            ),
+            used_fallback=True,
+            final_reason_code="|".join(last_reason_codes),
+        )
 
     def _generate_payload(
         self,
@@ -357,6 +442,26 @@ def _reason_codes_for(exc: Exception) -> tuple[str, ...]:
     if isinstance(exc, LlmUnavailable):
         return _llm_reason_codes(exc)
     return (type(exc).__name__,)
+
+
+def _attempts_from_failed(failed_attempts: list[dict[str, object]], route: str) -> tuple[SkillGenerationAttempt, ...]:
+    """Convert persisted failed-attempt metadata into safe result records."""
+    attempts: list[SkillGenerationAttempt] = []
+    for index, item in enumerate(failed_attempts, start=1):
+        reason_codes = item.get("reason_codes", ("unknown",))
+        if isinstance(reason_codes, (list, tuple)):
+            reason_code = "|".join(str(code)[:80] for code in reason_codes)
+        else:
+            reason_code = str(reason_codes)[:80]
+        attempts.append(
+            SkillGenerationAttempt(
+                attempt_index=int(item.get("attempt", index)),
+                route=route,
+                validation_status=ProposalValidationStatus.REJECTED,
+                reason_code=reason_code,
+            )
+        )
+    return tuple(attempts)
 
 
 def _dedupe_reason_codes(reason_codes: tuple[str, ...]) -> tuple[str, ...]:

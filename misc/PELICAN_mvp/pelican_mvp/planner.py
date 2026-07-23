@@ -10,7 +10,7 @@ from .llm import LlmAdapter
 from .models import DiagnosticQuestion, KnowledgeNode, LearnerIntakeProfile, LearningIntent, LearningPlanSnapshot
 from .observability import log_event
 from .skill_compiler import SkillCompileError, compile_learning_plan
-from .skill_generator import DomainSkillGenerator, SkillGenerationError
+from .skill_generator import DomainSkillGenerator, SkillGenerationError, SkillGenerationResult
 
 
 def validate_learning_plan(plan: LearningPlanSnapshot) -> None:
@@ -70,6 +70,7 @@ class LearningPlanner:
         """Initialize planner dependencies with deterministic fallback behavior."""
         self.llm = llm or LlmAdapter()
         self.skill_generator = DomainSkillGenerator(self.llm)
+        self.last_skill_generation_result: SkillGenerationResult | None = None
 
     def create_plan(self, topic: str) -> LearningPlanSnapshot:
         """Create a validated learning plan from a topic.
@@ -100,7 +101,9 @@ class LearningPlanner:
         profile = _profile_with_defaults(profile, topic_clean)
 
         try:
-            skill, route = self.skill_generator.generate(topic_clean)
+            result = self.skill_generator.generate_with_result(topic_clean)
+            self.last_skill_generation_result = result
+            skill, route = result.skill, result.route
             plan = compile_learning_plan(skill, _profile_with_route(profile, route))
             validate_learning_plan(plan)
             log_event(
@@ -116,6 +119,7 @@ class LearningPlanner:
             )
             return plan
         except (SkillGenerationError, SkillCompileError, ValueError, KeyError, TypeError) as exc:
+            self.last_skill_generation_result = None
             resolution = resolve_domain_category(topic_clean)
             log_event(
                 "pelican_plan_fallback",
