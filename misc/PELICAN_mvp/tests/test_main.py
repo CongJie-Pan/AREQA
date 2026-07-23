@@ -2,6 +2,7 @@ import logging
 import signal
 
 import pelican_mvp.__main__ as main_module
+from pelican_mvp.observability import log_event
 
 
 def test_ipv4_proc_hex_matches_linux_proc_format() -> None:
@@ -88,3 +89,32 @@ def test_safe_pelican_formatter_prints_safe_reason_code() -> None:
         "PELICAN WARNING pelican_skill_generation_failed "
         "reason=llm_request_failed|llm_jsondecodeerror"
     )
+
+
+def test_configure_runtime_logging_filters_terminal_channels(capsys) -> None:
+    logger = logging.getLogger("pelican_mvp")
+    for handler in list(logger.handlers):
+        if getattr(handler, "_pelican_cli_handler", False):
+            logger.removeHandler(handler)
+
+    main_module.configure_runtime_logging("info", "api")
+    log_event("pelican_api_start", "student", endpoint="/api/start", reason_code="ok")
+    log_event("pelican_skill_loaded", "student", skill_id="deep_learning", reason_code="ok")
+
+    output = capsys.readouterr().err
+
+    assert "channel=api" in output
+    assert "endpoint=/api/start" in output
+    assert "learner=" in output
+    assert "pelican_skill_loaded" not in output
+
+
+def test_configure_runtime_logging_off_removes_cli_handler() -> None:
+    logger = logging.getLogger("pelican_mvp")
+
+    main_module.configure_runtime_logging("info", "all")
+    assert any(getattr(handler, "_pelican_cli_handler", False) for handler in logger.handlers)
+
+    main_module.configure_runtime_logging("off", "all")
+
+    assert not any(getattr(handler, "_pelican_cli_handler", False) for handler in logger.handlers)

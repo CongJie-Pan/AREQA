@@ -84,6 +84,44 @@ def test_unknown_scaffolds_current_prerequisite_not_unrelated_node(tmp_path: Pat
     assert engine.state.direct_evidence[-1].signal == "unknown"
 
 
+def test_tutoring_control_signals_after_mastery_do_not_overwrite_progress(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    current_node = engine.state.current_node_id
+
+    correct = engine.respond("用來衡量預測與目標之間的差距")
+
+    assert correct.node_id == current_node
+    assert engine.state.phase == "tutoring"
+    assert engine.state.nodes[current_node].status.value == "mastered"
+
+    unknown = engine.respond("我不知道")
+
+    assert unknown.node_id == current_node
+    assert "先補" in unknown.message
+    assert "不跳到下一個診斷題" in unknown.next_reason
+    assert engine.state.direct_evidence[-1].signal == "unknown"
+    assert engine.state.nodes[current_node].status.value == "mastered"
+
+    too_detailed = engine.respond("這太細了，我完全沒有基礎")
+
+    assert too_detailed.node_id == current_node
+    assert "太細" in too_detailed.message
+    assert "重新校準抽象層級" in too_detailed.next_reason
+    assert engine.state.direct_evidence[-1].signal == "too_detailed"
+    assert engine.state.nodes[current_node].status.value == "mastered"
+
+
+def test_repeated_tutoring_failures_render_from_base_prompt(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    engine.respond("用來衡量預測與目標之間的差距")
+    first = engine.respond("載入數據")
+
+    second = engine.respond("還是不對")
+
+    assert first.message.count("請只聚焦") <= 1
+    assert second.message.count("請只聚焦") <= 1
+
+
 def test_too_easy_accelerates_to_next_concept(tmp_path: Path) -> None:
     engine = calibrated_deep_learning_engine(tmp_path)
 

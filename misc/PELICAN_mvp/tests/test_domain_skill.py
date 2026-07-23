@@ -119,5 +119,23 @@ def test_observability_allows_skill_metadata_but_redacts_raw_content(caplog) -> 
     record = caplog.records[0]
     assert record.skill_id == "deep_learning"
     assert record.route == "openrouter_gpt_5_5"
+    assert record.debug_channel == "skill"
     assert raw_topic not in caplog.text
     assert not hasattr(record, "topic")
+
+
+def test_observability_allows_api_endpoint_and_keeps_debug_channel_safe(caplog) -> None:
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        log_event(
+            "pelican_api_error",
+            learner_id="student",
+            endpoint="/api/respond",
+            reason_code="validation_error",
+            answer="raw private answer",
+        )
+
+    record = caplog.records[0]
+    assert record.debug_channel == "api"
+    assert record.endpoint == "/api/respond"
+    assert "raw private answer" not in caplog.text
+    assert not hasattr(record, "answer")

@@ -901,11 +901,14 @@ class PelicanEngine:
             node_id=node_id,
             reason_code=category.value,
         )
-        self.state.nodes[node_id].update(
-            KnowledgeStatus.NOT_MASTERED,
-            evidence=self._evidence(answer, category),
-        )
-        changes = [f"{self.curriculum.nodes[node_id].label}: not_mastered（直接證據）"]
+        changes: list[str] = []
+        current_status = self.state.nodes[node_id].status
+        if current_status not in (KnowledgeStatus.MASTERED, KnowledgeStatus.INFERRED_MASTERED):
+            self.state.nodes[node_id].update(
+                KnowledgeStatus.NOT_MASTERED,
+                evidence=self._evidence(answer, category),
+            )
+            changes.append(f"{self.curriculum.nodes[node_id].label}: not_mastered（直接證據）")
         strategy = strategy_for_remediation_signal("unknown") or TutoringStrategy.DECOMPOSITION
         self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category, "unknown")
@@ -986,7 +989,17 @@ class PelicanEngine:
         """Handle practice-step tutoring after diagnosis has selected a path."""
         node_id = self._require_current_node()
         step_id = self.state.current_step_id or ""
+        signal = remediation_signal(answer)
+        # Learner control signals remain remediation requests after tutoring
+        # begins; they are not ordinary practice evidence and must not overwrite
+        # a previously mastered node.
+        if self.state.plan_source is PlanSource.GENERATED and signal in {"too_detailed", "too_difficult"}:
+            return self._handle_scope_mismatch(answer, signal)
+        if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
+            return self._handle_acceleration_request(answer)
         category = self._classify(answer)
+        if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
+            return self._handle_scaffold_request(answer, category)
         changes: list[str] = []
         if category is ResponseCategory.CORRECT:
             self._record_agent_proposal(
@@ -1253,14 +1266,30 @@ class PelicanEngine:
 
     def _tutor_message(self, strategy: TutoringStrategy, node_id: str) -> tuple[str, str]:
         """Generate or select a tutor response without changing mastery state."""
+        prompt = self._base_tutor_prompt(node_id)
         if self.state.mode == "llm":
             try:
-                generated = self.llm.tutor_response(strategy, self.state.current_prompt, self.curriculum.nodes[node_id].label)
+                generated = self.llm.tutor_response(strategy, prompt, self.curriculum.nodes[node_id].label)
                 if generated:
                     return generated, "llm"
             except LlmUnavailable:
                 pass
-        return rule_tutor_message(strategy, node_id, self.state.current_prompt, self.curriculum), "rule"
+        return rule_tutor_message(strategy, node_id, prompt, self.curriculum), "rule"
+
+    def _base_tutor_prompt(self, node_id: str) -> str:
+        """Return the stable learning prompt for tutor rendering.
+
+        Tutor responses are persisted as ``current_prompt`` for continuity, so
+        repeated failures must render from the active task or diagnostic prompt
+        instead of wrapping the previously rendered tutor message.
+        """
+        if self.state.current_step_id:
+            for step in self.curriculum.task_steps:
+                if step.get("step_id") == self.state.current_step_id and step.get("node_id") == node_id:
+                    return step.get("prompt", self.state.current_prompt)
+        if node_id in self.curriculum.diagnostics:
+            return self.curriculum.diagnostics[node_id].prompt
+        return self.state.current_prompt
 
     def _show_answer(self) -> TurnOutcome:
         """Reveal the expected answer without writing mastery evidence."""

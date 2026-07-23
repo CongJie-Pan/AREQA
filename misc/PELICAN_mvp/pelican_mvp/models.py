@@ -524,6 +524,24 @@ class LearningPlanSnapshot:
             "created_at": self.created_at,
         }
 
+    def to_public_dict(self) -> dict[str, Any]:
+        """Return a learner/API-safe representation without answer keys.
+
+        ``to_dict`` remains the local persistence format and must keep
+        ``expected_answer`` so existing saved sessions can be restored. Public
+        surfaces should use this method when exposing plan structure.
+        """
+        payload = self.to_dict()
+        payload["diagnostics"] = [
+            {
+                "node_id": diagnostic["node_id"],
+                "prompt": diagnostic["prompt"],
+                "source": diagnostic["source"],
+            }
+            for diagnostic in payload["diagnostics"]
+        ]
+        return payload
+
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "LearningPlanSnapshot":
         """Build a plan snapshot from persisted JSON before store-level validation."""

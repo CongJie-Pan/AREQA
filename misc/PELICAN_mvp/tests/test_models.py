@@ -100,6 +100,29 @@ def test_session_state_round_trips_generated_plan_snapshot() -> None:
     assert restored.memory_snapshot.evidence_count == 0
 
 
+def test_learning_plan_public_dict_omits_expected_answers_without_breaking_persistence() -> None:
+    plan = LearningPlanSnapshot(
+        plan_id="binary-search-basics",
+        topic="binary search",
+        goal_summary="Understand binary search boundaries.",
+        nodes=(KnowledgeNode("boundaries", "Boundary updates"),),
+        diagnostics=(
+            DiagnosticQuestion("boundaries", "Why update a boundary?", "discard half"),
+        ),
+        task_steps=(
+            {"step_id": "apply", "node_id": "boundaries", "prompt": "Trace one step", "expected": "move low"},
+        ),
+    )
+
+    public_payload = plan.to_public_dict()
+    persistence_payload = plan.to_dict()
+
+    assert "expected_answer" not in public_payload["diagnostics"][0]
+    assert public_payload["diagnostics"][0]["prompt"] == "Why update a boundary?"
+    assert persistence_payload["diagnostics"][0]["expected_answer"] == "discard half"
+    assert LearningPlanSnapshot.from_dict(persistence_payload) == plan
+
+
 def test_session_state_treats_legacy_curriculum_as_fixture() -> None:
     state = SessionState.from_dict({"learner_id": "tester", "curriculum_id": "cnn"})
 

@@ -8,6 +8,39 @@ from typing import Any
 
 
 LOGGER_NAME = "pelican_mvp"
+DEBUG_CHANNELS = (
+    "api",
+    "intake",
+    "skill",
+    "diagnosis",
+    "state",
+    "edf",
+    "memory",
+    "tutor",
+    "methodology",
+    "activity",
+)
+_EVENT_CHANNEL_PREFIXES = (
+    ("pelican_api_", "api"),
+    ("pelican_intake_", "intake"),
+    ("pelican_topic_", "intake"),
+    ("pelican_skill_", "skill"),
+    ("pelican_plan_", "skill"),
+    ("pelican_diagnostic_", "diagnosis"),
+    ("pelican_diagnosis_", "diagnosis"),
+    ("pelican_state_", "state"),
+    ("pelican_session_", "state"),
+    ("pelican_phase_", "state"),
+    ("pelican_edf_", "edf"),
+    ("pelican_memory_", "memory"),
+    ("pelican_remediation_", "tutor"),
+    ("pelican_scope_", "tutor"),
+    ("pelican_scaffold_", "tutor"),
+    ("pelican_agent_", "methodology"),
+    ("pelican_methodology_", "methodology"),
+    ("pelican_turn_", "methodology"),
+    ("pelican_activity", "activity"),
+)
 _SAFE_FIELDS = frozenset({
     "schema_version",
     "phase",
@@ -49,7 +82,33 @@ _SAFE_FIELDS = frozenset({
     "event_type",
     "agent_role",
     "validation_status",
+    "endpoint",
 })
+
+
+class DebugChannelFilter(logging.Filter):
+    """Filter terminal logs by safe PELICAN feature channel.
+
+    Args:
+        channels: ``None`` to allow all channels, or a normalized collection of
+            channel names from ``DEBUG_CHANNELS``.
+
+    Returns:
+        ``True`` when the record belongs to an enabled channel.
+
+    Side Effects:
+        None. The filter only reads the ``debug_channel`` attribute written by
+        ``log_event`` and never inspects raw learner content.
+    """
+
+    def __init__(self, channels: frozenset[str] | None) -> None:
+        super().__init__()
+        self.channels = channels
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self.channels is None:
+            return True
+        return getattr(record, "debug_channel", "activity") in self.channels
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
@@ -60,6 +119,47 @@ def get_logger(name: str | None = None) -> logging.Logger:
 def learner_token(learner_id: str) -> str:
     """Return a stable non-reversible token for correlating local session events."""
     return hashlib.sha256(learner_id.encode("utf-8")).hexdigest()[:12]
+
+
+def debug_channel_for_event(event: str) -> str:
+    """Map a stable event name to one terminal debug channel.
+
+    Args:
+        event: Safe structured event name, normally beginning with
+            ``pelican_``.
+
+    Returns:
+        One of ``DEBUG_CHANNELS``. Unknown event names are grouped under
+        ``activity`` so they remain visible unless the operator narrows the
+        terminal filter.
+    """
+    for prefix, channel in _EVENT_CHANNEL_PREFIXES:
+        if event.startswith(prefix):
+            return channel
+    return "activity"
+
+
+def normalize_debug_channels(raw_channels: str | None) -> frozenset[str] | None:
+    """Normalize a comma-separated channel list for terminal filtering.
+
+    Args:
+        raw_channels: ``None``, ``all``, or a comma-separated list such as
+            ``api,skill,tutor``.
+
+    Returns:
+        ``None`` when all channels should be shown, otherwise a frozenset of
+        valid channel names.
+
+    Raises:
+        ValueError: If an unknown channel name is provided.
+    """
+    if raw_channels is None or raw_channels.strip().lower() in {"", "all", "*"}:
+        return None
+    channels = frozenset(item.strip().lower() for item in raw_channels.split(",") if item.strip())
+    unknown = sorted(channels - set(DEBUG_CHANNELS))
+    if unknown:
+        raise ValueError(f"Unknown PELICAN log channel(s): {', '.join(unknown)}")
+    return channels
 
 
 def log_event(event: str, learner_id: str | None = None, *, level: int = logging.INFO, **fields: Any) -> None:
@@ -73,7 +173,7 @@ def log_event(event: str, learner_id: str | None = None, *, level: int = logging
         for key, value in fields.items()
         if key in _SAFE_FIELDS and isinstance(value, (str, int, float, bool, type(None)))
     }
-    extra_fields = {"event": event, **safe_fields}
+    extra_fields = {"event": event, "debug_channel": debug_channel_for_event(event), **safe_fields}
     if learner_id:
         extra_fields["learner_token"] = learner_token(learner_id)
     get_logger().log(

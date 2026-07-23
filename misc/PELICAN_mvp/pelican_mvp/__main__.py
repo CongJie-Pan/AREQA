@@ -10,11 +10,15 @@ from pathlib import Path
 
 import uvicorn
 
+from .observability import DEBUG_CHANNELS, DebugChannelFilter, normalize_debug_channels
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROC_ROOT = Path("/proc")
 LOG_FIELDS = (
     "event",
+    "debug_channel",
+    "learner_token",
     "reason_code",
     "phase",
     "activity_code",
@@ -37,6 +41,7 @@ LOG_FIELDS = (
     "strategy",
     "edf_transition",
     "memory_event",
+    "endpoint",
 )
 
 
@@ -67,33 +72,80 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Do not terminate an older PELICAN MVP process already bound to this host/port.",
     )
+    parser.add_argument(
+        "--pelican-log",
+        choices=("off", "info", "debug"),
+        default=os.environ.get("PELICAN_LOG_MODE", "info"),
+        help="Terminal PELICAN structured log mode. Env: PELICAN_LOG_MODE.",
+    )
+    parser.add_argument(
+        "--pelican-log-channels",
+        default=os.environ.get("PELICAN_LOG_CHANNELS", "all"),
+        help=(
+            "Comma-separated PELICAN debug channels to show: "
+            f"{', '.join(DEBUG_CHANNELS)}. Use 'all' for every channel. Env: PELICAN_LOG_CHANNELS."
+        ),
+    )
     args = parser.parse_args(argv)
-    configure_runtime_logging()
+    configure_runtime_logging(args.pelican_log, args.pelican_log_channels)
     if not args.no_cleanup_stale_server:
         cleanup_stale_pelican_server(args.host, args.port)
     uvicorn.run("pelican_mvp.server:app", host=args.host, port=args.port)
 
 
-def configure_runtime_logging() -> None:
-    """Print safe PELICAN activity events beside uvicorn access logs."""
+def configure_runtime_logging(mode: str | None = None, channels: str | None = None) -> None:
+    """Print safe PELICAN activity events beside uvicorn access logs.
+
+    Args:
+        mode: ``off`` disables the CLI handler, ``info`` prints normal
+            structured events, and ``debug`` also permits DEBUG-level events.
+            ``None`` reads ``PELICAN_LOG_MODE`` with ``info`` fallback.
+        channels: Comma-separated channel list or ``all``. ``None`` reads
+            ``PELICAN_LOG_CHANNELS`` with ``all`` fallback.
+
+    Raises:
+        ValueError: If an unknown mode or channel is provided.
+
+    Side Effects:
+        Installs or updates exactly one CLI stream handler on the package
+        logger. The formatter prints only allow-listed safe metadata and never
+        raw learner answers, prompts, model outputs, credentials, or exception
+        bodies.
+    """
+    selected_mode = (mode or os.environ.get("PELICAN_LOG_MODE", "info")).strip().lower()
+    if selected_mode not in {"off", "info", "debug"}:
+        raise ValueError("PELICAN log mode must be one of: off, info, debug")
+    channel_filter = DebugChannelFilter(normalize_debug_channels(channels or os.environ.get("PELICAN_LOG_CHANNELS", "all")))
     logger = logging.getLogger("pelican_mvp")
-    logger.setLevel(logging.INFO)
-    if not any(getattr(handler, "_pelican_cli_handler", False) for handler in logger.handlers):
+    logger.setLevel(logging.DEBUG if selected_mode == "debug" else logging.INFO)
+    cli_handlers = [handler for handler in logger.handlers if getattr(handler, "_pelican_cli_handler", False)]
+    if selected_mode == "off":
+        for handler in cli_handlers:
+            logger.removeHandler(handler)
+        logger.propagate = False
+        return
+    if cli_handlers:
+        handler = cli_handlers[0]
+    else:
         handler = logging.StreamHandler()
         handler._pelican_cli_handler = True  # type: ignore[attr-defined]
-        handler.setFormatter(
-            SafePelicanFormatter(
-                "PELICAN %(levelname)s %(event)s phase=%(phase)s activity=%(activity_code)s "
-                "status=%(activity_status)s reason=%(reason_code)s detail=%(detail_code)s domain=%(domain_category)s "
-                "route=%(route)s api_status=%(api_status_code)s api_error=%(api_error_type)s "
-                "skill=%(skill_id)s skill_source=%(skill_source)s "
-                "intake_source=%(intake_source)s semantic=%(semantic_intent)s confidence=%(semantic_confidence)s "
-                "diagnostic_source=%(diagnostic_source)s "
-                "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "
-                "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s"
-            )
-        )
         logger.addHandler(handler)
+    handler.setLevel(logging.DEBUG if selected_mode == "debug" else logging.INFO)
+    handler.filters.clear()
+    handler.addFilter(channel_filter)
+    handler.setFormatter(
+        SafePelicanFormatter(
+            "PELICAN %(levelname)s channel=%(debug_channel)s event=%(event)s endpoint=%(endpoint)s "
+            "learner=%(learner_token)s phase=%(phase)s activity=%(activity_code)s "
+            "status=%(activity_status)s reason=%(reason_code)s detail=%(detail_code)s domain=%(domain_category)s "
+            "route=%(route)s api_status=%(api_status_code)s api_error=%(api_error_type)s "
+            "skill=%(skill_id)s skill_source=%(skill_source)s "
+            "intake_source=%(intake_source)s semantic=%(semantic_intent)s confidence=%(semantic_confidence)s "
+            "diagnostic_source=%(diagnostic_source)s "
+            "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "
+            "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s"
+        )
+    )
     logger.propagate = False
 
 

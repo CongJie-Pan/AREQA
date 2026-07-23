@@ -18,6 +18,24 @@ from pelican_mvp.llm import LlmConfig
 _original_from_env = LlmConfig.from_environment
 LlmConfig.from_environment = classmethod(lambda cls: None) # type: ignore
 
+def assert_center_clickable_in_viewport(page: Page, selector: str) -> None:
+    locator = page.locator(selector)
+    box = locator.bounding_box()
+    assert box is not None
+    viewport = page.viewport_size
+    assert viewport is not None
+    center_x = box["x"] + box["width"] / 2
+    center_y = box["y"] + box["height"] / 2
+    assert 0 <= center_x <= viewport["width"]
+    assert 0 <= center_y <= viewport["height"]
+    assert page.evaluate(
+        """([x, y, selector]) => {
+            const top = document.elementFromPoint(x, y);
+            return Boolean(top && top.closest(selector));
+        }""",
+        [center_x, center_y, selector],
+    )
+
 @pytest.fixture(scope="module", autouse=True)
 def run_server() -> None:
     config = uvicorn.Config(app=app, host="127.0.0.1", port=PORT, log_level="error")
@@ -88,6 +106,11 @@ def test_methodology_panel_mobile_layout(page: Page) -> None:
     expect(page.locator("#methodology-stages")).to_be_visible()
     expect(page.locator("#chat-input")).to_be_visible()
     expect(page.locator(".send-btn")).to_be_visible()
+    assert_center_clickable_in_viewport(page, "#reset-btn")
+    assert_center_clickable_in_viewport(page, "#chat-input")
+    assert_center_clickable_in_viewport(page, ".send-btn")
+    page.click("#reset-btn")
+    expect(page.locator("#phase-display")).to_have_text("onboarding", ignore_case=True)
     
 def test_mode_switch(page: Page) -> None:
     page.goto(URL)

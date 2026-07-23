@@ -1,4 +1,4 @@
-const LEARNER_ID = "demo_student";
+const LEARNER_ID = new URLSearchParams(window.location.search).get("learner_id") || "demo_student";
 
 document.addEventListener("DOMContentLoaded", async () => {
     const chatHistory = document.getElementById("chat-history");
@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ learner_id: LEARNER_ID, answer: text })
             });
-            const data = await res.json();
+            const data = await readJsonResponse(res, "回覆失敗");
             handleResponse(data);
         } catch (err) {
             appendMessage("系統錯誤：" + err.message, "teacher");
@@ -67,10 +67,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ learner_id: LEARNER_ID }) // no curriculum_id means fallback to onboarding
             });
-            const data = await res.json();
+            const data = await readJsonResponse(res, "重置失敗");
             handleResponse(data);
         } catch(err) {
-            console.error(err);
+            appendMessage("重置失敗：" + err.message, "teacher");
+            renderActivityStatus({ code: "error", label: "系統錯誤", status: "idle", detail: "reset_failed" }, []);
         } finally {
             showLoading(false);
             chatInput.disabled = false;
@@ -140,7 +141,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ learner_id: LEARNER_ID })
             });
-            const data = await res.json();
+            const data = await readJsonResponse(res, "啟動失敗");
             if (data.mode) {
                 modeSelect.value = data.mode;
             }
@@ -150,6 +151,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         } finally {
             showLoading(false);
         }
+    }
+
+    async function readJsonResponse(res, fallbackMessage) {
+        let data = {};
+        try {
+            data = await res.json();
+        } catch (err) {
+            if (res.ok) {
+                throw err;
+            }
+        }
+        if (!res.ok) {
+            throw new Error(data.detail || fallbackMessage);
+        }
+        return data;
     }
 
     function handleResponse(data) {
