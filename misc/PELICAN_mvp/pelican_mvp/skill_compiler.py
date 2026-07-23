@@ -38,6 +38,7 @@ def compile_learning_plan(skill: DomainSkill, profile: LearnerIntakeProfile) -> 
         raise SkillCompileError("missing canonical path for intake intent")
 
     selected_path = _initial_path_for_profile(path, profile, intent, skill)
+    foundation_first = _uses_foundation_first_slice(intent, skill)
     prerequisites = {item.concept_id: item for item in skill.prerequisites}
     diagnostics = {item.concept_id: item for item in skill.diagnostic_rules}
     nodes: list[KnowledgeNode] = []
@@ -49,7 +50,11 @@ def compile_learning_plan(skill: DomainSkill, profile: LearnerIntakeProfile) -> 
         diagnostic = diagnostics.get(concept_id)
         if concept is None or diagnostic is None:
             raise SkillCompileError("compiled path references missing concept or diagnostic")
-        local_prerequisites = tuple(item for item in concept.prerequisites if item in selected_path)
+        local_prerequisites = (
+            ()
+            if foundation_first
+            else tuple(item for item in concept.prerequisites if item in selected_path)
+        )
         nodes.append(
             KnowledgeNode(
                 node_id=concept.concept_id,
@@ -118,15 +123,27 @@ def _initial_path_for_profile(
 ) -> tuple[str, ...]:
     """Select the first compiled path without asserting mastery from intake.
 
-    The deep-learning catalog seed keeps the earlier calibration-first behavior:
-    conceptual requests start with one foundation node so broad beginner prompts
-    never jump to implementation trivia. Runtime-generated and generic skills
-    keep their full path because truncating them would make missing-skill
-    fallbacks look like one-node trees again.
+    The deep-learning catalog seed keeps calibration-first behavior while
+    exposing enough foundation concepts for the learner-facing UI to demonstrate
+    an adaptive learning path. Runtime-generated and generic skills keep their
+    full path because truncating them would make missing-skill fallbacks look
+    like shallow catalog demos.
     """
-    if intent is IntentType.CONCEPTUAL and skill.skill_id == "deep_learning":
-        return path[:1]
+    if _uses_foundation_first_slice(intent, skill):
+        return path[:3]
     return path
+
+
+def _uses_foundation_first_slice(intent: IntentType, skill: DomainSkill) -> bool:
+    """Return whether a catalog path should diagnose early foundations first.
+
+    The deep-learning conceptual catalog path is linear, so preserving its
+    prerequisite edges inside a short demo slice would make successor-first
+    diagnosis start at the deepest retained node. Flattening this MVP slice keeps
+    the first user-facing diagnostic at the intended beginner foundation while
+    still exposing multiple follow-up concepts in the session tree.
+    """
+    return intent is IntentType.CONCEPTUAL and skill.skill_id == "deep_learning"
 
 
 def _normalized_topic(topic: str) -> str:

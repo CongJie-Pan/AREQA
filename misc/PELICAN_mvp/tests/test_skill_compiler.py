@@ -10,8 +10,13 @@ def test_compile_uncalibrated_deep_learning_starts_with_foundation() -> None:
 
     plan = compile_learning_plan(skill, profile)
 
-    assert [node.node_id for node in plan.nodes] == ["math_intuition"]
+    assert [node.node_id for node in plan.nodes] == [
+        "math_intuition",
+        "vectors_tensors",
+        "functions_transformations",
+    ]
     assert "MLP" not in plan.nodes[0].label
+    assert all(node.prerequisites == () for node in plan.nodes)
     assert plan.diagnostics[0].node_id == "math_intuition"
     assert plan.diagnostics[0].expected_answer not in plan.diagnostics[0].prompt
 

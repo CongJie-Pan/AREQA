@@ -16,10 +16,11 @@ PELICAN MVP 是 AREQA 主系統外的一個學習引擎實驗場。它的目的�
 - EDF/GUM 模擬層：保留教學策略狀態、direct user evidence、working context count。
 - Agentic methodology runtime：以 turn/cycle ID 串接六個核心 stage、GUM subsystem event、learner interaction event、typed agent proposals。
 - Causal tutoring transaction：目前 learner evidence 會先更新 knowledge state、GUM 與 EDF，再由更新後的 context 選 tutor strategy。
+- Remediation-first tutoring：進入 tutoring 後仍會優先處理 `我不知道`、`太細了`、`太難`、`太簡單` 這類 learner control signals，不會把已掌握的概念誤降級。
 - Learner progress snapshot：前端/API 顯示 direct/inferred progress、status 與 confidence，而不是只顯示 raw mastery tree。
 - 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges、methodology graph、agent proposals 與 learner progress。
 - Markdown 匯出：可從 UI 匯出目前對話、session metadata、knowledge tree、recent activity、methodology events、agent proposals、progress snapshot。
-- 安全 structured logs：terminal 會顯示 safe metadata，例如 skill source、semantic intent、confidence、API health、reason code；不記錄 raw prompt、raw model output 或 API key。
+- 安全 structured logs：terminal 會顯示 safe metadata，例如 `channel`、`endpoint`、learner token、skill source、semantic intent、confidence、API health、reason code；不記錄 raw learner answer、raw prompt、raw model output 或 API key。
 
 目前仍需注意的限制：
 
@@ -49,10 +50,48 @@ python -m pelican_mvp
 http://127.0.0.1:8000
 ```
 
+如果要執行人工測試劇本，建議使用獨立 learner id，避免沿用 `demo_student` 的舊 session：
+
+```text
+http://127.0.0.1:8000/?learner_id=manual_agentic_pelican_20260723
+```
+
 `python -m pelican_mvp` 啟動時會嘗試清掉仍占用同一 host/port 的舊 PELICAN MVP server process。如果不想自動清理，可以使用：
 
 ```bash
 python -m pelican_mvp --no-cleanup-stale-server
+```
+
+### Terminal debug logger
+
+PELICAN terminal logger 預設會輸出安全 structured metadata，方便追蹤 API、onboarding、skill、diagnosis、EDF/GUM、tutoring 與 methodology runtime。它只印 allow-listed fields，不印 raw learner answer、prompt、model response、API key 或完整 exception body。
+
+CLI 開關：
+
+```bash
+python -m pelican_mvp --pelican-log info --pelican-log-channels all
+python -m pelican_mvp --pelican-log debug --pelican-log-channels api,intake,diagnosis,tutor
+python -m pelican_mvp --pelican-log off
+```
+
+等價環境變數：
+
+```bash
+export PELICAN_LOG_MODE=debug
+export PELICAN_LOG_CHANNELS=api,intake,skill,diagnosis,edf,memory,tutor,methodology
+python -m pelican_mvp
+```
+
+可用 channels：
+
+```text
+api, intake, skill, diagnosis, state, edf, memory, tutor, methodology, activity
+```
+
+Terminal log 範例：
+
+```text
+PELICAN INFO channel=tutor event=pelican_scaffold_selected endpoint=- learner=9f86d081884c phase=tutoring activity=- status=- reason=unknown detail=- domain=- route=- api_status=- api_error=- skill=- skill_source=- intake_source=- semantic=- confidence=- diagnostic_source=- node=- edf=- strategy=- edf_transition=- memory=- remediation=unknown
 ```
 
 常用檢查：
@@ -60,6 +99,14 @@ python -m pelican_mvp --no-cleanup-stale-server
 ```bash
 python -m pelican_mvp --help
 python -m pytest -q
+python -m compileall -q pelican_mvp
+node --check static/app.js
+```
+
+如果從 repo root 做完整品質檢查：
+
+```bash
+npm run check:report:strict
 ```
 
 預設可離線執行。離線時仍可使用 checked-in catalog skill 與 deterministic fallback。若要啟用 OpenRouter-compatible LLM：
@@ -98,6 +145,8 @@ flowchart TD
 
     Engine --> Store["StateStore\nlocal JSON session persistence"]
     Store --> State["SessionState\nphase, intake, plan, transcript,\nEDF snapshot, direct evidence"]
+    Engine --> Logs["Observability\nsafe terminal channels\napi/intake/skill/diagnosis/edf/memory/tutor"]
+    API --> Logs
 
     Engine --> Intake["Onboarding\n topic -> semantic classification -> goal -> level"]
     Intake --> Semantic["Semantic Intake Classifier\nLLM structured JSON + rule fallback"]
@@ -187,11 +236,33 @@ flowchart TD
     Scaffold --> EDF
     Recalibrate --> EDF
     Accelerate --> EDF
-    EDF --> Continue["Continue diagnosis/tutoring"]
+    EDF --> ControlSignals["Tutoring preserves control signals\nunknown/too_detailed do not overwrite mastery"]
+    ControlSignals --> Continue["Continue diagnosis/tutoring"]
     Continue --> Export["Optional: export Markdown transcript"]
 ```
 
-## 5. 檔案架構圖
+## 5. Manual regression path
+
+目前 `deep_learning.yaml` 的 beginner conceptual path 會從 `math_intuition` 開始，並保留前三個 foundation concepts 讓前端能展示實際學習路徑。人工驗收建議使用 rule mode，並依序輸入：
+
+```text
+深度學習
+想理解原理
+完全沒有基礎
+用來衡量預測與目標之間的差距
+我不知道
+這太細了，我完全沒有基礎
+```
+
+預期重點：
+
+- 前三步完成 onboarding，phase 進入 `diagnosis`。
+- 正確回答後 `math_intuition` 變成 `mastered`，下一題推進到 `vectors_tensors`，避免整段體驗停在單一 foundation node。
+- 後續輸入 `我不知道` 時，系統應 scaffold `vectors_tensors`，`latest_signal` 為 `unknown`，不得把已掌握的 `math_intuition` 降成 `not_mastered`。
+- 後續輸入 `這太細了，我完全沒有基礎` 時，系統應重新校準到更粗的資料表示直覺，`latest_signal` 為 `too_detailed`，不得回到重複的 `math_intuition` 停留模板。
+- 390x844 mobile viewport 下，Reset、chat input、send button 必須在 viewport 內且可點擊。
+
+## 6. 檔案架構圖
 
 ```text
 misc/PELICAN_mvp/
@@ -233,7 +304,7 @@ misc/PELICAN_mvp/
 │   ├── learning_memory.py              # bounded direct-evidence memory simulator
 │   ├── llm.py                          # OpenRouter-compatible LLM adapter
 │   ├── models.py                       # serializable state/domain models
-│   ├── observability.py                # safe structured logging allow-list
+│   ├── observability.py                # safe structured logging allow-list + debug channels
 │   ├── planner.py                      # profile-aware plan creation
 │   ├── server.py                       # FastAPI API + Markdown export
 │   ├── skill_artifacts.py              # validated/failed runtime skill artifacts

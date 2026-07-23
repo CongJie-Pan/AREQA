@@ -121,7 +121,11 @@ def test_planner_uses_catalog_skill_before_llm_for_deep_learning(caplog):
 
     plan = planner.create_plan("深度學習")
 
-    assert [node.node_id for node in plan.nodes] == ["math_intuition"]
+    assert [node.node_id for node in plan.nodes] == [
+        "math_intuition",
+        "vectors_tensors",
+        "functions_transformations",
+    ]
     assert plan.skill_id == "deep_learning"
     assert plan.skill_lifecycle == "validated_generated"
     assert plan.model_route == "catalog"

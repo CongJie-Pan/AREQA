@@ -54,6 +54,11 @@ def test_deep_learning_collects_goal_and_level_before_diagnosis(tmp_path: Path) 
     assert engine.state.intake_profile.intent.value == "conceptual"
     assert engine.state.intake_profile.level_hint == "beginner"
     assert diagnostic.node_id == "math_intuition"
+    assert [node.node_id for node in engine.state.learning_plan.nodes] == [
+        "math_intuition",
+        "vectors_tensors",
+        "functions_transformations",
+    ]
     assert "MLP" not in diagnostic.message
 
 
@@ -86,29 +91,33 @@ def test_unknown_scaffolds_current_prerequisite_not_unrelated_node(tmp_path: Pat
 
 def test_tutoring_control_signals_after_mastery_do_not_overwrite_progress(tmp_path: Path) -> None:
     engine = calibrated_deep_learning_engine(tmp_path)
-    current_node = engine.state.current_node_id
+    mastered_node = engine.state.current_node_id
 
     correct = engine.respond("用來衡量預測與目標之間的差距")
 
-    assert correct.node_id == current_node
-    assert engine.state.phase == "tutoring"
-    assert engine.state.nodes[current_node].status.value == "mastered"
+    assert correct.node_id == "vectors_tensors"
+    assert engine.state.phase == "diagnosis"
+    assert engine.state.nodes[mastered_node].status.value == "mastered"
+    assert "圖片、文字或表格資料" in correct.message
 
     unknown = engine.respond("我不知道")
 
-    assert unknown.node_id == current_node
+    assert unknown.node_id == "vectors_tensors"
     assert "先補" in unknown.message
     assert "不跳到下一個診斷題" in unknown.next_reason
     assert engine.state.direct_evidence[-1].signal == "unknown"
-    assert engine.state.nodes[current_node].status.value == "mastered"
+    assert engine.state.nodes[mastered_node].status.value == "mastered"
+    assert engine.state.nodes["vectors_tensors"].status.value == "not_mastered"
 
     too_detailed = engine.respond("這太細了，我完全沒有基礎")
 
-    assert too_detailed.node_id == current_node
+    assert too_detailed.node_id == "vectors_tensors"
     assert "太細" in too_detailed.message
+    assert "只懂數字的機器" in too_detailed.message
+    assert "數學直覺與誤差觀念" not in too_detailed.message
     assert "重新校準抽象層級" in too_detailed.next_reason
     assert engine.state.direct_evidence[-1].signal == "too_detailed"
-    assert engine.state.nodes[current_node].status.value == "mastered"
+    assert engine.state.nodes[mastered_node].status.value == "mastered"
 
 
 def test_repeated_tutoring_failures_render_from_base_prompt(tmp_path: Path) -> None:

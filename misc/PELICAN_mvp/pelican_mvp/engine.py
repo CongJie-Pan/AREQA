@@ -850,10 +850,7 @@ class PelicanEngine:
         self._record_activity("scope_mismatch", "偵測題目層級不合", detail=signal)
         self._record(answer, ResponseCategory.DIFFICULTY, strategy, [])
         self._refresh_learning_context(answer, ResponseCategory.DIFFICULTY, signal)
-        self.state.current_prompt = (
-            "收到，剛才那題對目前起點太細了。\n\n"
-            + self._remediation_prompt(node_id, self.curriculum.nodes[node_id].label)
-        )
+        self.state.current_prompt = self._scope_mismatch_prompt(node_id, self.curriculum.nodes[node_id].label)
         self.state.current_prompt_source = "rule"
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -915,9 +912,9 @@ class PelicanEngine:
         prerequisite_id = self.curriculum.nodes[node_id].prerequisites[0] if self.curriculum.nodes[node_id].prerequisites else node_id
         self.state.phase = "tutoring"
         self.state.current_node_id = prerequisite_id
-        self.state.current_prompt = (
-            f"沒關係，我們先補「{self.curriculum.nodes[prerequisite_id].label}」。\n\n"
-            + self._remediation_prompt(prerequisite_id, self.curriculum.nodes[prerequisite_id].label)
+        self.state.current_prompt = self._scaffold_prompt(
+            prerequisite_id,
+            self.curriculum.nodes[prerequisite_id].label,
         )
         self.state.current_prompt_source = "rule"
         self._record_methodology_event(
@@ -1237,6 +1234,32 @@ class PelicanEngine:
         return (
             f"我們先停在「{label}」。剛才那題先不往下推。\n\n"
             f"我換成更清楚的方式：請用一句話說，{label} 在整個學習中主要幫我們做什麼？"
+        )
+
+    def _scaffold_prompt(self, node_id: str, label: str) -> str:
+        """Render an unknown-answer scaffold without reusing mismatch wording."""
+        return (
+            f"沒關係，我們先補「{label}」。\n\n"
+            + self._remediation_prompt(node_id, label)
+        )
+
+    def _scope_mismatch_prompt(self, node_id: str, label: str) -> str:
+        """Render a simpler level-recalibration prompt for too-detailed feedback."""
+        if node_id == "math_intuition":
+            return (
+                "收到，剛才那題對目前起點還是太細了。我們先降到更粗的生活比喻。\n\n"
+                "先不要想模型、公式或梯度。想像你在猜明天會不會下雨：猜完以後，"
+                "你需要先知道「猜得準不準」。請只回答：我們為什麼需要先知道猜得準不準？"
+            )
+        if node_id == "vectors_tensors":
+            return (
+                "收到，剛才那題太細、太像技術細節了。我們先改成資料表達的直覺。\n\n"
+                "先不要管 tensor 或維度。想像你要把一張圖片交給只懂數字的機器，"
+                "第一步是不是要把圖片變成它看得懂的數字？請用一句話說說看。"
+            )
+        return (
+            f"收到，剛才那題對目前起點太細了。我們先把「{label}」降成更高層的直覺問題。\n\n"
+            f"先不要管術語，請只說：{label} 在這段學習裡大概想幫我們理解哪一件事？"
         )
 
     def _present_current_step(self, reason: str) -> TurnOutcome:
