@@ -52,6 +52,9 @@ def test_api_dynamic_learning_metadata() -> None:
     assert "skill_loaded" in activity_codes
     assert "skill_validated" in activity_codes
     assert "plan_compiled" in activity_codes
+    assert learning["skill_artifact_summary"]["skill_id"] == "deep_learning"
+    assert learning["skill_artifact_summary"]["concept_path"]
+    assert learning["skill_artifact_summary"]["current_diagnostic_target"]["node_id"] == "math_intuition"
 
 
 def test_api_progress_snapshot_is_safe_metadata() -> None:
@@ -83,6 +86,25 @@ def test_api_agent_proposals_are_safe_metadata() -> None:
     assert raw_answer not in str(proposals)
     assert "role" in proposals[-1]
     assert "validation_status" in proposals[-1]
+
+
+def test_api_exposes_safe_tutor_proposal_trace() -> None:
+    learner = "tutor_trace_user"
+    raw_answer = "我不知道 raw secret should not be copied into proposal trace"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解原理"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "完全沒有基礎"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": raw_answer})
+
+    learning = response.json()["learning"]
+
+    assert learning["tutor_proposal_trace"]
+    assert learning["tutor_proposal_trace"][-1]["artifact_type"] == "tutor_proposal"
+    assert learning["tutor_proposal_trace"][-1]["pedagogical_move"] == "scaffold"
+    assert learning["evidence_response_trace"]
+    assert raw_answer not in str(learning["tutor_proposal_trace"])
+    assert raw_answer not in str(learning["evidence_response_trace"])
 
 
 def test_api_methodology_events_are_current_cycle_metadata() -> None:
@@ -162,9 +184,12 @@ def test_api_export_markdown_includes_transcript_and_metadata() -> None:
     assert "# PELICAN MVP Conversation Export" in text
     assert "深度學習" in text
     assert "## Knowledge Tree" in text
+    assert "## Skill Artifact Summary" in text
     assert "## Recent Engine Activity" in text
     assert "## Methodology Events" in text
     assert "## Agent Proposals" in text
+    assert "## Recent Evidence-to-Response Trace" in text
+    assert "## Tutor Proposal Trace" in text
     assert "## Learner Progress Snapshot" in text
 
 

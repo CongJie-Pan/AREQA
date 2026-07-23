@@ -79,6 +79,93 @@ def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEng
     return engine
 
 
+def _skill_artifact_summary(engine: PelicanEngine) -> dict[str, Any] | None:
+    """Return a safe learner-visible summary of the active skill artifact.
+
+    Args:
+        engine: Active engine whose session may contain a generated learning
+            plan.
+
+    Returns:
+        Safe skill metadata for UI/export, or ``None`` before skill
+        construction. Answer keys, raw prompts, and raw learner evidence are not
+        included.
+    """
+    plan = engine.state.learning_plan
+    if not plan:
+        return None
+    current_node_id = engine.state.current_node_id
+    current_node = next((node for node in plan.nodes if node.node_id == current_node_id), None)
+    diagnostics = {item.node_id: item for item in plan.diagnostics}
+    teaching_moves = [
+        {"code": key[:80], "description": value[:180]}
+        for key, value in list(plan.teaching_methodology.items())[:6]
+    ]
+    concept_path = [
+        {
+            "node_id": node.node_id,
+            "label": node.label,
+            "priority": node.priority,
+            "active": node.node_id == current_node_id,
+        }
+        for node in plan.nodes[:12]
+    ]
+    return {
+        "skill_id": plan.skill_id,
+        "skill_version": plan.skill_version,
+        "skill_lifecycle": plan.skill_lifecycle,
+        "domain_category": plan.domain_category,
+        "model_route": plan.model_route,
+        "topic": plan.topic,
+        "goal_summary": plan.goal_summary,
+        "concept_path": concept_path,
+        "current_diagnostic_target": {
+            "node_id": current_node.node_id,
+            "label": current_node.label,
+            "diagnostic_source": diagnostics[current_node.node_id].source
+            if current_node and current_node.node_id in diagnostics
+            else None,
+        }
+        if current_node
+        else None,
+        "teaching_moves": teaching_moves,
+    }
+
+
+def _tutor_proposal_trace(engine: PelicanEngine) -> list[dict[str, Any]]:
+    """Return recent safe tutor proposals linked to final visible messages."""
+    return [
+        item.to_dict()
+        for item in engine.state.agent_proposals[-16:]
+        if item.artifact_type == "tutor_proposal"
+    ][-6:]
+
+
+def _evidence_response_trace(engine: PelicanEngine) -> list[dict[str, Any]]:
+    """Build safe evidence-to-response trace rows for paper-aligned export.
+
+    Returns:
+        Bounded rows that connect recent safe evidence signals to EDF state,
+        policy, tutor proposal, and final message preview.
+    """
+    tutor_proposals = _tutor_proposal_trace(engine)
+    latest_proposal = tutor_proposals[-1] if tutor_proposals else None
+    rows: list[dict[str, Any]] = []
+    for evidence in engine.state.direct_evidence[-6:]:
+        rows.append(
+            {
+                "node_id": evidence.node_id,
+                "signal": evidence.signal,
+                "edf_state": engine.state.edf_snapshot.learner_state,
+                "edf_policy": engine.state.edf_snapshot.pedagogical_strategy,
+                "proposal_id": latest_proposal.get("proposal_id") if latest_proposal else None,
+                "pedagogical_move": latest_proposal.get("pedagogical_move") if latest_proposal else None,
+                "final_message_preview": latest_proposal.get("final_message_preview") if latest_proposal else "",
+            }
+        )
+    return rows
+
+
 def _learning_metadata(engine: PelicanEngine, activity_steps: list[dict[str, Any]]) -> dict[str, Any]:
     """Build safe learning metadata shared by JSON responses and exports.
 
@@ -120,7 +207,10 @@ def _learning_metadata(engine: PelicanEngine, activity_steps: list[dict[str, Any
         "evidence_count": engine.state.memory_snapshot.evidence_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
         "context_count": engine.state.memory_snapshot.working_context_count if hasattr(engine.state, 'memory_snapshot') and engine.state.memory_snapshot else 0,
         "progress_snapshot": engine.state.learner_progress.to_dict(),
+        "skill_artifact_summary": _skill_artifact_summary(engine),
         "agent_proposals": [item.to_dict() for item in engine.state.agent_proposals[-8:]],
+        "tutor_proposal_trace": _tutor_proposal_trace(engine),
+        "evidence_response_trace": _evidence_response_trace(engine),
         "methodology_stages": [stage.value for stage in MethodologyStage],
         "methodology_events": [item.to_dict() for item in engine.state.methodology_events[-16:]],
         "current_cycle_id": engine.state.cycle_id,
@@ -230,6 +320,32 @@ def _markdown_export(engine: PelicanEngine) -> str:
     else:
         lines.extend(["_No transcript entries recorded yet._", ""])
 
+    lines.extend(["## Skill Artifact Summary", ""])
+    skill_summary = learning.get("skill_artifact_summary")
+    if skill_summary:
+        lines.extend(
+            [
+                f"- Skill id: `{skill_summary.get('skill_id') or '-'}`",
+                f"- Version: `{skill_summary.get('skill_version') or '-'}`",
+                f"- Lifecycle: `{skill_summary.get('skill_lifecycle') or '-'}`",
+                f"- Domain: `{skill_summary.get('domain_category') or '-'}`",
+                f"- Goal: {skill_summary.get('goal_summary') or '-'}",
+                "",
+                "### Concept Path",
+                "",
+            ]
+        )
+        for concept in skill_summary.get("concept_path", []):
+            marker = "-> " if concept.get("active") else ""
+            lines.append(f"- {marker}{concept.get('label')}: `{concept.get('node_id')}`")
+        lines.extend(["", "### Teaching Moves", ""])
+        for move in skill_summary.get("teaching_moves", []):
+            lines.append(f"- `{move.get('code')}`: {move.get('description')}")
+        if not skill_summary.get("teaching_moves"):
+            lines.append("_No teaching moves recorded yet._")
+    else:
+        lines.append("_No generated skill artifact recorded yet._")
+
     lines.extend(["## Knowledge Tree", ""])
     tree = engine.tree_state()
     if tree:
@@ -264,6 +380,34 @@ def _markdown_export(engine: PelicanEngine) -> str:
             )
     else:
         lines.append("_No agent proposals recorded yet._")
+
+    lines.extend(["", "## Recent Evidence-to-Response Trace", ""])
+    if learning["evidence_response_trace"]:
+        for row in learning["evidence_response_trace"]:
+            lines.append(
+                "- Evidence `{signal}` on `{node}` → EDF `{edf}` / `{policy}` → "
+                "proposal `{proposal}` / `{move}` → {preview}".format(
+                    signal=row.get("signal") or "-",
+                    node=row.get("node_id") or "-",
+                    edf=row.get("edf_state") or "-",
+                    policy=row.get("edf_policy") or "-",
+                    proposal=row.get("proposal_id") or "-",
+                    move=row.get("pedagogical_move") or "-",
+                    preview=row.get("final_message_preview") or "-",
+                )
+            )
+    else:
+        lines.append("_No evidence-to-response trace recorded yet._")
+
+    lines.extend(["", "## Tutor Proposal Trace", ""])
+    if learning["tutor_proposal_trace"]:
+        for proposal in learning["tutor_proposal_trace"]:
+            lines.append(
+                f"- `{proposal.get('proposal_id')}` `{proposal.get('validation_status')}` "
+                f"`{proposal.get('pedagogical_move') or '-'}`: {proposal.get('display_summary') or '-'}"
+            )
+    else:
+        lines.append("_No tutor proposal trace recorded yet._")
 
     lines.extend(["", "## Learner Progress Snapshot", ""])
     progress_nodes = learning["progress_snapshot"].get("nodes", [])

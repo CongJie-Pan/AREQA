@@ -18,8 +18,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const activityStatusDot = document.getElementById("activity-status-dot");
     const activityBadges = document.getElementById("activity-badges");
     const methodologyStages = document.getElementById("methodology-stages");
+    const skillArtifactSummary = document.getElementById("skill-artifact-summary");
     const methodologySubsystemEvents = document.getElementById("methodology-subsystem-events");
     const agentProposals = document.getElementById("agent-proposals");
+    const tutorProposalTrace = document.getElementById("tutor-proposal-trace");
     const learnerProgressSnapshot = document.getElementById("learner-progress-snapshot");
     const resetBtn = document.getElementById("reset-btn");
     const exportBtn = document.getElementById("export-btn");
@@ -192,8 +194,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 data.learning.methodology_stages || [],
                 data.learning.current_cycle_id || null
             );
+            renderSkillArtifactSummary(data.learning.skill_artifact_summary || null);
             renderSubsystemEvents(data.learning.methodology_events || [], data.learning.current_cycle_id || null);
             renderAgentProposals(data.learning.agent_proposals || []);
+            renderTutorProposalTrace(data.learning.tutor_proposal_trace || []);
             renderLearnerProgress(data.learning.progress_snapshot || null);
             
             if (data.learning.phase === "onboarding") {
@@ -340,8 +344,50 @@ document.addEventListener("DOMContentLoaded", async () => {
         recent.forEach(proposal => {
             const row = document.createElement("div");
             row.className = "methodology-row";
-            row.textContent = `${proposal.role}: ${proposal.validation_status} / ${proposal.reason_code || "recorded"}`;
+            const move = proposal.pedagogical_move ? ` / ${proposal.pedagogical_move}` : "";
+            row.textContent = `${proposal.role}: ${proposal.validation_status}${move} / ${proposal.reason_code || "recorded"}`;
             agentProposals.appendChild(row);
+        });
+    }
+
+    function renderSkillArtifactSummary(summary) {
+        skillArtifactSummary.innerHTML = "";
+        appendListTitle(skillArtifactSummary, "Skill Artifact");
+        if (!summary) {
+            appendEmptyLine(skillArtifactSummary, "No skill artifact yet");
+            return;
+        }
+        const identity = document.createElement("div");
+        identity.className = "methodology-row";
+        identity.textContent = `${summary.skill_id || "--"} / ${summary.domain_category || "--"}`;
+        skillArtifactSummary.appendChild(identity);
+
+        const target = summary.current_diagnostic_target;
+        const targetRow = document.createElement("div");
+        targetRow.className = "methodology-row";
+        targetRow.textContent = target ? `Target: ${target.label}` : "Target: --";
+        skillArtifactSummary.appendChild(targetRow);
+
+        const concepts = Array.isArray(summary.concept_path) ? summary.concept_path : [];
+        const pathRow = document.createElement("div");
+        pathRow.className = "methodology-row wrap";
+        pathRow.textContent = concepts.slice(0, 4).map(concept => concept.active ? `→ ${concept.label}` : concept.label).join(" · ") || "No concept path";
+        skillArtifactSummary.appendChild(pathRow);
+    }
+
+    function renderTutorProposalTrace(proposals) {
+        tutorProposalTrace.innerHTML = "";
+        appendListTitle(tutorProposalTrace, "Tutor Proposal Trace");
+        const recent = proposals.slice(-4);
+        if (recent.length === 0) {
+            appendEmptyLine(tutorProposalTrace, "No tutor proposals");
+            return;
+        }
+        recent.forEach(proposal => {
+            const row = document.createElement("div");
+            row.className = "methodology-row wrap";
+            row.textContent = `${proposal.validation_status}: ${proposal.pedagogical_move || proposal.strategy || "--"} → ${proposal.display_summary || proposal.reason_code || "recorded"}`;
+            tutorProposalTrace.appendChild(row);
         });
     }
 

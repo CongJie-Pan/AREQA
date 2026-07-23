@@ -16,10 +16,11 @@ PELICAN MVP 是 AREQA 主系統外的一個學習引擎實驗場。它的目的�
 - EDF/GUM 模擬層：保留教學策略狀態、direct user evidence、working context count。
 - Agentic methodology runtime：以 turn/cycle ID 串接六個核心 stage、GUM subsystem event、learner interaction event、typed agent proposals。
 - Causal tutoring transaction：目前 learner evidence 會先更新 knowledge state、GUM 與 EDF，再由更新後的 context 選 tutor strategy。
+- Bounded tutor proposal path：LLM mode 會先產生受 EDF/GUM 約束的 tutor proposal，通過 validator 後才成為 final tutor response；LLM 不可用或 proposal 不合格時會明確標示 fallback，而不是假裝 agentic generation 成功。
 - Remediation-first tutoring：進入 tutoring 後仍會優先處理 `我不知道`、`太細了`、`太難`、`太簡單` 這類 learner control signals，不會把已掌握的概念誤降級。
 - Learner progress snapshot：前端/API 顯示 direct/inferred progress、status 與 confidence，而不是只顯示 raw mastery tree。
-- 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges、methodology graph、agent proposals 與 learner progress。
-- Markdown 匯出：可從 UI 匯出目前對話、session metadata、knowledge tree、recent activity、methodology events、agent proposals、progress snapshot。
+- 前端即時狀態顯示：會顯示目前 phase、EDF policy、activity badges、methodology graph、skill artifact summary、agent proposals、tutor proposal trace 與 learner progress。
+- Markdown 匯出：可從 UI 匯出目前對話、session metadata、skill artifact summary、knowledge tree、recent activity、methodology events、agent proposals、evidence-to-response trace、tutor proposal trace、progress snapshot。
 - 安全 structured logs：terminal 會顯示 safe metadata，例如 `channel`、`endpoint`、learner token、skill source、semantic intent、confidence、API health、reason code；不記錄 raw learner answer、raw prompt、raw model output 或 API key。
 
 目前仍需注意的限制：
@@ -94,6 +95,17 @@ Terminal log 範例：
 PELICAN INFO channel=tutor event=pelican_scaffold_selected endpoint=- learner=9f86d081884c phase=tutoring activity=- status=- reason=unknown detail=- domain=- route=- api_status=- api_error=- skill=- skill_source=- intake_source=- semantic=- confidence=- diagnostic_source=- node=- edf=- strategy=- edf_transition=- memory=- remediation=unknown
 ```
 
+Paper-aligned tutoring debug events include:
+
+```text
+pelican_tutor_proposal_generated
+pelican_tutor_proposal_validated
+pelican_agent_proposal_recorded
+pelican_methodology_event_recorded
+```
+
+These events expose only safe metadata such as node id, strategy, proposal source, validation status, reason code, and pedagogical move. They do not expose raw learner answers, prompts, provider responses, or model reasoning.
+
 常用檢查：
 
 ```bash
@@ -108,6 +120,14 @@ node --check static/app.js
 ```bash
 npm run check:report:strict
 ```
+
+人工驗收劇本：
+
+```text
+docs/2026_07_23_experiment/Agentic_PELICAN_frontend_io_manual_test_script.md
+```
+
+該劇本要求 agentic/LLM run 顯示 skill artifact、tutor proposal trace、evidence-to-response trace，並明確拒絕只靠固定 template 通過的結果。若 LLM 不可用，run 應標示為 fallback run，不應宣稱符合 paper-aligned agentic tutoring 驗收。
 
 預設可離線執行。離線時仍可使用 checked-in catalog skill 與 deterministic fallback。若要啟用 OpenRouter-compatible LLM：
 
