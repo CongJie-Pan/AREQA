@@ -113,6 +113,40 @@ def test_llm_adapter_valid_json_response() -> None:
     assert res == "this is a mock response"
 
 
+def test_llm_tutor_proposal_returns_bounded_safe_candidate() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.user_prompt = ""
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.user_prompt = user
+            return {
+                "response": "我們先把資料想成機器看得懂的數字。你覺得圖片可以怎麼變成數字？",
+                "pedagogical_move": "scaffold",
+                "summary": "Use current unknown signal to scaffold the active node.",
+            }
+
+    adapter = RecordingAdapter()
+
+    proposal = adapter.tutor_proposal(
+        strategy=TutoringStrategy.DECOMPOSITION,
+        node_id="vectors_tensors",
+        node_label="資料表示與向量直覺",
+        base_prompt="圖片如何交給模型？",
+        learner_state="needs_support",
+        edf_policy="simplify_or_decompose",
+        recent_signals=("unknown",),
+        evidence_signal="unknown",
+    )
+
+    assert proposal is not None
+    assert proposal.node_id == "vectors_tensors"
+    assert proposal.strategy == "decomposition"
+    assert proposal.pedagogical_move == "scaffold"
+    assert proposal.source == "llm"
+
+
 def test_llm_category_model_route_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PELICAN_LLM_MODEL", raising=False)
     monkeypatch.delenv("PELICAN_SKILL_MODEL", raising=False)

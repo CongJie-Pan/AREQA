@@ -78,6 +78,8 @@ _SAFE_FIELDS = frozenset({
     "cycle_id",
     "sequence",
     "proposal_id",
+    "proposal_source",
+    "pedagogical_move",
     "methodology_status",
     "event_type",
     "agent_role",

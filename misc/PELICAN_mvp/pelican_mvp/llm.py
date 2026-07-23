@@ -9,7 +9,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from .domain_skill import DomainCategory, DomainSkill, SkillLifecycle
-from .models import DiagnosticQuestion, KnowledgeNode, LearningPlanSnapshot, ResponseCategory, TutoringStrategy
+from .models import (
+    BoundedTutorProposal,
+    DiagnosticQuestion,
+    KnowledgeNode,
+    LearningPlanSnapshot,
+    ResponseCategory,
+    TutoringStrategy,
+)
 
 
 class LlmUnavailable(RuntimeError):
@@ -262,6 +269,82 @@ class LlmAdapter:
         )
         response = str(payload.get("response", "")).strip()
         return response or None
+
+    def tutor_proposal(
+        self,
+        *,
+        strategy: TutoringStrategy,
+        node_id: str,
+        node_label: str,
+        base_prompt: str,
+        learner_state: str,
+        edf_policy: str,
+        recent_signals: tuple[str, ...],
+        evidence_signal: str,
+    ) -> BoundedTutorProposal | None:
+        """Generate a bounded tutor proposal constrained by EDF/GUM state.
+
+        Args:
+            strategy: Tutoring strategy selected by the local EDF policy.
+            node_id: Current knowledge node identifier.
+            node_label: Human-readable current concept label.
+            base_prompt: Current diagnostic/task prompt. This is sent to the
+                model for context but is not logged or persisted by this method.
+            learner_state: Safe EDF learner-state label.
+            edf_policy: Safe EDF policy label.
+            recent_signals: Safe bounded GUM signal labels.
+            evidence_signal: Current safe response signal, such as ``unknown``
+                or ``too_detailed``.
+
+        Returns:
+            A bounded proposal candidate, or ``None`` when the optional model is
+            unavailable or returns an unusable payload.
+
+        Privacy:
+            Only the bounded response, move label, and safe summary are returned
+            to the engine for validation. Raw prompts, provider payloads, and
+            model reasoning are never logged or persisted here.
+        """
+        if not self.available:
+            return None
+        payload = self._json(
+            "你是 Agentic PELICAN 的繁體中文家教代理。請只輸出 JSON，不要輸出推理。\n"
+            "你必須根據 EDF/GUM 狀態提出一個 bounded tutor proposal：一次只處理一個概念、"
+            "只問一個問題、避免固定模板、避免直接貼定義或標準答案。",
+            "node_id: {node_id}\n"
+            "knowledge_node: {node_label}\n"
+            "strategy: {strategy}\n"
+            "learner_state: {learner_state}\n"
+            "edf_policy: {edf_policy}\n"
+            "current_signal: {evidence_signal}\n"
+            "recent_safe_signals: {recent_signals}\n"
+            "current_prompt: {base_prompt}\n"
+            "輸出 JSON：{{\"response\": str, \"pedagogical_move\": str, \"summary\": str}}".format(
+                node_id=node_id,
+                node_label=node_label,
+                strategy=strategy.value,
+                learner_state=learner_state,
+                edf_policy=edf_policy,
+                evidence_signal=evidence_signal,
+                recent_signals=", ".join(recent_signals[-5:]) or "none",
+                base_prompt=base_prompt,
+            ),
+            model=self.tutor_model_route(),
+        )
+        response = str(payload.get("response", "")).strip()
+        move = str(payload.get("pedagogical_move", "")).strip()
+        summary = str(payload.get("summary", "")).strip()
+        if not response:
+            return None
+        return BoundedTutorProposal(
+            response=response,
+            pedagogical_move=move or strategy.value,
+            summary=summary or f"{strategy.value} for {node_label}",
+            node_id=node_id,
+            strategy=strategy.value,
+            evidence_signal=evidence_signal,
+            source="llm",
+        )
 
     def intake_question(
         self,

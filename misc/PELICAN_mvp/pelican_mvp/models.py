@@ -226,6 +226,50 @@ class LearnerProgressSnapshot:
 
 
 @dataclass(frozen=True)
+class BoundedTutorProposal:
+    """Learner-facing tutor proposal after validation and privacy bounding.
+
+    Args:
+        response: Final learner-facing message candidate. This is intentionally
+            bounded because it can be shown in chat/export after validation.
+        pedagogical_move: Short safe label for the teaching move, such as
+            ``scaffold`` or ``scope_recalibration``.
+        summary: Safe explanation of why the proposal was selected. It must not
+            contain raw learner answers, raw prompts, model output, credentials,
+            provider payloads, or chain-of-thought.
+        node_id: Current concept node that grounds the response.
+        strategy: EDF-selected tutoring strategy that constrained generation.
+        evidence_signal: Safe response signal used by EDF/GUM.
+        source: ``llm`` for generated proposals or ``rule`` for fallback.
+
+    Compatibility:
+        This model is append-only metadata for the MVP proposal layer. Session
+        replay remains compatible because persisted ``AgentProposal`` records
+        store only bounded summaries, not this full dataclass.
+    """
+
+    response: str
+    pedagogical_move: str
+    summary: str
+    node_id: str
+    strategy: str
+    evidence_signal: str
+    source: str = "llm"
+
+    def to_safe_dict(self) -> dict[str, str]:
+        """Serialize a bounded tutor proposal for UI metadata and tests."""
+        return {
+            "response": _bounded_text(self.response, 900),
+            "pedagogical_move": _bounded_text(self.pedagogical_move, 80),
+            "summary": _bounded_text(self.summary, 260),
+            "node_id": _bounded_text(self.node_id, 120),
+            "strategy": _bounded_text(self.strategy, 80),
+            "evidence_signal": _bounded_text(self.evidence_signal, 80),
+            "source": _bounded_text(self.source, 40),
+        }
+
+
+@dataclass(frozen=True)
 class AgentProposal:
     """Bounded agent proposal validated by the engine before state mutation."""
 
@@ -242,10 +286,18 @@ class AgentProposal:
     node_id: str | None = None
     strategy: str | None = None
     skill_id: str | None = None
+    display_summary: str = ""
+    pedagogical_move: str = ""
+    final_message_preview: str = ""
     created_at: str = field(default_factory=_utc_now)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize a proposal without raw payloads."""
+        """Serialize a proposal without raw payloads.
+
+        The optional display fields are safe, bounded summaries for the
+        frontend/export trace. They intentionally exclude raw learner answers,
+        prompts, provider output bodies, credentials, and chain-of-thought.
+        """
         return {
             "proposal_id": _bounded_text(self.proposal_id, 80),
             "turn_id": self.turn_id,
@@ -260,6 +312,9 @@ class AgentProposal:
             "node_id": self.node_id,
             "strategy": self.strategy,
             "skill_id": self.skill_id,
+            "display_summary": _bounded_text(self.display_summary, 260),
+            "pedagogical_move": _bounded_text(self.pedagogical_move, 80),
+            "final_message_preview": _bounded_text(self.final_message_preview, 220),
             "created_at": self.created_at,
         }
 
@@ -280,6 +335,9 @@ class AgentProposal:
             node_id=payload.get("node_id"),
             strategy=payload.get("strategy"),
             skill_id=payload.get("skill_id"),
+            display_summary=_bounded_text(payload.get("display_summary"), 260),
+            pedagogical_move=_bounded_text(payload.get("pedagogical_move"), 80),
+            final_message_preview=_bounded_text(payload.get("final_message_preview"), 220),
             created_at=payload.get("created_at", _utc_now()),
         )
 

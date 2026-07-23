@@ -14,6 +14,7 @@ from .models import (
     ActivityEvent,
     AgentProposal,
     AgentRole,
+    BoundedTutorProposal,
     KnowledgeStatus,
     LearnerIntakeProfile,
     LearnerProgressNode,
@@ -190,6 +191,9 @@ class PelicanEngine:
         node_id: str | None = None,
         strategy: str | None = None,
         skill_id: str | None = None,
+        display_summary: str = "",
+        pedagogical_move: str = "",
+        final_message_preview: str = "",
     ) -> AgentProposal:
         """Record a bounded proposal before the engine applies its effect.
 
@@ -210,6 +214,9 @@ class PelicanEngine:
             node_id=node_id,
             strategy=strategy,
             skill_id=skill_id,
+            display_summary=display_summary,
+            pedagogical_move=pedagogical_move,
+            final_message_preview=final_message_preview,
         )
         self._bounded_append("agent_proposals", proposal, MAX_AGENT_PROPOSALS)
         log_event(
@@ -850,13 +857,34 @@ class PelicanEngine:
         self._record_activity("scope_mismatch", "偵測題目層級不合", detail=signal)
         self._record(answer, ResponseCategory.DIFFICULTY, strategy, [])
         self._refresh_learning_context(answer, ResponseCategory.DIFFICULTY, signal)
-        self.state.current_prompt = self._scope_mismatch_prompt(node_id, self.curriculum.nodes[node_id].label)
-        self.state.current_prompt_source = "rule"
+        base_message = self._scope_mismatch_prompt(node_id, self.curriculum.nodes[node_id].label)
+        message, source, validation_status, proposal_reason, pedagogical_move, display_summary = self._tutor_message(
+            strategy,
+            node_id,
+            evidence_signal=signal,
+            base_message=base_message,
+        )
+        self.state.current_prompt = message
+        self.state.current_prompt_source = source
+        self._record_agent_proposal(
+            AgentRole.FAST_TUTOR_AGENT,
+            MethodologyStage.TUTOR_RESPONSE,
+            "tutor_proposal",
+            MethodologyRef("tutor_message", source, "scope remediation response"),
+            validation_status=validation_status,
+            reason_code=proposal_reason,
+            node_id=node_id,
+            strategy=strategy.value,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            display_summary=display_summary,
+            pedagogical_move=pedagogical_move,
+            final_message_preview=message,
+        )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
             stage=MethodologyStage.TUTOR_RESPONSE,
             input_ref=MethodologyRef("strategy", strategy.value, "scope remediation strategy"),
-            output_ref=MethodologyRef("tutor_message", "rule", "scope remediation response"),
+            output_ref=MethodologyRef("tutor_message", source, "scope remediation response"),
             node_id=node_id,
             strategy=strategy.value,
             reason_code=signal,
@@ -912,16 +940,37 @@ class PelicanEngine:
         prerequisite_id = self.curriculum.nodes[node_id].prerequisites[0] if self.curriculum.nodes[node_id].prerequisites else node_id
         self.state.phase = "tutoring"
         self.state.current_node_id = prerequisite_id
-        self.state.current_prompt = self._scaffold_prompt(
+        base_message = self._scaffold_prompt(
             prerequisite_id,
             self.curriculum.nodes[prerequisite_id].label,
         )
-        self.state.current_prompt_source = "rule"
+        message, source, validation_status, proposal_reason, pedagogical_move, display_summary = self._tutor_message(
+            strategy,
+            prerequisite_id,
+            evidence_signal="unknown",
+            base_message=base_message,
+        )
+        self.state.current_prompt = message
+        self.state.current_prompt_source = source
+        self._record_agent_proposal(
+            AgentRole.SLOW_SIMULATOR_AGENT,
+            MethodologyStage.TUTOR_RESPONSE,
+            "tutor_proposal",
+            MethodologyRef("tutor_message", source, "scaffold response"),
+            validation_status=validation_status,
+            reason_code=proposal_reason,
+            node_id=prerequisite_id,
+            strategy=strategy.value,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            display_summary=display_summary,
+            pedagogical_move=pedagogical_move,
+            final_message_preview=message,
+        )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
             stage=MethodologyStage.TUTOR_RESPONSE,
             input_ref=MethodologyRef("strategy", strategy.value, "scaffold strategy"),
-            output_ref=MethodologyRef("tutor_message", "rule", "scaffold response"),
+            output_ref=MethodologyRef("tutor_message", source, "scaffold response"),
             node_id=prerequisite_id,
             strategy=strategy.value,
             reason_code="unknown",
@@ -1075,16 +1124,26 @@ class PelicanEngine:
         self._refresh_learning_context(answer, category)
         context = self._tutoring_context(category, rounds)
         strategy, reason = select_strategy(context)
-        message, source = self._tutor_message(strategy, node_id)
+        signal = self.state.direct_evidence[-1].signal if self.state.direct_evidence else category.value
+        message, source, validation_status, proposal_reason, pedagogical_move, display_summary = self._tutor_message(
+            strategy,
+            node_id,
+            evidence_signal=signal,
+        )
         tutor_role = AgentRole.SLOW_SIMULATOR_AGENT if "slow-thinking" in reason else AgentRole.FAST_TUTOR_AGENT
         self._record_agent_proposal(
             tutor_role,
             MethodologyStage.TUTOR_RESPONSE,
-            "tutor_response",
+            "tutor_proposal",
             MethodologyRef("tutor_message", source, "tutor response"),
+            validation_status=validation_status,
             node_id=node_id,
             strategy=strategy.value,
-            reason_code="slow_strategy" if tutor_role is AgentRole.SLOW_SIMULATOR_AGENT else "fast_strategy",
+            reason_code=proposal_reason,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            display_summary=display_summary,
+            pedagogical_move=pedagogical_move,
+            final_message_preview=message,
         )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1287,17 +1346,202 @@ class PelicanEngine:
                 pass
         return classify_response(answer, self.state.current_expected_answer, self.curriculum)
 
-    def _tutor_message(self, strategy: TutoringStrategy, node_id: str) -> tuple[str, str]:
-        """Generate or select a tutor response without changing mastery state."""
+    def _tutor_message(
+        self,
+        strategy: TutoringStrategy,
+        node_id: str,
+        *,
+        evidence_signal: str | None = None,
+        base_message: str | None = None,
+    ) -> tuple[str, str, ProposalValidationStatus, str, str, str]:
+        """Generate or select a bounded tutor response without mastery mutation.
+
+        Args:
+            strategy: EDF-selected tutoring move.
+            node_id: Current concept node to ground the response.
+            evidence_signal: Safe current-turn signal used for proposal trace.
+            base_message: Optional deterministic remediation message. Remediation
+                handlers pass their already-rendered prompt here so rule-mode
+                behavior and existing tests remain stable.
+
+        Returns:
+            Tuple of final message, source, validation status, safe reason code,
+            pedagogical move, and display summary.
+
+        Side Effects:
+            Emits safe tutor proposal logs. The stable event names are
+            ``pelican_tutor_proposal_generated`` and
+            ``pelican_tutor_proposal_validated``. Metadata is limited to node,
+            strategy, source, status, and bounded move labels; raw learner text,
+            prompts, model output, provider bodies, and credentials are outside
+            this logging boundary.
+        """
         prompt = self._base_tutor_prompt(node_id)
+        signal = evidence_signal or self.state.edf_snapshot.reason_code or strategy.value
         if self.state.mode == "llm":
             try:
-                generated = self.llm.tutor_response(strategy, prompt, self.curriculum.nodes[node_id].label)
-                if generated:
-                    return generated, "llm"
+                proposal = self.llm.tutor_proposal(
+                    strategy=strategy,
+                    node_id=node_id,
+                    node_label=self.curriculum.nodes[node_id].label,
+                    base_prompt=prompt,
+                    learner_state=self.state.edf_snapshot.learner_state,
+                    edf_policy=self.state.edf_snapshot.pedagogical_strategy,
+                    recent_signals=self.memory.recent_safe_signals(self.state),
+                    evidence_signal=signal,
+                )
+                log_event(
+                    "pelican_tutor_proposal_generated",
+                    learner_id=self.state.learner_id,
+                    phase=self.state.phase,
+                    node_id=node_id,
+                    strategy=strategy.value,
+                    proposal_source="llm",
+                    reason_code="candidate",
+                )
+                status, reason = self._validate_tutor_proposal(proposal, node_id, strategy)
+                if proposal and status is ProposalValidationStatus.ACCEPTED:
+                    log_event(
+                        "pelican_tutor_proposal_validated",
+                        learner_id=self.state.learner_id,
+                        phase=self.state.phase,
+                        node_id=node_id,
+                        strategy=strategy.value,
+                        proposal_source="llm",
+                        validation_status=status.value,
+                        reason_code=reason,
+                        pedagogical_move=proposal.pedagogical_move,
+                    )
+                    return (
+                        proposal.response,
+                        "llm",
+                        status,
+                        reason,
+                        proposal.pedagogical_move,
+                        proposal.summary,
+                    )
+                fallback = self._fallback_tutor_proposal(
+                    strategy,
+                    node_id,
+                    signal,
+                    base_message=base_message,
+                    reason_code=reason,
+                )
+                log_event(
+                    "pelican_tutor_proposal_validated",
+                    learner_id=self.state.learner_id,
+                    phase=self.state.phase,
+                    node_id=node_id,
+                    strategy=strategy.value,
+                    proposal_source="rule",
+                    validation_status=ProposalValidationStatus.FALLBACK_USED.value,
+                    reason_code=reason,
+                    pedagogical_move=fallback.pedagogical_move,
+                )
+                return (
+                    fallback.response,
+                    fallback.source,
+                    ProposalValidationStatus.FALLBACK_USED,
+                    reason,
+                    fallback.pedagogical_move,
+                    fallback.summary,
+                )
             except LlmUnavailable:
                 pass
-        return rule_tutor_message(strategy, node_id, prompt, self.curriculum), "rule"
+        fallback = self._fallback_tutor_proposal(
+            strategy,
+            node_id,
+            signal,
+            base_message=base_message,
+            reason_code="rule_mode_baseline" if self.state.mode != "llm" else "llm_unavailable_fallback",
+        )
+        return (
+            fallback.response,
+            fallback.source,
+            ProposalValidationStatus.FALLBACK_USED,
+            "rule_mode_baseline" if self.state.mode != "llm" else "llm_unavailable_fallback",
+            fallback.pedagogical_move,
+            fallback.summary,
+        )
+
+    def _validate_tutor_proposal(
+        self,
+        proposal: BoundedTutorProposal | None,
+        node_id: str,
+        strategy: TutoringStrategy,
+    ) -> tuple[ProposalValidationStatus, str]:
+        """Validate one bounded tutor proposal before exposing it to the learner.
+
+        Args:
+            proposal: Candidate returned by the optional tutor model.
+            node_id: Required grounding concept.
+            strategy: Required EDF-selected strategy.
+
+        Returns:
+            Validation status and safe reason code.
+
+        Safety:
+            The validator fails closed. It accepts only non-empty, bounded,
+            node-grounded proposals whose strategy matches the local EDF
+            decision. Rejections trigger deterministic fallback and are recorded
+            as safe metadata rather than raw model output.
+        """
+        if proposal is None:
+            return ProposalValidationStatus.REJECTED, "empty_tutor_proposal"
+        if proposal.node_id != node_id:
+            return ProposalValidationStatus.REJECTED, "off_node_tutor_proposal"
+        if proposal.strategy != strategy.value:
+            return ProposalValidationStatus.REJECTED, "strategy_mismatch"
+        if len(proposal.response) > 900:
+            return ProposalValidationStatus.REJECTED, "tutor_response_too_long"
+        if len(proposal.response.strip()) < 8:
+            return ProposalValidationStatus.REJECTED, "tutor_response_too_short"
+        return ProposalValidationStatus.ACCEPTED, "accepted"
+
+    def _fallback_tutor_proposal(
+        self,
+        strategy: TutoringStrategy,
+        node_id: str,
+        evidence_signal: str,
+        *,
+        base_message: str | None = None,
+        reason_code: str,
+    ) -> BoundedTutorProposal:
+        """Build a deterministic bounded proposal for rule/fallback paths.
+
+        Args:
+            strategy: EDF-selected tutoring strategy.
+            node_id: Current grounded concept.
+            evidence_signal: Safe current-turn signal.
+            base_message: Optional remediation prompt already rendered by the
+                caller.
+            reason_code: Safe fallback reason code.
+
+        Returns:
+            Safe proposal carrying the deterministic final response and summary.
+
+        Rationale:
+            Rule fallback remains explicit in the trace so manual experiments do
+            not mistake deterministic baseline behavior for accepted agentic LLM
+            generation.
+        """
+        prompt = self._base_tutor_prompt(node_id)
+        message = base_message or rule_tutor_message(strategy, node_id, prompt, self.curriculum)
+        label = self.curriculum.nodes[node_id].label
+        move = {
+            "unknown": "scaffold",
+            "too_detailed": "scope_recalibration",
+            "too_difficult": "scope_recalibration",
+        }.get(evidence_signal, strategy.value)
+        return BoundedTutorProposal(
+            response=message,
+            pedagogical_move=move,
+            summary=f"{reason_code}: {strategy.value} grounded on {label}",
+            node_id=node_id,
+            strategy=strategy.value,
+            evidence_signal=evidence_signal,
+            source="rule",
+        )
 
     def _base_tutor_prompt(self, node_id: str) -> str:
         """Return the stable learning prompt for tutor rendering.

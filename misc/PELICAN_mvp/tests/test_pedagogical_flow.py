@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from pelican_mvp.engine import PelicanEngine
-from pelican_mvp.models import DiagnosticQuestion
+from pelican_mvp.models import BoundedTutorProposal, DiagnosticQuestion
 
 
 class FakeDiagnosticLlm:
@@ -28,6 +28,34 @@ class FakeIntakeLlm:
 
     def intake_question(self, **kwargs) -> str:
         return "LLM 產生的中國歷史前置問題"
+
+
+class FakeTutorProposalLlm:
+    @property
+    def available(self) -> bool:
+        return True
+
+    def tutor_proposal(self, **kwargs) -> BoundedTutorProposal:
+        signal = kwargs["evidence_signal"]
+        node_id = kwargs["node_id"]
+        strategy = kwargs["strategy"].value
+        if signal == "too_detailed":
+            return BoundedTutorProposal(
+                response="我們先退回高層直覺：圖片先變成數字，模型才有東西可以比較。你覺得第一步像不像翻譯？",
+                pedagogical_move="scope_recalibration",
+                summary="Recalibrate abstraction level for the current node.",
+                node_id=node_id,
+                strategy=strategy,
+                evidence_signal=signal,
+            )
+        return BoundedTutorProposal(
+            response="先補一個小台階：圖片可以被拆成一格格數字。你能猜猜每格數字可能代表什麼嗎？",
+            pedagogical_move="scaffold",
+            summary="Scaffold the active node after an unknown signal.",
+            node_id=node_id,
+            strategy=strategy,
+            evidence_signal=signal,
+        )
 
 
 def calibrated_deep_learning_engine(tmp_path: Path) -> PelicanEngine:
@@ -118,6 +146,29 @@ def test_tutoring_control_signals_after_mastery_do_not_overwrite_progress(tmp_pa
     assert "重新校準抽象層級" in too_detailed.next_reason
     assert engine.state.direct_evidence[-1].signal == "too_detailed"
     assert engine.state.nodes[mastered_node].status.value == "mastered"
+
+
+def test_llm_mode_records_distinct_bounded_tutor_proposals_for_control_signals(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.llm = FakeTutorProposalLlm()
+    engine.respond("用來衡量預測與目標之間的差距")
+
+    unknown = engine.respond("我不知道")
+    unknown_proposal = engine.state.agent_proposals[-1]
+
+    too_detailed = engine.respond("這太細了，我完全沒有基礎")
+    too_detailed_proposal = engine.state.agent_proposals[-1]
+
+    assert unknown.message != too_detailed.message
+    assert unknown_proposal.artifact_type == "tutor_proposal"
+    assert unknown_proposal.pedagogical_move == "scaffold"
+    assert unknown_proposal.validation_status.value == "accepted"
+    assert "unknown signal" in unknown_proposal.display_summary
+    assert too_detailed_proposal.artifact_type == "tutor_proposal"
+    assert too_detailed_proposal.pedagogical_move == "scope_recalibration"
+    assert too_detailed_proposal.validation_status.value == "accepted"
+    assert "Recalibrate" in too_detailed_proposal.display_summary
 
 
 def test_repeated_tutoring_failures_render_from_base_prompt(tmp_path: Path) -> None:
