@@ -16,7 +16,7 @@ from .llm import LlmAdapter
 from .models import TranscriptEntry
 from .models import MethodologyStage
 from .planner import LearningPlanner
-from .agents import SkillAgent
+from .agents import DiagnosisAgent, FastTutorAgent, SkillAgent, SlowSimulatorAgent
 from .skill_generator import DomainSkillGenerator
 from .state_store import StateStore, StateStoreError
 from .observability import log_event
@@ -79,6 +79,9 @@ def _get_engine(learner_id: str, curriculum_id: str | None = None) -> PelicanEng
     engine.llm = llm_adapter
     engine.planner = LearningPlanner(engine.llm)
     engine.skill_agent = SkillAgent(DomainSkillGenerator(engine.llm))
+    engine.diagnosis_agent = DiagnosisAgent(engine.llm)
+    engine.fast_tutor_agent = FastTutorAgent(engine.llm)
+    engine.slow_simulator_agent = SlowSimulatorAgent(engine.llm)
     return engine
 
 

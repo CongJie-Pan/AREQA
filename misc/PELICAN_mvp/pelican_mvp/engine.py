@@ -11,10 +11,12 @@ from .agents import (
     AgentExecutionContext,
     AgentExecutionResult,
     DiagnosisAgent,
+    FastTutorAgent,
     IntakeAgent,
     PolicyAgent,
     SkillAgent,
     SkillAgentInput,
+    SlowSimulatorAgent,
     StateAgent,
 )
 from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node, remediation_signal
@@ -85,6 +87,8 @@ class PelicanEngine:
         self.skill_agent = SkillAgent(DomainSkillGenerator(self.llm))
         self.diagnosis_agent = DiagnosisAgent(self.llm)
         self.state_agent = StateAgent()
+        self.fast_tutor_agent = FastTutorAgent(self.llm)
+        self.slow_simulator_agent = SlowSimulatorAgent(self.llm)
         self.edf = EdfSimulator()
         self.policy_agent = PolicyAgent(self.edf)
         self.memory = LearningMemorySimulator()
@@ -891,27 +895,20 @@ class PelicanEngine:
         self._record(answer, ResponseCategory.DIFFICULTY, strategy, [])
         self._refresh_learning_context(answer, ResponseCategory.DIFFICULTY, signal)
         base_message = self._scope_mismatch_prompt(node_id, self.curriculum.nodes[node_id].label)
-        message, source, validation_status, proposal_reason, pedagogical_move, display_summary = self._tutor_message(
+        message, source, validation_status, proposal_reason, pedagogical_move, display_summary, tutor_result = self._tutor_message(
             strategy,
             node_id,
             evidence_signal=signal,
             base_message=base_message,
+            tutor_role=AgentRole.FAST_TUTOR_AGENT,
         )
         self.state.current_prompt = message
         self.state.current_prompt_source = source
-        self._record_agent_proposal(
-            AgentRole.FAST_TUTOR_AGENT,
-            MethodologyStage.TUTOR_RESPONSE,
-            "tutor_proposal",
-            MethodologyRef("tutor_message", source, "scope remediation response"),
-            validation_status=validation_status,
-            reason_code=proposal_reason,
+        self._record_agent_result(
+            tutor_result,
             node_id=node_id,
             strategy=strategy.value,
             skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
-            display_summary=display_summary,
-            pedagogical_move=pedagogical_move,
-            final_message_preview=message,
         )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -977,27 +974,20 @@ class PelicanEngine:
             prerequisite_id,
             self.curriculum.nodes[prerequisite_id].label,
         )
-        message, source, validation_status, proposal_reason, pedagogical_move, display_summary = self._tutor_message(
+        message, source, validation_status, proposal_reason, pedagogical_move, display_summary, tutor_result = self._tutor_message(
             strategy,
             prerequisite_id,
             evidence_signal="unknown",
             base_message=base_message,
+            tutor_role=AgentRole.SLOW_SIMULATOR_AGENT,
         )
         self.state.current_prompt = message
         self.state.current_prompt_source = source
-        self._record_agent_proposal(
-            AgentRole.SLOW_SIMULATOR_AGENT,
-            MethodologyStage.TUTOR_RESPONSE,
-            "tutor_proposal",
-            MethodologyRef("tutor_message", source, "scaffold response"),
-            validation_status=validation_status,
-            reason_code=proposal_reason,
+        self._record_agent_result(
+            tutor_result,
             node_id=prerequisite_id,
             strategy=strategy.value,
             skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
-            display_summary=display_summary,
-            pedagogical_move=pedagogical_move,
-            final_message_preview=message,
         )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1158,25 +1148,18 @@ class PelicanEngine:
         context = self._tutoring_context(category, rounds)
         strategy, reason = select_strategy(context)
         signal = self.state.direct_evidence[-1].signal if self.state.direct_evidence else category.value
-        message, source, validation_status, proposal_reason, pedagogical_move, display_summary = self._tutor_message(
+        tutor_role = AgentRole.SLOW_SIMULATOR_AGENT if "slow-thinking" in reason else AgentRole.FAST_TUTOR_AGENT
+        message, source, validation_status, proposal_reason, pedagogical_move, display_summary, tutor_result = self._tutor_message(
             strategy,
             node_id,
             evidence_signal=signal,
+            tutor_role=tutor_role,
         )
-        tutor_role = AgentRole.SLOW_SIMULATOR_AGENT if "slow-thinking" in reason else AgentRole.FAST_TUTOR_AGENT
-        self._record_agent_proposal(
-            tutor_role,
-            MethodologyStage.TUTOR_RESPONSE,
-            "tutor_proposal",
-            MethodologyRef("tutor_message", source, "tutor response"),
-            validation_status=validation_status,
+        self._record_agent_result(
+            tutor_result,
             node_id=node_id,
             strategy=strategy.value,
-            reason_code=proposal_reason,
             skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
-            display_summary=display_summary,
-            pedagogical_move=pedagogical_move,
-            final_message_preview=message,
         )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1383,7 +1366,8 @@ class PelicanEngine:
         *,
         evidence_signal: str | None = None,
         base_message: str | None = None,
-    ) -> tuple[str, str, ProposalValidationStatus, str, str, str]:
+        tutor_role: AgentRole | None = None,
+    ) -> tuple[str, str, ProposalValidationStatus, str, str, str, AgentExecutionResult]:
         """Generate or select a bounded tutor response without mastery mutation.
 
         Args:
@@ -1408,90 +1392,44 @@ class PelicanEngine:
         """
         prompt = self._base_tutor_prompt(node_id)
         signal = evidence_signal or self.state.edf_snapshot.reason_code or strategy.value
-        if self.state.mode == "llm":
-            try:
-                proposal = self.llm.tutor_proposal(
-                    strategy=strategy,
-                    node_id=node_id,
-                    node_label=self.curriculum.nodes[node_id].label,
-                    base_prompt=prompt,
-                    learner_state=self.state.edf_snapshot.learner_state,
-                    edf_policy=self.state.edf_snapshot.pedagogical_strategy,
-                    recent_signals=self.memory.recent_safe_signals(self.state),
-                    evidence_signal=signal,
-                )
-                log_event(
-                    "pelican_tutor_proposal_generated",
-                    learner_id=self.state.learner_id,
-                    phase=self.state.phase,
-                    node_id=node_id,
-                    strategy=strategy.value,
-                    proposal_source="llm",
-                    reason_code="candidate",
-                )
-                status, reason = self._validate_tutor_proposal(proposal, node_id, strategy)
-                if proposal and status is ProposalValidationStatus.ACCEPTED:
-                    log_event(
-                        "pelican_tutor_proposal_validated",
-                        learner_id=self.state.learner_id,
-                        phase=self.state.phase,
-                        node_id=node_id,
-                        strategy=strategy.value,
-                        proposal_source="llm",
-                        validation_status=status.value,
-                        reason_code=reason,
-                        pedagogical_move=proposal.pedagogical_move,
-                    )
-                    return (
-                        proposal.response,
-                        "llm",
-                        status,
-                        reason,
-                        proposal.pedagogical_move,
-                        proposal.summary,
-                    )
-                fallback = self._fallback_tutor_proposal(
-                    strategy,
-                    node_id,
-                    signal,
-                    base_message=base_message,
-                    reason_code=reason,
-                )
-                log_event(
-                    "pelican_tutor_proposal_validated",
-                    learner_id=self.state.learner_id,
-                    phase=self.state.phase,
-                    node_id=node_id,
-                    strategy=strategy.value,
-                    proposal_source="rule",
-                    validation_status=ProposalValidationStatus.FALLBACK_USED.value,
-                    reason_code=reason,
-                    pedagogical_move=fallback.pedagogical_move,
-                )
-                return (
-                    fallback.response,
-                    fallback.source,
-                    ProposalValidationStatus.FALLBACK_USED,
-                    reason,
-                    fallback.pedagogical_move,
-                    fallback.summary,
-                )
-            except LlmUnavailable:
-                pass
-        fallback = self._fallback_tutor_proposal(
-            strategy,
-            node_id,
-            signal,
+        agent = (
+            self.slow_simulator_agent
+            if tutor_role is AgentRole.SLOW_SIMULATOR_AGENT
+            else self.fast_tutor_agent
+        )
+        agent.llm = self.llm
+        agent_response = agent.propose_response(
+            state=self.state,
+            curriculum=self.curriculum,
+            strategy=strategy,
+            node_id=node_id,
+            base_prompt=prompt,
+            evidence_signal=signal,
+            recent_safe_signals=self.memory.recent_safe_signals(self.state),
             base_message=base_message,
-            reason_code="rule_mode_baseline" if self.state.mode != "llm" else "llm_unavailable_fallback",
+            context=self._agent_execution_context(),
+        )
+        proposal = agent_response.proposal
+        log_event(
+            "pelican_tutor_proposal_validated",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            node_id=node_id,
+            strategy=strategy.value,
+            agent_role=agent_response.result.role.value,
+            proposal_source=proposal.source,
+            validation_status=agent_response.validation_status.value,
+            reason_code=agent_response.reason_code,
+            pedagogical_move=proposal.pedagogical_move,
         )
         return (
-            fallback.response,
-            fallback.source,
-            ProposalValidationStatus.FALLBACK_USED,
-            "rule_mode_baseline" if self.state.mode != "llm" else "llm_unavailable_fallback",
-            fallback.pedagogical_move,
-            fallback.summary,
+            proposal.response,
+            proposal.source,
+            agent_response.validation_status,
+            agent_response.reason_code,
+            proposal.pedagogical_move,
+            proposal.summary,
+            agent_response.result,
         )
 
     def _validate_tutor_proposal(
