@@ -20,6 +20,7 @@ from .agents import DiagnosisAgent, FastTutorAgent, SkillAgent, SlowSimulatorAge
 from .skill_generator import DomainSkillGenerator
 from .state_store import StateStore, StateStoreError
 from .observability import log_event
+from .progress import progress_snapshot, record_progress, reset_progress
 
 app = FastAPI(title="PELICAN MVP Web API")
 app.add_middleware(
@@ -545,18 +546,30 @@ def start(req: BaseRequest) -> dict[str, Any]:
 @app.post("/api/respond")
 def respond(req: RespondRequest) -> dict[str, Any]:
     """Process one learner answer through the PELICAN engine."""
+    reset_progress(req.learner_id)
+    record_progress(req.learner_id, "request_received", "收到學習回覆", status="processing", detail="api/respond")
     with state_lock:
         try:
             engine = _get_engine(req.learner_id)
+            record_progress(
+                req.learner_id,
+                "engine_processing",
+                "分析教學決策",
+                status="processing",
+                detail=engine.state.phase,
+            )
             msg = engine.respond(req.answer)
             _record_transcript(engine, "user", req.answer)
             _record_transcript(engine, "assistant", msg.message)
             _log_api_event("pelican_api_response", req.learner_id, engine)
+            record_progress(req.learner_id, "complete", "完成教學回覆", status="done", detail=engine.state.phase)
             return _serialize_response(engine, msg)
         except StateStoreError as e:
+            record_progress(req.learner_id, "error", "進度處理失敗", status="error", detail="state_store_error")
             log_event("pelican_api_error", req.learner_id, endpoint="/api/respond", reason_code="state_store_error")
             raise HTTPException(status_code=400, detail="Invalid session state")
         except ValueError as e:
+            record_progress(req.learner_id, "error", "進度處理失敗", status="error", detail="validation_error")
             log_event("pelican_api_error", req.learner_id, endpoint="/api/respond", reason_code="validation_error")
             raise HTTPException(status_code=400, detail="Validation error")
 
@@ -564,6 +577,7 @@ def respond(req: RespondRequest) -> dict[str, Any]:
 @app.post("/api/reset")
 def reset(req: BaseRequest) -> dict[str, Any]:
     """Reset a learner session to onboarding or an explicit fixture."""
+    reset_progress(req.learner_id)
     with state_lock:
         try:
             engine = _get_engine(req.learner_id)
@@ -598,6 +612,21 @@ def set_mode(req: ModeRequest) -> dict[str, Any]:
         except StateStoreError as e:
             log_event("pelican_api_error", req.learner_id, endpoint="/api/mode", reason_code="state_store_error")
             raise HTTPException(status_code=400, detail="Invalid session state")
+
+
+@app.get("/api/progress")
+def get_progress(learner_id: str = "demo_student") -> dict[str, Any]:
+    """Return safe runtime progress for the currently running learner request.
+
+    Args:
+        learner_id: Local learner/session identifier.
+
+    Returns:
+        Process-local progress events. This endpoint deliberately does not
+        acquire ``state_lock`` so the browser can poll it while ``/api/respond``
+        is still executing under that lock.
+    """
+    return progress_snapshot(learner_id)
 
 
 @app.get("/api/export")

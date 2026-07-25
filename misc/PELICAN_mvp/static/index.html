@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PELICAN Knowledge Tracing MVP</title>
-    <link rel="stylesheet" href="styles.css?v=20260725-chat-first">
+    <link rel="stylesheet" href="styles.css?v=20260725-skill-progress">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -66,9 +66,15 @@
             <div id="chat-history" class="chat-history"></div>
             
             <div id="loading" class="loading hidden">
-                <div class="dot"></div>
-                <div class="dot"></div>
-                <div class="dot"></div>
+                <div class="loading-dots" aria-hidden="true">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+                <div class="loading-progress">
+                    <div id="loading-progress-title" class="loading-progress-title">正在處理...</div>
+                    <div id="loading-progress-steps" class="loading-progress-steps"></div>
+                </div>
             </div>
 
             <form id="chat-form" class="chat-input-area">
@@ -77,6 +83,6 @@
             </form>
         </main>
     </div>
-    <script src="app.js?v=20260725-chat-first"></script>
+    <script src="app.js?v=20260725-skill-progress"></script>
 </body>
 </html>

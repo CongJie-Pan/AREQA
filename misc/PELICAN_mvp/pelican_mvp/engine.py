@@ -54,6 +54,7 @@ from .edf_simulator import EdfSimulator
 from .learning_memory import LearningMemorySimulator
 from .curriculum import Curriculum
 from .observability import log_event
+from .progress import record_progress
 from .skill_generator import DomainSkillGenerator
 
 
@@ -454,11 +455,46 @@ class PelicanEngine:
             model_route=intake.model_route,
             intake_turns=3,
         )
+        record_progress(
+            self.state.learner_id,
+            "skill_generation",
+            "建立領域 Skill",
+            status="processing",
+            detail=profile.model_route or profile.domain_category or "runtime",
+        )
         skill_proposal = self.skill_agent.propose_skill(
             SkillAgentInput(profile),
             context=self._agent_execution_context(),
         )
+        record_progress(
+            self.state.learner_id,
+            "skill_generation",
+            "建立領域 Skill",
+            status="done",
+            detail=skill_proposal.skill.skill_id,
+        )
+        record_progress(
+            self.state.learner_id,
+            "skill_validation",
+            "驗證 Skill 結構",
+            status="processing",
+            detail=skill_proposal.route,
+        )
         plan = self.planner.compile_validated_skill(skill_proposal.skill, profile, skill_proposal.route)
+        record_progress(
+            self.state.learner_id,
+            "skill_validation",
+            "驗證 Skill 結構",
+            status="done",
+            detail=plan.skill_lifecycle or "validated",
+        )
+        record_progress(
+            self.state.learner_id,
+            "plan_compiled",
+            "編譯知識地圖",
+            status="done",
+            detail=f"{len(plan.nodes)} nodes",
+        )
         for attempt in skill_proposal.attempts:
             self._record_agent_proposal(
                 attempt.role,
@@ -506,7 +542,21 @@ class PelicanEngine:
             route=plan.model_route,
             skill_id=plan.skill_id,
         )
+        record_progress(
+            self.state.learner_id,
+            "diagnostic_selected",
+            "準備診斷問題",
+            status="processing",
+            detail=plan.skill_id or "learning_plan",
+        )
         outcome = self._present_next_diagnostic()
+        record_progress(
+            self.state.learner_id,
+            "diagnostic_selected",
+            "準備診斷問題",
+            status="done",
+            detail=self.state.current_node_id or "selected",
+        )
         topic = plan.topic if plan else "這個主題"
         friendly_prefix = f"太好了，我們來一起學習「{topic}」吧！\n我會先用一個低負荷的校準問題確認起點。如果不知道，直接說不知道就好：\n\n"
         return TurnOutcome(

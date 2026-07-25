@@ -60,6 +60,29 @@ def test_api_dynamic_learning_metadata() -> None:
     assert learning["skill_artifact_summary"]["current_diagnostic_target"]["node_id"] == "math_intuition"
 
 
+def test_api_runtime_progress_exposes_skill_construction_steps() -> None:
+    learner = "runtime_progress_user"
+    raw_level_answer = "完全沒有基礎 raw secret should not enter runtime progress"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解原理"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": raw_level_answer})
+
+    assert response.status_code == 200
+    progress_response = client.get(f"/api/progress?learner_id={learner}")
+
+    assert progress_response.status_code == 200
+    progress = progress_response.json()
+    event_codes = [event["code"] for event in progress["events"]]
+    assert {"skill_generation", "skill_validation", "plan_compiled", "complete"} <= set(event_codes)
+    assert progress["latest"]["code"] == "complete"
+    assert progress["active"] is False
+    assert raw_level_answer not in str(progress)
+
+    client.post("/api/reset", json={"learner_id": learner})
+    assert client.get(f"/api/progress?learner_id={learner}").json()["events"] == []
+
+
 def test_api_spring_autumn_skill_artifact_is_history_specific(monkeypatch: pytest.MonkeyPatch) -> None:
     learner = "spring_autumn_user"
     monkeypatch.setattr(server_module, "llm_adapter", FakeSpringAutumnLlm())

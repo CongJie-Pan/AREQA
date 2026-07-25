@@ -39,6 +39,7 @@ _EVENT_CHANNEL_PREFIXES = (
     ("pelican_agent_", "methodology"),
     ("pelican_methodology_", "methodology"),
     ("pelican_turn_", "methodology"),
+    ("pelican_progress_", "activity"),
     ("pelican_activity", "activity"),
 )
 _SAFE_FIELDS = frozenset({

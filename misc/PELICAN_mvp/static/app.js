@@ -27,7 +27,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const resetBtn = document.getElementById("reset-btn");
     const exportBtn = document.getElementById("export-btn");
     const loadingUI = document.getElementById("loading");
+    const loadingProgressTitle = document.getElementById("loading-progress-title");
+    const loadingProgressSteps = document.getElementById("loading-progress-steps");
     let lastActivityKey = "";
+    let progressPollTimer = null;
+    let progressPollStartedAt = 0;
+    let latestProgressSequence = 0;
 
     // Initialize
     startSession();
@@ -41,6 +46,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         chatInput.value = "";
         
         showLoading(true);
+        startProgressPolling();
         renderPendingActivity("正在分析教學決策", "respond");
         try {
             const res = await fetch("/api/respond", {
@@ -54,6 +60,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             appendMessage("系統錯誤：" + err.message, "teacher");
             renderActivityStatus({ code: "error", label: "系統錯誤", status: "idle", detail: "request_failed" }, []);
         } finally {
+            stopProgressPolling();
             showLoading(false);
         }
     });
@@ -258,10 +265,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     function activityLabel(code) {
         const labels = {
             idle: "等待學習主題",
+            request_queued: "等待後端接收",
+            request_received: "收到學習回覆",
             intake_topic: "接收學習主題",
             domain_resolved: "判斷學習領域",
             intent_detected: "判斷學習方向",
             level_detected: "判斷目前程度",
+            skill_generation: "建立領域 Skill",
+            skill_validation: "驗證 Skill 結構",
             skill_loaded: "載入領域 Skill",
             skill_validated: "驗證 Skill 規則",
             plan_compiled: "編譯學習路徑",
@@ -276,10 +287,93 @@ document.addEventListener("DOMContentLoaded", async () => {
             tutoring_started: "進入教學引導",
             processing: "系統處理中",
             engine_processing: "等待後端決策",
+            complete: "完成教學回覆",
             exported: "已匯出對話紀錄",
             error: "系統錯誤"
         };
         return labels[code] || "系統處理中";
+    }
+
+    function startProgressPolling() {
+        stopProgressPolling();
+        progressPollStartedAt = Date.now();
+        latestProgressSequence = 0;
+        renderLoadingProgress([
+            {
+                code: "request_queued",
+                label: "等待後端接收",
+                status: "processing",
+                detail: "polling"
+            }
+        ]);
+        fetchRuntimeProgress();
+        progressPollTimer = window.setInterval(fetchRuntimeProgress, 800);
+    }
+
+    function stopProgressPolling() {
+        if (progressPollTimer) {
+            window.clearInterval(progressPollTimer);
+            progressPollTimer = null;
+        }
+    }
+
+    async function fetchRuntimeProgress() {
+        try {
+            const res = await fetch(`/api/progress?learner_id=${encodeURIComponent(LEARNER_ID)}`, {
+                cache: "no-store"
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const events = Array.isArray(data.events)
+                ? data.events.filter(event => {
+                    const eventTime = Date.parse(event.timestamp || "");
+                    return Number.isNaN(eventTime) || eventTime >= progressPollStartedAt;
+                })
+                : [];
+            if (events.length === 0) return;
+            renderLoadingProgress(events);
+            const latest = events[events.length - 1];
+            if ((latest.sequence || 0) > latestProgressSequence) {
+                latestProgressSequence = latest.sequence || latestProgressSequence;
+                renderActivityStatus(latest, events);
+            }
+        } catch (err) {
+            // Polling is best-effort; the final /api/respond response remains
+            // the authoritative state update for the chat.
+            console.debug("Progress polling skipped", err);
+        }
+    }
+
+    function renderLoadingProgress(events) {
+        const displayEvents = events.slice(-5);
+        const latest = displayEvents[displayEvents.length - 1] || {
+            code: "processing",
+            label: "正在處理",
+            status: "processing",
+            detail: ""
+        };
+        loadingProgressTitle.textContent = latest.label || activityLabel(latest.code);
+        loadingProgressSteps.innerHTML = "";
+        displayEvents.forEach(event => {
+            const row = document.createElement("div");
+            row.className = `loading-progress-step ${event.status || "processing"}`;
+
+            const marker = document.createElement("span");
+            marker.className = "loading-progress-marker";
+
+            const label = document.createElement("span");
+            label.className = "loading-progress-label";
+            label.textContent = event.label || activityLabel(event.code);
+
+            const detail = document.createElement("span");
+            detail.className = "loading-progress-detail";
+            detail.textContent = event.detail || event.code || "--";
+
+            row.appendChild(marker);
+            row.appendChild(label);
+            row.appendChild(detail);
+            loadingProgressSteps.appendChild(row);
+        });
     }
 
     function stageLabel(stage) {
@@ -533,6 +627,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     function showLoading(show) {
         if (show) {
             loadingUI.classList.remove("hidden");
+            renderLoadingProgress([
+                {
+                    code: "processing",
+                    label: "正在處理",
+                    status: "processing",
+                    detail: "request"
+                }
+            ]);
             chatHistory.appendChild(loadingUI); // Move to bottom
             chatHistory.scrollTop = chatHistory.scrollHeight;
         } else {

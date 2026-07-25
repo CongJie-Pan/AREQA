@@ -560,11 +560,20 @@ body {
     border-top-left-radius: 2px;
     margin-left: 0;
     display: flex;
+    align-items: flex-start;
     gap: 6px;
     margin-bottom: 20px;
+    max-width: min(520px, 88%);
 }
 
 .loading.hidden { display: none; }
+
+.loading-dots {
+    display: flex;
+    gap: 6px;
+    padding-top: 6px;
+    flex: 0 0 auto;
+}
 
 .dot {
     width: 8px;
@@ -580,6 +589,72 @@ body {
 @keyframes bounce {
     0%, 80%, 100% { transform: scale(0); }
     40% { transform: scale(1); }
+}
+
+.loading-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 220px;
+}
+
+.loading-progress-title {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.loading-progress-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.loading-progress-step {
+    display: grid;
+    grid-template-columns: 10px minmax(96px, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+}
+
+.loading-progress-marker {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    opacity: 0.75;
+}
+
+.loading-progress-step.processing .loading-progress-marker {
+    background: var(--accent);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
+
+.loading-progress-step.done .loading-progress-marker {
+    background: #10b981;
+}
+
+.loading-progress-step.error .loading-progress-marker {
+    background: #ef4444;
+}
+
+.loading-progress-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.loading-progress-detail {
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    max-width: 130px;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Scrollbar styling */
