@@ -106,7 +106,7 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     page.fill("#chat-input", "我不知道")
     page.click(".send-btn")
     expect(page.locator("#tutor-proposal-trace")).to_contain_text("scaffold")
-    expect(page.locator("#agent-executor-trace")).to_contain_text("slow_simulator_agent")
+    expect(page.locator("#agent-executor-trace")).to_contain_text("fast_tutor_agent")
 
 
 @pytest.mark.parametrize("viewport", [

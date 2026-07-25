@@ -64,7 +64,9 @@ def select_strategy_for_category(
 
 def strategy_for_remediation_signal(signal: str | None) -> TutoringStrategy | None:
     """Map domain-skill remediation signals to approved local tutoring moves."""
-    if signal in {"too_detailed", "too_difficult", "unknown"}:
+    if signal == "unknown":
+        return TutoringStrategy.EXPLANATION
+    if signal in {"too_detailed", "too_difficult"}:
         return TutoringStrategy.DECOMPOSITION
     if signal == "too_easy":
         return TutoringStrategy.CONFIRMATION
@@ -77,14 +79,15 @@ def _slow_candidates(category: ResponseCategory, pedagogical_policy: str | None 
     """Return candidate strategies after repeated difficulty or failure."""
     candidates = []
     if category in (ResponseCategory.INABILITY, ResponseCategory.DIFFICULTY):
-        candidates = [TutoringStrategy.DECOMPOSITION, TutoringStrategy.SIMPLIFICATION]
+        candidates = [TutoringStrategy.EXPLANATION, TutoringStrategy.SIMPLIFICATION]
     elif category in (ResponseCategory.INCORRECT, ResponseCategory.PARTIAL_CORRECT):
         candidates = [TutoringStrategy.CORRECTION, TutoringStrategy.DECOMPOSITION]
     else:
         candidates = [TutoringStrategy.OPEN_QUESTION, TutoringStrategy.CONFIRMATION]
 
     if pedagogical_policy == "simplify_or_decompose":
-        candidates = [c for c in candidates if c in (TutoringStrategy.SIMPLIFICATION, TutoringStrategy.DECOMPOSITION)]
+        allowed = (TutoringStrategy.EXPLANATION, TutoringStrategy.SIMPLIFICATION, TutoringStrategy.DECOMPOSITION)
+        candidates = [c for c in candidates if c in allowed]
     elif pedagogical_policy == "correct_and_explain":
         candidates = [c for c in candidates if c in (TutoringStrategy.CORRECTION, TutoringStrategy.EXPLANATION)]
     elif pedagogical_policy == "confirm_and_suggest_action":
@@ -100,7 +103,8 @@ def _simulation_score(strategy: TutoringStrategy, context: TutoringContext, disc
     category = context.category
     success_probability = {
         (ResponseCategory.INABILITY, TutoringStrategy.DECOMPOSITION): 0.85,
-        (ResponseCategory.INABILITY, TutoringStrategy.SIMPLIFICATION): 0.75,
+        (ResponseCategory.INABILITY, TutoringStrategy.EXPLANATION): 0.92,
+        (ResponseCategory.INABILITY, TutoringStrategy.SIMPLIFICATION): 0.78,
         (ResponseCategory.DIFFICULTY, TutoringStrategy.DECOMPOSITION): 0.82,
         (ResponseCategory.DIFFICULTY, TutoringStrategy.SIMPLIFICATION): 0.78,
         (ResponseCategory.PARTIAL_CORRECT, TutoringStrategy.CORRECTION): 0.84,
@@ -109,7 +113,9 @@ def _simulation_score(strategy: TutoringStrategy, context: TutoringContext, disc
         (ResponseCategory.INCORRECT, TutoringStrategy.DECOMPOSITION): 0.70,
     }.get((category, strategy), 0.60)
     recent = context.recent_signals[-3:]
-    if strategy is TutoringStrategy.DECOMPOSITION and any(signal in {"unknown", ResponseCategory.INABILITY.value} for signal in recent):
+    if strategy is TutoringStrategy.EXPLANATION and any(
+        signal in {"unknown", ResponseCategory.INABILITY.value} for signal in recent
+    ):
         success_probability += 0.08
     if strategy is TutoringStrategy.SIMPLIFICATION and any(signal in {"too_detailed", "too_difficult", ResponseCategory.DIFFICULTY.value} for signal in recent):
         success_probability += 0.06

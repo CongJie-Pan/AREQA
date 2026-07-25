@@ -6,6 +6,7 @@ from pelican_mvp.server import app
 import pelican_mvp.server as server_module
 from pelican_mvp.domain_skill import DomainCategory
 from pelican_mvp.llm import LlmHealth
+from pelican_mvp import skill_artifacts
 from test_skill_agent import FakeSpringAutumnLlm
 
 @pytest.fixture(autouse=True)
@@ -199,7 +200,10 @@ def test_api_agent_executor_trace_is_safe_metadata() -> None:
     assert raw_answer not in trace_text
 
 
-def test_api_agent_executor_trace_does_not_adopt_rejected_skill_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_api_agent_executor_trace_does_not_adopt_rejected_skill_attempts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class InvalidHumanitiesLlm:
         @property
         def available(self) -> bool:
@@ -216,6 +220,7 @@ def test_api_agent_executor_trace_does_not_adopt_rejected_skill_attempts(monkeyp
 
     learner = "rejected_skill_trace_user"
     monkeypatch.setattr(server_module, "llm_adapter", InvalidHumanitiesLlm())
+    monkeypatch.setattr(skill_artifacts, "ARTIFACT_ROOT", tmp_path / "generated_skills")
     client.post("/api/reset", json={"learner_id": learner})
     client.post("/api/respond", json={"learner_id": learner, "answer": "中國明朝歷史"})
     client.post("/api/respond", json={"learner_id": learner, "answer": "想理解明末事件脈絡"})

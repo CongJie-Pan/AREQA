@@ -53,7 +53,7 @@ class FakeTutorProposalLlm:
                 evidence_signal=signal,
             )
         return BoundedTutorProposal(
-            response="先補一個小台階：圖片可以被拆成一格格數字。你能猜猜每格數字可能代表什麼嗎？",
+            response="先直接講重點：圖片可以被拆成一格格數字，每格代表局部亮度或顏色。你先確認這是在說資料表示嗎？",
             pedagogical_move="scaffold",
             summary="Scaffold the active node after an unknown signal.",
             node_id=node_id,
@@ -145,7 +145,8 @@ def test_unknown_scaffolds_current_prerequisite_not_unrelated_node(tmp_path: Pat
     outcome = engine.respond("不知道")
 
     assert outcome.node_id == current_node
-    assert "先補" in outcome.message
+    assert "先直接講" in outcome.message
+    assert "重點是" in outcome.message
     assert "不跳到下一個診斷題" in outcome.next_reason
     assert engine.state.phase == "tutoring"
     assert engine.state.direct_evidence[-1].signal == "unknown"
@@ -165,7 +166,7 @@ def test_tutoring_control_signals_after_mastery_do_not_overwrite_progress(tmp_pa
     unknown = engine.respond("我不知道")
 
     assert unknown.node_id == "vectors_tensors"
-    assert "先補" in unknown.message
+    assert "先直接講" in unknown.message
     assert "不跳到下一個診斷題" in unknown.next_reason
     assert engine.state.direct_evidence[-1].signal == "unknown"
     assert engine.state.nodes[mastered_node].status.value == "mastered"

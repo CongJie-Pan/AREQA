@@ -1082,7 +1082,7 @@ class PelicanEngine:
                 evidence=self._evidence(answer, category),
             )
             changes.append(f"{self.curriculum.nodes[node_id].label}: not_mastered（直接證據）")
-        strategy = strategy_for_remediation_signal("unknown") or TutoringStrategy.DECOMPOSITION
+        strategy = strategy_for_remediation_signal("unknown") or TutoringStrategy.EXPLANATION
         self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category, "unknown")
         prerequisite_id = self.curriculum.nodes[node_id].prerequisites[0] if self.curriculum.nodes[node_id].prerequisites else node_id
@@ -1097,7 +1097,7 @@ class PelicanEngine:
             prerequisite_id,
             evidence_signal="unknown",
             base_message=base_message,
-            tutor_role=AgentRole.SLOW_SIMULATOR_AGENT,
+            tutor_role=AgentRole.FAST_TUTOR_AGENT,
         )
         self.state.current_prompt = message
         self.state.current_prompt_source = source
@@ -1130,7 +1130,7 @@ class PelicanEngine:
             category,
             strategy,
             tuple(changes),
-            "unknown：先 scaffold prerequisite，不跳到下一個診斷題",
+            "unknown：先直接講解並 scaffold prerequisite，不跳到下一個診斷題",
         )
 
     def _handle_acceleration_request(self, answer: str) -> TurnOutcome:
@@ -1451,10 +1451,19 @@ class PelicanEngine:
         )
 
     def _scaffold_prompt(self, node_id: str, label: str) -> str:
-        """Render an unknown-answer scaffold without reusing mismatch wording."""
+        """Render an explanation-first scaffold after an inability signal.
+
+        The learner has already said they do not know, so this seed must teach
+        before checking. It deliberately includes direct content and only one
+        low-load confirmation question to avoid a Socratic question loop.
+        """
+        expected = (self.state.current_expected_answer or "").strip()
+        explanation = expected or self._base_tutor_prompt(node_id)
         return (
-            f"沒關係，我們先補「{label}」。\n\n"
-            + self._remediation_prompt(node_id, label)
+            f"沒關係，我先直接講「{label}」。\n\n"
+            f"重點是：{explanation}\n\n"
+            "你現在不用猜細節，先抓住這個因果骨架即可。"
+            "低負荷確認：上面這段主要是在說「原因」還是「結果」？"
         )
 
     def _scope_mismatch_prompt(self, node_id: str, label: str) -> str:

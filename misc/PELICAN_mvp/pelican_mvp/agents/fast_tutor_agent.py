@@ -155,11 +155,46 @@ def validate_tutor_proposal(
         return ProposalValidationStatus.REJECTED, "off_node_tutor_proposal"
     if proposal.strategy != strategy.value:
         return ProposalValidationStatus.REJECTED, "strategy_mismatch"
+    if proposal.evidence_signal in {"unknown", "inability_to_respond"} and _is_question_only_inability_response(
+        proposal.response
+    ):
+        return ProposalValidationStatus.REJECTED, "question_only_inability_response"
     if len(proposal.response) > 900:
         return ProposalValidationStatus.REJECTED, "tutor_response_too_long"
     if len(proposal.response.strip()) < 8:
         return ProposalValidationStatus.REJECTED, "tutor_response_too_short"
     return ProposalValidationStatus.ACCEPTED, "accepted"
+
+
+def _is_question_only_inability_response(response: str) -> bool:
+    """Return whether an inability response keeps probing without teaching.
+
+    Args:
+        response: Candidate learner-facing tutor response.
+
+    Returns:
+        ``True`` when the response appears to be primarily another diagnostic
+        question. This is intentionally conservative: direct teaching may end
+        with one low-load check, but it must include explicit explanation
+        markers before the question.
+    """
+    text = response.strip()
+    if not any(mark in text for mark in ("?", "？", "你認為", "如何", "什麼")):
+        return False
+    teaching_markers = (
+        "重點",
+        "答案",
+        "先直接",
+        "先講",
+        "原因",
+        "因為",
+        "例如",
+        "也就是",
+        "這表示",
+        "所以",
+        "說明",
+    )
+    return not any(marker in text for marker in teaching_markers)
 
 
 def fallback_tutor_proposal(

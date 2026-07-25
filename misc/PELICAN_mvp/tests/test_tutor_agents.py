@@ -20,6 +20,21 @@ class OffNodeTutorLlm:
         )
 
 
+class QuestionOnlyUnknownTutorLlm:
+    available = True
+
+    def tutor_proposal(self, **kwargs) -> BoundedTutorProposal:
+        return BoundedTutorProposal(
+            response="你認為這個概念還可以從哪個角度繼續拆解？",
+            pedagogical_move="scaffold",
+            summary="Invalid question-only inability response.",
+            node_id=kwargs["node_id"],
+            strategy=kwargs["strategy"].value,
+            evidence_signal=kwargs["evidence_signal"],
+            source="llm",
+        )
+
+
 def prepared_engine(tmp_path: Path) -> PelicanEngine:
     engine = PelicanEngine(tmp_path)
     engine.start()
@@ -36,7 +51,7 @@ def test_fast_tutor_agent_returns_bounded_rule_scaffold(tmp_path: Path) -> None:
     response = agent.propose_response(
         state=engine.state,
         curriculum=engine.curriculum,
-        strategy=TutoringStrategy.DECOMPOSITION,
+        strategy=TutoringStrategy.EXPLANATION,
         node_id="math_intuition",
         base_prompt=engine.state.current_prompt,
         evidence_signal="unknown",
@@ -83,3 +98,23 @@ def test_invalid_llm_tutor_proposal_falls_back_safely(tmp_path: Path) -> None:
     assert response.validation_status is ProposalValidationStatus.FALLBACK_USED
     assert response.result.reason_code == "off_node_tutor_proposal"
     assert response.proposal.source == "rule"
+
+
+def test_question_only_unknown_tutor_proposal_falls_back_to_explanation(tmp_path: Path) -> None:
+    engine = prepared_engine(tmp_path)
+    engine.state.mode = "llm"
+    agent = FastTutorAgent(QuestionOnlyUnknownTutorLlm())
+
+    response = agent.propose_response(
+        state=engine.state,
+        curriculum=engine.curriculum,
+        strategy=TutoringStrategy.EXPLANATION,
+        node_id="math_intuition",
+        base_prompt=engine.state.current_prompt,
+        evidence_signal="unknown",
+        base_message="沒關係，我先直接講「數學直覺」。\n\n重點是：先理解誤差代表猜測偏差。",
+    )
+
+    assert response.validation_status is ProposalValidationStatus.FALLBACK_USED
+    assert response.result.reason_code == "question_only_inability_response"
+    assert "重點是" in response.proposal.response

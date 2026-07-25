@@ -159,7 +159,7 @@ def test_persistent_failure_activates_slow_thinking(tmp_path: Path) -> None:
     engine.respond("我不會")
     second = engine.respond("我不會")
 
-    assert second.strategy is TutoringStrategy.DECOMPOSITION
+    assert second.strategy is TutoringStrategy.EXPLANATION
     assert "slow-thinking" in second.next_reason
     assert engine.state.nodes["cnn_conv"].status is KnowledgeStatus.NOT_MASTERED
 
@@ -175,7 +175,7 @@ def test_current_turn_evidence_drives_current_strategy(tmp_path: Path) -> None:
     second = engine.respond("我不會")
 
     assert engine.state.edf_snapshot.pedagogical_strategy == "simplify_or_decompose"
-    assert second.strategy is TutoringStrategy.DECOMPOSITION
+    assert second.strategy is TutoringStrategy.EXPLANATION
     assert engine.state.learner_progress.current_node_id == "cnn_conv"
 
 

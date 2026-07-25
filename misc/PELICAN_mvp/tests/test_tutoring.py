@@ -10,13 +10,13 @@ def test_fast_thinking_uses_response_category() -> None:
 
 def test_slow_thinking_activates_after_two_rounds() -> None:
     strategy, reason = select_strategy(ResponseCategory.INABILITY, rounds=2)
-    assert strategy in (TutoringStrategy.DECOMPOSITION, TutoringStrategy.SIMPLIFICATION)
+    assert strategy is TutoringStrategy.EXPLANATION
     assert "slow-thinking" in reason
 
 
 def test_slow_thinking_respects_pedagogical_policy() -> None:
     strategy, reason = select_strategy(ResponseCategory.INABILITY, rounds=2, pedagogical_policy="simplify_or_decompose")
-    assert strategy in (TutoringStrategy.SIMPLIFICATION, TutoringStrategy.DECOMPOSITION)
+    assert strategy is TutoringStrategy.EXPLANATION
 
     strategy2, _ = select_strategy(ResponseCategory.INCORRECT, rounds=2, pedagogical_policy="correct_and_explain")
     assert strategy2 == TutoringStrategy.CORRECTION
@@ -35,7 +35,7 @@ def test_context_strategy_uses_recent_safe_signals() -> None:
 
     strategy, reason = select_strategy(context)
 
-    assert strategy is TutoringStrategy.DECOMPOSITION
+    assert strategy is TutoringStrategy.EXPLANATION
     assert "slow-thinking" in reason
 
 
