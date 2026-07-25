@@ -15,6 +15,14 @@ def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 client = TestClient(app)
 
 
+class OfflineLlm:
+    """Minimal offline LLM double for deterministic API fallback tests."""
+
+    @property
+    def available(self) -> bool:
+        return False
+
+
 def test_api_start() -> None:
     response = client.post("/api/start", json={"learner_id": "test_user", "curriculum_id": "cnn"})
     assert response.status_code == 200
@@ -109,6 +117,37 @@ def test_api_spring_autumn_skill_artifact_is_history_specific(monkeypatch: pytes
     assert "諸侯爭霸" in summary_text
     assert "深度學習" not in summary_text
     assert "math_intuition" not in summary_text
+
+
+def test_api_daoist_humanities_topic_does_not_fail_skill_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    learner = "daoist_user"
+    monkeypatch.setattr(server_module, "llm_adapter", OfflineLlm())
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "道家"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "單純想了解道家"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": "沒有讀過道德經或莊子"})
+
+    assert response.status_code == 200
+    learning = response.json()["learning"]
+    assert learning["phase"] == "diagnosis"
+    assert learning["domain_category"] == "humanities"
+    assert learning["skill_id"]
+    assert "系統錯誤" not in response.json()["message"]
+
+
+def test_api_unknown_domain_requires_clarification_without_500() -> None:
+    learner = "unknown_domain_guard_user"
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "星際手工藝"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解它的基礎"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": "完全沒有基礎"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "無法安全判斷" in data["message"]
+    assert data["learning"]["phase"] == "onboarding"
+    assert data["learning"]["domain_category"] == "unknown"
+    assert data["learning"]["skill_id"] is None
 
 
 def test_api_progress_snapshot_is_safe_metadata() -> None:

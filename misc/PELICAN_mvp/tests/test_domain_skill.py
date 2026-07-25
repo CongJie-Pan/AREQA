@@ -145,6 +145,14 @@ def test_domain_catalog_routes_spring_autumn_history_aliases_to_humanities() -> 
         "尊王攘夷",
         "禮崩樂壞",
         "戰國",
+        "諸子百家",
+        "百家爭鳴",
+        "道家",
+        "儒家",
+        "墨家",
+        "法家",
+        "老子",
+        "莊子",
     ]
 
     for topic in aliases:

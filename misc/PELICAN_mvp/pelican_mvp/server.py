@@ -17,7 +17,7 @@ from .models import TranscriptEntry
 from .models import MethodologyStage
 from .planner import LearningPlanner
 from .agents import DiagnosisAgent, FastTutorAgent, SkillAgent, SlowSimulatorAgent
-from .skill_generator import DomainSkillGenerator
+from .skill_generator import DomainSkillGenerator, SkillGenerationError
 from .state_store import StateStore, StateStoreError
 from .observability import log_event
 from .progress import progress_snapshot, record_progress, reset_progress
@@ -572,6 +572,10 @@ def respond(req: RespondRequest) -> dict[str, Any]:
             record_progress(req.learner_id, "error", "進度處理失敗", status="error", detail="validation_error")
             log_event("pelican_api_error", req.learner_id, endpoint="/api/respond", reason_code="validation_error")
             raise HTTPException(status_code=400, detail="Validation error")
+        except SkillGenerationError as e:
+            record_progress(req.learner_id, "error", "Skill 建立需要更多資訊", status="error", detail="skill_generation_error")
+            log_event("pelican_api_error", req.learner_id, endpoint="/api/respond", reason_code="skill_generation_error")
+            raise HTTPException(status_code=400, detail="Skill generation requires clarification")
 
 
 @app.post("/api/reset")

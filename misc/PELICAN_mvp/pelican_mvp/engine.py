@@ -455,6 +455,38 @@ class PelicanEngine:
             model_route=intake.model_route,
             intake_turns=3,
         )
+        if profile.domain_category == DomainCategory.UNKNOWN.value or profile.model_route == "clarify_before_routing":
+            self._record_activity(
+                "domain_clarification_needed",
+                "需要確認學習領域",
+                detail=profile.domain_category or "unknown",
+            )
+            self.state.intake_profile = LearnerIntakeProfile(
+                topic=profile.topic,
+                goal_summary=profile.goal_summary,
+                intent=LearningIntent.UNKNOWN,
+                level_hint="unknown",
+                domain_category=DomainCategory.UNKNOWN.value,
+                model_route="clarify_before_routing",
+                intake_turns=0,
+            )
+            self.store.save(self.state)
+            record_progress(
+                self.state.learner_id,
+                "domain_clarification_needed",
+                "需要確認學習領域",
+                status="done",
+                detail="unknown_domain",
+            )
+            return TurnOutcome(
+                "我目前還無法安全判斷這個主題應該使用哪個領域的 Skill。"
+                "請再用一句話描述你想學的主題，例如「中國哲學中的道家思想」或「春秋戰國的諸子百家」。",
+                None,
+                None,
+                None,
+                (),
+                "未知領域需要重新確認主題",
+            )
         record_progress(
             self.state.learner_id,
             "skill_generation",
