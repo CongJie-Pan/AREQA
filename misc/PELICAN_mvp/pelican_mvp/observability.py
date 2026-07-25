@@ -87,6 +87,10 @@ _SAFE_FIELDS = frozenset({
     "event_type",
     "agent_role",
     "validation_status",
+    "elapsed_ms",
+    "attempt_count",
+    "rejected_count",
+    "fallback_used",
     "endpoint",
 })
 

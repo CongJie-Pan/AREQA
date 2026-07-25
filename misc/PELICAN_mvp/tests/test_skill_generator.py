@@ -148,6 +148,25 @@ def test_generate_with_result_exposes_rejected_attempts(tmp_path: Path) -> None:
     assert "missing_remediation" in result.final_reason_code
 
 
+def test_generator_logs_attempt_latency_and_summary(caplog, tmp_path: Path) -> None:
+    invalid = make_skill()
+    object.__setattr__(invalid, "remediation_paths", invalid.remediation_paths[:1])
+    llm = FakeLlm([invalid])
+    generator = DomainSkillGenerator(llm, max_retries=0, artifact_root=tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        generator.generate_with_result("機器學習", force_regenerate=True)
+
+    rejected = next(item for item in caplog.records if item.message == "pelican_skill_validation_rejected")
+    summary = next(item for item in caplog.records if item.message == "pelican_skill_generation_summary")
+    assert isinstance(rejected.elapsed_ms, int)
+    assert rejected.elapsed_ms >= 0
+    assert summary.attempt_count == 2
+    assert summary.rejected_count == 1
+    assert summary.fallback_used is True
+    assert summary.route == "generic:stem"
+
+
 def test_generate_preserves_tuple_contract(tmp_path: Path) -> None:
     skill = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
     llm = FakeLlm([skill])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -111,6 +112,7 @@ class DomainSkillGenerator:
                 that needs clarification before any safe fallback can be chosen.
         """
         topic_clean = re.sub(r"\s+", " ", topic).strip()[:100] or "預設主題"
+        started_at = time.monotonic()
         resolution = resolve_domain_category(topic_clean)
         log_event(
             "pelican_skill_route_selected",
@@ -131,6 +133,16 @@ class DomainSkillGenerator:
                     skill_lifecycle=skill.lifecycle.value,
                     route="catalog",
                     skill_source="catalog",
+                    reason_code="catalog_skill_available",
+                )
+                _log_generation_summary(
+                    started_at,
+                    route="catalog",
+                    category=skill.domain_category,
+                    skill_id=skill.skill_id,
+                    attempt_count=1,
+                    rejected_count=0,
+                    fallback_used=False,
                     reason_code="catalog_skill_available",
                 )
                 return SkillGenerationResult(
@@ -164,6 +176,16 @@ class DomainSkillGenerator:
                     skill_source="validated_runtime_cache",
                     reason_code="validated_artifact_available",
                 )
+                _log_generation_summary(
+                    started_at,
+                    route="runtime_cache",
+                    category=skill.domain_category,
+                    skill_id=skill.skill_id,
+                    attempt_count=1,
+                    rejected_count=0,
+                    fallback_used=False,
+                    reason_code="validated_artifact_available",
+                )
                 return SkillGenerationResult(
                     skill=skill,
                     route="runtime_cache",
@@ -191,6 +213,16 @@ class DomainSkillGenerator:
             # Known domains must stay skill-backed even offline; falling through
             # to the legacy planner would recreate the one-node-tree failure.
             skill, fallback_route = self._generic_fallback(topic_clean, resolution.category, resolution.route_slug, ("llm_unavailable",))
+            _log_generation_summary(
+                started_at,
+                route=fallback_route,
+                category=skill.domain_category,
+                skill_id=skill.skill_id,
+                attempt_count=1,
+                rejected_count=0,
+                fallback_used=True,
+                reason_code="llm_unavailable",
+            )
             return SkillGenerationResult(
                 skill=skill,
                 route=fallback_route,
@@ -231,6 +263,16 @@ class DomainSkillGenerator:
                 root=self.artifact_root,
             )
             skill, fallback_route = self._generic_fallback(topic_clean, resolution.category, route, health.reason_codes)
+            _log_generation_summary(
+                started_at,
+                route=fallback_route,
+                category=skill.domain_category,
+                skill_id=skill.skill_id,
+                attempt_count=1,
+                rejected_count=0,
+                fallback_used=True,
+                reason_code="|".join(health.reason_codes),
+            )
             return SkillGenerationResult(
                 skill=skill,
                 route=fallback_route,
@@ -245,6 +287,7 @@ class DomainSkillGenerator:
         last_payload: dict | None = None
         failed_attempts: list[dict[str, object]] = []
         for attempt in range(self.max_retries + 1):
+            attempt_started_at = time.monotonic()
             log_event(
                 "pelican_skill_generation_attempt",
                 domain_category=resolution.category.value,
@@ -279,9 +322,20 @@ class DomainSkillGenerator:
                     model_route=route,
                     skill_source="runtime_generated",
                     reason_code="validated",
+                    elapsed_ms=_elapsed_ms(attempt_started_at),
                 )
                 attempts = _attempts_from_failed(failed_attempts, route) + (
                     SkillGenerationAttempt(attempt + 1, route, ProposalValidationStatus.ACCEPTED, "validated"),
+                )
+                _log_generation_summary(
+                    started_at,
+                    route=route,
+                    category=skill.domain_category,
+                    skill_id=skill.skill_id,
+                    attempt_count=len(attempts),
+                    rejected_count=len(failed_attempts),
+                    fallback_used=False,
+                    reason_code="validated",
                 )
                 return SkillGenerationResult(
                     skill=skill,
@@ -314,6 +368,7 @@ class DomainSkillGenerator:
                     reason_code="|".join(last_reason_codes),
                     api_status_code=getattr(exc, "api_status_code", None),
                     api_error_type=getattr(exc, "api_error_type", None),
+                    elapsed_ms=_elapsed_ms(attempt_started_at),
                 )
                 if attempt < self.max_retries:
                     log_event(
@@ -335,10 +390,21 @@ class DomainSkillGenerator:
             root=self.artifact_root,
         )
         skill, fallback_route = self._generic_fallback(topic_clean, resolution.category, route, last_reason_codes)
+        rejected_attempts = _attempts_from_failed(failed_attempts, route)
+        _log_generation_summary(
+            started_at,
+            route=fallback_route,
+            category=skill.domain_category,
+            skill_id=skill.skill_id,
+            attempt_count=len(rejected_attempts) + 1,
+            rejected_count=len(rejected_attempts),
+            fallback_used=True,
+            reason_code="|".join(last_reason_codes),
+        )
         return SkillGenerationResult(
             skill=skill,
             route=fallback_route,
-            attempts=_attempts_from_failed(failed_attempts, route)
+            attempts=rejected_attempts
             + (
                 SkillGenerationAttempt(
                     len(failed_attempts) + 1,
@@ -462,6 +528,37 @@ def _attempts_from_failed(failed_attempts: list[dict[str, object]], route: str) 
             )
         )
     return tuple(attempts)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    """Return bounded elapsed milliseconds for safe latency logging."""
+    return max(0, int((time.monotonic() - started_at) * 1000))
+
+
+def _log_generation_summary(
+    started_at: float,
+    *,
+    route: str,
+    category: DomainCategory,
+    skill_id: str,
+    attempt_count: int,
+    rejected_count: int,
+    fallback_used: bool,
+    reason_code: str,
+) -> None:
+    """Emit one safe terminal summary for the full skill-agent generation path."""
+    log_event(
+        "pelican_skill_generation_summary",
+        skill_id=skill_id,
+        domain_category=category.value,
+        route=route,
+        skill_source=route,
+        reason_code=reason_code,
+        attempt_count=attempt_count,
+        rejected_count=rejected_count,
+        fallback_used=fallback_used,
+        elapsed_ms=_elapsed_ms(started_at),
+    )
 
 
 def _dedupe_reason_codes(reason_codes: tuple[str, ...]) -> tuple[str, ...]:

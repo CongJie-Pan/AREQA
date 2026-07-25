@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from pelican_mvp.server import app
 import pelican_mvp.server as server_module
+from pelican_mvp.domain_skill import DomainCategory
+from pelican_mvp.llm import LlmHealth
 from test_skill_agent import FakeSpringAutumnLlm
 
 @pytest.fixture(autouse=True)
@@ -133,6 +135,43 @@ def test_api_agent_executor_trace_is_safe_metadata() -> None:
     assert {"input_ref", "proposal_artifact", "validation_status", "adopted_output_ref", "final_effect"} <= set(trace[-1])
     assert "fast_tutor_agent" in trace_text or "slow_simulator_agent" in trace_text
     assert raw_answer not in trace_text
+
+
+def test_api_agent_executor_trace_does_not_adopt_rejected_skill_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    class InvalidHumanitiesLlm:
+        @property
+        def available(self) -> bool:
+            return True
+
+        def model_route_for_category(self, category: DomainCategory) -> str:
+            return f"fake/{category.value}"
+
+        def check_route_health(self, model_route: str) -> LlmHealth:
+            return LlmHealth(True, ("ok",))
+
+        def generate_domain_skill_payload(self, *args, **kwargs) -> dict:
+            return {"skill_id": "broken"}
+
+    learner = "rejected_skill_trace_user"
+    monkeypatch.setattr(server_module, "llm_adapter", InvalidHumanitiesLlm())
+    client.post("/api/reset", json={"learner_id": learner})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "中國明朝歷史"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "想理解明末事件脈絡"})
+    response = client.post("/api/respond", json={"learner_id": learner, "answer": "主要是 youtube"})
+
+    trace = response.json()["learning"]["agent_executor_trace"]
+    rejected_skill_rows = [
+        row for row in trace if row["role"] == "skill_agent" and row["validation_status"] == "rejected"
+    ]
+    fallback_rows = [
+        row for row in trace if row["role"] == "skill_agent" and row["validation_status"] == "fallback_used"
+    ]
+
+    assert rejected_skill_rows
+    assert fallback_rows
+    assert all(row["adopted_output_ref"] is None for row in rejected_skill_rows)
+    assert all(row["final_effect"] == "not_adopted" for row in rejected_skill_rows)
+    assert fallback_rows[-1]["adopted_output_ref"]["label"] == "validated learning plan"
 
 
 def test_api_exposes_safe_tutor_proposal_trace() -> None:

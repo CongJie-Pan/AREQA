@@ -173,15 +173,22 @@ def _agent_executor_trace(engine: PelicanEngine) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     events = engine.state.methodology_events
     for proposal in engine.state.agent_proposals[-24:]:
-        adopted_event = next(
-            (
-                event
-                for event in events
-                if event.sequence >= proposal.sequence
-                and event.stage == proposal.stage
-                and (proposal.node_id is None or event.node_id in {None, proposal.node_id})
-            ),
-            None,
+        adopted_event = None
+        if proposal.validation_status.value in {"accepted", "fallback_used"}:
+            adopted_event = next(
+                (
+                    event
+                    for event in events
+                    if event.sequence >= proposal.sequence
+                    and event.stage == proposal.stage
+                    and (proposal.node_id is None or event.node_id in {None, proposal.node_id})
+                ),
+                None,
+            )
+        final_effect = (
+            "not_adopted"
+            if proposal.validation_status.value == "rejected"
+            else proposal.final_message_preview or proposal.display_summary or proposal.reason_code
         )
         rows.append(
             {
@@ -199,7 +206,7 @@ def _agent_executor_trace(engine: PelicanEngine) -> list[dict[str, Any]]:
                 "validation_status": proposal.validation_status.value,
                 "reason_code": proposal.reason_code,
                 "adopted_output_ref": adopted_event.output_ref.to_dict() if adopted_event and adopted_event.output_ref else None,
-                "final_effect": proposal.final_message_preview or proposal.display_summary or proposal.reason_code,
+                "final_effect": final_effect,
             }
         )
     return rows[-12:]
