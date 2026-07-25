@@ -57,6 +57,28 @@ class PayloadLlm(FakeLlm):
         return item
 
 
+class ProductionLikeLlm(LlmAdapter):
+    """Exercise the inherited production payload API without network access."""
+
+    def __init__(self, payloads) -> None:
+        self.payloads = list(payloads)
+        self.json_calls: list[tuple[str, str, str | None]] = []
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def model_route_for_category(self, category: DomainCategory) -> str:
+        return f"route/{category.value}"
+
+    def check_route_health(self, model_route: str) -> LlmHealth:
+        return LlmHealth(True, ("ok",))
+
+    def _json(self, system: str, user: str, *, model: str | None = None) -> dict:
+        self.json_calls.append((system, user, model))
+        return self.payloads.pop(0)
+
+
 def make_skill(**updates) -> DomainSkill:
     payload = valid_skill_payload()
     payload.update(updates)
@@ -212,6 +234,39 @@ def test_generator_repairs_with_validation_reason_codes(tmp_path: Path) -> None:
     assert route == "route/stem"
     assert llm.payload_calls[0][3] == ()
     assert "missing_remediation" in llm.payload_calls[1][3]
+
+
+def test_generator_repairs_malformed_payload_through_inherited_production_api(tmp_path: Path) -> None:
+    malformed_payload = valid_skill_payload()
+    malformed_payload.pop("title")
+    valid_payload = valid_skill_payload()
+    valid_payload["skill_id"] = "qing_history"
+    valid_payload["supported_topics"] = ["中國清朝歷史"]
+    llm = ProductionLikeLlm([malformed_payload, valid_payload])
+    generator = DomainSkillGenerator(llm, max_retries=1, artifact_root=tmp_path)
+
+    skill, route = generator.generate("中國清朝歷史", force_regenerate=True)
+
+    assert skill.skill_id == "qing_history"
+    assert route == "route/humanities"
+    assert len(llm.json_calls) == 2
+    assert "validation_reason_codes: missing_required_field" in llm.json_calls[1][1]
+
+
+def test_generator_hashes_malformed_production_payload_in_failed_artifact(tmp_path: Path) -> None:
+    malformed_payload = valid_skill_payload()
+    malformed_payload.pop("title")
+    llm = ProductionLikeLlm([malformed_payload])
+    generator = DomainSkillGenerator(llm, max_retries=0, artifact_root=tmp_path)
+
+    skill, route = generator.generate("中國清朝歷史", force_regenerate=True)
+
+    failed = json.loads((tmp_path / "failed" / "中國清朝歷史.failed.json").read_text(encoding="utf-8"))
+    assert skill.skill_id == "generic_humanities"
+    assert route == "generic:humanities"
+    assert failed["reason_codes"] == ["missing_required_field"]
+    assert isinstance(failed["payload_hash"], str)
+    assert len(failed["payload_hash"]) == 16
 
 
 def test_generator_uses_generic_skill_after_bounded_retry(tmp_path: Path) -> None:

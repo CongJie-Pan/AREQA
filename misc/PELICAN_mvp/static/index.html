@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PELICAN Knowledge Tracing MVP</title>
-    <link rel="stylesheet" href="styles.css?v=20260721-export">
+    <link rel="stylesheet" href="styles.css?v=20260725-chat-first">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -51,14 +51,17 @@
             </section>
             <section class="methodology-panel" aria-label="Agentic PELICAN methodology">
                 <div id="methodology-stages" class="methodology-stages"></div>
-                <div class="methodology-detail-grid">
-                    <div id="skill-artifact-summary" class="methodology-list"></div>
-                    <div id="methodology-subsystem-events" class="methodology-list"></div>
-                    <div id="agent-executor-trace" class="methodology-list wide"></div>
-                    <div id="agent-proposals" class="methodology-list"></div>
-                    <div id="tutor-proposal-trace" class="methodology-list"></div>
-                    <div id="learner-progress-snapshot" class="methodology-list"></div>
-                </div>
+                <details class="methodology-details">
+                    <summary>教學決策與執行記錄 <span>展開詳細 trace</span></summary>
+                    <div class="methodology-detail-grid">
+                        <div id="skill-artifact-summary" class="methodology-list"></div>
+                        <div id="methodology-subsystem-events" class="methodology-list"></div>
+                        <div id="agent-executor-trace" class="methodology-list wide"></div>
+                        <div id="agent-proposals" class="methodology-list"></div>
+                        <div id="tutor-proposal-trace" class="methodology-list"></div>
+                        <div id="learner-progress-snapshot" class="methodology-list"></div>
+                    </div>
+                </details>
             </section>
             <div id="chat-history" class="chat-history"></div>
             
@@ -74,6 +77,6 @@
             </form>
         </main>
     </div>
-    <script src="app.js?v=20260721-export"></script>
+    <script src="app.js?v=20260725-chat-first"></script>
 </body>
 </html>

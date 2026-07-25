@@ -18,16 +18,20 @@ from pelican_mvp.llm import LlmConfig
 _original_from_env = LlmConfig.from_environment
 LlmConfig.from_environment = classmethod(lambda cls: None) # type: ignore
 
-def assert_center_clickable_in_viewport(page: Page, selector: str) -> None:
+def assert_fully_clickable_in_viewport(page: Page, selector: str) -> None:
     locator = page.locator(selector)
     box = locator.bounding_box()
     assert box is not None
     viewport = page.viewport_size
     assert viewport is not None
+    assert box["width"] > 0
+    assert box["height"] > 0
+    assert 0 <= box["x"]
+    assert 0 <= box["y"]
+    assert box["x"] + box["width"] <= viewport["width"]
+    assert box["y"] + box["height"] <= viewport["height"]
     center_x = box["x"] + box["width"] / 2
     center_y = box["y"] + box["height"] / 2
-    assert 0 <= center_x <= viewport["width"]
-    assert 0 <= center_y <= viewport["height"]
     assert page.evaluate(
         """([x, y, selector]) => {
             const top = document.elementFromPoint(x, y);
@@ -105,20 +109,31 @@ def test_dynamic_intake_and_diagnosis_flow(page: Page) -> None:
     expect(page.locator("#agent-executor-trace")).to_contain_text("slow_simulator_agent")
 
 
-def test_methodology_panel_mobile_layout(page: Page) -> None:
-    page.set_viewport_size({"width": 390, "height": 844})
+@pytest.mark.parametrize("viewport", [
+    {"width": 1920, "height": 840},
+    {"width": 1366, "height": 768},
+    {"width": 390, "height": 844},
+    {"width": 390, "height": 667},
+])
+def test_chat_composer_remains_usable_at_supported_viewports(page: Page, viewport: dict[str, int]) -> None:
+    page.set_viewport_size(viewport)
     page.goto(URL)
     page.wait_for_selector(".message.teacher")
 
     expect(page.locator("#methodology-stages")).to_be_visible()
+    expect(page.locator(".methodology-details")).not_to_have_attribute("open", "")
+    expect(page.locator("#chat-input")).to_be_visible()
+    expect(page.locator(".send-btn")).to_be_visible()
+    assert_fully_clickable_in_viewport(page, "#reset-btn")
+    assert_fully_clickable_in_viewport(page, "#chat-input")
+    assert_fully_clickable_in_viewport(page, ".send-btn")
+
+    page.locator(".methodology-details summary").click()
     expect(page.locator("#skill-artifact-summary")).to_be_visible()
     expect(page.locator("#agent-executor-trace")).to_be_visible()
     expect(page.locator("#tutor-proposal-trace")).to_be_visible()
-    expect(page.locator("#chat-input")).to_be_visible()
-    expect(page.locator(".send-btn")).to_be_visible()
-    assert_center_clickable_in_viewport(page, "#reset-btn")
-    assert_center_clickable_in_viewport(page, "#chat-input")
-    assert_center_clickable_in_viewport(page, ".send-btn")
+    assert_fully_clickable_in_viewport(page, "#chat-input")
+    assert_fully_clickable_in_viewport(page, ".send-btn")
     page.click("#reset-btn")
     expect(page.locator("#phase-display")).to_have_text("onboarding", ignore_case=True)
     

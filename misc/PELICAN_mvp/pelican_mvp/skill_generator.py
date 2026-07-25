@@ -437,11 +437,19 @@ class DomainSkillGenerator:
             Raw JSON-compatible skill payload, or ``None`` for an empty response.
 
         Compatibility:
-            Older tests and adapters may only override ``generate_domain_skill``.
-            The type check intentionally detects whether the newer payload API is
-            overridden before falling back to the older structured method.
+            Production adapters use ``generate_domain_skill_payload`` even when
+            they inherit its implementation from ``LlmAdapter``. This leaves
+            parsing and validation at the generator boundary, where failed raw
+            payloads can be safely hashed and validator reason codes can drive
+            the next repair attempt. Older test doubles that override only the
+            legacy structured method retain their historical behavior.
         """
-        if type(self.llm).generate_domain_skill_payload is not LlmAdapter.generate_domain_skill_payload:
+        adapter_type = type(self.llm)
+        payload_api = getattr(adapter_type, "generate_domain_skill_payload", None)
+        legacy_api = getattr(adapter_type, "generate_domain_skill", None)
+        payload_api_overridden = payload_api is not None and payload_api is not LlmAdapter.generate_domain_skill_payload
+        legacy_api_overridden = legacy_api is not None and legacy_api is not LlmAdapter.generate_domain_skill
+        if payload_api_overridden or (payload_api is LlmAdapter.generate_domain_skill_payload and not legacy_api_overridden):
             return self.llm.generate_domain_skill_payload(
                 topic,
                 category,
@@ -507,7 +515,33 @@ def _reason_codes_for(exc: Exception) -> tuple[str, ...]:
         return _dedupe_reason_codes(tuple(issue.reason_code for issue in exc.issues)) or ("validation_failed",)
     if isinstance(exc, LlmUnavailable):
         return _llm_reason_codes(exc)
+    if isinstance(exc, DomainSkillError):
+        return _domain_skill_reason_codes(exc)
     return (type(exc).__name__,)
+
+
+def _domain_skill_reason_codes(exc: DomainSkillError) -> tuple[str, ...]:
+    """Map parser failures to bounded schema classes without exposing payload text.
+
+    ``DomainSkill.from_dict`` raises field-specific messages, but model output
+    must never enter logs, repair prompts, or artifacts verbatim. The returned
+    codes describe only the contract failure class, which is sufficient for a
+    subsequent schema-repair prompt and safe for structured telemetry.
+    """
+    message = str(exc)
+    if message.endswith(" is required"):
+        return ("missing_required_field",)
+    if message.endswith(" must be a non-empty list"):
+        return ("invalid_required_list",)
+    if message.endswith(" must be an object"):
+        return ("invalid_object_field",)
+    if message.endswith(" must be a string"):
+        return ("invalid_string_field",)
+    if message.endswith(" must be a bounded non-empty identifier"):
+        return ("invalid_identifier",)
+    if message.endswith(" must be bounded non-empty text"):
+        return ("invalid_text",)
+    return ("domain_skill_schema_invalid",)
 
 
 def _attempts_from_failed(failed_attempts: list[dict[str, object]], route: str) -> tuple[SkillGenerationAttempt, ...]:
