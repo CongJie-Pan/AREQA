@@ -1,0 +1,224 @@
+{
+  "artifact_type": "validated_runtime_skill",
+  "created_at": "2026-07-25T08:14:30.944026+00:00",
+  "domain_category": "humanities",
+  "route": "~google/gemini-pro-latest",
+  "skill": {
+    "assessment_policy": {
+      "education_only": true,
+      "mode": "formative",
+      "notes": "採用低風險的形成性評量，鼓勵學習者表達歷史觀點，不作絕對的對錯評判。"
+    },
+    "calibration_questions": [
+      {
+        "intent_targets": [
+          "conceptual",
+          "explanatory"
+        ],
+        "level_targets": [
+          "beginner",
+          "intermediate"
+        ],
+        "prompt": "對於大清建國的歷史，你最感興趣的是早期的部落統一、軍事戰役，還是後期的政治制度與入關過程？",
+        "question_id": "goal_and_background"
+      }
+    ],
+    "canonical_path": {
+      "assessment": [
+        "jianzhou_jurchen_origins",
+        "eight_banners_system",
+        "seven_great_grievances",
+        "battle_of_sarhu",
+        "huang_taiji_reforms",
+        "entry_into_shanhai_pass"
+      ],
+      "conceptual": [
+        "jianzhou_jurchen_origins",
+        "eight_banners_system",
+        "seven_great_grievances",
+        "battle_of_sarhu",
+        "huang_taiji_reforms",
+        "entry_into_shanhai_pass"
+      ],
+      "explanatory": [
+        "jianzhou_jurchen_origins",
+        "eight_banners_system",
+        "seven_great_grievances",
+        "battle_of_sarhu",
+        "huang_taiji_reforms",
+        "entry_into_shanhai_pass"
+      ]
+    },
+    "diagnostic_rules": [
+      {
+        "concept_id": "jianzhou_jurchen_origins",
+        "expected_answer": "Learner should mention the unification of Jurchen tribes and the geographical/political context of the Northeast.",
+        "prompt": "請簡述努爾哈赤在起兵初期，是如何在東北地區逐步擴張勢力的？",
+        "rule_id": "diag_jianzhou_jurchen_origins",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "eight_banners_system",
+        "expected_answer": "Learner should explain the dual military and administrative/social functions of the Eight Banners.",
+        "prompt": "八旗制度在平時和戰時分別扮演什麼樣的角色？",
+        "rule_id": "diag_eight_banners_system",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "seven_great_grievances",
+        "expected_answer": "Learner should identify it as a declaration of war and a justification based on economic and political oppression by the Ming.",
+        "prompt": "努爾哈赤發布「七大恨」的主要目的是什麼？這反映了當時後金與明朝的何種關係？",
+        "rule_id": "diag_seven_great_grievances",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "battle_of_sarhu",
+        "expected_answer": "Learner should describe the strategy of defeating the enemy in detail, specifically concentrating forces to defeat the Ming armies one by one.",
+        "prompt": "在薩爾滸之戰中，後金軍隊為何能夠擊敗兵力佔優勢的明軍？",
+        "rule_id": "diag_battle_of_sarhu",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "huang_taiji_reforms",
+        "expected_answer": "Learner should discuss centralization, the shift from a tribal confederacy to an imperial state, and the integration of Han and Mongol elements.",
+        "prompt": "皇太極將國號改為「清」並重用漢人官員，這對清朝的發展有何深遠影響？",
+        "rule_id": "diag_huang_taiji_reforms",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "entry_into_shanhai_pass",
+        "expected_answer": "Learner should mention Li Zicheng's rebellion, the fall of Beijing, and Wu Sangui's alliance with Dorgon.",
+        "prompt": "請說明導致清兵得以順利進入山海關的關鍵歷史事件與人物。",
+        "rule_id": "diag_entry_into_shanhai_pass",
+        "tests_single_concept": true
+      }
+    ],
+    "domain_category": "humanities",
+    "intent_types": [
+      "conceptual",
+      "explanatory",
+      "assessment"
+    ],
+    "lifecycle": "validated_generated",
+    "prerequisites": [
+      {
+        "concept_id": "jianzhou_jurchen_origins",
+        "description": "努爾哈赤統一女真各部的背景、地理環境與早期發展過程。",
+        "label": "建州女真的崛起",
+        "prerequisites": []
+      },
+      {
+        "concept_id": "eight_banners_system",
+        "description": "軍政合一、兵民一體的社會組織架構及其對滿族崛起的影響。",
+        "label": "八旗制度的建立",
+        "prerequisites": [
+          "jianzhou_jurchen_origins"
+        ]
+      },
+      {
+        "concept_id": "seven_great_grievances",
+        "description": "努爾哈赤誓師伐明的政治、經濟動機與歷史宣告。",
+        "label": "七大恨與反明",
+        "prerequisites": [
+          "jianzhou_jurchen_origins",
+          "eight_banners_system"
+        ]
+      },
+      {
+        "concept_id": "battle_of_sarhu",
+        "description": "明清雙方兵力懸殊下，後金以少勝多的關鍵戰役及其戰略意義。",
+        "label": "薩爾滸之戰",
+        "prerequisites": [
+          "seven_great_grievances"
+        ]
+      },
+      {
+        "concept_id": "huang_taiji_reforms",
+        "description": "滿蒙漢文化融合、中央集權化、改國號為清的政治轉型過程。",
+        "label": "皇太極的改制與稱帝",
+        "prerequisites": [
+          "battle_of_sarhu"
+        ]
+      },
+      {
+        "concept_id": "entry_into_shanhai_pass",
+        "description": "李自成民變、吳三桂引清兵入關及多爾袞定鼎中原的歷史契機。",
+        "label": "清兵入關",
+        "prerequisites": [
+          "huang_taiji_reforms"
+        ]
+      }
+    ],
+    "remediation_paths": [
+      {
+        "action": "scaffold_prerequisite",
+        "signal": "unknown",
+        "target": "jianzhou_jurchen_origins"
+      },
+      {
+        "action": "recalibrate_level",
+        "signal": "too_detailed",
+        "target": "goal_and_background"
+      },
+      {
+        "action": "accelerate",
+        "signal": "too_easy",
+        "target": "huang_taiji_reforms"
+      },
+      {
+        "action": "switch_path",
+        "signal": "project_goal",
+        "target": "explanatory"
+      },
+      {
+        "action": "switch_path",
+        "signal": "assessment_goal",
+        "target": "assessment"
+      }
+    ],
+    "remediation_templates": {
+      "battle_of_sarhu": "我們來畫一張簡單的戰略地圖，看看努爾哈赤如何運用「憑爾幾路來，我只一路去」的戰術。",
+      "eight_banners_system": "我們可以用現代的企業或社區組織架構來比喻，重新拆解八旗制度是如何運作的。",
+      "entry_into_shanhai_pass": "我們來分析李自成、吳三桂與多爾袞三方的利益衝突，釐清清軍入關的關鍵契機。",
+      "huang_taiji_reforms": "讓我們比較努爾哈赤與皇太極的統治風格，看看為何政權擴大後需要改國號與引入漢人官僚。",
+      "jianzhou_jurchen_origins": "讓我們回到起點，先了解努爾哈赤當時面臨的地理環境與部落分散的狀況。",
+      "seven_great_grievances": "讓我們檢視當時明朝與女真的貿易與邊界衝突，找出努爾哈赤決定起兵的具體導火線。"
+    },
+    "safety_notes": [
+      "Educational use only. 本內容僅供歷史教育用途，不涉及任何現代政治或法律諮詢。"
+    ],
+    "skill_id": "qing_dynasty_founding_history",
+    "supported_topics": [
+      "大清創業的歷史",
+      "清朝建立",
+      "努爾哈赤與皇太極",
+      "滿清入關"
+    ],
+    "teaching_methodology": {
+      "diagnosis": "透過提問確認學習者對歷史事件因果關係的理解程度，每次聚焦單一歷史階段，避免資訊超載。",
+      "sequencing": "依時間軸與因果關係推進，從部落統一、制度建立、軍事衝突到政權轉型與入主中原，層層遞進。"
+    },
+    "teaching_moves": [
+      {
+        "description": "聚焦微型課程：在提問前簡要說明單一歷史概念或事件背景，幫助學習者建立基礎認知。",
+        "move_id": "focused_mini_lesson",
+        "strategy": "focused_mini_lesson"
+      },
+      {
+        "description": "引導式範例：透過具體歷史人物的決策（如皇太極的改制），逐步解析當時的歷史情境與考量。",
+        "move_id": "guided_example",
+        "strategy": "guided_example"
+      },
+      {
+        "description": "蘇格拉底式提問：提出針對性問題，引導學習者思考歷史事件背後的深層原因與因果關係。",
+        "move_id": "socratic_question",
+        "strategy": "socratic_question"
+      }
+    ],
+    "title": "大清創業的歷史學習指南",
+    "version": "0.1.0"
+  },
+  "skill_id": "qing_dynasty_founding_history",
+  "skill_version": "0.1.0",
+  "topic_slug": "大清創業的歷史"
+}
