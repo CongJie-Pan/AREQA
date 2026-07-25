@@ -152,6 +152,20 @@ def test_unknown_scaffolds_current_prerequisite_not_unrelated_node(tmp_path: Pat
     assert engine.state.direct_evidence[-1].signal == "unknown"
 
 
+def test_unknown_scaffold_does_not_expose_teacher_expected_rubric(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    engine.state.current_expected_answer = (
+        "Learner should mention the unification of Jurchen tribes and the initial fragmented state."
+    )
+
+    outcome = engine.respond("不知道")
+
+    assert "Learner should" not in outcome.message
+    assert "student should" not in outcome.message.lower()
+    assert "重點是" in outcome.message
+    assert "我們先停在" in outcome.message
+
+
 def test_tutoring_control_signals_after_mastery_do_not_overwrite_progress(tmp_path: Path) -> None:
     engine = calibrated_deep_learning_engine(tmp_path)
     mastered_node = engine.state.current_node_id

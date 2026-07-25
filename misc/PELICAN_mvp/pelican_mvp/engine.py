@@ -1457,14 +1457,34 @@ class PelicanEngine:
         before checking. It deliberately includes direct content and only one
         low-load confirmation question to avoid a Socratic question loop.
         """
-        expected = (self.state.current_expected_answer or "").strip()
-        explanation = expected or self._base_tutor_prompt(node_id)
+        explanation = self._learner_facing_scaffold_explanation(node_id, label)
         return (
             f"沒關係，我先直接講「{label}」。\n\n"
             f"重點是：{explanation}\n\n"
             "你現在不用猜細節，先抓住這個因果骨架即可。"
             "低負荷確認：上面這段主要是在說「原因」還是「結果」？"
         )
+
+    def _learner_facing_scaffold_explanation(self, node_id: str, label: str) -> str:
+        """Return safe learner-facing content for an inability scaffold.
+
+        Generated skill ``expected_answer`` values are teacher-side rubrics and
+        may be English model instructions such as ``Learner should mention...``.
+        Those are useful for classification but must never be exposed as a
+        mini-lesson. Prefer skill-authored remediation text, then safe expected
+        answers, then a bounded prompt-derived explanation.
+        """
+        if self.state.learning_plan:
+            template = self.state.learning_plan.remediation_templates.get(node_id, "")
+            if template and not _looks_like_teacher_rubric(template):
+                return template.format(label=label)
+        expected = (self.state.current_expected_answer or "").strip()
+        if expected and not _looks_like_teacher_rubric(expected):
+            return expected
+        prompt = self._base_tutor_prompt(node_id).strip()
+        if prompt:
+            return f"這一節先抓住「{label}」的問題焦點：{prompt}"
+        return f"先把「{label}」放回整體脈絡中，理解它為什麼會影響下一步。"
 
     def _scope_mismatch_prompt(self, node_id: str, label: str) -> str:
         """Render a simpler level-recalibration prompt for too-detailed feedback."""
@@ -1766,6 +1786,32 @@ def _infer_level_hint(answer: str) -> str:
     if any(token in answer for token in ("學過", "一點", "簡單題", "intermediate")):
         return "intermediate"
     return "unknown"
+
+
+def _looks_like_teacher_rubric(text: str) -> bool:
+    """Return whether text is teacher-facing grading guidance.
+
+    Args:
+        text: Candidate explanation text from diagnostics or remediation data.
+
+    Returns:
+        ``True`` for rubric-like English instructions that should remain hidden
+        from learners.
+    """
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    if not normalized:
+        return False
+    rubric_markers = (
+        "learner should",
+        "student should",
+        "expected answer",
+        "should mention",
+        "should explain",
+        "should identify",
+        "should describe",
+        "should connect",
+    )
+    return any(marker in normalized for marker in rubric_markers)
 
 
 def _rule_intake_semantic_signal(answer: str) -> IntakeSemanticSignal:
