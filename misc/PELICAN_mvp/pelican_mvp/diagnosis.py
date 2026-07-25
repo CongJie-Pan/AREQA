@@ -38,8 +38,31 @@ def is_correct(answer: str, expected: str, curriculum: Curriculum) -> bool:
     return actual in {normalize_answer(item) for item in curriculum.answer_aliases.get(target, set())}
 
 
-def classify_response(answer: str, expected: str, curriculum: Curriculum) -> ResponseCategory:
-    """Classify a learner response while keeping fixture behavior stable."""
+def classify_response(
+    answer: str,
+    expected: str,
+    curriculum: Curriculum,
+    *,
+    prompt: str = "",
+) -> ResponseCategory:
+    """Classify a learner response while keeping fixture behavior stable.
+
+    Args:
+        answer: Learner answer from the current diagnostic turn.
+        expected: Teacher-side expected answer. It may be English for generated
+            skills, so partial-understanding checks cannot rely on exact string
+            overlap only.
+        curriculum: Active curriculum used for exact-answer aliases.
+        prompt: Optional current diagnostic prompt. Generated humanities skills
+            use this to detect safe partial evidence when the expected answer is
+            in another language.
+
+    Returns:
+        A bounded response category. ``PARTIAL_CORRECT`` is used only when the
+        answer carries a recognizable clue but does not satisfy the expected
+        answer. It lets the tutor acknowledge partial understanding without
+        advancing mastery.
+    """
     normalized = normalize_answer(answer)
     if not normalized:
         return ResponseCategory.OTHER
@@ -49,6 +72,8 @@ def classify_response(answer: str, expected: str, curriculum: Curriculum) -> Res
         return ResponseCategory.INABILITY
     if is_correct(answer, expected, curriculum):
         return ResponseCategory.CORRECT
+    if _has_partial_understanding(answer, expected, prompt):
+        return ResponseCategory.PARTIAL_CORRECT
     return ResponseCategory.INCORRECT
 
 
@@ -71,7 +96,12 @@ def apply_diagnostic_result(
     state: SessionState, node_id: str, answer: str, category: ResponseCategory, curriculum: Curriculum
 ) -> list[str]:
     """Apply diagnostic evidence and infer prerequisite state from correct answers."""
-    status = KnowledgeStatus.MASTERED if category is ResponseCategory.CORRECT else KnowledgeStatus.NOT_MASTERED
+    if category is ResponseCategory.CORRECT:
+        status = KnowledgeStatus.MASTERED
+    elif category is ResponseCategory.PARTIAL_CORRECT:
+        status = KnowledgeStatus.PARTIALLY_MASTERED
+    else:
+        status = KnowledgeStatus.NOT_MASTERED
     evidence = Evidence(response=answer, category=category.value, direct=True)
     state.nodes[node_id].update(status, evidence)
     changes = [f"{curriculum.nodes[node_id].label}: {status.value}（直接證據）"]
@@ -100,3 +130,29 @@ def _mark_prerequisites_mastered(
 def diagnostic_for(node_id: str, curriculum: Curriculum):
     """Return the diagnostic question for a known curriculum node."""
     return curriculum.diagnostics[node_id]
+
+
+def _has_partial_understanding(answer: str, expected: str, prompt: str) -> bool:
+    """Return whether an incomplete answer contains safe domain clues.
+
+    The check is intentionally conservative. It does not mark arbitrary keyword
+    overlap as correct; it only emits a partial category so the tutor can
+    acknowledge a useful clue while continuing remediation.
+    """
+    normalized_answer = normalize_answer(answer)
+    normalized_expected = normalize_answer(expected)
+    if len(normalized_answer) < 2:
+        return False
+    if len(normalized_expected) >= 6:
+        expected_chunks = {
+            normalized_expected[index : index + 4]
+            for index in range(0, max(0, len(normalized_expected) - 3))
+        }
+        if any(chunk and chunk in normalized_answer for chunk in expected_chunks):
+            return True
+
+    history_prompt_tokens = ("滿洲", "清朝", "入主中原", "入關", "明末", "建立清朝")
+    history_clue_tokens = ("明朝", "明末", "李自成", "吳三桂", "山海關", "舊官員", "官員", "入關", "滿人")
+    if any(token in prompt for token in history_prompt_tokens):
+        return sum(1 for token in history_clue_tokens if token in answer) >= 2
+    return False

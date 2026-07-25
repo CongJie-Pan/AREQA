@@ -250,6 +250,7 @@ def _domain_skill_json_schema(category: DomainCategory) -> dict[str, Any]:
         still followed by local ``DomainSkill`` parsing and validation.
     """
     string_array = {"type": "array", "items": {"type": "string"}, "minItems": 1}
+    min_concepts = 6 if category is DomainCategory.HUMANITIES else 1
     return {
         "type": "object",
         "additionalProperties": False,
@@ -286,7 +287,7 @@ def _domain_skill_json_schema(category: DomainCategory) -> dict[str, Any]:
             },
             "prerequisites": {
                 "type": "array",
-                "minItems": 1,
+                "minItems": min_concepts,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -321,7 +322,7 @@ def _domain_skill_json_schema(category: DomainCategory) -> dict[str, Any]:
             },
             "diagnostic_rules": {
                 "type": "array",
-                "minItems": 1,
+                "minItems": min_concepts,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -589,9 +590,10 @@ class LlmAdapter:
         payload = self._json(
             "將學生回答分類成指定五類之一。只輸出 JSON。\n"
             "注意：若學生的回答包含了正確的概念、部分正確，或意思與標準答案相符（例如選擇題多選了合理選項），請寬容地分類為 correct。\n"
+            "若學生有明確線索但缺關鍵人物、步驟、因果鏈或術語，請分類為 partial_correct。"
             "若學生明確表達不知道，為 inability_to_respond；表達困惑則為 difficulty_in_understanding。",
             "題目：%s\n標準答案：%s\n學生回答：%s\n"
-            "輸出 {\"category\": \"inability_to_respond|difficulty_in_understanding|correct|incorrect|other\"}"
+            "輸出 {\"category\": \"inability_to_respond|difficulty_in_understanding|correct|partial_correct|incorrect|other\"}"
             % (prompt, expected, answer),
             model=self.tutor_model_route(),
         )
@@ -856,6 +858,7 @@ class LlmAdapter:
         *,
         model_route: str | None = None,
         repair_issues: tuple[str, ...] = (),
+        goal_context: str = "",
     ) -> DomainSkill | None:
         """Generate a structured domain skill without persisting model reasoning.
 
@@ -865,6 +868,7 @@ class LlmAdapter:
                 payload before parsing so model output cannot silently reroute.
             model_route: Optional skill-generation model route.
             repair_issues: Safe validator reason codes from a previous attempt.
+            goal_context: Optional learner goal summary used to scope the skill.
 
         Returns:
             Parsed ``DomainSkill`` or ``None`` for unavailable model access.
@@ -876,7 +880,13 @@ class LlmAdapter:
         """
         if not self.available:
             return None
-        payload = self.generate_domain_skill_payload(topic, category, model_route=model_route, repair_issues=repair_issues)
+        payload = self.generate_domain_skill_payload(
+            topic,
+            category,
+            model_route=model_route,
+            repair_issues=repair_issues,
+            goal_context=goal_context,
+        )
         payload["domain_category"] = category.value
         payload["lifecycle"] = payload.get("lifecycle") or SkillLifecycle.RUNTIME_GENERATED.value
         return DomainSkill.from_dict(payload)
@@ -888,6 +898,7 @@ class LlmAdapter:
         *,
         model_route: str | None = None,
         repair_issues: tuple[str, ...] = (),
+        goal_context: str = "",
     ) -> dict[str, Any]:
         """Generate raw DomainSkill JSON for validation or bounded repair.
 
@@ -899,6 +910,8 @@ class LlmAdapter:
             repair_issues: Validator reason codes from the previous attempt.
                 When present, the prompt asks for schema repair rather than a
                 brand-new lesson or Markdown response.
+            goal_context: Optional bounded learner goal summary. It should steer
+                concept-map scope but must not be logged by callers.
 
         Returns:
             JSON object emitted by the model. The caller owns parsing, validation,
@@ -936,8 +949,16 @@ class LlmAdapter:
             "remediation_templates 的 key 應對應 concept_id。法律知識只能作教育用途，不可提供法律諮詢。\n"
             "你必須輸出單一 JSON object，且 shape 必須符合使用者訊息中的範例。所有 required arrays 都必須是 non-empty。"
         )
+        goal_line = f"learner_goal: {goal_context[:300]}\n" if goal_context.strip() else ""
+        humanities_quality = (
+            "humanities quality rules: learner-facing title, concept labels, descriptions, teaching_methodology, "
+            "teaching_moves, and remediation_templates must be Traditional Chinese; build at least 6 focused concepts; "
+            "the concept map must target learner_goal rather than a broad survey.\n"
+            if category is DomainCategory.HUMANITIES
+            else ""
+        )
         user_prompt = (
-            repair_instruction + f"topic: {topic}\ncategory: {category.value}\n"
+            repair_instruction + f"topic: {topic}\ncategory: {category.value}\n{goal_line}{humanities_quality}"
             "輸出 JSON 欄位：skill_id, version, title, domain_category, lifecycle, supported_topics, intent_types, "
             "prerequisites, calibration_questions, canonical_path, diagnostic_rules, teaching_moves, remediation_paths, "
             "assessment_policy, teaching_methodology, remediation_templates, safety_notes。lifecycle 請用 runtime_generated。\n"

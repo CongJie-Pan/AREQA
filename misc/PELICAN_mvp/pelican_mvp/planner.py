@@ -101,7 +101,10 @@ class LearningPlanner:
         profile = _profile_with_defaults(profile, topic_clean)
 
         try:
-            result = self.skill_generator.generate_with_result(topic_clean)
+            result = self.skill_generator.generate_with_result(
+                topic_clean,
+                goal_context=profile.goal_summary,
+            )
             self.last_skill_generation_result = result
             skill, route = result.skill, result.route
             plan = compile_learning_plan(skill, _profile_with_route(profile, route))

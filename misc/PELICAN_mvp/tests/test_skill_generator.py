@@ -10,6 +10,7 @@ from pelican_mvp.skill_artifacts import save_validated_skill_artifact
 from pelican_mvp.models import ProposalValidationStatus
 from pelican_mvp.skill_generator import DomainSkillGenerator, SkillGenerationError
 from test_domain_skill import valid_skill_payload
+from test_skill_agent import spring_autumn_payload
 
 
 class FakeLlm(LlmAdapter):
@@ -49,8 +50,9 @@ class PayloadLlm(FakeLlm):
         *,
         model_route: str | None = None,
         repair_issues=(),
+        goal_context: str = "",
     ):
-        self.payload_calls.append((topic, category, model_route, tuple(repair_issues)))
+        self.payload_calls.append((topic, category, model_route, tuple(repair_issues), goal_context))
         item = self.payloads.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -236,12 +238,31 @@ def test_generator_repairs_with_validation_reason_codes(tmp_path: Path) -> None:
     assert "missing_remediation" in llm.payload_calls[1][3]
 
 
-def test_generator_repairs_malformed_payload_through_inherited_production_api(tmp_path: Path) -> None:
-    malformed_payload = valid_skill_payload()
-    malformed_payload.pop("title")
+def test_generator_passes_goal_context_to_payload_generation(tmp_path: Path) -> None:
     valid_payload = valid_skill_payload()
+    valid_payload["skill_id"] = "machine_learning"
+    valid_payload["supported_topics"] = ["機器學習"]
+    llm = PayloadLlm([valid_payload])
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
+
+    skill, route = generator.generate(
+        "機器學習",
+        force_regenerate=True,
+        goal_context="想理解模型為什麼可以分類圖片",
+    )
+
+    assert skill.skill_id == "machine_learning"
+    assert route == "route/stem"
+    assert llm.payload_calls[0][4] == "想理解模型為什麼可以分類圖片"
+
+
+def test_generator_repairs_malformed_payload_through_inherited_production_api(tmp_path: Path) -> None:
+    malformed_payload = spring_autumn_payload()
+    malformed_payload.pop("title")
+    valid_payload = spring_autumn_payload()
     valid_payload["skill_id"] = "qing_history"
-    valid_payload["supported_topics"] = ["中國清朝歷史"]
+    valid_payload["title"] = "中國清朝入關脈絡"
+    valid_payload["supported_topics"] = ["中國清朝歷史", "滿清入關"]
     llm = ProductionLikeLlm([malformed_payload, valid_payload])
     generator = DomainSkillGenerator(llm, max_retries=1, artifact_root=tmp_path)
 
@@ -255,7 +276,7 @@ def test_generator_repairs_malformed_payload_through_inherited_production_api(tm
 
 
 def test_generator_hashes_malformed_production_payload_in_failed_artifact(tmp_path: Path) -> None:
-    malformed_payload = valid_skill_payload()
+    malformed_payload = spring_autumn_payload()
     malformed_payload.pop("title")
     llm = ProductionLikeLlm([malformed_payload])
     generator = DomainSkillGenerator(llm, max_retries=0, artifact_root=tmp_path)

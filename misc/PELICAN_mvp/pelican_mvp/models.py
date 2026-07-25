@@ -25,6 +25,7 @@ class ResponseCategory(str, Enum):
     INABILITY = "inability_to_respond"
     DIFFICULTY = "difficulty_in_understanding"
     CORRECT = "correct"
+    PARTIAL_CORRECT = "partial_correct"
     INCORRECT = "incorrect"
     OTHER = "other"
 

@@ -216,6 +216,21 @@ def test_repeated_tutoring_failures_render_from_base_prompt(tmp_path: Path) -> N
     assert second.message.count("請只聚焦") <= 1
 
 
+def test_generated_skill_missed_diagnostic_records_tutor_proposal(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    current_node = engine.state.current_node_id
+
+    outcome = engine.respond("載入數據")
+
+    proposal = engine.state.agent_proposals[-1]
+    assert outcome.node_id == current_node
+    assert proposal.artifact_type == "tutor_proposal"
+    assert proposal.node_id == current_node
+    assert proposal.validation_status.value == "fallback_used"
+    assert proposal.final_message_preview
+    assert engine.state.phase == "tutoring"
+
+
 def test_too_easy_accelerates_to_next_concept(tmp_path: Path) -> None:
     engine = calibrated_deep_learning_engine(tmp_path)
 

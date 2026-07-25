@@ -140,6 +140,7 @@ class SkillAgent:
         result = self.generator.generate_with_result(
             agent_input.profile.topic,
             force_regenerate=agent_input.force_regenerate,
+            goal_context=agent_input.profile.goal_summary,
         )
         proposal = SkillAgentProposal.from_generation_result(result)
         log_event(

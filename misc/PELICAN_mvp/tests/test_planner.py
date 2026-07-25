@@ -2,6 +2,9 @@ import pytest
 from pelican_mvp.models import DiagnosticQuestion, KnowledgeNode, LearnerIntakeProfile, LearningIntent, LearningPlanSnapshot
 from pelican_mvp.planner import LearningPlanner, validate_learning_plan
 from pelican_mvp.llm import LlmAdapter, LlmUnavailable
+from pelican_mvp.domain_skill import DomainSkill
+from pelican_mvp.skill_compiler import compile_learning_plan
+from test_skill_agent import spring_autumn_payload
 from unittest.mock import Mock
 
 
@@ -151,3 +154,18 @@ def test_planner_profile_aware_method_selects_implementation_route() -> None:
     node_ids = [node.node_id for node in plan.nodes]
     assert "mlp_implementation" in node_ids
     assert node_ids[0] == "math_intuition"
+
+
+def test_humanities_runtime_skill_keeps_full_generated_map() -> None:
+    skill = DomainSkill.from_dict(spring_autumn_payload())
+    profile = LearnerIntakeProfile(
+        topic="中國春秋時期歷史",
+        goal_summary="想理解政治秩序與諸侯爭霸",
+        intent=LearningIntent.CONCEPTUAL,
+        level_hint="beginner",
+    )
+
+    plan = compile_learning_plan(skill, profile)
+
+    assert len(plan.nodes) == 6
+    assert [node.node_id for node in plan.nodes][-1] == "transition_to_warring_states"

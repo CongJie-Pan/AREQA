@@ -245,6 +245,33 @@ def test_generate_domain_skill_payload_keeps_gemini_route_in_json_object_auto_mo
     assert adapter.response_format is None
 
 
+def test_generate_domain_skill_payload_includes_goal_context_and_humanities_quality_rules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.user_prompt = ""
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.user_prompt = user
+            return valid_skill_payload()
+
+    monkeypatch.setenv("PELICAN_SKILL_SCHEMA_MODE", "json_object")
+    adapter = RecordingAdapter()
+
+    adapter.generate_domain_skill_payload(
+        "中國清朝歷史",
+        DomainCategory.HUMANITIES,
+        model_route="~google/gemini-pro-latest",
+        goal_context="想了解為何滿清能入關",
+    )
+
+    assert "learner_goal: 想了解為何滿清能入關" in adapter.user_prompt
+    assert "at least 6 focused concepts" in adapter.user_prompt
+    assert "Traditional Chinese" in adapter.user_prompt
+
+
 def test_generate_domain_skill_payload_can_force_strict_schema_for_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

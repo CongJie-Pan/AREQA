@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from .domain_skill import DomainCategory, DomainSkill, REQUIRED_REMEDIATION_SIGNALS
 
 
+MIN_HUMANITIES_CONCEPTS = 6
+
+
 @dataclass(frozen=True)
 class SkillValidationIssue:
     """A stable, log-safe skill validation failure."""
@@ -88,6 +91,9 @@ def validate_domain_skill(skill: DomainSkill) -> None:
         if "法律諮詢" not in skill.assessment_policy.notes and "legal advice" not in skill.assessment_policy.notes.lower():
             issues.append(SkillValidationIssue("legal_policy_missing_boundary", "assessment_policy.notes"))
 
+    if skill.domain_category is DomainCategory.HUMANITIES and not skill.skill_id.startswith("generic_"):
+        _validate_humanities_quality(skill, issues)
+
     if issues:
         raise SkillValidationError(issues)
 
@@ -129,3 +135,35 @@ def _prompt_contains_answer(prompt: str, expected_answer: str) -> bool:
 
 def _is_legal_topic(topic: str) -> bool:
     return any(token in topic.casefold() for token in ("法律", "law", "legal"))
+
+
+def _validate_humanities_quality(skill: DomainSkill, issues: list[SkillValidationIssue]) -> None:
+    """Validate learner-facing quality for generated humanities skills.
+
+    Schema validity only proves that a model produced parseable fields. For a
+    humanities tutor in a Traditional Chinese session, learner-facing concept
+    labels and teaching guidance must not be English-only, and the map must be
+    deep enough to avoid a shallow survey masquerading as a domain skill.
+    Generic fallback skills are excluded by the caller because they are explicit
+    recovery artifacts, not accepted expert skills.
+    """
+    if len(skill.prerequisites) < MIN_HUMANITIES_CONCEPTS:
+        issues.append(SkillValidationIssue("insufficient_humanities_concepts", "prerequisites"))
+    if not _contains_cjk(skill.title):
+        issues.append(SkillValidationIssue("learner_facing_language_mismatch", "title"))
+    for prerequisite in skill.prerequisites:
+        if not _contains_cjk(prerequisite.label):
+            issues.append(SkillValidationIssue("learner_facing_language_mismatch", f"prerequisites.{prerequisite.concept_id}.label"))
+        if prerequisite.description and not _contains_cjk(prerequisite.description):
+            issues.append(SkillValidationIssue("learner_facing_language_mismatch", f"prerequisites.{prerequisite.concept_id}.description"))
+    for move in skill.teaching_moves:
+        if not _contains_cjk(move.description):
+            issues.append(SkillValidationIssue("learner_facing_language_mismatch", f"teaching_moves.{move.move_id}.description"))
+    for key, value in skill.teaching_methodology.items():
+        if not _contains_cjk(value):
+            issues.append(SkillValidationIssue("learner_facing_language_mismatch", f"teaching_methodology.{key}"))
+
+
+def _contains_cjk(value: str) -> bool:
+    """Return whether text contains at least one CJK character."""
+    return any("\u4e00" <= char <= "\u9fff" for char in value)

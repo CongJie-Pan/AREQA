@@ -80,12 +80,24 @@ class DomainSkillGenerator:
         self.max_retries = max_retries
         self.artifact_root = artifact_root
 
-    def generate(self, topic: str, *, force_regenerate: bool = False) -> tuple[DomainSkill, str]:
+    def generate(
+        self,
+        topic: str,
+        *,
+        force_regenerate: bool = False,
+        goal_context: str = "",
+    ) -> tuple[DomainSkill, str]:
         """Return the historical tuple contract for existing planner callers."""
-        result = self.generate_with_result(topic, force_regenerate=force_regenerate)
+        result = self.generate_with_result(topic, force_regenerate=force_regenerate, goal_context=goal_context)
         return result.skill, result.route
 
-    def generate_with_result(self, topic: str, *, force_regenerate: bool = False) -> SkillGenerationResult:
+    def generate_with_result(
+        self,
+        topic: str,
+        *,
+        force_regenerate: bool = False,
+        goal_context: str = "",
+    ) -> SkillGenerationResult:
         """Return a validated skill and safe route slug for the learner topic.
 
         The pipeline is catalog-first, cached validated runtime artifact, runtime
@@ -102,6 +114,9 @@ class DomainSkillGenerator:
             force_regenerate: When true, skip catalog/cache lookup and exercise
                 the runtime generation path. Tests use this to verify repair
                 logic.
+            goal_context: Optional bounded learner goal summary. It may be sent
+                to the model for skill construction but is never logged or used
+                for artifact filenames.
 
         Returns:
             A ``DomainSkill`` plus a safe source/route string such as
@@ -302,6 +317,7 @@ class DomainSkillGenerator:
                     resolution.category,
                     route,
                     repair_issues=last_reason_codes if attempt > 0 else (),
+                    goal_context=goal_context,
                 )
                 last_payload = payload
                 if payload is None:
@@ -424,6 +440,7 @@ class DomainSkillGenerator:
         route: str,
         *,
         repair_issues: tuple[str, ...],
+        goal_context: str = "",
     ) -> dict | None:
         """Call the LLM payload API, retaining compatibility with older test doubles.
 
@@ -455,6 +472,7 @@ class DomainSkillGenerator:
                 category,
                 model_route=route,
                 repair_issues=repair_issues,
+                **({"goal_context": goal_context} if goal_context else {}),
             )
         generated = self.llm.generate_domain_skill(topic, category, model_route=route)
         return generated.to_dict() if generated else None

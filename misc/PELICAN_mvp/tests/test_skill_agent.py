@@ -25,6 +25,7 @@ class FakeSpringAutumnLlm:
         *,
         model_route: str | None = None,
         repair_issues: tuple[str, ...] = (),
+        goal_context: str = "",
     ) -> dict:
         return spring_autumn_payload()
 
@@ -63,6 +64,24 @@ def spring_autumn_payload() -> dict:
                 "prerequisites": ["fengjian_order"],
                 "description": "理解霸主如何在尊王名義下重組秩序。",
             },
+            {
+                "concept_id": "ritual_breakdown",
+                "label": "禮樂秩序鬆動",
+                "prerequisites": ["zhou_authority"],
+                "description": "理解禮樂規範弱化後，政治衝突如何更頻繁出現。",
+            },
+            {
+                "concept_id": "state_reform",
+                "label": "諸侯國改革與軍事競爭",
+                "prerequisites": ["fengjian_order"],
+                "description": "理解各國如何透過內政與軍事改革提升競爭力。",
+            },
+            {
+                "concept_id": "transition_to_warring_states",
+                "label": "春秋到戰國的轉變",
+                "prerequisites": ["hegemon_politics", "state_reform"],
+                "description": "理解爭霸政治如何逐步轉向更激烈的兼併戰爭。",
+            },
         ],
         "calibration_questions": [
             {
@@ -73,7 +92,14 @@ def spring_autumn_payload() -> dict:
             }
         ],
         "canonical_path": {
-            "conceptual": ["zhou_authority", "fengjian_order", "hegemon_politics"],
+            "conceptual": [
+                "zhou_authority",
+                "fengjian_order",
+                "ritual_breakdown",
+                "hegemon_politics",
+                "state_reform",
+                "transition_to_warring_states",
+            ],
         },
         "diagnostic_rules": [
             {
@@ -93,6 +119,24 @@ def spring_autumn_payload() -> dict:
                 "concept_id": "hegemon_politics",
                 "prompt": "春秋霸主通常如何取得政治正當性？",
                 "expected_answer": "以尊王或維護秩序名義號召諸侯",
+            },
+            {
+                "rule_id": "diag_ritual_breakdown",
+                "concept_id": "ritual_breakdown",
+                "prompt": "禮樂秩序鬆動為什麼會讓諸侯衝突增加？",
+                "expected_answer": "共同規範弱化後，諸侯更容易用實力解決爭端",
+            },
+            {
+                "rule_id": "diag_state_reform",
+                "concept_id": "state_reform",
+                "prompt": "諸侯國改革和軍事競爭有什麼關係？",
+                "expected_answer": "改革能提高動員、財政或軍事能力，使諸侯競爭更激烈",
+            },
+            {
+                "rule_id": "diag_transition",
+                "concept_id": "transition_to_warring_states",
+                "prompt": "春秋政治如何逐漸走向戰國式兼併？",
+                "expected_answer": "霸主協調秩序減弱，國家改革和軍事競爭推動兼併戰爭",
             },
         ],
         "teaching_moves": [

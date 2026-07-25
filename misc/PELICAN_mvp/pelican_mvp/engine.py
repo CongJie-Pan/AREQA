@@ -827,13 +827,18 @@ class PelicanEngine:
         self._record_activity("evidence_applied", "更新概念掌握狀態", detail=node_id)
         self._record(answer, category, None, changes)
         self._refresh_learning_context(answer, category)
-        if self._uses_generated_skill_plan() and category in (ResponseCategory.INCORRECT, ResponseCategory.DIFFICULTY):
+        if self._uses_generated_skill_plan() and category in (
+            ResponseCategory.INCORRECT,
+            ResponseCategory.PARTIAL_CORRECT,
+            ResponseCategory.DIFFICULTY,
+        ):
             return self._remediate_current_skill_diagnostic(answer, category, changes)
         self.store.save(self.state)
         next_outcome = self._present_next_diagnostic()
         
         category_msg_map = {
             ResponseCategory.CORRECT: "答對了，看來你對這個概念有基本掌握！",
+            ResponseCategory.PARTIAL_CORRECT: "你抓到部分線索了，我們把缺口補起來。",
             ResponseCategory.INCORRECT: "這個答案不太對喔，我們晚點再詳細探討。",
             ResponseCategory.DIFFICULTY: "這部分確實比較進階，不用擔心。",
             ResponseCategory.INABILITY: "沒關係，學習本來就是一步步來的。",
@@ -860,9 +865,9 @@ class PelicanEngine:
         node_id = self._require_current_node()
         label = self.curriculum.nodes[node_id].label
         strategy = (
-            TutoringStrategy.CORRECTION
-            if category is ResponseCategory.INCORRECT
-            else TutoringStrategy.SIMPLIFICATION
+            TutoringStrategy.SIMPLIFICATION
+            if category is ResponseCategory.DIFFICULTY
+            else TutoringStrategy.CORRECTION
         )
         self._record_activity("remediation_selected", "停在當前概念補架", detail=node_id)
         log_event(
@@ -875,8 +880,39 @@ class PelicanEngine:
             reason_code="stay_on_current_concept",
         )
         self.state.phase = "tutoring"
-        self.state.current_prompt = self._remediation_prompt(node_id, label)
-        self.state.current_prompt_source = "rule"
+        base_message = self._remediation_prompt(node_id, label, category=category)
+        (
+            message,
+            source,
+            _validation_status,
+            proposal_reason,
+            _pedagogical_move,
+            _display_summary,
+            tutor_result,
+        ) = self._tutor_message(
+            strategy,
+            node_id,
+            evidence_signal=category.value,
+            base_message=base_message,
+            tutor_role=AgentRole.FAST_TUTOR_AGENT,
+        )
+        self.state.current_prompt = message
+        self.state.current_prompt_source = source
+        self._record_agent_result(
+            tutor_result,
+            node_id=node_id,
+            strategy=strategy.value,
+            skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+        )
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.TUTOR_RESPONSE,
+            input_ref=MethodologyRef("strategy", strategy.value, "skill remediation strategy"),
+            output_ref=MethodologyRef("tutor_message", source, "skill remediation response"),
+            node_id=node_id,
+            strategy=strategy.value,
+            reason_code=proposal_reason,
+        )
         self.store.save(self.state)
         return TurnOutcome(
             self.state.current_prompt,
@@ -1297,12 +1333,36 @@ class PelicanEngine:
             skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
         )
 
-    def _remediation_prompt(self, node_id: str, label: str) -> str:
-        """Return a skill-authored remediation prompt when available."""
+    def _remediation_prompt(
+        self,
+        node_id: str,
+        label: str,
+        *,
+        category: ResponseCategory | None = None,
+    ) -> str:
+        """Return a bounded remediation seed, not a final tutor response.
+
+        Skill-authored remediation templates are useful as strategy hints, but
+        generated-skill missed diagnostics must still pass through the tutor
+        proposal layer. The returned text is therefore treated as fallback
+        ``base_message`` for ``FastTutorAgent``.
+        """
         if self.state.learning_plan:
             template = self.state.learning_plan.remediation_templates.get(node_id)
             if template:
-                return template.format(label=label)
+                rendered = template.format(label=label)
+                if category is ResponseCategory.PARTIAL_CORRECT:
+                    return (
+                        "你抓到一個重要線索，但還缺關鍵人物、地點或因果鏈。\n\n"
+                        f"{rendered}\n\n"
+                        "下一步請聚焦：這個明朝舊官員是誰？他在哪個關口讓清軍入關？"
+                    )
+                return rendered
+        if category is ResponseCategory.PARTIAL_CORRECT:
+            return (
+                f"你抓到「{label}」的一部分線索了，我們先把缺口補齊。\n\n"
+                f"請用一句話補上：關鍵人物、地點，以及他為什麼讓清軍入關？"
+            )
         return (
             f"我們先停在「{label}」。剛才那題先不往下推。\n\n"
             f"我換成更清楚的方式：請用一句話說，{label} 在整個學習中主要幫我們做什麼？"
@@ -1357,7 +1417,12 @@ class PelicanEngine:
                     return category
             except LlmUnavailable:
                 pass
-        return classify_response(answer, self.state.current_expected_answer, self.curriculum)
+        return classify_response(
+            answer,
+            self.state.current_expected_answer,
+            self.curriculum,
+            prompt=self.state.current_prompt,
+        )
 
     def _tutor_message(
         self,

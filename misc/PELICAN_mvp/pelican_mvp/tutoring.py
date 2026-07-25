@@ -8,6 +8,7 @@ from .models import ResponseCategory, TutoringContext, TutoringStrategy
 
 FAST_STRATEGIES = {
     ResponseCategory.CORRECT: TutoringStrategy.CONFIRMATION,
+    ResponseCategory.PARTIAL_CORRECT: TutoringStrategy.CORRECTION,
     ResponseCategory.INCORRECT: TutoringStrategy.CORRECTION,
     ResponseCategory.INABILITY: TutoringStrategy.EXPLANATION,
     ResponseCategory.DIFFICULTY: TutoringStrategy.EXPLANATION,
@@ -77,7 +78,7 @@ def _slow_candidates(category: ResponseCategory, pedagogical_policy: str | None 
     candidates = []
     if category in (ResponseCategory.INABILITY, ResponseCategory.DIFFICULTY):
         candidates = [TutoringStrategy.DECOMPOSITION, TutoringStrategy.SIMPLIFICATION]
-    elif category is ResponseCategory.INCORRECT:
+    elif category in (ResponseCategory.INCORRECT, ResponseCategory.PARTIAL_CORRECT):
         candidates = [TutoringStrategy.CORRECTION, TutoringStrategy.DECOMPOSITION]
     else:
         candidates = [TutoringStrategy.OPEN_QUESTION, TutoringStrategy.CONFIRMATION]
@@ -102,6 +103,8 @@ def _simulation_score(strategy: TutoringStrategy, context: TutoringContext, disc
         (ResponseCategory.INABILITY, TutoringStrategy.SIMPLIFICATION): 0.75,
         (ResponseCategory.DIFFICULTY, TutoringStrategy.DECOMPOSITION): 0.82,
         (ResponseCategory.DIFFICULTY, TutoringStrategy.SIMPLIFICATION): 0.78,
+        (ResponseCategory.PARTIAL_CORRECT, TutoringStrategy.CORRECTION): 0.84,
+        (ResponseCategory.PARTIAL_CORRECT, TutoringStrategy.DECOMPOSITION): 0.74,
         (ResponseCategory.INCORRECT, TutoringStrategy.CORRECTION): 0.80,
         (ResponseCategory.INCORRECT, TutoringStrategy.DECOMPOSITION): 0.70,
     }.get((category, strategy), 0.60)
