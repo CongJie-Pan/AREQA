@@ -151,6 +151,11 @@ python -m pelican_mvp
 - `PELICAN_SKILL_MODEL`：所有 domain skill generation 的全域 override。
 - `PELICAN_STEM_MODEL` / `PELICAN_HUMANITIES_MODEL` / `PELICAN_BUSINESS_MODEL` / `PELICAN_LANGUAGE_MODEL`：各 domain 的 skill generation route。
 - `PELICAN_LLM_MODEL`：舊版相容用的全域 override。
+- `PELICAN_SKILL_SCHEMA_MODE`：skill generation structured-output mode。
+  - `auto`：預設。OpenAI route 會嘗試 provider-native `json_schema` strict output；Gemini/OpenRouter route 除非 allowlist，否則維持 `json_object` + local validation/repair。
+  - `strict`：強制所有 route 使用 `response_format.type=json_schema`。用於驗證某個 OpenRouter/Gemini route 是否真的支援 strict schema；若 provider 不支援，會直接失敗。
+  - `json_object`：完全停用 provider-native strict schema，只用 JSON object mode。
+- `PELICAN_SKILL_SCHEMA_MODELS`：逗號分隔 allowlist，例如 `~google/gemini-pro-latest,google/gemini-3.1-flash-lite`。只在 `auto` mode 下讓指定 route 嘗試 strict schema。
 
 Runtime artifacts：
 

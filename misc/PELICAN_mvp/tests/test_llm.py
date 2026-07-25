@@ -195,6 +195,108 @@ def test_generate_domain_skill_uses_requested_route() -> None:
     assert skill.lifecycle.value == "runtime_generated"
 
 
+def test_generate_domain_skill_payload_uses_strict_schema_for_openai_auto_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.response_format = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.response_format = response_format
+            return valid_skill_payload()
+
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODE", raising=False)
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODELS", raising=False)
+    adapter = RecordingAdapter()
+
+    adapter.generate_domain_skill_payload("深度學習", DomainCategory.STEM, model_route="openai/gpt-5.5")
+
+    assert adapter.response_format["type"] == "json_schema"
+    assert adapter.response_format["json_schema"]["strict"] is True
+    assert adapter.response_format["json_schema"]["schema"]["properties"]["domain_category"]["enum"] == ["stem"]
+
+
+def test_generate_domain_skill_payload_keeps_gemini_route_in_json_object_auto_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.response_format = "not-called"
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.response_format = response_format
+            return valid_skill_payload()
+
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODE", raising=False)
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODELS", raising=False)
+    adapter = RecordingAdapter()
+
+    adapter.generate_domain_skill_payload(
+        "中國清朝歷史",
+        DomainCategory.HUMANITIES,
+        model_route="~google/gemini-pro-latest",
+    )
+
+    assert adapter.response_format is None
+
+
+def test_generate_domain_skill_payload_can_force_strict_schema_for_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.response_format = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.response_format = response_format
+            return valid_skill_payload()
+
+    monkeypatch.setenv("PELICAN_SKILL_SCHEMA_MODE", "strict")
+    adapter = RecordingAdapter()
+
+    adapter.generate_domain_skill_payload(
+        "中國清朝歷史",
+        DomainCategory.HUMANITIES,
+        model_route="~google/gemini-pro-latest",
+    )
+
+    assert adapter.response_format["type"] == "json_schema"
+
+
+def test_generate_domain_skill_payload_auto_falls_back_when_schema_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.response_formats = []
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.response_formats.append(response_format)
+            if response_format is not None:
+                raise LlmUnavailable(
+                    "LLM request failed: BadRequestError",
+                    reason_codes=("llm_request_failed", "llm_api_error_unsupported_parameter"),
+                    api_status_code=400,
+                    api_error_type="unsupported_parameter",
+                )
+            return valid_skill_payload()
+
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODE", raising=False)
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODELS", raising=False)
+    adapter = RecordingAdapter()
+
+    payload = adapter.generate_domain_skill_payload("深度學習", DomainCategory.STEM, model_route="openai/gpt-5.5")
+
+    assert payload["skill_id"] == "deep_learning"
+    assert adapter.response_formats[0]["type"] == "json_schema"
+    assert adapter.response_formats[1] is None
+
+
 def test_intake_question_uses_domain_route() -> None:
     class RecordingAdapter(LlmAdapter):
         def __init__(self) -> None:

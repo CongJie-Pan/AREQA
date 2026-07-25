@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .domain_skill import DomainCategory, DomainSkill, SkillLifecycle
+from .domain_skill import DomainCategory, DomainSkill, IntentType, SkillLifecycle, REQUIRED_REMEDIATION_SIGNALS
 from .models import (
     BoundedTutorProposal,
     DiagnosticQuestion,
@@ -105,6 +105,16 @@ DEFAULT_SKILL_MODEL_ROUTES = {
     DomainCategory.LANGUAGE: "~google/gemini-pro-latest",
 }
 DEFAULT_TUTOR_MODEL = "google/gemini-3.1-flash-lite"
+SKILL_SCHEMA_MODE_ENV = "PELICAN_SKILL_SCHEMA_MODE"
+SKILL_SCHEMA_MODELS_ENV = "PELICAN_SKILL_SCHEMA_MODELS"
+STRUCTURED_OUTPUT_COMPATIBILITY_ERRORS = {
+    "bad_request",
+    "invalid_request",
+    "invalid_request_error",
+    "unsupported_parameter",
+    "unknown_parameter",
+    "not_supported",
+}
 
 MODEL_ROUTE_ENV = {
     DomainCategory.STEM: "PELICAN_STEM_MODEL",
@@ -222,6 +232,223 @@ def _domain_skill_json_contract(topic: str, category: DomainCategory) -> str:
         "safety_notes": ["Educational use only."],
     }
     return json.dumps(example, ensure_ascii=False, indent=2)
+
+
+def _domain_skill_json_schema(category: DomainCategory) -> dict[str, Any]:
+    """Build the provider-native JSON schema for DomainSkill generation.
+
+    Returns:
+        A JSON Schema object used inside OpenAI/OpenRouter
+        ``response_format={"type": "json_schema"}`` requests.
+
+    Compatibility:
+        OpenRouter exposes an OpenAI-compatible ``json_schema`` response format,
+        while Gemini's direct API uses a different ``responseSchema`` field.
+        This schema intentionally uses common JSON Schema keywords only and is
+        still followed by local ``DomainSkill`` parsing and validation.
+    """
+    string_array = {"type": "array", "items": {"type": "string"}, "minItems": 1}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "skill_id",
+            "version",
+            "title",
+            "domain_category",
+            "lifecycle",
+            "supported_topics",
+            "intent_types",
+            "prerequisites",
+            "calibration_questions",
+            "canonical_path",
+            "diagnostic_rules",
+            "teaching_moves",
+            "remediation_paths",
+            "assessment_policy",
+            "teaching_methodology",
+            "remediation_templates",
+            "safety_notes",
+        ],
+        "properties": {
+            "skill_id": {"type": "string", "description": "Stable bounded identifier without whitespace."},
+            "version": {"type": "string"},
+            "title": {"type": "string"},
+            "domain_category": {"type": "string", "enum": [category.value]},
+            "lifecycle": {"type": "string", "enum": [SkillLifecycle.RUNTIME_GENERATED.value]},
+            "supported_topics": string_array,
+            "intent_types": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "enum": [item.value for item in IntentType]},
+            },
+            "prerequisites": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["concept_id", "label", "prerequisites", "description"],
+                    "properties": {
+                        "concept_id": {"type": "string"},
+                        "label": {"type": "string"},
+                        "prerequisites": {"type": "array", "items": {"type": "string"}},
+                        "description": {"type": "string"},
+                    },
+                },
+            },
+            "calibration_questions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["question_id", "prompt", "intent_targets", "level_targets"],
+                    "properties": {
+                        "question_id": {"type": "string"},
+                        "prompt": {"type": "string"},
+                        "intent_targets": string_array,
+                        "level_targets": string_array,
+                    },
+                },
+            },
+            "canonical_path": {
+                "type": "object",
+                "description": "Keys are intent types. Values are concept_id arrays from prerequisites.",
+                "additionalProperties": string_array,
+            },
+            "diagnostic_rules": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["rule_id", "concept_id", "prompt", "expected_answer", "tests_single_concept"],
+                    "properties": {
+                        "rule_id": {"type": "string"},
+                        "concept_id": {"type": "string"},
+                        "prompt": {"type": "string"},
+                        "expected_answer": {"type": "string"},
+                        "tests_single_concept": {"type": "boolean"},
+                    },
+                },
+            },
+            "teaching_moves": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["move_id", "strategy", "description"],
+                    "properties": {
+                        "move_id": {"type": "string"},
+                        "strategy": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                },
+            },
+            "remediation_paths": {
+                "type": "array",
+                "minItems": 5,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["signal", "action", "target"],
+                    "properties": {
+                        "signal": {"type": "string", "enum": sorted(REQUIRED_REMEDIATION_SIGNALS)},
+                        "action": {"type": "string"},
+                        "target": {"type": "string"},
+                    },
+                },
+            },
+            "assessment_policy": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["mode", "education_only", "notes"],
+                "properties": {
+                    "mode": {"type": "string"},
+                    "education_only": {"type": "boolean"},
+                    "notes": {"type": "string"},
+                },
+            },
+            "teaching_methodology": {"type": "object", "additionalProperties": {"type": "string"}},
+            "remediation_templates": {"type": "object", "additionalProperties": {"type": "string"}},
+            "safety_notes": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+
+
+def _domain_skill_response_format(category: DomainCategory) -> dict[str, Any]:
+    """Return the OpenAI/OpenRouter strict schema response_format payload."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "domain_skill",
+            "strict": True,
+            "schema": _domain_skill_json_schema(category),
+        },
+    }
+
+
+def _skill_schema_response_format_for_route(model_route: str, category: DomainCategory) -> dict[str, Any] | None:
+    """Return strict schema response format when enabled for a model route.
+
+    Args:
+        model_route: OpenAI/OpenRouter model route selected for skill generation.
+        category: Domain category used to constrain the generated schema.
+
+    Returns:
+        ``response_format`` payload for provider-native structured output, or
+        ``None`` when the route should use JSON object compatibility mode.
+
+    Environment:
+        ``PELICAN_SKILL_SCHEMA_MODE`` supports:
+        - ``auto`` (default): enable strict schema for OpenAI routes and
+          allowlisted routes only.
+        - ``strict``: force strict schema for every route; useful for manual
+          compatibility verification.
+        - ``json_object``: disable provider-native strict schema.
+
+        ``PELICAN_SKILL_SCHEMA_MODELS`` is a comma-separated allowlist for
+        routes verified to support OpenAI/OpenRouter ``json_schema`` format.
+    """
+    mode = _skill_schema_mode()
+    if mode == "json_object":
+        return None
+    if mode == "strict" or _route_supports_skill_json_schema(model_route):
+        return _domain_skill_response_format(category)
+    return None
+
+
+def _skill_schema_mode() -> str:
+    """Read the bounded provider-native schema mode from environment."""
+    raw_mode = os.getenv(SKILL_SCHEMA_MODE_ENV, "auto").strip().lower()
+    return raw_mode if raw_mode in {"auto", "strict", "json_object"} else "auto"
+
+
+def _route_supports_skill_json_schema(model_route: str) -> bool:
+    """Return whether auto mode should attempt strict schema for this route."""
+    normalized_route = model_route.strip().lower()
+    allowlist = {
+        item.strip().lower()
+        for item in os.getenv(SKILL_SCHEMA_MODELS_ENV, "").split(",")
+        if item.strip()
+    }
+    if normalized_route in allowlist:
+        return True
+    # Direct OpenAI-style routes are the safest default for Chat Completions
+    # ``response_format=json_schema``. Gemini through OpenRouter is left opt-in
+    # because direct Gemini uses a different ``responseSchema`` API surface.
+    return normalized_route.startswith("openai/")
+
+
+def _is_structured_output_compatibility_failure(exc: LlmUnavailable) -> bool:
+    """Detect provider errors that likely mean strict schema is unsupported."""
+    if exc.api_status_code == 400:
+        return True
+    if exc.api_error_type in STRUCTURED_OUTPUT_COMPATIBILITY_ERRORS:
+        return True
+    return any(error_type in code for error_type in STRUCTURED_OUTPUT_COMPATIBILITY_ERRORS for code in exc.reason_codes)
 
 
 def _slugify_identifier(value: str) -> str:
@@ -695,11 +922,8 @@ class LlmAdapter:
                 "前一次輸出未通過驗證。請只修正 schema，不要改成課文或 Markdown。\n"
                 f"validation_reason_codes: {', '.join(repair_issues)}\n"
             )
-        # OpenRouter routes used by this MVP do not guarantee portable support
-        # for provider-native strict JSON schema. Keep JSON-object mode here and
-        # enforce the full contract locally before persisting any generated skill.
         contract = _domain_skill_json_contract(topic, category)
-        return self._json(
+        system_prompt = (
             "你是領域教學設計師。只輸出 JSON，不要輸出推理過程、Markdown 或學生可見課程內容。\n"
             "你的任務是產生一份可驗證的 DomainSkill schema，供教學引擎稍後編譯知識樹。\n"
             "必須包含 intake calibration、prerequisite map、canonical_path、single-concept diagnostics、"
@@ -708,7 +932,9 @@ class LlmAdapter:
             "硬性規則：canonical_path 只能引用 prerequisites 裡存在的 concept_id；每個 concept 必須有一個 diagnostic_rule；"
             "diagnostic prompt 絕對不能包含 expected_answer；prerequisites 必須無循環；"
             "remediation_templates 的 key 應對應 concept_id。法律知識只能作教育用途，不可提供法律諮詢。\n"
-            "你必須輸出單一 JSON object，且 shape 必須符合使用者訊息中的範例。所有 required arrays 都必須是 non-empty。",
+            "你必須輸出單一 JSON object，且 shape 必須符合使用者訊息中的範例。所有 required arrays 都必須是 non-empty。"
+        )
+        user_prompt = (
             repair_instruction + f"topic: {topic}\ncategory: {category.value}\n"
             "輸出 JSON 欄位：skill_id, version, title, domain_category, lifecycle, supported_topics, intent_types, "
             "prerequisites, calibration_questions, canonical_path, diagnostic_rules, teaching_moves, remediation_paths, "
@@ -724,12 +950,45 @@ class LlmAdapter:
             "unknown, too_detailed, too_easy, project_goal, assessment_goal。\n"
             "assessment_policy 必須是 object 並包含 mode, education_only, notes。\n"
             "最小有效 JSON 範例，請依 topic 改寫內容但保持相同 schema：\n"
-            f"{contract}",
-            model=route,
+            f"{contract}"
         )
+        response_format = _skill_schema_response_format_for_route(route, category)
+        if response_format is None:
+            return self._json(system_prompt, user_prompt, model=route)
+        try:
+            return self._json(system_prompt, user_prompt, model=route, response_format=response_format)
+        except LlmUnavailable as exc:
+            if _skill_schema_mode() != "auto" or not _is_structured_output_compatibility_failure(exc):
+                raise
+            # Some OpenRouter/provider routes accept JSON mode but reject strict
+            # schema parameters. In auto mode the generation still proceeds via
+            # JSON object mode and is guarded by local schema validation/repair.
+            return self._json(system_prompt, user_prompt, model=route)
 
-    def _json(self, system: str, user: str, *, model: str | None = None) -> dict[str, Any]:
-        """Call the configured model and require a JSON object response."""
+    def _json(
+        self,
+        system: str,
+        user: str,
+        *,
+        model: str | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Call the configured model and require a JSON object response.
+
+        Args:
+            system: System instruction sent to the provider.
+            user: User/developer payload sent to the provider.
+            model: Optional model route override.
+            response_format: Optional OpenAI/OpenRouter response format. When
+                omitted, JSON object mode is used for compatibility.
+
+        Returns:
+            Parsed JSON object.
+
+        Raises:
+            LlmUnavailable: If credentials are absent, the provider request
+                fails, or the returned content is not a JSON object.
+        """
         if not self.config:
             raise LlmUnavailable(
                 "OPENROUTER_API_KEY is not configured",
@@ -744,7 +1003,7 @@ class LlmAdapter:
                 model=model or self.config.model,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                 temperature=0,
-                response_format={"type": "json_object"},
+                response_format=response_format or {"type": "json_object"},
             )
             content = response.choices[0].message.content or "{}"
             parsed = json.loads(content)
