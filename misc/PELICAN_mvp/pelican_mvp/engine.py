@@ -1454,37 +1454,71 @@ class PelicanEngine:
         """Render an explanation-first scaffold after an inability signal.
 
         The learner has already said they do not know, so this seed must teach
-        before checking. It deliberately includes direct content and only one
-        low-load confirmation question to avoid a Socratic question loop.
+        before checking. It deliberately avoids generic "cause or result"
+        checks because those read like a template and do not verify the actual
+        concept.
         """
-        explanation = self._learner_facing_scaffold_explanation(node_id, label)
+        lesson = self._learner_facing_scaffold_lesson(node_id, label)
+        check = self._low_load_scaffold_check(label)
         return (
             f"沒關係，我先直接講「{label}」。\n\n"
-            f"重點是：{explanation}\n\n"
-            "你現在不用猜細節，先抓住這個因果骨架即可。"
-            "低負荷確認：上面這段主要是在說「原因」還是「結果」？"
+            f"{lesson}\n\n"
+            f"{check}"
         )
 
-    def _learner_facing_scaffold_explanation(self, node_id: str, label: str) -> str:
-        """Return safe learner-facing content for an inability scaffold.
+    def _learner_facing_scaffold_lesson(self, node_id: str, label: str) -> str:
+        """Return a compact mini-lesson for an inability scaffold.
 
         Generated skill ``expected_answer`` values are teacher-side rubrics and
         may be English model instructions such as ``Learner should mention...``.
-        Those are useful for classification but must never be exposed as a
-        mini-lesson. Prefer skill-authored remediation text, then safe expected
-        answers, then a bounded prompt-derived explanation.
+        Those are useful for classification but must never be exposed as a mini
+        lesson. The fallback therefore builds learner-facing content from node
+        labels, concept descriptions, remediation templates, and prompts.
         """
+        concept_text = self._concept_description(node_id)
+        remediation_text = self._safe_remediation_template(node_id, label)
+        expected = (self.state.current_expected_answer or "").strip()
+        prompt = self._base_tutor_prompt(node_id).strip()
+        facts = [
+            item
+            for item in (
+                concept_text,
+                remediation_text,
+                expected if expected and not _looks_like_teacher_rubric(expected) else "",
+                prompt,
+            )
+            if item and not _looks_like_teacher_rubric(item)
+        ]
+        context_sentence = facts[0] if facts else f"「{label}」是這段學習的起點概念。"
+        detail_sentence = facts[1] if len(facts) > 1 else f"先把它理解成後續概念的背景條件。"
+        return (
+            f"先抓概念定位：{context_sentence}\n"
+            f"再看為什麼重要：{detail_sentence}\n"
+            f"一條脈絡先記住：{label} → 後續制度或事件才有發展基礎。"
+        )
+
+    def _concept_description(self, node_id: str) -> str:
+        """Return a learner-facing concept positioning sentence."""
+        if not node_id:
+            return ""
+        return f"「{self.curriculum.nodes[node_id].label}」是在建立後續理解之前，先要放清楚的背景基礎。"
+
+    def _safe_remediation_template(self, node_id: str, label: str) -> str:
+        """Return remediation guidance only when it contains learner-facing content."""
         if self.state.learning_plan:
             template = self.state.learning_plan.remediation_templates.get(node_id, "")
             if template and not _looks_like_teacher_rubric(template):
-                return template.format(label=label)
-        expected = (self.state.current_expected_answer or "").strip()
-        if expected and not _looks_like_teacher_rubric(expected):
-            return expected
-        prompt = self._base_tutor_prompt(node_id).strip()
-        if prompt:
-            return f"這一節先抓住「{label}」的問題焦點：{prompt}"
-        return f"先把「{label}」放回整體脈絡中，理解它為什麼會影響下一步。"
+                rendered = template.format(label=label)
+                if not _looks_like_instruction_only(rendered):
+                    return _clean_learner_sentence(rendered)
+        return ""
+
+    def _low_load_scaffold_check(self, label: str) -> str:
+        """Return a concrete binary check grounded on the current concept label."""
+        return (
+            "低負荷確認：你先只要選一個，"
+            f"「{label}」比較像是 A. 後面事件的背景基礎，還是 B. 已經完成的最後結果？"
+        )
 
     def _scope_mismatch_prompt(self, node_id: str, label: str) -> str:
         """Render a simpler level-recalibration prompt for too-detailed feedback."""
@@ -1812,6 +1846,29 @@ def _looks_like_teacher_rubric(text: str) -> bool:
         "should connect",
     )
     return any(marker in normalized for marker in rubric_markers)
+
+
+def _looks_like_instruction_only(text: str) -> bool:
+    """Return whether text is mainly a teaching instruction, not content."""
+    normalized = re.sub(r"\s+", " ", text).strip()
+    instruction_markers = (
+        "讓我們回到",
+        "讓我們看看",
+        "我們來回顧",
+        "我們來拆解",
+        "我們來梳理",
+        "先了解",
+        "先看看",
+    )
+    return any(marker in normalized for marker in instruction_markers) and not any(
+        marker in normalized for marker in ("因為", "所以", "形成", "造成", "導致", "基礎", "關鍵在於")
+    )
+
+
+def _clean_learner_sentence(text: str) -> str:
+    """Normalize a bounded learner-facing sentence."""
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    return cleaned.rstrip("。！？?") + "。"
 
 
 def _rule_intake_semantic_signal(answer: str) -> IntakeSemanticSignal:

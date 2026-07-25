@@ -146,7 +146,9 @@ def test_unknown_scaffolds_current_prerequisite_not_unrelated_node(tmp_path: Pat
 
     assert outcome.node_id == current_node
     assert "先直接講" in outcome.message
-    assert "重點是" in outcome.message
+    assert "先抓概念定位" in outcome.message
+    assert "一條脈絡先記住" in outcome.message
+    assert "原因」還是「結果" not in outcome.message
     assert "不跳到下一個診斷題" in outcome.next_reason
     assert engine.state.phase == "tutoring"
     assert engine.state.direct_evidence[-1].signal == "unknown"
@@ -162,8 +164,25 @@ def test_unknown_scaffold_does_not_expose_teacher_expected_rubric(tmp_path: Path
 
     assert "Learner should" not in outcome.message
     assert "student should" not in outcome.message.lower()
-    assert "重點是" in outcome.message
-    assert "我們先停在" in outcome.message
+    assert "先抓概念定位" in outcome.message
+    assert "A." in outcome.message
+    assert "B." in outcome.message
+
+
+def test_unknown_scaffold_uses_mini_lesson_not_instruction_template(tmp_path: Path) -> None:
+    engine = calibrated_deep_learning_engine(tmp_path)
+    node_id = engine.state.current_node_id
+    engine.state.learning_plan.remediation_templates[node_id] = (
+        "讓我們回到明朝末年的東北邊疆，先了解當時女真各部的基本分佈與明朝的牽制政策。"
+    )
+
+    outcome = engine.respond("不知道")
+
+    assert "重點是：讓我們回到" not in outcome.message
+    assert "低負荷確認：上面這段主要是在說" not in outcome.message
+    assert "先抓概念定位" in outcome.message
+    assert "一條脈絡先記住" in outcome.message
+    assert "A. 後面事件的背景基礎" in outcome.message
 
 
 def test_tutoring_control_signals_after_mastery_do_not_overwrite_progress(tmp_path: Path) -> None:
