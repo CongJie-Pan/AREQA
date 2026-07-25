@@ -36,6 +36,10 @@ LOG_FIELDS = (
     "model_route",
     "api_status_code",
     "api_error_type",
+    "schema_mode",
+    "schema_format",
+    "schema_strict",
+    "schema_fallback",
     "remediation_reason",
     "learner_state",
     "strategy",
@@ -139,6 +143,8 @@ def configure_runtime_logging(mode: str | None = None, channels: str | None = No
             "learner=%(learner_token)s phase=%(phase)s activity=%(activity_code)s "
             "status=%(activity_status)s reason=%(reason_code)s detail=%(detail_code)s domain=%(domain_category)s "
             "route=%(route)s api_status=%(api_status_code)s api_error=%(api_error_type)s "
+            "schema_mode=%(schema_mode)s schema_format=%(schema_format)s "
+            "schema_strict=%(schema_strict)s schema_fallback=%(schema_fallback)s "
             "skill=%(skill_id)s skill_source=%(skill_source)s "
             "intake_source=%(intake_source)s semantic=%(semantic_intent)s confidence=%(semantic_confidence)s "
             "diagnostic_source=%(diagnostic_source)s "

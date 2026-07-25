@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from .models import (
     ResponseCategory,
     TutoringStrategy,
 )
+from .observability import log_event
 
 
 class LlmUnavailable(RuntimeError):
@@ -953,6 +955,19 @@ class LlmAdapter:
             f"{contract}"
         )
         response_format = _skill_schema_response_format_for_route(route, category)
+        schema_mode = _skill_schema_mode()
+        schema_format = "json_schema" if response_format else "json_object"
+        log_event(
+            "pelican_skill_schema_mode_selected",
+            level=logging.DEBUG,
+            domain_category=category.value,
+            route=route,
+            model_route=route,
+            schema_mode=schema_mode,
+            schema_format=schema_format,
+            schema_strict=response_format is not None,
+            schema_fallback=False,
+        )
         if response_format is None:
             return self._json(system_prompt, user_prompt, model=route)
         try:
@@ -963,6 +978,20 @@ class LlmAdapter:
             # Some OpenRouter/provider routes accept JSON mode but reject strict
             # schema parameters. In auto mode the generation still proceeds via
             # JSON object mode and is guarded by local schema validation/repair.
+            log_event(
+                "pelican_skill_schema_provider_fallback",
+                level=logging.DEBUG,
+                domain_category=category.value,
+                route=route,
+                model_route=route,
+                schema_mode=schema_mode,
+                schema_format="json_object",
+                schema_strict=False,
+                schema_fallback=True,
+                reason_code="structured_output_unsupported",
+                api_status_code=exc.api_status_code,
+                api_error_type=exc.api_error_type,
+            )
             return self._json(system_prompt, user_prompt, model=route)
 
     def _json(

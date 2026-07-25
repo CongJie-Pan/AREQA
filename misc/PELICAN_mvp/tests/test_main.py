@@ -109,6 +109,32 @@ def test_configure_runtime_logging_filters_terminal_channels(capsys) -> None:
     assert "pelican_skill_loaded" not in output
 
 
+def test_configure_runtime_logging_prints_schema_debug_fields(capsys) -> None:
+    logger = logging.getLogger("pelican_mvp")
+    for handler in list(logger.handlers):
+        if getattr(handler, "_pelican_cli_handler", False):
+            logger.removeHandler(handler)
+
+    main_module.configure_runtime_logging("debug", "skill")
+    log_event(
+        "pelican_skill_schema_mode_selected",
+        level=logging.DEBUG,
+        model_route="openai/gpt-5.5",
+        schema_mode="auto",
+        schema_format="json_schema",
+        schema_strict=True,
+        schema_fallback=False,
+    )
+
+    output = capsys.readouterr().err
+
+    assert "event=pelican_skill_schema_mode_selected" in output
+    assert "schema_mode=auto" in output
+    assert "schema_format=json_schema" in output
+    assert "schema_strict=True" in output
+    assert "schema_fallback=False" in output
+
+
 def test_configure_runtime_logging_off_removes_cli_handler() -> None:
     logger = logging.getLogger("pelican_mvp")
 

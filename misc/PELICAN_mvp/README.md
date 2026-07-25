@@ -108,6 +108,23 @@ pelican_agent_proposal_recorded
 pelican_methodology_event_recorded
 ```
 
+Provider-native skill schema debug:
+
+```bash
+export PELICAN_LOG_MODE=debug
+export PELICAN_LOG_CHANNELS=skill
+python -m pelican_mvp
+```
+
+Key events:
+
+```text
+pelican_skill_schema_mode_selected       # selected auto/strict/json_object and response_format mode
+pelican_skill_schema_provider_fallback   # auto mode fell back because provider/route rejected json_schema
+```
+
+These events print safe metadata only: `route`, `domain_category`, `schema_mode`, `schema_format`, `schema_strict`, `schema_fallback`, `api_status_code`, `api_error_type`, and `reason_code`.
+
 These events expose only safe metadata such as node id, strategy, proposal source, validation status, reason code, and pedagogical move. They do not expose raw learner answers, prompts, provider responses, or model reasoning.
 
 常用檢查：

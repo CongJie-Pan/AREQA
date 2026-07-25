@@ -92,6 +92,10 @@ _SAFE_FIELDS = frozenset({
     "rejected_count",
     "fallback_used",
     "endpoint",
+    "schema_mode",
+    "schema_format",
+    "schema_strict",
+    "schema_fallback",
 })
 
 

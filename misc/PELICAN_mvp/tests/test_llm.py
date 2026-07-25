@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from pelican_mvp.domain_skill import DomainCategory
 from pelican_mvp.llm import LlmAdapter, LlmConfig, LlmUnavailable
@@ -295,6 +297,45 @@ def test_generate_domain_skill_payload_auto_falls_back_when_schema_unsupported(
     assert payload["skill_id"] == "deep_learning"
     assert adapter.response_formats[0]["type"] == "json_schema"
     assert adapter.response_formats[1] is None
+
+
+def test_generate_domain_skill_payload_logs_schema_debug_metadata(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            if response_format is not None:
+                raise LlmUnavailable(
+                    "LLM request failed: BadRequestError",
+                    reason_codes=("llm_request_failed", "llm_api_error_unsupported_parameter"),
+                    api_status_code=400,
+                    api_error_type="unsupported_parameter",
+                )
+            return valid_skill_payload()
+
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODE", raising=False)
+    monkeypatch.delenv("PELICAN_SKILL_SCHEMA_MODELS", raising=False)
+    adapter = RecordingAdapter()
+
+    with caplog.at_level(logging.DEBUG, logger="pelican_mvp"):
+        adapter.generate_domain_skill_payload("深度學習", DomainCategory.STEM, model_route="openai/gpt-5.5")
+
+    selected = next(item for item in caplog.records if item.message == "pelican_skill_schema_mode_selected")
+    fallback = next(item for item in caplog.records if item.message == "pelican_skill_schema_provider_fallback")
+    assert selected.debug_channel == "skill"
+    assert selected.schema_mode == "auto"
+    assert selected.schema_format == "json_schema"
+    assert selected.schema_strict is True
+    assert selected.schema_fallback is False
+    assert fallback.schema_format == "json_object"
+    assert fallback.schema_fallback is True
+    assert fallback.reason_code == "structured_output_unsupported"
+    assert fallback.api_status_code == 400
+    assert "深度學習" not in caplog.text
 
 
 def test_intake_question_uses_domain_route() -> None:
