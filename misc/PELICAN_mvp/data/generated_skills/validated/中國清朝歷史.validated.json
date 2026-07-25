@@ -1,0 +1,187 @@
+{
+  "artifact_type": "validated_runtime_skill",
+  "created_at": "2026-07-25T04:08:27.969573+00:00",
+  "domain_category": "humanities",
+  "route": "~google/gemini-pro-latest",
+  "skill": {
+    "assessment_policy": {
+      "education_only": true,
+      "mode": "formative",
+      "notes": "Use low-stakes checks to verify historical comprehension. Do not present historical theories as absolute facts."
+    },
+    "calibration_questions": [
+      {
+        "intent_targets": [
+          "conceptual",
+          "explanatory",
+          "assessment"
+        ],
+        "level_targets": [
+          "beginner",
+          "intermediate",
+          "advanced"
+        ],
+        "prompt": "你想從清朝的建立開始了解，還是專注於康雍乾盛世、晚清的衰退，或者是為了準備歷史考試進行總結？",
+        "question_id": "goal"
+      }
+    ],
+    "canonical_path": {
+      "assessment": [
+        "qing_establishment",
+        "high_qing_era",
+        "late_qing_decline",
+        "qing_fall"
+      ],
+      "conceptual": [
+        "qing_establishment",
+        "high_qing_era",
+        "late_qing_decline",
+        "qing_fall"
+      ],
+      "explanatory": [
+        "qing_establishment",
+        "high_qing_era",
+        "late_qing_decline",
+        "qing_fall"
+      ]
+    },
+    "diagnostic_rules": [
+      {
+        "concept_id": "qing_establishment",
+        "expected_answer": "Learner should mention the unification of Jurchen tribes, Nurhaci/Hong Taiji, and the collapse of the Ming Dynasty.",
+        "prompt": "請簡述滿洲人是如何崛起並最終入主中原建立清朝的？",
+        "rule_id": "diag_qing_establishment",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "high_qing_era",
+        "expected_answer": "Learner should identify key policies like the Grand Council (Junjichu), tax reforms, or territorial expansion.",
+        "prompt": "在康熙、雍正、乾隆時期，清朝在政治制度或疆域擴張上有哪些重要發展？",
+        "rule_id": "diag_high_qing_era",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "late_qing_decline",
+        "expected_answer": "Learner should mention external conflicts like the Opium Wars and internal strife like the Taiping Rebellion.",
+        "prompt": "導致清朝中後期走向衰退的主要內憂與外患分別是什麼？",
+        "rule_id": "diag_late_qing_decline",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "qing_fall",
+        "expected_answer": "Learner should connect the Wuchang Uprising, the revolutionary movement, and the abdication of the last emperor.",
+        "prompt": "請說明辛亥革命是如何爆發並導致清朝最終滅亡的？",
+        "rule_id": "diag_qing_fall",
+        "tests_single_concept": true
+      }
+    ],
+    "domain_category": "humanities",
+    "intent_types": [
+      "conceptual",
+      "explanatory",
+      "assessment"
+    ],
+    "lifecycle": "validated_generated",
+    "prerequisites": [
+      {
+        "concept_id": "qing_establishment",
+        "description": "The rise of the Manchus, Nurhaci, Hong Taiji, and the conquest of the Ming Dynasty.",
+        "label": "Establishment of the Qing Dynasty",
+        "prerequisites": []
+      },
+      {
+        "concept_id": "high_qing_era",
+        "description": "The golden age under Emperors Kangxi, Yongzheng, and Qianlong, including territorial expansion and political consolidation.",
+        "label": "High Qing Era",
+        "prerequisites": [
+          "qing_establishment"
+        ]
+      },
+      {
+        "concept_id": "late_qing_decline",
+        "description": "Internal rebellions and external pressures, including the Opium Wars and unequal treaties.",
+        "label": "Late Qing Decline",
+        "prerequisites": [
+          "high_qing_era"
+        ]
+      },
+      {
+        "concept_id": "qing_fall",
+        "description": "The Xinhai Revolution, the abdication of Puyi, and the end of imperial China.",
+        "label": "Fall of the Qing Dynasty",
+        "prerequisites": [
+          "late_qing_decline"
+        ]
+      }
+    ],
+    "remediation_paths": [
+      {
+        "action": "scaffold_prerequisite",
+        "signal": "unknown",
+        "target": "qing_establishment"
+      },
+      {
+        "action": "recalibrate_level",
+        "signal": "too_detailed",
+        "target": "goal"
+      },
+      {
+        "action": "accelerate",
+        "signal": "too_easy",
+        "target": "late_qing_decline"
+      },
+      {
+        "action": "switch_path",
+        "signal": "project_goal",
+        "target": "explanatory"
+      },
+      {
+        "action": "switch_path",
+        "signal": "assessment_goal",
+        "target": "assessment"
+      }
+    ],
+    "remediation_templates": {
+      "high_qing_era": "我們來看看康熙、雍正、乾隆三位皇帝是如何鞏固統治並開創盛世的。",
+      "late_qing_decline": "讓我們梳理一下鴉片戰爭之後，清朝面臨的外部壓力與內部動亂。",
+      "qing_establishment": "讓我們回到明末清初，先了解滿洲人是如何崛起的。",
+      "qing_fall": "我們來回顧辛亥革命爆發的背景，以及清朝皇帝退位的歷史過程。"
+    },
+    "safety_notes": [
+      "Educational use only. Historical interpretations should remain objective and balanced."
+    ],
+    "skill_id": "qing_dynasty_history_skill",
+    "supported_topics": [
+      "中國清朝歷史",
+      "清朝政治制度",
+      "清朝衰亡",
+      "康雍乾盛世"
+    ],
+    "teaching_methodology": {
+      "diagnosis": "Assess chronological understanding and the ability to link historical causes with their effects.",
+      "sequencing": "Follow a chronological progression from the dynasty's rise to its golden age, followed by its decline and eventual fall."
+    },
+    "teaching_moves": [
+      {
+        "description": "Provide a brief historical narrative of a specific era before asking a comprehension question.",
+        "move_id": "focused_mini_lesson",
+        "strategy": "focused_mini_lesson"
+      },
+      {
+        "description": "Analyze a specific historical event (e.g., the First Opium War) to illustrate broader historical trends.",
+        "move_id": "guided_example",
+        "strategy": "guided_example"
+      },
+      {
+        "description": "Ask a targeted question to prompt the learner to connect causes and effects in history.",
+        "move_id": "socratic_question",
+        "strategy": "socratic_question"
+      }
+    ],
+    "title": "中國清朝歷史 Learning Skill",
+    "version": "0.1.0"
+  },
+  "skill_id": "qing_dynasty_history_skill",
+  "skill_version": "0.1.0",
+  "topic_slug": "中國清朝歷史"
+}
