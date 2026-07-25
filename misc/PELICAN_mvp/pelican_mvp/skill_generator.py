@@ -523,11 +523,18 @@ def _reason_codes_for(exc: Exception) -> tuple[str, ...]:
 def _domain_skill_reason_codes(exc: DomainSkillError) -> tuple[str, ...]:
     """Map parser failures to bounded schema classes without exposing payload text.
 
-    ``DomainSkill.from_dict`` raises field-specific messages, but model output
+    ``DomainSkill.from_dict`` raises field-specific metadata, but model output
     must never enter logs, repair prompts, or artifacts verbatim. The returned
-    codes describe only the contract failure class, which is sufficient for a
-    subsequent schema-repair prompt and safe for structured telemetry.
+    codes describe only the contract failure class and field path, which gives
+    the repair prompt enough precision without exposing learner/model content.
     """
+    reason_code = getattr(exc, "reason_code", "")
+    field_path = getattr(exc, "field_path", "")
+    if reason_code and field_path:
+        return (f"{reason_code}:{field_path}",)
+    if reason_code:
+        return (reason_code,)
+
     message = str(exc)
     if message.endswith(" is required"):
         return ("missing_required_field",)

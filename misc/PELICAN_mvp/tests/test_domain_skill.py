@@ -1,7 +1,9 @@
 import logging
 
+import pytest
+
 from pelican_mvp.domain_catalog import resolve_domain_category, resolve_model_route
-from pelican_mvp.domain_skill import DomainCategory, DomainSkill, IntentType, SkillLifecycle
+from pelican_mvp.domain_skill import DomainCategory, DomainSkill, DomainSkillError, IntentType, SkillLifecycle
 from pelican_mvp.observability import log_event
 
 
@@ -86,6 +88,39 @@ def test_domain_skill_round_trips_structured_payload() -> None:
     assert restored.lifecycle is SkillLifecycle.VALIDATED_GENERATED
     assert restored.intent_types == (IntentType.CONCEPTUAL, IntentType.IMPLEMENTATION)
     assert restored.canonical_path[IntentType.CONCEPTUAL][0] == "math_intuition"
+
+
+def test_domain_skill_reports_missing_top_level_field_path() -> None:
+    payload = valid_skill_payload()
+    payload.pop("title")
+
+    with pytest.raises(DomainSkillError) as excinfo:
+        DomainSkill.from_dict(payload)
+
+    assert excinfo.value.reason_code == "missing_required_field"
+    assert excinfo.value.field_path == "title"
+
+
+def test_domain_skill_reports_missing_nested_diagnostic_field_path() -> None:
+    payload = valid_skill_payload()
+    payload["diagnostic_rules"][0].pop("expected_answer")
+
+    with pytest.raises(DomainSkillError) as excinfo:
+        DomainSkill.from_dict(payload)
+
+    assert excinfo.value.reason_code == "missing_required_field"
+    assert excinfo.value.field_path == "diagnostic_rules[0].expected_answer"
+
+
+def test_domain_skill_reports_invalid_nested_canonical_path_list() -> None:
+    payload = valid_skill_payload()
+    payload["canonical_path"]["conceptual"] = "math_intuition"
+
+    with pytest.raises(DomainSkillError) as excinfo:
+        DomainSkill.from_dict(payload)
+
+    assert excinfo.value.reason_code == "invalid_required_list"
+    assert excinfo.value.field_path == "canonical_path.conceptual"
 
 
 def test_domain_catalog_routes_supported_and_unknown_topics() -> None:

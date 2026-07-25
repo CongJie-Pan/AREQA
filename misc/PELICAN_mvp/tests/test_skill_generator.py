@@ -250,7 +250,8 @@ def test_generator_repairs_malformed_payload_through_inherited_production_api(tm
     assert skill.skill_id == "qing_history"
     assert route == "route/humanities"
     assert len(llm.json_calls) == 2
-    assert "validation_reason_codes: missing_required_field" in llm.json_calls[1][1]
+    assert "validation_reason_codes: missing_required_field:title" in llm.json_calls[1][1]
+    assert "每個 diagnostic_rules object 必須有 rule_id, concept_id, prompt, expected_answer" in llm.json_calls[1][1]
 
 
 def test_generator_hashes_malformed_production_payload_in_failed_artifact(tmp_path: Path) -> None:
@@ -264,7 +265,7 @@ def test_generator_hashes_malformed_production_payload_in_failed_artifact(tmp_pa
     failed = json.loads((tmp_path / "failed" / "中國清朝歷史.failed.json").read_text(encoding="utf-8"))
     assert skill.skill_id == "generic_humanities"
     assert route == "generic:humanities"
-    assert failed["reason_codes"] == ["missing_required_field"]
+    assert failed["reason_codes"] == ["missing_required_field:title"]
     assert isinstance(failed["payload_hash"], str)
     assert len(failed["payload_hash"]) == 16
 

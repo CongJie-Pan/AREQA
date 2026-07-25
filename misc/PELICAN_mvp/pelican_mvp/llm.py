@@ -114,6 +114,122 @@ MODEL_ROUTE_ENV = {
 }
 
 
+def _domain_skill_json_contract(topic: str, category: DomainCategory) -> str:
+    """Return a compact valid DomainSkill example for schema-constrained prompting."""
+    slug = _slugify_identifier(topic) or "runtime_topic"
+    example = {
+        "skill_id": slug[:60],
+        "version": "0.1.0",
+        "title": f"{topic} Learning Skill",
+        "domain_category": category.value,
+        "lifecycle": SkillLifecycle.RUNTIME_GENERATED.value,
+        "supported_topics": [topic, f"{topic} overview"],
+        "intent_types": ["conceptual", "explanatory", "assessment"],
+        "prerequisites": [
+            {
+                "concept_id": "context_foundation",
+                "label": "Context foundation",
+                "prerequisites": [],
+                "description": "Core background needed before detailed study.",
+            },
+            {
+                "concept_id": "key_timeline",
+                "label": "Key timeline",
+                "prerequisites": ["context_foundation"],
+                "description": "Major sequence, actors, and turning points.",
+            },
+            {
+                "concept_id": "cause_effect_reasoning",
+                "label": "Cause-effect reasoning",
+                "prerequisites": ["context_foundation", "key_timeline"],
+                "description": "Use evidence to connect causes, events, and consequences.",
+            },
+        ],
+        "calibration_questions": [
+            {
+                "question_id": "goal",
+                "prompt": "你想先建立脈絡、理解關鍵事件，還是準備考試式整理？",
+                "intent_targets": ["conceptual", "explanatory", "assessment"],
+                "level_targets": ["beginner", "intermediate"],
+            }
+        ],
+        "canonical_path": {
+            "conceptual": ["context_foundation", "key_timeline", "cause_effect_reasoning"],
+            "explanatory": ["context_foundation", "key_timeline", "cause_effect_reasoning"],
+            "assessment": ["context_foundation", "key_timeline", "cause_effect_reasoning"],
+        },
+        "diagnostic_rules": [
+            {
+                "rule_id": "diag_context_foundation",
+                "concept_id": "context_foundation",
+                "prompt": "請用自己的話說明這個主題的基本背景是什麼。",
+                "expected_answer": "Learner should mention the central background and setting.",
+                "tests_single_concept": True,
+            },
+            {
+                "rule_id": "diag_key_timeline",
+                "concept_id": "key_timeline",
+                "prompt": "請列出一個關鍵事件，並說明它在整體脈絡中的位置。",
+                "expected_answer": "Learner should identify an event and place it in sequence.",
+                "tests_single_concept": True,
+            },
+            {
+                "rule_id": "diag_cause_effect_reasoning",
+                "concept_id": "cause_effect_reasoning",
+                "prompt": "請說明一個原因如何導致後續結果。",
+                "expected_answer": "Learner should connect cause and consequence with evidence.",
+                "tests_single_concept": True,
+            },
+        ],
+        "teaching_moves": [
+            {
+                "move_id": "focused_mini_lesson",
+                "strategy": "focused_mini_lesson",
+                "description": "Explain one concept briefly before asking a check question.",
+            },
+            {
+                "move_id": "guided_example",
+                "strategy": "guided_example",
+                "description": "Walk through one concrete example step by step.",
+            },
+            {
+                "move_id": "socratic_question",
+                "strategy": "socratic_question",
+                "description": "Ask a targeted question to reveal learner reasoning.",
+            },
+        ],
+        "remediation_paths": [
+            {"signal": "unknown", "action": "scaffold_prerequisite", "target": "context_foundation"},
+            {"signal": "too_detailed", "action": "recalibrate_level", "target": "goal"},
+            {"signal": "too_easy", "action": "accelerate", "target": "cause_effect_reasoning"},
+            {"signal": "project_goal", "action": "switch_path", "target": "explanatory"},
+            {"signal": "assessment_goal", "action": "switch_path", "target": "assessment"},
+        ],
+        "assessment_policy": {
+            "mode": "formative",
+            "education_only": True,
+            "notes": "Use low-stakes checks and avoid professional advice.",
+        },
+        "teaching_methodology": {
+            "diagnosis": "Start with one concept at a time.",
+            "sequencing": "Move from context to sequence to causal reasoning.",
+        },
+        "remediation_templates": {
+            "context_foundation": "Let us rebuild the background with one simple anchor.",
+            "key_timeline": "Let us place this event before and after two nearby events.",
+            "cause_effect_reasoning": "Let us connect one cause to one consequence using evidence.",
+        },
+        "safety_notes": ["Educational use only."],
+    }
+    return json.dumps(example, ensure_ascii=False, indent=2)
+
+
+def _slugify_identifier(value: str) -> str:
+    """Create a bounded ASCII-ish identifier from a learner topic."""
+    slug = re.sub(r"[^0-9A-Za-z]+", "_", value).strip("_").lower()
+    return slug or "runtime_topic"
+
+
 class LlmAdapter:
     """Small fail-safe wrapper around optional OpenAI-compatible model calls.
 
@@ -579,6 +695,10 @@ class LlmAdapter:
                 "前一次輸出未通過驗證。請只修正 schema，不要改成課文或 Markdown。\n"
                 f"validation_reason_codes: {', '.join(repair_issues)}\n"
             )
+        # OpenRouter routes used by this MVP do not guarantee portable support
+        # for provider-native strict JSON schema. Keep JSON-object mode here and
+        # enforce the full contract locally before persisting any generated skill.
+        contract = _domain_skill_json_contract(topic, category)
         return self._json(
             "你是領域教學設計師。只輸出 JSON，不要輸出推理過程、Markdown 或學生可見課程內容。\n"
             "你的任務是產生一份可驗證的 DomainSkill schema，供教學引擎稍後編譯知識樹。\n"
@@ -587,11 +707,24 @@ class LlmAdapter:
             "teaching_methodology、remediation_templates，以及 assessment_policy。\n"
             "硬性規則：canonical_path 只能引用 prerequisites 裡存在的 concept_id；每個 concept 必須有一個 diagnostic_rule；"
             "diagnostic prompt 絕對不能包含 expected_answer；prerequisites 必須無循環；"
-            "remediation_templates 的 key 應對應 concept_id。法律知識只能作教育用途，不可提供法律諮詢。",
+            "remediation_templates 的 key 應對應 concept_id。法律知識只能作教育用途，不可提供法律諮詢。\n"
+            "你必須輸出單一 JSON object，且 shape 必須符合使用者訊息中的範例。所有 required arrays 都必須是 non-empty。",
             repair_instruction + f"topic: {topic}\ncategory: {category.value}\n"
             "輸出 JSON 欄位：skill_id, version, title, domain_category, lifecycle, supported_topics, intent_types, "
             "prerequisites, calibration_questions, canonical_path, diagnostic_rules, teaching_moves, remediation_paths, "
-            "assessment_policy, teaching_methodology, remediation_templates, safety_notes。lifecycle 請用 runtime_generated。",
+            "assessment_policy, teaching_methodology, remediation_templates, safety_notes。lifecycle 請用 runtime_generated。\n"
+            "enum 限制：domain_category 必須等於上述 category；lifecycle 必須是 runtime_generated；"
+            "intent_types 只能使用 conceptual, procedural, implementation, project, assessment, explanatory, "
+            "business_decision, language_practice。\n"
+            "每個 prerequisite object 必須有 concept_id, label, prerequisites, description。\n"
+            "每個 calibration_questions object 必須有 question_id, prompt, intent_targets, level_targets。\n"
+            "每個 diagnostic_rules object 必須有 rule_id, concept_id, prompt, expected_answer, tests_single_concept。\n"
+            "每個 teaching_moves object 必須有 move_id, strategy, description。\n"
+            "每個 remediation_paths object 必須有 signal, action, target，且 signal 必須覆蓋 "
+            "unknown, too_detailed, too_easy, project_goal, assessment_goal。\n"
+            "assessment_policy 必須是 object 並包含 mode, education_only, notes。\n"
+            "最小有效 JSON 範例，請依 topic 改寫內容但保持相同 schema：\n"
+            f"{contract}",
             model=route,
         )
 
