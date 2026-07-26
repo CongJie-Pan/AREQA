@@ -269,7 +269,9 @@ export async function sendMessage(
 
       onDone: async (suggestions?: string[]) => {
         completed = true;
-        chatStore.endStreaming();
+        // Pass sourcesPayload directly to avoid race condition where
+        // state.ragSources may not yet be set when endStreaming reads it.
+        chatStore.endStreaming(sourcesPayload.length > 0 ? sourcesPayload : undefined);
 
         if (suggestions && suggestions.length > 0) {
           suggestionsList = suggestions;
@@ -698,7 +700,9 @@ export async function regenerateMessage(messageId: string): Promise<void> {
         },
 
         onDone: async (suggestions?: string[]) => {
-          chatStore.endStreaming();
+          // Pass sourcesPayload directly to avoid race condition where
+          // state.ragSources may not yet be set when endStreaming reads it.
+          chatStore.endStreaming(sourcesPayload.length > 0 ? sourcesPayload : undefined);
 
           // Update message with final suggestions if received in done event
           if (suggestions && suggestions.length > 0) {

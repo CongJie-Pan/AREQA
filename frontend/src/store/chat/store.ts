@@ -234,9 +234,15 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   /**
    * End streaming and finalize the message
+   * Accepts optional sources to avoid race conditions where setRagSources
+   * may not have committed to Zustand state before endStreaming reads it.
    */
-  endStreaming: () => {
+  endStreaming: (finalSources?: CitationSource[]) => {
     set((state) => {
+      // Prefer explicitly passed sources (from local closure) over state.ragSources
+      // to avoid the race condition on cold-start / fast SSE delivery.
+      const sourcesToPersist = finalSources ?? (state.ragSources.length > 0 ? state.ragSources : undefined);
+
       // Finalize the streaming message if we have one
       if (state.currentStreamingId) {
         return {
@@ -251,10 +257,7 @@ export const useChatStore = create<ChatStore>((set) => ({
                       : undefined,
                   // Persist structured RAG sources onto the message so the
                   // Citations panel survives after streaming ends
-                  sources:
-                    state.ragSources.length > 0
-                      ? state.ragSources
-                      : undefined,
+                  sources: sourcesToPersist,
                   isStreaming: false,
                 }
               : msg

@@ -123,8 +123,8 @@ export interface ChatActions {
   endThinking: () => void;
   /** Append content to answer */
   appendContent: (content: string) => void;
-  /** End streaming and finalize message */
-  endStreaming: () => void;
+  /** End streaming and finalize message; pass finalSources to avoid race condition */
+  endStreaming: (finalSources?: CitationSource[]) => void;
 
   // Citations
   /** Set citation URLs */
