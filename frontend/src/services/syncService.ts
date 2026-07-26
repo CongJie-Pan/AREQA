@@ -4,11 +4,16 @@ import type { Conversation, Message } from '@/database/schema';
 import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
+import type { MessageFeedback } from '@/database/schema';
 
 function handleAuthError(error: unknown): void {
   if ((error as { status?: number } | null)?.status === 401) {
     void useAuthStore.getState().invalidateSession();
   }
+}
+
+function normalizeMessageFeedback(value: unknown): MessageFeedback | null {
+  return value === 'liked' || value === 'disliked' ? value : null;
 }
 
 export const syncService = {
@@ -82,11 +87,22 @@ export const syncService = {
 
       if (cloudMsgs && cloudMsgs.length > 0) {
         const localMsgs = await db.messages.toArray();
-        const localMsgIds = new Set(localMsgs.map(m => m.id));
+        const localMsgMap = new Map(localMsgs.map(m => [m.id, m]));
         
         const msgsToUpsert = [];
         for (const m of cloudMsgs) {
-          if (!localMsgIds.has(m.id)) {
+          const cloudFeedback = normalizeMessageFeedback(m.feedback);
+          const cloudFeedbackUpdatedAt = m.feedback_updated_at
+            ? new Date(m.feedback_updated_at)
+            : null;
+          const localMsg = localMsgMap.get(m.id);
+
+          if (
+            !localMsg ||
+            (localMsg.feedback ?? null) !== cloudFeedback ||
+            (localMsg.feedbackUpdatedAt?.getTime() ?? null) !==
+              (cloudFeedbackUpdatedAt?.getTime() ?? null)
+          ) {
             msgsToUpsert.push({
               id: m.id,
               userId: m.user_id,
@@ -94,6 +110,8 @@ export const syncService = {
               role: m.role,
               content: m.content,
               attachments: normalizeAttachmentMetadata(m.attachments),
+              feedback: cloudFeedback,
+              feedbackUpdatedAt: cloudFeedbackUpdatedAt,
               createdAt: new Date(m.created_at)
             } as Message);
           }
@@ -153,11 +171,50 @@ export const syncService = {
         role: msg.role,
         content: msg.content,
         attachments: normalizeAttachmentMetadata(msg.attachments),
+        feedback: msg.feedback ?? null,
+        feedback_updated_at: msg.feedbackUpdatedAt?.toISOString() ?? null,
         created_at: msg.createdAt.toISOString(),
       });
     } catch (e) {
       handleAuthError(e);
       logger.error('Push message error', e instanceof Error ? e : new Error(String(e)));
+    }
+  },
+
+  /**
+   * Updates only the assistant-feedback fields for an existing cloud message.
+   */
+  async updateMessageFeedback(
+    messageId: string,
+    feedback: MessageFeedback | null,
+    feedbackUpdatedAt: Date | null
+  ) {
+    const userId = getCurrentUserId();
+    if (!userId || userId === 'default_user') return;
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .update({
+          feedback,
+          feedback_updated_at: feedbackUpdatedAt?.toISOString() ?? null,
+        })
+        .eq('id', messageId)
+        .eq('user_id', userId)
+        .select('id');
+
+      if (error) {
+        handleAuthError(error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('Cloud message not found for feedback update');
+      }
+    } catch (e) {
+      handleAuthError(e);
+      logger.error('Update message feedback error', e instanceof Error ? e : new Error(String(e)));
+      throw e;
     }
   },
 

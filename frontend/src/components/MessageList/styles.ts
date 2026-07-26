@@ -590,6 +590,16 @@ quoteBlockContent: css`
     }
   `,
 
+  actionButtonActive: css`
+    color: #d8a25c;
+    background: rgba(216, 162, 92, 0.14);
+
+    &:hover {
+      color: #f0c987;
+      background: rgba(216, 162, 92, 0.2);
+    }
+  `,
+
   // Legacy: keep for user messages
   copyButton: css`
     display: flex;

@@ -85,6 +85,13 @@ class PerplexityQADatabase extends Dexie {
       });
     });
 
+    // Version 3: Assistant message feedback is stored on the message row.
+    this.version(3).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
+      settings: 'key',
+    });
+
     // Handle multi-tab upgrades
     this.on('versionchange', () => {
       window.location.reload();

@@ -6,9 +6,13 @@
  */
 
 import { db, getCurrentUserId } from '../db';
-import type { Message } from '../schema';
+import type { Message, MessageFeedback } from '../schema';
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
+
+type AddMessageData = Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> & {
+  id?: string;
+};
 
 export const messageRepo = {
   /**
@@ -22,13 +26,13 @@ export const messageRepo = {
    */
   async add(
     conversationId: string,
-    messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'>
+    messageData: AddMessageData
   ): Promise<Message> {
     const userId = getCurrentUserId();
     if (!userId) throw new Error('Authentication required to persist messages');
 
     const message: Message = {
-      id: generateUUID(),
+      id: messageData.id ?? generateUUID(),
       userId,
       conversationId,
       ...messageData,
@@ -88,6 +92,34 @@ export const messageRepo = {
    */
   async update(id: string, updates: Partial<Message>): Promise<void> {
     await db.messages.update(id, updates);
+    const message = await db.messages.get(id);
+    if (message) {
+      syncService.pushMessage(message);
+    }
+  },
+
+  /**
+   * Update user feedback on an assistant message and sync the change to cloud.
+   *
+   * @param id - The assistant message ID.
+   * @param feedback - New feedback value, or null to clear the feedback.
+   * @throws Error when the target message is missing or is not an assistant reply.
+   */
+  async updateFeedback(id: string, feedback: MessageFeedback | null): Promise<void> {
+    const message = await db.messages.get(id);
+    if (!message) throw new Error('Message not found');
+    if (message.role !== 'assistant') {
+      throw new Error('Feedback can only be applied to assistant messages');
+    }
+
+    const feedbackUpdatedAt = feedback ? new Date() : null;
+
+    await syncService.updateMessageFeedback(id, feedback, feedbackUpdatedAt);
+
+    await db.messages.update(id, {
+      feedback,
+      feedbackUpdatedAt,
+    });
   },
 
   /**

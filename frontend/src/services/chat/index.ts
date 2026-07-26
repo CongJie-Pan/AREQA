@@ -157,11 +157,12 @@ export async function sendMessage(
   }
 
   // Add user message to store
-  chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata);
+  const userMessageId = chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata);
 
   // Save user message to database
   if (shouldPersist) {
     await databaseService.message.add(activeConversationId, {
+      id: userMessageId,
       role: 'user',
       content: sanitizedContent,
       ...(attachmentMetadata.length > 0 ? { attachments: attachmentMetadata } : {}),
@@ -286,7 +287,12 @@ export async function sendMessage(
         if (citations.length > 0) messageData.citations = citations;
         if (sourcesPayload.length > 0) messageData.sources = sourcesPayload;
         if (suggestionsList.length > 0) messageData.suggestions = suggestionsList;
-        if (shouldPersist) await databaseService.message.add(conversationIdForSave, messageData);
+        if (shouldPersist) {
+          await databaseService.message.add(conversationIdForSave, {
+            id: assistantMessageId,
+            ...messageData,
+          });
+        }
         if (shouldPersist) {
           const userId = getCurrentUserId();
           if (userId) await conversationStore.loadConversations(userId);
@@ -386,6 +392,7 @@ export async function insertAssistantMessage(
   // Save to database
   if (shouldPersist) {
     await databaseService.message.add(activeConversationId, {
+      id: messageId,
       role: 'assistant',
       content: sanitizedContent,
     });
@@ -446,7 +453,10 @@ export async function cancelCurrentStream(): Promise<void> {
         };
       }
 
-      await databaseService.message.add(activeConversationId, messageData);
+      await databaseService.message.add(activeConversationId, {
+        id: streamingMessageId,
+        ...messageData,
+      });
     } catch (error) {
       // Log but don't throw - cancellation should always succeed
       console.error('Failed to save partial message on cancel:', error);
@@ -971,7 +981,10 @@ export async function editUserMessage(
           }
 
           if (shouldPersist) {
-            await databaseService.message.add(activeConversationId, messageData);
+            await databaseService.message.add(activeConversationId, {
+              id: assistantMessageId,
+              ...messageData,
+            });
           }
 
 

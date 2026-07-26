@@ -10,7 +10,7 @@ import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Copy, RefreshCw, Edit, CornerDownRight } from 'lucide-react';
+import { Copy, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -18,6 +18,7 @@ import { Citations } from '@/components/Citations';
 import { RAGStatusPanel } from '@/components/RAGStatusPanel';
 import type { CitationSource } from '@/components/Citations';
 import type { DisplayMessage } from '@/store/chat';
+import type { MessageFeedback } from '@/database/schema';
 import { useStyles } from './styles';
 import remend from 'remend';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
@@ -192,6 +193,8 @@ export interface MessageItemProps {
   onRegenerate?: (messageId: string) => void;
   /** Callback when edit is submitted (user messages only) */
   onEdit?: (messageId: string, newContent: string) => void;
+  /** Callback when assistant feedback is changed */
+  onFeedback?: (messageId: string, feedback: MessageFeedback | null) => Promise<void> | void;
   /** Whether this is the last message in the list (to show suggested questions) */
   isLast?: boolean;
   /** Callback when a suggested question is clicked */
@@ -259,6 +262,7 @@ export const MessageItem = memo(function MessageItem({
   ragInfo,
   onRegenerate,
   onEdit,
+  onFeedback,
   isLast = false,
   onSelectSuggestion,
   className,
@@ -371,6 +375,17 @@ export const MessageItem = memo(function MessageItem({
       onRegenerate(message.id);
     }
   }, [onRegenerate, message.id]);
+
+  const handleFeedback = useCallback(async (feedback: MessageFeedback) => {
+    if (!onFeedback) return;
+
+    const nextFeedback = message.feedback === feedback ? null : feedback;
+    try {
+      await onFeedback(message.id, nextFeedback);
+    } catch {
+      antMessageApi.error('儲存評價失敗');
+    }
+  }, [antMessageApi, message.feedback, message.id, onFeedback]);
 
   // Handle entering edit mode
   const handleEditClick = useCallback(() => {
@@ -617,6 +632,36 @@ export const MessageItem = memo(function MessageItem({
                   <Copy size={16} />
                 </button>
               </Tooltip>
+              {!isStreaming && onFeedback && (
+                <>
+                  <Tooltip title="這則回覆有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                    <button
+                      className={cx(
+                        styles.actionButton,
+                        message.feedback === 'liked' && styles.actionButtonActive,
+                      )}
+                      onClick={() => handleFeedback('liked')}
+                      aria-label="這則回覆有幫助"
+                      aria-pressed={message.feedback === 'liked'}
+                    >
+                      <ThumbsUp size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip title="這則回覆沒有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                    <button
+                      className={cx(
+                        styles.actionButton,
+                        message.feedback === 'disliked' && styles.actionButtonActive,
+                      )}
+                      onClick={() => handleFeedback('disliked')}
+                      aria-label="這則回覆沒有幫助"
+                      aria-pressed={message.feedback === 'disliked'}
+                    >
+                      <ThumbsDown size={16} />
+                    </button>
+                  </Tooltip>
+                </>
+              )}
               {onRegenerate && !isStreaming && (
                 <Tooltip title="重新生成" color="#262626" styles={{ container: { color: '#ffffff' } }}>
                   <button

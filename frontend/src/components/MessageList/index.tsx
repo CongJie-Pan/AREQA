@@ -12,6 +12,8 @@ import { ArrowDown } from 'lucide-react';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { MessageItem } from './MessageItem';
 import { useStyles } from './styles';
+import { databaseService } from '@/services/database';
+import type { MessageFeedback } from '@/database/schema';
 
 /** Scroll threshold in pixels from bottom to trigger auto-scroll */
 const SCROLL_THRESHOLD = 30;
@@ -47,6 +49,27 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
   const ragStatus = useChatStore((state) => state.ragStatus);
   const ragMessage = useChatStore((state) => state.ragMessage);
   const ragSources = useChatStore((state) => state.ragSources);
+  const setMessageFeedback = useChatStore((state) => state.setMessageFeedback);
+
+  const handleFeedback = useCallback(async (
+    messageId: string,
+    feedback: MessageFeedback | null
+  ) => {
+    const currentMessage = useChatStore
+      .getState()
+      .messages
+      .find((message) => message.id === messageId);
+    const previousFeedback = currentMessage?.feedback ?? null;
+
+    setMessageFeedback(messageId, feedback);
+
+    try {
+      await databaseService.message.updateFeedback(messageId, feedback);
+    } catch (error) {
+      setMessageFeedback(messageId, previousFeedback);
+      throw error;
+    }
+  }, [setMessageFeedback]);
 
   // Handle user scroll - track if user manually scrolled up
   const handleScroll = useCallback(() => {
@@ -190,6 +213,11 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
                 : undefined
             }
             onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
+            onFeedback={
+              message.role === 'assistant' && message.userId !== 'guest'
+                ? handleFeedback
+                : undefined
+            }
             onEdit={message.role === 'user' ? onEdit : undefined}
           />
         );

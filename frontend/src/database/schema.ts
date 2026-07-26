@@ -34,6 +34,8 @@ export interface AttachmentMetadata {
   sizeBytes: number;
 }
 
+export type MessageFeedback = 'liked' | 'disliked';
+
 /**
  * Message entity
  * Represents a single message in a conversation
@@ -76,6 +78,10 @@ export interface Message {
   }>;
   /** Suggested follow-up questions (optional) */
   suggestions?: string[];
+  /** User feedback for assistant messages. */
+  feedback?: MessageFeedback | null;
+  /** Timestamp for the latest feedback change. */
+  feedbackUpdatedAt?: Date | null;
   /** Token usage information (optional) */
   usage?: {
     promptTokens: number;
