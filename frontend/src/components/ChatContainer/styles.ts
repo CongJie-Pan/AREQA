@@ -8,7 +8,8 @@ import { createStyles } from 'antd-style';
 export const useStyles = createStyles(({ css, token }) => ({
   container: css`
     display: flex;
-    height: 100vh;
+    height: var(--areqa-visual-viewport-height, 100dvh);
+    min-height: 0;
     overflow: hidden;
     background: #130f18;
   `,

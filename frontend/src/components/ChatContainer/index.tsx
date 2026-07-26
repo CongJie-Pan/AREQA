@@ -103,6 +103,44 @@ export function ChatContainer({ className }: ChatContainerProps) {
   );
   const landingPromptSent = useRef(false);
 
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const root = document.documentElement;
+    let animationFrameId: number | null = null;
+
+    const updateViewportHeight = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+
+      animationFrameId = window.requestAnimationFrame(() => {
+        const viewportHeight = viewport?.height ?? window.innerHeight;
+        root.style.setProperty(
+          '--areqa-visual-viewport-height',
+          `${Math.round(viewportHeight)}px`,
+        );
+        animationFrameId = null;
+      });
+    };
+
+    updateViewportHeight();
+    viewport?.addEventListener('resize', updateViewportHeight);
+    viewport?.addEventListener('scroll', updateViewportHeight);
+    window.addEventListener('resize', updateViewportHeight);
+    window.addEventListener('orientationchange', updateViewportHeight);
+
+    return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      viewport?.removeEventListener('resize', updateViewportHeight);
+      viewport?.removeEventListener('scroll', updateViewportHeight);
+      window.removeEventListener('resize', updateViewportHeight);
+      window.removeEventListener('orientationchange', updateViewportHeight);
+      root.style.removeProperty('--areqa-visual-viewport-height');
+    };
+  }, []);
+
   // Resolve authentication before loading any user-owned history.
   useEffect(() => {
     void initializeAuth();

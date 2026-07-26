@@ -436,13 +436,13 @@ export const MessageItem = memo(function MessageItem({
   }, [antMessageApi, handleFeedback, isLiked, onFeedback]);
 
   const openDislikeFeedback = useCallback(() => {
-    if (!onFeedback || isLiked) return;
+    if (!onFeedback || isLiked || isDisliked) return;
 
     setFeedbackReason(message.feedbackReason ?? null);
     setFeedbackComment(message.feedbackComment ?? '');
     setIsMobileFeedbackModal(isMobileFeedbackViewport());
     setIsFeedbackModalOpen(true);
-  }, [isLiked, message.feedbackComment, message.feedbackReason, onFeedback]);
+  }, [isDisliked, isLiked, message.feedbackComment, message.feedbackReason, onFeedback]);
 
   const closeDislikeFeedback = useCallback(() => {
     if (isFeedbackSubmitting) return;
