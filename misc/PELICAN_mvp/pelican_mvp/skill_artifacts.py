@@ -111,6 +111,128 @@ def load_validated_skill_artifact(
         raise SkillArtifactError("validated skill artifact contains invalid skill payload") from exc
 
 
+def find_relevant_validated_skill_artifact(
+    *,
+    topic: str,
+    category: DomainCategory,
+    root: Path | None = None,
+    threshold: float = 0.62,
+) -> DomainSkill:
+    """Find a highly relevant validated runtime skill for a related topic.
+
+    Args:
+        topic: Normalized learner topic.
+        category: Resolved domain category; artifacts from other domains are
+            ignored.
+        root: Optional test/deployment override for generated skill artifacts.
+        threshold: Minimum conservative similarity score required for reuse.
+
+    Returns:
+        The most relevant persisted ``DomainSkill``.
+
+    Raises:
+        SkillArtifactError: If no same-domain validated artifact is relevant
+            enough or all candidate artifacts are malformed.
+
+    Rationale:
+        Exact filename cache hits are too narrow for natural learner phrasing.
+        A learner may add intent words around a topic that already has a
+        validated runtime skill. This scanner reuses only strong same-domain
+        matches based on skill metadata, avoiding unnecessary model generation
+        while still failing closed for weak or invalid matches.
+    """
+    artifact_root = root or ARTIFACT_ROOT
+    directory = artifact_root / "validated"
+    if not directory.exists():
+        raise SkillArtifactError("validated skill artifact directory not found")
+
+    best_skill: DomainSkill | None = None
+    best_score = 0.0
+    saw_candidate = False
+    for path in sorted(directory.glob("*.validated.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or payload.get("artifact_type") != "validated_runtime_skill":
+                continue
+            if payload.get("domain_category") != category.value:
+                continue
+            skill_payload = payload.get("skill")
+            if not isinstance(skill_payload, dict):
+                continue
+            skill = DomainSkill.from_dict(skill_payload)
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            continue
+        saw_candidate = True
+        score = _skill_relevance_score(topic, skill)
+        if score > best_score:
+            best_score = score
+            best_skill = skill
+
+    if best_skill is None or best_score < threshold:
+        if saw_candidate:
+            raise SkillArtifactError("validated skill artifact relevance below threshold")
+        raise SkillArtifactError("validated skill artifact not found")
+    return best_skill
+
+
+def find_relevant_validated_skill_artifact_any_category(
+    *,
+    topic: str,
+    root: Path | None = None,
+    threshold: float = 0.62,
+) -> DomainSkill:
+    """Find a highly relevant validated runtime skill without a known category.
+
+    Args:
+        topic: Normalized learner topic.
+        root: Optional test/deployment override for generated skill artifacts.
+        threshold: Minimum conservative similarity score required for reuse.
+
+    Returns:
+        The most relevant persisted ``DomainSkill`` across all domain
+        categories.
+
+    Raises:
+        SkillArtifactError: If no validated artifact is relevant enough or all
+            candidate artifacts are malformed.
+
+    Compatibility:
+        This is used only as an intake routing fallback after deterministic
+        domain aliases fail. It does not load raw learner text into logs and it
+        does not promote runtime skills into reviewed catalog assets.
+    """
+    artifact_root = root or ARTIFACT_ROOT
+    directory = artifact_root / "validated"
+    if not directory.exists():
+        raise SkillArtifactError("validated skill artifact directory not found")
+
+    best_skill: DomainSkill | None = None
+    best_score = 0.0
+    saw_candidate = False
+    for path in sorted(directory.glob("*.validated.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or payload.get("artifact_type") != "validated_runtime_skill":
+                continue
+            skill_payload = payload.get("skill")
+            if not isinstance(skill_payload, dict):
+                continue
+            skill = DomainSkill.from_dict(skill_payload)
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            continue
+        saw_candidate = True
+        score = _skill_relevance_score(topic, skill)
+        if score > best_score:
+            best_score = score
+            best_skill = skill
+
+    if best_skill is None or best_score < threshold:
+        if saw_candidate:
+            raise SkillArtifactError("validated skill artifact relevance below threshold")
+        raise SkillArtifactError("validated skill artifact not found")
+    return best_skill
+
+
 def save_failed_skill_artifact(
     *,
     topic: str,
@@ -191,6 +313,54 @@ def _safe_attempt(payload: dict[str, Any]) -> dict[str, Any]:
 def _safe_int(value: Any) -> int | None:
     """Return an integer metadata value when already type-safe."""
     return value if isinstance(value, int) else None
+
+
+def _skill_relevance_score(topic: str, skill: DomainSkill) -> float:
+    """Return a conservative metadata-only relevance score."""
+    query = _normalize_relevance_text(topic)
+    if not query:
+        return 0.0
+    metadata_items = [
+        skill.title,
+        *skill.supported_topics,
+        *(item.label for item in skill.prerequisites),
+        *(item.description for item in skill.prerequisites),
+    ]
+    return max((_text_relevance_score(query, item) for item in metadata_items), default=0.0)
+
+
+def _text_relevance_score(normalized_query: str, candidate: str) -> float:
+    """Score one normalized topic against one skill metadata string."""
+    normalized_candidate = _normalize_relevance_text(candidate)
+    if not normalized_candidate:
+        return 0.0
+    if normalized_query == normalized_candidate:
+        return 1.0
+    shorter, longer = sorted((normalized_query, normalized_candidate), key=len)
+    if len(shorter) >= 4 and shorter in longer:
+        return 0.94
+    query_tokens = _relevance_tokens(normalized_query)
+    candidate_tokens = _relevance_tokens(normalized_candidate)
+    if not query_tokens or not candidate_tokens:
+        return 0.0
+    overlap = len(query_tokens & candidate_tokens)
+    union = len(query_tokens | candidate_tokens)
+    return overlap / union if union else 0.0
+
+
+def _normalize_relevance_text(value: str) -> str:
+    """Normalize bounded text for relevance matching."""
+    text = re.sub(r"\s+", "", str(value or "")).lower()
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", text)
+
+
+def _relevance_tokens(text: str) -> set[str]:
+    """Return character n-grams for short mixed CJK/ASCII topic matching."""
+    if len(text) <= 2:
+        return {text} if text else set()
+    bigrams = {text[index : index + 2] for index in range(len(text) - 1)}
+    trigrams = {text[index : index + 3] for index in range(len(text) - 2)}
+    return bigrams | trigrams
 
 
 def _slug(value: str) -> str:

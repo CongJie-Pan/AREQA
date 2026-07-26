@@ -16,6 +16,7 @@ from .observability import log_event
 from .models import ProposalValidationStatus
 from .skill_artifacts import (
     SkillArtifactError,
+    find_relevant_validated_skill_artifact,
     load_validated_skill_artifact,
     save_failed_skill_artifact,
     save_validated_skill_artifact,
@@ -220,6 +221,56 @@ class DomainSkillGenerator:
                     route=resolution.route_slug,
                     skill_source="validated_runtime_cache",
                     reason_code=type(exc).__name__,
+                )
+            try:
+                skill = find_relevant_validated_skill_artifact(
+                    topic=topic_clean,
+                    category=resolution.category,
+                    root=self.artifact_root,
+                )
+                skill = _normalize_generated_skill(skill, resolution.category)
+                validate_domain_skill(skill)
+                log_event(
+                    "pelican_skill_cache_hit",
+                    skill_id=skill.skill_id,
+                    skill_version=skill.version,
+                    domain_category=skill.domain_category.value,
+                    skill_lifecycle=skill.lifecycle.value,
+                    route="runtime_cache",
+                    skill_source="validated_runtime_cache",
+                    reason_code="validated_related_artifact_available",
+                )
+                _log_generation_summary(
+                    started_at,
+                    route="runtime_cache",
+                    category=skill.domain_category,
+                    skill_id=skill.skill_id,
+                    attempt_count=1,
+                    rejected_count=0,
+                    fallback_used=False,
+                    reason_code="validated_related_artifact_available",
+                )
+                return SkillGenerationResult(
+                    skill=skill,
+                    route="runtime_cache",
+                    attempts=(
+                        SkillGenerationAttempt(
+                            1,
+                            "runtime_cache",
+                            ProposalValidationStatus.ACCEPTED,
+                            "validated_related_artifact_available",
+                        ),
+                    ),
+                    used_fallback=False,
+                    final_reason_code="validated_related_artifact_available",
+                )
+            except (SkillArtifactError, SkillValidationError, DomainSkillError, ValueError, TypeError) as exc:
+                log_event(
+                    "pelican_skill_cache_miss",
+                    domain_category=resolution.category.value,
+                    route=resolution.route_slug,
+                    skill_source="validated_runtime_cache",
+                    reason_code=f"related:{type(exc).__name__}",
                 )
 
         if resolution.category is DomainCategory.UNKNOWN:

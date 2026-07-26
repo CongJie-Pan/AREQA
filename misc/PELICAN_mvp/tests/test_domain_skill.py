@@ -138,6 +138,8 @@ def test_domain_catalog_routes_supported_and_unknown_topics() -> None:
 def test_domain_catalog_routes_spring_autumn_history_aliases_to_humanities() -> None:
     aliases = [
         "中國春秋時期歷史",
+        "二戰日本的崛起與戰後重建",
+        "明治維新如何改變日本的政治與社會結構",
         "春秋時期",
         "春秋五霸",
         "諸侯爭霸",

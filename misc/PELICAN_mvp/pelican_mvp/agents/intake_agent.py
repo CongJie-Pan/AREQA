@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..domain_catalog import DomainResolution, resolve_domain_category
 from ..models import AgentRole, LearningIntent, MethodologyRef, MethodologyStage, ProposalValidationStatus
@@ -32,9 +33,19 @@ class IntakeAgent:
 
     role = AgentRole.INTAKE_AGENT
 
+    def __init__(self, *, artifact_root: Path | None = None) -> None:
+        """Initialize intake routing with an optional runtime skill cache root.
+
+        Args:
+            artifact_root: Optional generated-skill artifact root. This keeps
+                local tests isolated while allowing production intake to reuse
+                the default runtime skill cache.
+        """
+        self.artifact_root = artifact_root
+
     def propose_topic(self, topic: str, context: AgentExecutionContext | None = None) -> IntakeInterpretation:
         """Propose a scoped topic and domain route for a learner utterance."""
-        resolution = resolve_domain_category(topic)
+        resolution = resolve_domain_category(topic, artifact_root=self.artifact_root)
         ref = safe_artifact_ref("learner_turn", (context.turn_id if context else None) or "turn", "topic answer")
         result = self._result(
             "topic_interpretation",

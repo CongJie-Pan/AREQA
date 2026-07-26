@@ -125,6 +125,24 @@ def test_generator_reuses_validated_runtime_skill_cache(tmp_path: Path) -> None:
     assert llm.calls == []
 
 
+def test_generator_reuses_highly_relevant_runtime_skill_cache(tmp_path: Path) -> None:
+    payload = spring_autumn_payload()
+    payload["skill_id"] = "japan_wwii_history"
+    payload["title"] = "日本二戰歷史"
+    payload["supported_topics"] = ["日本二戰歷史", "二戰日本崛起與戰後重建"]
+    cached = DomainSkill.from_dict(payload)
+    save_validated_skill_artifact(cached, topic="日本二戰歷史", route="route/humanities", root=tmp_path)
+    llm = PayloadLlm([spring_autumn_payload()])
+    generator = DomainSkillGenerator(llm, artifact_root=tmp_path)
+
+    result = generator.generate_with_result("我想學日本二戰歷史")
+
+    assert result.skill.skill_id == "japan_wwii_history"
+    assert result.route == "runtime_cache"
+    assert result.final_reason_code == "validated_related_artifact_available"
+    assert llm.payload_calls == []
+
+
 def test_generator_ignores_invalid_runtime_skill_cache(tmp_path: Path) -> None:
     cached = make_skill(skill_id="machine_learning", supported_topics=["機器學習"])
     save_validated_skill_artifact(cached, topic="機器學習", route="route/stem", root=tmp_path)
