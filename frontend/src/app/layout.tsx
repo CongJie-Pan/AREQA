@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   description: '結合思考過程視覺化的 Adaptive RAG 教育問答系統',
   icons: {
     icon: '/logo/favicon.ico',
-    apple: '/icon/areqa_icon_v3_full_Fill.png',
+    apple: '/icon/areqa_icon_v3_full_Fill_512.png',
   },
 };
 
