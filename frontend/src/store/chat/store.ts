@@ -11,7 +11,7 @@ import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import type { ChatStore, DisplayMessage } from './types';
 import type { CitationSource } from '@/components/Citations';
-import type { AttachmentMetadata, MessageFeedback } from '@/database/schema';
+import type { AttachmentMetadata, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 
 /**
  * Initial state for the chat store
@@ -143,13 +143,19 @@ export const useChatStore = create<ChatStore>((set) => ({
     }));
   },
 
-  setMessageFeedback: (id: string, feedback: MessageFeedback | null) => {
+  setMessageFeedback: (
+    id: string,
+    feedback: MessageFeedback | null,
+    details: MessageFeedbackDetails = {}
+  ) => {
     set((state) => ({
       messages: state.messages.map((msg) =>
         msg.id === id
           ? {
               ...msg,
               feedback,
+              feedbackReason: feedback === 'disliked' ? details.reason ?? null : null,
+              feedbackComment: feedback === 'disliked' ? details.comment ?? null : null,
               feedbackUpdatedAt: feedback ? new Date() : null,
             }
           : msg

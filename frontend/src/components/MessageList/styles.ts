@@ -600,6 +600,264 @@ quoteBlockContent: css`
     }
   `,
 
+  feedbackActionSlot: css`
+    display: inline-flex;
+    width: 32px;
+    overflow: hidden;
+    opacity: 1;
+    transform: translateX(0);
+    transition: width 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+  `,
+
+  feedbackActionSlotCollapsed: css`
+    width: 0;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-8px);
+  `,
+
+  feedbackModal: css`
+    .ant-modal-content {
+      padding: 22px 20px 20px;
+      border-radius: 16px;
+      background: #202020;
+      color: #f2f2f2;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.46);
+    }
+
+    .ant-modal-close {
+      color: rgba(255, 255, 255, 0.86);
+    }
+
+    .ant-modal-close:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+    }
+  `,
+
+  feedbackSheetModal: css`
+    top: auto;
+    margin: 0;
+    max-width: 100vw;
+    padding-bottom: 0;
+
+    .ant-modal-content {
+      min-height: min(78vh, 680px);
+      border-radius: 28px 28px 0 0;
+      background: #ffffff;
+      color: #111111;
+      padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+    }
+
+    @media (max-width: 768px) {
+      width: 100vw !important;
+      position: fixed;
+      right: 0;
+      bottom: 0;
+      left: 0;
+    }
+  `,
+
+  feedbackForm: css`
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  `,
+
+  feedbackSheetHandle: css`
+    width: 54px;
+    height: 6px;
+    margin: 2px auto 10px;
+    border-radius: 999px;
+    background: #e4e4e4;
+  `,
+
+  feedbackTitle: css`
+    color: inherit;
+    font-size: 18px;
+    font-weight: 500;
+
+    @media (max-width: 768px) {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 600;
+    }
+  `,
+
+  desktopFeedbackReasons: css`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+
+    @media (max-width: 768px) {
+      display: none;
+    }
+  `,
+
+  feedbackReasonChip: css`
+    min-height: 42px;
+    padding: 0 16px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    font-size: 15px;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+
+    &:hover {
+      border-color: rgba(216, 162, 92, 0.7);
+      color: #ffffff;
+    }
+  `,
+
+  feedbackReasonChipSelected: css`
+    border-color: #d8a25c;
+    background: rgba(216, 162, 92, 0.16);
+    color: #f0c987;
+  `,
+
+  mobileFeedbackReason: css`
+    display: none;
+
+    @media (max-width: 768px) {
+      display: block;
+    }
+  `,
+
+  feedbackLabel: css`
+    margin-bottom: -8px;
+    padding-left: 12px;
+    color: #111111;
+    font-size: 15px;
+    line-height: 1;
+  `,
+
+  feedbackSelect: css`
+    width: 100%;
+
+    .ant-select-selector {
+      min-height: 58px;
+      border: 2px solid #111111 !important;
+      border-radius: 6px !important;
+      background: #ffffff !important;
+      color: #111111 !important;
+      box-shadow: none !important;
+    }
+
+    .ant-select-selection-placeholder,
+    .ant-select-selection-item {
+      display: flex;
+      align-items: center;
+      min-height: 54px;
+      color: #666666 !important;
+      font-size: 22px;
+    }
+  `,
+
+  feedbackSelectDropdown: css`
+    .ant-select-item {
+      min-height: 54px;
+      padding: 14px 18px;
+      color: #111111;
+      font-size: 20px;
+      font-weight: 600;
+    }
+  `,
+
+  feedbackTextArea: css`
+    &.ant-input {
+      resize: vertical;
+      border-color: rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      background: #202020;
+      color: #f2f2f2;
+      font-size: 15px;
+      box-shadow: none;
+    }
+
+    &.ant-input::placeholder {
+      color: rgba(255, 255, 255, 0.46);
+    }
+
+    &.ant-input:hover,
+    &.ant-input:focus {
+      border-color: rgba(216, 162, 92, 0.65);
+      box-shadow: none;
+    }
+
+    @media (max-width: 768px) {
+      &.ant-input {
+        min-height: 260px;
+        border: 1px solid #d8d8d8;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #111111;
+        font-size: 20px;
+      }
+
+      &.ant-input::placeholder {
+        color: #606060;
+      }
+    }
+  `,
+
+  feedbackPrivacyText: css`
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 14px;
+    line-height: 1.45;
+
+    @media (max-width: 768px) {
+      padding: 0;
+      background: transparent;
+      color: #555555;
+      font-size: 18px;
+    }
+  `,
+
+  feedbackSubmitRow: css`
+    display: flex;
+    justify-content: flex-end;
+
+    @media (max-width: 768px) {
+      margin-top: auto;
+    }
+  `,
+
+  feedbackSubmitButton: css`
+    min-width: 64px;
+    height: 44px;
+    border: 0;
+    border-radius: 999px;
+    background: #5f5f5f;
+    color: #ffffff;
+
+    &.ant-btn-primary:not(:disabled):hover {
+      background: #707070;
+      color: #ffffff;
+    }
+
+    &.ant-btn:disabled {
+      background: #3f3f3f;
+      color: rgba(255, 255, 255, 0.34);
+    }
+
+    @media (max-width: 768px) {
+      width: 100%;
+      height: 72px;
+      font-size: 22px;
+      background: #111111;
+
+      &.ant-btn:disabled {
+        background: #e5e5e5;
+        color: #b8b8b8;
+      }
+    }
+  `,
+
   // Legacy: keep for user messages
   copyButton: css`
     display: flex;

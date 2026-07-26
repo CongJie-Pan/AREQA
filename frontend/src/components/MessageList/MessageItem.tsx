@@ -11,20 +11,26 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { Copy, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Tooltip, App } from 'antd';
+import { Button, Input, Modal, Select, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
 import { Citations } from '@/components/Citations';
 import { RAGStatusPanel } from '@/components/RAGStatusPanel';
 import type { CitationSource } from '@/components/Citations';
 import type { DisplayMessage } from '@/store/chat';
-import type { MessageFeedback } from '@/database/schema';
+import type {
+  MessageFeedback,
+  MessageFeedbackDetails,
+  MessageFeedbackReason,
+} from '@/database/schema';
 import { useStyles } from './styles';
 import remend from 'remend';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
+
+const { TextArea } = Input;
 
 /**
  * Safe URL protocols whitelist
@@ -56,6 +62,19 @@ type WindowWithFind = Window & {
     showDialog?: boolean
   ) => boolean;
 };
+
+const FEEDBACK_OPTIONS: Array<{ value: MessageFeedbackReason; label: string }> = [
+  { value: 'incorrect_or_incomplete', label: '不正確或不完整' },
+  { value: 'not_what_i_wanted', label: '這不是我想要的' },
+  { value: 'slow_or_broken', label: '緩慢或故障' },
+  { value: 'style_or_tone', label: '風格或語調' },
+  { value: 'safety_or_legal', label: '安全性或法律疑慮' },
+  { value: 'other', label: '其他' },
+];
+
+function isMobileFeedbackViewport(): boolean {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
 
 const createMarkdownComponents = (
   messageId: string,
@@ -194,7 +213,11 @@ export interface MessageItemProps {
   /** Callback when edit is submitted (user messages only) */
   onEdit?: (messageId: string, newContent: string) => void;
   /** Callback when assistant feedback is changed */
-  onFeedback?: (messageId: string, feedback: MessageFeedback | null) => Promise<void> | void;
+  onFeedback?: (
+    messageId: string,
+    feedback: MessageFeedback | null,
+    details?: MessageFeedbackDetails
+  ) => Promise<void> | void;
   /** Whether this is the last message in the list (to show suggested questions) */
   isLast?: boolean;
   /** Callback when a suggested question is clicked */
@@ -279,11 +302,25 @@ export const MessageItem = memo(function MessageItem({
     if (message.attachments && message.attachments.length > 0) return message.attachments;
     return createLegacyAttachmentMetadata(legacyMessage.legacyCount);
   }, [legacyMessage.legacyCount, message.attachments]);
+  const isLiked = message.feedback === 'liked';
+  const isDisliked = message.feedback === 'disliked';
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [isMobileFeedbackModal, setIsMobileFeedbackModal] = useState(false);
+  const [feedbackReason, setFeedbackReason] = useState<MessageFeedbackReason | null>(
+    message.feedbackReason ?? null,
+  );
+  const [feedbackComment, setFeedbackComment] = useState(message.feedbackComment ?? '');
+  const [isFeedbackSubmitting, setIsFeedbackSubmitting] = useState(false);
   const [bubbleEl, setBubbleEl] = useState<HTMLDivElement | null>(null);
   const [areAttachmentsExpanded, setAreAttachmentsExpanded] = useState(false);
   const setBubbleRef = useCallback((node: HTMLDivElement | null) => {
     setBubbleEl(node);
   }, []);
+
+  React.useEffect(() => {
+    setFeedbackReason(message.feedbackReason ?? null);
+    setFeedbackComment(message.feedbackComment ?? '');
+  }, [message.feedbackComment, message.feedbackReason]);
 
   // Handle clicking on a quote bubble to highlight text in the original message
   const handleQuoteClick = useCallback((quoteText: string) => {
@@ -376,16 +413,61 @@ export const MessageItem = memo(function MessageItem({
     }
   }, [onRegenerate, message.id]);
 
-  const handleFeedback = useCallback(async (feedback: MessageFeedback) => {
+  const handleFeedback = useCallback(async (
+    feedback: MessageFeedback,
+    details: MessageFeedbackDetails = {},
+  ) => {
     if (!onFeedback) return;
+    if (message.feedback === feedback) return;
 
-    const nextFeedback = message.feedback === feedback ? null : feedback;
     try {
-      await onFeedback(message.id, nextFeedback);
+      await onFeedback(message.id, feedback, details);
     } catch {
       antMessageApi.error('儲存評價失敗');
     }
   }, [antMessageApi, message.feedback, message.id, onFeedback]);
+
+  const handleLikeFeedback = useCallback(async () => {
+    if (!onFeedback || isLiked) return;
+
+    await handleFeedback('liked');
+
+    if (isMobileFeedbackViewport()) {
+      antMessageApi.success('感謝您的回饋！');
+    }
+  }, [antMessageApi, handleFeedback, isLiked, onFeedback]);
+
+  const openDislikeFeedback = useCallback(() => {
+    if (!onFeedback || isLiked) return;
+
+    setFeedbackReason(message.feedbackReason ?? null);
+    setFeedbackComment(message.feedbackComment ?? '');
+    setIsMobileFeedbackModal(isMobileFeedbackViewport());
+    setIsFeedbackModalOpen(true);
+  }, [isLiked, message.feedbackComment, message.feedbackReason, onFeedback]);
+
+  const closeDislikeFeedback = useCallback(() => {
+    if (isFeedbackSubmitting) return;
+
+    setIsFeedbackModalOpen(false);
+  }, [isFeedbackSubmitting]);
+
+  const submitDislikeFeedback = useCallback(async () => {
+    if (!onFeedback || !feedbackReason) return;
+
+    setIsFeedbackSubmitting(true);
+    try {
+      await onFeedback(message.id, 'disliked', {
+        reason: feedbackReason,
+        comment: feedbackComment.trim() || null,
+      });
+      setIsFeedbackModalOpen(false);
+    } catch {
+      antMessageApi.error('儲存評價失敗');
+    } finally {
+      setIsFeedbackSubmitting(false);
+    }
+  }, [antMessageApi, feedbackComment, feedbackReason, message.id, onFeedback]);
 
   // Handle entering edit mode
   const handleEditClick = useCallback(() => {
@@ -638,28 +720,38 @@ export const MessageItem = memo(function MessageItem({
                     <button
                       className={cx(
                         styles.actionButton,
-                        message.feedback === 'liked' && styles.actionButtonActive,
+                        isLiked && styles.actionButtonActive,
                       )}
-                      onClick={() => handleFeedback('liked')}
+                      onClick={handleLikeFeedback}
                       aria-label="這則回覆有幫助"
-                      aria-pressed={message.feedback === 'liked'}
+                      aria-pressed={isLiked}
                     >
-                      <ThumbsUp size={16} />
+                      <ThumbsUp fill={isLiked ? 'currentColor' : 'none'} size={16} />
                     </button>
                   </Tooltip>
-                  <Tooltip title="這則回覆沒有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-                    <button
-                      className={cx(
-                        styles.actionButton,
-                        message.feedback === 'disliked' && styles.actionButtonActive,
-                      )}
-                      onClick={() => handleFeedback('disliked')}
-                      aria-label="這則回覆沒有幫助"
-                      aria-pressed={message.feedback === 'disliked'}
-                    >
-                      <ThumbsDown size={16} />
-                    </button>
-                  </Tooltip>
+                  <span
+                    aria-hidden={isLiked}
+                    className={cx(
+                      styles.feedbackActionSlot,
+                      isLiked && styles.feedbackActionSlotCollapsed,
+                    )}
+                  >
+                    <Tooltip title="這則回覆沒有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                      <button
+                        className={cx(
+                          styles.actionButton,
+                          isDisliked && styles.actionButtonActive,
+                        )}
+                        disabled={isLiked}
+                        onClick={openDislikeFeedback}
+                        aria-label="這則回覆沒有幫助"
+                        aria-pressed={isDisliked}
+                        tabIndex={isLiked ? -1 : undefined}
+                      >
+                        <ThumbsDown fill={isDisliked ? 'currentColor' : 'none'} size={16} />
+                      </button>
+                    </Tooltip>
+                  </span>
                 </>
               )}
               {onRegenerate && !isStreaming && (
@@ -674,6 +766,80 @@ export const MessageItem = memo(function MessageItem({
                 </Tooltip>
               )}
             </div>
+            {onFeedback && (
+              <Modal
+                centered={!isMobileFeedbackModal}
+                className={cx(
+                  styles.feedbackModal,
+                  isMobileFeedbackModal && styles.feedbackSheetModal,
+                )}
+                closable={!isMobileFeedbackModal}
+                footer={null}
+                maskClosable={!isFeedbackSubmitting}
+                onCancel={closeDislikeFeedback}
+                open={isFeedbackModalOpen}
+                title={null}
+              >
+                <div className={styles.feedbackForm}>
+                  {isMobileFeedbackModal && <div className={styles.feedbackSheetHandle} />}
+                  <div className={styles.feedbackTitle}>分享回饋</div>
+
+                  <div className={styles.mobileFeedbackReason}>
+                    <div className={styles.feedbackLabel}>問題</div>
+                    <Select
+                      aria-label="選取問題"
+                      className={styles.feedbackSelect}
+                      onChange={(value) => setFeedbackReason(value)}
+                      options={FEEDBACK_OPTIONS}
+                      placeholder="選取問題"
+                      popupClassName={styles.feedbackSelectDropdown}
+                      value={feedbackReason ?? undefined}
+                    />
+                  </div>
+
+                  <div className={styles.desktopFeedbackReasons}>
+                    {FEEDBACK_OPTIONS.map((option) => (
+                      <button
+                        className={cx(
+                          styles.feedbackReasonChip,
+                          feedbackReason === option.value && styles.feedbackReasonChipSelected,
+                        )}
+                        key={option.value}
+                        onClick={() => setFeedbackReason(option.value)}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <TextArea
+                    className={styles.feedbackTextArea}
+                    maxLength={2000}
+                    onChange={(event) => setFeedbackComment(event.target.value)}
+                    placeholder="分享詳細資料（選填）"
+                    rows={isMobileFeedbackModal ? 8 : 4}
+                    value={feedbackComment}
+                  />
+
+                  <div className={styles.feedbackPrivacyText}>
+                    你的回饋將包含你的對話，以協助我們改善 AREQA。
+                  </div>
+
+                  <div className={styles.feedbackSubmitRow}>
+                    <Button
+                      className={styles.feedbackSubmitButton}
+                      disabled={!feedbackReason}
+                      loading={isFeedbackSubmitting}
+                      onClick={submitDislikeFeedback}
+                      type="primary"
+                    >
+                      提交
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            )}
           </div>
         </div>
       )}

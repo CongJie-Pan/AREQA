@@ -13,7 +13,7 @@ import { useChatStore, chatSelectors } from '@/store/chat';
 import { MessageItem } from './MessageItem';
 import { useStyles } from './styles';
 import { databaseService } from '@/services/database';
-import type { MessageFeedback } from '@/database/schema';
+import type { MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 
 /** Scroll threshold in pixels from bottom to trigger auto-scroll */
 const SCROLL_THRESHOLD = 30;
@@ -53,20 +53,25 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
 
   const handleFeedback = useCallback(async (
     messageId: string,
-    feedback: MessageFeedback | null
+    feedback: MessageFeedback | null,
+    details: MessageFeedbackDetails = {}
   ) => {
     const currentMessage = useChatStore
       .getState()
       .messages
       .find((message) => message.id === messageId);
     const previousFeedback = currentMessage?.feedback ?? null;
+    const previousDetails = {
+      reason: currentMessage?.feedbackReason ?? null,
+      comment: currentMessage?.feedbackComment ?? null,
+    };
 
-    setMessageFeedback(messageId, feedback);
+    setMessageFeedback(messageId, feedback, details);
 
     try {
-      await databaseService.message.updateFeedback(messageId, feedback);
+      await databaseService.message.updateFeedback(messageId, feedback, details);
     } catch (error) {
-      setMessageFeedback(messageId, previousFeedback);
+      setMessageFeedback(messageId, previousFeedback, previousDetails);
       throw error;
     }
   }, [setMessageFeedback]);

@@ -3,7 +3,7 @@
  * Types for managing chat state with Zustand
  */
 
-import type { AttachmentMetadata, Message, MessageFeedback } from '@/database/schema';
+import type { AttachmentMetadata, Message, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 import type { CitationSource } from '@/components/Citations';
 
 export type SearchMode = 'auto' | 'always' | 'never';
@@ -114,7 +114,7 @@ export interface ChatActions {
   /** Update message content by ID */
   updateMessageContent: (id: string, content: string) => void;
   /** Update assistant feedback by message ID */
-  setMessageFeedback: (id: string, feedback: MessageFeedback | null) => void;
+  setMessageFeedback: (id: string, feedback: MessageFeedback | null, details?: MessageFeedbackDetails) => void;
 
   // Streaming processing
   /** Start streaming for a message */

@@ -35,6 +35,18 @@ export interface AttachmentMetadata {
 }
 
 export type MessageFeedback = 'liked' | 'disliked';
+export type MessageFeedbackReason =
+  | 'incorrect_or_incomplete'
+  | 'not_what_i_wanted'
+  | 'slow_or_broken'
+  | 'style_or_tone'
+  | 'safety_or_legal'
+  | 'other';
+
+export interface MessageFeedbackDetails {
+  reason?: MessageFeedbackReason | null;
+  comment?: string | null;
+}
 
 /**
  * Message entity
@@ -80,6 +92,10 @@ export interface Message {
   suggestions?: string[];
   /** User feedback for assistant messages. */
   feedback?: MessageFeedback | null;
+  /** Categorized reason for negative assistant feedback. */
+  feedbackReason?: MessageFeedbackReason | null;
+  /** Optional user-written feedback details. */
+  feedbackComment?: string | null;
   /** Timestamp for the latest feedback change. */
   feedbackUpdatedAt?: Date | null;
   /** Token usage information (optional) */

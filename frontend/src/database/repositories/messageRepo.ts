@@ -6,7 +6,7 @@
  */
 
 import { db, getCurrentUserId } from '../db';
-import type { Message, MessageFeedback } from '../schema';
+import type { Message, MessageFeedback, MessageFeedbackDetails } from '../schema';
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
 
@@ -105,7 +105,11 @@ export const messageRepo = {
    * @param feedback - New feedback value, or null to clear the feedback.
    * @throws Error when the target message is missing or is not an assistant reply.
    */
-  async updateFeedback(id: string, feedback: MessageFeedback | null): Promise<void> {
+  async updateFeedback(
+    id: string,
+    feedback: MessageFeedback | null,
+    details: MessageFeedbackDetails = {}
+  ): Promise<void> {
     const message = await db.messages.get(id);
     if (!message) throw new Error('Message not found');
     if (message.role !== 'assistant') {
@@ -113,11 +117,18 @@ export const messageRepo = {
     }
 
     const feedbackUpdatedAt = feedback ? new Date() : null;
+    const feedbackReason = feedback === 'disliked' ? details.reason ?? null : null;
+    const feedbackComment = feedback === 'disliked' ? details.comment ?? null : null;
 
-    await syncService.updateMessageFeedback(id, feedback, feedbackUpdatedAt);
+    await syncService.updateMessageFeedback(id, feedback, feedbackUpdatedAt, {
+      reason: feedbackReason,
+      comment: feedbackComment,
+    });
 
     await db.messages.update(id, {
       feedback,
+      feedbackReason,
+      feedbackComment,
       feedbackUpdatedAt,
     });
   },

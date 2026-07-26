@@ -4,7 +4,7 @@ import type { Conversation, Message } from '@/database/schema';
 import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
-import type { MessageFeedback } from '@/database/schema';
+import type { MessageFeedback, MessageFeedbackDetails, MessageFeedbackReason } from '@/database/schema';
 
 function handleAuthError(error: unknown): void {
   if ((error as { status?: number } | null)?.status === 401) {
@@ -14,6 +14,17 @@ function handleAuthError(error: unknown): void {
 
 function normalizeMessageFeedback(value: unknown): MessageFeedback | null {
   return value === 'liked' || value === 'disliked' ? value : null;
+}
+
+function normalizeMessageFeedbackReason(value: unknown): MessageFeedbackReason | null {
+  return (
+    value === 'incorrect_or_incomplete' ||
+    value === 'not_what_i_wanted' ||
+    value === 'slow_or_broken' ||
+    value === 'style_or_tone' ||
+    value === 'safety_or_legal' ||
+    value === 'other'
+  ) ? value : null;
 }
 
 export const syncService = {
@@ -92,6 +103,10 @@ export const syncService = {
         const msgsToUpsert = [];
         for (const m of cloudMsgs) {
           const cloudFeedback = normalizeMessageFeedback(m.feedback);
+          const cloudFeedbackReason = normalizeMessageFeedbackReason(m.feedback_reason);
+          const cloudFeedbackComment = typeof m.feedback_comment === 'string'
+            ? m.feedback_comment
+            : null;
           const cloudFeedbackUpdatedAt = m.feedback_updated_at
             ? new Date(m.feedback_updated_at)
             : null;
@@ -100,6 +115,8 @@ export const syncService = {
           if (
             !localMsg ||
             (localMsg.feedback ?? null) !== cloudFeedback ||
+            (localMsg.feedbackReason ?? null) !== cloudFeedbackReason ||
+            (localMsg.feedbackComment ?? null) !== cloudFeedbackComment ||
             (localMsg.feedbackUpdatedAt?.getTime() ?? null) !==
               (cloudFeedbackUpdatedAt?.getTime() ?? null)
           ) {
@@ -111,6 +128,8 @@ export const syncService = {
               content: m.content,
               attachments: normalizeAttachmentMetadata(m.attachments),
               feedback: cloudFeedback,
+              feedbackReason: cloudFeedbackReason,
+              feedbackComment: cloudFeedbackComment,
               feedbackUpdatedAt: cloudFeedbackUpdatedAt,
               createdAt: new Date(m.created_at)
             } as Message);
@@ -172,6 +191,8 @@ export const syncService = {
         content: msg.content,
         attachments: normalizeAttachmentMetadata(msg.attachments),
         feedback: msg.feedback ?? null,
+        feedback_reason: msg.feedbackReason ?? null,
+        feedback_comment: msg.feedbackComment ?? null,
         feedback_updated_at: msg.feedbackUpdatedAt?.toISOString() ?? null,
         created_at: msg.createdAt.toISOString(),
       });
@@ -187,7 +208,8 @@ export const syncService = {
   async updateMessageFeedback(
     messageId: string,
     feedback: MessageFeedback | null,
-    feedbackUpdatedAt: Date | null
+    feedbackUpdatedAt: Date | null,
+    details: MessageFeedbackDetails = {}
   ) {
     const userId = getCurrentUserId();
     if (!userId || userId === 'default_user') return;
@@ -197,6 +219,8 @@ export const syncService = {
         .from('messages')
         .update({
           feedback,
+          feedback_reason: feedback === 'disliked' ? details.reason ?? null : null,
+          feedback_comment: feedback === 'disliked' ? details.comment ?? null : null,
           feedback_updated_at: feedbackUpdatedAt?.toISOString() ?? null,
         })
         .eq('id', messageId)
