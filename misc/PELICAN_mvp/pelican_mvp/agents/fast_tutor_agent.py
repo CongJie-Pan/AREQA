@@ -48,6 +48,7 @@ class FastTutorAgent:
         node_id: str,
         base_prompt: str,
         evidence_signal: str,
+        learner_answer: str = "",
         recent_safe_signals: tuple[str, ...] = (),
         base_message: str | None = None,
         context: AgentExecutionContext | None = None,
@@ -62,6 +63,7 @@ class FastTutorAgent:
             node_id=node_id,
             base_prompt=base_prompt,
             evidence_signal=evidence_signal,
+            learner_answer=learner_answer,
             recent_safe_signals=recent_safe_signals,
             base_message=base_message,
             slow_route=False,
@@ -79,6 +81,7 @@ def _candidate_or_fallback(
     node_id: str,
     base_prompt: str,
     evidence_signal: str,
+    learner_answer: str,
     recent_safe_signals: tuple[str, ...],
     base_message: str | None,
     slow_route: bool,
@@ -95,6 +98,7 @@ def _candidate_or_fallback(
                 edf_policy=state.edf_snapshot.pedagogical_strategy,
                 recent_signals=recent_safe_signals,
                 evidence_signal=evidence_signal,
+                learner_answer=learner_answer,
                 domain_category=(
                     state.learning_plan.domain_category
                     if state.learning_plan and state.learning_plan.domain_category
@@ -192,6 +196,12 @@ def validate_tutor_proposal(
         "difficulty_in_understanding",
     } and _lacks_humanities_explanation_cycle(proposal.response):
         return ProposalValidationStatus.REJECTED, "thin_humanities_remediation"
+    if (
+        domain_category == "humanities"
+        and proposal.evidence_signal == "partial_correct"
+        and _lacks_partial_correct_acknowledgement(proposal.response)
+    ):
+        return ProposalValidationStatus.REJECTED, "missing_partial_acknowledgement"
     if len(proposal.response) > 900:
         return ProposalValidationStatus.REJECTED, "tutor_response_too_long"
     if len(proposal.response.strip()) < 8:
@@ -280,6 +290,23 @@ def _remediation_template_from_state(state: SessionState, node_id: str) -> str:
         any(marker in text for marker in explanation_markers)
         and any(marker in text for marker in restatement_markers)
     )
+
+
+def _lacks_partial_correct_acknowledgement(response: str) -> bool:
+    """Return whether a partial-correct remediation ignores useful evidence."""
+    text = response.strip()
+    acknowledgement_markers = (
+        "你說",
+        "你提到",
+        "你抓到",
+        "你已經",
+        "這句",
+        "這個方向",
+        "對",
+        "沒錯",
+        "是對的",
+    )
+    return not any(marker in text for marker in acknowledgement_markers)
 
 
 def fallback_tutor_proposal(

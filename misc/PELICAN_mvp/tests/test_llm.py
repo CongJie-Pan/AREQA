@@ -173,7 +173,8 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
         learner_state="EXPLORING",
         edf_policy="probe_understanding",
         recent_signals=("unknown",),
-        evidence_signal="unknown",
+        evidence_signal="partial_correct",
+        learner_answer="簡單來說，這是改革與西化，為了趕上西方現代化。",
         domain_category=DomainCategory.HUMANITIES.value,
         concept_description="理解事件發生前的時代條件與主要人物。",
         expected_answer="學生應能說出背景、人物與因果關係。",
@@ -183,7 +184,9 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
 
     assert "domain_style_contract for humanities" in adapter.user_prompt
     assert "Generate a topic-specific explanatory mini-lesson" in adapter.user_prompt
-    assert "explain the same concept back in their own words" in adapter.user_prompt
+    assert "latest_learner_answer: 簡單來說，這是改革與西化，為了趕上西方現代化。" in adapter.user_prompt
+    assert "start by acknowledging the specific useful idea" in adapter.user_prompt
+    assert "好，接下來，你可以用自己的話" in adapter.user_prompt
     assert "concept_description: 理解事件發生前的時代條件與主要人物。" in adapter.user_prompt
     assert "remediation_template: 先補事件背景，再確認因果鏈。" in adapter.user_prompt
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 
 from pelican_mvp.agents import FastTutorAgent, SlowSimulatorAgent
 from pelican_mvp.engine import PelicanEngine
@@ -28,6 +29,24 @@ class QuestionOnlyUnknownTutorLlm:
             response="你認為這個概念還可以從哪個角度繼續拆解？",
             pedagogical_move="scaffold",
             summary="Invalid question-only inability response.",
+            node_id=kwargs["node_id"],
+            strategy=kwargs["strategy"].value,
+            evidence_signal=kwargs["evidence_signal"],
+            source="llm",
+        )
+
+
+class HumanitiesPartialWithoutAckLlm:
+    available = True
+
+    def tutor_proposal(self, **kwargs) -> BoundedTutorProposal:
+        return BoundedTutorProposal(
+            response=(
+                "明治維新的背景脈絡是日本推動中央集權與社會改革，"
+                "所以請用自己的話再說一次。"
+            ),
+            pedagogical_move="mini_lesson_with_verification",
+            summary="Missing acknowledgement of partial evidence.",
             node_id=kwargs["node_id"],
             strategy=kwargs["strategy"].value,
             evidence_signal=kwargs["evidence_signal"],
@@ -121,3 +140,26 @@ def test_question_only_unknown_tutor_proposal_falls_back_to_explanation(tmp_path
     assert response.validation_status is ProposalValidationStatus.FALLBACK_USED
     assert response.result.reason_code == "question_only_inability_response"
     assert "重點是" in response.proposal.response
+
+
+def test_humanities_partial_correct_without_acknowledgement_falls_back(tmp_path: Path) -> None:
+    engine = prepared_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.state.intake_profile = replace(engine.state.intake_profile, domain_category="humanities")
+    engine.state.learning_plan = replace(engine.state.learning_plan, domain_category="humanities")
+    agent = FastTutorAgent(HumanitiesPartialWithoutAckLlm())
+
+    response = agent.propose_response(
+        state=engine.state,
+        curriculum=engine.curriculum,
+        strategy=TutoringStrategy.CORRECTION,
+        node_id="math_intuition",
+        base_prompt=engine.state.current_prompt,
+        evidence_signal="partial_correct",
+        learner_answer="簡單來說，是改革與西化。",
+        base_message="你說到改革與西化是對的，我再補一點。\n\n好，接下來，你可以用自己的話說一次嗎？",
+    )
+
+    assert response.validation_status is ProposalValidationStatus.FALLBACK_USED
+    assert response.result.reason_code == "missing_partial_acknowledgement"
+    assert "你說到改革與西化是對的" in response.proposal.response

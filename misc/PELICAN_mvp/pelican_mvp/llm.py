@@ -628,6 +628,7 @@ class LlmAdapter:
         edf_policy: str,
         recent_signals: tuple[str, ...],
         evidence_signal: str,
+        learner_answer: str = "",
         domain_category: str = "",
         concept_description: str = "",
         expected_answer: str = "",
@@ -647,6 +648,9 @@ class LlmAdapter:
             recent_signals: Safe bounded GUM signal labels.
             evidence_signal: Current safe response signal, such as ``unknown``
                 or ``too_detailed``.
+            learner_answer: Latest learner answer. It is sent only to the tutor
+                model so the response can acknowledge what the learner said; it
+                must not be logged by callers.
             domain_category: Safe domain label used to select teaching style.
             concept_description: Skill-authored learner-facing concept context.
             expected_answer: Current answer/rubric. The model may use it to
@@ -676,7 +680,8 @@ class LlmAdapter:
             "- If current_signal is unknown, inability_to_respond, incorrect, partial_correct, or difficulty_in_understanding, do not keep probing first.\n"
             "- Generate a topic-specific explanatory mini-lesson from the provided knowledge_node, concept_description, current_prompt, expected_answer, remediation_template, and teaching_methodology.\n"
             "- The mini-lesson should teach the missing knowledge in Traditional Chinese with narrative context, key actors/concepts, cause-effect links, and where this node sits in the knowledge map.\n"
-            "- End by asking the learner to explain the same concept back in their own words so the AI can verify mastery.\n"
+            "- If current_signal is partial_correct, start by acknowledging the specific useful idea in latest_learner_answer before adding missing details. Do not ignore the learner's sentence.\n"
+            "- End with a warm, low-pressure restatement request. Prefer wording like: 好，接下來，你可以用自己的話，說明以上我剛剛談到的重點嗎？我先確認你有理解，再繼續往下一個知識點。\n"
             "- If the learner's next explanation is correct, the engine will unlock the next knowledge-map node; if not, the tutor should explain again based on that answer.\n"
             "- Do not output a generic template with headings only; fill it with the actual subject matter from the provided context.\n"
             if domain_category == DomainCategory.HUMANITIES.value
@@ -695,6 +700,7 @@ class LlmAdapter:
             "edf_policy: {edf_policy}\n"
             "current_signal: {evidence_signal}\n"
             "recent_safe_signals: {recent_signals}\n"
+            "latest_learner_answer: {learner_answer}\n"
             "current_prompt: {base_prompt}\n"
             "concept_description: {concept_description}\n"
             "expected_answer: {expected_answer}\n"
@@ -710,6 +716,7 @@ class LlmAdapter:
                 edf_policy=edf_policy,
                 evidence_signal=evidence_signal,
                 recent_signals=", ".join(recent_signals[-5:]) or "none",
+                learner_answer=learner_answer[:800] or "none",
                 base_prompt=base_prompt,
                 concept_description=concept_description[:800] or "none",
                 expected_answer=expected_answer[:800] or "none",

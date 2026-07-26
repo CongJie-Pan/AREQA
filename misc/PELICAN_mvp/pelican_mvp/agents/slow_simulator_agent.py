@@ -37,6 +37,7 @@ class SlowSimulatorAgent:
         node_id: str,
         base_prompt: str,
         evidence_signal: str,
+        learner_answer: str = "",
         recent_safe_signals: tuple[str, ...] = (),
         base_message: str | None = None,
         context: AgentExecutionContext | None = None,
@@ -53,6 +54,8 @@ class SlowSimulatorAgent:
             node_id: Current concept node.
             base_prompt: Current prompt for fallback response generation.
             evidence_signal: Current bounded evidence signal.
+            learner_answer: Latest learner answer for model-only response
+                grounding. It is not emitted in trace metadata.
             recent_safe_signals: Recent bounded GUM signal labels.
             base_message: Optional engine-provided fallback response.
             context: Safe execution correlation metadata.
@@ -84,6 +87,7 @@ class SlowSimulatorAgent:
             node_id=node_id,
             base_prompt=base_prompt,
             evidence_signal=evidence_signal,
+            learner_answer=learner_answer,
             recent_safe_signals=recent_safe_signals,
             base_message=base_message,
             slow_route=True,

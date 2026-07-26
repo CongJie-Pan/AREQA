@@ -975,6 +975,7 @@ class PelicanEngine:
             strategy,
             node_id,
             evidence_signal=category.value,
+            learner_answer=answer,
             base_message=base_message,
             tutor_role=AgentRole.FAST_TUTOR_AGENT,
         )
@@ -1017,6 +1018,7 @@ class PelicanEngine:
             strategy,
             node_id,
             evidence_signal=signal,
+            learner_answer=answer,
             base_message=base_message,
             tutor_role=AgentRole.FAST_TUTOR_AGENT,
         )
@@ -1101,6 +1103,7 @@ class PelicanEngine:
             strategy,
             prerequisite_id,
             evidence_signal="unknown",
+            learner_answer=answer,
             base_message=base_message,
             tutor_role=AgentRole.FAST_TUTOR_AGENT,
         )
@@ -1310,6 +1313,7 @@ class PelicanEngine:
             strategy,
             node_id,
             evidence_signal=signal,
+            learner_answer=answer,
             base_message=base_message,
             tutor_role=tutor_role,
         )
@@ -1694,6 +1698,7 @@ class PelicanEngine:
         node_id: str,
         *,
         evidence_signal: str | None = None,
+        learner_answer: str = "",
         base_message: str | None = None,
         tutor_role: AgentRole | None = None,
     ) -> tuple[str, str, ProposalValidationStatus, str, str, str, AgentExecutionResult]:
@@ -1703,6 +1708,9 @@ class PelicanEngine:
             strategy: EDF-selected tutoring move.
             node_id: Current concept node to ground the response.
             evidence_signal: Safe current-turn signal used for proposal trace.
+            learner_answer: Latest learner answer passed only to the tutor model
+                for acknowledgement and remediation grounding. It is not logged
+                or stored in agent proposal metadata by this method.
             base_message: Optional deterministic remediation message. Remediation
                 handlers pass their already-rendered prompt here so rule-mode
                 behavior and existing tests remain stable.
@@ -1734,6 +1742,7 @@ class PelicanEngine:
             node_id=node_id,
             base_prompt=prompt,
             evidence_signal=signal,
+            learner_answer=learner_answer,
             recent_safe_signals=self.memory.recent_safe_signals(self.state),
             base_message=base_message,
             context=self._agent_execution_context(),
