@@ -79,6 +79,9 @@ def test_slow_simulator_agent_marks_slow_route_metadata(tmp_path: Path) -> None:
     assert response.result.role is AgentRole.SLOW_SIMULATOR_AGENT
     assert response.proposal.pedagogical_move == "slow_scaffold"
     assert response.result.reason_code == "rule_mode_baseline"
+    assert "slow_simulation" in response.result.display_summary
+    assert "candidates=" in response.result.display_summary
+    assert "selected=" in response.result.display_summary
 
 
 def test_invalid_llm_tutor_proposal_falls_back_safely(tmp_path: Path) -> None:

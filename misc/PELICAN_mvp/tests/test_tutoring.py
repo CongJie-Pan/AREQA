@@ -1,5 +1,5 @@
 from pelican_mvp.models import ResponseCategory, TutoringContext, TutoringStrategy
-from pelican_mvp.tutoring import rule_tutor_message, select_strategy
+from pelican_mvp.tutoring import rule_tutor_message, select_strategy, simulate_strategy_candidates
 
 
 def test_fast_thinking_uses_response_category() -> None:
@@ -37,6 +37,27 @@ def test_context_strategy_uses_recent_safe_signals() -> None:
 
     assert strategy is TutoringStrategy.EXPLANATION
     assert "slow-thinking" in reason
+
+
+def test_slow_simulation_candidates_include_scores_gain_and_risk() -> None:
+    context = TutoringContext(
+        category=ResponseCategory.INCORRECT,
+        rounds=2,
+        pedagogical_policy="correct_and_explain",
+        learner_state="TINKERING",
+        node_id="math_intuition",
+        node_label="數學直覺",
+        recent_signals=("incorrect", "incorrect"),
+    )
+
+    candidates = simulate_strategy_candidates(context)
+
+    assert len(candidates) >= 1
+    selected = max(candidates, key=lambda item: item.score)
+    assert selected.strategy is TutoringStrategy.CORRECTION
+    assert 0.0 <= selected.expected_gain <= 1.0
+    assert 0.0 <= selected.risk <= 1.0
+    assert "gain=" in selected.rationale
 
 
 from pelican_mvp.curriculum import CURRICULUMS

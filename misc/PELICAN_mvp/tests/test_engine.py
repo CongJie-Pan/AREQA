@@ -177,6 +177,14 @@ def test_persistent_failure_activates_slow_thinking(tmp_path: Path) -> None:
     assert second.strategy is TutoringStrategy.EXPLANATION
     assert "slow-thinking" in second.next_reason
     assert engine.state.nodes["cnn_conv"].status is KnowledgeStatus.NOT_MASTERED
+    slow_proposals = [
+        proposal
+        for proposal in engine.state.agent_proposals
+        if proposal.role is AgentRole.SLOW_SIMULATOR_AGENT
+    ]
+    assert slow_proposals
+    assert "slow_simulation" in slow_proposals[-1].display_summary
+    assert "candidates=" in slow_proposals[-1].display_summary
 
 
 def test_current_turn_evidence_drives_current_strategy(tmp_path: Path) -> None:
