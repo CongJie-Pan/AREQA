@@ -1088,6 +1088,11 @@ class PelicanEngine:
         prerequisite_id = self.curriculum.nodes[node_id].prerequisites[0] if self.curriculum.nodes[node_id].prerequisites else node_id
         self.state.phase = "tutoring"
         self.state.current_node_id = prerequisite_id
+        self.state.current_step_id = None
+        if prerequisite_id in self.curriculum.diagnostics:
+            diagnostic = self.curriculum.diagnostics[prerequisite_id]
+            self.state.current_expected_answer = diagnostic.expected_answer
+            self.state.current_prompt_source = diagnostic.source
         base_message = self._scaffold_prompt(
             prerequisite_id,
             self.curriculum.nodes[prerequisite_id].label,
@@ -1209,9 +1214,26 @@ class PelicanEngine:
                 KnowledgeStatus.MASTERED,
                 evidence=self._evidence(answer, category),
             )
-            changes.append(f"{self.curriculum.nodes[node_id].label}: mastered（原題直接證據）")
+            evidence_label = (
+                "複述直接證據"
+                if self.state.plan_source is PlanSource.GENERATED and not step_id
+                else "原題直接證據"
+            )
+            changes.append(f"{self.curriculum.nodes[node_id].label}: mastered（{evidence_label}）")
             self._record(answer, category, TutoringStrategy.CONFIRMATION, changes)
             self._refresh_learning_context(answer, category)
+            if self.state.plan_source is PlanSource.GENERATED and not step_id:
+                self.state.phase = "diagnosis"
+                self.store.save(self.state)
+                next_outcome = self._present_next_diagnostic()
+                return TurnOutcome(
+                    f"說得對，這個知識點可以先視為理解了。\n\n{next_outcome.message}",
+                    next_outcome.node_id,
+                    category,
+                    TutoringStrategy.CONFIRMATION,
+                    tuple(changes),
+                    "restatement confirmed：回到知識地圖並解鎖下一個知識點",
+                )
             step = self.curriculum.next_task_step(step_id)
             if step is None:
                 self.state.completed = True
@@ -1267,10 +1289,28 @@ class PelicanEngine:
         strategy, reason = select_strategy(context)
         signal = self.state.direct_evidence[-1].signal if self.state.direct_evidence else category.value
         tutor_role = AgentRole.SLOW_SIMULATOR_AGENT if "slow-thinking" in reason else AgentRole.FAST_TUTOR_AGENT
+        base_message = (
+            self._humanities_explanation_check_prompt(
+                node_id,
+                self.curriculum.nodes[node_id].label,
+                category=category,
+            )
+            if (
+                self._is_humanities_plan()
+                and (self.state.mode != "llm" or not self.llm.available)
+                and category in (
+                    ResponseCategory.INCORRECT,
+                    ResponseCategory.PARTIAL_CORRECT,
+                    ResponseCategory.DIFFICULTY,
+                )
+            )
+            else None
+        )
         message, source, validation_status, proposal_reason, pedagogical_move, display_summary, tutor_result = self._tutor_message(
             strategy,
             node_id,
             evidence_signal=signal,
+            base_message=base_message,
             tutor_role=tutor_role,
         )
         self._record_agent_result(
@@ -1435,16 +1475,18 @@ class PelicanEngine:
                 rendered = template.format(label=label)
                 if category is ResponseCategory.PARTIAL_CORRECT:
                     return (
-                        "你抓到一個重要線索，但還缺關鍵人物、地點或因果鏈。\n\n"
+                        "你抓到一個重要線索，但還缺關鍵人物、事件位置或因果鏈。\n\n"
                         f"{rendered}\n\n"
-                        "下一步請聚焦：這個明朝舊官員是誰？他在哪個關口讓清軍入關？"
+                        f"下一步請聚焦：把「{label}」的背景、關鍵變化和後續影響補成一條完整脈絡。"
                     )
                 return rendered
         if category is ResponseCategory.PARTIAL_CORRECT:
             return (
                 f"你抓到「{label}」的一部分線索了，我們先把缺口補齊。\n\n"
-                f"請用一句話補上：關鍵人物、地點，以及他為什麼讓清軍入關？"
+                "請用一句話補上：關鍵人物或概念、發生的變化，以及它造成的後續影響。"
             )
+        if self._is_humanities_plan():
+            return self._humanities_explanation_check_prompt(node_id, label, category=category)
         return (
             f"我們先停在「{label}」。剛才那題先不往下推。\n\n"
             f"我換成更清楚的方式：請用一句話說，{label} 在整個學習中主要幫我們做什麼？"
@@ -1459,7 +1501,11 @@ class PelicanEngine:
         concept.
         """
         lesson = self._learner_facing_scaffold_lesson(node_id, label)
-        check = self._low_load_scaffold_check(label)
+        check = (
+            self._restatement_check(label)
+            if self._is_humanities_plan()
+            else self._low_load_scaffold_check(label)
+        )
         return (
             f"沒關係，我先直接講「{label}」。\n\n"
             f"{lesson}\n\n"
@@ -1491,10 +1537,83 @@ class PelicanEngine:
         ]
         context_sentence = facts[0] if facts else f"「{label}」是這段學習的起點概念。"
         detail_sentence = facts[1] if len(facts) > 1 else f"先把它理解成後續概念的背景條件。"
+        if self._is_humanities_plan():
+            return self._humanities_lesson(node_id, label, context_sentence, detail_sentence)
         return (
             f"先抓概念定位：{context_sentence}\n"
             f"再看為什麼重要：{detail_sentence}\n"
             f"一條脈絡先記住：{label} → 後續制度或事件才有發展基礎。"
+        )
+
+    def _is_humanities_plan(self) -> bool:
+        """Return whether the active generated plan should use humanities tutoring."""
+        category = (
+            self.state.learning_plan.domain_category
+            if self.state.learning_plan and self.state.learning_plan.domain_category
+            else self.state.intake_profile.domain_category
+        )
+        return category == DomainCategory.HUMANITIES.value
+
+    def _humanities_explanation_check_prompt(
+        self,
+        node_id: str,
+        label: str,
+        *,
+        category: ResponseCategory | None,
+    ) -> str:
+        """Render explanation-first humanities remediation before rechecking.
+
+        Args:
+            node_id: Current knowledge-map concept.
+            label: Learner-facing concept label.
+            category: Current response category that triggered remediation.
+
+        Returns:
+            A learner-facing mini-lesson that keeps the learner on the same
+            concept and asks for a restatement. Correct restatements are handled
+            by the normal tutoring state machine, which unlocks the next map
+            step only after mastery evidence is recorded.
+        """
+        concept_text = self._concept_description(node_id)
+        remediation_text = self._safe_remediation_template(node_id, label)
+        lesson = self._humanities_lesson(
+            node_id,
+            label,
+            concept_text or f"「{label}」是理解這段歷史或文本之前要先放穩的背景。",
+            remediation_text or f"先把它看成一段脈絡中的關鍵環節，再看它如何影響後面的發展。",
+        )
+        prefix = (
+            "你已經抓到一部分線索，我把缺口補完整。"
+            if category is ResponseCategory.PARTIAL_CORRECT
+            else "我們先停在這個知識點，不急著往下。"
+        )
+        return f"{prefix}\n\n{lesson}\n\n{self._restatement_check(label)}"
+
+    def _humanities_lesson(
+        self,
+        node_id: str,
+        label: str,
+        context_sentence: str,
+        detail_sentence: str,
+    ) -> str:
+        """Build a narrative mini-lesson for humanities concepts.
+
+        The method uses only the generated skill artifacts and current
+        diagnostic context. It deliberately avoids topic-specific hard-coded
+        facts so new humanities topics can follow the same explain-check loop.
+        """
+        return (
+            f"背景脈絡：{context_sentence}\n"
+            f"關鍵意思：{detail_sentence}\n"
+            f"怎麼理解：文科內容通常不是只背一個名詞，而是要把「{label}」放回人物、事件、制度和時代條件裡。"
+            "先抓住它前面承接了什麼、它本身改變了什麼、後面又導致什麼，後續知識點才會連成一條線。"
+        )
+
+    def _restatement_check(self, label: str) -> str:
+        """Ask the learner to restate the concept before progression."""
+        return (
+            f"接下來請你用自己的話，把「{label}」再解釋給我聽。"
+            "我會先確認你講得對不對；如果對，我們再接到知識地圖的下一個知識點，如果還有缺口，我會根據你的說法再補一次。"
         )
 
     def _concept_description(self, node_id: str) -> str:

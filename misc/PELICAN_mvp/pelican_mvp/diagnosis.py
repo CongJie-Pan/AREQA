@@ -151,8 +151,42 @@ def _has_partial_understanding(answer: str, expected: str, prompt: str) -> bool:
         if any(chunk and chunk in normalized_answer for chunk in expected_chunks):
             return True
 
-    history_prompt_tokens = ("滿洲", "清朝", "入主中原", "入關", "明末", "建立清朝")
-    history_clue_tokens = ("明朝", "明末", "李自成", "吳三桂", "山海關", "舊官員", "官員", "入關", "滿人")
-    if any(token in prompt for token in history_prompt_tokens):
-        return sum(1 for token in history_clue_tokens if token in answer) >= 2
+    source_tokens = _significant_cjk_tokens(f"{expected} {prompt}")
+    if source_tokens:
+        return sum(1 for token in source_tokens if token in answer) >= 2
     return False
+
+
+def _significant_cjk_tokens(text: str) -> set[str]:
+    """Extract bounded CJK clue tokens from the active rubric and prompt.
+
+    Returns:
+        Domain-neutral tokens that can support a partial-understanding signal
+        without embedding topic-specific facts in the classifier.
+    """
+    stop_tokens = {
+        "請回答",
+        "請簡述",
+        "為什麼",
+        "如何",
+        "哪一位",
+        "什麼",
+        "是否",
+        "可以",
+        "需要",
+        "概念",
+        "學習",
+        "診斷題",
+    }
+    tokens: set[str] = set()
+    for phrase in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+        if phrase in stop_tokens:
+            continue
+        if len(phrase) <= 8:
+            tokens.add(phrase)
+            continue
+        for index in range(0, len(phrase) - 1, 2):
+            chunk = phrase[index : index + 4]
+            if len(chunk) >= 2 and chunk not in stop_tokens:
+                tokens.add(chunk)
+    return {token for token in tokens if token not in stop_tokens}

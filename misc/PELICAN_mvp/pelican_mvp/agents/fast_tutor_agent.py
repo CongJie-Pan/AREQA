@@ -95,6 +95,19 @@ def _candidate_or_fallback(
                 edf_policy=state.edf_snapshot.pedagogical_strategy,
                 recent_signals=recent_safe_signals,
                 evidence_signal=evidence_signal,
+                domain_category=(
+                    state.learning_plan.domain_category
+                    if state.learning_plan and state.learning_plan.domain_category
+                    else state.intake_profile.domain_category
+                ),
+                concept_description=_concept_description_from_state(state, node_id),
+                expected_answer=state.current_expected_answer,
+                remediation_template=_remediation_template_from_state(state, node_id),
+                teaching_methodology=(
+                    state.learning_plan.teaching_methodology
+                    if state.learning_plan
+                    else {}
+                ),
             )
             log_event(
                 "pelican_tutor_proposal_generated",
@@ -106,7 +119,17 @@ def _candidate_or_fallback(
                 proposal_source="llm",
                 reason_code="candidate",
             )
-            status, reason = validate_tutor_proposal(proposal, node_id, strategy)
+            domain_category = (
+                state.learning_plan.domain_category
+                if state.learning_plan and state.learning_plan.domain_category
+                else state.intake_profile.domain_category
+            )
+            status, reason = validate_tutor_proposal(
+                proposal,
+                node_id,
+                strategy,
+                domain_category=domain_category,
+            )
             if proposal and status is ProposalValidationStatus.ACCEPTED:
                 return proposal, status, reason
             return (
@@ -147,6 +170,8 @@ def validate_tutor_proposal(
     proposal: BoundedTutorProposal | None,
     node_id: str,
     strategy: TutoringStrategy,
+    *,
+    domain_category: str | None = None,
 ) -> tuple[ProposalValidationStatus, str]:
     """Validate a bounded tutor proposal before learner display."""
     if proposal is None:
@@ -159,6 +184,14 @@ def validate_tutor_proposal(
         proposal.response
     ):
         return ProposalValidationStatus.REJECTED, "question_only_inability_response"
+    if domain_category == "humanities" and proposal.evidence_signal in {
+        "unknown",
+        "inability_to_respond",
+        "incorrect",
+        "partial_correct",
+        "difficulty_in_understanding",
+    } and _lacks_humanities_explanation_cycle(proposal.response):
+        return ProposalValidationStatus.REJECTED, "thin_humanities_remediation"
     if len(proposal.response) > 900:
         return ProposalValidationStatus.REJECTED, "tutor_response_too_long"
     if len(proposal.response.strip()) < 8:
@@ -195,6 +228,58 @@ def _is_question_only_inability_response(response: str) -> bool:
         "說明",
     )
     return not any(marker in text for marker in teaching_markers)
+
+
+def _lacks_humanities_explanation_cycle(response: str) -> bool:
+    """Return whether humanities remediation skips teaching before rechecking.
+
+    Humanities learners often need an explanatory narrative before a mastery
+    check. This validator blocks LLM proposals that continue probing or offer a
+    thin hint without asking the learner to restate the concept in their own
+    words.
+    """
+    text = response.strip()
+    explanation_markers = (
+        "背景",
+        "脈絡",
+        "原因",
+        "關鍵",
+        "因為",
+        "所以",
+        "先理解",
+        "先抓",
+        "這表示",
+        "這代表",
+    )
+
+
+def _concept_description_from_state(state: SessionState, node_id: str) -> str:
+    """Return the generated skill description for the active node."""
+    if not state.learning_plan:
+        return ""
+    for node in state.learning_plan.nodes:
+        if node.node_id == node_id:
+            return node.label
+    return ""
+
+
+def _remediation_template_from_state(state: SessionState, node_id: str) -> str:
+    """Return skill-authored remediation guidance for the active node."""
+    if not state.learning_plan:
+        return ""
+    return state.learning_plan.remediation_templates.get(node_id, "")
+    restatement_markers = (
+        "用自己的話",
+        "再說一次",
+        "重新說",
+        "解釋給我聽",
+        "說給我聽",
+        "複述",
+    )
+    return not (
+        any(marker in text for marker in explanation_markers)
+        and any(marker in text for marker in restatement_markers)
+    )
 
 
 def fallback_tutor_proposal(

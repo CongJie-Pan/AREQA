@@ -149,6 +149,45 @@ def test_llm_tutor_proposal_returns_bounded_safe_candidate() -> None:
     assert proposal.source == "llm"
 
 
+def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.user_prompt = ""
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.user_prompt = user
+            return {
+                "response": "先建立事件脈絡，再請你用自己的話說一次。",
+                "pedagogical_move": "explain_then_restate",
+                "summary": "Generate humanities explanation before mastery check.",
+            }
+
+    adapter = RecordingAdapter()
+
+    adapter.tutor_proposal(
+        strategy=TutoringStrategy.EXPLANATION,
+        node_id="context_foundation",
+        node_label="背景脈絡",
+        base_prompt="請說明這個事件的背景。",
+        learner_state="EXPLORING",
+        edf_policy="probe_understanding",
+        recent_signals=("unknown",),
+        evidence_signal="unknown",
+        domain_category=DomainCategory.HUMANITIES.value,
+        concept_description="理解事件發生前的時代條件與主要人物。",
+        expected_answer="學生應能說出背景、人物與因果關係。",
+        remediation_template="先補事件背景，再確認因果鏈。",
+        teaching_methodology={"sequencing": "先背景，再事件，最後因果。"},
+    )
+
+    assert "domain_style_contract for humanities" in adapter.user_prompt
+    assert "Generate a topic-specific explanatory mini-lesson" in adapter.user_prompt
+    assert "explain the same concept back in their own words" in adapter.user_prompt
+    assert "concept_description: 理解事件發生前的時代條件與主要人物。" in adapter.user_prompt
+    assert "remediation_template: 先補事件背景，再確認因果鏈。" in adapter.user_prompt
+
+
 def test_llm_category_model_route_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PELICAN_LLM_MODEL", raising=False)
     monkeypatch.delenv("PELICAN_SKILL_MODEL", raising=False)

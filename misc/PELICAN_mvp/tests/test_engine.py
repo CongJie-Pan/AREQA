@@ -4,7 +4,22 @@ from pathlib import Path
 from pelican_mvp.engine import PelicanEngine
 from pelican_mvp.domain_skill import DomainCategory
 from pelican_mvp.llm import IntakeSemanticSignal
-from pelican_mvp.models import AgentRole, KnowledgeStatus, MethodologyEventType, MethodologyStage, ResponseCategory, TutoringStrategy
+from pelican_mvp.models import (
+    AgentRole,
+    DiagnosticQuestion,
+    KnowledgeNode,
+    KnowledgeStatus,
+    LearnerIntakeProfile,
+    LearningIntent,
+    LearningPlanSnapshot,
+    MethodologyEventType,
+    MethodologyStage,
+    NodeState,
+    PlanSource,
+    ResponseCategory,
+    TutoringStrategy,
+    BoundedTutorProposal,
+)
 
 
 def test_unknown_student_is_diagnosed_before_original_problem(tmp_path: Path) -> None:
@@ -275,3 +290,131 @@ def test_llm_mode_fallback_on_respond(tmp_path: Path, monkeypatch: pytest.Monkey
     outcome = engine.respond("100")
 
     assert outcome is not None
+
+
+def _prepared_generated_humanities_engine(tmp_path: Path) -> PelicanEngine:
+    """Create a deterministic humanities generated-plan session for flow tests."""
+    engine = PelicanEngine(tmp_path, mode="rule")
+    plan = LearningPlanSnapshot(
+        plan_id="qing_test_plan",
+        topic="大清創業的歷史",
+        goal_summary="學習大清創業的歷史",
+        nodes=(
+            KnowledgeNode("jianzhou_jurchen_origins", "建州女真的崛起", priority=1),
+            KnowledgeNode(
+                "eight_banners_system",
+                "八旗制度的建立",
+                priority=2,
+            ),
+        ),
+        diagnostics=(
+            DiagnosticQuestion(
+                "jianzhou_jurchen_origins",
+                "請簡述努爾哈赤在起兵初期，是如何在東北地區逐步擴張勢力的？",
+                "努爾哈赤整合建州女真",
+                source="skill",
+            ),
+            DiagnosticQuestion(
+                "eight_banners_system",
+                "八旗制度為什麼有助於後金政權擴張？",
+                "八旗整合軍事和社會組織",
+                source="skill",
+            ),
+        ),
+        task_steps=(
+            {
+                "step_id": "qing_step_1",
+                "node_id": "jianzhou_jurchen_origins",
+                "label": "說明建州女真",
+                "prompt": "請說明建州女真如何成為清朝創業基礎。",
+                "expected": "努爾哈赤整合建州女真",
+            },
+        ),
+        skill_id="qing_dynasty_founding_history",
+        skill_version="0.1.0",
+        skill_lifecycle="validated_generated",
+        domain_category=DomainCategory.HUMANITIES.value,
+        model_route="~google/gemini-pro-latest",
+    )
+    engine.state.plan_source = PlanSource.GENERATED
+    engine.state.learning_plan = plan
+    engine.state.phase = "diagnosis"
+    engine.state.intake_profile = LearnerIntakeProfile(
+        topic=plan.topic,
+        goal_summary=plan.goal_summary,
+        intent=LearningIntent.CONCEPTUAL,
+        level_hint="unknown",
+        domain_category=DomainCategory.HUMANITIES.value,
+        skill_id=plan.skill_id,
+        skill_version=plan.skill_version,
+        skill_lifecycle=plan.skill_lifecycle,
+        model_route=plan.model_route,
+        intake_turns=3,
+    )
+    engine.state.nodes = {node.node_id: NodeState() for node in plan.nodes}
+    engine.curriculum = engine._resolve_curriculum()
+    engine.store.save(engine.state)
+    engine.start()
+    return engine
+
+
+def test_humanities_unknown_teaches_then_asks_for_restatement(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+
+    outcome = engine.respond("不知道")
+
+    assert outcome.node_id == "jianzhou_jurchen_origins"
+    assert "背景脈絡" in outcome.message
+    assert "努爾哈赤" in outcome.message
+    assert "用自己的話" in outcome.message
+    assert engine.state.phase == "tutoring"
+    assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
+
+
+def test_humanities_restatement_must_pass_before_next_knowledge_point(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    engine.respond("不知道")
+
+    wrong = engine.respond("我還是不太會")
+
+    assert wrong.node_id == "jianzhou_jurchen_origins"
+    assert "用自己的話" in wrong.message
+    assert engine.state.current_node_id == "jianzhou_jurchen_origins"
+    assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
+
+    correct = engine.respond("努爾哈赤整合建州女真")
+
+    assert correct.category is ResponseCategory.CORRECT
+    assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.MASTERED
+    assert engine.state.current_node_id == "eight_banners_system"
+    assert "八旗制度" in correct.message
+
+
+def test_humanities_llm_mode_uses_model_generated_remediation(tmp_path: Path) -> None:
+    class HumanitiesTutorLlm:
+        available = True
+
+        def classify(self, prompt: str, expected: str, answer: str) -> ResponseCategory:
+            return ResponseCategory.INCORRECT
+
+        def tutor_proposal(self, **kwargs) -> BoundedTutorProposal:
+            return BoundedTutorProposal(
+                response="模型生成：我先依照這個主題補完整脈絡，最後請你用自己的話再說一次。",
+                pedagogical_move="explain_then_restate",
+                summary="LLM generated humanities remediation.",
+                node_id=kwargs["node_id"],
+                strategy=kwargs["strategy"].value,
+                evidence_signal=kwargs["evidence_signal"],
+                source="llm",
+            )
+
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.llm = HumanitiesTutorLlm()
+    engine.store.save(engine.state)
+    engine.respond("不知道")
+
+    wrong = engine.respond("我還是不太會")
+
+    assert wrong.message.startswith("模型生成")
+    assert wrong.strategy is TutoringStrategy.CORRECTION

@@ -628,6 +628,11 @@ class LlmAdapter:
         edf_policy: str,
         recent_signals: tuple[str, ...],
         evidence_signal: str,
+        domain_category: str = "",
+        concept_description: str = "",
+        expected_answer: str = "",
+        remediation_template: str = "",
+        teaching_methodology: dict[str, str] | None = None,
     ) -> BoundedTutorProposal | None:
         """Generate a bounded tutor proposal constrained by EDF/GUM state.
 
@@ -642,6 +647,13 @@ class LlmAdapter:
             recent_signals: Safe bounded GUM signal labels.
             evidence_signal: Current safe response signal, such as ``unknown``
                 or ``too_detailed``.
+            domain_category: Safe domain label used to select teaching style.
+            concept_description: Skill-authored learner-facing concept context.
+            expected_answer: Current answer/rubric. The model may use it to
+                understand the target, but must not reveal it verbatim.
+            remediation_template: Skill-authored remediation guidance for the
+                current concept.
+            teaching_methodology: Skill-authored pedagogy notes for this domain.
 
         Returns:
             A bounded proposal candidate, or ``None`` when the optional model is
@@ -654,27 +666,56 @@ class LlmAdapter:
         """
         if not self.available:
             return None
+        methodology_lines = "\n".join(
+            f"- {key}: {value}"
+            for key, value in (teaching_methodology or {}).items()
+            if str(key).strip() and str(value).strip()
+        ) or "none"
+        humanities_contract = (
+            "domain_style_contract for humanities:\n"
+            "- If current_signal is unknown, inability_to_respond, incorrect, partial_correct, or difficulty_in_understanding, do not keep probing first.\n"
+            "- Generate a topic-specific explanatory mini-lesson from the provided knowledge_node, concept_description, current_prompt, expected_answer, remediation_template, and teaching_methodology.\n"
+            "- The mini-lesson should teach the missing knowledge in Traditional Chinese with narrative context, key actors/concepts, cause-effect links, and where this node sits in the knowledge map.\n"
+            "- End by asking the learner to explain the same concept back in their own words so the AI can verify mastery.\n"
+            "- If the learner's next explanation is correct, the engine will unlock the next knowledge-map node; if not, the tutor should explain again based on that answer.\n"
+            "- Do not output a generic template with headings only; fill it with the actual subject matter from the provided context.\n"
+            if domain_category == DomainCategory.HUMANITIES.value
+            else ""
+        )
         payload = self._json(
             "你是 Agentic PELICAN 的繁體中文家教代理。請只輸出 JSON，不要輸出推理。\n"
             "你必須根據 EDF/GUM 狀態提出一個 bounded tutor proposal：一次只處理一個概念、"
-            "只問一個問題、避免固定模板、避免直接貼定義或標準答案。",
+            "只問一個問題、避免固定模板。你可以根據領域調整教學法；若學生不知道或答錯，"
+            "應先教會該知識點，再用一個低負荷檢核確認理解。不要逐字洩漏 expected_answer。",
             "node_id: {node_id}\n"
             "knowledge_node: {node_label}\n"
+            "domain_category: {domain_category}\n"
             "strategy: {strategy}\n"
             "learner_state: {learner_state}\n"
             "edf_policy: {edf_policy}\n"
             "current_signal: {evidence_signal}\n"
             "recent_safe_signals: {recent_signals}\n"
             "current_prompt: {base_prompt}\n"
+            "concept_description: {concept_description}\n"
+            "expected_answer: {expected_answer}\n"
+            "remediation_template: {remediation_template}\n"
+            "teaching_methodology:\n{teaching_methodology}\n"
+            "{humanities_contract}"
             "輸出 JSON：{{\"response\": str, \"pedagogical_move\": str, \"summary\": str}}".format(
                 node_id=node_id,
                 node_label=node_label,
+                domain_category=domain_category or "unknown",
                 strategy=strategy.value,
                 learner_state=learner_state,
                 edf_policy=edf_policy,
                 evidence_signal=evidence_signal,
                 recent_signals=", ".join(recent_signals[-5:]) or "none",
                 base_prompt=base_prompt,
+                concept_description=concept_description[:800] or "none",
+                expected_answer=expected_answer[:800] or "none",
+                remediation_template=remediation_template[:800] or "none",
+                teaching_methodology=methodology_lines[:1200],
+                humanities_contract=humanities_contract,
             ),
             model=self.tutor_model_route(),
         )
