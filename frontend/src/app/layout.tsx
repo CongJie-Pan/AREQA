@@ -4,6 +4,7 @@ import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { ConfigProvider, theme, App } from 'antd';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
+import { PwaLaunchScreen } from '@/components/PwaLaunchScreen';
 import './globals.css';
 import 'katex/dist/katex.min.css';
 
@@ -64,6 +65,7 @@ export default function RootLayout({
               }}
             >
               <App>
+                <PwaLaunchScreen />
                 {children}
                 <PwaInstallPrompt />
               </App>
