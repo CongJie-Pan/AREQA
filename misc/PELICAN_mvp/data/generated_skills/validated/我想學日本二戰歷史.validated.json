@@ -1,0 +1,265 @@
+{
+  "artifact_type": "validated_runtime_skill",
+  "created_at": "2026-07-26T07:17:32.488954+00:00",
+  "domain_category": "humanities",
+  "route": "qwen/qwen3-235b-a22b-2507",
+  "skill": {
+    "assessment_policy": {
+      "education_only": true,
+      "mode": "formative",
+      "notes": "僅供教育用途，不提供歷史詮釋的法律或政治建議。"
+    },
+    "calibration_questions": [
+      {
+        "intent_targets": [
+          "conceptual",
+          "explanatory",
+          "assessment"
+        ],
+        "level_targets": [
+          "beginner",
+          "intermediate"
+        ],
+        "prompt": "你最想了解日本二戰的起因、戰爭過程，還是戰後如何重建？",
+        "question_id": "goal"
+      },
+      {
+        "intent_targets": [
+          "conceptual",
+          "procedural"
+        ],
+        "level_targets": [
+          "beginner"
+        ],
+        "prompt": "你是否知道明治維新對日本現代化的影響？",
+        "question_id": "prior_knowledge"
+      }
+    ],
+    "canonical_path": {
+      "assessment": [
+        "明治維新與近代化基礎",
+        "軍國主義興起與擴張政策",
+        "太平洋戰爭的關鍵轉折",
+        "戰敗與美國佔領體制",
+        "經濟復甦與產業重建",
+        "歷史記憶與社會反思"
+      ],
+      "business_decision": [
+        "經濟復甦與產業重建"
+      ],
+      "conceptual": [
+        "明治維新與近代化基礎",
+        "軍國主義興起與擴張政策",
+        "太平洋戰爭的關鍵轉折",
+        "戰敗與美國佔領體制",
+        "經濟復甦與產業重建",
+        "歷史記憶與社會反思"
+      ],
+      "explanatory": [
+        "明治維新與近代化基礎",
+        "軍國主義興起與擴張政策",
+        "太平洋戰爭的關鍵轉折",
+        "戰敗與美國佔領體制",
+        "經濟復甦與產業重建",
+        "歷史記憶與社會反思"
+      ],
+      "implementation": [
+        "經濟復甦與產業重建",
+        "歷史記憶與社會反思"
+      ],
+      "procedural": [
+        "軍國主義興起與擴張政策",
+        "太平洋戰爭的關鍵轉折",
+        "戰敗與美國佔領體制"
+      ]
+    },
+    "diagnostic_rules": [
+      {
+        "concept_id": "明治維新與近代化基礎",
+        "expected_answer": "學習者應能指出廢藩置縣、現代教育與軍事改革等關鍵措施。",
+        "prompt": "請說明明治維新如何改變日本的政治與社會結構。",
+        "rule_id": "diag_明治維新與近代化基礎",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "軍國主義興起與擴張政策",
+        "expected_answer": "學習者應提及滿洲事變、軍部獨立性與民族主義情緒。",
+        "prompt": "為何20世紀30年代日本軍方能主導國家政策？",
+        "rule_id": "diag_軍國主義興起與擴張政策",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "太平洋戰爭的關鍵轉折",
+        "expected_answer": "學習者應說明日軍損失四艘航空母艦與戰略主動權轉移。",
+        "prompt": "中途島戰役為何是太平洋戰爭的轉折點？",
+        "rule_id": "diag_太平洋戰爭的關鍵轉折",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "戰敗與美國佔領體制",
+        "expected_answer": "學習者應提到和平憲法第九條與天皇象徵化。",
+        "prompt": "美國佔領期間對日本憲法做了哪些重大修改？",
+        "rule_id": "diag_戰敗與美國佔領體制",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "經濟復甦與產業重建",
+        "expected_answer": "學習者應提及朝鮮戰爭特需、技術引進與政府產業政策。",
+        "prompt": "日本在1950年代經濟復甦的主要推動因素是什麼？",
+        "rule_id": "diag_經濟復甦與產業重建",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "歷史記憶與社會反思",
+        "expected_answer": "學習者應能討論不同版本教科書的爭議與社會分歧。",
+        "prompt": "日本教科書如何處理戰爭責任的議題？",
+        "rule_id": "diag_歷史記憶與社會反思",
+        "tests_single_concept": true
+      }
+    ],
+    "domain_category": "humanities",
+    "intent_types": [
+      "conceptual",
+      "explanatory",
+      "assessment",
+      "procedural",
+      "implementation",
+      "business_decision"
+    ],
+    "lifecycle": "validated_generated",
+    "prerequisites": [
+      {
+        "concept_id": "明治維新與近代化基礎",
+        "description": "理解明治維新如何使日本走向現代化與軍國主義的起點。",
+        "label": "明治維新與近代化基礎",
+        "prerequisites": []
+      },
+      {
+        "concept_id": "軍國主義興起與擴張政策",
+        "description": "探討20世紀初日本軍方如何掌握政權並推動對外擴張。",
+        "label": "軍國主義興起與擴張政策",
+        "prerequisites": [
+          "明治維新與近代化基礎"
+        ]
+      },
+      {
+        "concept_id": "太平洋戰爭的關鍵轉折",
+        "description": "分析珍珠港事件、中途島戰役與戰局逆轉的關鍵因素。",
+        "label": "太平洋戰爭的關鍵轉折",
+        "prerequisites": [
+          "軍國主義興起與擴張政策"
+        ]
+      },
+      {
+        "concept_id": "戰敗與美國佔領體制",
+        "description": "說明1945年戰敗後盟軍接管、天皇地位變革與新憲法制定。",
+        "label": "戰敗與美國佔領體制",
+        "prerequisites": [
+          "太平洋戰爭的關鍵轉折"
+        ]
+      },
+      {
+        "concept_id": "經濟復甦與產業重建",
+        "description": "探討日本如何在1950至1970年代實現快速經濟成長。",
+        "label": "經濟復甦與產業重建",
+        "prerequisites": [
+          "戰敗與美國佔領體制"
+        ]
+      },
+      {
+        "concept_id": "歷史記憶與社會反思",
+        "description": "理解日本社會對戰爭責任的討論與教育中的歷史詮釋。",
+        "label": "歷史記憶與社會反思",
+        "prerequisites": [
+          "經濟復甦與產業重建"
+        ]
+      }
+    ],
+    "remediation_paths": [
+      {
+        "action": "scaffold_prerequisite",
+        "signal": "unknown",
+        "target": "明治維新與近代化基礎"
+      },
+      {
+        "action": "recalibrate_level",
+        "signal": "too_detailed",
+        "target": "goal"
+      },
+      {
+        "action": "accelerate",
+        "signal": "too_easy",
+        "target": "歷史記憶與社會反思"
+      },
+      {
+        "action": "switch_path",
+        "signal": "project_goal",
+        "target": "implementation"
+      },
+      {
+        "action": "switch_path",
+        "signal": "assessment_goal",
+        "target": "assessment"
+      }
+    ],
+    "remediation_templates": {
+      "太平洋戰爭的關鍵轉折": "讓我們分析中途島戰役前後的戰略變化。",
+      "戰敗與美國佔領體制": "讓我們探討美國佔領如何重塑日本的政治體制。",
+      "明治維新與近代化基礎": "讓我們從明治維新的核心改革開始，理解日本現代化的起點。",
+      "歷史記憶與社會反思": "讓我們討論不同世代對戰爭責任的看法差異。",
+      "經濟復甦與產業重建": "讓我們從朝鮮戰爭特需出發，理解經濟奇蹟的開端。",
+      "軍國主義興起與擴張政策": "讓我們聚焦軍方如何逐步掌握政治主導權。"
+    },
+    "safety_notes": [
+      "僅供教育用途。",
+      "不提供對歷史事件的法律責任認定。",
+      "避免引導特定政治立場。"
+    ],
+    "skill_id": "runtime_topic",
+    "supported_topics": [
+      "我想學日本二戰歷史",
+      "我想學日本二戰歷史 overview"
+    ],
+    "teaching_methodology": {
+      "diagnosis": "每次診斷一個概念的理解程度。",
+      "sequencing": "從近代化基礎出發，依序理解崛起、戰爭、戰敗到重建的因果鏈。"
+    },
+    "teaching_moves": [
+      {
+        "description": "用簡短講解介紹單一概念，再提出檢核問題。",
+        "move_id": "focused_mini_lesson",
+        "strategy": "focused_mini_lesson"
+      },
+      {
+        "description": "逐步引導分析一個歷史事件的前因後果。",
+        "move_id": "guided_example",
+        "strategy": "guided_example"
+      },
+      {
+        "description": "透過提問引導學習者反思歷史選擇與後果。",
+        "move_id": "socratic_question",
+        "strategy": "socratic_question"
+      },
+      {
+        "description": "比較不同時期或國家的重建模式以深化理解。",
+        "move_id": "comparative_analysis",
+        "strategy": "comparative_analysis"
+      },
+      {
+        "description": "解讀歷史文件或影像資料以培養證據意識。",
+        "move_id": "source_interpretation",
+        "strategy": "source_interpretation"
+      },
+      {
+        "description": "假設不同決策可能導致的歷史走向。",
+        "move_id": "scenario_projection",
+        "strategy": "scenario_projection"
+      }
+    ],
+    "title": "我想學日本二戰歷史 Learning Skill",
+    "version": "0.1.0"
+  },
+  "skill_id": "runtime_topic",
+  "skill_version": "0.1.0",
+  "topic_slug": "我想學日本二戰歷史"
+}

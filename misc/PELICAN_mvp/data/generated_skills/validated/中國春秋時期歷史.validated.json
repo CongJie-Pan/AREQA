@@ -1,0 +1,186 @@
+{
+  "artifact_type": "validated_runtime_skill",
+  "created_at": "2026-07-26T07:54:35.380259+00:00",
+  "domain_category": "humanities",
+  "route": "fake/humanities",
+  "skill": {
+    "assessment_policy": {
+      "education_only": true,
+      "mode": "formative",
+      "notes": "Humanities education only."
+    },
+    "calibration_questions": [
+      {
+        "intent_targets": [
+          "conceptual"
+        ],
+        "level_targets": [
+          "beginner",
+          "intermediate"
+        ],
+        "prompt": "你想從政治秩序、人物事件，還是制度變遷理解春秋？",
+        "question_id": "goal"
+      }
+    ],
+    "canonical_path": {
+      "conceptual": [
+        "zhou_authority",
+        "fengjian_order",
+        "ritual_breakdown",
+        "hegemon_politics",
+        "state_reform",
+        "transition_to_warring_states"
+      ]
+    },
+    "diagnostic_rules": [
+      {
+        "concept_id": "zhou_authority",
+        "expected_answer": "周王室控制力下降，諸侯在名義秩序下競爭主導權",
+        "prompt": "春秋時期為什麼周王室權威下降會讓諸侯更容易爭霸？",
+        "rule_id": "diag_zhou",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "fengjian_order",
+        "expected_answer": "分封提供名分和義務，也形成諸侯競爭的框架",
+        "prompt": "分封秩序如何影響諸侯之間的互動？",
+        "rule_id": "diag_fengjian",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "hegemon_politics",
+        "expected_answer": "以尊王或維護秩序名義號召諸侯",
+        "prompt": "春秋霸主通常如何取得政治正當性？",
+        "rule_id": "diag_hegemon",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "ritual_breakdown",
+        "expected_answer": "共同規範弱化後，諸侯更容易用實力解決爭端",
+        "prompt": "禮樂秩序鬆動為什麼會讓諸侯衝突增加？",
+        "rule_id": "diag_ritual_breakdown",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "state_reform",
+        "expected_answer": "改革能提高動員、財政或軍事能力，使諸侯競爭更激烈",
+        "prompt": "諸侯國改革和軍事競爭有什麼關係？",
+        "rule_id": "diag_state_reform",
+        "tests_single_concept": true
+      },
+      {
+        "concept_id": "transition_to_warring_states",
+        "expected_answer": "霸主協調秩序減弱，國家改革和軍事競爭推動兼併戰爭",
+        "prompt": "春秋政治如何逐漸走向戰國式兼併？",
+        "rule_id": "diag_transition",
+        "tests_single_concept": true
+      }
+    ],
+    "domain_category": "humanities",
+    "intent_types": [
+      "conceptual"
+    ],
+    "lifecycle": "validated_generated",
+    "prerequisites": [
+      {
+        "concept_id": "zhou_authority",
+        "description": "理解春秋時期名義共主和實際控制力的落差。",
+        "label": "周王室權威下降",
+        "prerequisites": []
+      },
+      {
+        "concept_id": "fengjian_order",
+        "description": "理解封建秩序如何約束又放大諸侯競爭。",
+        "label": "分封秩序與諸侯互動",
+        "prerequisites": [
+          "zhou_authority"
+        ]
+      },
+      {
+        "concept_id": "hegemon_politics",
+        "description": "理解霸主如何在尊王名義下重組秩序。",
+        "label": "諸侯爭霸與霸主秩序",
+        "prerequisites": [
+          "fengjian_order"
+        ]
+      },
+      {
+        "concept_id": "ritual_breakdown",
+        "description": "理解禮樂規範弱化後，政治衝突如何更頻繁出現。",
+        "label": "禮樂秩序鬆動",
+        "prerequisites": [
+          "zhou_authority"
+        ]
+      },
+      {
+        "concept_id": "state_reform",
+        "description": "理解各國如何透過內政與軍事改革提升競爭力。",
+        "label": "諸侯國改革與軍事競爭",
+        "prerequisites": [
+          "fengjian_order"
+        ]
+      },
+      {
+        "concept_id": "transition_to_warring_states",
+        "description": "理解爭霸政治如何逐步轉向更激烈的兼併戰爭。",
+        "label": "春秋到戰國的轉變",
+        "prerequisites": [
+          "hegemon_politics",
+          "state_reform"
+        ]
+      }
+    ],
+    "remediation_paths": [
+      {
+        "action": "scaffold_prerequisite",
+        "signal": "unknown",
+        "target": "zhou_authority"
+      },
+      {
+        "action": "recalibrate_level",
+        "signal": "too_detailed",
+        "target": "goal"
+      },
+      {
+        "action": "accelerate",
+        "signal": "too_easy",
+        "target": "fengjian_order"
+      },
+      {
+        "action": "switch_path",
+        "signal": "project_goal",
+        "target": "conceptual"
+      },
+      {
+        "action": "switch_path",
+        "signal": "assessment_goal",
+        "target": "conceptual"
+      }
+    ],
+    "remediation_templates": {},
+    "safety_notes": [
+      "Avoid overconfident claims about disputed historical interpretations."
+    ],
+    "skill_id": "spring_autumn_history",
+    "supported_topics": [
+      "中國春秋時期歷史",
+      "春秋五霸",
+      "諸侯爭霸"
+    ],
+    "teaching_methodology": {
+      "context_first": "先講周王室權威與分封秩序，再連到諸侯爭霸。"
+    },
+    "teaching_moves": [
+      {
+        "description": "先建立周王室和諸侯關係，再進入事件細節。",
+        "move_id": "context_first",
+        "strategy": "explanation"
+      }
+    ],
+    "title": "中國春秋時期歷史脈絡",
+    "version": "0.1.0"
+  },
+  "skill_id": "spring_autumn_history",
+  "skill_version": "0.1.0",
+  "topic_slug": "中國春秋時期歷史"
+}

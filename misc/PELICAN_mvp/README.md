@@ -37,10 +37,10 @@ PELICAN MVP 是 AREQA 主系統外的一個學習引擎實驗場。它的目的�
 從 repo root 執行：
 
 ```bash
-cd /workspaces/AREQA/misc/PELICAN_mvp
+cd misc/PELICAN_mvp
 
 python -m venv .venv
-source .venv/bin/activate
+.venv\Scripts\activate  
 
 pip install -r requirements.txt
 python -m pelican_mvp

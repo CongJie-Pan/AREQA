@@ -1,0 +1,25 @@
+{
+  "artifact_type": "failed_runtime_skill",
+  "attempts": [
+    {
+      "api_error_type": "apiconnectionerror",
+      "api_status_code": null,
+      "attempt": 0,
+      "event": "pelican_skill_api_health_checked",
+      "reason_codes": [
+        "llm_request_failed",
+        "llm_apiconnectionerror"
+      ],
+      "stage": "api_health"
+    }
+  ],
+  "created_at": "2026-07-26T07:54:34.847436+00:00",
+  "domain_category": "humanities",
+  "payload_hash": null,
+  "reason_codes": [
+    "llm_request_failed",
+    "llm_apiconnectionerror"
+  ],
+  "route": "qwen/qwen3-235b-a22b-2507",
+  "topic_slug": "中國春秋時期歷史"
+}
