@@ -31,6 +31,7 @@ import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 
 const { TextArea } = Input;
+const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 
 /**
  * Safe URL protocols whitelist
@@ -431,10 +432,7 @@ export const MessageItem = memo(function MessageItem({
     if (!onFeedback || isLiked) return;
 
     await handleFeedback('liked');
-
-    if (isMobileFeedbackViewport()) {
-      antMessageApi.success('感謝您的回饋！');
-    }
+    antMessageApi.success(FEEDBACK_SUCCESS_MESSAGE);
   }, [antMessageApi, handleFeedback, isLiked, onFeedback]);
 
   const openDislikeFeedback = useCallback(() => {
@@ -462,7 +460,9 @@ export const MessageItem = memo(function MessageItem({
         comment: feedbackComment.trim() || null,
       });
       setIsFeedbackModalOpen(false);
-      antMessageApi.success('感謝您的回饋！');
+      window.setTimeout(() => {
+        antMessageApi.success(FEEDBACK_SUCCESS_MESSAGE);
+      }, 0);
     } catch {
       antMessageApi.error('儲存評價失敗');
     } finally {
