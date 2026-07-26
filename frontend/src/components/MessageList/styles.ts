@@ -642,11 +642,14 @@ quoteBlockContent: css`
     padding-bottom: 0;
 
     .ant-modal-content {
-      min-height: min(78vh, 680px);
-      border-radius: 28px 28px 0 0;
-      background: #ffffff;
-      color: #111111;
-      padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+      max-height: min(82dvh, 640px);
+      overflow-y: auto;
+      border: 1px solid rgba(216, 162, 92, 0.16);
+      border-radius: 24px 24px 0 0;
+      background: #1e1826;
+      color: #f5f0ea;
+      padding: 16px 20px calc(18px + env(safe-area-inset-bottom));
+      box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.42);
     }
 
     @media (max-width: 768px) {
@@ -662,14 +665,18 @@ quoteBlockContent: css`
     display: flex;
     flex-direction: column;
     gap: 16px;
+
+    @media (max-width: 768px) {
+      gap: 14px;
+    }
   `,
 
   feedbackSheetHandle: css`
-    width: 54px;
-    height: 6px;
-    margin: 2px auto 10px;
+    width: 48px;
+    height: 5px;
+    margin: 0 auto 8px;
     border-radius: 999px;
-    background: #e4e4e4;
+    background: rgba(255, 255, 255, 0.36);
   `,
 
   feedbackTitle: css`
@@ -679,8 +686,9 @@ quoteBlockContent: css`
 
     @media (max-width: 768px) {
       text-align: center;
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 600;
+      line-height: 1.25;
     }
   `,
 
@@ -726,22 +734,21 @@ quoteBlockContent: css`
   `,
 
   feedbackLabel: css`
-    margin-bottom: -8px;
-    padding-left: 12px;
-    color: #111111;
-    font-size: 15px;
-    line-height: 1;
+    margin-bottom: 8px;
+    color: rgba(245, 240, 234, 0.74);
+    font-size: 14px;
+    line-height: 1.2;
   `,
 
   feedbackSelect: css`
     width: 100%;
 
     .ant-select-selector {
-      min-height: 58px;
-      border: 2px solid #111111 !important;
-      border-radius: 6px !important;
-      background: #ffffff !important;
-      color: #111111 !important;
+      min-height: 48px;
+      border: 1px solid rgba(216, 162, 92, 0.28) !important;
+      border-radius: 12px !important;
+      background: rgba(255, 255, 255, 0.06) !important;
+      color: #f5f0ea !important;
       box-shadow: none !important;
     }
 
@@ -749,19 +756,34 @@ quoteBlockContent: css`
     .ant-select-selection-item {
       display: flex;
       align-items: center;
-      min-height: 54px;
-      color: #666666 !important;
-      font-size: 22px;
+      min-height: 46px;
+      color: rgba(245, 240, 234, 0.72) !important;
+      font-size: 16px;
+    }
+
+    .ant-select-arrow {
+      color: rgba(245, 240, 234, 0.68);
     }
   `,
 
   feedbackSelectDropdown: css`
+    background: #241d2e;
+    border: 1px solid rgba(216, 162, 92, 0.22);
+    border-radius: 14px;
+    padding: 6px;
+
     .ant-select-item {
-      min-height: 54px;
-      padding: 14px 18px;
-      color: #111111;
-      font-size: 20px;
-      font-weight: 600;
+      min-height: 42px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      color: #f5f0ea;
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .ant-select-item-option-active,
+    .ant-select-item-option-selected {
+      background: rgba(216, 162, 92, 0.16) !important;
     }
   `,
 
@@ -788,16 +810,17 @@ quoteBlockContent: css`
 
     @media (max-width: 768px) {
       &.ant-input {
-        min-height: 260px;
-        border: 1px solid #d8d8d8;
-        border-radius: 6px;
-        background: #ffffff;
-        color: #111111;
-        font-size: 20px;
+        min-height: 150px;
+        border: 1px solid rgba(216, 162, 92, 0.24);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #f5f0ea;
+        font-size: 16px;
+        line-height: 1.55;
       }
 
       &.ant-input::placeholder {
-        color: #606060;
+        color: rgba(245, 240, 234, 0.5);
       }
     }
   `,
@@ -813,8 +836,8 @@ quoteBlockContent: css`
     @media (max-width: 768px) {
       padding: 0;
       background: transparent;
-      color: #555555;
-      font-size: 18px;
+      color: rgba(245, 240, 234, 0.54);
+      font-size: 13px;
     }
   `,
 
@@ -823,7 +846,7 @@ quoteBlockContent: css`
     justify-content: flex-end;
 
     @media (max-width: 768px) {
-      margin-top: auto;
+      margin-top: 2px;
     }
   `,
 
@@ -847,13 +870,15 @@ quoteBlockContent: css`
 
     @media (max-width: 768px) {
       width: 100%;
-      height: 72px;
-      font-size: 22px;
-      background: #111111;
+      height: 52px;
+      font-size: 16px;
+      font-weight: 700;
+      background: #d8a25c;
+      color: #130f18;
 
       &.ant-btn:disabled {
-        background: #e5e5e5;
-        color: #b8b8b8;
+        background: rgba(255, 255, 255, 0.12);
+        color: rgba(245, 240, 234, 0.34);
       }
     }
   `,

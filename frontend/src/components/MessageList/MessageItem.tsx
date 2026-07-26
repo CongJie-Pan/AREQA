@@ -462,6 +462,7 @@ export const MessageItem = memo(function MessageItem({
         comment: feedbackComment.trim() || null,
       });
       setIsFeedbackModalOpen(false);
+      antMessageApi.success('感謝您的回饋！');
     } catch {
       antMessageApi.error('儲存評價失敗');
     } finally {
