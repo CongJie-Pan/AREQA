@@ -145,7 +145,7 @@ def _base_payload(topic: str, category: DomainCategory, concepts: list[tuple[str
             "remediation": "答錯時停在目前概念，改用更高層的脈絡問題補架。",
         },
         "remediation_templates": {
-            concept_id: f"我們先停在「{{label}}」。先不要追求標準答案，請先用自己的話說說它和「{topic}」的整體理解有什麼關係？"
+            concept_id: f"我們先停在「{{label}}」。先不要追求標準答案，也不用完整重述；你可以先選一個關鍵原因、轉折點，或影響，說說它如何幫你理解「{topic}」。"
             for concept_id, _label, _description in concepts
         },
         "safety_notes": ["Generic fallback skills must remain broad and formative."],

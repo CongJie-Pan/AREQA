@@ -2,6 +2,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from pelican_mvp.agents import FastTutorAgent, SlowSimulatorAgent
+from pelican_mvp.agents.fast_tutor_agent import _lacks_humanities_explanation_cycle
 from pelican_mvp.engine import PelicanEngine
 from pelican_mvp.models import AgentRole, BoundedTutorProposal, ProposalValidationStatus, TutoringStrategy
 
@@ -157,9 +158,18 @@ def test_humanities_partial_correct_without_acknowledgement_falls_back(tmp_path:
         base_prompt=engine.state.current_prompt,
         evidence_signal="partial_correct",
         learner_answer="簡單來說，是改革與西化。",
-        base_message="你說到改革與西化是對的，我再補一點。\n\n好，接下來，你可以用自己的話說一次嗎？",
+        base_message="你說到改革與西化是對的，我再補一點。\n\n先不用完整重述。你可以先說說看最關鍵的轉折點是哪一個？",
     )
 
     assert response.validation_status is ProposalValidationStatus.FALLBACK_USED
     assert response.result.reason_code == "missing_partial_acknowledgement"
     assert "你說到改革與西化是對的" in response.proposal.response
+
+
+def test_humanities_explanation_cycle_accepts_scaffolded_micro_check() -> None:
+    response = (
+        "先建立背景脈絡：這個事件的關鍵在於戰略主動權改變。"
+        "先不用完整重述。你可以先說說看最關鍵的轉折點是哪一個？"
+    )
+
+    assert _lacks_humanities_explanation_cycle(response) is False

@@ -158,7 +158,7 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
         def _json(self, system: str, user: str, *, model: str | None = None):
             self.user_prompt = user
             return {
-                "response": "先建立事件脈絡，再請你用自己的話說一次。",
+                "response": "先建立事件脈絡，再請你先選一個關鍵轉折點。",
                 "pedagogical_move": "explain_then_restate",
                 "summary": "Generate humanities explanation before mastery check.",
             }
@@ -186,7 +186,8 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
     assert "Generate a topic-specific explanatory mini-lesson" in adapter.user_prompt
     assert "latest_learner_answer: 簡單來說，這是改革與西化，為了趕上西方現代化。" in adapter.user_prompt
     assert "start by acknowledging the specific useful idea" in adapter.user_prompt
-    assert "好，接下來，你可以用自己的話" in adapter.user_prompt
+    assert "先不用完整重述" in adapter.user_prompt
+    assert "最關鍵的轉折點或原因" in adapter.user_prompt
     assert "concept_description: 理解事件發生前的時代條件與主要人物。" in adapter.user_prompt
     assert "remediation_template: 先補事件背景，再確認因果鏈。" in adapter.user_prompt
 

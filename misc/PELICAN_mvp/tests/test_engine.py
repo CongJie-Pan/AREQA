@@ -374,7 +374,8 @@ def test_humanities_unknown_teaches_then_asks_for_restatement(tmp_path: Path) ->
     assert outcome.node_id == "jianzhou_jurchen_origins"
     assert "背景脈絡" in outcome.message
     assert "努爾哈赤" in outcome.message
-    assert "用自己的話" in outcome.message
+    assert "先不用完整重述" in outcome.message
+    assert "最關鍵的原因" in outcome.message
     assert engine.state.phase == "tutoring"
     assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
 
@@ -386,7 +387,7 @@ def test_humanities_restatement_must_pass_before_next_knowledge_point(tmp_path: 
     wrong = engine.respond("我還是不太會")
 
     assert wrong.node_id == "jianzhou_jurchen_origins"
-    assert "用自己的話" in wrong.message
+    assert "先不用完整重述" in wrong.message
     assert engine.state.current_node_id == "jianzhou_jurchen_origins"
     assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
 
@@ -407,7 +408,7 @@ def test_humanities_llm_mode_uses_model_generated_remediation(tmp_path: Path) ->
 
         def tutor_proposal(self, **kwargs) -> BoundedTutorProposal:
             return BoundedTutorProposal(
-                response="模型生成：我先依照這個主題補完整脈絡，最後請你用自己的話再說一次。",
+                response="模型生成：我先依照這個主題補完整脈絡，最後請你先選一個關鍵轉折點。",
                 pedagogical_move="explain_then_restate",
                 summary="LLM generated humanities remediation.",
                 node_id=kwargs["node_id"],

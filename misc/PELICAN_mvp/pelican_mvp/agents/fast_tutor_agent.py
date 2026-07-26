@@ -245,8 +245,7 @@ def _lacks_humanities_explanation_cycle(response: str) -> bool:
 
     Humanities learners often need an explanatory narrative before a mastery
     check. This validator blocks LLM proposals that continue probing or offer a
-    thin hint without asking the learner to restate the concept in their own
-    words.
+    thin hint without asking one scaffolded causal/contextual micro-check.
     """
     text = response.strip()
     explanation_markers = (
@@ -260,6 +259,25 @@ def _lacks_humanities_explanation_cycle(response: str) -> bool:
         "先抓",
         "這表示",
         "這代表",
+    )
+    check_markers = (
+        "先不用完整重述",
+        "你可以先說說看",
+        "最關鍵",
+        "轉折點",
+        "原因是哪",
+        "影響是哪",
+        "只選一個",
+        "用自己的話",
+        "再說一次",
+        "重新說",
+        "解釋給我聽",
+        "說給我聽",
+        "複述",
+    )
+    return not (
+        any(marker in text for marker in explanation_markers)
+        and any(marker in text for marker in check_markers)
     )
 
 
@@ -278,18 +296,6 @@ def _remediation_template_from_state(state: SessionState, node_id: str) -> str:
     if not state.learning_plan:
         return ""
     return state.learning_plan.remediation_templates.get(node_id, "")
-    restatement_markers = (
-        "用自己的話",
-        "再說一次",
-        "重新說",
-        "解釋給我聽",
-        "說給我聽",
-        "複述",
-    )
-    return not (
-        any(marker in text for marker in explanation_markers)
-        and any(marker in text for marker in restatement_markers)
-    )
 
 
 def _lacks_partial_correct_acknowledgement(response: str) -> bool:

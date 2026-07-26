@@ -681,7 +681,8 @@ class LlmAdapter:
             "- Generate a topic-specific explanatory mini-lesson from the provided knowledge_node, concept_description, current_prompt, expected_answer, remediation_template, and teaching_methodology.\n"
             "- The mini-lesson should teach the missing knowledge in Traditional Chinese with narrative context, key actors/concepts, cause-effect links, and where this node sits in the knowledge map.\n"
             "- If current_signal is partial_correct, start by acknowledging the specific useful idea in latest_learner_answer before adding missing details. Do not ignore the learner's sentence.\n"
-            "- End with a warm, low-pressure restatement request. Prefer wording like: 好，接下來，你可以用自己的話，說明以上我剛剛談到的重點嗎？我先確認你有理解，再繼續往下一個知識點。\n"
+            "- End with a warm, low-pressure humanities micro-check rather than asking the learner to paraphrase the whole mini-lesson.\n"
+            "- Prefer a scaffolded causal/context question. Example: 先不用完整重述。你可以先說說看：在剛剛這段裡，你覺得最關鍵的轉折點或原因是哪一個？如果一開始不好說，也可以只選一個你覺得重要的原因。\n"
             "- If the learner's next explanation is correct, the engine will unlock the next knowledge-map node; if not, the tutor should explain again based on that answer.\n"
             "- Do not output a generic template with headings only; fill it with the actual subject matter from the provided context.\n"
             if domain_category == DomainCategory.HUMANITIES.value

@@ -1574,9 +1574,9 @@ class PelicanEngine:
 
         Returns:
             A learner-facing mini-lesson that keeps the learner on the same
-            concept and asks for a restatement. Correct restatements are handled
-            by the normal tutoring state machine, which unlocks the next map
-            step only after mastery evidence is recorded.
+            concept and asks one scaffolded understanding check. Correct
+            answers are handled by the normal tutoring state machine, which
+            unlocks the next map step only after mastery evidence is recorded.
         """
         concept_text = self._concept_description(node_id)
         remediation_text = self._safe_remediation_template(node_id, label)
@@ -1614,10 +1614,10 @@ class PelicanEngine:
         )
 
     def _restatement_check(self, label: str) -> str:
-        """Ask the learner to restate the concept before progression."""
+        """Ask a scaffolded humanities micro-check before progression."""
         return (
-            f"接下來請你用自己的話，把「{label}」再解釋給我聽。"
-            "我會先確認你講得對不對；如果對，我們再接到知識地圖的下一個知識點，如果還有缺口，我會根據你的說法再補一次。"
+            f"先不用完整重述。你可以先說說看：「{label}」在剛剛這段裡，最關鍵的原因、轉折點，或影響是哪一個？"
+            "如果一開始不好說，也可以只選一個你覺得重要的點，我會先幫你確認理解，再接到知識地圖的下一個知識點。"
         )
 
     def _concept_description(self, node_id: str) -> str:
