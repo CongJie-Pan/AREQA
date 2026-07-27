@@ -11,7 +11,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { Copy, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Button, Input, Modal, Select, Tooltip, App } from 'antd';
+import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
 import { Citations } from '@/components/Citations';
@@ -798,17 +798,19 @@ export const MessageItem = memo(function MessageItem({
 
                   <div className={styles.mobileFeedbackReason}>
                     <div className={styles.feedbackLabel}>問題</div>
-                    <Select
+                    <select
                       aria-label="選取問題"
-                      className={styles.feedbackSelect}
-                      onChange={(value) => setFeedbackReason(value)}
-                      options={FEEDBACK_OPTIONS}
-                      placeholder="選取問題"
-                      popupClassName={styles.feedbackSelectDropdown}
-                      getPopupContainer={(triggerNode) => triggerNode.parentElement ?? document.body}
-                      listHeight={260}
-                      value={feedbackReason ?? undefined}
-                    />
+                      className={styles.mobileFeedbackNativeSelect}
+                      onChange={(event) => setFeedbackReason(event.target.value as MessageFeedbackReason)}
+                      value={feedbackReason ?? ''}
+                    >
+                      <option disabled value="">選取問題</option>
+                      {FEEDBACK_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className={styles.desktopFeedbackReasons}>

@@ -789,6 +789,35 @@ quoteBlockContent: css`
     }
   `,
 
+  mobileFeedbackNativeSelect: css`
+    width: 100%;
+    min-height: 50px;
+    padding: 0 44px 0 14px;
+    border: 1px solid rgba(216, 162, 92, 0.28);
+    border-radius: 12px;
+    background:
+      linear-gradient(45deg, transparent 50%, rgba(245, 240, 234, 0.68) 50%) right 18px center / 8px 8px no-repeat,
+      linear-gradient(135deg, rgba(245, 240, 234, 0.68) 50%, transparent 50%) right 12px center / 8px 8px no-repeat,
+      rgba(255, 255, 255, 0.06);
+    color: #f5f0ea;
+    font: inherit;
+    font-size: 16px;
+    line-height: 1.2;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+
+    &:focus {
+      border-color: rgba(216, 162, 92, 0.82);
+      box-shadow: 0 0 0 2px rgba(216, 162, 92, 0.18);
+    }
+
+    option {
+      background: #241d2e;
+      color: #f5f0ea;
+    }
+  `,
+
   feedbackSelectDropdown: css`
     max-height: min(44dvh, 320px);
     overflow-y: auto;
