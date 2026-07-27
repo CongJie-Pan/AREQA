@@ -1,5 +1,5 @@
 from pelican_mvp.edf_simulator import EdfSimulator
-from pelican_mvp.models import KnowledgeStatus, LearningMemorySnapshot, NodeState, ResponseCategory, SessionState, TurnRecord
+from pelican_mvp.models import KnowledgeStatus, LearningMemorySnapshot, NodeState, ResponseCategory, SessionState, TurnRecord, TutoringStrategy
 
 
 def create_mock_state() -> SessionState:
@@ -69,6 +69,22 @@ def test_edf_evaluate_repeated_dialogue_confusion_escalates_to_slow_route():
 
     assert snapshot.reason_code == "repeated_micro_check_confusion"
     assert snapshot.route == "slow"
+
+
+def test_edf_decision_is_authoritative_for_strategy_route():
+    state = create_mock_state()
+    state.memory_snapshot = LearningMemorySnapshot(
+        recent_dialogue_acts=("micro_check_confusion", "micro_check_confusion"),
+        recent_tutor_moves=("give_choices", "give_choices"),
+        repeated_confusion_count=2,
+    )
+
+    decision = EdfSimulator().decide(state)
+
+    assert decision.route == "slow"
+    assert decision.selected_strategy is TutoringStrategy.GIVE_CHOICES
+    assert decision.should_recheck is True
+    assert decision.candidates[0].strategy is TutoringStrategy.GIVE_CHOICES
 
 
 def test_edf_evaluate_progressing():

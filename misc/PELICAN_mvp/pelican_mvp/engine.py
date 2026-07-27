@@ -1467,11 +1467,12 @@ class PelicanEngine:
             strategy=strategy.value,
             reason_code=signal.reason_code,
         )
-        proposed_snapshot, policy_proposal = self.policy_agent.propose_strategy(
+        strategy_decision, policy_proposal = self.policy_agent.propose_strategy(
             self.state,
             context=self._agent_execution_context(),
         )
-        self.state.edf_snapshot = proposed_snapshot
+        self.state.strategy_decision = strategy_decision
+        self.state.edf_snapshot = self.edf.snapshot_from_decision(self.state, strategy_decision)
         self._record_agent_result(policy_proposal, node_id=node_id, strategy=strategy.value)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1509,11 +1510,12 @@ class PelicanEngine:
             reason_code=signal or category.value,
         )
         self._record_activity("memory_updated", "保存直接學習證據", detail=signal or category.value)
-        proposed_snapshot, policy_proposal = self.policy_agent.propose_strategy(
+        strategy_decision, policy_proposal = self.policy_agent.propose_strategy(
             self.state,
             context=self._agent_execution_context(),
         )
-        self.state.edf_snapshot = proposed_snapshot
+        self.state.strategy_decision = strategy_decision
+        self.state.edf_snapshot = self.edf.snapshot_from_decision(self.state, strategy_decision)
         self._refresh_learner_progress()
         self._record_agent_result(policy_proposal, node_id=self.state.current_node_id)
         self._record_methodology_event(
@@ -1614,6 +1616,8 @@ class PelicanEngine:
 
     def _select_tutor_role(self, reason: str) -> AgentRole:
         """Choose fast or slow tutor executor from EDF route plus selector fallback."""
+        if self.state.strategy_decision.route == "slow":
+            return AgentRole.SLOW_SIMULATOR_AGENT
         if self.state.edf_snapshot.route == "slow":
             return AgentRole.SLOW_SIMULATOR_AGENT
         if "slow-thinking" in reason:

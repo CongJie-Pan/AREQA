@@ -418,6 +418,8 @@ def test_humanities_micro_check_clarification_does_not_repeat_lesson_or_update_m
     assert engine.state.memory_snapshot.recent_dialogue_acts[-1] == "micro_check_confusion"
     assert engine.state.edf_snapshot.dialogue_act == "micro_check_confusion"
     assert engine.state.edf_snapshot.pedagogical_strategy == "give_choices"
+    assert engine.state.strategy_decision.dialogue_act == "micro_check_confusion"
+    assert engine.state.strategy_decision.selected_strategy is TutoringStrategy.GIVE_CHOICES
     assert {proposal.role for proposal in engine.state.agent_proposals[-2:]} == {
         AgentRole.DIALOGUE_ACT_AGENT,
         AgentRole.POLICY_AGENT,
