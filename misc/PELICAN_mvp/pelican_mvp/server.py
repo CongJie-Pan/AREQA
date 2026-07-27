@@ -504,7 +504,9 @@ def _markdown_export(engine: PelicanEngine) -> str:
         lines.append("_No tutor proposal trace recorded yet._")
 
     lines.extend(["", "## Learner Progress Snapshot", ""])
-    progress_nodes = learning["progress_snapshot"].get("nodes", [])
+    progress = learning["progress_snapshot"]
+    lines.extend(_progress_snapshot_summary_lines(progress))
+    progress_nodes = progress.get("nodes", [])
     if progress_nodes:
         for node in progress_nodes:
             lines.append(
@@ -514,6 +516,32 @@ def _markdown_export(engine: PelicanEngine) -> str:
         lines.append("_No learner progress snapshot recorded yet._")
     lines.append("")
     return "\n".join(lines)
+
+
+def _progress_snapshot_summary_lines(progress: dict[str, Any]) -> list[str]:
+    """Render learner-visible progress summary without raw evidence content."""
+    nodes = progress.get("nodes", [])
+    current_node_id = progress.get("current_node_id") or "-"
+    current_focus = "-"
+    for node in nodes:
+        if node.get("node_id") == current_node_id:
+            current_focus = node.get("label") or current_node_id
+            break
+    status_counts: dict[str, int] = {}
+    for node in nodes:
+        status = str(node.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    mastery_map = ", ".join(f"{status}={count}" for status, count in sorted(status_counts.items())) or "-"
+    fragile = progress.get("fragile_concepts") or []
+    return [
+        f"- Current focus: `{current_focus}` (`{current_node_id}`)",
+        f"- Learner state: `{progress.get('learner_state') or '-'}`",
+        f"- Recommended next action: `{progress.get('recommended_next_action') or '-'}`",
+        f"- Strategy signal: `{progress.get('strategy_signal') or '-'}`",
+        f"- Fragile concepts: `{', '.join(fragile) if fragile else '-'}`",
+        f"- Mastery map: `{mastery_map}`",
+        "",
+    ]
 
 
 @app.get("/api/curriculums")

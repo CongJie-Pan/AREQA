@@ -329,8 +329,13 @@ def test_api_reset_phase() -> None:
 
 def test_api_export_markdown_includes_transcript_and_metadata() -> None:
     learner = "export_user"
+    raw_answer = "export raw progress guard"
     client.post("/api/reset", json={"learner_id": learner})
     client.post("/api/respond", json={"learner_id": learner, "answer": "深度學習"})
+
+    client.post("/api/respond", json={"learner_id": learner, "answer": "understand basics"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": "beginner"})
+    client.post("/api/respond", json={"learner_id": learner, "answer": raw_answer})
 
     response = client.get("/api/export", params={"learner_id": learner})
 
@@ -349,6 +354,13 @@ def test_api_export_markdown_includes_transcript_and_metadata() -> None:
     assert "## Recent Evidence-to-Response Trace" in text
     assert "## Tutor Proposal Trace" in text
     assert "## Learner Progress Snapshot" in text
+    assert "- Current focus:" in text
+    assert "- Learner state:" in text
+    assert "- Recommended next action:" in text
+    assert "- Fragile concepts:" in text
+    assert "- Mastery map:" in text
+    progress_section = text.split("## Learner Progress Snapshot", 1)[1]
+    assert raw_answer not in progress_section
 
 
 def test_api_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:
