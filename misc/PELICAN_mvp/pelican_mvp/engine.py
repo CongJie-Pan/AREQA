@@ -28,6 +28,7 @@ from .models import (
     AgentProposal,
     AgentRole,
     BoundedTutorProposal,
+    DialogueControlDecision,
     DialogueActSignal,
     KnowledgeStatus,
     LearnerDialogueAct,
@@ -1366,20 +1367,71 @@ class PelicanEngine:
         )
         self._record_agent_result(interpretation.result, node_id=node_id)
         signal = interpretation.signal
-        if signal.act is LearnerDialogueAct.TERM_DEFINITION_REQUEST:
-            return self._handle_term_clarification(signal, node_id)
-        if signal.act is LearnerDialogueAct.MICRO_CHECK_CONFUSION:
-            return self._handle_micro_check_confusion(signal, node_id)
-        if signal.act is LearnerDialogueAct.CLARIFICATION_QUESTION and signal.confidence >= 0.72:
-            return self._handle_term_clarification(signal, node_id)
-        return None
+        decision = self._dialogue_control_decision(signal)
+        if decision.should_diagnose:
+            return None
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.COGNITIVE_DIAGNOSIS,
+            input_ref=MethodologyRef("dialogue_act", decision.act.value, "learner dialogue control"),
+            output_ref=MethodologyRef("dialogue_control", decision.reason_code, "dialogue control decision"),
+            node_id=node_id,
+            reason_code=decision.reason_code,
+        )
+        if decision.act is LearnerDialogueAct.MICRO_CHECK_CONFUSION:
+            return self._handle_micro_check_confusion(signal, node_id, decision=decision)
+        return self._handle_term_clarification(signal, node_id, decision=decision)
 
-    def _handle_term_clarification(self, signal: DialogueActSignal, node_id: str) -> TurnOutcome:
+    def _dialogue_control_decision(self, signal: DialogueActSignal) -> DialogueControlDecision:
+        """Convert a dialogue-act signal into the formal pre-diagnosis gate.
+
+        Args:
+            signal: Bounded dialogue-act proposal from ``DialogueActAgent``.
+
+        Returns:
+            A dialogue-control decision that either allows normal cognitive
+            diagnosis or routes the turn as clarification/control metadata.
+
+        Compatibility:
+            Only generated humanities sessions call this helper today. It keeps
+            fixture and STEM sessions on the legacy diagnosis path while making
+            the humanities clarification path explicit in methodology traces.
+        """
+        strategy = strategy_for_dialogue_act(signal.act)
+        should_route = strategy is not None or (
+            signal.act is LearnerDialogueAct.CLARIFICATION_QUESTION and signal.confidence >= 0.72
+        )
+        if not should_route:
+            return DialogueControlDecision(
+                act=signal.act,
+                should_diagnose=True,
+                memory_kind="answer_evidence",
+                target_text=signal.target_text,
+                reason_code="dialogue_control_diagnose",
+                confidence=signal.confidence,
+            )
+        return DialogueControlDecision(
+            act=signal.act,
+            should_diagnose=False,
+            memory_kind="dialogue_control",
+            target_text=signal.target_text,
+            reason_code=f"dialogue_control:{signal.reason_code}",
+            confidence=signal.confidence,
+        )
+
+    def _handle_term_clarification(
+        self,
+        signal: DialogueActSignal,
+        node_id: str,
+        *,
+        decision: DialogueControlDecision | None = None,
+    ) -> TurnOutcome:
         """Clarify one learner-requested term without updating mastery state."""
+        decision = decision or self._dialogue_control_decision(signal)
         label = self.curriculum.nodes[node_id].label
-        target = signal.target_text or label
+        target = decision.target_text or signal.target_text or label
         strategy = strategy_for_dialogue_act(signal.act) or TutoringStrategy.CLARIFY_TERM
-        self._refresh_dialogue_context(signal, node_id, strategy)
+        self._refresh_dialogue_context(signal, node_id, strategy, decision=decision)
         message = _term_clarification_message(target, label)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1388,7 +1440,7 @@ class PelicanEngine:
             output_ref=MethodologyRef("tutor_message", "rule", "term clarification"),
             node_id=node_id,
             strategy=strategy.value,
-            reason_code=signal.reason_code,
+            reason_code=decision.reason_code,
         )
         log_event(
             "pelican_dialogue_act_routed",
@@ -1396,7 +1448,7 @@ class PelicanEngine:
             phase=self.state.phase,
             node_id=node_id,
             strategy=strategy.value,
-            reason_code=signal.reason_code,
+            reason_code=decision.reason_code,
         )
         self.state.current_prompt = message
         self.state.current_prompt_source = "dialogue_act"
@@ -1410,12 +1462,19 @@ class PelicanEngine:
             "dialogue_act:term_clarification_no_mastery_update",
         )
 
-    def _handle_micro_check_confusion(self, signal: DialogueActSignal, node_id: str) -> TurnOutcome:
+    def _handle_micro_check_confusion(
+        self,
+        signal: DialogueActSignal,
+        node_id: str,
+        *,
+        decision: DialogueControlDecision | None = None,
+    ) -> TurnOutcome:
         """Offer choices for a micro-check without replaying the full lesson."""
+        decision = decision or self._dialogue_control_decision(signal)
         label = self.curriculum.nodes[node_id].label
-        target = signal.target_text or "這個檢核問題"
+        target = decision.target_text or signal.target_text or "這個檢核問題"
         strategy = strategy_for_dialogue_act(signal.act) or TutoringStrategy.GIVE_CHOICES
-        self._refresh_dialogue_context(signal, node_id, strategy)
+        self._refresh_dialogue_context(signal, node_id, strategy, decision=decision)
         message = _micro_check_choice_message(target, label)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1424,7 +1483,7 @@ class PelicanEngine:
             output_ref=MethodologyRef("tutor_message", "rule", "micro-check choices"),
             node_id=node_id,
             strategy=strategy.value,
-            reason_code=signal.reason_code,
+            reason_code=decision.reason_code,
         )
         log_event(
             "pelican_dialogue_act_routed",
@@ -1432,7 +1491,7 @@ class PelicanEngine:
             phase=self.state.phase,
             node_id=node_id,
             strategy=strategy.value,
-            reason_code=signal.reason_code,
+            reason_code=decision.reason_code,
         )
         self.state.current_prompt = message
         self.state.current_prompt_source = "dialogue_act"
@@ -1451,8 +1510,11 @@ class PelicanEngine:
         signal: DialogueActSignal,
         node_id: str,
         strategy: TutoringStrategy,
+        *,
+        decision: DialogueControlDecision | None = None,
     ) -> None:
         """Update bounded dialogue memory and EDF policy without mastery evidence."""
+        decision = decision or self._dialogue_control_decision(signal)
         self.memory.record_dialogue_act(
             self.state,
             signal,
@@ -1461,11 +1523,11 @@ class PelicanEngine:
         )
         self._record_methodology_event(
             MethodologyEventType.GUM_SUBSYSTEM,
-            input_ref=MethodologyRef("dialogue_act", signal.act.value, "learner dialogue act"),
+            input_ref=MethodologyRef(decision.memory_kind, decision.act.value, "learner dialogue control"),
             output_ref=MethodologyRef("memory_snapshot", node_id, "GUM dialogue snapshot"),
             node_id=node_id,
             strategy=strategy.value,
-            reason_code=signal.reason_code,
+            reason_code=decision.reason_code,
         )
         strategy_decision, policy_proposal = self.policy_agent.propose_strategy(
             self.state,

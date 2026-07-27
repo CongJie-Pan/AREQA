@@ -426,6 +426,22 @@ def test_humanities_micro_check_clarification_does_not_repeat_lesson_or_update_m
         AgentRole.DIALOGUE_ACT_AGENT,
         AgentRole.POLICY_AGENT,
     }
+    control_events = [
+        event
+        for event in engine.state.methodology_events
+        if event.event_type is MethodologyEventType.PIPELINE_STAGE
+        and event.output_ref is not None
+        and event.output_ref.ref_type == "dialogue_control"
+    ]
+    assert control_events[-1].reason_code.startswith("dialogue_control:")
+    gum_events = [
+        event
+        for event in engine.state.methodology_events
+        if event.event_type is MethodologyEventType.GUM_SUBSYSTEM
+        and event.input_ref is not None
+        and event.input_ref.ref_type == "dialogue_control"
+    ]
+    assert gum_events[-1].reason_code.startswith("dialogue_control:")
 
 
 def test_humanities_llm_mode_uses_model_generated_remediation(tmp_path: Path) -> None:
