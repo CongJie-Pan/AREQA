@@ -790,6 +790,7 @@ export const MessageItem = memo(function MessageItem({
                 onCancel={closeDislikeFeedback}
                 open={isFeedbackModalOpen}
                 title={null}
+                wrapClassName={isMobileFeedbackModal ? styles.feedbackSheetWrap : undefined}
               >
                 <div className={styles.feedbackForm}>
                   {isMobileFeedbackModal && <div className={styles.feedbackSheetHandle} />}
@@ -804,6 +805,8 @@ export const MessageItem = memo(function MessageItem({
                       options={FEEDBACK_OPTIONS}
                       placeholder="選取問題"
                       popupClassName={styles.feedbackSelectDropdown}
+                      getPopupContainer={(triggerNode) => triggerNode.parentElement ?? document.body}
+                      listHeight={260}
                       value={feedbackReason ?? undefined}
                     />
                   </div>

@@ -635,6 +635,29 @@ quoteBlockContent: css`
     }
   `,
 
+  feedbackSheetWrap: css`
+    @media (max-width: 768px) {
+      position: fixed !important;
+      top: var(--areqa-visual-viewport-top, 0) !important;
+      right: 0 !important;
+      bottom: auto !important;
+      left: 0 !important;
+      display: flex;
+      align-items: flex-end;
+      height: var(--areqa-visual-viewport-height, 100dvh) !important;
+      overflow: hidden !important;
+      overscroll-behavior: contain;
+
+      .ant-modal {
+        top: auto !important;
+        width: 100vw !important;
+        max-width: 100vw;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+    }
+  `,
+
   feedbackSheetModal: css`
     top: auto;
     margin: 0;
@@ -642,7 +665,7 @@ quoteBlockContent: css`
     padding-bottom: 0;
 
     .ant-modal-content {
-      max-height: min(82dvh, 640px);
+      max-height: min(calc(var(--areqa-visual-viewport-height, 100dvh) - 24px), 640px);
       overflow-y: auto;
       border: 1px solid rgba(216, 162, 92, 0.16);
       border-radius: 24px 24px 0 0;
@@ -654,7 +677,7 @@ quoteBlockContent: css`
 
     @media (max-width: 768px) {
       width: 100vw !important;
-      position: fixed;
+      position: relative;
       right: 0;
       bottom: 0;
       left: 0;
@@ -767,6 +790,8 @@ quoteBlockContent: css`
   `,
 
   feedbackSelectDropdown: css`
+    max-height: min(44dvh, 320px);
+    overflow-y: auto;
     background: #241d2e;
     border: 1px solid rgba(216, 162, 92, 0.22);
     border-radius: 14px;
