@@ -11,6 +11,7 @@ from .agents import (
     AgentExecutionContext,
     AgentExecutionResult,
     DiagnosisAgent,
+    DialogueActAgent,
     FastTutorAgent,
     IntakeAgent,
     PolicyAgent,
@@ -27,7 +28,9 @@ from .models import (
     AgentProposal,
     AgentRole,
     BoundedTutorProposal,
+    DialogueActSignal,
     KnowledgeStatus,
+    LearnerDialogueAct,
     LearnerIntakeProfile,
     LearnerProgressNode,
     LearnerProgressSnapshot,
@@ -84,6 +87,7 @@ class PelicanEngine:
         self.curriculum = self._resolve_curriculum()
         self.llm = LlmAdapter()
         self.planner = LearningPlanner(self.llm)
+        self.dialogue_act_agent = DialogueActAgent()
         self.intake_agent = IntakeAgent()
         self.skill_agent = SkillAgent(DomainSkillGenerator(self.llm))
         self.diagnosis_agent = DiagnosisAgent(self.llm)
@@ -887,6 +891,9 @@ class PelicanEngine:
             return self._handle_scope_mismatch(answer, signal)
         if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
             return self._handle_acceleration_request(answer)
+        dialogue_outcome = self._route_dialogue_act(answer, node_id)
+        if dialogue_outcome is not None:
+            return dialogue_outcome
         category = self._classify(answer)
         self._record_activity("response_classified", "分類學習者回應", detail=category.value)
         if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
@@ -1192,6 +1199,9 @@ class PelicanEngine:
             return self._handle_scope_mismatch(answer, signal)
         if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
             return self._handle_acceleration_request(answer)
+        dialogue_outcome = self._route_dialogue_act(answer, node_id)
+        if dialogue_outcome is not None:
+            return dialogue_outcome
         category = self._classify(answer)
         if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
             return self._handle_scaffold_request(answer, category)
@@ -1336,6 +1346,101 @@ class PelicanEngine:
         self.state.current_prompt_source = source
         self.store.save(self.state)
         return TurnOutcome(message, node_id, category, strategy, tuple(changes), reason)
+
+    def _route_dialogue_act(self, answer: str, node_id: str) -> TurnOutcome | None:
+        """Route conversational control turns before mastery diagnosis.
+
+        The dialogue-act layer prevents learner clarification questions from
+        being recorded as wrong knowledge evidence. It currently intercepts only
+        generated humanities sessions because fixture/STEM compatibility relies
+        on the legacy diagnosis path.
+        """
+        if self.state.plan_source is not PlanSource.GENERATED or not self._is_humanities_plan():
+            return None
+        interpretation = self.dialogue_act_agent.classify(
+            answer,
+            current_prompt=self.state.current_prompt,
+            previous_tutor_message=self.state.current_prompt,
+            node_label=self.curriculum.nodes[node_id].label,
+            context=self._agent_execution_context(),
+        )
+        self._record_agent_result(interpretation.result, node_id=node_id)
+        signal = interpretation.signal
+        if signal.act is LearnerDialogueAct.TERM_DEFINITION_REQUEST:
+            return self._handle_term_clarification(signal, node_id)
+        if signal.act is LearnerDialogueAct.MICRO_CHECK_CONFUSION:
+            return self._handle_micro_check_confusion(signal, node_id)
+        if signal.act is LearnerDialogueAct.CLARIFICATION_QUESTION and signal.confidence >= 0.72:
+            return self._handle_term_clarification(signal, node_id)
+        return None
+
+    def _handle_term_clarification(self, signal: DialogueActSignal, node_id: str) -> TurnOutcome:
+        """Clarify one learner-requested term without updating mastery state."""
+        label = self.curriculum.nodes[node_id].label
+        target = signal.target_text or label
+        message = _term_clarification_message(target, label)
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.TUTOR_RESPONSE,
+            input_ref=MethodologyRef("dialogue_act", signal.act.value, "learner clarification"),
+            output_ref=MethodologyRef("tutor_message", "rule", "term clarification"),
+            node_id=node_id,
+            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            reason_code=signal.reason_code,
+        )
+        log_event(
+            "pelican_dialogue_act_routed",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            node_id=node_id,
+            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            reason_code=signal.reason_code,
+        )
+        self.state.current_prompt = message
+        self.state.current_prompt_source = "dialogue_act"
+        self.store.save(self.state)
+        return TurnOutcome(
+            message,
+            node_id,
+            None,
+            TutoringStrategy.OPEN_QUESTION,
+            (),
+            "dialogue_act:term_clarification_no_mastery_update",
+        )
+
+    def _handle_micro_check_confusion(self, signal: DialogueActSignal, node_id: str) -> TurnOutcome:
+        """Offer choices for a micro-check without replaying the full lesson."""
+        label = self.curriculum.nodes[node_id].label
+        target = signal.target_text or "這個檢核問題"
+        message = _micro_check_choice_message(target, label)
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.TUTOR_RESPONSE,
+            input_ref=MethodologyRef("dialogue_act", signal.act.value, "micro-check confusion"),
+            output_ref=MethodologyRef("tutor_message", "rule", "micro-check choices"),
+            node_id=node_id,
+            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            reason_code=signal.reason_code,
+        )
+        log_event(
+            "pelican_dialogue_act_routed",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            node_id=node_id,
+            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            reason_code=signal.reason_code,
+        )
+        self.state.current_prompt = message
+        self.state.current_prompt_source = "dialogue_act"
+        self.store.save(self.state)
+        return TurnOutcome(
+            message,
+            node_id,
+            None,
+            TutoringStrategy.OPEN_QUESTION,
+            (),
+            "dialogue_act:micro_check_confusion_no_mastery_update",
+        )
 
     def _refresh_learning_context(self, answer: str, category: ResponseCategory, signal: str | None = None) -> None:
         """Update bounded direct evidence and keep EDF inference separate."""
@@ -2028,6 +2133,50 @@ def _rule_intake_semantic_signal(answer: str) -> IntakeSemanticSignal:
         intent="normal_answer",
         confidence=0.55,
         reason_code="rule_no_revision",
+    )
+
+
+def _term_clarification_message(target: str, node_label: str) -> str:
+    """Return a short humanities clarification for a learner-requested term.
+
+    Args:
+        target: Bounded term extracted by ``DialogueActAgent``.
+        node_label: Current knowledge-map concept used only for grounding.
+
+    Returns:
+        A learner-facing clarification that avoids replaying the prior
+        mini-lesson and asks for one small next action.
+    """
+    term = target.strip() or "這個詞"
+    if term == "轉折點":
+        meaning = "讓局勢方向明顯改變的關鍵事件或原因"
+    elif term in {"原因", "關鍵"}:
+        meaning = "最能解釋前後變化的核心因素"
+    elif term == "影響":
+        meaning = "這件事後來造成的改變或結果"
+    else:
+        meaning = f"剛剛問題裡需要先釐清的「{term}」"
+    return (
+        f"這裡的「{term}」是指：{meaning}。\n\n"
+        f"你不用重講整段內容；先把它放回「{node_label}」這個知識點裡看。"
+        "可以先回答一個很小的版本：它讓前後情勢、人物選擇，或後續結果出現什麼改變？"
+    )
+
+
+def _micro_check_choice_message(target: str, node_label: str) -> str:
+    """Return choices when a learner is unsure how to answer a micro-check."""
+    term = target.strip() or "剛剛那題"
+    prefix = ""
+    if term == "轉折點":
+        prefix = "這裡的「轉折點」是指：讓局勢方向明顯改變的關鍵事件或原因。\n\n"
+    return (
+        prefix +
+        f"可以，我把「{term}」換成更好選的方式。\n\n"
+        f"先看「{node_label}」時，你只要從三個角度挑一個：\n"
+        "A. 前面發生了什麼，讓局勢開始改變\n"
+        "B. 哪個事件或條件最直接推動改變\n"
+        "C. 這個改變後來造成什麼影響\n\n"
+        "你可以只回 A、B、C，或用一句話說你選哪個。"
     )
 
 

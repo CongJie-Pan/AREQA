@@ -150,6 +150,14 @@ def _classify_rule(
             target_text=_first_micro_check_term(current_prompt, previous_tutor_message),
             reason_code="micro_check_choice_confusion",
         )
+    inline_micro_term = _inline_micro_check_term(text)
+    if inline_micro_term and text.endswith(("?", "？")):
+        return DialogueActSignal(
+            LearnerDialogueAct.MICRO_CHECK_CONFUSION,
+            0.84,
+            target_text=inline_micro_term,
+            reason_code="inline_micro_check_term_question",
+        )
     if text.endswith(("?", "？")) and len(text) <= 28:
         return DialogueActSignal(
             LearnerDialogueAct.CLARIFICATION_QUESTION,
@@ -187,6 +195,14 @@ def _first_micro_check_term(current_prompt: str, previous_tutor_message: str) ->
     haystack = f"{current_prompt} {previous_tutor_message}"
     for term in _MICRO_CHECK_TERMS:
         if term in haystack:
+            return term
+    return ""
+
+
+def _inline_micro_check_term(text: str) -> str:
+    """Return a known micro-check term mentioned inside a short question."""
+    for term in _MICRO_CHECK_TERMS:
+        if term in text:
             return term
     return ""
 

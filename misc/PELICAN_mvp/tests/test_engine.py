@@ -399,6 +399,24 @@ def test_humanities_restatement_must_pass_before_next_knowledge_point(tmp_path: 
     assert "八旗制度" in correct.message
 
 
+def test_humanities_micro_check_clarification_does_not_repeat_lesson_or_update_mastery(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    first = engine.respond("我不知道")
+    evidence_count = len(engine.state.direct_evidence)
+
+    clarification = engine.respond("什麼轉折點？")
+
+    assert clarification.node_id == "jianzhou_jurchen_origins"
+    assert "這裡的「轉折點」是指" in clarification.message
+    assert "A. 前面發生了什麼" in clarification.message
+    assert first.message != clarification.message
+    assert "??窗" not in clarification.message
+    assert len(engine.state.direct_evidence) == evidence_count
+    assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
+    assert engine.state.current_node_id == "jianzhou_jurchen_origins"
+    assert engine.state.agent_proposals[-1].role is AgentRole.DIALOGUE_ACT_AGENT
+
+
 def test_humanities_llm_mode_uses_model_generated_remediation(tmp_path: Path) -> None:
     class HumanitiesTutorLlm:
         available = True
