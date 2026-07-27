@@ -147,7 +147,7 @@ export const useStyles = createStyles(({ css }) => ({
     &:hover {
       background: rgba(255, 255, 255, 0.05);
       
-      .delete-btn {
+      .conversation-menu-btn {
         opacity: 1;
       }
     }
@@ -216,6 +216,37 @@ export const useStyles = createStyles(({ css }) => ({
       color: #ff4d4f;
       background: rgba(255, 77, 79, 0.1);
     }
+  `,
+
+  menuBtn: css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.46);
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.2s;
+
+    &:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    @media (max-width: 768px) {
+      display: none;
+    }
+  `,
+
+  pinnedIcon: css`
+    color: #d8a25c;
+    flex-shrink: 0;
+    opacity: 0.86;
   `,
 
   loading: css`

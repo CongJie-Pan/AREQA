@@ -115,9 +115,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       animationFrameId = window.requestAnimationFrame(() => {
         const viewportHeight = viewport?.height ?? window.innerHeight;
+        const viewportTop = viewport?.offsetTop ?? 0;
         root.style.setProperty(
           '--areqa-visual-viewport-height',
           `${Math.round(viewportHeight)}px`,
+        );
+        root.style.setProperty(
+          '--areqa-visual-viewport-top',
+          `${Math.round(viewportTop)}px`,
         );
         animationFrameId = null;
       });
@@ -138,6 +143,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
       window.removeEventListener('resize', updateViewportHeight);
       window.removeEventListener('orientationchange', updateViewportHeight);
       root.style.removeProperty('--areqa-visual-viewport-height');
+      root.style.removeProperty('--areqa-visual-viewport-top');
     };
   }, []);
 

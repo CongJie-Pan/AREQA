@@ -7,8 +7,14 @@ import { createStyles } from 'antd-style';
 
 export const useStyles = createStyles(({ css, token }) => ({
   container: css`
+    position: fixed;
+    top: var(--areqa-visual-viewport-top, 0);
+    right: 0;
+    bottom: auto;
+    left: 0;
     display: flex;
     height: var(--areqa-visual-viewport-height, 100dvh);
+    width: 100vw;
     min-height: 0;
     overflow: hidden;
     background: #130f18;
@@ -61,6 +67,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     min-width: 0;
     overflow: hidden;
+    overscroll-behavior: contain;
     background: #130f18;
   `,
 
@@ -126,6 +133,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;
+    overscroll-behavior: contain;
   `,
 
   /* When chat is empty, center the greeting + input together vertically */
@@ -150,10 +159,16 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex: 1;
     overflow-y: auto;
     min-height: 0;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   `,
 
   inputArea: css`
     flex-shrink: 0;
+
+    @media (max-width: 768px) {
+      padding-bottom: max(env(safe-area-inset-bottom), 0px);
+    }
   `,
 
   errorBanner: css`

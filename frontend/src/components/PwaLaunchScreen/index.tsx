@@ -34,6 +34,10 @@ const useStyles = createStyles(({ css }) => ({
 }));
 
 function isStandalonePwa(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false;
+  }
+
   const navigatorWithStandalone = navigator as Navigator & {
     standalone?: boolean;
   };
@@ -53,15 +57,13 @@ function isStandalonePwa(): boolean {
  */
 export function PwaLaunchScreen() {
   const { styles, cx } = useStyles();
-  const [shouldRender, setShouldRender] = useState(false);
+  const [shouldRender, setShouldRender] = useState(() => isStandalonePwa());
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   useEffect(() => {
-    if (!isStandalonePwa()) {
+    if (!shouldRender) {
       return;
     }
-
-    setShouldRender(true);
 
     const fadeTimer = window.setTimeout(() => {
       setIsFadingOut(true);
@@ -75,7 +77,7 @@ export function PwaLaunchScreen() {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(removeTimer);
     };
-  }, []);
+  }, [shouldRender]);
 
   if (!shouldRender) {
     return null;

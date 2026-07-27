@@ -717,19 +717,29 @@ export const MessageItem = memo(function MessageItem({
               </Tooltip>
               {!isStreaming && onFeedback && (
                 <>
-                  <Tooltip title="這則回覆有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
-                    <button
-                      className={cx(
-                        styles.actionButton,
-                        isLiked && styles.actionButtonActive,
-                      )}
-                      onClick={handleLikeFeedback}
-                      aria-label="這則回覆有幫助"
-                      aria-pressed={isLiked}
-                    >
-                      <ThumbsUp fill={isLiked ? 'currentColor' : 'none'} size={16} />
-                    </button>
-                  </Tooltip>
+                  <span
+                    aria-hidden={isDisliked}
+                    className={cx(
+                      styles.feedbackActionSlot,
+                      isDisliked && styles.feedbackActionSlotCollapsed,
+                    )}
+                  >
+                    <Tooltip title="這則回覆有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                      <button
+                        className={cx(
+                          styles.actionButton,
+                          isLiked && styles.actionButtonActive,
+                        )}
+                        disabled={isDisliked}
+                        onClick={handleLikeFeedback}
+                        aria-label="這則回覆有幫助"
+                        aria-pressed={isLiked}
+                        tabIndex={isDisliked ? -1 : undefined}
+                      >
+                        <ThumbsUp fill={isLiked ? 'currentColor' : 'none'} size={16} />
+                      </button>
+                    </Tooltip>
+                  </span>
                   <span
                     aria-hidden={isLiked}
                     className={cx(
