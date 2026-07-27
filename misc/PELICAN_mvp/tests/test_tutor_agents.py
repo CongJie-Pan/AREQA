@@ -55,6 +55,28 @@ class HumanitiesPartialWithoutAckLlm:
         )
 
 
+class SlowChoiceLlm:
+    available = True
+
+    def slow_strategy_simulation(self, **kwargs):
+        return {
+            "selected_strategy": "short_reframe",
+            "reason_code": "lower load clarification",
+            "rationale": "Use a lighter clarification before another lesson.",
+        }
+
+    def tutor_proposal(self, **kwargs) -> BoundedTutorProposal:
+        return BoundedTutorProposal(
+            response="Here is a short reframing of the current idea before the next check.",
+            pedagogical_move="short_reframe",
+            summary="Selected short reframe from candidate simulation.",
+            node_id=kwargs["node_id"],
+            strategy=kwargs["strategy"].value,
+            evidence_signal=kwargs["evidence_signal"],
+            source="llm",
+        )
+
+
 def prepared_engine(tmp_path: Path) -> PelicanEngine:
     engine = PelicanEngine(tmp_path)
     engine.start()
@@ -104,6 +126,32 @@ def test_slow_simulator_agent_marks_slow_route_metadata(tmp_path: Path) -> None:
     assert "selected=" in response.result.display_summary
     assert "load=" in response.result.display_summary
     assert "fit=" in response.result.display_summary
+
+
+def test_slow_simulator_agent_accepts_valid_llm_candidate_selection(tmp_path: Path) -> None:
+    engine = prepared_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.state.edf_snapshot = replace(
+        engine.state.edf_snapshot,
+        learner_state="CLARIFYING",
+        pedagogical_strategy="give_choices",
+        dialogue_act="micro_check_confusion",
+    )
+    engine.state.memory_snapshot = replace(engine.state.memory_snapshot, repeated_confusion_count=1)
+    agent = SlowSimulatorAgent(SlowChoiceLlm())
+
+    response = agent.propose_response(
+        state=engine.state,
+        curriculum=engine.curriculum,
+        strategy=TutoringStrategy.GIVE_CHOICES,
+        node_id="math_intuition",
+        base_prompt=engine.state.current_prompt,
+        evidence_signal="unknown",
+    )
+
+    assert response.proposal.strategy == "short_reframe"
+    assert response.validation_status is ProposalValidationStatus.ACCEPTED
+    assert "selection=llm" in response.result.display_summary
 
 
 def test_invalid_llm_tutor_proposal_falls_back_safely(tmp_path: Path) -> None:

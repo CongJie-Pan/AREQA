@@ -78,7 +78,13 @@ class SlowSimulatorAgent:
             recent_safe_signals=recent_safe_signals,
         )
         candidates = simulate_strategy_candidates(simulation_context)
-        selected = max(candidates, key=lambda item: item.score)
+        selected, selection_source = _select_candidate(
+            llm=self.llm,
+            state=state,
+            simulation_context=simulation_context,
+            candidates=candidates,
+            evidence_signal=evidence_signal,
+        )
         proposal, status, reason = _candidate_or_fallback(
             role=self.role,
             llm=self.llm,
@@ -98,12 +104,46 @@ class SlowSimulatorAgent:
             summary=_simulation_summary(
                 candidates=candidates,
                 selected=selected,
+                selection_source=selection_source,
                 fallback_reason=reason,
             ),
             pedagogical_move=_slow_pedagogical_move(proposal.pedagogical_move),
             strategy=selected.strategy.value,
         )
         return _response_from_proposal(self.role, proposal, status, reason)
+
+
+def _select_candidate(
+    *,
+    llm: LlmAdapter,
+    state: SessionState,
+    simulation_context: TutoringContext,
+    candidates: tuple[StrategyCandidate, ...],
+    evidence_signal: str,
+) -> tuple[StrategyCandidate, str]:
+    """Select a slow-route candidate with bounded LLM arbitration when enabled."""
+    deterministic = max(candidates, key=lambda item: item.score)
+    if state.mode != "llm" or not getattr(llm, "available", False):
+        return deterministic, "deterministic"
+    try:
+        payload = llm.slow_strategy_simulation(
+            learner_state=simulation_context.learner_state,
+            pedagogical_policy=simulation_context.pedagogical_policy,
+            node_id=simulation_context.node_id,
+            node_label=simulation_context.node_label,
+            evidence_signal=evidence_signal,
+            recent_safe_signals=simulation_context.recent_signals,
+            dialogue_act=simulation_context.dialogue_act,
+            repeated_confusion_count=simulation_context.repeated_confusion_count,
+            candidates=tuple(candidate.to_dict() for candidate in candidates),
+        )
+    except Exception:
+        return deterministic, "deterministic"
+    selected_strategy = str((payload or {}).get("selected_strategy", "")).strip()
+    for candidate in candidates:
+        if candidate.strategy.value == selected_strategy:
+            return candidate, "llm"
+    return deterministic, "deterministic"
 
 
 def _simulation_context(
@@ -148,6 +188,7 @@ def _simulation_summary(
     *,
     candidates: tuple[StrategyCandidate, ...],
     selected: StrategyCandidate,
+    selection_source: str,
     fallback_reason: str,
 ) -> str:
     """Render a bounded candidate comparison for trace display."""
@@ -160,6 +201,7 @@ def _simulation_summary(
     return bound_agent_text(
         "slow_simulation "
         f"candidates={len(candidates)} selected={selected.strategy.value} "
+        f"selection={selection_source} "
         f"gain={selected.expected_gain:.2f} risk={selected.risk:.2f} "
         f"load={selected.cognitive_load:.2f} fit={selected.learner_fit:.2f} "
         f"reason={fallback_reason}; {comparison}",

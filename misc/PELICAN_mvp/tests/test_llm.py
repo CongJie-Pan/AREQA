@@ -189,6 +189,44 @@ def test_llm_edf_policy_decision_prompt_uses_bounded_state() -> None:
     assert "recent_dialogue_acts: micro_check_confusion" in adapter.user_prompt
 
 
+def test_llm_slow_strategy_simulation_prompt_uses_candidate_set() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.user_prompt = ""
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.user_prompt = user
+            return {
+                "selected_strategy": "short_reframe",
+                "reason_code": "lower load",
+                "rationale": "Pick the lighter clarification candidate.",
+            }
+
+    adapter = RecordingAdapter()
+
+    payload = adapter.slow_strategy_simulation(
+        learner_state="CLARIFYING",
+        pedagogical_policy="give_choices",
+        node_id="node_1",
+        node_label="Node One",
+        evidence_signal="unknown",
+        recent_safe_signals=("unknown",),
+        dialogue_act="micro_check_confusion",
+        repeated_confusion_count=1,
+        candidates=(
+            {"strategy": "give_choices", "score": 1.4, "risk": 0.3},
+            {"strategy": "short_reframe", "score": 1.3, "risk": 0.2},
+        ),
+    )
+
+    assert payload["reason_code"] == "lower_load"
+    assert "candidates_json:" in adapter.user_prompt
+    assert "short_reframe" in adapter.user_prompt
+    assert "recent_safe_signals: unknown" in adapter.user_prompt
+    assert "dialogue_act: micro_check_confusion" in adapter.user_prompt
+
+
 def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() -> None:
     class RecordingAdapter(LlmAdapter):
         def __init__(self) -> None:
