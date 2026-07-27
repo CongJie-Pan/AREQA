@@ -38,7 +38,7 @@ Position of this work. The present work builds on PELICAN for cognitive diagnosi
 
 ### III. Methods
 
-![Agentic PELICAN learning engine methodology](figures/agentic_pelican_learning_engine_methodology_v7.jpg)
+![Agentic PELICAN learning engine methodology](figures/agentic_pelican_learning_engine_methodology_v8.jpg)
 
 **Figure 1. Agentic PELICAN learning engine methodology.**
 
