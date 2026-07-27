@@ -505,6 +505,17 @@ def _markdown_export(engine: PelicanEngine) -> str:
 
     lines.extend(["", "## Learner Progress Snapshot", ""])
     progress = learning["progress_snapshot"]
+    log_event(
+        "pelican_progress_export_rendered",
+        learner_id=engine.state.learner_id,
+        phase=engine.state.phase,
+        node_id=progress.get("current_node_id"),
+        learner_state=progress.get("learner_state"),
+        recommended_next_action=progress.get("recommended_next_action"),
+        fragile_count=len(progress.get("fragile_concepts") or []),
+        progress_node_count=len(progress.get("nodes") or []),
+        reason_code="markdown_export",
+    )
     lines.extend(_progress_snapshot_summary_lines(progress))
     progress_nodes = progress.get("nodes", [])
     if progress_nodes:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 from ..curriculum import Curriculum
@@ -14,6 +15,7 @@ from ..models import (
     TutoringContext,
     TutoringStrategy,
 )
+from ..observability import log_event
 from ..tutoring import simulate_strategy_candidates
 from .artifacts import bound_agent_text
 from .base import AgentExecutionContext
@@ -85,6 +87,21 @@ class SlowSimulatorAgent:
             candidates=candidates,
             evidence_signal=evidence_signal,
         )
+        log_event(
+            "pelican_slow_simulation_decided",
+            learner_id=state.learner_id,
+            phase=state.phase,
+            node_id=node_id,
+            learner_state=simulation_context.learner_state,
+            strategy=selected.strategy.value,
+            selected_strategy=selected.strategy.value,
+            route=selected.route,
+            selection_source=selection_source,
+            candidate_count=len(candidates),
+            repeated_confusion_count=simulation_context.repeated_confusion_count,
+            dialogue_act=simulation_context.dialogue_act,
+            reason_code="slow_candidate_selected",
+        )
         proposal, status, reason = _candidate_or_fallback(
             role=self.role,
             llm=self.llm,
@@ -124,6 +141,19 @@ def _select_candidate(
     """Select a slow-route candidate with bounded LLM arbitration when enabled."""
     deterministic = max(candidates, key=lambda item: item.score)
     if state.mode != "llm" or not getattr(llm, "available", False):
+        log_event(
+            "pelican_slow_simulation_llm_skipped",
+            learner_id=state.learner_id,
+            phase=state.phase,
+            node_id=simulation_context.node_id,
+            learner_state=simulation_context.learner_state,
+            route=deterministic.route,
+            strategy=deterministic.strategy.value,
+            selected_strategy=deterministic.strategy.value,
+            selection_source="deterministic",
+            candidate_count=len(candidates),
+            reason_code="llm_slow_not_available" if state.mode == "llm" else "rule_mode",
+        )
         return deterministic, "deterministic"
     try:
         payload = llm.slow_strategy_simulation(
@@ -138,11 +168,52 @@ def _select_candidate(
             candidates=tuple(candidate.to_dict() for candidate in candidates),
         )
     except Exception:
+        log_event(
+            "pelican_slow_simulation_llm_rejected",
+            learner_id=state.learner_id,
+            phase=state.phase,
+            node_id=simulation_context.node_id,
+            learner_state=simulation_context.learner_state,
+            route=deterministic.route,
+            strategy=deterministic.strategy.value,
+            selected_strategy=deterministic.strategy.value,
+            selection_source="deterministic",
+            candidate_count=len(candidates),
+            reason_code="llm_slow_exception",
+        )
         return deterministic, "deterministic"
     selected_strategy = str((payload or {}).get("selected_strategy", "")).strip()
     for candidate in candidates:
         if candidate.strategy.value == selected_strategy:
+            log_event(
+                "pelican_slow_simulation_llm_adopted",
+                learner_id=state.learner_id,
+                phase=state.phase,
+                node_id=simulation_context.node_id,
+                learner_state=simulation_context.learner_state,
+                route=candidate.route,
+                strategy=candidate.strategy.value,
+                selected_strategy=candidate.strategy.value,
+                fallback_strategy=deterministic.strategy.value,
+                selection_source="llm",
+                candidate_count=len(candidates),
+                reason_code=_safe_reason_code(str((payload or {}).get("reason_code", "llm_slow_simulation"))),
+            )
             return candidate, "llm"
+    log_event(
+        "pelican_slow_simulation_llm_rejected",
+        learner_id=state.learner_id,
+        phase=state.phase,
+        node_id=simulation_context.node_id,
+        learner_state=simulation_context.learner_state,
+        route=deterministic.route,
+        strategy=deterministic.strategy.value,
+        selected_strategy="-",
+        fallback_strategy=deterministic.strategy.value,
+        selection_source="deterministic",
+        candidate_count=len(candidates),
+        reason_code="llm_slow_invalid_strategy",
+    )
     return deterministic, "deterministic"
 
 
@@ -213,3 +284,8 @@ def _slow_pedagogical_move(move: str) -> str:
     """Ensure slow-route proposals remain visibly attributable in traces."""
     normalized = move or "simulation"
     return normalized if normalized.startswith("slow_") else f"slow_{normalized}"
+
+
+def _safe_reason_code(value: str) -> str:
+    """Normalize model-provided labels before structured logging."""
+    return re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")[:80] or "llm_slow_simulation"

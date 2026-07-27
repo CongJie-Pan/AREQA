@@ -1368,6 +1368,17 @@ class PelicanEngine:
         self._record_agent_result(interpretation.result, node_id=node_id)
         signal = interpretation.signal
         decision = self._dialogue_control_decision(signal)
+        log_event(
+            "pelican_dialogue_control_decided",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            node_id=node_id,
+            dialogue_act=decision.act.value,
+            should_diagnose=decision.should_diagnose,
+            memory_kind=decision.memory_kind,
+            decision_confidence=decision.confidence,
+            reason_code=decision.reason_code,
+        )
         if decision.should_diagnose:
             return None
         self._record_methodology_event(
@@ -1552,6 +1563,18 @@ class PelicanEngine:
             "EDF dialogue policy updated",
             detail=self.state.edf_snapshot.pedagogical_strategy,
         )
+        log_event(
+            "pelican_dialogue_policy_updated",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            node_id=node_id,
+            dialogue_act=decision.act.value,
+            learner_state=self.state.edf_snapshot.learner_state,
+            strategy=self.state.edf_snapshot.pedagogical_strategy,
+            route=self.state.edf_snapshot.route,
+            reason_code=self.state.edf_snapshot.reason_code,
+            proposal_source=policy_proposal.proposal_source,
+        )
 
     def _refresh_learning_context(self, answer: str, category: ResponseCategory, signal: str | None = None) -> None:
         """Update bounded direct evidence and keep EDF inference separate."""
@@ -1583,6 +1606,18 @@ class PelicanEngine:
         self.state.edf_snapshot = self.edf.snapshot_from_decision(self.state, strategy_decision)
         self._refresh_learner_progress()
         self._record_agent_result(policy_proposal, node_id=self.state.current_node_id)
+        log_event(
+            "pelican_learning_policy_updated",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            node_id=self.state.current_node_id,
+            category=category.value,
+            learner_state=self.state.edf_snapshot.learner_state,
+            strategy=self.state.edf_snapshot.pedagogical_strategy,
+            route=self.state.edf_snapshot.route,
+            reason_code=self.state.edf_snapshot.reason_code,
+            proposal_source=policy_proposal.proposal_source,
+        )
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
             stage=MethodologyStage.EDF_STRATEGY_SELECTION,

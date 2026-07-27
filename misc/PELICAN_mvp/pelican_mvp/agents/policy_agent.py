@@ -17,6 +17,7 @@ from ..models import (
     TutorStrategyDecision,
     TutoringStrategy,
 )
+from ..observability import log_event
 from .artifacts import safe_artifact_ref
 from .base import AgentExecutionContext, AgentExecutionResult
 
@@ -50,6 +51,21 @@ class PolicyAgent:
         fallback = self.edf.decide(state)
         decision = self._llm_decision(state, fallback) or fallback
         proposal_source = "llm" if decision is not fallback else "edf"
+        log_event(
+            "pelican_edf_policy_agent_decided",
+            learner_id=state.learner_id,
+            phase=state.phase,
+            node_id=state.current_node_id,
+            learner_state=decision.learner_state,
+            route=decision.route,
+            strategy=decision.selected_strategy.value,
+            selected_strategy=decision.selected_strategy.value,
+            fallback_strategy=fallback.selected_strategy.value,
+            proposal_source=proposal_source,
+            llm_decision_status="adopted" if proposal_source == "llm" else "fallback",
+            reason_code=decision.reason_code,
+            candidate_count=len(decision.candidates),
+        )
         result = AgentExecutionResult(
             role=self.role,
             stage=MethodologyStage.EDF_STRATEGY_SELECTION,
@@ -73,6 +89,16 @@ class PolicyAgent:
         """Return a validated prompt-driven EDF decision when LLM mode is active."""
         llm = self.llm
         if state.mode != "llm" or llm is None or not getattr(llm, "available", False):
+            log_event(
+                "pelican_edf_policy_llm_skipped",
+                learner_id=state.learner_id,
+                phase=state.phase,
+                node_id=state.current_node_id,
+                route=fallback.route,
+                strategy=fallback.selected_strategy.value,
+                llm_decision_status="skipped",
+                reason_code="llm_policy_not_available" if state.mode == "llm" else "rule_mode",
+            )
             return None
         try:
             payload = llm.edf_policy_decision(
@@ -87,24 +113,60 @@ class PolicyAgent:
                 mastery_summary=_mastery_summary(state),
             )
         except Exception:
+            log_event(
+                "pelican_edf_policy_llm_rejected",
+                learner_id=state.learner_id,
+                phase=state.phase,
+                node_id=state.current_node_id,
+                route=fallback.route,
+                strategy=fallback.selected_strategy.value,
+                llm_decision_status="exception",
+                reason_code="llm_policy_exception",
+            )
             return None
-        return _validated_llm_decision(payload, fallback)
+        decision, rejection_reason = _validated_llm_decision(payload, fallback)
+        if decision is None:
+            log_event(
+                "pelican_edf_policy_llm_rejected",
+                learner_id=state.learner_id,
+                phase=state.phase,
+                node_id=state.current_node_id,
+                route=fallback.route,
+                strategy=fallback.selected_strategy.value,
+                llm_decision_status="rejected",
+                reason_code=rejection_reason,
+            )
+            return None
+        log_event(
+            "pelican_edf_policy_llm_adopted",
+            learner_id=state.learner_id,
+            phase=state.phase,
+            node_id=state.current_node_id,
+            learner_state=decision.learner_state,
+            route=decision.route,
+            strategy=decision.selected_strategy.value,
+            selected_strategy=decision.selected_strategy.value,
+            fallback_strategy=fallback.selected_strategy.value,
+            llm_decision_status="adopted",
+            reason_code=decision.reason_code,
+        )
+        return decision
 
 
 def _validated_llm_decision(
     payload: dict[str, Any] | None,
     fallback: TutorStrategyDecision,
-) -> TutorStrategyDecision | None:
+) -> tuple[TutorStrategyDecision | None, str]:
     """Convert a raw model payload into an EDF decision or reject it."""
     if not isinstance(payload, dict):
-        return None
+        return None, "llm_policy_empty_payload"
     try:
         strategy = TutoringStrategy(str(payload.get("selected_strategy", "")))
     except ValueError:
-        return None
+        return None, "llm_policy_invalid_strategy"
     route = str(payload.get("route", "")).strip().lower()
     if route not in {"fast", "slow", "dialogue"}:
-        return None
+        return None, "llm_policy_invalid_route"
     reason_code = _slug_reason(str(payload.get("reason_code", "llm_edf_policy")))
     candidate = StrategyCandidate(
         strategy=strategy,
@@ -130,7 +192,7 @@ def _validated_llm_decision(
         candidates=(candidate,),
         dialogue_act=str(payload.get("dialogue_act", fallback.dialogue_act)).strip()[:80],
         updated_at=datetime.now(timezone.utc).isoformat(),
-    )
+    ), "accepted"
 
 
 def _current_node_label(state: SessionState) -> str:

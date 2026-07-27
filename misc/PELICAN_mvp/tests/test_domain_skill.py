@@ -202,3 +202,41 @@ def test_observability_allows_api_endpoint_and_keeps_debug_channel_safe(caplog) 
     assert record.endpoint == "/api/respond"
     assert "raw private answer" not in caplog.text
     assert not hasattr(record, "answer")
+
+
+def test_observability_allows_methodology_debug_fields_without_raw_content(caplog) -> None:
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        log_event(
+            "pelican_slow_simulation_decided",
+            learner_id="student",
+            phase="diagnosis",
+            node_id="node_1",
+            learner_state="CLARIFYING",
+            strategy="short_reframe",
+            selected_strategy="short_reframe",
+            fallback_strategy="give_choices",
+            route="slow",
+            selection_source="llm",
+            candidate_count=3,
+            dialogue_act="micro_check_confusion",
+            memory_kind="dialogue_control",
+            should_diagnose=False,
+            repeated_confusion_count=2,
+            decision_confidence=0.82,
+            llm_decision_status="adopted",
+            recommended_next_action="recheck_current_node",
+            fragile_count=1,
+            progress_node_count=4,
+            raw_answer="private learner answer",
+        )
+
+    record = caplog.records[0]
+    assert record.debug_channel == "tutor"
+    assert record.selected_strategy == "short_reframe"
+    assert record.selection_source == "llm"
+    assert record.candidate_count == 3
+    assert record.dialogue_act == "micro_check_confusion"
+    assert record.should_diagnose is False
+    assert record.recommended_next_action == "recheck_current_node"
+    assert "private learner answer" not in caplog.text
+    assert not hasattr(record, "raw_answer")
