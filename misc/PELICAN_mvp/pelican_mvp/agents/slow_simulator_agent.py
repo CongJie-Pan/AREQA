@@ -10,10 +10,11 @@ from ..models import (
     AgentRole,
     ResponseCategory,
     SessionState,
+    StrategyCandidate,
     TutoringContext,
     TutoringStrategy,
 )
-from ..tutoring import StrategySimulationCandidate, simulate_strategy_candidates
+from ..tutoring import simulate_strategy_candidates
 from .artifacts import bound_agent_text
 from .base import AgentExecutionContext
 from .fast_tutor_agent import TutorAgentResponse, _candidate_or_fallback, _response_from_proposal
@@ -145,20 +146,22 @@ def _category_from_signal(signal: str) -> ResponseCategory:
 
 def _simulation_summary(
     *,
-    candidates: tuple[StrategySimulationCandidate, ...],
-    selected: StrategySimulationCandidate,
+    candidates: tuple[StrategyCandidate, ...],
+    selected: StrategyCandidate,
     fallback_reason: str,
 ) -> str:
     """Render a bounded candidate comparison for trace display."""
     comparison = "; ".join(
         f"{candidate.strategy.value}=score:{candidate.score:.2f}/"
-        f"gain:{candidate.expected_gain:.2f}/risk:{candidate.risk:.2f}"
+        f"gain:{candidate.expected_gain:.2f}/risk:{candidate.risk:.2f}/"
+        f"load:{candidate.cognitive_load:.2f}/fit:{candidate.learner_fit:.2f}"
         for candidate in candidates
     )
     return bound_agent_text(
         "slow_simulation "
         f"candidates={len(candidates)} selected={selected.strategy.value} "
         f"gain={selected.expected_gain:.2f} risk={selected.risk:.2f} "
+        f"load={selected.cognitive_load:.2f} fit={selected.learner_fit:.2f} "
         f"reason={fallback_reason}; {comparison}",
         260,
     )

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from .curriculum import Curriculum
-from .models import LearnerDialogueAct, ResponseCategory, TutoringContext, TutoringStrategy
+from .models import LearnerDialogueAct, ResponseCategory, StrategyCandidate, TutoringContext, TutoringStrategy
 
 
 FAST_STRATEGIES = {
@@ -16,27 +14,6 @@ FAST_STRATEGIES = {
     ResponseCategory.DIFFICULTY: TutoringStrategy.EXPLANATION,
     ResponseCategory.OTHER: TutoringStrategy.OPEN_QUESTION,
 }
-
-
-@dataclass(frozen=True)
-class StrategySimulationCandidate:
-    """Safe summary of one simulated tutoring strategy path.
-
-    Args:
-        strategy: Candidate tutoring strategy.
-        score: Deterministic expected utility score used for selection.
-        expected_gain: Bounded proxy for learning progress if the candidate is
-            chosen. This is derived metadata, not a learner memory fact.
-        risk: Bounded proxy for confusion or overload risk.
-        rationale: Safe explanation suitable for trace display.
-    """
-
-    strategy: TutoringStrategy
-    score: float
-    expected_gain: float
-    risk: float
-    rationale: str
-
 
 def select_strategy(
     context_or_category: TutoringContext | ResponseCategory,
@@ -81,7 +58,7 @@ def select_strategy(
     return selected.strategy, f"slow-thinking：模擬 {len(candidates)} 條策略路徑後選擇最高分 {selected.score:.2f}"
 
 
-def simulate_strategy_candidates(context: TutoringContext) -> tuple[StrategySimulationCandidate, ...]:
+def simulate_strategy_candidates(context: TutoringContext) -> tuple[StrategyCandidate, ...]:
     """Simulate candidate tutoring paths for repeated or fragile attempts.
 
     Args:
@@ -205,7 +182,7 @@ def _simulate_strategy(
     strategy: TutoringStrategy,
     context: TutoringContext,
     discount: float = 0.2,
-) -> StrategySimulationCandidate:
+) -> StrategyCandidate:
     """Return one deterministic slow-simulation candidate."""
     category = context.category
     success_probability = {
@@ -252,15 +229,40 @@ def _simulate_strategy(
             success_probability = 0.78
     expected_gain = max(0.0, min(1.0, success_probability))
     risk = max(0.0, min(1.0, 1.0 - expected_gain + (discount / 2.0)))
-    score = expected_gain + (1.0 - discount)
+    cognitive_load = _cognitive_load(strategy, context)
+    learner_fit = max(0.0, min(1.0, expected_gain - (risk * 0.25) + (0.1 if context.dialogue_act else 0.0)))
+    score = expected_gain + learner_fit - risk - (cognitive_load * 0.2) + (1.0 - discount)
     rationale = _candidate_rationale(strategy, context, expected_gain, risk)
-    return StrategySimulationCandidate(
+    route = "dialogue" if context.dialogue_act else "slow"
+    return StrategyCandidate(
         strategy=strategy,
+        route=route,
         score=score,
         expected_gain=expected_gain,
         risk=risk,
+        cognitive_load=cognitive_load,
+        learner_fit=learner_fit,
         rationale=rationale,
     )
+
+
+def _cognitive_load(strategy: TutoringStrategy, context: TutoringContext) -> float:
+    """Estimate bounded cognitive load for a candidate tutor move."""
+    base = {
+        TutoringStrategy.GIVE_CHOICES: 0.25,
+        TutoringStrategy.CLARIFY_TERM: 0.3,
+        TutoringStrategy.SHORT_REFRAME: 0.35,
+        TutoringStrategy.CONFIRMATION: 0.25,
+        TutoringStrategy.OPEN_QUESTION: 0.55,
+        TutoringStrategy.MINI_LESSON: 0.55,
+        TutoringStrategy.EXPLANATION: 0.6,
+        TutoringStrategy.CORRECTION: 0.55,
+        TutoringStrategy.SIMPLIFICATION: 0.45,
+        TutoringStrategy.DECOMPOSITION: 0.5,
+    }.get(strategy, 0.5)
+    if context.repeated_confusion_count >= 2:
+        base += 0.1
+    return max(0.0, min(1.0, base))
 
 
 def _candidate_rationale(

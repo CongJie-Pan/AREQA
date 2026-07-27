@@ -93,6 +93,9 @@ def test_slow_simulation_candidates_include_scores_gain_and_risk() -> None:
     assert selected.strategy is TutoringStrategy.CORRECTION
     assert 0.0 <= selected.expected_gain <= 1.0
     assert 0.0 <= selected.risk <= 1.0
+    assert 0.0 <= selected.cognitive_load <= 1.0
+    assert 0.0 <= selected.learner_fit <= 1.0
+    assert selected.route == "slow"
     assert "gain=" in selected.rationale
 
 

@@ -102,6 +102,8 @@ def test_slow_simulator_agent_marks_slow_route_metadata(tmp_path: Path) -> None:
     assert "slow_simulation" in response.result.display_summary
     assert "candidates=" in response.result.display_summary
     assert "selected=" in response.result.display_summary
+    assert "load=" in response.result.display_summary
+    assert "fit=" in response.result.display_summary
 
 
 def test_invalid_llm_tutor_proposal_falls_back_safely(tmp_path: Path) -> None:
