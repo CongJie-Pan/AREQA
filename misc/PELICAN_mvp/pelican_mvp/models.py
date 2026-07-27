@@ -41,6 +41,12 @@ class TutoringStrategy(str, Enum):
     SIMPLIFICATION = "simplification"
     DECOMPOSITION = "decomposition"
     ANALOGY = "analogy"
+    CLARIFY_TERM = "clarify_term"
+    GIVE_CHOICES = "give_choices"
+    SHORT_REFRAME = "short_reframe"
+    MINI_LESSON = "mini_lesson"
+    MICRO_CHECK = "micro_check"
+    CONFIRM_ADVANCE = "confirm_advance"
 
 
 class LearnerDialogueAct(str, Enum):

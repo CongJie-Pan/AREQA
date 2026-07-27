@@ -414,6 +414,7 @@ def test_humanities_micro_check_clarification_does_not_repeat_lesson_or_update_m
     assert len(engine.state.direct_evidence) == evidence_count
     assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
     assert engine.state.current_node_id == "jianzhou_jurchen_origins"
+    assert clarification.strategy is TutoringStrategy.GIVE_CHOICES
     assert engine.state.agent_proposals[-1].role is AgentRole.DIALOGUE_ACT_AGENT
 
 

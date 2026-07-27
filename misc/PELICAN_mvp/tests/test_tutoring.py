@@ -1,5 +1,10 @@
-from pelican_mvp.models import ResponseCategory, TutoringContext, TutoringStrategy
-from pelican_mvp.tutoring import rule_tutor_message, select_strategy, simulate_strategy_candidates
+from pelican_mvp.models import LearnerDialogueAct, ResponseCategory, TutoringContext, TutoringStrategy
+from pelican_mvp.tutoring import (
+    rule_tutor_message,
+    select_strategy,
+    simulate_strategy_candidates,
+    strategy_for_dialogue_act,
+)
 
 
 def test_fast_thinking_uses_response_category() -> None:
@@ -37,6 +42,13 @@ def test_context_strategy_uses_recent_safe_signals() -> None:
 
     assert strategy is TutoringStrategy.EXPLANATION
     assert "slow-thinking" in reason
+
+
+def test_dialogue_act_strategy_mapping_uses_explicit_tutor_moves() -> None:
+    assert strategy_for_dialogue_act(LearnerDialogueAct.TERM_DEFINITION_REQUEST) is TutoringStrategy.CLARIFY_TERM
+    assert strategy_for_dialogue_act(LearnerDialogueAct.MICRO_CHECK_CONFUSION) is TutoringStrategy.GIVE_CHOICES
+    assert strategy_for_dialogue_act(LearnerDialogueAct.CLARIFICATION_QUESTION) is TutoringStrategy.SHORT_REFRAME
+    assert strategy_for_dialogue_act(LearnerDialogueAct.ANSWER_ATTEMPT) is None
 
 
 def test_slow_simulation_candidates_include_scores_gain_and_risk() -> None:

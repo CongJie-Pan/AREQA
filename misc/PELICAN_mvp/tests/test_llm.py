@@ -180,11 +180,15 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
         expected_answer="學生應能說出背景、人物與因果關係。",
         remediation_template="先補事件背景，再確認因果鏈。",
         teaching_methodology={"sequencing": "先背景，再事件，最後因果。"},
+        dialogue_act="micro_check_confusion",
+        dialogue_target="turning_point",
     )
 
     assert "domain_style_contract for humanities" in adapter.user_prompt
     assert "Generate a topic-specific explanatory mini-lesson" in adapter.user_prompt
     assert "latest_learner_answer: 簡單來說，這是改革與西化，為了趕上西方現代化。" in adapter.user_prompt
+    assert "dialogue_act: micro_check_confusion" in adapter.user_prompt
+    assert "dialogue_target: turning_point" in adapter.user_prompt
     assert "start by acknowledging the specific useful idea" in adapter.user_prompt
     assert "先不用完整重述" in adapter.user_prompt
     assert "最關鍵的轉折點或原因" in adapter.user_prompt

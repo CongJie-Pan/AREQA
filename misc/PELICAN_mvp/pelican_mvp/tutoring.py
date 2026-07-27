@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .curriculum import Curriculum
-from .models import ResponseCategory, TutoringContext, TutoringStrategy
+from .models import LearnerDialogueAct, ResponseCategory, TutoringContext, TutoringStrategy
 
 
 FAST_STRATEGIES = {
@@ -112,6 +112,36 @@ def strategy_for_remediation_signal(signal: str | None) -> TutoringStrategy | No
         return TutoringStrategy.CONFIRMATION
     if signal in {"project_goal", "assessment_goal"}:
         return TutoringStrategy.OPEN_QUESTION
+    return None
+
+
+def strategy_for_dialogue_act(act: LearnerDialogueAct | str | None) -> TutoringStrategy | None:
+    """Map learner dialogue acts to explicit tutor response strategies.
+
+    Args:
+        act: Bounded dialogue act from ``DialogueActAgent``.
+
+    Returns:
+        A concrete tutoring strategy for conversational-control turns, or
+        ``None`` when the utterance should continue through normal diagnosis.
+
+    Compatibility:
+        Existing response-category strategy selection remains unchanged. This
+        mapping only handles pre-diagnosis dialogue acts introduced for
+        agentic routing.
+    """
+    try:
+        normalized = act if isinstance(act, LearnerDialogueAct) else LearnerDialogueAct(str(act))
+    except (TypeError, ValueError):
+        return None
+    if normalized is LearnerDialogueAct.TERM_DEFINITION_REQUEST:
+        return TutoringStrategy.CLARIFY_TERM
+    if normalized is LearnerDialogueAct.CLARIFICATION_QUESTION:
+        return TutoringStrategy.SHORT_REFRAME
+    if normalized is LearnerDialogueAct.MICRO_CHECK_CONFUSION:
+        return TutoringStrategy.GIVE_CHOICES
+    if normalized is LearnerDialogueAct.READY_TO_CONTINUE:
+        return TutoringStrategy.CONFIRM_ADVANCE
     return None
 
 

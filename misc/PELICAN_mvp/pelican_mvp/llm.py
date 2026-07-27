@@ -634,6 +634,8 @@ class LlmAdapter:
         expected_answer: str = "",
         remediation_template: str = "",
         teaching_methodology: dict[str, str] | None = None,
+        dialogue_act: str = "",
+        dialogue_target: str = "",
     ) -> BoundedTutorProposal | None:
         """Generate a bounded tutor proposal constrained by EDF/GUM state.
 
@@ -658,6 +660,8 @@ class LlmAdapter:
             remediation_template: Skill-authored remediation guidance for the
                 current concept.
             teaching_methodology: Skill-authored pedagogy notes for this domain.
+            dialogue_act: Optional bounded conversational role before diagnosis.
+            dialogue_target: Optional short term from a clarification turn.
 
         Returns:
             A bounded proposal candidate, or ``None`` when the optional model is
@@ -700,6 +704,8 @@ class LlmAdapter:
             "learner_state: {learner_state}\n"
             "edf_policy: {edf_policy}\n"
             "current_signal: {evidence_signal}\n"
+            "dialogue_act: {dialogue_act}\n"
+            "dialogue_target: {dialogue_target}\n"
             "recent_safe_signals: {recent_signals}\n"
             "latest_learner_answer: {learner_answer}\n"
             "current_prompt: {base_prompt}\n"
@@ -716,6 +722,8 @@ class LlmAdapter:
                 learner_state=learner_state,
                 edf_policy=edf_policy,
                 evidence_signal=evidence_signal,
+                dialogue_act=dialogue_act[:80] or "none",
+                dialogue_target=dialogue_target[:80] or "none",
                 recent_signals=", ".join(recent_signals[-5:]) or "none",
                 learner_answer=learner_answer[:800] or "none",
                 base_prompt=base_prompt,

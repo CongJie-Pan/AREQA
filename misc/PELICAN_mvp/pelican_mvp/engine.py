@@ -51,7 +51,7 @@ from .models import (
 )
 from typing import Any
 from .state_store import StateStore
-from .tutoring import rule_tutor_message, select_strategy, strategy_for_remediation_signal
+from .tutoring import rule_tutor_message, select_strategy, strategy_for_dialogue_act, strategy_for_remediation_signal
 from .planner import LearningPlanner
 from .edf_simulator import EdfSimulator
 from .learning_memory import LearningMemorySimulator
@@ -1378,6 +1378,7 @@ class PelicanEngine:
         """Clarify one learner-requested term without updating mastery state."""
         label = self.curriculum.nodes[node_id].label
         target = signal.target_text or label
+        strategy = strategy_for_dialogue_act(signal.act) or TutoringStrategy.CLARIFY_TERM
         message = _term_clarification_message(target, label)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1385,7 +1386,7 @@ class PelicanEngine:
             input_ref=MethodologyRef("dialogue_act", signal.act.value, "learner clarification"),
             output_ref=MethodologyRef("tutor_message", "rule", "term clarification"),
             node_id=node_id,
-            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            strategy=strategy.value,
             reason_code=signal.reason_code,
         )
         log_event(
@@ -1393,7 +1394,7 @@ class PelicanEngine:
             learner_id=self.state.learner_id,
             phase=self.state.phase,
             node_id=node_id,
-            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            strategy=strategy.value,
             reason_code=signal.reason_code,
         )
         self.state.current_prompt = message
@@ -1403,7 +1404,7 @@ class PelicanEngine:
             message,
             node_id,
             None,
-            TutoringStrategy.OPEN_QUESTION,
+            strategy,
             (),
             "dialogue_act:term_clarification_no_mastery_update",
         )
@@ -1412,6 +1413,7 @@ class PelicanEngine:
         """Offer choices for a micro-check without replaying the full lesson."""
         label = self.curriculum.nodes[node_id].label
         target = signal.target_text or "這個檢核問題"
+        strategy = strategy_for_dialogue_act(signal.act) or TutoringStrategy.GIVE_CHOICES
         message = _micro_check_choice_message(target, label)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1419,7 +1421,7 @@ class PelicanEngine:
             input_ref=MethodologyRef("dialogue_act", signal.act.value, "micro-check confusion"),
             output_ref=MethodologyRef("tutor_message", "rule", "micro-check choices"),
             node_id=node_id,
-            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            strategy=strategy.value,
             reason_code=signal.reason_code,
         )
         log_event(
@@ -1427,7 +1429,7 @@ class PelicanEngine:
             learner_id=self.state.learner_id,
             phase=self.state.phase,
             node_id=node_id,
-            strategy=TutoringStrategy.OPEN_QUESTION.value,
+            strategy=strategy.value,
             reason_code=signal.reason_code,
         )
         self.state.current_prompt = message
@@ -1437,7 +1439,7 @@ class PelicanEngine:
             message,
             node_id,
             None,
-            TutoringStrategy.OPEN_QUESTION,
+            strategy,
             (),
             "dialogue_act:micro_check_confusion_no_mastery_update",
         )
