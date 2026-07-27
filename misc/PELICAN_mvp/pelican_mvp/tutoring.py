@@ -67,6 +67,13 @@ def select_strategy(
         )
     category = context.category
     rounds = context.rounds
+    if context.dialogue_act:
+        candidates = simulate_strategy_candidates(context)
+        selected = max(candidates, key=lambda item: item.score)
+        return selected.strategy, (
+            f"{context.dialogue_act}:edf-dialogue-route:"
+            f"{selected.strategy.value}:score:{selected.score:.2f}"
+        )
     if rounds < 2:
         return FAST_STRATEGIES[category], "fast-thinking：依本回合回答類別選擇策略"
     candidates = simulate_strategy_candidates(context)
@@ -89,7 +96,7 @@ def simulate_strategy_candidates(context: TutoringContext) -> tuple[StrategySimu
         simulator. It never uses raw learner text and only emits bounded labels
         so the results can be shown in traces.
     """
-    candidates = _slow_candidates(context.category, context.pedagogical_policy)
+    candidates = _slow_candidates(context)
     return tuple(_simulate_strategy(strategy, context) for strategy in candidates)
 
 
@@ -146,10 +153,16 @@ def strategy_for_dialogue_act(act: LearnerDialogueAct | str | None) -> TutoringS
 
 
 def _slow_candidates(
-    category: ResponseCategory,
-    pedagogical_policy: str | None = None,
+    context: TutoringContext,
 ) -> tuple[TutoringStrategy, ...]:
     """Return candidate strategies after repeated difficulty or failure."""
+    category = context.category
+    pedagogical_policy = context.pedagogical_policy
+    if context.dialogue_act in {"term_definition_request", "clarification_question"}:
+        return (TutoringStrategy.CLARIFY_TERM, TutoringStrategy.SHORT_REFRAME)
+    if context.dialogue_act == "micro_check_confusion":
+        return (TutoringStrategy.GIVE_CHOICES, TutoringStrategy.SHORT_REFRAME, TutoringStrategy.MINI_LESSON)
+
     candidates = []
     if category in (ResponseCategory.INABILITY, ResponseCategory.DIFFICULTY):
         candidates = [TutoringStrategy.EXPLANATION, TutoringStrategy.SIMPLIFICATION]
@@ -223,6 +236,20 @@ def _simulate_strategy(
         and recent.count(ResponseCategory.CORRECT.value) >= 2
     ):
         success_probability += 0.05
+    if context.dialogue_act == "micro_check_confusion":
+        if strategy is TutoringStrategy.GIVE_CHOICES:
+            success_probability = 0.88
+        elif strategy is TutoringStrategy.SHORT_REFRAME:
+            success_probability = 0.76
+        elif strategy is TutoringStrategy.MINI_LESSON:
+            success_probability = 0.68
+        if context.repeated_confusion_count >= 2 and strategy is TutoringStrategy.GIVE_CHOICES:
+            success_probability += 0.04
+    elif context.dialogue_act in {"term_definition_request", "clarification_question"}:
+        if strategy is TutoringStrategy.CLARIFY_TERM:
+            success_probability = 0.86
+        elif strategy is TutoringStrategy.SHORT_REFRAME:
+            success_probability = 0.78
     expected_gain = max(0.0, min(1.0, success_probability))
     risk = max(0.0, min(1.0, 1.0 - expected_gain + (discount / 2.0)))
     score = expected_gain + (1.0 - discount)
@@ -251,6 +278,14 @@ def _candidate_rationale(
         base = "split the current task into smaller checks"
     elif strategy is TutoringStrategy.CORRECTION:
         base = "address current misconception directly"
+    elif strategy is TutoringStrategy.CLARIFY_TERM:
+        base = "define the requested term before continuing"
+    elif strategy is TutoringStrategy.GIVE_CHOICES:
+        base = "offer bounded options for the learner to choose from"
+    elif strategy is TutoringStrategy.SHORT_REFRAME:
+        base = "rephrase the current point briefly"
+    elif strategy is TutoringStrategy.MINI_LESSON:
+        base = "give a short bridge explanation"
     else:
         base = "continue with a bounded follow-up"
     return (

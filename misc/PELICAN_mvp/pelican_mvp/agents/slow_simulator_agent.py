@@ -128,6 +128,8 @@ def _simulation_context(
         recent_signals=recent_safe_signals,
         plan_source=state.plan_source,
         skill_id=state.learning_plan.skill_id if state.learning_plan else None,
+        dialogue_act=state.edf_snapshot.dialogue_act,
+        repeated_confusion_count=state.memory_snapshot.repeated_confusion_count,
     )
 
 

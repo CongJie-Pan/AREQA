@@ -51,6 +51,30 @@ def test_dialogue_act_strategy_mapping_uses_explicit_tutor_moves() -> None:
     assert strategy_for_dialogue_act(LearnerDialogueAct.ANSWER_ATTEMPT) is None
 
 
+def test_dialogue_act_context_uses_dialogue_aware_simulation() -> None:
+    context = TutoringContext(
+        category=ResponseCategory.OTHER,
+        rounds=0,
+        pedagogical_policy="give_choices",
+        learner_state="CLARIFYING",
+        node_id="history_turning_point",
+        node_label="turning point",
+        dialogue_act="micro_check_confusion",
+        repeated_confusion_count=1,
+    )
+
+    strategy, reason = select_strategy(context)
+    candidates = simulate_strategy_candidates(context)
+
+    assert strategy is TutoringStrategy.GIVE_CHOICES
+    assert "edf-dialogue-route" in reason
+    assert {candidate.strategy for candidate in candidates} == {
+        TutoringStrategy.GIVE_CHOICES,
+        TutoringStrategy.SHORT_REFRAME,
+        TutoringStrategy.MINI_LESSON,
+    }
+
+
 def test_slow_simulation_candidates_include_scores_gain_and_risk() -> None:
     context = TutoringContext(
         category=ResponseCategory.INCORRECT,

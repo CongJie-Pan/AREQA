@@ -1,6 +1,15 @@
 import pytest
 from pelican_mvp.learning_memory import LearningMemorySimulator
-from pelican_mvp.models import KnowledgeStatus, NodeState, ResponseCategory, SessionState, TurnRecord, Evidence
+from pelican_mvp.models import (
+    DialogueActSignal,
+    Evidence,
+    KnowledgeStatus,
+    LearnerDialogueAct,
+    NodeState,
+    ResponseCategory,
+    SessionState,
+    TurnRecord,
+)
 
 
 def create_mock_state() -> SessionState:
@@ -65,3 +74,22 @@ def test_learning_memory_keeps_edf_inference_separate() -> None:
     assert state.direct_evidence[0].signal == "too_detailed"
     assert state.edf_snapshot.reason_code == "not_evaluated"
     assert memory.recent_safe_signals(state) == ("too_detailed",)
+
+
+def test_learning_memory_records_dialogue_act_without_direct_evidence() -> None:
+    state = create_mock_state()
+    memory = LearningMemorySimulator(max_context_size=2)
+    signal = DialogueActSignal(
+        LearnerDialogueAct.MICRO_CHECK_CONFUSION,
+        confidence=0.9,
+        target_text="turning_point",
+        reason_code="micro_check_term_question",
+    )
+
+    memory.record_dialogue_act(state, signal, node_id="n1", tutor_move="give_choices")
+
+    assert state.direct_evidence == []
+    assert state.memory_snapshot.evidence_count == 0
+    assert state.memory_snapshot.recent_dialogue_acts == ("micro_check_confusion",)
+    assert state.memory_snapshot.recent_tutor_moves == ("give_choices",)
+    assert state.memory_snapshot.repeated_confusion_count == 1

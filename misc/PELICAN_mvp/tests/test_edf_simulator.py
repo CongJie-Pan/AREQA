@@ -1,6 +1,5 @@
-import pytest
 from pelican_mvp.edf_simulator import EdfSimulator
-from pelican_mvp.models import KnowledgeStatus, NodeState, ResponseCategory, SessionState, TurnRecord
+from pelican_mvp.models import KnowledgeStatus, LearningMemorySnapshot, NodeState, ResponseCategory, SessionState, TurnRecord
 
 
 def create_mock_state() -> SessionState:
@@ -37,7 +36,39 @@ def test_edf_evaluate_repeated_difficulty():
     assert snapshot.learner_state == "STRUGGLING"
     assert snapshot.pedagogical_strategy == "simplify_or_decompose"
     assert snapshot.reason_code == "repeated_difficulty"
+    assert snapshot.route == "slow"
     assert snapshot.evidence_count == 2
+
+
+def test_edf_evaluate_dialogue_micro_check_confusion():
+    state = create_mock_state()
+    state.memory_snapshot = LearningMemorySnapshot(
+        recent_dialogue_acts=("micro_check_confusion",),
+        recent_tutor_moves=("give_choices",),
+        repeated_confusion_count=1,
+    )
+
+    snapshot = EdfSimulator().evaluate(state)
+
+    assert snapshot.learner_state == "CLARIFYING"
+    assert snapshot.pedagogical_strategy == "give_choices"
+    assert snapshot.selected_strategy == "give_choices"
+    assert snapshot.dialogue_act == "micro_check_confusion"
+    assert snapshot.route == "dialogue"
+
+
+def test_edf_evaluate_repeated_dialogue_confusion_escalates_to_slow_route():
+    state = create_mock_state()
+    state.memory_snapshot = LearningMemorySnapshot(
+        recent_dialogue_acts=("micro_check_confusion", "micro_check_confusion"),
+        recent_tutor_moves=("give_choices", "give_choices"),
+        repeated_confusion_count=2,
+    )
+
+    snapshot = EdfSimulator().evaluate(state)
+
+    assert snapshot.reason_code == "repeated_micro_check_confusion"
+    assert snapshot.route == "slow"
 
 
 def test_edf_evaluate_progressing():

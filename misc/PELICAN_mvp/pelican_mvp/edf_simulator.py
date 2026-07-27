@@ -16,6 +16,8 @@ class EdfSimulator:
         total_evidence = sum(len(node.evidence) for node in state.nodes.values() if node.evidence)
         mastered_count = sum(1 for node in state.nodes.values() if node.status == KnowledgeStatus.MASTERED)
         total_nodes = len(state.nodes)
+        recent_dialogue_acts = tuple(state.memory_snapshot.recent_dialogue_acts)
+        last_dialogue_act = recent_dialogue_acts[-1] if recent_dialogue_acts else ""
 
         # Analyze recent evidence
         recent_categories: list[str] = []
@@ -28,8 +30,29 @@ class EdfSimulator:
         policy = "probe_understanding"
         confidence = 0.5
         reason = "initial_state"
+        route = "fast"
+        selected_strategy = ""
 
-        if total_evidence > 0:
+        if last_dialogue_act in {"term_definition_request", "clarification_question"}:
+            learner_state = "CLARIFYING"
+            policy = "clarify_term"
+            confidence = 0.82
+            reason = "dialogue_clarification"
+            route = "dialogue"
+            selected_strategy = "clarify_term"
+        elif last_dialogue_act == "micro_check_confusion":
+            learner_state = "CLARIFYING"
+            policy = "give_choices"
+            confidence = 0.84
+            reason = (
+                "repeated_micro_check_confusion"
+                if state.memory_snapshot.repeated_confusion_count >= 2
+                else "micro_check_confusion"
+            )
+            route = "slow" if state.memory_snapshot.repeated_confusion_count >= 2 else "dialogue"
+            selected_strategy = "give_choices"
+
+        if not selected_strategy and total_evidence > 0:
             confidence = min(0.9, 0.5 + (total_evidence * 0.05))
 
             recent_difficulties = recent_categories.count(ResponseCategory.DIFFICULTY.value) + \
@@ -41,15 +64,18 @@ class EdfSimulator:
                 learner_state = "STRUGGLING"
                 policy = "simplify_or_decompose"
                 reason = "repeated_difficulty"
+                route = "slow"
             elif recent_incorrect >= 2:
                 learner_state = "TINKERING"
                 policy = "correct_and_explain"
                 reason = "frequent_errors"
+                route = "slow"
             elif recent_correct >= 2:
                 if mastered_count == total_nodes and total_nodes > 0:
                     learner_state = "MASTERY"
                     policy = "challenge_or_fade"
                     reason = "sustained_mastery"
+                    route = "slow"
                 else:
                     learner_state = "PROGRESSING"
                     policy = "confirm_and_suggest_action"
@@ -66,6 +92,9 @@ class EdfSimulator:
             confidence=confidence,
             evidence_count=total_evidence,
             reason_code=reason,
+            route=route,
+            selected_strategy=selected_strategy,
+            dialogue_act=last_dialogue_act,
             updated_at=datetime.now(timezone.utc).isoformat()
         )
 
@@ -74,6 +103,8 @@ class EdfSimulator:
             learner_id=state.learner_id,
             learner_state=learner_state,
             strategy=policy,
+            route=route,
+            dialogue_act=last_dialogue_act,
             evidence_count=total_evidence,
             reason_code=reason,
         )

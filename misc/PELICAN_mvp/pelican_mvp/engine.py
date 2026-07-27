@@ -1301,7 +1301,7 @@ class PelicanEngine:
         context = self._tutoring_context(category, rounds)
         strategy, reason = select_strategy(context)
         signal = self.state.direct_evidence[-1].signal if self.state.direct_evidence else category.value
-        tutor_role = AgentRole.SLOW_SIMULATOR_AGENT if "slow-thinking" in reason else AgentRole.FAST_TUTOR_AGENT
+        tutor_role = self._select_tutor_role(reason)
         base_message = (
             self._humanities_explanation_check_prompt(
                 node_id,
@@ -1379,6 +1379,7 @@ class PelicanEngine:
         label = self.curriculum.nodes[node_id].label
         target = signal.target_text or label
         strategy = strategy_for_dialogue_act(signal.act) or TutoringStrategy.CLARIFY_TERM
+        self._refresh_dialogue_context(signal, node_id, strategy)
         message = _term_clarification_message(target, label)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1414,6 +1415,7 @@ class PelicanEngine:
         label = self.curriculum.nodes[node_id].label
         target = signal.target_text or "這個檢核問題"
         strategy = strategy_for_dialogue_act(signal.act) or TutoringStrategy.GIVE_CHOICES
+        self._refresh_dialogue_context(signal, node_id, strategy)
         message = _micro_check_choice_message(target, label)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1442,6 +1444,48 @@ class PelicanEngine:
             strategy,
             (),
             "dialogue_act:micro_check_confusion_no_mastery_update",
+        )
+
+    def _refresh_dialogue_context(
+        self,
+        signal: DialogueActSignal,
+        node_id: str,
+        strategy: TutoringStrategy,
+    ) -> None:
+        """Update bounded dialogue memory and EDF policy without mastery evidence."""
+        self.memory.record_dialogue_act(
+            self.state,
+            signal,
+            node_id=node_id,
+            tutor_move=strategy.value,
+        )
+        self._record_methodology_event(
+            MethodologyEventType.GUM_SUBSYSTEM,
+            input_ref=MethodologyRef("dialogue_act", signal.act.value, "learner dialogue act"),
+            output_ref=MethodologyRef("memory_snapshot", node_id, "GUM dialogue snapshot"),
+            node_id=node_id,
+            strategy=strategy.value,
+            reason_code=signal.reason_code,
+        )
+        proposed_snapshot, policy_proposal = self.policy_agent.propose_strategy(
+            self.state,
+            context=self._agent_execution_context(),
+        )
+        self.state.edf_snapshot = proposed_snapshot
+        self._record_agent_result(policy_proposal, node_id=node_id, strategy=strategy.value)
+        self._record_methodology_event(
+            MethodologyEventType.PIPELINE_STAGE,
+            stage=MethodologyStage.EDF_STRATEGY_SELECTION,
+            input_ref=MethodologyRef("memory_snapshot", node_id, "GUM dialogue snapshot"),
+            output_ref=MethodologyRef("edf_snapshot", self.state.edf_snapshot.reason_code, "current EDF policy"),
+            node_id=node_id,
+            strategy=self.state.edf_snapshot.pedagogical_strategy,
+            reason_code=self.state.edf_snapshot.reason_code,
+        )
+        self._record_activity(
+            "edf_dialogue_evaluated",
+            "EDF dialogue policy updated",
+            detail=self.state.edf_snapshot.pedagogical_strategy,
         )
 
     def _refresh_learning_context(self, answer: str, category: ResponseCategory, signal: str | None = None) -> None:
@@ -1564,7 +1608,17 @@ class PelicanEngine:
             recent_signals=self.memory.recent_safe_signals(self.state),
             plan_source=self.state.plan_source,
             skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            dialogue_act=self.state.edf_snapshot.dialogue_act,
+            repeated_confusion_count=self.state.memory_snapshot.repeated_confusion_count,
         )
+
+    def _select_tutor_role(self, reason: str) -> AgentRole:
+        """Choose fast or slow tutor executor from EDF route plus selector fallback."""
+        if self.state.edf_snapshot.route == "slow":
+            return AgentRole.SLOW_SIMULATOR_AGENT
+        if "slow-thinking" in reason:
+            return AgentRole.SLOW_SIMULATOR_AGENT
+        return AgentRole.FAST_TUTOR_AGENT
 
     def _remediation_prompt(
         self,

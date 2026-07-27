@@ -31,7 +31,10 @@ class PolicyAgent:
             artifact_ref=safe_artifact_ref("edf_snapshot", snapshot.reason_code, "current EDF policy"),
             validation_status=ProposalValidationStatus.ACCEPTED,
             reason_code=snapshot.reason_code,
-            display_summary=f"{snapshot.learner_state}:{snapshot.pedagogical_strategy}",
+            display_summary=(
+                f"{snapshot.learner_state}:{snapshot.pedagogical_strategy}:"
+                f"{snapshot.route or 'fast'}"
+            ),
             proposal_source="edf",
         )
         return snapshot, result

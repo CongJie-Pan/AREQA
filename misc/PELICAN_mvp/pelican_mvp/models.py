@@ -443,6 +443,8 @@ class TutoringContext:
     recent_signals: tuple[str, ...] = ()
     plan_source: PlanSource = PlanSource.GENERATED
     skill_id: str | None = None
+    dialogue_act: str = ""
+    repeated_confusion_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -717,6 +719,9 @@ class EdfSnapshot:
     confidence: float = 0.0
     evidence_count: int = 0
     reason_code: str = "not_evaluated"
+    route: str = "fast"
+    selected_strategy: str = ""
+    dialogue_act: str = ""
     updated_at: str | None = None
 
 
@@ -726,6 +731,9 @@ class LearningMemorySnapshot:
 
     evidence_count: int = 0
     working_context_count: int = 0
+    recent_dialogue_acts: tuple[str, ...] = ()
+    recent_tutor_moves: tuple[str, ...] = ()
+    repeated_confusion_count: int = 0
     updated_at: str | None = None
 
 

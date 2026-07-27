@@ -415,7 +415,13 @@ def test_humanities_micro_check_clarification_does_not_repeat_lesson_or_update_m
     assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
     assert engine.state.current_node_id == "jianzhou_jurchen_origins"
     assert clarification.strategy is TutoringStrategy.GIVE_CHOICES
-    assert engine.state.agent_proposals[-1].role is AgentRole.DIALOGUE_ACT_AGENT
+    assert engine.state.memory_snapshot.recent_dialogue_acts[-1] == "micro_check_confusion"
+    assert engine.state.edf_snapshot.dialogue_act == "micro_check_confusion"
+    assert engine.state.edf_snapshot.pedagogical_strategy == "give_choices"
+    assert {proposal.role for proposal in engine.state.agent_proposals[-2:]} == {
+        AgentRole.DIALOGUE_ACT_AGENT,
+        AgentRole.POLICY_AGENT,
+    }
 
 
 def test_humanities_llm_mode_uses_model_generated_remediation(tmp_path: Path) -> None:

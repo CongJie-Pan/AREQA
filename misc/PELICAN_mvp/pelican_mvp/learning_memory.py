@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .models import LearningMemorySnapshot, MemoryEvidenceRecord, ResponseCategory, SessionState
+from .models import DialogueActSignal, LearningMemorySnapshot, MemoryEvidenceRecord, ResponseCategory, SessionState
 from .observability import log_event
 
 
@@ -56,6 +56,9 @@ class LearningMemorySimulator:
         state.memory_snapshot = LearningMemorySnapshot(
             evidence_count=direct_evidence_count,
             working_context_count=working_context_count,
+            recent_dialogue_acts=tuple(state.memory_snapshot.recent_dialogue_acts),
+            recent_tutor_moves=tuple(state.memory_snapshot.recent_tutor_moves),
+            repeated_confusion_count=state.memory_snapshot.repeated_confusion_count,
             updated_at=datetime.now(timezone.utc).isoformat()
         )
 
@@ -65,6 +68,42 @@ class LearningMemorySimulator:
             evidence_count=direct_evidence_count,
             working_context_count=working_context_count,
             category=category.value,
+        )
+
+    def record_dialogue_act(
+        self,
+        state: SessionState,
+        signal: DialogueActSignal,
+        *,
+        node_id: str | None,
+        tutor_move: str,
+    ) -> None:
+        """Record bounded dialogue-control state without creating mastery evidence."""
+        recent_acts = tuple(state.memory_snapshot.recent_dialogue_acts) + (signal.act.value,)
+        recent_moves = tuple(state.memory_snapshot.recent_tutor_moves) + (tutor_move,)
+        recent_acts = recent_acts[-self.max_context_size:]
+        recent_moves = recent_moves[-self.max_context_size:]
+        repeated_confusion_count = (
+            state.memory_snapshot.repeated_confusion_count + 1
+            if signal.act.value == "micro_check_confusion"
+            else 0
+        )
+        state.memory_snapshot = LearningMemorySnapshot(
+            evidence_count=state.memory_snapshot.evidence_count,
+            working_context_count=state.memory_snapshot.working_context_count,
+            recent_dialogue_acts=recent_acts,
+            recent_tutor_moves=recent_moves,
+            repeated_confusion_count=repeated_confusion_count,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        log_event(
+            "pelican_memory_dialogue_act_recorded",
+            learner_id=state.learner_id,
+            node_id=node_id,
+            dialogue_act=signal.act.value,
+            tutor_move=tutor_move,
+            repeated_confusion_count=repeated_confusion_count,
+            reason_code=signal.reason_code,
         )
 
     def get_working_context(self, state: SessionState) -> list[str]:
