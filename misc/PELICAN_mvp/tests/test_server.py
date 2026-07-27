@@ -166,6 +166,10 @@ def test_api_progress_snapshot_is_safe_metadata() -> None:
 
     assert progress["current_node_id"] is not None
     assert progress["nodes"]
+    assert progress["learner_state"]
+    assert "recommended_next_action" in progress
+    assert "strategy_signal" in progress
+    assert isinstance(progress["fragile_concepts"], list)
     assert "用來衡量預測與目標之間的差距" not in str(progress)
 
 

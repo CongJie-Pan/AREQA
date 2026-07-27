@@ -235,6 +235,7 @@ def test_methodology_events_use_six_core_stages_and_subsystem_events(tmp_path: P
     engine.respond("想理解原理")
     engine.respond("完全沒有基礎")
     engine.respond("用來衡量預測與目標之間的差距")
+    engine.respond("我不知道")
 
     pipeline_stages = {
         event.stage
@@ -248,6 +249,7 @@ def test_methodology_events_use_six_core_stages_and_subsystem_events(tmp_path: P
     assert MethodologyStage.COGNITIVE_DIAGNOSIS in pipeline_stages
     assert MethodologyStage.KNOWLEDGE_STATE_UPDATE in pipeline_stages
     assert MethodologyStage.EDF_STRATEGY_SELECTION in pipeline_stages
+    assert MethodologyStage.TUTOR_RESPONSE in pipeline_stages
     assert MethodologyEventType.GUM_SUBSYSTEM in event_types
     assert MethodologyEventType.LEARNER_INTERACTION in event_types
     assert None not in pipeline_stages

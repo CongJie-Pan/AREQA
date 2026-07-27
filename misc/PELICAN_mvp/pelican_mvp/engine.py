@@ -1473,6 +1473,7 @@ class PelicanEngine:
         )
         self.state.strategy_decision = strategy_decision
         self.state.edf_snapshot = self.edf.snapshot_from_decision(self.state, strategy_decision)
+        self._refresh_learner_progress()
         self._record_agent_result(policy_proposal, node_id=node_id, strategy=strategy.value)
         self._record_methodology_event(
             MethodologyEventType.PIPELINE_STAGE,
@@ -1550,9 +1551,17 @@ class PelicanEngine:
         new mastery facts.
         """
         if not self.curriculum:
-            self.state.learner_progress = LearnerProgressSnapshot(self.state.cycle_id, None, ())
+            self.state.learner_progress = LearnerProgressSnapshot(
+                self.state.cycle_id,
+                None,
+                (),
+                learner_state=self.state.strategy_decision.learner_state,
+                recommended_next_action=self.state.strategy_decision.selected_strategy.value,
+                strategy_signal=self.state.strategy_decision.reason_code,
+            )
             return
         progress_nodes: list[LearnerProgressNode] = []
+        fragile_concepts: list[str] = []
         for node in sorted(self.curriculum.nodes.values(), key=lambda item: item.priority, reverse=True):
             node_state = self.state.nodes[node.node_id]
             direct_count = sum(1 for item in node_state.evidence if item.direct)
@@ -1579,6 +1588,12 @@ class PelicanEngine:
             else:
                 confidence = 0.0
                 source = "none"
+            if node_state.status in {
+                KnowledgeStatus.NOT_MASTERED,
+                KnowledgeStatus.FRAGILE,
+                KnowledgeStatus.PARTIALLY_MASTERED,
+            }:
+                fragile_concepts.append(node.node_id)
             progress_nodes.append(
                 LearnerProgressNode(
                     node_id=node.node_id,
@@ -1594,6 +1609,10 @@ class PelicanEngine:
             cycle_id=self.state.cycle_id,
             current_node_id=self.state.current_node_id,
             nodes=tuple(progress_nodes),
+            learner_state=self.state.strategy_decision.learner_state,
+            fragile_concepts=tuple(fragile_concepts[:8]),
+            recommended_next_action=self.state.strategy_decision.selected_strategy.value,
+            strategy_signal=self.state.strategy_decision.reason_code,
         )
 
     def _tutoring_context(self, category: ResponseCategory, rounds: int) -> TutoringContext:
