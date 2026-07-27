@@ -617,6 +617,86 @@ class LlmAdapter:
         response = str(payload.get("response", "")).strip()
         return response or None
 
+    def edf_policy_decision(
+        self,
+        *,
+        current_learner_state: str,
+        current_policy: str,
+        current_route: str,
+        current_strategy: str,
+        current_node_id: str,
+        current_node_label: str,
+        recent_safe_signals: tuple[str, ...],
+        recent_dialogue_acts: tuple[str, ...],
+        mastery_summary: str,
+    ) -> dict[str, Any] | None:
+        """Ask the model to propose one bounded EDF policy decision.
+
+        Args:
+            current_learner_state: Deterministic EDF learner-state label used as
+                the baseline policy state.
+            current_policy: Deterministic EDF policy label used for comparison.
+            current_route: Baseline route: ``fast``, ``slow``, or ``dialogue``.
+            current_strategy: Baseline tutor strategy enum value.
+            current_node_id: Safe current knowledge-node id.
+            current_node_label: Safe current knowledge-node label.
+            recent_safe_signals: Bounded GUM evidence labels only.
+            recent_dialogue_acts: Bounded dialogue-control labels only.
+            mastery_summary: Compact status counts, not raw learner text.
+
+        Returns:
+            Raw JSON object for local validation, or ``None`` when unavailable.
+
+        Privacy:
+            This prompt intentionally sends safe state labels and compact counts,
+            not learner answers, transcript text, provider reasoning, or hidden
+            chain-of-thought. Callers must validate every enum before adoption.
+        """
+        if not self.available:
+            return None
+        allowed_strategies = ", ".join(item.value for item in TutoringStrategy)
+        payload = self._json(
+            "You are the EDF policy decision agent for Agentic PELICAN. "
+            "Return only one JSON object. Do not include reasoning text. "
+            "Choose the smallest intervention that fits the bounded learner state.",
+            "baseline_learner_state: {learner_state}\n"
+            "baseline_policy: {policy}\n"
+            "baseline_route: {route}\n"
+            "baseline_strategy: {strategy}\n"
+            "current_node_id: {node_id}\n"
+            "current_node_label: {node_label}\n"
+            "recent_safe_signals: {signals}\n"
+            "recent_dialogue_acts: {dialogue_acts}\n"
+            "mastery_summary: {mastery}\n"
+            "allowed_routes: fast, slow, dialogue\n"
+            "allowed_strategies: {allowed_strategies}\n"
+            "Rules:\n"
+            "- Use dialogue route for clarification/control turns that should not update mastery.\n"
+            "- Use slow route only when repeated confusion, repeated incorrectness, or high support need is visible.\n"
+            "- Keep should_advance false unless sustained mastery is visible.\n"
+            "- Keep should_recheck true unless the learner has already demonstrated mastery.\n"
+            "Return JSON with exactly these keys: "
+            '{{"learner_state": str, "route": str, "selected_strategy": str, '
+            '"intervention_strength": number, "should_advance": bool, '
+            '"should_recheck": bool, "reason_code": str, "dialogue_act": str}}.'.format(
+                learner_state=current_learner_state[:80],
+                policy=current_policy[:80],
+                route=current_route[:40],
+                strategy=current_strategy[:80],
+                node_id=current_node_id[:80] or "none",
+                node_label=current_node_label[:160] or "none",
+                signals=", ".join(recent_safe_signals[-8:]) or "none",
+                dialogue_acts=", ".join(recent_dialogue_acts[-8:]) or "none",
+                mastery=mastery_summary[:200],
+                allowed_strategies=allowed_strategies,
+            ),
+            model=self.tutor_model_route(),
+        )
+        if not isinstance(payload, dict):
+            return None
+        payload["reason_code"] = _slug_reason(str(payload.get("reason_code", "llm_edf_policy")))
+        return payload
+
     def tutor_proposal(
         self,
         *,

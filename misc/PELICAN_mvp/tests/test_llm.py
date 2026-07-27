@@ -149,6 +149,46 @@ def test_llm_tutor_proposal_returns_bounded_safe_candidate() -> None:
     assert proposal.source == "llm"
 
 
+def test_llm_edf_policy_decision_prompt_uses_bounded_state() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.user_prompt = ""
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.user_prompt = user
+            return {
+                "learner_state": "CLARIFYING",
+                "route": "dialogue",
+                "selected_strategy": "give_choices",
+                "intervention_strength": 0.5,
+                "should_advance": False,
+                "should_recheck": True,
+                "reason_code": "needs choices",
+                "dialogue_act": "micro_check_confusion",
+            }
+
+    adapter = RecordingAdapter()
+
+    payload = adapter.edf_policy_decision(
+        current_learner_state="CLARIFYING",
+        current_policy="give_choices",
+        current_route="dialogue",
+        current_strategy="give_choices",
+        current_node_id="node_1",
+        current_node_label="Node One",
+        recent_safe_signals=("unknown",),
+        recent_dialogue_acts=("micro_check_confusion",),
+        mastery_summary="mastered=0, not_mastered=1",
+    )
+
+    assert payload["reason_code"] == "needs_choices"
+    assert "allowed_routes: fast, slow, dialogue" in adapter.user_prompt
+    assert "allowed_strategies:" in adapter.user_prompt
+    assert "recent_safe_signals: unknown" in adapter.user_prompt
+    assert "recent_dialogue_acts: micro_check_confusion" in adapter.user_prompt
+
+
 def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() -> None:
     class RecordingAdapter(LlmAdapter):
         def __init__(self) -> None:

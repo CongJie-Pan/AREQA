@@ -96,7 +96,7 @@ class PelicanEngine:
         self.fast_tutor_agent = FastTutorAgent(self.llm)
         self.slow_simulator_agent = SlowSimulatorAgent(self.llm)
         self.edf = EdfSimulator()
-        self.policy_agent = PolicyAgent(self.edf)
+        self.policy_agent = PolicyAgent(self.edf, self.llm)
         self.memory = LearningMemorySimulator()
 
     def _resolve_curriculum(self) -> Curriculum | None:
@@ -1529,6 +1529,7 @@ class PelicanEngine:
             strategy=strategy.value,
             reason_code=decision.reason_code,
         )
+        self.policy_agent.llm = self.llm
         strategy_decision, policy_proposal = self.policy_agent.propose_strategy(
             self.state,
             context=self._agent_execution_context(),
@@ -1573,6 +1574,7 @@ class PelicanEngine:
             reason_code=signal or category.value,
         )
         self._record_activity("memory_updated", "保存直接學習證據", detail=signal or category.value)
+        self.policy_agent.llm = self.llm
         strategy_decision, policy_proposal = self.policy_agent.propose_strategy(
             self.state,
             context=self._agent_execution_context(),
