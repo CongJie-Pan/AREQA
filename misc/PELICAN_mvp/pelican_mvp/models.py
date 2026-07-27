@@ -43,6 +43,26 @@ class TutoringStrategy(str, Enum):
     ANALOGY = "analogy"
 
 
+class LearnerDialogueAct(str, Enum):
+    """Bounded learner utterance roles before knowledge diagnosis.
+
+    These labels separate conversational control from mastery evidence. Only
+    ``ANSWER_ATTEMPT`` should flow directly into cognitive diagnosis; the other
+    acts are routed as tutor-facing clarification or control moves without
+    asserting mastery or failure.
+    """
+
+    ANSWER_ATTEMPT = "answer_attempt"
+    CLARIFICATION_QUESTION = "clarification_question"
+    TERM_DEFINITION_REQUEST = "term_definition_request"
+    MICRO_CHECK_CONFUSION = "micro_check_confusion"
+    TOO_HARD = "too_hard"
+    TOO_EASY = "too_easy"
+    READY_TO_CONTINUE = "ready_to_continue"
+    TOPIC_SHIFT = "topic_shift"
+    OTHER = "other"
+
+
 class PlanSource(str, Enum):
     """Identify whether a session resolves a fixture or generated learning plan."""
 
@@ -106,6 +126,7 @@ class ProposalValidationStatus(str, Enum):
 class AgentRole(str, Enum):
     """Functional agent roles used by the proposal layer."""
 
+    DIALOGUE_ACT_AGENT = "dialogue_act_agent"
     INTAKE_AGENT = "intake_agent"
     SKILL_AGENT = "skill_agent"
     DIAGNOSIS_AGENT = "diagnosis_agent"
@@ -503,6 +524,39 @@ class MemoryEvidenceRecord:
             signal=payload.get("signal"),
             timestamp=payload.get("timestamp", datetime.now(timezone.utc).isoformat()),
         )
+
+
+@dataclass(frozen=True)
+class DialogueActSignal:
+    """Bounded dialogue-act proposal for one learner turn.
+
+    Args:
+        act: Conversational role detected before cognitive diagnosis.
+        confidence: Conservative confidence from deterministic or LLM-backed
+            classification. The engine may fail closed to diagnosis when this
+            is low.
+        target_text: Bounded term or phrase the learner appears to ask about.
+            This may appear in traces and must not contain full raw prompts.
+        reason_code: Stable safe reason code for observability and tests.
+
+    Privacy:
+        ``target_text`` is capped and intended for short terms such as
+        "轉折點"; callers must not pass full learner answers or prompts here.
+    """
+
+    act: LearnerDialogueAct
+    confidence: float = 0.0
+    target_text: str = ""
+    reason_code: str = "unknown"
+
+    def to_safe_dict(self) -> dict[str, str | float]:
+        """Serialize bounded dialogue-act metadata for traces and tests."""
+        return {
+            "act": self.act.value,
+            "confidence": max(0.0, min(1.0, float(self.confidence))),
+            "target_text": _bounded_text(self.target_text, 80),
+            "reason_code": _bounded_text(self.reason_code, 80),
+        }
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@
 
 from .base import AgentExecutionContext, AgentExecutionResult, BaseAgent
 from .artifacts import bound_agent_text, safe_artifact_ref
+from .dialogue_act_agent import DialogueActAgent, DialogueActInterpretation
 from .diagnosis_agent import DiagnosisAgent, DiagnosticAgentProposal
 from .fast_tutor_agent import FastTutorAgent, TutorAgentResponse
 from .intake_agent import IntakeAgent, IntakeInterpretation
@@ -14,6 +15,8 @@ __all__ = [
     "AgentExecutionContext",
     "AgentExecutionResult",
     "BaseAgent",
+    "DialogueActAgent",
+    "DialogueActInterpretation",
     "DiagnosisAgent",
     "DiagnosticAgentProposal",
     "FastTutorAgent",
