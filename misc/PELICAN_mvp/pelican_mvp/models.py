@@ -224,6 +224,10 @@ class LearnerProgressSnapshot:
     cycle_id: str | None
     current_node_id: str | None
     nodes: tuple[LearnerProgressNode, ...]
+    learner_state: str = "STARTING"
+    fragile_concepts: tuple[str, ...] = ()
+    recommended_next_action: str = ""
+    strategy_signal: str = ""
     updated_at: str = field(default_factory=_utc_now)
 
     def to_dict(self) -> dict[str, Any]:
@@ -232,6 +236,10 @@ class LearnerProgressSnapshot:
             "cycle_id": self.cycle_id,
             "current_node_id": self.current_node_id,
             "nodes": [item.to_dict() for item in self.nodes],
+            "learner_state": _bounded_text(self.learner_state, 80),
+            "fragile_concepts": [_bounded_text(item, 120) for item in self.fragile_concepts[:8]],
+            "recommended_next_action": _bounded_text(self.recommended_next_action, 120),
+            "strategy_signal": _bounded_text(self.strategy_signal, 120),
             "updated_at": self.updated_at,
         }
 
@@ -249,8 +257,188 @@ class LearnerProgressSnapshot:
             cycle_id=payload.get("cycle_id"),
             current_node_id=payload.get("current_node_id"),
             nodes=tuple(nodes),
+            learner_state=_bounded_text(payload.get("learner_state", "STARTING"), 80),
+            fragile_concepts=tuple(
+                _bounded_text(item, 120)
+                for item in payload.get("fragile_concepts", ())[:8]
+            ),
+            recommended_next_action=_bounded_text(payload.get("recommended_next_action"), 120),
+            strategy_signal=_bounded_text(payload.get("strategy_signal"), 120),
             updated_at=payload.get("updated_at", _utc_now()),
         )
+
+
+@dataclass(frozen=True)
+class StrategyCandidate:
+    """Bounded summary of one candidate tutor strategy.
+
+    Args:
+        strategy: Tutor move being considered.
+        route: Candidate execution route such as ``fast``, ``slow``, or
+            ``dialogue``.
+        score: Deterministic utility score used for ranking.
+        expected_gain: Bounded proxy for likely learning progress.
+        risk: Bounded proxy for confusion, overload, or regression risk.
+        cognitive_load: Bounded estimate of learner effort required.
+        learner_fit: Bounded estimate of fit to current GUM/EDF context.
+        rationale: Safe explanation for traces and tests.
+
+    Compatibility:
+        This metadata is derived decision context, not direct learner memory.
+        It must never contain raw learner answers, prompts, or model output.
+    """
+
+    strategy: TutoringStrategy
+    route: str = "fast"
+    score: float = 0.0
+    expected_gain: float = 0.0
+    risk: float = 0.0
+    cognitive_load: float = 0.0
+    learner_fit: float = 0.0
+    rationale: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the candidate with bounded, JSON-safe metadata."""
+        return {
+            "strategy": self.strategy.value,
+            "route": _bounded_text(self.route, 40),
+            "score": max(0.0, min(2.0, float(self.score))),
+            "expected_gain": max(0.0, min(1.0, float(self.expected_gain))),
+            "risk": max(0.0, min(1.0, float(self.risk))),
+            "cognitive_load": max(0.0, min(1.0, float(self.cognitive_load))),
+            "learner_fit": max(0.0, min(1.0, float(self.learner_fit))),
+            "rationale": _bounded_text(self.rationale, 240),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> "StrategyCandidate":
+        """Deserialize a candidate, falling back to a safe explanation move."""
+        payload = payload or {}
+        try:
+            strategy = TutoringStrategy(payload.get("strategy", TutoringStrategy.EXPLANATION.value))
+        except ValueError:
+            strategy = TutoringStrategy.EXPLANATION
+        return cls(
+            strategy=strategy,
+            route=_bounded_text(payload.get("route", "fast"), 40),
+            score=max(0.0, min(2.0, float(payload.get("score", 0.0)))),
+            expected_gain=max(0.0, min(1.0, float(payload.get("expected_gain", 0.0)))),
+            risk=max(0.0, min(1.0, float(payload.get("risk", 0.0)))),
+            cognitive_load=max(0.0, min(1.0, float(payload.get("cognitive_load", 0.0)))),
+            learner_fit=max(0.0, min(1.0, float(payload.get("learner_fit", 0.0)))),
+            rationale=_bounded_text(payload.get("rationale"), 240),
+        )
+
+
+@dataclass(frozen=True)
+class TutorStrategyDecision:
+    """Authoritative EDF strategy decision for one tutor turn.
+
+    Args:
+        learner_state: EDF learner state label.
+        route: Tutor route selected by policy: ``fast``, ``slow``, or
+            ``dialogue``.
+        selected_strategy: Strategy adopted by the engine.
+        intervention_strength: Bounded scaffold intensity estimate.
+        should_advance: Whether the next turn should move to the next concept
+            after the response.
+        should_recheck: Whether the learner should be rechecked before advance.
+        reason_code: Stable safe reason code for trace and regression tests.
+        candidates: Candidate comparison used to justify the decision.
+        dialogue_act: Optional bounded dialogue-control label.
+
+    Side Effects:
+        None. The engine owns persistence and structured event emission.
+    """
+
+    learner_state: str = "STARTING"
+    route: str = "fast"
+    selected_strategy: TutoringStrategy = TutoringStrategy.OPEN_QUESTION
+    intervention_strength: float = 0.0
+    should_advance: bool = False
+    should_recheck: bool = True
+    reason_code: str = "not_evaluated"
+    candidates: tuple[StrategyCandidate, ...] = ()
+    dialogue_act: str = ""
+    updated_at: str = field(default_factory=_utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the policy decision without exposing raw learner content."""
+        return {
+            "learner_state": _bounded_text(self.learner_state, 80),
+            "route": _bounded_text(self.route, 40),
+            "selected_strategy": self.selected_strategy.value,
+            "intervention_strength": max(0.0, min(1.0, float(self.intervention_strength))),
+            "should_advance": bool(self.should_advance),
+            "should_recheck": bool(self.should_recheck),
+            "reason_code": _bounded_text(self.reason_code, 120),
+            "candidates": [item.to_dict() for item in self.candidates[:8]],
+            "dialogue_act": _bounded_text(self.dialogue_act, 80),
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> "TutorStrategyDecision":
+        """Deserialize a strategy decision with fail-closed defaults."""
+        payload = payload or {}
+        try:
+            strategy = TutoringStrategy(
+                payload.get("selected_strategy", TutoringStrategy.OPEN_QUESTION.value)
+            )
+        except ValueError:
+            strategy = TutoringStrategy.OPEN_QUESTION
+        candidates: list[StrategyCandidate] = []
+        for item in payload.get("candidates", ())[:8]:
+            try:
+                candidates.append(StrategyCandidate.from_dict(item))
+            except (TypeError, ValueError):
+                continue
+        return cls(
+            learner_state=_bounded_text(payload.get("learner_state", "STARTING"), 80),
+            route=_bounded_text(payload.get("route", "fast"), 40),
+            selected_strategy=strategy,
+            intervention_strength=max(0.0, min(1.0, float(payload.get("intervention_strength", 0.0)))),
+            should_advance=bool(payload.get("should_advance", False)),
+            should_recheck=bool(payload.get("should_recheck", True)),
+            reason_code=_bounded_text(payload.get("reason_code", "not_evaluated"), 120),
+            candidates=tuple(candidates),
+            dialogue_act=_bounded_text(payload.get("dialogue_act"), 80),
+            updated_at=payload.get("updated_at", _utc_now()),
+        )
+
+
+@dataclass(frozen=True)
+class DialogueControlDecision:
+    """Pre-diagnosis decision for learner conversational-control turns.
+
+    Args:
+        act: Bounded dialogue act proposed before cognitive diagnosis.
+        should_diagnose: Whether the turn should continue into mastery
+            diagnosis. Clarification and control turns should set this false.
+        memory_kind: Safe memory-gate label such as ``dialogue_control`` or
+            ``answer_evidence``.
+        target_text: Bounded term or concept target, not a raw learner answer.
+        reason_code: Stable safe reason code.
+        confidence: Conservative confidence for policy trace.
+    """
+
+    act: LearnerDialogueAct = LearnerDialogueAct.OTHER
+    should_diagnose: bool = True
+    memory_kind: str = "answer_evidence"
+    target_text: str = ""
+    reason_code: str = "unknown"
+    confidence: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize bounded dialogue-control metadata for trace display."""
+        return {
+            "act": self.act.value,
+            "should_diagnose": bool(self.should_diagnose),
+            "memory_kind": _bounded_text(self.memory_kind, 80),
+            "target_text": _bounded_text(self.target_text, 80),
+            "reason_code": _bounded_text(self.reason_code, 120),
+            "confidence": max(0.0, min(1.0, float(self.confidence))),
+        }
 
 
 @dataclass(frozen=True)
@@ -868,6 +1056,7 @@ class SessionState:
     methodology_events: list[MethodologyEvent] = field(default_factory=list)
     agent_proposals: list[AgentProposal] = field(default_factory=list)
     learner_progress: LearnerProgressSnapshot = field(default_factory=lambda: LearnerProgressSnapshot(None, None, ()))
+    strategy_decision: TutorStrategyDecision = field(default_factory=TutorStrategyDecision)
     completed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -907,6 +1096,7 @@ class SessionState:
             "methodology_events": [item.to_dict() for item in self.methodology_events[-64:]],
             "agent_proposals": [item.to_dict() for item in self.agent_proposals[-48:]],
             "learner_progress": self.learner_progress.to_dict(),
+            "strategy_decision": self.strategy_decision.to_dict(),
             "completed": self.completed,
         }
 
@@ -981,6 +1171,7 @@ class SessionState:
             methodology_events=methodology_events,
             agent_proposals=agent_proposals,
             learner_progress=LearnerProgressSnapshot.from_dict(payload.get("learner_progress")),
+            strategy_decision=TutorStrategyDecision.from_dict(payload.get("strategy_decision")),
             completed=bool(payload.get("completed", False)),
         )
 

@@ -7,6 +7,7 @@ from pelican_mvp.models import (
     KnowledgeNode,
     KnowledgeStatus,
     LearnerIntakeProfile,
+    LearnerProgressSnapshot,
     LearningIntent,
     LearningPlanSnapshot,
     MemoryEvidenceRecord,
@@ -18,7 +19,10 @@ from pelican_mvp.models import (
     PlanSource,
     ProposalValidationStatus,
     SessionState,
+    StrategyCandidate,
     TranscriptEntry,
+    TutorStrategyDecision,
+    TutoringStrategy,
     TurnRecord,
 )
 
@@ -224,7 +228,62 @@ def test_session_state_schema_two_defaults_methodology_contract() -> None:
     assert state.methodology_events == []
     assert state.agent_proposals == []
     assert state.learner_progress.nodes == ()
+    assert state.strategy_decision.reason_code == "not_evaluated"
+    assert state.strategy_decision.selected_strategy is TutoringStrategy.OPEN_QUESTION
     assert state.to_dict()["schema_version"] == 2
+
+
+def test_session_state_round_trips_strategy_decision_contract() -> None:
+    decision = TutorStrategyDecision(
+        learner_state="CLARIFYING",
+        route="dialogue",
+        selected_strategy=TutoringStrategy.GIVE_CHOICES,
+        intervention_strength=0.45,
+        should_advance=False,
+        should_recheck=True,
+        reason_code="micro_check_confusion",
+        dialogue_act="micro_check_confusion",
+        candidates=(
+            StrategyCandidate(
+                strategy=TutoringStrategy.GIVE_CHOICES,
+                route="dialogue",
+                score=1.68,
+                expected_gain=0.88,
+                risk=0.22,
+                cognitive_load=0.3,
+                learner_fit=0.9,
+                rationale="offer bounded options",
+            ),
+        ),
+    )
+    state = SessionState(learner_id="tester", strategy_decision=decision)
+
+    restored = SessionState.from_dict(state.to_dict())
+
+    assert restored.strategy_decision.learner_state == "CLARIFYING"
+    assert restored.strategy_decision.route == "dialogue"
+    assert restored.strategy_decision.selected_strategy is TutoringStrategy.GIVE_CHOICES
+    assert restored.strategy_decision.candidates[0].strategy is TutoringStrategy.GIVE_CHOICES
+    assert restored.to_dict()["strategy_decision"]["candidates"][0]["rationale"] == "offer bounded options"
+
+
+def test_learner_progress_snapshot_round_trips_methodology_summary_fields() -> None:
+    snapshot = LearnerProgressSnapshot(
+        cycle_id="cycle_1",
+        current_node_id="node_1",
+        nodes=(),
+        learner_state="RUN_REPEAT",
+        fragile_concepts=("turning_point", "industrial_capacity"),
+        recommended_next_action="offer_choices",
+        strategy_signal="give_choices",
+    )
+
+    restored = LearnerProgressSnapshot.from_dict(snapshot.to_dict())
+
+    assert restored.learner_state == "RUN_REPEAT"
+    assert restored.fragile_concepts == ("turning_point", "industrial_capacity")
+    assert restored.recommended_next_action == "offer_choices"
+    assert restored.strategy_signal == "give_choices"
 
 
 def test_session_state_round_trips_methodology_records() -> None:
