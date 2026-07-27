@@ -2,10 +2,95 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from .models import DialogueActSignal, LearningMemorySnapshot, MemoryEvidenceRecord, ResponseCategory, SessionState
+from .models import DialogueActSignal, LearnerDialogueAct, LearningMemorySnapshot, MemoryEvidenceRecord, ResponseCategory, SessionState
 from .observability import log_event
+
+
+@dataclass(frozen=True)
+class LearningMemoryGateDecision:
+    """Bounded local memory-gate decision for one learner turn.
+
+    Args:
+        memory_kind: Safe event class used by GUM/EDF context.
+        evidence_kind: Direct-evidence record kind when a local record is kept.
+        should_record_direct_evidence: Whether raw learner text should be kept
+            in session-local direct evidence.
+        should_update_dialogue_context: Whether bounded dialogue history should
+            be updated.
+        counts_as_mastery_evidence: Whether the event contributes to mastery
+            evidence counters. Control signals and clarification questions must
+            keep this false.
+        signal: Safe signal label for strategy context.
+        reason_code: Stable reason code for logs and methodology traces.
+
+    Privacy:
+        The decision contains no raw learner text. Raw text, when retained, is
+        stored only in prompt-unsafe ``MemoryEvidenceRecord`` entries.
+    """
+
+    memory_kind: str
+    evidence_kind: str
+    should_record_direct_evidence: bool
+    should_update_dialogue_context: bool
+    counts_as_mastery_evidence: bool
+    signal: str
+    reason_code: str
+
+
+CONTROL_SIGNALS = frozenset({"unknown", "too_detailed", "too_difficult", "too_easy"})
+
+
+def classify_turn_memory(
+    category: ResponseCategory | None,
+    *,
+    signal: str | None = None,
+    dialogue_signal: DialogueActSignal | None = None,
+) -> LearningMemoryGateDecision:
+    """Classify one learner turn before writing local GUM state.
+
+    Args:
+        category: Cognitive diagnosis category when the turn is an answer.
+        signal: Optional bounded remediation/control signal.
+        dialogue_signal: Optional pre-diagnosis dialogue act.
+
+    Returns:
+        A deterministic memory-gate decision aligned with the main backend's
+        conservative rule: questions and control turns can update working
+        context, but they must not become mastery evidence.
+    """
+    if dialogue_signal is not None and dialogue_signal.act is not LearnerDialogueAct.ANSWER_ATTEMPT:
+        return LearningMemoryGateDecision(
+            memory_kind="dialogue_control",
+            evidence_kind="DIALOGUE_CONTROL",
+            should_record_direct_evidence=False,
+            should_update_dialogue_context=True,
+            counts_as_mastery_evidence=False,
+            signal=dialogue_signal.act.value,
+            reason_code=dialogue_signal.reason_code,
+        )
+    safe_signal = (signal or (category.value if category else "unknown"))[:80]
+    if safe_signal in CONTROL_SIGNALS:
+        return LearningMemoryGateDecision(
+            memory_kind="control_signal",
+            evidence_kind="CONTROL_EVIDENCE",
+            should_record_direct_evidence=True,
+            should_update_dialogue_context=False,
+            counts_as_mastery_evidence=False,
+            signal=safe_signal,
+            reason_code=safe_signal,
+        )
+    return LearningMemoryGateDecision(
+        memory_kind="answer_evidence",
+        evidence_kind="USER_EVIDENCE",
+        should_record_direct_evidence=True,
+        should_update_dialogue_context=False,
+        counts_as_mastery_evidence=True,
+        signal=safe_signal,
+        reason_code=safe_signal,
+    )
 
 
 class LearningMemorySimulator:
@@ -30,26 +115,29 @@ class LearningMemorySimulator:
         for LLM prompt construction; tutoring strategy selection should consume
         safe signal labels instead.
         """
-        state.direct_evidence.append(
-            MemoryEvidenceRecord(
-                source="user_message",
-                kind="USER_EVIDENCE",
-                text=answer,
-                prompt_safe=False,
-                cold_export_eligible=False,
-                confidence=1.0,
-                topic=state.learning_plan.topic if state.learning_plan else state.intake_profile.topic,
-                node_id=state.current_node_id,
-                signal=signal or category.value,
+        decision = classify_turn_memory(category, signal=signal)
+        if decision.should_record_direct_evidence:
+            state.direct_evidence.append(
+                MemoryEvidenceRecord(
+                    source="user_message",
+                    kind=decision.evidence_kind,
+                    text=answer,
+                    prompt_safe=False,
+                    cold_export_eligible=False,
+                    confidence=1.0,
+                    topic=state.learning_plan.topic if state.learning_plan else state.intake_profile.topic,
+                    node_id=state.current_node_id,
+                    signal=decision.signal,
+                )
             )
-        )
         if len(state.direct_evidence) > self.max_context_size:
             state.direct_evidence = state.direct_evidence[-self.max_context_size:]
 
         direct_evidence_count = 0
         for node in state.nodes.values():
             direct_evidence_count += sum(1 for e in node.evidence if e.direct)
-        direct_evidence_count = max(direct_evidence_count, len(state.direct_evidence))
+        user_evidence_count = sum(1 for record in state.direct_evidence if record.kind == "USER_EVIDENCE")
+        direct_evidence_count = max(direct_evidence_count, user_evidence_count)
 
         working_context_count = min(direct_evidence_count, self.max_context_size)
 
@@ -68,6 +156,8 @@ class LearningMemorySimulator:
             evidence_count=direct_evidence_count,
             working_context_count=working_context_count,
             category=category.value,
+            memory_kind=decision.memory_kind,
+            reason_code=decision.reason_code,
         )
 
     def record_dialogue_act(
@@ -79,6 +169,9 @@ class LearningMemorySimulator:
         tutor_move: str,
     ) -> None:
         """Record bounded dialogue-control state without creating mastery evidence."""
+        decision = classify_turn_memory(None, dialogue_signal=signal)
+        if not decision.should_update_dialogue_context:
+            return
         recent_acts = tuple(state.memory_snapshot.recent_dialogue_acts) + (signal.act.value,)
         recent_moves = tuple(state.memory_snapshot.recent_tutor_moves) + (tutor_move,)
         recent_acts = recent_acts[-self.max_context_size:]
@@ -103,6 +196,7 @@ class LearningMemorySimulator:
             dialogue_act=signal.act.value,
             tutor_move=tutor_move,
             repeated_confusion_count=repeated_confusion_count,
+            memory_kind=decision.memory_kind,
             reason_code=signal.reason_code,
         )
 
@@ -118,7 +212,7 @@ class LearningMemorySimulator:
         """Return bounded learner evidence signal labels for strategy context."""
         signals: list[str] = []
         for record in state.direct_evidence[-limit:]:
-            if record.kind != "USER_EVIDENCE":
+            if record.kind not in {"USER_EVIDENCE", "CONTROL_EVIDENCE"}:
                 continue
             signals.append((record.signal or "unknown")[:80])
         return tuple(signals)

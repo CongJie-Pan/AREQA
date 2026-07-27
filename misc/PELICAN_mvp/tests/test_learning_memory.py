@@ -1,5 +1,5 @@
 import pytest
-from pelican_mvp.learning_memory import LearningMemorySimulator
+from pelican_mvp.learning_memory import LearningMemorySimulator, classify_turn_memory
 from pelican_mvp.models import (
     DialogueActSignal,
     Evidence,
@@ -68,10 +68,11 @@ def test_learning_memory_keeps_edf_inference_separate() -> None:
     memory.record_direct_evidence(state, "這太細了吧，我不知道", ResponseCategory.DIFFICULTY, signal="too_detailed")
 
     assert state.direct_evidence[0].source == "user_message"
-    assert state.direct_evidence[0].kind == "USER_EVIDENCE"
+    assert state.direct_evidence[0].kind == "CONTROL_EVIDENCE"
     assert state.direct_evidence[0].prompt_safe is False
     assert state.direct_evidence[0].cold_export_eligible is False
     assert state.direct_evidence[0].signal == "too_detailed"
+    assert state.memory_snapshot.evidence_count == 0
     assert state.edf_snapshot.reason_code == "not_evaluated"
     assert memory.recent_safe_signals(state) == ("too_detailed",)
 
@@ -93,3 +94,29 @@ def test_learning_memory_records_dialogue_act_without_direct_evidence() -> None:
     assert state.memory_snapshot.recent_dialogue_acts == ("micro_check_confusion",)
     assert state.memory_snapshot.recent_tutor_moves == ("give_choices",)
     assert state.memory_snapshot.repeated_confusion_count == 1
+
+
+def test_memory_gate_classifies_dialogue_control_without_mastery_evidence() -> None:
+    signal = DialogueActSignal(
+        LearnerDialogueAct.TERM_DEFINITION_REQUEST,
+        confidence=0.92,
+        target_text="turning_point",
+        reason_code="term_question",
+    )
+
+    decision = classify_turn_memory(None, dialogue_signal=signal)
+
+    assert decision.memory_kind == "dialogue_control"
+    assert decision.should_record_direct_evidence is False
+    assert decision.should_update_dialogue_context is True
+    assert decision.counts_as_mastery_evidence is False
+    assert decision.signal == "term_definition_request"
+
+
+def test_memory_gate_classifies_answer_attempt_as_mastery_evidence() -> None:
+    decision = classify_turn_memory(ResponseCategory.PARTIAL_CORRECT)
+
+    assert decision.memory_kind == "answer_evidence"
+    assert decision.evidence_kind == "USER_EVIDENCE"
+    assert decision.should_record_direct_evidence is True
+    assert decision.counts_as_mastery_evidence is True
