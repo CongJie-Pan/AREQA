@@ -128,31 +128,31 @@ misc/
 
 #### Work List
 
-1. [ ] Create `misc/PELICAN_mvp/pelican_mvp/agents/learning_manager_orchestrator.py`.
-   - [ ] Add the proposed immutable `LearningManagerTurnContext` type.
-   - [ ] Add the proposed `LearningManagerAction` enum.
-   - [ ] Add the proposed `CapabilityPolicy` enum with `none`, `read`, `specialist`, and `write_proposed`.
-   - [ ] Add the proposed `LearningManagerDecision` type with action, capability, policy, target phase, confidence, reason code, proposal source, and snapshot id.
-   - [ ] Add the proposed `LearningManagerOrchestrator.interpret_turn()` method.
-   - [ ] Add validators for schema shape, enum values, confidence bounds, threshold, snapshot identity, and safe reason codes.
-2. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/llm.py`.
-   - [ ] Add the proposed `LlmAdapter.orchestrate_turn_decision()` method using `orchestrator_model_route()`.
-   - [ ] Use strict JSON schema only when Phase 1 health allows it.
-   - [ ] Use JSON-object prompting plus local validation when strict schema support is unsupported or unknown.
-3. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/agents/__init__.py`.
-   - [ ] Export `LearningManagerOrchestrator` and public context/decision types.
-4. [ ] Modify `misc/PELICAN_mvp/tests/test_learning_manager_orchestrator.py`.
-   - [ ] Test direct-answer decisions for learner clarification.
-   - [ ] Test capability-call decisions for answer diagnosis.
-   - [ ] Test delegated-capability decisions for complex teaching analysis.
-   - [ ] Test low-confidence fallback.
-   - [ ] Test invalid schema fallback.
-   - [ ] Test stale snapshot rejection.
-   - [ ] Test raw learner text and model output are not copied into safe metadata.
-5. [ ] Modify `misc/PELICAN_mvp/tests/test_agent_contract.py`.
-   - [ ] Add contract coverage proving the orchestrator returns bounded proposal metadata and does not mutate session state.
-6. [ ] Modify `misc/PELICAN_mvp/tests/test_llm.py`.
-   - [ ] Add orchestrator structured-output payload validation coverage.
+1. [x] Create `misc/PELICAN_mvp/pelican_mvp/agents/learning_manager_orchestrator.py`.
+   - [x] Add the proposed immutable `LearningManagerTurnContext` type.
+   - [x] Add the proposed `LearningManagerAction` enum.
+   - [x] Add the proposed `CapabilityPolicy` enum with `none`, `read`, `specialist`, and `write_proposed`.
+   - [x] Add the proposed `LearningManagerDecision` type with action, capability, policy, target phase, confidence, reason code, proposal source, and snapshot id.
+   - [x] Add the proposed `LearningManagerOrchestrator.interpret_turn()` method.
+   - [x] Add validators for schema shape, enum values, confidence bounds, threshold, snapshot identity, and safe reason codes.
+2. [x] Modify `misc/PELICAN_mvp/pelican_mvp/llm.py`.
+   - [x] Add the proposed `LlmAdapter.orchestrate_turn_decision()` method using `orchestrator_model_route()`.
+   - [x] Use strict JSON schema only when Phase 1 health allows it.
+   - [x] Use JSON-object prompting plus local validation when strict schema support is unsupported or unknown.
+3. [x] Modify `misc/PELICAN_mvp/pelican_mvp/agents/__init__.py`.
+   - [x] Export `LearningManagerOrchestrator` and public context/decision types.
+4. [x] Modify `misc/PELICAN_mvp/tests/test_learning_manager_orchestrator.py`.
+   - [x] Test direct-answer decisions for learner clarification.
+   - [x] Test capability-call decisions for answer diagnosis.
+   - [x] Test delegated-capability decisions for complex teaching analysis.
+   - [x] Test low-confidence fallback.
+   - [x] Test invalid schema fallback.
+   - [x] Test stale snapshot rejection.
+   - [x] Test raw learner text and model output are not copied into safe metadata.
+5. [x] Modify `misc/PELICAN_mvp/tests/test_agent_contract.py`.
+   - [x] Add contract coverage proving the orchestrator returns bounded proposal metadata and does not mutate session state.
+6. [x] Modify `misc/PELICAN_mvp/tests/test_llm.py`.
+   - [x] Add orchestrator structured-output payload validation coverage.
 
 #### Test Plan
 

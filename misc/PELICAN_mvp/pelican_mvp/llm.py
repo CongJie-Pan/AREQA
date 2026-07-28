@@ -418,6 +418,45 @@ def _orchestrator_health_response_format() -> dict[str, Any]:
     }
 
 
+def _orchestrator_decision_response_format() -> dict[str, Any]:
+    """Return the strict schema for a bounded orchestration decision payload.
+
+    Returns:
+        OpenAI/OpenRouter ``response_format`` payload. The schema constrains the
+        transport shape only; ``LearningManagerOrchestrator`` still owns local
+        enum, confidence, snapshot, capability, and privacy validation.
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "pelican_learning_manager_decision",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "snapshot_id",
+                    "action",
+                    "capability",
+                    "policy",
+                    "target_phase",
+                    "confidence",
+                    "reason_code",
+                ],
+                "properties": {
+                    "snapshot_id": {"type": "string"},
+                    "action": {"type": "string"},
+                    "capability": {"type": "string"},
+                    "policy": {"type": "string"},
+                    "target_phase": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "reason_code": {"type": "string"},
+                },
+            },
+        },
+    }
+
+
 def _skill_schema_response_format_for_route(model_route: str, category: DomainCategory) -> dict[str, Any] | None:
     """Return strict schema response format when enabled for a model route.
 
@@ -644,6 +683,57 @@ class LlmAdapter:
                 api_status_code=exc.api_status_code,
                 api_error_type=exc.api_error_type,
             )
+
+    def orchestrate_turn_decision(
+        self,
+        turn_context: dict[str, Any],
+        *,
+        model_route: str | None = None,
+        structured_output_health: LlmHealth | None = None,
+    ) -> dict[str, Any]:
+        """Ask the configured model for one bounded orchestration decision.
+
+        Args:
+            turn_context: JSON-safe turn snapshot prepared by
+                ``LearningManagerOrchestrator``. It may contain the current
+                learner text for interpretation, but callers must not log this
+                payload.
+            model_route: Optional route override for tests or diagnostics.
+            structured_output_health: Optional precomputed health result. When
+                absent, this method probes the selected route before deciding
+                whether to request strict schema output.
+
+        Returns:
+            Raw JSON object from the model. The caller owns all local validation
+            and must reject invalid, low-confidence, or stale decisions.
+
+        Raises:
+            LlmUnavailable: If credentials are missing, transport fails, or the
+                provider response is not a JSON object.
+
+        Privacy:
+            This method does not emit logs and must not expose raw learner text,
+            prompts, provider payloads, or model output through safe metadata.
+        """
+        if not self.available:
+            raise LlmUnavailable(
+                "OPENROUTER_API_KEY is not configured",
+                reason_codes=("llm_missing_api_key",),
+            )
+        route = model_route or self.orchestrator_model_route()
+        health = structured_output_health or self.check_orchestrator_structured_output_health(route)
+        response_format = _orchestrator_decision_response_format() if health.available else None
+        system_prompt = (
+            "You are the PELICAN LearningManagerOrchestrator. Interpret the current learner turn and "
+            "choose one bounded action. You propose decisions only; the engine owns all state writes. "
+            "Return one JSON object with snapshot_id, action, capability, policy, target_phase, "
+            "confidence, and reason_code. Allowed actions: answer_directly, call_capability, "
+            "delegate_capability, resume_pipeline, continue_pipeline, fallback_legacy_pipeline, "
+            "reject_illegal_action. Allowed policies: none, read, specialist, write_proposed. "
+            "Use write_proposed only when the engine should validate a state-writing specialist."
+        )
+        user_prompt = json.dumps(turn_context, ensure_ascii=False, sort_keys=True)
+        return self._json(system_prompt, user_prompt, model=route, response_format=response_format)
 
     def verified_diagnostic(self, node_label: str) -> DiagnosticQuestion | None:
         """Generate a diagnostic only if an independent verifier accepts it."""

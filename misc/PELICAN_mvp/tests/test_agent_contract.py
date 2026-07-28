@@ -1,4 +1,13 @@
-from pelican_mvp.agents import AgentExecutionContext, AgentExecutionResult, bound_agent_text, safe_artifact_ref
+from pelican_mvp.agents import (
+    AgentExecutionContext,
+    AgentExecutionResult,
+    CapabilityPolicy,
+    LearningManagerAction,
+    LearningManagerDecision,
+    LearningManagerTurnContext,
+    bound_agent_text,
+    safe_artifact_ref,
+)
 from pelican_mvp.models import AgentRole, MethodologyStage, ProposalValidationStatus
 
 
@@ -52,3 +61,26 @@ def test_safe_artifact_ref_and_bound_agent_text_normalize_display_fields() -> No
     assert ref.ref_id == "runtime_generated"
     assert ref.label == "validated skill"
     assert bound_agent_text("a\n\nb", 10) == "a b"
+
+
+def test_learning_manager_turn_context_keeps_raw_text_out_of_safe_decision_metadata() -> None:
+    context = LearningManagerTurnContext(
+        snapshot_id="snapshot_1",
+        turn_id="turn_1",
+        cycle_id="cycle_1",
+        phase="tutoring",
+        learner_text="private learner answer",
+    )
+    decision = LearningManagerDecision(
+        action=LearningManagerAction.ANSWER_DIRECTLY,
+        capability="",
+        policy=CapabilityPolicy.NONE,
+        target_phase=context.phase,
+        confidence=0.8,
+        reason_code="clarification",
+        proposal_source="llm",
+        snapshot_id=context.snapshot_id,
+    )
+
+    assert context.to_llm_payload()["learner_text"] == "private learner answer"
+    assert "private learner answer" not in str(decision.to_safe_metadata())

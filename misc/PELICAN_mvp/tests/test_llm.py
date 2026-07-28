@@ -368,6 +368,72 @@ def test_orchestrator_structured_output_health_missing_key(monkeypatch: pytest.M
     assert health.reason_codes == ("llm_missing_api_key",)
 
 
+def test_orchestrate_turn_decision_uses_strict_schema_when_health_supported() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.response_format_seen = None
+            self.model_seen = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.response_format_seen = response_format
+            self.model_seen = model
+            return {
+                "snapshot_id": "snapshot_1",
+                "action": "fallback_legacy_pipeline",
+                "capability": "",
+                "policy": "none",
+                "target_phase": "tutoring",
+                "confidence": 0.8,
+                "reason_code": "ok",
+            }
+
+    adapter = RecordingAdapter()
+
+    payload = adapter.orchestrate_turn_decision(
+        {"snapshot_id": "snapshot_1"},
+        model_route="orchestrator/model",
+        structured_output_health=adapter.check_orchestrator_structured_output_health("orchestrator/model"),
+    )
+
+    assert payload["reason_code"] == "ok"
+    assert adapter.model_seen == "orchestrator/model"
+    assert adapter.response_format_seen["type"] == "json_schema"
+    assert adapter.response_format_seen["json_schema"]["name"] == "pelican_learning_manager_decision"
+
+
+def test_orchestrate_turn_decision_uses_json_object_when_strict_schema_unavailable() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.response_format_seen = "not-called"
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.response_format_seen = response_format
+            return {
+                "snapshot_id": "snapshot_1",
+                "action": "fallback_legacy_pipeline",
+                "capability": "",
+                "policy": "none",
+                "target_phase": "tutoring",
+                "confidence": 0.8,
+                "reason_code": "ok",
+            }
+
+    adapter = RecordingAdapter()
+
+    adapter.orchestrate_turn_decision(
+        {"snapshot_id": "snapshot_1"},
+        structured_output_health=type(
+            "Health",
+            (),
+            {"available": False, "reason_codes": ("structured_output_unsupported",)},
+        )(),
+    )
+
+    assert adapter.response_format_seen is None
+
+
 def test_generate_domain_skill_uses_requested_route() -> None:
     payload = valid_skill_payload()
     payload["lifecycle"] = "runtime_generated"
