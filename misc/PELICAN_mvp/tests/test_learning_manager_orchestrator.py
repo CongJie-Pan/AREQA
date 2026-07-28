@@ -199,6 +199,7 @@ def test_learning_manager_decision_is_read_only_metadata() -> None:
 def test_orchestrator_logs_decision_without_raw_learner_text(caplog: pytest.LogCaptureFixture) -> None:
     raw_text = "private learner text should not enter logs"
     orchestrator = LearningManagerOrchestrator(FakeLlm(valid_payload()), capability_names=("diagnose_answer",))
+    logging.getLogger("pelican_mvp").propagate = True
 
     with caplog.at_level(logging.INFO, logger="pelican_mvp"):
         orchestrator.interpret_turn(make_context(learner_text=raw_text))
@@ -217,6 +218,7 @@ def test_orchestrator_logs_fallback_without_raw_learner_text(caplog: pytest.LogC
         FakeLlm(valid_payload(confidence=0.1)),
         capability_names=("diagnose_answer",),
     )
+    logging.getLogger("pelican_mvp").propagate = True
 
     with caplog.at_level(logging.INFO, logger="pelican_mvp"):
         orchestrator.interpret_turn(make_context(learner_text=raw_text))

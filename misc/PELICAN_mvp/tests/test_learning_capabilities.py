@@ -136,6 +136,7 @@ def test_capability_registry_logs_safe_selection_and_completion(caplog) -> None:
             emits_learner_text=True,
         )
     )
+    logging.getLogger("pelican_mvp").propagate = True
 
     with caplog.at_level(logging.INFO, logger="pelican_mvp"):
         registry.execute(CapabilityRequest(name="clarify", policy=CapabilityPolicy.NONE, turn_id="turn_1"))
@@ -148,6 +149,7 @@ def test_capability_registry_logs_safe_selection_and_completion(caplog) -> None:
 
 def test_capability_registry_logs_safe_rejection(caplog) -> None:
     registry = CapabilityRegistry()
+    logging.getLogger("pelican_mvp").propagate = True
 
     with caplog.at_level(logging.INFO, logger="pelican_mvp"):
         registry.validate(CapabilityRequest(name="missing raw secret", policy=CapabilityPolicy.NONE))

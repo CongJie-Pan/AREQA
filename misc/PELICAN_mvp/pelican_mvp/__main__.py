@@ -45,6 +45,16 @@ LOG_FIELDS = (
     "strategy",
     "edf_transition",
     "memory_event",
+    "turn_id",
+    "cycle_id",
+    "action",
+    "capability",
+    "policy",
+    "target_phase",
+    "confidence_bucket",
+    "proposal_source",
+    "idempotency_key",
+    "outcome",
     "endpoint",
 )
 
@@ -149,7 +159,10 @@ def configure_runtime_logging(mode: str | None = None, channels: str | None = No
             "intake_source=%(intake_source)s semantic=%(semantic_intent)s confidence=%(semantic_confidence)s "
             "diagnostic_source=%(diagnostic_source)s "
             "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "
-            "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s"
+            "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s "
+            "turn=%(turn_id)s cycle=%(cycle_id)s action=%(action)s capability=%(capability)s "
+            "policy=%(policy)s target=%(target_phase)s confidence_bucket=%(confidence_bucket)s "
+            "proposal_source=%(proposal_source)s outcome=%(outcome)s idempotency=%(idempotency_key)s"
         )
     )
     logger.propagate = False

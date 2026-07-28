@@ -135,6 +135,47 @@ def test_configure_runtime_logging_prints_schema_debug_fields(capsys) -> None:
     assert "schema_fallback=False" in output
 
 
+def test_configure_runtime_logging_prints_orchestration_debug_fields(capsys) -> None:
+    logger = logging.getLogger("pelican_mvp")
+    for handler in list(logger.handlers):
+        if getattr(handler, "_pelican_cli_handler", False):
+            logger.removeHandler(handler)
+
+    main_module.configure_runtime_logging("info", "methodology")
+    log_event(
+        "pelican_learning_orchestrator_decided",
+        "student",
+        turn_id="turn_1",
+        cycle_id="cycle_1",
+        phase="diagnosis",
+        action="call_capability",
+        capability="diagnose_answer",
+        policy="write_proposed",
+        target_phase="cognitive_diagnosis",
+        confidence_bucket="high",
+        proposal_source="llm",
+        outcome="accepted",
+        idempotency_key="turn_1:snapshot:call_capability:diagnose_answer",
+        reason_code="active_prompt_answer",
+        raw_answer="private learner text",
+    )
+
+    output = capsys.readouterr().err
+
+    assert "event=pelican_learning_orchestrator_decided" in output
+    assert "turn=turn_1" in output
+    assert "cycle=cycle_1" in output
+    assert "action=call_capability" in output
+    assert "capability=diagnose_answer" in output
+    assert "policy=write_proposed" in output
+    assert "target=cognitive_diagnosis" in output
+    assert "confidence_bucket=high" in output
+    assert "proposal_source=llm" in output
+    assert "outcome=accepted" in output
+    assert "idempotency=turn_1:snapshot:call_capability:diagnose_answer" in output
+    assert "private learner text" not in output
+
+
 def test_configure_runtime_logging_off_removes_cli_handler() -> None:
     logger = logging.getLogger("pelican_mvp")
 

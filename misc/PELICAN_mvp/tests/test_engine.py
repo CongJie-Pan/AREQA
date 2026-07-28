@@ -553,6 +553,7 @@ def test_orchestrated_capability_logs_safe_same_turn_trace(tmp_path: Path, caplo
         policy=CapabilityPolicy.WRITE_PROPOSED,
     )
     raw_answer = "not the expected answer raw secret"
+    logging.getLogger("pelican_mvp").propagate = True
 
     with caplog.at_level(logging.INFO, logger="pelican_mvp"):
         engine.respond(raw_answer)
