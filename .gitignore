@@ -54,7 +54,7 @@ frontend/node_modules
 /.drift
 /.driftignore
 /node_modules
-/temp
+#/temp
 /PLANNING.md
 /TASK.md
 data/rag/gum_local.db
