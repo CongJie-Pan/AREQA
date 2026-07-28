@@ -149,6 +149,11 @@ class DelegationManager:
 
         effective_role = _normalize_role(role)
         effective_tool_policy = _normalize_tool_policy(tool_policy)
+        if effective_role != "orchestrator" and effective_tool_policy == TOOL_POLICY_DELEGATE:
+            # A descriptive role like "team lead" still normalizes to leaf. Do
+            # not expose nested delegation unless the parent explicitly requests
+            # the supported orchestrator role.
+            effective_tool_policy = TOOL_POLICY_NONE
         can_delegate = (
             effective_role == "orchestrator"
             and effective_tool_policy == TOOL_POLICY_DELEGATE
@@ -157,7 +162,7 @@ class DelegationManager:
         if effective_role == "orchestrator" and not can_delegate:
             effective_role = "leaf"
             if effective_tool_policy == TOOL_POLICY_DELEGATE:
-                effective_tool_policy = TOOL_POLICY_BASE
+                effective_tool_policy = TOOL_POLICY_NONE
 
         delegation_id = f"delegation_{next(self._counter)}"
         record = DelegationRecord(

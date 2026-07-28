@@ -23,6 +23,9 @@ Rules:
 - When delegating conceptual analysis, set tool_policy="none".
 - Set tool_policy="base" only when the child needs normal tools.
 - Set tool_policy="delegate" only for a child orchestrator that must spawn workers.
+- For normal specialist children, set role="leaf".
+- For a child that must coordinate other children, set role exactly to "orchestrator".
+- Put descriptive job titles in the goal or context, not in the role field.
 - After delegation, synthesize the child summaries into one final answer.
 - Be concise and clear about uncertainty.
 """
@@ -74,7 +77,8 @@ class OrchestratorAgent:
                 "Delegate a focused subtask to an isolated child agent. Use this "
                 "for independent, reasoning-heavy work; do not use it for simple tasks. "
                 "Set tool_policy to 'none' for conceptual analysis, 'base' for "
-                "normal tools, or 'delegate' for nested orchestration."
+                "normal tools, or 'delegate' for nested orchestration. Role must "
+                "be exactly 'leaf' or 'orchestrator'; put job titles in goal or context."
             ),
         )
         memory = Memory(system_prompt=ORCHESTRATOR_SYSTEM_PROMPT)

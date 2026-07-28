@@ -154,6 +154,41 @@ def test_delegate_tool_policy_exposes_delegate_to_orchestrator_child():
     assert any(schema["function"]["name"] == "delegate_task" for schema in first_call_tools)
 
 
+def test_delegate_policy_requires_exact_orchestrator_role():
+    """Descriptive role labels must not receive nested delegation tools."""
+    client = FakeClient([message("done")])
+    manager = DelegationManager(base_tool_factory=base_tools, client=client, max_spawn_depth=2)
+
+    result = manager.run_child(
+        goal="coordinate subtasks",
+        role="team lead - AI agent teaching coordinator",
+        tool_policy="delegate",
+    )
+    first_call_tools = client.chat.completions.calls[0].get("tools", [])
+
+    assert "role=leaf" in result
+    assert "tool_policy=none" in result
+    assert first_call_tools == []
+
+
+def test_orchestrator_at_depth_limit_loses_delegate_policy():
+    """Depth-limited orchestrator requests should not keep delegate policy metadata."""
+    client = FakeClient([message("done")])
+    manager = DelegationManager(base_tool_factory=base_tools, client=client, max_spawn_depth=2)
+
+    result = manager.run_child(
+        goal="coordinate subtasks",
+        role="orchestrator",
+        tool_policy="delegate",
+        parent_depth=1,
+    )
+    first_call_tools = client.chat.completions.calls[0].get("tools", [])
+
+    assert "role=leaf" in result
+    assert "tool_policy=none" in result
+    assert first_call_tools == []
+
+
 def test_max_spawn_depth_rejects_nested_delegation():
     """Delegation must stop when the configured depth is exceeded."""
     manager = DelegationManager(base_tool_factory=base_tools, max_spawn_depth=1)
