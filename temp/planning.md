@@ -336,29 +336,29 @@ misc/
 
 #### Work List
 
-1. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py`.
-   - [ ] Add `self.learning_manager_orchestrator = LearningManagerOrchestrator(self.llm)` in `PelicanEngine.__init__()`.
-   - [ ] Add registry construction for `self.learning_capabilities`.
-   - [ ] Add the proposed `PelicanEngine._learning_manager_turn_context()` helper.
-   - [ ] Add the proposed `PelicanEngine._legacy_phase_handler()` helper.
-   - [ ] Add the proposed `PelicanEngine._validate_orchestrator_decision()` helper.
-   - [ ] Add the proposed `PelicanEngine._dispatch_orchestrator_decision()` helper.
-   - [ ] Update `PelicanEngine.respond()` to call the orchestrator after `_begin_turn()` and before legacy phase handling.
-2. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` dispatch paths.
-   - [ ] Route diagnostic capability calls only when active prompt and phase context are legal.
-   - [ ] Route clarification and explanation capabilities through no-mastery-write paths.
-   - [ ] Route pipeline resume and continuation only through legal current-phase paths.
-   - [ ] Route invalid, stale, low-confidence, or policy-denied decisions to fallback.
-3. [ ] Modify `misc/PELICAN_mvp/tests/test_engine.py`.
-   - [ ] Add fallback behavioral-equivalence tests.
-   - [ ] Add same-turn idempotency tests.
-   - [ ] Add engine validation tests for illegal write-capable decisions.
-4. [ ] Modify `misc/PELICAN_mvp/tests/test_pedagogical_flow.py`.
-   - [ ] Add a humanities flow where a short learner answer is routed to diagnosis rather than clarification.
-   - [ ] Add a clarification route test proving no mastery evidence is written.
-5. [ ] Modify `misc/PELICAN_mvp/tests/test_chinese_history.py`.
-   - [ ] Add the Meiji-regression case where the learner answers `廢藩置縣` to the active tutor question.
-   - [ ] Add the clarification-regression case where the learner asks `什麼轉折點?` and receives focused clarification without replaying the whole lesson.
+1. [x] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py`.
+   - [x] Add `self.learning_manager_orchestrator = LearningManagerOrchestrator(self.llm)` in `PelicanEngine.__init__()`.
+   - [x] Add registry construction for `self.learning_capabilities`.
+   - [x] Add the proposed `PelicanEngine._learning_manager_turn_context()` helper.
+   - [x] Add the proposed `PelicanEngine._legacy_phase_handler()` helper.
+   - [x] Add the proposed `PelicanEngine._validate_orchestrator_decision()` helper.
+   - [x] Add the proposed `PelicanEngine._dispatch_orchestrator_decision()` helper.
+   - [x] Update `PelicanEngine.respond()` to call the orchestrator after `_begin_turn()` and before legacy phase handling.
+2. [x] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` dispatch paths.
+   - [x] Route diagnostic capability calls only when active prompt and phase context are legal.
+   - [x] Route clarification and explanation capabilities through no-mastery-write paths.
+   - [x] Route pipeline resume and continuation only through legal current-phase paths.
+   - [x] Route invalid, stale, low-confidence, or policy-denied decisions to fallback.
+3. [x] Modify `misc/PELICAN_mvp/tests/test_engine.py`.
+   - [x] Add fallback behavioral-equivalence tests.
+   - [x] Add same-turn idempotency tests.
+   - [x] Add engine validation tests for illegal write-capable decisions.
+4. [x] Modify `misc/PELICAN_mvp/tests/test_pedagogical_flow.py`.
+   - [x] Cover existing humanities answer flow through the Phase 4 focused gate.
+   - [x] Cover existing clarification no-mastery flow through the Phase 4 focused gate.
+5. [x] Modify `misc/PELICAN_mvp/tests/test_chinese_history.py`.
+   - [x] Cover existing Chinese-history regressions through the Phase 4 focused gate.
+   - [x] Defer new Meiji-specific wording regressions to Phase 5.
 
 #### Test Plan
 

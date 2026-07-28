@@ -10,10 +10,18 @@ from .curriculum import CURRICULUMS
 from .agents import (
     AgentExecutionContext,
     AgentExecutionResult,
+    CapabilityPolicy,
+    CapabilityRegistry,
+    CapabilityRequest,
     DiagnosisAgent,
     DialogueActAgent,
     FastTutorAgent,
     IntakeAgent,
+    LearningCapability,
+    LearningManagerAction,
+    LearningManagerDecision,
+    LearningManagerOrchestrator,
+    LearningManagerTurnContext,
     PolicyAgent,
     SkillAgent,
     SkillAgentInput,
@@ -98,6 +106,12 @@ class PelicanEngine:
         self.edf = EdfSimulator()
         self.policy_agent = PolicyAgent(self.edf, self.llm)
         self.memory = LearningMemorySimulator()
+        self._applied_orchestration_keys: set[str] = set()
+        self.learning_capabilities = self._build_learning_capabilities()
+        self.learning_manager_orchestrator = LearningManagerOrchestrator(
+            self.llm,
+            capability_names=self.learning_capabilities.names(),
+        )
 
     def _resolve_curriculum(self) -> Curriculum | None:
         """Return the active fixture or compiled generated curriculum."""
@@ -159,11 +173,11 @@ class PelicanEngine:
             return TurnOutcome("請輸入你的答案、困難點，或使用 CLI 指令。", self.state.current_node_id, None, None, (), "等待學生回應")
 
         self._begin_turn()
-        if self.state.phase == "onboarding":
-            return self._handle_onboarding(answer)
-        if self.state.phase == "diagnosis":
-            return self._handle_diagnostic(answer)
-        return self._handle_tutoring(answer)
+        decision = self._orchestrate_current_turn(answer)
+        orchestrated = self._dispatch_orchestrator_decision(answer, decision)
+        if orchestrated is not None:
+            return orchestrated
+        return self._legacy_phase_handler(answer)
 
     def _begin_turn(self) -> None:
         """Allocate correlation IDs for one accepted learner message.
@@ -192,6 +206,245 @@ class PelicanEngine:
             output_ref=MethodologyRef("cycle", self.state.cycle_id, "active tutoring cycle"),
             reason_code="learner_message_accepted",
         )
+
+    def _legacy_phase_handler(self, answer: str) -> TurnOutcome:
+        """Run the pre-orchestrator phase handler for exact fallback behavior.
+
+        Args:
+            answer: Current learner answer. This is passed only to legacy
+                handlers and is never included in structured logs.
+
+        Returns:
+            The same outcome the engine would have produced before
+            ``LearningManagerOrchestrator`` was introduced.
+        """
+        if self.state.phase == "onboarding":
+            return self._handle_onboarding(answer)
+        if self.state.phase == "diagnosis":
+            return self._handle_diagnostic(answer)
+        return self._handle_tutoring(answer)
+
+    def _build_learning_capabilities(self) -> CapabilityRegistry:
+        """Create the engine-owned manifest of orchestratable capabilities.
+
+        The registry stores capability metadata and policy boundaries. Concrete
+        state mutation still happens only in ``_dispatch_orchestrator_decision``
+        after the engine validates phase legality and the current turn snapshot.
+        """
+        registry = CapabilityRegistry()
+        registry.register(
+            LearningCapability(
+                name="diagnose_answer",
+                allowed_policies=frozenset({CapabilityPolicy.WRITE_PROPOSED}),
+                can_write_mastery=True,
+                emits_learner_text=True,
+                description="Classify the active learner answer and update mastery only after engine validation.",
+            )
+        )
+        registry.register(
+            LearningCapability(
+                name="clarify_current_prompt",
+                allowed_policies=frozenset({CapabilityPolicy.NONE, CapabilityPolicy.SPECIALIST}),
+                can_write_mastery=False,
+                emits_learner_text=True,
+                description="Answer a learner clarification without recording mastery evidence.",
+            )
+        )
+        registry.register(
+            LearningCapability(
+                name="tutor_response",
+                allowed_policies=frozenset({CapabilityPolicy.SPECIALIST}),
+                can_write_mastery=False,
+                emits_learner_text=True,
+                description="Generate a teaching response through existing tutor agents.",
+            )
+        )
+        registry.register(
+            LearningCapability(
+                name="edf_policy",
+                allowed_policies=frozenset({CapabilityPolicy.SPECIALIST}),
+                can_write_mastery=False,
+                emits_learner_text=False,
+                description="Select an EDF-informed tutoring policy.",
+            )
+        )
+        registry.register(
+            LearningCapability(
+                name="slow_simulator",
+                allowed_policies=frozenset({CapabilityPolicy.SPECIALIST}),
+                can_write_mastery=False,
+                emits_learner_text=True,
+                description="Run slow teaching-strategy simulation for complex tutor-response choices.",
+            )
+        )
+        registry.register(
+            LearningCapability(
+                name="resume_pipeline",
+                allowed_policies=frozenset({CapabilityPolicy.READ, CapabilityPolicy.SPECIALIST}),
+                can_write_mastery=False,
+                emits_learner_text=True,
+                description="Resume the current legal pipeline prompt without learner-evidence writes.",
+            )
+        )
+        return registry
+
+    def _learning_manager_turn_context(self, answer: str) -> LearningManagerTurnContext:
+        """Build the immutable turn snapshot consumed by the orchestrator.
+
+        Args:
+            answer: Raw current learner turn used by the model only for
+                interpretation. The returned context can serialize this text for
+                the LLM, but safe logs and decision metadata must not include it.
+
+        Returns:
+            ``LearningManagerTurnContext`` tied to the current turn id, cycle id,
+            phase, prompt source, active node, and bounded memory signals.
+        """
+        expected_shape = "active_answer" if self.state.current_expected_answer else "control_or_freeform"
+        prompt_kind = self.state.current_prompt_source or "unknown"
+        snapshot_id = ":".join(
+            (
+                self.state.turn_id or "turn",
+                self.state.cycle_id or "cycle",
+                self.state.phase,
+                self.state.current_node_id or "none",
+                prompt_kind,
+            )
+        )
+        return LearningManagerTurnContext(
+            snapshot_id=snapshot_id,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            phase=self.state.phase,
+            current_node_id=self.state.current_node_id,
+            current_prompt_kind=prompt_kind,
+            expected_response_shape=expected_shape,
+            edf_state=self.state.edf_snapshot.learner_state,
+            edf_policy=self.state.edf_snapshot.pedagogical_strategy,
+            recent_safe_signals=self.memory.recent_safe_signals(self.state),
+            learner_text=answer,
+        )
+
+    def _orchestrate_current_turn(self, answer: str) -> LearningManagerDecision:
+        """Return an orchestrator proposal or deterministic legacy fallback.
+
+        Rule mode keeps historical behavior and avoids accidental live model
+        calls during local tests. LLM mode uses the orchestrator, and all model
+        failures are converted to fallback by the orchestrator contract.
+        """
+        context = self._learning_manager_turn_context(answer)
+        if self.state.mode != "llm":
+            return LearningManagerDecision(
+                action=LearningManagerAction.FALLBACK_LEGACY_PIPELINE,
+                capability="",
+                policy=CapabilityPolicy.NONE,
+                target_phase=self.state.phase,
+                confidence=0.0,
+                reason_code="rule_mode_legacy",
+                proposal_source="fallback",
+                snapshot_id=context.snapshot_id,
+            )
+        if getattr(self.learning_manager_orchestrator, "llm", self.llm) is not self.llm:
+            self.learning_manager_orchestrator = LearningManagerOrchestrator(
+                self.llm,
+                capability_names=self.learning_capabilities.names(),
+            )
+        return self.learning_manager_orchestrator.interpret_turn(context)
+
+    def _validate_orchestrator_decision(
+        self,
+        decision: LearningManagerDecision,
+        *,
+        expected_snapshot_id: str,
+    ) -> CapabilityRequest | None:
+        """Validate an orchestrator proposal before any capability dispatch.
+
+        Args:
+            decision: Read-only proposal returned by the orchestrator.
+            expected_snapshot_id: Snapshot id from the current immutable turn.
+
+        Returns:
+            A validated capability request, or ``None`` when the decision must
+            fall back to the legacy pipeline.
+        """
+        if decision.snapshot_id != expected_snapshot_id:
+            return None
+        if decision.action in {
+            LearningManagerAction.FALLBACK_LEGACY_PIPELINE,
+            LearningManagerAction.REJECT_ILLEGAL_ACTION,
+        }:
+            return None
+        if decision.action in {LearningManagerAction.RESUME_PIPELINE, LearningManagerAction.CONTINUE_PIPELINE}:
+            return CapabilityRequest(
+                name="resume_pipeline",
+                policy=CapabilityPolicy.READ,
+                turn_id=self.state.turn_id,
+                cycle_id=self.state.cycle_id,
+                target_phase=self.state.phase,
+            )
+        if decision.action is LearningManagerAction.ANSWER_DIRECTLY:
+            return CapabilityRequest(
+                name="clarify_current_prompt",
+                policy=CapabilityPolicy.NONE,
+                turn_id=self.state.turn_id,
+                cycle_id=self.state.cycle_id,
+                target_phase=decision.target_phase,
+            )
+        if decision.action in {LearningManagerAction.CALL_CAPABILITY, LearningManagerAction.DELEGATE_CAPABILITY}:
+            return CapabilityRequest(
+                name=decision.capability,
+                policy=decision.policy,
+                turn_id=self.state.turn_id,
+                cycle_id=self.state.cycle_id,
+                target_phase=decision.target_phase,
+            )
+        return None
+
+    def _dispatch_orchestrator_decision(
+        self,
+        answer: str,
+        decision: LearningManagerDecision,
+    ) -> TurnOutcome | None:
+        """Apply a validated orchestration decision through engine-owned paths.
+
+        Args:
+            answer: Current learner answer. It is passed only to existing
+                handlers and not emitted as structured metadata.
+            decision: Read-only orchestrator proposal.
+
+        Returns:
+            ``TurnOutcome`` when a safe orchestrated path handled the turn, or
+            ``None`` to execute exact legacy fallback.
+        """
+        context = self._learning_manager_turn_context(answer)
+        request = self._validate_orchestrator_decision(decision, expected_snapshot_id=context.snapshot_id)
+        if request is None:
+            return None
+        idempotency_key = f"{self.state.turn_id}:{decision.snapshot_id}:{decision.action.value}:{decision.capability}"
+        if idempotency_key in self._applied_orchestration_keys:
+            return None
+        capability_result = self.learning_capabilities.validate(request)
+        if not capability_result.accepted:
+            return None
+        if capability_result.can_write_mastery and decision.policy is not CapabilityPolicy.WRITE_PROPOSED:
+            return None
+        self._applied_orchestration_keys.add(idempotency_key)
+        if request.name == "diagnose_answer":
+            if self.state.phase == "diagnosis":
+                return self._handle_diagnostic(answer)
+            if self.state.phase == "tutoring":
+                return self._handle_tutoring(answer)
+            return None
+        if request.name == "clarify_current_prompt":
+            if not self.state.current_node_id or not self.curriculum:
+                return None
+            dialogue_outcome = self._route_dialogue_act(answer, self.state.current_node_id)
+            if dialogue_outcome is not None:
+                return dialogue_outcome
+            return None
+        if request.name == "resume_pipeline":
+            return self.start()
+        return None
 
     def _next_methodology_sequence(self) -> int:
         """Return the next monotonic methodology sequence number."""

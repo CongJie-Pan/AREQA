@@ -2,6 +2,7 @@ import pytest
 from pathlib import Path
 
 from pelican_mvp.engine import PelicanEngine
+from pelican_mvp.agents import CapabilityPolicy, LearningManagerAction, LearningManagerDecision
 from pelican_mvp.domain_skill import DomainCategory
 from pelican_mvp.llm import IntakeSemanticSignal
 from pelican_mvp.models import (
@@ -442,6 +443,103 @@ def test_humanities_micro_check_clarification_does_not_repeat_lesson_or_update_m
         and event.input_ref.ref_type == "dialogue_control"
     ]
     assert gum_events[-1].reason_code.startswith("dialogue_control:")
+
+
+class FakeLearningManagerOrchestrator:
+    """Deterministic test double that returns one decision for the current snapshot."""
+
+    def __init__(self, action: LearningManagerAction, *, capability: str = "", policy: CapabilityPolicy = CapabilityPolicy.NONE):
+        self.action = action
+        self.capability = capability
+        self.policy = policy
+        self.contexts = []
+
+    def interpret_turn(self, context):
+        self.contexts.append(context)
+        return LearningManagerDecision(
+            action=self.action,
+            capability=self.capability,
+            policy=self.policy,
+            target_phase=context.phase,
+            confidence=0.95,
+            reason_code="test_decision",
+            proposal_source="llm",
+            snapshot_id=context.snapshot_id,
+        )
+
+
+def test_orchestrator_fallback_preserves_legacy_diagnostic_behavior(tmp_path: Path) -> None:
+    legacy = PelicanEngine(tmp_path / "legacy", curriculum_id="cnn")
+    orchestrated = PelicanEngine(tmp_path / "orchestrated", curriculum_id="cnn")
+    legacy.start()
+    orchestrated.start()
+    orchestrated.state.mode = "llm"
+    orchestrated.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.FALLBACK_LEGACY_PIPELINE
+    )
+
+    legacy_outcome = legacy.respond("not the expected answer")
+    orchestrated_outcome = orchestrated.respond("not the expected answer")
+
+    assert orchestrated_outcome.category is legacy_outcome.category
+    assert orchestrated_outcome.node_id == legacy_outcome.node_id
+    assert orchestrated.state.current_node_id == legacy.state.current_node_id
+
+
+def test_orchestrator_diagnose_answer_dispatches_through_engine_handler(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
+    engine.start()
+    engine.state.mode = "llm"
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.CALL_CAPABILITY,
+        capability="diagnose_answer",
+        policy=CapabilityPolicy.WRITE_PROPOSED,
+    )
+
+    outcome = engine.respond("not the expected answer")
+
+    assert engine.learning_manager_orchestrator.contexts
+    assert outcome.category is not None
+    assert engine.state.history
+
+
+def test_orchestrator_same_turn_dispatch_is_idempotent(tmp_path: Path) -> None:
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
+    engine.start()
+    engine._begin_turn()
+    context = engine._learning_manager_turn_context("resume")
+    decision = LearningManagerDecision(
+        action=LearningManagerAction.CONTINUE_PIPELINE,
+        capability="",
+        policy=CapabilityPolicy.READ,
+        target_phase=engine.state.phase,
+        confidence=0.95,
+        reason_code="test_resume",
+        proposal_source="llm",
+        snapshot_id=context.snapshot_id,
+    )
+
+    first = engine._dispatch_orchestrator_decision("resume", decision)
+    second = engine._dispatch_orchestrator_decision("resume", decision)
+
+    assert first is not None
+    assert second is None
+
+
+def test_orchestrator_answer_directly_uses_no_mastery_dialogue_path(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.ANSWER_DIRECTLY,
+        policy=CapabilityPolicy.NONE,
+    )
+    before_evidence = len(engine.state.direct_evidence)
+
+    outcome = engine.respond("什麼轉折點?")
+
+    assert outcome.category is None
+    assert len(engine.state.direct_evidence) == before_evidence
+    assert engine.state.current_node_id == "jianzhou_jurchen_origins"
 
 
 def test_humanities_llm_mode_uses_model_generated_remediation(tmp_path: Path) -> None:
