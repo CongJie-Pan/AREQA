@@ -1,11 +1,48 @@
 """CLI entry point for the orchestration-oriented Agent MVP."""
 
+import ctypes
 import os
+import sys
 
 from dotenv import load_dotenv
 
 from core.orchestrator import OrchestratorAgent
 from core.tools import ToolRegistry
+
+
+UTF8_CODE_PAGE = 65001
+
+
+def configure_console_encoding() -> None:
+    """Configure the interactive CLI to handle UTF-8 text.
+
+    Side Effects:
+        On Windows, attempts to set the console input and output code pages to
+        UTF-8. For all platforms, asks Python's standard streams to encode and
+        decode as UTF-8 when the stream object supports ``reconfigure``.
+
+    Compatibility:
+        Encoding setup must be best-effort because CI, redirected output, and
+        IDE terminals may expose stream wrappers without ``reconfigure`` or a
+        native Windows console handle. Failures are intentionally ignored so the
+        CLI can still start in constrained environments.
+    """
+    if os.name == "nt":
+        try:
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleCP(UTF8_CODE_PAGE)
+            kernel32.SetConsoleOutputCP(UTF8_CODE_PAGE)
+        except (AttributeError, OSError):
+            pass
+
+    for stream_name in ("stdin", "stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
 
 
 def calculator(a: float, b: float, operator: str) -> float:
@@ -29,7 +66,7 @@ def calculator(a: float, b: float, operator: str) -> float:
         return a - b
     if op in ["*", "x", "multiply", "times"]:
         return a * b
-    if op in ["/", "divide"]:
+    if op in ["/", "divide", "div"]:
         return a / b
     raise ValueError(f"Unknown operator: {operator}")
 
@@ -81,6 +118,7 @@ def print_trace(event: dict) -> None:
 
 def main() -> None:
     """Run the interactive orchestration-agent CLI."""
+    configure_console_encoding()
     load_dotenv()
     if not os.getenv("OPENROUTER_API_KEY"):
         print("Warning: OPENROUTER_API_KEY not found in environment or .env file.")
