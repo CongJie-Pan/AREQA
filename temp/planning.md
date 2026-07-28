@@ -440,21 +440,21 @@ misc/
 
 #### Work List
 
-1. [ ] Modify `misc/PELICAN_mvp/tests/test_chinese_history.py`.
-   - [ ] Add the Meiji short-answer regression for `廢藩置縣`.
-   - [ ] Add the focused clarification regression for `什麼轉折點?`.
-   - [ ] Add a partial humanities explanation case that receives helpful feedback without forcing an immediate full rephrase.
-2. [ ] Modify `misc/PELICAN_mvp/tests/test_pedagogical_flow.py`.
-   - [ ] Add a learner question during explanation that should trigger direct clarification.
-   - [ ] Add a learner answer after clarification that resumes pipeline progression.
-3. [ ] Modify `misc/PELICAN_mvp/tests/test_engine.py`.
-   - [ ] Add no-mastery-write assertions for all no-write capability decisions.
-   - [ ] Add fallback equivalence assertions for low-confidence and invalid decisions.
-4. [ ] Modify `misc/PELICAN_mvp/tests/test_learning_manager_orchestrator.py`.
-   - [ ] Add table-driven action-selection cases for answer, clarification, direct answer, delegated capability, and fallback.
-5. [ ] Create `misc/PELICAN_mvp/docs/learning_manager_orchestrator_test_script.md` if manual validation docs are appropriate.
-   - [ ] Add Traditional Chinese realistic learner prompts.
-   - [ ] Add expected decision, capability, state-write behavior, and learner-visible response criteria.
+1. [x] Modify `misc/PELICAN_mvp/tests/test_chinese_history.py`.
+   - [x] Add the Meiji short-answer regression for `廢藩置縣`.
+   - [x] Add the focused clarification regression for `什麼轉折點?`.
+   - [x] Add a partial humanities explanation case that receives helpful feedback without forcing an immediate full rephrase.
+2. [x] Modify `misc/PELICAN_mvp/tests/test_pedagogical_flow.py`.
+   - [x] Reuse existing learner-question regression through the Phase 5 focused gate.
+   - [x] Reuse existing progression coverage through the Phase 5 focused gate.
+3. [x] Modify `misc/PELICAN_mvp/tests/test_engine.py`.
+   - [x] Reuse Phase 4 no-mastery-write assertions for no-write capability decisions.
+   - [x] Reuse Phase 4 fallback equivalence assertions for low-confidence and invalid decisions.
+4. [x] Modify `misc/PELICAN_mvp/tests/test_learning_manager_orchestrator.py`.
+   - [x] Keep table-driven action-selection cases for answer, clarification, direct answer, delegated capability, and fallback.
+5. [x] Create `misc/PELICAN_mvp/docs/learning_manager_orchestrator_test_script.md` if manual validation docs are appropriate.
+   - [x] Add Traditional Chinese realistic learner prompts.
+   - [x] Add expected decision, capability, state-write behavior, and learner-visible response criteria.
 
 #### Test Plan
 
