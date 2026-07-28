@@ -2,7 +2,7 @@ import logging
 
 import pytest
 from pelican_mvp.domain_skill import DomainCategory
-from pelican_mvp.llm import LlmAdapter, LlmConfig, LlmUnavailable
+from pelican_mvp.llm import DEFAULT_ORCHESTRATOR_MODEL, DEFAULT_TUTOR_MODEL, LlmAdapter, LlmConfig, LlmUnavailable
 from pelican_mvp.models import TutoringStrategy
 from test_domain_skill import valid_skill_payload
 
@@ -278,26 +278,94 @@ def test_llm_category_model_route_precedence(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.delenv("PELICAN_LLM_MODEL", raising=False)
     monkeypatch.delenv("PELICAN_SKILL_MODEL", raising=False)
     monkeypatch.delenv("PELICAN_TUTOR_MODEL", raising=False)
+    monkeypatch.delenv("PELICAN_ORCHESTRATOR_MODEL", raising=False)
     monkeypatch.delenv("PELICAN_STEM_MODEL", raising=False)
     config = LlmConfig(api_key="test", model="legacy", base_url="test")
     adapter = LlmAdapter(config=config)
 
     assert adapter.model_route_for_category(DomainCategory.STEM) == "openai/gpt-5.5"
     assert adapter.model_route_for_category(DomainCategory.HUMANITIES) == "~google/gemini-pro-latest"
-    assert adapter.tutor_model_route() == "google/gemini-3.1-flash-lite"
+    assert adapter.tutor_model_route() == DEFAULT_TUTOR_MODEL
+    assert adapter.orchestrator_model_route() == DEFAULT_ORCHESTRATOR_MODEL
 
     monkeypatch.setenv("PELICAN_LLM_MODEL", "global/model")
     assert adapter.model_route_for_category(DomainCategory.BUSINESS) == "global/model"
     assert adapter.tutor_model_route() == "global/model"
+    assert adapter.orchestrator_model_route() == "global/model"
 
     monkeypatch.setenv("PELICAN_SKILL_MODEL", "skill/model")
     assert adapter.model_route_for_category(DomainCategory.BUSINESS) == "skill/model"
+    assert adapter.tutor_model_route() == "global/model"
+    assert adapter.orchestrator_model_route() == "global/model"
 
     monkeypatch.setenv("PELICAN_STEM_MODEL", "stem/model")
     assert adapter.model_route_for_category(DomainCategory.STEM) == "stem/model"
 
     monkeypatch.setenv("PELICAN_TUTOR_MODEL", "tutor/model")
     assert adapter.tutor_model_route() == "tutor/model"
+    assert adapter.orchestrator_model_route() == "tutor/model"
+
+    monkeypatch.setenv("PELICAN_ORCHESTRATOR_MODEL", "orchestrator/model")
+    assert adapter.orchestrator_model_route() == "orchestrator/model"
+    assert adapter.tutor_model_route() == "tutor/model"
+    assert adapter.model_route_for_category(DomainCategory.STEM) == "stem/model"
+
+
+def test_orchestrator_structured_output_health_supported() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.model_seen = None
+            self.response_format_seen = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.model_seen = model
+            self.response_format_seen = response_format
+            return {"ok": True}
+
+    adapter = RecordingAdapter()
+
+    health = adapter.check_orchestrator_structured_output_health("orchestrator/model")
+
+    assert health.available is True
+    assert health.reason_codes == ("ok",)
+    assert adapter.model_seen == "orchestrator/model"
+    assert adapter.response_format_seen["type"] == "json_schema"
+    assert adapter.response_format_seen["json_schema"]["name"] == "pelican_orchestrator_health"
+
+
+def test_orchestrator_structured_output_health_marks_unsupported() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            raise LlmUnavailable(
+                "LLM request failed: BadRequestError",
+                reason_codes=("llm_request_failed", "llm_api_error_unsupported_parameter"),
+                api_status_code=400,
+                api_error_type="unsupported_parameter",
+            )
+
+    health = RecordingAdapter().check_orchestrator_structured_output_health("orchestrator/model")
+
+    assert health.available is False
+    assert health.api_status_code == 400
+    assert health.api_error_type == "unsupported_parameter"
+    assert "structured_output_unsupported" in health.reason_codes
+
+
+def test_orchestrator_structured_output_health_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import dotenv
+
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    adapter = LlmAdapter(config=None)
+
+    health = adapter.check_orchestrator_structured_output_health("orchestrator/model")
+
+    assert health.available is False
+    assert health.reason_codes == ("llm_missing_api_key",)
 
 
 def test_generate_domain_skill_uses_requested_route() -> None:

@@ -106,7 +106,8 @@ DEFAULT_SKILL_MODEL_ROUTES = {
     DomainCategory.BUSINESS: "~google/gemini-pro-latest",
     DomainCategory.LANGUAGE: "~google/gemini-pro-latest",
 }
-DEFAULT_TUTOR_MODEL = "google/gemini-3.1-flash-lite"
+DEFAULT_TUTOR_MODEL = "google/gemini-3.5-flash-lite"
+DEFAULT_ORCHESTRATOR_MODEL = "google/gemini-3.5-flash-lite"
 SKILL_SCHEMA_MODE_ENV = "PELICAN_SKILL_SCHEMA_MODE"
 SKILL_SCHEMA_MODELS_ENV = "PELICAN_SKILL_SCHEMA_MODELS"
 STRUCTURED_OUTPUT_COMPATIBILITY_ERRORS = {
@@ -393,6 +394,30 @@ def _domain_skill_response_format(category: DomainCategory) -> dict[str, Any]:
     }
 
 
+def _orchestrator_health_response_format() -> dict[str, Any]:
+    """Return the strict schema used only for orchestrator route health checks.
+
+    Returns:
+        OpenAI/OpenRouter ``response_format`` payload for a minimal object. The
+        schema is intentionally tiny because the health probe verifies provider
+        compatibility with strict JSON schema, not the full orchestration
+        contract that later local validators must still enforce.
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "pelican_orchestrator_health",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["ok"],
+                "properties": {"ok": {"type": "boolean"}},
+            },
+        },
+    }
+
+
 def _skill_schema_response_format_for_route(model_route: str, category: DomainCategory) -> dict[str, Any] | None:
     """Return strict schema response format when enabled for a model route.
 
@@ -522,6 +547,31 @@ class LlmAdapter:
             return legacy_override
         return DEFAULT_TUTOR_MODEL
 
+    def orchestrator_model_route(self) -> str:
+        """Resolve the model route for turn-level orchestration decisions.
+
+        Returns:
+            OpenRouter model slug for the read-only learning manager
+            orchestrator. The precedence is ``PELICAN_ORCHESTRATOR_MODEL``,
+            ``PELICAN_TUTOR_MODEL``, legacy ``PELICAN_LLM_MODEL``, then
+            ``DEFAULT_ORCHESTRATOR_MODEL``.
+
+        Compatibility:
+            Skill generation intentionally stays on ``model_route_for_category``
+            so stronger or category-specific structured generation routes do
+            not get overwritten by a low-latency orchestration model.
+        """
+        override = os.getenv("PELICAN_ORCHESTRATOR_MODEL", "").strip()
+        if override:
+            return override
+        tutor_override = os.getenv("PELICAN_TUTOR_MODEL", "").strip()
+        if tutor_override:
+            return tutor_override
+        legacy_override = os.getenv("PELICAN_LLM_MODEL", "").strip()
+        if legacy_override:
+            return legacy_override
+        return DEFAULT_ORCHESTRATOR_MODEL
+
     def check_route_health(self, model_route: str) -> LlmHealth:
         """Probe whether a model route can return a minimal JSON response.
 
@@ -551,6 +601,46 @@ class LlmAdapter:
             return LlmHealth(
                 False,
                 exc.reason_codes or ("llm_unavailable",),
+                api_status_code=exc.api_status_code,
+                api_error_type=exc.api_error_type,
+            )
+
+    def check_orchestrator_structured_output_health(self, model_route: str | None = None) -> LlmHealth:
+        """Probe strict JSON-schema support for orchestration decisions.
+
+        Args:
+            model_route: Optional OpenRouter/OpenAI-compatible route to probe.
+                ``None`` uses ``orchestrator_model_route()``.
+
+        Returns:
+            Safe compatibility metadata. ``available=True`` means the provider
+            accepted a strict JSON-schema request for a tiny health object.
+            ``available=False`` with ``structured_output_unsupported`` means
+            callers should use JSON-object prompting plus local validation.
+
+        Privacy:
+            The probe logs or returns only bounded status metadata. It never
+            exposes raw prompts, model content, provider response bodies, or
+            credentials.
+        """
+        route = model_route or self.orchestrator_model_route()
+        if not self.available:
+            return LlmHealth(False, ("llm_missing_api_key",))
+        try:
+            self._json(
+                "You are a structured-output health check. Return only JSON.",
+                'Return exactly {"ok": true}.',
+                model=route,
+                response_format=_orchestrator_health_response_format(),
+            )
+            return LlmHealth(True, ("ok",))
+        except LlmUnavailable as exc:
+            reason_codes = exc.reason_codes or ("llm_unavailable",)
+            if _is_structured_output_compatibility_failure(exc):
+                reason_codes = tuple(dict.fromkeys((*reason_codes, "structured_output_unsupported")))
+            return LlmHealth(
+                False,
+                reason_codes,
                 api_status_code=exc.api_status_code,
                 api_error_type=exc.api_error_type,
             )
