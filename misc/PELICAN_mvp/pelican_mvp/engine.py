@@ -49,11 +49,13 @@ from .models import (
     MethodologyRef,
     MethodologyStage,
     MethodologyStatus,
+    OrchestrationTraceRecord,
     PlanSource,
     ProposalValidationStatus,
     ResponseCategory,
     SessionState,
     TutoringContext,
+    TurnInterpretation,
     TurnOutcome,
     TurnRecord,
     TutoringStrategy,
@@ -73,6 +75,7 @@ from .skill_generator import DomainSkillGenerator
 MAX_ACTIVITY_LOG = 16
 MAX_METHODOLOGY_EVENTS = 64
 MAX_AGENT_PROPOSALS = 48
+MAX_ORCHESTRATION_TRACE = 32
 
 
 class PelicanEngine:
@@ -111,6 +114,7 @@ class PelicanEngine:
         self.learning_manager_orchestrator = LearningManagerOrchestrator(
             self.llm,
             capability_names=self.learning_capabilities.names(),
+            capability_policies=self.learning_capabilities.policy_manifest(),
         )
 
     def _resolve_curriculum(self) -> Curriculum | None:
@@ -177,7 +181,7 @@ class PelicanEngine:
         orchestrated = self._dispatch_orchestrator_decision(answer, decision)
         if orchestrated is not None:
             return orchestrated
-        return self._legacy_phase_handler(answer)
+        return self._legacy_phase_handler(answer, decision.turn_interpretation)
 
     def _begin_turn(self) -> None:
         """Allocate correlation IDs for one accepted learner message.
@@ -207,12 +211,19 @@ class PelicanEngine:
             reason_code="learner_message_accepted",
         )
 
-    def _legacy_phase_handler(self, answer: str) -> TurnOutcome:
+    def _legacy_phase_handler(
+        self,
+        answer: str,
+        turn_interpretation: TurnInterpretation | None = None,
+    ) -> TurnOutcome:
         """Run the pre-orchestrator phase handler for exact fallback behavior.
 
         Args:
             answer: Current learner answer. This is passed only to legacy
                 handlers and is never included in structured logs.
+            turn_interpretation: Optional safe Learning Manager interpretation
+                that guides diagnosis and tutor response without owning state
+                mutation.
 
         Returns:
             The same outcome the engine would have produced before
@@ -221,8 +232,8 @@ class PelicanEngine:
         if self.state.phase == "onboarding":
             return self._handle_onboarding(answer)
         if self.state.phase == "diagnosis":
-            return self._handle_diagnostic(answer)
-        return self._handle_tutoring(answer)
+            return self._handle_diagnostic(answer, turn_interpretation=turn_interpretation)
+        return self._handle_tutoring(answer, turn_interpretation=turn_interpretation)
 
     def _build_learning_capabilities(self) -> CapabilityRegistry:
         """Create the engine-owned manifest of orchestratable capabilities.
@@ -232,6 +243,24 @@ class PelicanEngine:
         after the engine validates phase legality and the current turn snapshot.
         """
         registry = CapabilityRegistry()
+        registry.register(
+            LearningCapability(
+                name="conversation_control",
+                allowed_policies=frozenset({CapabilityPolicy.NONE}),
+                can_write_mastery=False,
+                emits_learner_text=True,
+                description="Handle social or meta-conversation turns without advancing the learning pipeline.",
+            )
+        )
+        registry.register(
+            LearningCapability(
+                name="onboarding_intake",
+                allowed_policies=frozenset({CapabilityPolicy.WRITE_PROPOSED}),
+                can_write_mastery=False,
+                emits_learner_text=True,
+                description="Advance topic, goal, or level onboarding through engine-owned intake handlers.",
+            )
+        )
         registry.register(
             LearningCapability(
                 name="diagnose_answer",
@@ -300,15 +329,17 @@ class PelicanEngine:
             ``LearningManagerTurnContext`` tied to the current turn id, cycle id,
             phase, prompt source, active node, and bounded memory signals.
         """
-        expected_shape = "active_answer" if self.state.current_expected_answer else "control_or_freeform"
+        pending_intake_stage = self._pending_intake_stage()
+        expected_shape = self._expected_response_shape(pending_intake_stage)
         prompt_kind = self.state.current_prompt_source or "unknown"
+        pending_prompt_kind = f"onboarding_{pending_intake_stage}" if pending_intake_stage else prompt_kind
         snapshot_id = ":".join(
             (
                 self.state.turn_id or "turn",
                 self.state.cycle_id or "cycle",
                 self.state.phase,
                 self.state.current_node_id or "none",
-                prompt_kind,
+                pending_prompt_kind,
             )
         )
         return LearningManagerTurnContext(
@@ -322,8 +353,60 @@ class PelicanEngine:
             edf_state=self.state.edf_snapshot.learner_state,
             edf_policy=self.state.edf_snapshot.pedagogical_strategy,
             recent_safe_signals=self.memory.recent_safe_signals(self.state),
+            recent_messages=self._recent_turn_messages(),
+            last_assistant_prompt=self._last_assistant_prompt(),
+            pending_intake_stage=pending_intake_stage,
+            pending_prompt_kind=pending_prompt_kind,
+            pending_choices=self._pending_intake_choices(pending_intake_stage),
             learner_text=answer,
         )
+
+    def _pending_intake_stage(self) -> str | None:
+        """Return the onboarding slot that is currently waiting for a learner answer."""
+        if self.state.phase != "onboarding":
+            return None
+        turns = self.state.intake_profile.intake_turns
+        if turns <= 0:
+            return "topic"
+        if turns == 1:
+            return "goal"
+        if turns == 2:
+            return "level"
+        return None
+
+    def _expected_response_shape(self, pending_intake_stage: str | None) -> str:
+        """Return a safe high-level response-shape label for orchestration."""
+        if self.state.current_expected_answer:
+            return "active_answer"
+        if pending_intake_stage == "topic":
+            return "learning_topic_or_social"
+        if pending_intake_stage == "goal":
+            return "goal_choice_revision_or_no_preference"
+        if pending_intake_stage == "level":
+            return "experience_level_or_no_preference"
+        return "control_or_freeform"
+
+    def _recent_turn_messages(self) -> tuple[dict[str, str], ...]:
+        """Return bounded recent visible turns for current-turn interpretation only."""
+        messages: list[dict[str, str]] = []
+        for entry in self.state.transcript[-6:]:
+            messages.append({"role": entry.role[:32], "text": entry.text[:800]})
+        return tuple(messages)
+
+    def _last_assistant_prompt(self) -> str:
+        """Return the latest assistant-visible prompt text without logging it."""
+        for entry in reversed(self.state.transcript):
+            if entry.role == "assistant" and entry.text:
+                return entry.text[:1200]
+        return self.state.current_prompt[:1200]
+
+    def _pending_intake_choices(self, pending_intake_stage: str | None) -> tuple[str, ...]:
+        """Return safe option labels for the current onboarding prompt."""
+        if pending_intake_stage == "goal":
+            return ("military", "economy", "society", "politics", "no_preference")
+        if pending_intake_stage == "level":
+            return ("beginner", "intermediate", "advanced", "no_preference")
+        return ()
 
     def _orchestrate_current_turn(self, answer: str) -> LearningManagerDecision:
         """Return an orchestrator proposal or deterministic legacy fallback.
@@ -334,6 +417,18 @@ class PelicanEngine:
         """
         context = self._learning_manager_turn_context(answer)
         if self.state.mode != "llm":
+            conversation_reason = _conversation_control_reason(answer)
+            if conversation_reason:
+                return LearningManagerDecision(
+                    action=LearningManagerAction.CALL_CAPABILITY,
+                    capability="conversation_control",
+                    policy=CapabilityPolicy.NONE,
+                    target_phase=self.state.phase,
+                    confidence=0.95,
+                    reason_code=conversation_reason,
+                    proposal_source="fallback",
+                    snapshot_id=context.snapshot_id,
+                )
             return LearningManagerDecision(
                 action=LearningManagerAction.FALLBACK_LEGACY_PIPELINE,
                 capability="",
@@ -348,6 +443,7 @@ class PelicanEngine:
             self.learning_manager_orchestrator = LearningManagerOrchestrator(
                 self.llm,
                 capability_names=self.learning_capabilities.names(),
+                capability_policies=self.learning_capabilities.policy_manifest(),
             )
         return self.learning_manager_orchestrator.interpret_turn(context)
 
@@ -420,6 +516,7 @@ class PelicanEngine:
         request = self._validate_orchestrator_decision(decision, expected_snapshot_id=context.snapshot_id)
         if request is None:
             if decision.action is not LearningManagerAction.FALLBACK_LEGACY_PIPELINE:
+                self._record_orchestration_trace(decision, outcome="rejected")
                 log_event(
                     "pelican_learning_orchestrator_action_rejected",
                     learner_id=self.state.learner_id,
@@ -433,9 +530,36 @@ class PelicanEngine:
                     outcome="rejected",
                     reason_code=decision.reason_code,
                 )
+            else:
+                self._record_orchestration_trace(decision, outcome="fallback")
+            return None
+        if request.name == "conversation_control" and self._should_guard_conversation_control(answer):
+            self._record_orchestration_trace(
+                decision,
+                outcome="rejected",
+                reason_code="pending_pipeline_answer_guard",
+            )
+            log_event(
+                "pelican_learning_orchestrator_action_rejected",
+                learner_id=self.state.learner_id,
+                phase=self.state.phase,
+                turn_id=self.state.turn_id,
+                cycle_id=self.state.cycle_id,
+                action=decision.action.value,
+                capability=decision.capability,
+                policy=decision.policy.value,
+                target_phase=decision.target_phase,
+                outcome="rejected",
+                reason_code="pending_pipeline_answer_guard",
+            )
             return None
         idempotency_key = f"{self.state.turn_id}:{decision.snapshot_id}:{decision.action.value}:{decision.capability}"
         if idempotency_key in self._applied_orchestration_keys:
+            self._record_orchestration_trace(
+                decision,
+                outcome="rejected",
+                reason_code="duplicate_orchestrator_decision",
+            )
             log_event(
                 "pelican_learning_orchestrator_action_rejected",
                 learner_id=self.state.learner_id,
@@ -453,8 +577,18 @@ class PelicanEngine:
             return None
         capability_result = self.learning_capabilities.validate(request)
         if not capability_result.accepted:
+            self._record_orchestration_trace(
+                decision,
+                outcome="rejected",
+                reason_code=capability_result.reason_code,
+            )
             return None
         if capability_result.can_write_mastery and decision.policy is not CapabilityPolicy.WRITE_PROPOSED:
+            self._record_orchestration_trace(
+                decision,
+                outcome="rejected",
+                reason_code="mastery_write_requires_write_proposed",
+            )
             return None
         self._applied_orchestration_keys.add(idempotency_key)
         if not capability_result.can_write_mastery:
@@ -472,14 +606,47 @@ class PelicanEngine:
                 outcome="guarded",
                 reason_code="no_mastery_write_capability",
             )
+        if request.name == "conversation_control":
+            outcome = self._handle_conversation_control(answer, decision.reason_code)
+            self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+            self._record_orchestration_trace(decision, outcome="accepted")
+            log_event(
+                "pelican_learning_conversation_control_handled",
+                learner_id=self.state.learner_id,
+                phase=self.state.phase,
+                turn_id=self.state.turn_id,
+                cycle_id=self.state.cycle_id,
+                action=decision.action.value,
+                capability=request.name,
+                policy=request.policy.value,
+                target_phase=request.target_phase,
+                idempotency_key=idempotency_key,
+                outcome="accepted",
+                reason_code=decision.reason_code,
+            )
+            return outcome
+        if request.name == "onboarding_intake":
+            if self.state.phase != "onboarding":
+                self._record_orchestration_trace(
+                    decision,
+                    outcome="rejected",
+                    reason_code="onboarding_intake_wrong_phase",
+                )
+                return None
+            outcome = self._handle_onboarding(answer)
+            self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+            self._record_orchestration_trace(decision, outcome="accepted")
+            return outcome
         if request.name == "diagnose_answer":
             if self.state.phase == "diagnosis":
-                outcome = self._handle_diagnostic(answer)
+                outcome = self._handle_diagnostic(answer, turn_interpretation=decision.turn_interpretation)
                 self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+                self._record_orchestration_trace(decision, outcome="accepted")
                 return outcome
             if self.state.phase == "tutoring":
-                outcome = self._handle_tutoring(answer)
+                outcome = self._handle_tutoring(answer, turn_interpretation=decision.turn_interpretation)
                 self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+                self._record_orchestration_trace(decision, outcome="accepted")
                 return outcome
             return None
         if request.name == "clarify_current_prompt":
@@ -488,13 +655,129 @@ class PelicanEngine:
             dialogue_outcome = self._route_dialogue_act(answer, self.state.current_node_id)
             if dialogue_outcome is not None:
                 self._log_orchestrated_capability_completed(request, dialogue_outcome, idempotency_key)
+                self._record_orchestration_trace(decision, outcome="accepted")
                 return dialogue_outcome
             return None
         if request.name == "resume_pipeline":
             outcome = self.start()
             self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+            self._record_orchestration_trace(decision, outcome="accepted")
             return outcome
         return None
+
+    def _should_guard_conversation_control(self, answer: str) -> bool:
+        """Reject no-write control when the learner is answering a pending pipeline prompt."""
+        if _conversation_control_reason(answer):
+            return False
+        if self._pending_intake_stage() is not None:
+            return True
+        return bool(self.state.current_expected_answer)
+
+    def _record_orchestration_trace(
+        self,
+        decision: LearningManagerDecision,
+        *,
+        outcome: str,
+        reason_code: str | None = None,
+    ) -> None:
+        """Append one safe Learning Manager trace row and emit a matching log.
+
+        The stable log event is ``pelican_learning_orchestration_trace_recorded``.
+        It contains only bounded orchestration labels and correlation IDs; raw
+        learner text, prompts, and model output remain outside this boundary.
+        """
+        record = OrchestrationTraceRecord(
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            phase=self.state.phase,
+            action=decision.action.value,
+            capability=decision.capability,
+            policy=decision.policy.value,
+            target_phase=decision.target_phase,
+            confidence_bucket=_orchestration_confidence_bucket(decision.confidence),
+            proposal_source=decision.proposal_source,
+            reason_code=reason_code or decision.reason_code,
+            outcome=outcome,
+            learner_act=decision.turn_interpretation.learner_act,
+            understanding_status=decision.turn_interpretation.understanding_status,
+            teaching_move=decision.turn_interpretation.teaching_move,
+        )
+        self.state.orchestration_trace.append(record)
+        if len(self.state.orchestration_trace) > MAX_ORCHESTRATION_TRACE:
+            self.state.orchestration_trace = self.state.orchestration_trace[-MAX_ORCHESTRATION_TRACE:]
+        self.store.save(self.state)
+        log_event(
+            "pelican_learning_orchestration_trace_recorded",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            action=record.action,
+            capability=record.capability,
+            policy=record.policy,
+            target_phase=record.target_phase,
+            confidence_bucket=record.confidence_bucket,
+            proposal_source=record.proposal_source,
+            outcome=record.outcome,
+            reason_code=record.reason_code,
+            learner_act=record.learner_act,
+            understanding_status=record.understanding_status,
+            teaching_move=record.teaching_move,
+        )
+
+    def _handle_conversation_control(self, learner_text: str, reason_code: str) -> TurnOutcome:
+        """Generate a no-write conversational control response.
+
+        Args:
+            learner_text: Current learner turn used only for bounded response
+                generation. It must not be logged or persisted by this path.
+            reason_code: Safe stable reason supplied by the orchestrator or the
+                deterministic rule-mode classifier.
+
+        Returns:
+            Learner-facing outcome that preserves the current phase, intake
+            profile, mastery evidence, and active learning state.
+
+        Side Effects:
+            None. The caller owns structured logging so this method cannot
+            accidentally emit learner text or mutate session state.
+        """
+        message_source = "fallback"
+        message = ""
+        try:
+            generated = self.llm.conversation_control_response(
+                learner_text=learner_text,
+                phase=self.state.phase,
+                current_topic=self.state.intake_profile.topic,
+                current_prompt_kind=self.state.current_prompt_source or "unknown",
+                reason_code=reason_code,
+            )
+            if generated:
+                message = generated
+                message_source = "llm"
+        except LlmUnavailable:
+            message_source = "fallback"
+        if not message:
+            message = "我在。你可以直接告訴我想學什麼，或先說你想確認哪一段。"
+        log_event(
+            "pelican_learning_conversation_control_response_ready",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            capability="conversation_control",
+            policy=CapabilityPolicy.NONE.value,
+            outcome=message_source,
+            reason_code=reason_code,
+        )
+        return TurnOutcome(
+            message,
+            self.state.current_node_id,
+            None,
+            None,
+            (),
+            reason_code,
+        )
 
     def _log_orchestrated_capability_completed(
         self,
@@ -1212,7 +1495,12 @@ class PelicanEngine:
         self.store.save(self.state)
         return TurnOutcome(question.prompt, node_id, None, None, (), "successor-first：先診斷尚未確認的葉節點")
 
-    def _handle_diagnostic(self, answer: str) -> TurnOutcome:
+    def _handle_diagnostic(
+        self,
+        answer: str,
+        *,
+        turn_interpretation: TurnInterpretation | None = None,
+    ) -> TurnOutcome:
         """Handle a diagnostic answer with generated-skill remediation precedence."""
         node_id = self._require_current_node()
         signal = remediation_signal(answer)
@@ -1225,7 +1513,7 @@ class PelicanEngine:
         dialogue_outcome = self._route_dialogue_act(answer, node_id)
         if dialogue_outcome is not None:
             return dialogue_outcome
-        category = self._classify(answer)
+        category = self._category_with_turn_interpretation(self._classify(answer), turn_interpretation)
         self._record_activity("response_classified", "分類學習者回應", detail=category.value)
         if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
             return self._handle_scaffold_request(answer, category)
@@ -1252,7 +1540,12 @@ class PelicanEngine:
             ResponseCategory.PARTIAL_CORRECT,
             ResponseCategory.DIFFICULTY,
         ):
-            return self._remediate_current_skill_diagnostic(answer, category, changes)
+            return self._remediate_current_skill_diagnostic(
+                answer,
+                category,
+                changes,
+                turn_interpretation=turn_interpretation,
+            )
         self.store.save(self.state)
         next_outcome = self._present_next_diagnostic()
         
@@ -1280,6 +1573,8 @@ class PelicanEngine:
         answer: str,
         category: ResponseCategory,
         changes: list[str],
+        *,
+        turn_interpretation: TurnInterpretation | None = None,
     ) -> TurnOutcome:
         """Keep generated-skill learners on the current concept after missed evidence."""
         node_id = self._require_current_node()
@@ -1300,7 +1595,9 @@ class PelicanEngine:
             reason_code="stay_on_current_concept",
         )
         self.state.phase = "tutoring"
-        base_message = self._remediation_prompt(node_id, label, category=category)
+        base_message = self._interpretation_remediation_prompt(node_id, label, turn_interpretation)
+        if base_message is None:
+            base_message = self._remediation_prompt(node_id, label, category=category)
         (
             message,
             source,
@@ -1316,6 +1613,7 @@ class PelicanEngine:
             learner_answer=answer,
             base_message=base_message,
             tutor_role=AgentRole.FAST_TUTOR_AGENT,
+            turn_interpretation=turn_interpretation,
         )
         self.state.current_prompt = message
         self.state.current_prompt_source = source
@@ -1518,7 +1816,12 @@ class PelicanEngine:
             "too_easy：加速到下一個仍需確認的概念",
         )
 
-    def _handle_tutoring(self, answer: str) -> TurnOutcome:
+    def _handle_tutoring(
+        self,
+        answer: str,
+        *,
+        turn_interpretation: TurnInterpretation | None = None,
+    ) -> TurnOutcome:
         """Handle practice-step tutoring after diagnosis has selected a path."""
         node_id = self._require_current_node()
         step_id = self.state.current_step_id or ""
@@ -1533,7 +1836,7 @@ class PelicanEngine:
         dialogue_outcome = self._route_dialogue_act(answer, node_id)
         if dialogue_outcome is not None:
             return dialogue_outcome
-        category = self._classify(answer)
+        category = self._category_with_turn_interpretation(self._classify(answer), turn_interpretation)
         if self.state.plan_source is PlanSource.GENERATED and category is ResponseCategory.INABILITY:
             return self._handle_scaffold_request(answer, category)
         changes: list[str] = []
@@ -1633,23 +1936,26 @@ class PelicanEngine:
         strategy, reason = select_strategy(context)
         signal = self.state.direct_evidence[-1].signal if self.state.direct_evidence else category.value
         tutor_role = self._select_tutor_role(reason)
-        base_message = (
-            self._humanities_explanation_check_prompt(
+        base_message = self._interpretation_remediation_prompt(
+            node_id,
+            self.curriculum.nodes[node_id].label,
+            turn_interpretation,
+        )
+        if (
+            base_message is None
+            and self._is_humanities_plan()
+            and (self.state.mode != "llm" or not self.llm.available)
+            and category in (
+                ResponseCategory.INCORRECT,
+                ResponseCategory.PARTIAL_CORRECT,
+                ResponseCategory.DIFFICULTY,
+            )
+        ):
+            base_message = self._humanities_explanation_check_prompt(
                 node_id,
                 self.curriculum.nodes[node_id].label,
                 category=category,
             )
-            if (
-                self._is_humanities_plan()
-                and (self.state.mode != "llm" or not self.llm.available)
-                and category in (
-                    ResponseCategory.INCORRECT,
-                    ResponseCategory.PARTIAL_CORRECT,
-                    ResponseCategory.DIFFICULTY,
-                )
-            )
-            else None
-        )
         message, source, validation_status, proposal_reason, pedagogical_move, display_summary, tutor_result = self._tutor_message(
             strategy,
             node_id,
@@ -1657,6 +1963,7 @@ class PelicanEngine:
             learner_answer=answer,
             base_message=base_message,
             tutor_role=tutor_role,
+            turn_interpretation=turn_interpretation,
         )
         self._record_agent_result(
             tutor_result,
@@ -2072,6 +2379,55 @@ class PelicanEngine:
             return AgentRole.SLOW_SIMULATOR_AGENT
         return AgentRole.FAST_TUTOR_AGENT
 
+    def _category_with_turn_interpretation(
+        self,
+        category: ResponseCategory,
+        turn_interpretation: TurnInterpretation | None,
+    ) -> ResponseCategory:
+        """Use Learning Manager interpretation to avoid over-penalizing broad humanities answers."""
+        if not turn_interpretation or not self._is_humanities_plan():
+            return category
+        if turn_interpretation.understanding_status in {
+            "partial",
+            "partial_correct",
+            "broad_but_incomplete",
+            "mechanism_missing",
+            "context_correct_detail_missing",
+        }:
+            return ResponseCategory.PARTIAL_CORRECT
+        if turn_interpretation.understanding_status == "correct" and turn_interpretation.should_advance_pipeline:
+            return ResponseCategory.CORRECT
+        return category
+
+    def _interpretation_remediation_prompt(
+        self,
+        node_id: str,
+        label: str,
+        turn_interpretation: TurnInterpretation | None,
+    ) -> str | None:
+        """Build a fallback tutor message from safe Learning Manager teaching points."""
+        if (
+            not turn_interpretation
+            or not self._is_humanities_plan()
+            or turn_interpretation.teaching_move != "acknowledge_then_clarify"
+        ):
+            return None
+        understood = "、".join(turn_interpretation.understood_points[:3]).strip()
+        missing = "、".join(turn_interpretation.missing_points[:3]).strip()
+        if not understood and not missing:
+            return None
+        understood_text = understood or "你已經抓到這個概念的一部分方向"
+        missing_text = missing or f"{label} 的關鍵機制"
+        concept_text = self._concept_description(node_id)
+        remediation_text = self._safe_remediation_template(node_id, label)
+        detail = remediation_text or concept_text or f"{label} 不只是在描述一個大方向，也要說清楚它如何改變制度、關係或結構。"
+        return (
+            f"你抓到一個重要方向：{understood_text}。\n\n"
+            f"不過這個知識點想確認的是「{label}」背後的具體變化。現在還可以補上：{missing_text}。\n"
+            f"{detail}\n\n"
+            "你可以試著把剛剛那句話再補一點：加上這些具體變化是怎麼發生的就好。"
+        )
+
     def _remediation_prompt(
         self,
         node_id: str,
@@ -2314,6 +2670,7 @@ class PelicanEngine:
         learner_answer: str = "",
         base_message: str | None = None,
         tutor_role: AgentRole | None = None,
+        turn_interpretation: TurnInterpretation | None = None,
     ) -> tuple[str, str, ProposalValidationStatus, str, str, str, AgentExecutionResult]:
         """Generate or select a bounded tutor response without mastery mutation.
 
@@ -2358,6 +2715,7 @@ class PelicanEngine:
             learner_answer=learner_answer,
             recent_safe_signals=self.memory.recent_safe_signals(self.state),
             base_message=base_message,
+            turn_interpretation=turn_interpretation,
             context=self._agent_execution_context(),
         )
         proposal = agent_response.proposal
@@ -2533,6 +2891,52 @@ class PelicanEngine:
             ),
             route=self.state.learning_plan.model_route if self.state.learning_plan else self.state.intake_profile.model_route,
         )
+
+
+def _conversation_control_reason(answer: str) -> str:
+    """Classify high-confidence no-write conversation-control turns.
+
+    Args:
+        answer: Current learner turn. The caller must not log this raw text.
+
+    Returns:
+        Stable safe reason code when the turn should be handled before the
+        learning pipeline, otherwise an empty string.
+
+    Compatibility:
+        This rule-mode guard intentionally covers only very short social turns.
+        Rich intent interpretation remains the responsibility of the
+        ``LearningManagerOrchestrator`` in LLM mode, while this helper prevents
+        offline tests and fallback operation from storing greetings as topics.
+    """
+    normalized = re.sub(r"\s+", "", answer).casefold()
+    if not normalized or len(normalized) > 16:
+        return ""
+    greetings = {
+        "你好",
+        "您好",
+        "嗨",
+        "哈囉",
+        "哈啰",
+        "hello",
+        "hi",
+        "hey",
+        "yo",
+        "你在嗎",
+        "你在吗",
+    }
+    return "social_greeting" if normalized in greetings else ""
+
+
+def _orchestration_confidence_bucket(value: float) -> str:
+    """Return a coarse Learning Manager confidence bucket for safe UI/debug output."""
+    if value >= 0.8:
+        return "high"
+    if value >= 0.62:
+        return "medium"
+    if value > 0:
+        return "low"
+    return "none"
 
 
 def _infer_learning_intent(answer: str) -> LearningIntent:

@@ -38,6 +38,11 @@ def make_context(**updates) -> LearningManagerTurnContext:
         "edf_state": "exploring",
         "edf_policy": "probe_understanding",
         "recent_safe_signals": ("active_prompt",),
+        "recent_messages": ({"role": "assistant", "text": "Choose military, economy, or society."},),
+        "last_assistant_prompt": "Choose military, economy, or society.",
+        "pending_intake_stage": None,
+        "pending_prompt_kind": "unknown",
+        "pending_choices": (),
         "learner_text": "secret learner text",
     }
     values.update(updates)
@@ -53,6 +58,16 @@ def valid_payload(**updates) -> dict:
         "target_phase": "cognitive_diagnosis",
         "confidence": 0.91,
         "reason_code": "active_prompt_answer",
+        "turn_interpretation": {
+            "learner_act": "answer_attempt",
+            "understanding_status": "unknown",
+            "understood_points": [],
+            "missing_points": [],
+            "teaching_move": "resume_pipeline",
+            "recommended_capability": "diagnose_answer",
+            "should_advance_pipeline": True,
+            "reason_code": "active_prompt_answer",
+        },
     }
     payload.update(updates)
     return payload
@@ -68,6 +83,7 @@ def test_interpret_turn_adopts_answer_diagnosis_capability() -> None:
     assert decision.policy is CapabilityPolicy.WRITE_PROPOSED
     assert decision.proposal_source == "llm"
     assert decision.reason_code == "active_prompt_answer"
+    assert decision.turn_interpretation.learner_act == "answer_attempt"
 
 
 def test_interpret_turn_allows_direct_no_write_clarification() -> None:
@@ -105,6 +121,89 @@ def test_interpret_turn_allows_delegated_specialist_capability() -> None:
     assert decision.policy is CapabilityPolicy.SPECIALIST
 
 
+def test_interpret_turn_allows_no_write_conversation_control_capability() -> None:
+    payload = valid_payload(
+        action="call_capability",
+        capability="conversation_control",
+        policy="none",
+        target_phase="onboarding",
+        reason_code="social_greeting",
+    )
+    orchestrator = LearningManagerOrchestrator(
+        FakeLlm(payload),
+        capability_names=("conversation_control", "diagnose_answer"),
+        capability_policies={
+            "conversation_control": ("none",),
+            "diagnose_answer": ("write_proposed",),
+        },
+    )
+
+    decision = orchestrator.interpret_turn(make_context(phase="onboarding", learner_text="你好"))
+
+    assert decision.action is LearningManagerAction.CALL_CAPABILITY
+    assert decision.capability == "conversation_control"
+    assert decision.policy is CapabilityPolicy.NONE
+    assert decision.reason_code == "social_greeting"
+
+
+def test_interpret_turn_allows_onboarding_intake_write_proposed_capability() -> None:
+    payload = valid_payload(
+        action="call_capability",
+        capability="onboarding_intake",
+        policy="write_proposed",
+        target_phase="onboarding",
+        reason_code="pending_goal_answer",
+    )
+    orchestrator = LearningManagerOrchestrator(
+        FakeLlm(payload),
+        capability_names=("conversation_control", "onboarding_intake"),
+        capability_policies={
+            "conversation_control": ("none",),
+            "onboarding_intake": ("write_proposed",),
+        },
+    )
+
+    decision = orchestrator.interpret_turn(
+        make_context(
+            phase="onboarding",
+            pending_intake_stage="goal",
+            pending_prompt_kind="onboarding_goal",
+            pending_choices=("military", "economy", "society", "no_preference"),
+            learner_text="any is fine",
+        )
+    )
+
+    assert decision.action is LearningManagerAction.CALL_CAPABILITY
+    assert decision.capability == "onboarding_intake"
+    assert decision.policy is CapabilityPolicy.WRITE_PROPOSED
+    assert decision.reason_code == "pending_goal_answer"
+
+
+def test_turn_context_payload_includes_pending_prompt_context() -> None:
+    llm = FakeLlm(valid_payload(capability="onboarding_intake"))
+    orchestrator = LearningManagerOrchestrator(
+        llm,
+        capability_names=("onboarding_intake",),
+        capability_policies={"onboarding_intake": ("write_proposed",)},
+    )
+
+    orchestrator.interpret_turn(
+        make_context(
+            phase="onboarding",
+            pending_intake_stage="goal",
+            pending_prompt_kind="onboarding_goal",
+            pending_choices=("military", "economy", "society", "no_preference"),
+            learner_text="any is fine",
+        )
+    )
+
+    assert llm.seen_context["pending_intake_stage"] == "goal"
+    assert llm.seen_context["pending_prompt_kind"] == "onboarding_goal"
+    assert "no_preference" in llm.seen_context["pending_choices"]
+    assert llm.seen_context["last_assistant_prompt"] == "Choose military, economy, or society."
+    assert llm.seen_context["recent_messages"][0]["role"] == "assistant"
+
+
 @pytest.mark.parametrize(
     ("payload", "reason_code"),
     [
@@ -118,7 +217,11 @@ def test_interpret_turn_allows_delegated_specialist_capability() -> None:
     ],
 )
 def test_interpret_turn_falls_back_for_unsafe_payloads(payload: dict, reason_code: str) -> None:
-    orchestrator = LearningManagerOrchestrator(FakeLlm(payload), capability_names=("diagnose_answer",))
+    orchestrator = LearningManagerOrchestrator(
+        FakeLlm(payload),
+        capability_names=("diagnose_answer",),
+        capability_policies={"diagnose_answer": ("write_proposed",)},
+    )
 
     decision = orchestrator.interpret_turn(make_context())
 
@@ -136,6 +239,36 @@ def test_interpret_turn_falls_back_when_llm_unavailable() -> None:
 
     assert decision.action is LearningManagerAction.FALLBACK_LEGACY_PIPELINE
     assert decision.reason_code == "llm_missing_api_key"
+
+
+def test_interpret_turn_preserves_interpretation_when_policy_is_denied() -> None:
+    payload = valid_payload(
+        capability="tutor_response",
+        policy="none",
+        turn_interpretation={
+            "learner_act": "answer_attempt",
+            "understanding_status": "broad_but_incomplete",
+            "understood_points": ["modernization"],
+            "missing_points": ["centralization"],
+            "teaching_move": "acknowledge_then_clarify",
+            "recommended_capability": "tutor_response",
+            "should_advance_pipeline": False,
+            "reason_code": "broad_answer",
+        },
+    )
+    orchestrator = LearningManagerOrchestrator(
+        FakeLlm(payload),
+        capability_names=("tutor_response",),
+        capability_policies={"tutor_response": ("specialist",)},
+    )
+
+    decision = orchestrator.interpret_turn(make_context())
+
+    assert decision.action is LearningManagerAction.FALLBACK_LEGACY_PIPELINE
+    assert decision.reason_code == "policy_denied"
+    assert decision.turn_interpretation.understanding_status == "broad_but_incomplete"
+    assert decision.turn_interpretation.teaching_move == "acknowledge_then_clarify"
+    assert decision.turn_interpretation.missing_points == ("centralization",)
 
 
 def test_safe_metadata_excludes_raw_learner_text_and_model_output() -> None:

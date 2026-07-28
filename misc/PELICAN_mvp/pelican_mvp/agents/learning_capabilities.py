@@ -135,6 +135,20 @@ class CapabilityRegistry:
         """Return sorted safe capability names available to the orchestrator."""
         return tuple(sorted(self._capabilities))
 
+    def policy_manifest(self) -> dict[str, tuple[str, ...]]:
+        """Return safe policy labels allowed for each registered capability.
+
+        Returns:
+            Mapping from capability name to sorted policy labels. This manifest
+            is safe to expose to the read-only learning manager because it
+            contains only bounded capability and policy identifiers, not
+            handlers, prompts, learner text, or stateful objects.
+        """
+        return {
+            name: tuple(sorted(policy.value for policy in capability.allowed_policies))
+            for name, capability in sorted(self._capabilities.items())
+        }
+
     def lookup(self, name: str) -> LearningCapability | None:
         """Return a capability by name, or ``None`` when absent."""
         return self._capabilities.get(_normalize_capability_name(name))

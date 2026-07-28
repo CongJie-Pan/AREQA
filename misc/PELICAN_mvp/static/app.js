@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const methodologyStages = document.getElementById("methodology-stages");
     const skillArtifactSummary = document.getElementById("skill-artifact-summary");
     const methodologySubsystemEvents = document.getElementById("methodology-subsystem-events");
+    const learningManagerTrace = document.getElementById("learning-manager-trace");
     const agentExecutorTrace = document.getElementById("agent-executor-trace");
     const agentProposals = document.getElementById("agent-proposals");
     const tutorProposalTrace = document.getElementById("tutor-proposal-trace");
@@ -204,6 +205,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             );
             renderSkillArtifactSummary(data.learning.skill_artifact_summary || null);
             renderSubsystemEvents(data.learning.methodology_events || [], data.learning.current_cycle_id || null);
+            renderLearningManagerTrace(
+                data.learning.orchestration_trace || [],
+                data.learning.latest_orchestration || null
+            );
             renderAgentExecutorTrace(data.learning.agent_executor_trace || []);
             renderAgentProposals(data.learning.agent_proposals || []);
             renderTutorProposalTrace(data.learning.tutor_proposal_trace || []);
@@ -426,6 +431,39 @@ document.addEventListener("DOMContentLoaded", async () => {
             row.className = "methodology-row";
             row.textContent = `${event.event_type}: ${event.reason_code || event.status || "recorded"}`;
             methodologySubsystemEvents.appendChild(row);
+        });
+    }
+
+    function renderLearningManagerTrace(trace, latest) {
+        learningManagerTrace.innerHTML = "";
+        appendListTitle(learningManagerTrace, "Learning Manager");
+        const current = latest || (Array.isArray(trace) ? trace[trace.length - 1] : null);
+        if (!current) {
+            appendEmptyLine(learningManagerTrace, "No orchestration yet");
+            return;
+        }
+
+        const summary = document.createElement("div");
+        summary.className = "methodology-row";
+        summary.textContent = `${current.capability || current.action || "--"} / ${current.policy || "--"} / ${current.outcome || "--"}`;
+        learningManagerTrace.appendChild(summary);
+
+        const reason = document.createElement("div");
+        reason.className = "methodology-row wrap";
+        reason.textContent = `${current.reason_code || "recorded"} / ${current.confidence_bucket || "--"} / ${current.target_phase || current.phase || "--"}`;
+        learningManagerTrace.appendChild(reason);
+
+        const interpretation = document.createElement("div");
+        interpretation.className = "methodology-row wrap";
+        interpretation.textContent = `${current.understanding_status || "--"} / ${current.teaching_move || "--"} / ${current.learner_act || "--"}`;
+        learningManagerTrace.appendChild(interpretation);
+
+        const recent = Array.isArray(trace) ? trace.slice(-3, -1) : [];
+        recent.forEach(item => {
+            const row = document.createElement("div");
+            row.className = "methodology-row";
+            row.textContent = `${item.capability || item.action || "--"}: ${item.outcome || "--"}`;
+            learningManagerTrace.appendChild(row);
         });
     }
 

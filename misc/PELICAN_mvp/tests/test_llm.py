@@ -3,7 +3,7 @@ import logging
 import pytest
 from pelican_mvp.domain_skill import DomainCategory
 from pelican_mvp.llm import DEFAULT_ORCHESTRATOR_MODEL, DEFAULT_TUTOR_MODEL, LlmAdapter, LlmConfig, LlmUnavailable
-from pelican_mvp.models import TutoringStrategy
+from pelican_mvp.models import TurnInterpretation, TutoringStrategy
 from test_domain_skill import valid_skill_payload
 
 def test_llm_adapter_no_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -260,6 +260,16 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
         teaching_methodology={"sequencing": "先背景，再事件，最後因果。"},
         dialogue_act="micro_check_confusion",
         dialogue_target="turning_point",
+        turn_interpretation=TurnInterpretation(
+            learner_act="answer_attempt",
+            understanding_status="broad_but_incomplete",
+            understood_points=("modernization",),
+            missing_points=("centralization",),
+            teaching_move="acknowledge_then_clarify",
+            recommended_capability="tutor_response",
+            should_advance_pipeline=False,
+            reason_code="broad_answer",
+        ),
     )
 
     assert "domain_style_contract for humanities" in adapter.user_prompt
@@ -267,6 +277,9 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
     assert "latest_learner_answer: 簡單來說，這是改革與西化，為了趕上西方現代化。" in adapter.user_prompt
     assert "dialogue_act: micro_check_confusion" in adapter.user_prompt
     assert "dialogue_target: turning_point" in adapter.user_prompt
+    assert "turn_interpretation:" in adapter.user_prompt
+    assert "broad_but_incomplete" in adapter.user_prompt
+    assert "acknowledge_then_clarify" in adapter.user_prompt
     assert "start by acknowledging the specific useful idea" in adapter.user_prompt
     assert "先不用完整重述" in adapter.user_prompt
     assert "最關鍵的轉折點或原因" in adapter.user_prompt
@@ -374,10 +387,14 @@ def test_orchestrate_turn_decision_uses_strict_schema_when_health_supported() ->
             super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
             self.response_format_seen = None
             self.model_seen = None
+            self.system_seen = ""
+            self.user_seen = ""
 
         def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
             self.response_format_seen = response_format
             self.model_seen = model
+            self.system_seen = system
+            self.user_seen = user
             return {
                 "snapshot_id": "snapshot_1",
                 "action": "fallback_legacy_pipeline",
@@ -400,6 +417,12 @@ def test_orchestrate_turn_decision_uses_strict_schema_when_health_supported() ->
     assert adapter.model_seen == "orchestrator/model"
     assert adapter.response_format_seen["type"] == "json_schema"
     assert adapter.response_format_seen["json_schema"]["name"] == "pelican_learning_manager_decision"
+    schema = adapter.response_format_seen["json_schema"]["schema"]
+    assert "turn_interpretation" in schema["required"]
+    assert "understanding_status" in schema["properties"]["turn_interpretation"]["required"]
+    assert "pending_intake_stage" in adapter.system_seen
+    assert "onboarding_intake" in adapter.system_seen
+    assert "acknowledge_then_clarify" in adapter.system_seen
 
 
 def test_orchestrate_turn_decision_uses_json_object_when_strict_schema_unavailable() -> None:
@@ -432,6 +455,37 @@ def test_orchestrate_turn_decision_uses_json_object_when_strict_schema_unavailab
     )
 
     assert adapter.response_format_seen is None
+
+
+def test_conversation_control_response_generates_bounded_message() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.system_seen = ""
+            self.user_seen = ""
+            self.model_seen = None
+
+        def _json(self, system: str, user: str, *, model: str | None = None, response_format=None):
+            self.system_seen = system
+            self.user_seen = user
+            self.model_seen = model
+            return {"message": "模型自然生成的回應"}
+
+    adapter = RecordingAdapter()
+
+    message = adapter.conversation_control_response(
+        learner_text="你好",
+        phase="onboarding",
+        current_topic="",
+        current_prompt_kind="unknown",
+        reason_code="social_greeting",
+        model_route="tutor/model",
+    )
+
+    assert message == "模型自然生成的回應"
+    assert adapter.model_seen == "tutor/model"
+    assert "conversation-control" in adapter.system_seen
+    assert "social_greeting" in adapter.user_seen
 
 
 def test_generate_domain_skill_uses_requested_route() -> None:

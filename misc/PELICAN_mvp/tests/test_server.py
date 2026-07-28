@@ -67,6 +67,9 @@ def test_api_dynamic_learning_metadata() -> None:
     assert learning["skill_artifact_summary"]["skill_id"] == "deep_learning"
     assert learning["skill_artifact_summary"]["concept_path"]
     assert learning["skill_artifact_summary"]["current_diagnostic_target"]["node_id"] == "math_intuition"
+    assert learning["latest_orchestration"] is not None
+    assert learning["orchestration_trace"]
+    assert "learner_text" not in str(learning["orchestration_trace"])
 
 
 def test_api_runtime_progress_exposes_skill_construction_steps() -> None:

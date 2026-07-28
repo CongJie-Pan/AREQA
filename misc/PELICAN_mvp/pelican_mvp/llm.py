@@ -16,6 +16,7 @@ from .models import (
     KnowledgeNode,
     LearningPlanSnapshot,
     ResponseCategory,
+    TurnInterpretation,
     TutoringStrategy,
 )
 from .observability import log_event
@@ -442,6 +443,7 @@ def _orchestrator_decision_response_format() -> dict[str, Any]:
                     "target_phase",
                     "confidence",
                     "reason_code",
+                    "turn_interpretation",
                 ],
                 "properties": {
                     "snapshot_id": {"type": "string"},
@@ -451,6 +453,38 @@ def _orchestrator_decision_response_format() -> dict[str, Any]:
                     "target_phase": {"type": "string"},
                     "confidence": {"type": "number"},
                     "reason_code": {"type": "string"},
+                    "turn_interpretation": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "learner_act",
+                            "understanding_status",
+                            "understood_points",
+                            "missing_points",
+                            "teaching_move",
+                            "recommended_capability",
+                            "should_advance_pipeline",
+                            "reason_code",
+                        ],
+                        "properties": {
+                            "learner_act": {"type": "string"},
+                            "understanding_status": {"type": "string"},
+                            "understood_points": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "maxItems": 4,
+                            },
+                            "missing_points": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "maxItems": 4,
+                            },
+                            "teaching_move": {"type": "string"},
+                            "recommended_capability": {"type": "string"},
+                            "should_advance_pipeline": {"type": "boolean"},
+                            "reason_code": {"type": "string"},
+                        },
+                    },
                 },
             },
         },
@@ -727,13 +761,95 @@ class LlmAdapter:
             "You are the PELICAN LearningManagerOrchestrator. Interpret the current learner turn and "
             "choose one bounded action. You propose decisions only; the engine owns all state writes. "
             "Return one JSON object with snapshot_id, action, capability, policy, target_phase, "
-            "confidence, and reason_code. Allowed actions: answer_directly, call_capability, "
+            "confidence, reason_code, and turn_interpretation. Allowed actions: answer_directly, call_capability, "
             "delegate_capability, resume_pipeline, continue_pipeline, fallback_legacy_pipeline, "
             "reject_illegal_action. Allowed policies: none, read, specialist, write_proposed. "
-            "Use write_proposed only when the engine should validate a state-writing specialist."
+            "Use write_proposed only when the engine should validate a state-writing specialist. "
+            "Always include turn_interpretation as safe teaching metadata: learner_act, "
+            "understanding_status, understood_points, missing_points, teaching_move, "
+            "recommended_capability, should_advance_pipeline, and reason_code. "
+            "For humanities answers that are directionally right but too broad, set "
+            "understanding_status to broad_but_incomplete or partial, preserve the useful idea "
+            "in understood_points, put the missing causal/mechanism details in missing_points, "
+            "set teaching_move to acknowledge_then_clarify, and do not mark should_advance_pipeline true. "
+            "When pending_intake_stage is topic, goal, or level, interpret the learner turn against "
+            "last_assistant_prompt and pending_choices. Short answers such as 'any is fine', 'all good', "
+            "'no preference', or a single offered option are still onboarding answers; choose "
+            "call_capability with capability onboarding_intake and policy write_proposed. "
+            "For greetings, small talk, availability checks, or meta-conversation, choose "
+            "conversation_control with policy none only when the turn is not answering a pending "
+            "onboarding, diagnosis, tutoring, mastery, or evidence prompt. Use pipeline capabilities "
+            "when the learner turn is a topic, goal, level answer, clarification, or active answer attempt."
         )
         user_prompt = json.dumps(turn_context, ensure_ascii=False, sort_keys=True)
         return self._json(system_prompt, user_prompt, model=route, response_format=response_format)
+
+    def conversation_control_response(
+        self,
+        *,
+        learner_text: str,
+        phase: str,
+        current_topic: str = "",
+        current_prompt_kind: str = "unknown",
+        reason_code: str = "conversation_control",
+        model_route: str | None = None,
+    ) -> str | None:
+        """Generate one bounded no-write conversational response.
+
+        Args:
+            learner_text: Current learner turn used only for response
+                generation. Callers must not log this raw text.
+            phase: Current safe pipeline phase label.
+            current_topic: Optional bounded topic already stored in session.
+            current_prompt_kind: Safe label for the active prompt shape.
+            reason_code: Safe reason selected by the conversation-control
+                capability, such as ``social_greeting``.
+            model_route: Optional route override for tests or deployments.
+
+        Returns:
+            A short learner-facing response, or ``None`` when the model returns
+            no usable message.
+
+        Raises:
+            LlmUnavailable: If credentials or transport are unavailable.
+
+        Privacy:
+            Only the final bounded message is returned. Raw learner text,
+            prompts, provider payloads, and model output are not logged here.
+        """
+        if not self.available:
+            raise LlmUnavailable(
+                "OPENROUTER_API_KEY is not configured",
+                reason_codes=("llm_missing_api_key",),
+            )
+        route = model_route or self.tutor_model_route()
+        payload = self._json(
+            "You are the learner-facing conversation-control voice for PELICAN. "
+            "Respond naturally to the current user turn without advancing the learning pipeline. "
+            "Do not diagnose mastery, do not infer a topic from a greeting, and do not mention internal agents, "
+            "capabilities, policies, or pipeline state. If the learner is only greeting you, greet them back "
+            "briefly and invite them to share what they want to learn. Return JSON only.",
+            json.dumps(
+                {
+                    "learner_text": learner_text,
+                    "phase": phase,
+                    "current_topic": current_topic[:120],
+                    "current_prompt_kind": current_prompt_kind,
+                    "reason_code": reason_code,
+                    "response_constraints": {
+                        "language": "Traditional Chinese unless the learner uses another language",
+                        "max_sentences": 2,
+                        "tone": "warm, concise, flexible",
+                    },
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + '\nReturn JSON: {"message": str}',
+            model=route,
+        )
+        message = str(payload.get("message", "")).strip()
+        return message[:500] if message else None
 
     def verified_diagnostic(self, node_label: str) -> DiagnosticQuestion | None:
         """Generate a diagnostic only if an independent verifier accepts it."""
@@ -968,6 +1084,7 @@ class LlmAdapter:
         teaching_methodology: dict[str, str] | None = None,
         dialogue_act: str = "",
         dialogue_target: str = "",
+        turn_interpretation: TurnInterpretation | None = None,
     ) -> BoundedTutorProposal | None:
         """Generate a bounded tutor proposal constrained by EDF/GUM state.
 
@@ -994,6 +1111,9 @@ class LlmAdapter:
             teaching_methodology: Skill-authored pedagogy notes for this domain.
             dialogue_act: Optional bounded conversational role before diagnosis.
             dialogue_target: Optional short term from a clarification turn.
+            turn_interpretation: Optional safe Learning Manager teaching
+                interpretation used to acknowledge useful evidence and target
+                missing points.
 
         Returns:
             A bounded proposal candidate, or ``None`` when the optional model is
@@ -1011,12 +1131,18 @@ class LlmAdapter:
             for key, value in (teaching_methodology or {}).items()
             if str(key).strip() and str(value).strip()
         ) or "none"
+        interpretation_payload = (
+            turn_interpretation.to_dict()
+            if turn_interpretation is not None
+            else TurnInterpretation().to_dict()
+        )
         humanities_contract = (
             "domain_style_contract for humanities:\n"
             "- If current_signal is unknown, inability_to_respond, incorrect, partial_correct, or difficulty_in_understanding, do not keep probing first.\n"
             "- Generate a topic-specific explanatory mini-lesson from the provided knowledge_node, concept_description, current_prompt, expected_answer, remediation_template, and teaching_methodology.\n"
             "- The mini-lesson should teach the missing knowledge in Traditional Chinese with narrative context, key actors/concepts, cause-effect links, and where this node sits in the knowledge map.\n"
             "- If current_signal is partial_correct, start by acknowledging the specific useful idea in latest_learner_answer before adding missing details. Do not ignore the learner's sentence.\n"
+            "- If turn_interpretation.teaching_move is acknowledge_then_clarify, start by acknowledging understood_points, explain missing_points, and ask one gentle targeted follow-up. Do not replace this with a generic restart sentence.\n"
             "- End with a warm, low-pressure humanities micro-check rather than asking the learner to paraphrase the whole mini-lesson.\n"
             "- Prefer a scaffolded causal/context question. Example: 先不用完整重述。你可以先說說看：在剛剛這段裡，你覺得最關鍵的轉折點或原因是哪一個？如果一開始不好說，也可以只選一個你覺得重要的原因。\n"
             "- If the learner's next explanation is correct, the engine will unlock the next knowledge-map node; if not, the tutor should explain again based on that answer.\n"
@@ -1044,6 +1170,7 @@ class LlmAdapter:
             "concept_description: {concept_description}\n"
             "expected_answer: {expected_answer}\n"
             "remediation_template: {remediation_template}\n"
+            "turn_interpretation: {turn_interpretation}\n"
             "teaching_methodology:\n{teaching_methodology}\n"
             "{humanities_contract}"
             "輸出 JSON：{{\"response\": str, \"pedagogical_move\": str, \"summary\": str}}".format(
@@ -1062,6 +1189,7 @@ class LlmAdapter:
                 concept_description=concept_description[:800] or "none",
                 expected_answer=expected_answer[:800] or "none",
                 remediation_template=remediation_template[:800] or "none",
+                turn_interpretation=json.dumps(interpretation_payload, ensure_ascii=False, sort_keys=True)[:1200],
                 teaching_methodology=methodology_lines[:1200],
                 humanities_contract=humanities_contract,
             ),

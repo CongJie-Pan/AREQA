@@ -259,6 +259,7 @@ def _learning_metadata(engine: PelicanEngine, activity_steps: list[dict[str, Any
         else engine.state.intake_profile.domain_category
     )
     model_route = engine.state.learning_plan.model_route if engine.state.learning_plan else engine.state.intake_profile.model_route
+    orchestration_trace = [item.to_dict() for item in engine.state.orchestration_trace[-8:]]
     return {
         "phase": engine.state.phase,
         "plan_source": engine.state.plan_source.value,
@@ -282,6 +283,8 @@ def _learning_metadata(engine: PelicanEngine, activity_steps: list[dict[str, Any
         "skill_artifact_summary": _skill_artifact_summary(engine),
         "agent_proposals": [item.to_dict() for item in engine.state.agent_proposals[-8:]],
         "agent_executor_trace": _agent_executor_trace(engine),
+        "latest_orchestration": orchestration_trace[-1] if orchestration_trace else None,
+        "orchestration_trace": orchestration_trace,
         "tutor_proposal_trace": _tutor_proposal_trace(engine),
         "evidence_response_trace": _evidence_response_trace(engine),
         "methodology_stages": [stage.value for stage in MethodologyStage],

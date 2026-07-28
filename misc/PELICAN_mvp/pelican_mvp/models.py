@@ -69,6 +69,55 @@ class LearnerDialogueAct(str, Enum):
     OTHER = "other"
 
 
+@dataclass(frozen=True)
+class TurnInterpretation:
+    """Safe turn-level teaching interpretation from the Learning Manager.
+
+    This is the handoff between flexible turn understanding and deterministic
+    pipeline execution. It intentionally stores bounded labels and short
+    teaching points only; raw learner text, model output, prompts, credentials,
+    and provider payloads must never be copied into this structure.
+    """
+
+    learner_act: str = "answer_attempt"
+    understanding_status: str = "unknown"
+    understood_points: tuple[str, ...] = ()
+    missing_points: tuple[str, ...] = ()
+    teaching_move: str = "resume_pipeline"
+    recommended_capability: str = ""
+    should_advance_pipeline: bool = True
+    reason_code: str = "unknown"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-safe interpretation metadata for UI and persistence."""
+        return {
+            "learner_act": _bounded_text(self.learner_act, 80),
+            "understanding_status": _bounded_text(self.understanding_status, 80),
+            "understood_points": [_bounded_text(item, 160) for item in self.understood_points[:4]],
+            "missing_points": [_bounded_text(item, 160) for item in self.missing_points[:4]],
+            "teaching_move": _bounded_text(self.teaching_move, 80),
+            "recommended_capability": _bounded_text(self.recommended_capability, 80),
+            "should_advance_pipeline": bool(self.should_advance_pipeline),
+            "reason_code": _bounded_text(self.reason_code, 120),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Any) -> "TurnInterpretation":
+        """Deserialize untrusted model/session payload into bounded labels."""
+        if not isinstance(payload, dict):
+            return cls()
+        return cls(
+            learner_act=_bounded_text(payload.get("learner_act", "answer_attempt"), 80),
+            understanding_status=_bounded_text(payload.get("understanding_status", "unknown"), 80),
+            understood_points=_bounded_text_tuple(payload.get("understood_points"), 4, 160),
+            missing_points=_bounded_text_tuple(payload.get("missing_points"), 4, 160),
+            teaching_move=_bounded_text(payload.get("teaching_move", "resume_pipeline"), 80),
+            recommended_capability=_bounded_text(payload.get("recommended_capability", ""), 80),
+            should_advance_pipeline=bool(payload.get("should_advance_pipeline", True)),
+            reason_code=_bounded_text(payload.get("reason_code", "unknown"), 120),
+        )
+
+
 class PlanSource(str, Enum):
     """Identify whether a session resolves a fixture or generated learning plan."""
 
@@ -145,6 +194,20 @@ class AgentRole(str, Enum):
 def _bounded_text(value: Any, limit: int = 160) -> str:
     """Return bounded text for public metadata fields."""
     return str(value or "")[:limit]
+
+
+def _bounded_text_tuple(value: Any, limit: int, item_limit: int) -> tuple[str, ...]:
+    """Return a tuple of bounded text items from an untrusted sequence."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    items: list[str] = []
+    for item in value:
+        text = _bounded_text(item, item_limit).strip()
+        if text:
+            items.append(text)
+        if len(items) >= limit:
+            break
+    return tuple(items)
 
 
 def _utc_now() -> str:
@@ -1025,6 +1088,73 @@ class TranscriptEntry:
         )
 
 
+@dataclass(frozen=True)
+class OrchestrationTraceRecord:
+    """Safe Learning Manager decision trace for UI and debugging.
+
+    The record contains only bounded labels and correlation identifiers. It must
+    not store raw learner text, prompts, model output, credentials, or provider
+    payloads because the same structure is exposed through API learning metadata.
+    """
+
+    turn_id: str | None = None
+    cycle_id: str | None = None
+    phase: str = "unknown"
+    action: str = ""
+    capability: str = ""
+    policy: str = ""
+    target_phase: str = "unknown"
+    confidence_bucket: str = ""
+    proposal_source: str = ""
+    reason_code: str = ""
+    outcome: str = "proposed"
+    learner_act: str = ""
+    understanding_status: str = ""
+    teaching_move: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Return a JSON-safe orchestration trace record."""
+        return {
+            "turn_id": self.turn_id,
+            "cycle_id": self.cycle_id,
+            "phase": self.phase[:80],
+            "action": self.action[:80],
+            "capability": self.capability[:80],
+            "policy": self.policy[:80],
+            "target_phase": self.target_phase[:80],
+            "confidence_bucket": self.confidence_bucket[:32],
+            "proposal_source": self.proposal_source[:32],
+            "reason_code": self.reason_code[:120],
+            "outcome": self.outcome[:32],
+            "learner_act": self.learner_act[:80],
+            "understanding_status": self.understanding_status[:80],
+            "teaching_move": self.teaching_move[:80],
+            "timestamp": self.timestamp,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "OrchestrationTraceRecord":
+        """Deserialize legacy-safe trace payloads with bounded defaults."""
+        return cls(
+            turn_id=payload.get("turn_id"),
+            cycle_id=payload.get("cycle_id"),
+            phase=str(payload.get("phase", "unknown"))[:80],
+            action=str(payload.get("action", ""))[:80],
+            capability=str(payload.get("capability", ""))[:80],
+            policy=str(payload.get("policy", ""))[:80],
+            target_phase=str(payload.get("target_phase", "unknown"))[:80],
+            confidence_bucket=str(payload.get("confidence_bucket", ""))[:32],
+            proposal_source=str(payload.get("proposal_source", ""))[:32],
+            reason_code=str(payload.get("reason_code", ""))[:120],
+            outcome=str(payload.get("outcome", "proposed"))[:32],
+            learner_act=str(payload.get("learner_act", ""))[:80],
+            understanding_status=str(payload.get("understanding_status", ""))[:80],
+            teaching_move=str(payload.get("teaching_move", ""))[:80],
+            timestamp=payload.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        )
+
+
 @dataclass
 class SessionState:
     """Serialize the complete local state for one PELICAN learning session."""
@@ -1055,6 +1185,7 @@ class SessionState:
     methodology_sequence: int = 0
     methodology_events: list[MethodologyEvent] = field(default_factory=list)
     agent_proposals: list[AgentProposal] = field(default_factory=list)
+    orchestration_trace: list[OrchestrationTraceRecord] = field(default_factory=list)
     learner_progress: LearnerProgressSnapshot = field(default_factory=lambda: LearnerProgressSnapshot(None, None, ()))
     strategy_decision: TutorStrategyDecision = field(default_factory=TutorStrategyDecision)
     completed: bool = False
@@ -1095,6 +1226,7 @@ class SessionState:
             "methodology_sequence": self.methodology_sequence,
             "methodology_events": [item.to_dict() for item in self.methodology_events[-64:]],
             "agent_proposals": [item.to_dict() for item in self.agent_proposals[-48:]],
+            "orchestration_trace": [item.to_dict() for item in self.orchestration_trace[-32:]],
             "learner_progress": self.learner_progress.to_dict(),
             "strategy_decision": self.strategy_decision.to_dict(),
             "completed": self.completed,
@@ -1122,6 +1254,12 @@ class SessionState:
         for item in payload.get("agent_proposals", [])[-48:]:
             try:
                 agent_proposals.append(AgentProposal.from_dict(item))
+            except (TypeError, ValueError):
+                continue
+        orchestration_trace: list[OrchestrationTraceRecord] = []
+        for item in payload.get("orchestration_trace", [])[-32:]:
+            try:
+                orchestration_trace.append(OrchestrationTraceRecord.from_dict(item))
             except (TypeError, ValueError):
                 continue
         curriculum_id = payload.get("curriculum_id")
@@ -1170,6 +1308,7 @@ class SessionState:
             methodology_sequence=max(0, int(payload.get("methodology_sequence", 0))),
             methodology_events=methodology_events,
             agent_proposals=agent_proposals,
+            orchestration_trace=orchestration_trace,
             learner_progress=LearnerProgressSnapshot.from_dict(payload.get("learner_progress")),
             strategy_decision=TutorStrategyDecision.from_dict(payload.get("strategy_decision")),
             completed=bool(payload.get("completed", False)),

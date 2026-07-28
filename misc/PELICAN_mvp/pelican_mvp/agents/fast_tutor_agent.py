@@ -13,6 +13,7 @@ from ..models import (
     ProposalValidationStatus,
     SessionState,
     TutoringStrategy,
+    TurnInterpretation,
 )
 from ..observability import log_event
 from ..tutoring import rule_tutor_message
@@ -51,6 +52,7 @@ class FastTutorAgent:
         learner_answer: str = "",
         recent_safe_signals: tuple[str, ...] = (),
         base_message: str | None = None,
+        turn_interpretation: TurnInterpretation | None = None,
         context: AgentExecutionContext | None = None,
     ) -> TutorAgentResponse:
         """Propose a learner-facing response candidate for the current node."""
@@ -66,6 +68,7 @@ class FastTutorAgent:
             learner_answer=learner_answer,
             recent_safe_signals=recent_safe_signals,
             base_message=base_message,
+            turn_interpretation=turn_interpretation,
             slow_route=False,
         )
         return _response_from_proposal(self.role, proposal, status, reason)
@@ -84,6 +87,7 @@ def _candidate_or_fallback(
     learner_answer: str,
     recent_safe_signals: tuple[str, ...],
     base_message: str | None,
+    turn_interpretation: TurnInterpretation | None,
     slow_route: bool,
 ) -> tuple[BoundedTutorProposal, ProposalValidationStatus, str]:
     """Return a validated LLM candidate or explicit deterministic fallback."""
@@ -112,6 +116,7 @@ def _candidate_or_fallback(
                     if state.learning_plan
                     else {}
                 ),
+                turn_interpretation=turn_interpretation,
             )
             log_event(
                 "pelican_tutor_proposal_generated",

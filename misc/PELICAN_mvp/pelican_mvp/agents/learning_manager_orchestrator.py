@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import re
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from ..llm import LlmAdapter, LlmUnavailable
+from ..models import TurnInterpretation
 from ..observability import log_event
 
 
@@ -67,6 +68,16 @@ class LearningManagerTurnContext:
         edf_state: Safe EDF learner-state label.
         edf_policy: Safe EDF policy label.
         recent_safe_signals: Recent bounded memory/dialogue signals.
+        recent_messages: Bounded recent chat messages used only for current-turn
+            interpretation. These may contain learner-visible text and must not
+            be copied into safe metadata or structured logs.
+        last_assistant_prompt: Last assistant prompt visible to the learner.
+            This helps short answers such as "any is fine" stay attached to the
+            prompt they are answering.
+        pending_intake_stage: Safe onboarding slot currently awaiting an answer,
+            such as topic, goal, or level.
+        pending_prompt_kind: Safe label for the pending prompt owner.
+        pending_choices: Safe option labels offered by the previous prompt.
         learner_text: Raw current learner turn used only for interpretation.
             It must never be copied into safe metadata or structured logs.
     """
@@ -81,6 +92,11 @@ class LearningManagerTurnContext:
     edf_state: str = "unknown"
     edf_policy: str = "unknown"
     recent_safe_signals: tuple[str, ...] = ()
+    recent_messages: tuple[dict[str, str], ...] = ()
+    last_assistant_prompt: str = ""
+    pending_intake_stage: str | None = None
+    pending_prompt_kind: str = "unknown"
+    pending_choices: tuple[str, ...] = ()
     learner_text: str = ""
 
     def to_llm_payload(self, capability_names: Iterable[str] = ()) -> dict[str, Any]:
@@ -107,6 +123,17 @@ class LearningManagerTurnContext:
             "edf_state": self.edf_state,
             "edf_policy": self.edf_policy,
             "recent_safe_signals": list(self.recent_safe_signals),
+            "recent_messages": [
+                {
+                    "role": str(item.get("role", ""))[:32],
+                    "text": str(item.get("text", ""))[:800],
+                }
+                for item in self.recent_messages[-6:]
+            ],
+            "last_assistant_prompt": self.last_assistant_prompt[:1200],
+            "pending_intake_stage": self.pending_intake_stage,
+            "pending_prompt_kind": self.pending_prompt_kind,
+            "pending_choices": list(self.pending_choices),
             "learner_text": self.learner_text,
             "available_capabilities": sorted(set(capability_names)),
         }
@@ -140,6 +167,7 @@ class LearningManagerDecision:
     reason_code: str
     proposal_source: str
     snapshot_id: str
+    turn_interpretation: TurnInterpretation = field(default_factory=TurnInterpretation)
 
     def to_safe_metadata(self) -> dict[str, str | float]:
         """Return bounded metadata safe for logs, tests, and exports."""
@@ -152,6 +180,9 @@ class LearningManagerDecision:
             "reason_code": self.reason_code,
             "proposal_source": self.proposal_source,
             "snapshot_id": self.snapshot_id,
+            "learner_act": self.turn_interpretation.learner_act,
+            "understanding_status": self.turn_interpretation.understanding_status,
+            "teaching_move": self.turn_interpretation.teaching_move,
         }
 
 
@@ -163,6 +194,7 @@ class LearningManagerOrchestrator:
         llm: LlmAdapter,
         *,
         capability_names: Iterable[str] = (),
+        capability_policies: Mapping[str, Iterable[str]] | None = None,
         confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
     ) -> None:
         """Create an orchestrator around the optional LLM adapter.
@@ -171,11 +203,19 @@ class LearningManagerOrchestrator:
             llm: Optional OpenAI-compatible adapter used for decision proposals.
             capability_names: Safe capability manifest names available to the
                 engine dispatcher.
+            capability_policies: Optional safe policy manifest keyed by
+                capability name. When present, capability proposals are checked
+                against the same policy labels the engine registry will enforce.
             confidence_threshold: Minimum confidence required before a model
                 decision can be adopted.
         """
         self.llm = llm
         self.capability_names = frozenset(_slug_label(item) for item in capability_names if item)
+        self.capability_policies = {
+            _slug_label(name): frozenset(_slug_label(policy) for policy in policies if policy)
+            for name, policies in (capability_policies or {}).items()
+            if _slug_label(name)
+        }
         self.confidence_threshold = max(0.0, min(1.0, confidence_threshold))
 
     def interpret_turn(self, context: LearningManagerTurnContext) -> LearningManagerDecision:
@@ -213,29 +253,31 @@ class LearningManagerOrchestrator:
         """Validate raw model payload and reduce unsafe output to fallback."""
         if not isinstance(payload, dict):
             return self._fallback(context, "invalid_payload")
+        turn_interpretation = TurnInterpretation.from_dict(payload.get("turn_interpretation"))
         if str(payload.get("snapshot_id", "")) != context.snapshot_id:
-            return self._fallback(context, "stale_snapshot")
+            return self._fallback(context, "stale_snapshot", turn_interpretation=turn_interpretation)
         try:
             action = LearningManagerAction(str(payload.get("action", "")))
             policy = CapabilityPolicy(str(payload.get("policy", "")))
         except ValueError:
-            return self._fallback(context, "invalid_enum")
+            return self._fallback(context, "invalid_enum", turn_interpretation=turn_interpretation)
         confidence = _bounded_confidence(payload.get("confidence"))
         if confidence < self.confidence_threshold:
-            return self._fallback(context, "low_confidence")
+            return self._fallback(context, "low_confidence", turn_interpretation=turn_interpretation)
         capability = _slug_label(str(payload.get("capability", "")))
         if action in {LearningManagerAction.CALL_CAPABILITY, LearningManagerAction.DELEGATE_CAPABILITY}:
             if not capability:
-                return self._fallback(context, "missing_capability")
+                return self._fallback(context, "missing_capability", turn_interpretation=turn_interpretation)
             if self.capability_names and capability not in self.capability_names:
-                return self._fallback(context, "unknown_capability")
-            if policy is CapabilityPolicy.NONE:
-                return self._fallback(context, "policy_denied")
+                return self._fallback(context, "unknown_capability", turn_interpretation=turn_interpretation)
+            allowed_policies = self.capability_policies.get(capability)
+            if allowed_policies is not None and policy.value not in allowed_policies:
+                return self._fallback(context, "policy_denied", turn_interpretation=turn_interpretation)
         else:
             # Non-capability actions should not smuggle a write-capable target.
             capability = ""
             if policy is CapabilityPolicy.WRITE_PROPOSED:
-                return self._fallback(context, "write_policy_without_capability")
+                return self._fallback(context, "write_policy_without_capability", turn_interpretation=turn_interpretation)
         decision = LearningManagerDecision(
             action=action,
             capability=capability,
@@ -245,6 +287,7 @@ class LearningManagerOrchestrator:
             reason_code=_slug_reason(str(payload.get("reason_code", action.value))),
             proposal_source="llm",
             snapshot_id=context.snapshot_id,
+            turn_interpretation=turn_interpretation,
         )
         log_event(
             "pelican_learning_orchestrator_decided",
@@ -260,10 +303,19 @@ class LearningManagerOrchestrator:
             confidence_bucket=_confidence_bucket(decision.confidence),
             proposal_source=decision.proposal_source,
             reason_code=decision.reason_code,
+            learner_act=decision.turn_interpretation.learner_act,
+            understanding_status=decision.turn_interpretation.understanding_status,
+            teaching_move=decision.turn_interpretation.teaching_move,
         )
         return decision
 
-    def _fallback(self, context: LearningManagerTurnContext, reason_code: str) -> LearningManagerDecision:
+    def _fallback(
+        self,
+        context: LearningManagerTurnContext,
+        reason_code: str,
+        *,
+        turn_interpretation: TurnInterpretation | None = None,
+    ) -> LearningManagerDecision:
         """Build a deterministic no-write legacy fallback decision."""
         decision = LearningManagerDecision(
             action=LearningManagerAction.FALLBACK_LEGACY_PIPELINE,
@@ -274,6 +326,7 @@ class LearningManagerOrchestrator:
             reason_code=_slug_reason(reason_code),
             proposal_source="fallback",
             snapshot_id=context.snapshot_id,
+            turn_interpretation=turn_interpretation or TurnInterpretation(reason_code=_slug_reason(reason_code)),
         )
         log_event(
             "pelican_learning_orchestrator_fallback",

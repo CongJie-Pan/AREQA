@@ -14,6 +14,7 @@ from ..models import (
     StrategyCandidate,
     TutoringContext,
     TutoringStrategy,
+    TurnInterpretation,
 )
 from ..observability import log_event
 from ..tutoring import simulate_strategy_candidates
@@ -43,6 +44,7 @@ class SlowSimulatorAgent:
         learner_answer: str = "",
         recent_safe_signals: tuple[str, ...] = (),
         base_message: str | None = None,
+        turn_interpretation: TurnInterpretation | None = None,
         context: AgentExecutionContext | None = None,
     ) -> TutorAgentResponse:
         """Propose a response after simulating multiple tutoring paths.
@@ -114,6 +116,7 @@ class SlowSimulatorAgent:
             learner_answer=learner_answer,
             recent_safe_signals=recent_safe_signals,
             base_message=base_message,
+            turn_interpretation=turn_interpretation,
             slow_route=True,
         )
         proposal = replace(
