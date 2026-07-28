@@ -10,6 +10,11 @@ from .agent import Agent, DEFAULT_MODEL
 from .memory import Memory
 from .tools import ToolRegistry
 
+TOOL_POLICY_NONE = "none"
+TOOL_POLICY_BASE = "base"
+TOOL_POLICY_DELEGATE = "delegate"
+SUPPORTED_TOOL_POLICIES = frozenset({TOOL_POLICY_NONE, TOOL_POLICY_BASE, TOOL_POLICY_DELEGATE})
+
 
 @dataclass
 class DelegationRecord:
@@ -19,6 +24,7 @@ class DelegationRecord:
         delegation_id: Stable in-process id for this delegated task.
         parent_id: Optional parent delegation id for nested orchestration.
         role: Effective child role, either ``leaf`` or ``orchestrator``.
+        tool_policy: Effective tool visibility policy.
         depth: Child delegation depth.
         goal: Delegated goal. This MVP keeps the trace in-process for local
             debugging; production systems should bound or redact this field.
@@ -29,6 +35,7 @@ class DelegationRecord:
     delegation_id: str
     parent_id: str | None
     role: str
+    tool_policy: str
     depth: int
     goal: str
     status: str = "created"
@@ -79,7 +86,12 @@ class DelegationManager:
             A callable named ``delegate_task`` suitable for ``ToolRegistry``.
         """
 
-        def delegate_task(goal: str, context: str = "", role: str = "leaf") -> str:
+        def delegate_task(
+            goal: str,
+            context: str = "",
+            role: str = "leaf",
+            tool_policy: str = TOOL_POLICY_NONE,
+        ) -> str:
             """Delegate a focused task to an isolated child agent.
 
             Args:
@@ -87,6 +99,9 @@ class DelegationManager:
                 context: Optional context needed by the child.
                 role: ``leaf`` for a focused worker or ``orchestrator`` for a
                     child that may spawn further workers when depth allows.
+                tool_policy: Child tool visibility. Use ``none`` for conceptual
+                    analysis, ``base`` when the child needs normal tools, or
+                    ``delegate`` when an orchestrator child may spawn workers.
 
             Returns:
                 A concise child summary for the parent model to synthesize.
@@ -95,6 +110,7 @@ class DelegationManager:
                 goal=goal,
                 context=context,
                 role=role,
+                tool_policy=tool_policy,
                 parent_depth=current_depth,
                 parent_id=parent_id,
             )
@@ -107,6 +123,7 @@ class DelegationManager:
         goal: str,
         context: str = "",
         role: str = "leaf",
+        tool_policy: str = TOOL_POLICY_NONE,
         parent_depth: int = 0,
         parent_id: str | None = None,
     ) -> str:
@@ -116,6 +133,7 @@ class DelegationManager:
             goal: Specific delegated goal.
             context: Optional context provided by the parent agent.
             role: Requested child role.
+            tool_policy: Requested tool visibility policy.
             parent_depth: Delegation depth of the parent.
             parent_id: Optional parent delegation id.
 
@@ -130,15 +148,23 @@ class DelegationManager:
             )
 
         effective_role = _normalize_role(role)
-        can_delegate = effective_role == "orchestrator" and child_depth < self.max_spawn_depth
+        effective_tool_policy = _normalize_tool_policy(tool_policy)
+        can_delegate = (
+            effective_role == "orchestrator"
+            and effective_tool_policy == TOOL_POLICY_DELEGATE
+            and child_depth < self.max_spawn_depth
+        )
         if effective_role == "orchestrator" and not can_delegate:
             effective_role = "leaf"
+            if effective_tool_policy == TOOL_POLICY_DELEGATE:
+                effective_tool_policy = TOOL_POLICY_BASE
 
         delegation_id = f"delegation_{next(self._counter)}"
         record = DelegationRecord(
             delegation_id=delegation_id,
             parent_id=parent_id,
             role=effective_role,
+            tool_policy=effective_tool_policy,
             depth=child_depth,
             goal=goal,
             status="running",
@@ -149,10 +175,11 @@ class DelegationManager:
             delegation_id=delegation_id,
             parent_id=parent_id,
             role=effective_role,
+            tool_policy=effective_tool_policy,
             depth=child_depth,
         )
 
-        child_registry = self.base_tool_factory()
+        child_registry = self._registry_for_policy(effective_tool_policy)
         if can_delegate:
             child_registry.register_tool(
                 self.build_delegate_tool(
@@ -168,6 +195,7 @@ class DelegationManager:
                 goal=goal,
                 context=context,
                 role=effective_role,
+                tool_policy=effective_tool_policy,
                 depth=child_depth,
                 max_spawn_depth=self.max_spawn_depth,
             )
@@ -192,10 +220,12 @@ class DelegationManager:
                 "delegation_completed",
                 delegation_id=delegation_id,
                 role=effective_role,
+                tool_policy=effective_tool_policy,
                 depth=child_depth,
             )
             return (
-                f"[{delegation_id} | role={effective_role} | status=completed]\n"
+                f"[{delegation_id} | role={effective_role} | "
+                f"tool_policy={effective_tool_policy} | status=completed]\n"
                 f"{record.result_summary}"
             )
         except Exception as exc:
@@ -205,12 +235,27 @@ class DelegationManager:
                 "delegation_failed",
                 delegation_id=delegation_id,
                 role=effective_role,
+                tool_policy=effective_tool_policy,
                 depth=child_depth,
             )
             return (
-                f"[{delegation_id} | role={effective_role} | status=failed]\n"
+                f"[{delegation_id} | role={effective_role} | "
+                f"tool_policy={effective_tool_policy} | status=failed]\n"
                 f"{record.result_summary}"
             )
+
+    def _registry_for_policy(self, tool_policy: str) -> ToolRegistry:
+        """Return a child tool registry for the effective policy.
+
+        Args:
+            tool_policy: Normalized tool policy.
+
+        Returns:
+            An empty registry for ``none`` and base tools for other policies.
+        """
+        if tool_policy == TOOL_POLICY_NONE:
+            return ToolRegistry()
+        return self.base_tool_factory()
 
     def _trace(self, event: str, **metadata) -> None:
         """Emit a safe delegation trace event."""
@@ -226,6 +271,7 @@ def build_child_system_prompt(
     goal: str,
     context: str = "",
     role: str = "leaf",
+    tool_policy: str = TOOL_POLICY_NONE,
     depth: int = 1,
     max_spawn_depth: int = 2,
 ) -> str:
@@ -235,6 +281,7 @@ def build_child_system_prompt(
         goal: Specific task assigned to the child.
         context: Optional parent-provided background.
         role: Effective role after depth validation.
+        tool_policy: Effective child tool visibility policy.
         depth: Child depth in the delegation tree.
         max_spawn_depth: Maximum configured delegation depth.
 
@@ -252,7 +299,7 @@ def build_child_system_prompt(
     parts.extend(
         [
             "",
-            "Complete the task with the tools available to you.",
+            _tool_policy_instruction(tool_policy),
             "Return a concise summary of what you did, what you found, and any issues.",
             "Do not mention hidden chain-of-thought. Report only useful conclusions.",
         ]
@@ -277,6 +324,30 @@ def _normalize_role(role: str) -> str:
     """Normalize a requested child role to a supported role."""
     normalized = str(role or "leaf").strip().lower()
     return normalized if normalized in {"leaf", "orchestrator"} else "leaf"
+
+
+def _normalize_tool_policy(tool_policy: str) -> str:
+    """Normalize a requested tool policy to a supported policy."""
+    normalized = str(tool_policy or TOOL_POLICY_NONE).strip().lower()
+    return normalized if normalized in SUPPORTED_TOOL_POLICIES else TOOL_POLICY_NONE
+
+
+def _tool_policy_instruction(tool_policy: str) -> str:
+    """Return child prompt guidance for the effective tool policy."""
+    if tool_policy == TOOL_POLICY_NONE:
+        return (
+            "Tool policy: none. You do not have tools in this child context. "
+            "Analyze conceptually and do not ask to call tools for examples."
+        )
+    if tool_policy == TOOL_POLICY_DELEGATE:
+        return (
+            "Tool policy: delegate. Use normal tools only when they are required "
+            "for the task, and use delegate_task only for independent subtasks."
+        )
+    return (
+        "Tool policy: base. Use normal tools only when the task genuinely needs "
+        "external data or computation. Do not call tools merely to create examples."
+    )
 
 
 def _bound_text(value: str, limit: int = 4000) -> str:

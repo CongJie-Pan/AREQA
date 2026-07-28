@@ -20,6 +20,9 @@ Rules:
 - Do simple tasks directly.
 - Use normal tools directly when one tool call is enough.
 - Delegate independent subtasks, not your entire job.
+- When delegating conceptual analysis, set tool_policy="none".
+- Set tool_policy="base" only when the child needs normal tools.
+- Set tool_policy="delegate" only for a child orchestrator that must spawn workers.
 - After delegation, synthesize the child summaries into one final answer.
 - Be concise and clear about uncertainty.
 """
@@ -69,7 +72,9 @@ class OrchestratorAgent:
             name="delegate_task",
             description=(
                 "Delegate a focused subtask to an isolated child agent. Use this "
-                "for independent, reasoning-heavy work; do not use it for simple tasks."
+                "for independent, reasoning-heavy work; do not use it for simple tasks. "
+                "Set tool_policy to 'none' for conceptual analysis, 'base' for "
+                "normal tools, or 'delegate' for nested orchestration."
             ),
         )
         memory = Memory(system_prompt=ORCHESTRATOR_SYSTEM_PROMPT)

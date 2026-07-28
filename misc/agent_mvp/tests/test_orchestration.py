@@ -67,7 +67,10 @@ def test_orchestrator_can_delegate_and_synthesize():
                 tool_calls=[
                     tool_call(
                         "delegate_task",
-                        '{"goal": "inspect architecture", "context": "repo", "role": "leaf"}',
+                        (
+                            '{"goal": "inspect architecture", "context": "repo", '
+                            '"role": "leaf", "tool_policy": "none"}'
+                        ),
                     )
                 ]
             ),
@@ -87,6 +90,7 @@ def test_orchestrator_can_delegate_and_synthesize():
     assert result == "Final synthesis from child result."
     assert agent.delegation_manager.records[0].status == "completed"
     assert agent.delegation_manager.records[0].role == "leaf"
+    assert agent.delegation_manager.records[0].tool_policy == "none"
     assert any(t["event"] == "delegation_started" for t in traces)
 
 
@@ -99,6 +103,55 @@ def test_leaf_child_does_not_receive_delegate_tool():
     assert "status=completed" in result
     tool_names = manager.base_tool_factory().tools.keys()
     assert "delegate_task" not in tool_names
+
+
+def test_none_tool_policy_hides_base_tools_from_child():
+    """Conceptual child tasks should run without unrelated base tools."""
+    client = FakeClient(
+        [
+            message(
+                tool_calls=[
+                    tool_call("echo", '{"text": "should not be available"}')
+                ]
+            ),
+            message("Recovered after tool rejection."),
+        ]
+    )
+    manager = DelegationManager(base_tool_factory=base_tools, client=client)
+
+    result = manager.run_child(goal="conceptual task", tool_policy="none")
+    first_call_tools = client.chat.completions.calls[0].get("tools", [])
+
+    assert first_call_tools == []
+    assert "status=completed" in result
+
+
+def test_base_tool_policy_exposes_base_tools_to_child():
+    """Children should receive normal tools only when policy requests them."""
+    client = FakeClient([message("done")])
+    manager = DelegationManager(base_tool_factory=base_tools, client=client)
+
+    result = manager.run_child(goal="use a base tool if needed", tool_policy="base")
+    first_call_tools = client.chat.completions.calls[0].get("tools", [])
+
+    assert "status=completed" in result
+    assert any(schema["function"]["name"] == "echo" for schema in first_call_tools)
+
+
+def test_delegate_tool_policy_exposes_delegate_to_orchestrator_child():
+    """Nested delegation should require both orchestrator role and delegate policy."""
+    client = FakeClient([message("done")])
+    manager = DelegationManager(base_tool_factory=base_tools, client=client, max_spawn_depth=2)
+
+    result = manager.run_child(
+        goal="coordinate subtasks",
+        role="orchestrator",
+        tool_policy="delegate",
+    )
+    first_call_tools = client.chat.completions.calls[0].get("tools", [])
+
+    assert "role=orchestrator" in result
+    assert any(schema["function"]["name"] == "delegate_task" for schema in first_call_tools)
 
 
 def test_max_spawn_depth_rejects_nested_delegation():
@@ -116,9 +169,18 @@ def test_orchestrator_prompt_mentions_delegation_rules():
     prompt = build_child_system_prompt(
         goal="coordinate research",
         role="orchestrator",
+        tool_policy="delegate",
         depth=1,
         max_spawn_depth=2,
     )
 
     assert "Orchestrator role" in prompt
     assert "delegate_task" in prompt
+
+
+def test_none_tool_policy_prompt_discourages_example_tool_calls():
+    """The child prompt should explicitly block tools-for-examples behavior."""
+    prompt = build_child_system_prompt(goal="explain tool calling", tool_policy="none")
+
+    assert "Tool policy: none" in prompt
+    assert "do not ask to call tools for examples" in prompt
