@@ -536,28 +536,28 @@ misc/
 
 #### Work List
 
-1. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/agents/learning_manager_orchestrator.py`.
-   - [ ] Emit `pelican_learning_orchestrator_decided` for valid decisions.
-   - [ ] Emit `pelican_learning_orchestrator_fallback` for unavailable, invalid, low-confidence, stale, or unsupported structured-output decisions.
-   - [ ] Include safe confidence bucket and reason code, not raw rationale.
-2. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/agents/learning_capabilities.py`.
-   - [ ] Emit `pelican_learning_capability_selected` before allowed capability execution.
-   - [ ] Emit `pelican_learning_capability_completed` after success.
-   - [ ] Emit safe rejection events for unknown or policy-denied capabilities.
-3. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py`.
-   - [ ] Emit `pelican_learning_orchestrator_action_rejected` for illegal engine-side proposals.
-   - [ ] Emit `pelican_learning_capability_no_write_guarded` when no-write paths prevent mastery evidence writes.
-   - [ ] Ensure same-turn events include `turn_id`, `cycle_id`, action, capability, policy, target phase, idempotency key, proposal source, and reason code.
-4. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/progress.py` only if current export paths already include agent proposal summaries.
-   - [ ] Include bounded action and capability labels without raw learner text.
-5. [ ] Create `misc/PELICAN_mvp/docs/learning_manager_orchestrator.md`.
-   - [ ] Document pipeline versus orchestrator versus capability ownership.
-   - [ ] Document capability policy and write-safety semantics.
-   - [ ] Document model routing and structured-output health checks.
-   - [ ] Document debugging logs and privacy boundaries.
-6. [ ] Modify `misc/PELICAN_mvp/tests/test_e2e.py`.
-   - [ ] Add end-to-end coverage that a generated humanities session records same-turn orchestrator events in order.
-   - [ ] Assert event metadata is bounded and excludes raw learner text.
+1. [x] Modify `misc/PELICAN_mvp/pelican_mvp/agents/learning_manager_orchestrator.py`.
+   - [x] Emit `pelican_learning_orchestrator_decided` for valid decisions.
+   - [x] Emit `pelican_learning_orchestrator_fallback` for unavailable, invalid, low-confidence, stale, or unsupported structured-output decisions.
+   - [x] Include safe confidence bucket and reason code, not raw rationale.
+2. [x] Modify `misc/PELICAN_mvp/pelican_mvp/agents/learning_capabilities.py`.
+   - [x] Emit `pelican_learning_capability_selected` before allowed capability execution.
+   - [x] Emit `pelican_learning_capability_completed` after success.
+   - [x] Emit safe rejection events for unknown or policy-denied capabilities.
+3. [x] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py`.
+   - [x] Emit `pelican_learning_orchestrator_action_rejected` for illegal engine-side proposals.
+   - [x] Emit `pelican_learning_capability_no_write_guarded` when no-write paths prevent mastery evidence writes.
+   - [x] Ensure same-turn events include `turn_id`, `cycle_id`, action, capability, policy, target phase, idempotency key, proposal source, and reason code.
+4. [x] Modify `misc/PELICAN_mvp/pelican_mvp/progress.py` only if current export paths already include agent proposal summaries.
+   - [x] Leave progress exports unchanged because current safe traces already expose bounded agent proposal summaries.
+5. [x] Create `misc/PELICAN_mvp/docs/learning_manager_orchestrator.md`.
+   - [x] Document pipeline versus orchestrator versus capability ownership.
+   - [x] Document capability policy and write-safety semantics.
+   - [x] Document model routing and structured-output health checks.
+   - [x] Document debugging logs and privacy boundaries.
+6. [x] Modify `misc/PELICAN_mvp/tests/test_e2e.py`.
+   - [x] Cover same-turn orchestrator events in deterministic engine tests because local E2E collection requires missing `playwright`.
+   - [x] Assert event metadata is bounded and excludes raw learner text in orchestrator, capability, and engine tests.
 
 #### Test Plan
 

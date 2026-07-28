@@ -10,8 +10,10 @@ mutation and mastery-write adoption.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any, Callable, Mapping
 
+from ..observability import log_event
 from .learning_manager_orchestrator import CapabilityPolicy
 
 
@@ -150,9 +152,19 @@ class CapabilityRegistry:
         name = _normalize_capability_name(request.name)
         capability = self.lookup(name)
         if capability is None:
-            return self.rejected(name, request.policy, "unknown_capability")
+            return self.rejected(name, request.policy, "unknown_capability", request=request)
         if not capability.allows(request.policy):
-            return self.rejected(name, request.policy, "policy_denied")
+            return self.rejected(name, request.policy, "policy_denied", request=request)
+        log_event(
+            "pelican_learning_capability_selected",
+            level=logging.INFO,
+            turn_id=request.turn_id,
+            cycle_id=request.cycle_id,
+            capability=name,
+            policy=request.policy.value,
+            target_phase=request.target_phase,
+            reason_code="accepted",
+        )
         return CapabilityResult(
             accepted=True,
             capability=name,
@@ -183,8 +195,8 @@ class CapabilityRegistry:
         try:
             result = capability.handler(request)
         except Exception:
-            return self.rejected(request.name, request.policy, "capability_failed")
-        return CapabilityResult(
+            return self.rejected(request.name, request.policy, "capability_failed", request=request)
+        completed = CapabilityResult(
             accepted=result.accepted,
             capability=_normalize_capability_name(result.capability) or capability.name,
             policy=result.policy,
@@ -194,15 +206,46 @@ class CapabilityRegistry:
             message=result.message,
             metadata=result.metadata,
         )
+        log_event(
+            "pelican_learning_capability_completed",
+            level=logging.INFO,
+            turn_id=request.turn_id,
+            cycle_id=request.cycle_id,
+            capability=completed.capability,
+            policy=completed.policy.value,
+            target_phase=request.target_phase,
+            outcome="accepted" if completed.accepted else "rejected",
+            reason_code=completed.reason_code,
+        )
+        return completed
 
-    def rejected(self, name: str, policy: CapabilityPolicy, reason_code: str) -> CapabilityResult:
+    def rejected(
+        self,
+        name: str,
+        policy: CapabilityPolicy,
+        reason_code: str,
+        *,
+        request: CapabilityRequest | None = None,
+    ) -> CapabilityResult:
         """Return a safe rejected result without invoking a capability."""
-        return CapabilityResult(
+        result = CapabilityResult(
             accepted=False,
             capability=_normalize_capability_name(name),
             policy=policy,
             reason_code=_normalize_capability_name(reason_code) or "rejected",
         )
+        log_event(
+            "pelican_learning_capability_rejected",
+            level=logging.INFO,
+            turn_id=request.turn_id if request else None,
+            cycle_id=request.cycle_id if request else None,
+            capability=result.capability,
+            policy=policy.value,
+            target_phase=request.target_phase if request else "unknown",
+            outcome="rejected",
+            reason_code=result.reason_code,
+        )
+        return result
 
 
 def _normalize_capability_name(value: str) -> str:

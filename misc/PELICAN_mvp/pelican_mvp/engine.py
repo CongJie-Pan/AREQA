@@ -419,9 +419,37 @@ class PelicanEngine:
         context = self._learning_manager_turn_context(answer)
         request = self._validate_orchestrator_decision(decision, expected_snapshot_id=context.snapshot_id)
         if request is None:
+            if decision.action is not LearningManagerAction.FALLBACK_LEGACY_PIPELINE:
+                log_event(
+                    "pelican_learning_orchestrator_action_rejected",
+                    learner_id=self.state.learner_id,
+                    phase=self.state.phase,
+                    turn_id=self.state.turn_id,
+                    cycle_id=self.state.cycle_id,
+                    action=decision.action.value,
+                    capability=decision.capability,
+                    policy=decision.policy.value,
+                    target_phase=decision.target_phase,
+                    outcome="rejected",
+                    reason_code=decision.reason_code,
+                )
             return None
         idempotency_key = f"{self.state.turn_id}:{decision.snapshot_id}:{decision.action.value}:{decision.capability}"
         if idempotency_key in self._applied_orchestration_keys:
+            log_event(
+                "pelican_learning_orchestrator_action_rejected",
+                learner_id=self.state.learner_id,
+                phase=self.state.phase,
+                turn_id=self.state.turn_id,
+                cycle_id=self.state.cycle_id,
+                action=decision.action.value,
+                capability=decision.capability,
+                policy=decision.policy.value,
+                target_phase=decision.target_phase,
+                idempotency_key=idempotency_key,
+                outcome="rejected",
+                reason_code="duplicate_orchestrator_decision",
+            )
             return None
         capability_result = self.learning_capabilities.validate(request)
         if not capability_result.accepted:
@@ -429,22 +457,71 @@ class PelicanEngine:
         if capability_result.can_write_mastery and decision.policy is not CapabilityPolicy.WRITE_PROPOSED:
             return None
         self._applied_orchestration_keys.add(idempotency_key)
+        if not capability_result.can_write_mastery:
+            log_event(
+                "pelican_learning_capability_no_write_guarded",
+                learner_id=self.state.learner_id,
+                phase=self.state.phase,
+                turn_id=self.state.turn_id,
+                cycle_id=self.state.cycle_id,
+                action=decision.action.value,
+                capability=request.name,
+                policy=request.policy.value,
+                target_phase=request.target_phase,
+                idempotency_key=idempotency_key,
+                outcome="guarded",
+                reason_code="no_mastery_write_capability",
+            )
         if request.name == "diagnose_answer":
             if self.state.phase == "diagnosis":
-                return self._handle_diagnostic(answer)
+                outcome = self._handle_diagnostic(answer)
+                self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+                return outcome
             if self.state.phase == "tutoring":
-                return self._handle_tutoring(answer)
+                outcome = self._handle_tutoring(answer)
+                self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+                return outcome
             return None
         if request.name == "clarify_current_prompt":
             if not self.state.current_node_id or not self.curriculum:
                 return None
             dialogue_outcome = self._route_dialogue_act(answer, self.state.current_node_id)
             if dialogue_outcome is not None:
+                self._log_orchestrated_capability_completed(request, dialogue_outcome, idempotency_key)
                 return dialogue_outcome
             return None
         if request.name == "resume_pipeline":
-            return self.start()
+            outcome = self.start()
+            self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+            return outcome
         return None
+
+    def _log_orchestrated_capability_completed(
+        self,
+        request: CapabilityRequest,
+        outcome: TurnOutcome,
+        idempotency_key: str,
+    ) -> None:
+        """Emit safe completion metadata for an engine-dispatched capability.
+
+        The event intentionally records labels and correlation IDs only. It does
+        not include the learner answer, tutor message, prompt, or model output.
+        """
+        log_event(
+            "pelican_learning_capability_completed",
+            learner_id=self.state.learner_id,
+            phase=self.state.phase,
+            turn_id=self.state.turn_id,
+            cycle_id=self.state.cycle_id,
+            capability=request.name,
+            policy=request.policy.value,
+            target_phase=request.target_phase,
+            idempotency_key=idempotency_key,
+            outcome="accepted",
+            category=outcome.category.value if outcome.category else None,
+            strategy=outcome.strategy.value if outcome.strategy else None,
+            reason_code=outcome.next_reason,
+        )
 
     def _next_methodology_sequence(self) -> int:
         """Return the next monotonic methodology sequence number."""

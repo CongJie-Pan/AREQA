@@ -11,11 +11,13 @@ pipeline, or fall back without exposing unrestricted tools to every child path.
 from __future__ import annotations
 
 import re
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable
 
 from ..llm import LlmAdapter, LlmUnavailable
+from ..observability import log_event
 
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.62
@@ -234,7 +236,7 @@ class LearningManagerOrchestrator:
             capability = ""
             if policy is CapabilityPolicy.WRITE_PROPOSED:
                 return self._fallback(context, "write_policy_without_capability")
-        return LearningManagerDecision(
+        decision = LearningManagerDecision(
             action=action,
             capability=capability,
             policy=policy,
@@ -244,10 +246,26 @@ class LearningManagerOrchestrator:
             proposal_source="llm",
             snapshot_id=context.snapshot_id,
         )
+        log_event(
+            "pelican_learning_orchestrator_decided",
+            level=logging.INFO,
+            turn_id=context.turn_id,
+            cycle_id=context.cycle_id,
+            phase=context.phase,
+            node_id=context.current_node_id,
+            action=decision.action.value,
+            capability=decision.capability,
+            policy=decision.policy.value,
+            target_phase=decision.target_phase,
+            confidence_bucket=_confidence_bucket(decision.confidence),
+            proposal_source=decision.proposal_source,
+            reason_code=decision.reason_code,
+        )
+        return decision
 
     def _fallback(self, context: LearningManagerTurnContext, reason_code: str) -> LearningManagerDecision:
         """Build a deterministic no-write legacy fallback decision."""
-        return LearningManagerDecision(
+        decision = LearningManagerDecision(
             action=LearningManagerAction.FALLBACK_LEGACY_PIPELINE,
             capability="",
             policy=CapabilityPolicy.NONE,
@@ -257,6 +275,21 @@ class LearningManagerOrchestrator:
             proposal_source="fallback",
             snapshot_id=context.snapshot_id,
         )
+        log_event(
+            "pelican_learning_orchestrator_fallback",
+            level=logging.INFO,
+            turn_id=context.turn_id,
+            cycle_id=context.cycle_id,
+            phase=context.phase,
+            node_id=context.current_node_id,
+            action=decision.action.value,
+            policy=decision.policy.value,
+            target_phase=decision.target_phase,
+            confidence_bucket=_confidence_bucket(decision.confidence),
+            proposal_source=decision.proposal_source,
+            reason_code=decision.reason_code,
+        )
+        return decision
 
 
 def _bounded_confidence(value: Any) -> float:
@@ -275,6 +308,17 @@ def _first_safe_reason(reason_codes: tuple[str, ...], default: str) -> str:
         if safe:
             return safe
     return default
+
+
+def _confidence_bucket(value: float) -> str:
+    """Return a coarse confidence label that avoids overprecise model scoring."""
+    if value >= 0.8:
+        return "high"
+    if value >= 0.62:
+        return "medium"
+    if value > 0:
+        return "low"
+    return "none"
 
 
 def _slug_label(value: str) -> str:

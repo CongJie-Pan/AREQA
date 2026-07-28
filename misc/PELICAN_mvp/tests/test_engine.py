@@ -1,3 +1,4 @@
+import logging
 import pytest
 from pathlib import Path
 
@@ -540,6 +541,29 @@ def test_orchestrator_answer_directly_uses_no_mastery_dialogue_path(tmp_path: Pa
     assert outcome.category is None
     assert len(engine.state.direct_evidence) == before_evidence
     assert engine.state.current_node_id == "jianzhou_jurchen_origins"
+
+
+def test_orchestrated_capability_logs_safe_same_turn_trace(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
+    engine.start()
+    engine.state.mode = "llm"
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.CALL_CAPABILITY,
+        capability="diagnose_answer",
+        policy=CapabilityPolicy.WRITE_PROPOSED,
+    )
+    raw_answer = "not the expected answer raw secret"
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        engine.respond(raw_answer)
+
+    selected = next(record for record in caplog.records if record.message == "pelican_learning_capability_selected")
+    completed = next(record for record in caplog.records if record.message == "pelican_learning_capability_completed")
+    assert selected.turn_id == completed.turn_id
+    assert selected.cycle_id == completed.cycle_id
+    assert selected.capability == "diagnose_answer"
+    assert completed.capability == "diagnose_answer"
+    assert raw_answer not in caplog.text
 
 
 def test_humanities_llm_mode_uses_model_generated_remediation(tmp_path: Path) -> None:

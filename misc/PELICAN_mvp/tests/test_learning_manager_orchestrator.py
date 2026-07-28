@@ -1,3 +1,4 @@
+import logging
 import pytest
 
 from pelican_mvp.agents import (
@@ -193,3 +194,34 @@ def test_learning_manager_decision_is_read_only_metadata() -> None:
     )
 
     assert decision.to_safe_metadata()["action"] == "fallback_legacy_pipeline"
+
+
+def test_orchestrator_logs_decision_without_raw_learner_text(caplog: pytest.LogCaptureFixture) -> None:
+    raw_text = "private learner text should not enter logs"
+    orchestrator = LearningManagerOrchestrator(FakeLlm(valid_payload()), capability_names=("diagnose_answer",))
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        orchestrator.interpret_turn(make_context(learner_text=raw_text))
+
+    record = next(item for item in caplog.records if item.message == "pelican_learning_orchestrator_decided")
+    assert record.action == "call_capability"
+    assert record.capability == "diagnose_answer"
+    assert record.policy == "write_proposed"
+    assert record.confidence_bucket == "high"
+    assert raw_text not in caplog.text
+
+
+def test_orchestrator_logs_fallback_without_raw_learner_text(caplog: pytest.LogCaptureFixture) -> None:
+    raw_text = "private fallback learner text"
+    orchestrator = LearningManagerOrchestrator(
+        FakeLlm(valid_payload(confidence=0.1)),
+        capability_names=("diagnose_answer",),
+    )
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        orchestrator.interpret_turn(make_context(learner_text=raw_text))
+
+    record = next(item for item in caplog.records if item.message == "pelican_learning_orchestrator_fallback")
+    assert record.action == "fallback_legacy_pipeline"
+    assert record.reason_code == "low_confidence"
+    assert raw_text not in caplog.text

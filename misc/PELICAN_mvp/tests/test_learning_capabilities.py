@@ -1,3 +1,5 @@
+import logging
+
 from pelican_mvp.agents import (
     CapabilityPolicy,
     CapabilityRegistry,
@@ -119,3 +121,37 @@ def test_capability_registry_converts_handler_failure_to_safe_result() -> None:
     assert result.accepted is False
     assert result.reason_code == "capability_failed"
     assert "raw failure details" not in str(result)
+
+
+def test_capability_registry_logs_safe_selection_and_completion(caplog) -> None:
+    def handler(request: CapabilityRequest) -> CapabilityResult:
+        return CapabilityResult(True, request.name, request.policy, "handled", emits_learner_text=True)
+
+    registry = CapabilityRegistry()
+    registry.register(
+        LearningCapability(
+            name="clarify",
+            allowed_policies=frozenset({CapabilityPolicy.NONE}),
+            handler=handler,
+            emits_learner_text=True,
+        )
+    )
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        registry.execute(CapabilityRequest(name="clarify", policy=CapabilityPolicy.NONE, turn_id="turn_1"))
+
+    selected = next(record for record in caplog.records if record.message == "pelican_learning_capability_selected")
+    completed = next(record for record in caplog.records if record.message == "pelican_learning_capability_completed")
+    assert selected.capability == "clarify"
+    assert completed.reason_code == "handled"
+
+
+def test_capability_registry_logs_safe_rejection(caplog) -> None:
+    registry = CapabilityRegistry()
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        registry.validate(CapabilityRequest(name="missing raw secret", policy=CapabilityPolicy.NONE))
+
+    record = next(item for item in caplog.records if item.message == "pelican_learning_capability_rejected")
+    assert record.capability == "missing_raw_secret"
+    assert record.reason_code == "unknown_capability"

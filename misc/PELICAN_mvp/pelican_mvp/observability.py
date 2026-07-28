@@ -33,6 +33,8 @@ _EVENT_CHANNEL_PREFIXES = (
     ("pelican_phase_", "state"),
     ("pelican_edf_", "edf"),
     ("pelican_learning_policy_", "edf"),
+    ("pelican_learning_orchestrator_", "methodology"),
+    ("pelican_learning_capability_", "methodology"),
     ("pelican_memory_", "memory"),
     ("pelican_dialogue_", "methodology"),
     ("pelican_remediation_", "tutor"),
@@ -114,6 +116,13 @@ _SAFE_FIELDS = frozenset({
     "recommended_next_action",
     "fragile_count",
     "progress_node_count",
+    "action",
+    "capability",
+    "policy",
+    "target_phase",
+    "confidence_bucket",
+    "idempotency_key",
+    "outcome",
 })
 
 
