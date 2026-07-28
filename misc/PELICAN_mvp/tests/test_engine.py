@@ -530,6 +530,34 @@ def test_orchestrator_diagnose_answer_dispatches_through_engine_handler(tmp_path
     assert engine.state.history
 
 
+def test_engine_repairs_orchestrator_policy_denied_before_legacy_fallback(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine = PelicanEngine(tmp_path, curriculum_id="cnn")
+    engine.start()
+    engine.state.mode = "llm"
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.CALL_CAPABILITY,
+        capability="diagnose_answer",
+        policy=CapabilityPolicy.SPECIALIST,
+    )
+    logging.getLogger("pelican_mvp").propagate = True
+
+    with caplog.at_level(logging.INFO, logger="pelican_mvp"):
+        outcome = engine.respond("not the expected answer")
+
+    assert outcome.category is not None
+    assert engine.state.orchestration_trace[-1].outcome == "accepted"
+    repaired = next(
+        record for record in caplog.records if record.message == "pelican_learning_capability_policy_repaired"
+    )
+    assert repaired.capability == "diagnose_answer"
+    assert repaired.requested_policy == "specialist"
+    assert repaired.policy == "write_proposed"
+    assert "not the expected answer" not in caplog.text
+
+
 def test_orchestrator_same_turn_dispatch_is_idempotent(tmp_path: Path) -> None:
     engine = PelicanEngine(tmp_path, curriculum_id="cnn")
     engine.start()
@@ -693,6 +721,22 @@ def test_learning_manager_interpretation_guides_humanities_broad_answer(tmp_path
     assert "政治中央集權" in outcome.message
     assert "社會階級與身分制度改變" in outcome.message
     assert "讓我們從" not in outcome.message
+
+
+def test_generated_humanities_correct_restatement_bridges_before_next_diagnostic(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    engine.state.phase = "tutoring"
+    engine.state.current_node_id = "jianzhou_jurchen_origins"
+    engine.state.current_prompt = "Explain the reform."
+    engine.state.current_expected_answer = "domain abolition"
+    engine.state.current_prompt_source = "rule"
+
+    outcome = engine.respond("domain abolition")
+
+    assert outcome.category is ResponseCategory.CORRECT
+    assert "接下來我們把時間往後推" in outcome.message
+    assert "這個知識點可以先視為理解了" in outcome.message
+    assert "\n\n" in outcome.message
 
 
 def test_orchestrated_capability_logs_safe_same_turn_trace(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

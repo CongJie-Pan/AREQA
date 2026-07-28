@@ -19,6 +19,7 @@ from typing import Any, Iterable, Mapping
 from ..llm import LlmAdapter, LlmUnavailable
 from ..models import TurnInterpretation
 from ..observability import log_event
+from .capability_policy_repair import repair_capability_policy
 
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.62
@@ -256,9 +257,14 @@ class LearningManagerOrchestrator:
         turn_interpretation = TurnInterpretation.from_dict(payload.get("turn_interpretation"))
         if str(payload.get("snapshot_id", "")) != context.snapshot_id:
             return self._fallback(context, "stale_snapshot", turn_interpretation=turn_interpretation)
+        raw_action = str(payload.get("action", ""))
+        raw_policy = str(payload.get("policy", ""))
+        action_label = _normalize_action_label(raw_action)
+        policy_label = _normalize_policy_label(raw_policy)
+        normalized_reason = _normalization_reason(raw_action, raw_policy, action_label, policy_label)
         try:
-            action = LearningManagerAction(str(payload.get("action", "")))
-            policy = CapabilityPolicy(str(payload.get("policy", "")))
+            action = LearningManagerAction(action_label)
+            policy = CapabilityPolicy(policy_label)
         except ValueError:
             return self._fallback(context, "invalid_enum", turn_interpretation=turn_interpretation)
         confidence = _bounded_confidence(payload.get("confidence"))
@@ -272,20 +278,29 @@ class LearningManagerOrchestrator:
                 return self._fallback(context, "unknown_capability", turn_interpretation=turn_interpretation)
             allowed_policies = self.capability_policies.get(capability)
             if allowed_policies is not None and policy.value not in allowed_policies:
-                return self._fallback(context, "policy_denied", turn_interpretation=turn_interpretation)
+                repair = repair_capability_policy(capability, policy, self.capability_policies)
+                if not repair.accepted or not repair.repaired:
+                    return self._fallback(context, repair.reason_code, turn_interpretation=turn_interpretation)
+                policy = repair.effective_policy
+                normalized_reason = normalized_reason or repair.reason_code
         else:
             # Non-capability actions should not smuggle a write-capable target.
             capability = ""
             if policy is CapabilityPolicy.WRITE_PROPOSED:
                 return self._fallback(context, "write_policy_without_capability", turn_interpretation=turn_interpretation)
+        proposal_source = "llm"
+        if normalized_reason == "policy_repaired_from_manifest":
+            proposal_source = "llm_policy_repaired"
+        elif normalized_reason:
+            proposal_source = "llm_repaired"
         decision = LearningManagerDecision(
             action=action,
             capability=capability,
             policy=policy,
             target_phase=_slug_label(str(payload.get("target_phase", context.phase))) or context.phase,
             confidence=confidence,
-            reason_code=_slug_reason(str(payload.get("reason_code", action.value))),
-            proposal_source="llm",
+            reason_code=_slug_reason(normalized_reason or str(payload.get("reason_code", action.value))),
+            proposal_source=proposal_source,
             snapshot_id=context.snapshot_id,
             turn_interpretation=turn_interpretation,
         )
@@ -377,6 +392,59 @@ def _confidence_bucket(value: float) -> str:
 def _slug_label(value: str) -> str:
     """Normalize a model-selected action target into a bounded safe label."""
     return re.sub(r"[^a-z0-9_]+", "_", value.strip().lower()).strip("_")[:SAFE_REASON_MAX_LENGTH]
+
+
+def _normalize_action_label(value: str) -> str:
+    """Map near-miss model action labels into the bounded action vocabulary."""
+    label = _slug_label(value)
+    aliases = {
+        "clarify": LearningManagerAction.ANSWER_DIRECTLY.value,
+        "clarify_answer": LearningManagerAction.ANSWER_DIRECTLY.value,
+        "clarification": LearningManagerAction.ANSWER_DIRECTLY.value,
+        "answer": LearningManagerAction.ANSWER_DIRECTLY.value,
+        "direct_answer": LearningManagerAction.ANSWER_DIRECTLY.value,
+        "call_tool": LearningManagerAction.CALL_CAPABILITY.value,
+        "tool_call": LearningManagerAction.CALL_CAPABILITY.value,
+        "use_capability": LearningManagerAction.CALL_CAPABILITY.value,
+        "delegate_tool": LearningManagerAction.DELEGATE_CAPABILITY.value,
+        "resume": LearningManagerAction.RESUME_PIPELINE.value,
+        "continue": LearningManagerAction.CONTINUE_PIPELINE.value,
+        "fallback": LearningManagerAction.FALLBACK_LEGACY_PIPELINE.value,
+        "reject": LearningManagerAction.REJECT_ILLEGAL_ACTION.value,
+    }
+    return aliases.get(label, label)
+
+
+def _normalize_policy_label(value: str) -> str:
+    """Map near-miss model policy labels into the bounded policy vocabulary."""
+    label = _slug_label(value)
+    aliases = {
+        "no_write": CapabilityPolicy.NONE.value,
+        "no_write_policy": CapabilityPolicy.NONE.value,
+        "none_policy": CapabilityPolicy.NONE.value,
+        "readonly": CapabilityPolicy.READ.value,
+        "read_only": CapabilityPolicy.READ.value,
+        "specialized": CapabilityPolicy.SPECIALIST.value,
+        "specialist_tool": CapabilityPolicy.SPECIALIST.value,
+        "write": CapabilityPolicy.WRITE_PROPOSED.value,
+        "write_intent": CapabilityPolicy.WRITE_PROPOSED.value,
+        "write_proposal": CapabilityPolicy.WRITE_PROPOSED.value,
+        "state_write": CapabilityPolicy.WRITE_PROPOSED.value,
+    }
+    return aliases.get(label, label)
+
+
+def _normalization_reason(raw_action: str, raw_policy: str, action_label: str, policy_label: str) -> str:
+    """Return a safe reason code when enum labels were repaired."""
+    raw_action_label = _slug_label(raw_action)
+    raw_policy_label = _slug_label(raw_policy)
+    if raw_action_label != action_label and raw_policy_label != policy_label:
+        return "normalized_action_and_policy"
+    if raw_action_label != action_label:
+        return "normalized_action"
+    if raw_policy_label != policy_label:
+        return "normalized_policy"
+    return ""
 
 
 def _slug_reason(value: str) -> str:

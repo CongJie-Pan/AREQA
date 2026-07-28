@@ -119,6 +119,8 @@ _SAFE_FIELDS = frozenset({
     "action",
     "capability",
     "policy",
+    "requested_policy",
+    "allowed_policy_count",
     "target_phase",
     "confidence_bucket",
     "idempotency_key",

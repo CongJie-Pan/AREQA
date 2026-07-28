@@ -6,6 +6,7 @@ from .dialogue_act_agent import DialogueActAgent, DialogueActInterpretation
 from .diagnosis_agent import DiagnosisAgent, DiagnosticAgentProposal
 from .fast_tutor_agent import FastTutorAgent, TutorAgentResponse
 from .intake_agent import IntakeAgent, IntakeInterpretation
+from .capability_policy_repair import CapabilityPolicyRepairResult, repair_capability_policy
 from .learning_capabilities import CapabilityRegistry, CapabilityRequest, CapabilityResult, LearningCapability
 from .learning_manager_orchestrator import (
     CapabilityPolicy,
@@ -31,6 +32,7 @@ __all__ = [
     "IntakeAgent",
     "IntakeInterpretation",
     "CapabilityPolicy",
+    "CapabilityPolicyRepairResult",
     "CapabilityRegistry",
     "CapabilityRequest",
     "CapabilityResult",
@@ -40,6 +42,7 @@ __all__ = [
     "LearningManagerOrchestrator",
     "LearningManagerTurnContext",
     "PolicyAgent",
+    "repair_capability_policy",
     "SkillAgent",
     "SkillAgentInput",
     "SkillAgentProposal",

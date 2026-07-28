@@ -104,6 +104,25 @@ def test_interpret_turn_allows_direct_no_write_clarification() -> None:
     assert decision.reason_code == "learner_clarification"
 
 
+def test_interpret_turn_repairs_near_miss_action_and_policy_labels() -> None:
+    payload = valid_payload(
+        action="clarify_answer",
+        capability="diagnose_answer",
+        policy="no_write",
+        target_phase="tutor_response",
+        reason_code="learner_clarification",
+    )
+    orchestrator = LearningManagerOrchestrator(FakeLlm(payload), capability_names=("diagnose_answer",))
+
+    decision = orchestrator.interpret_turn(make_context(learner_text="what does this mean?"))
+
+    assert decision.action is LearningManagerAction.ANSWER_DIRECTLY
+    assert decision.capability == ""
+    assert decision.policy is CapabilityPolicy.NONE
+    assert decision.reason_code == "normalized_action_and_policy"
+    assert decision.proposal_source == "llm_repaired"
+
+
 def test_interpret_turn_allows_delegated_specialist_capability() -> None:
     payload = valid_payload(
         action="delegate_capability",
@@ -212,15 +231,24 @@ def test_turn_context_payload_includes_pending_prompt_context() -> None:
         (valid_payload(snapshot_id="stale"), "stale_snapshot"),
         (valid_payload(capability="unknown"), "unknown_capability"),
         (valid_payload(capability=""), "missing_capability"),
-        (valid_payload(policy="none"), "policy_denied"),
+        (
+            valid_payload(
+                capability="clarify_current_prompt",
+                policy="write_proposed",
+            ),
+            "ambiguous_policy_repair",
+        ),
         (valid_payload(action="continue_pipeline", policy="write_proposed"), "write_policy_without_capability"),
     ],
 )
 def test_interpret_turn_falls_back_for_unsafe_payloads(payload: dict, reason_code: str) -> None:
     orchestrator = LearningManagerOrchestrator(
         FakeLlm(payload),
-        capability_names=("diagnose_answer",),
-        capability_policies={"diagnose_answer": ("write_proposed",)},
+        capability_names=("diagnose_answer", "clarify_current_prompt"),
+        capability_policies={
+            "diagnose_answer": ("write_proposed",),
+            "clarify_current_prompt": ("none", "specialist"),
+        },
     )
 
     decision = orchestrator.interpret_turn(make_context())
@@ -241,10 +269,10 @@ def test_interpret_turn_falls_back_when_llm_unavailable() -> None:
     assert decision.reason_code == "llm_missing_api_key"
 
 
-def test_interpret_turn_preserves_interpretation_when_policy_is_denied() -> None:
+def test_interpret_turn_repairs_single_policy_mismatch_without_losing_interpretation() -> None:
     payload = valid_payload(
         capability="tutor_response",
-        policy="none",
+        policy="write_proposed",
         turn_interpretation={
             "learner_act": "answer_attempt",
             "understanding_status": "broad_but_incomplete",
@@ -264,11 +292,43 @@ def test_interpret_turn_preserves_interpretation_when_policy_is_denied() -> None
 
     decision = orchestrator.interpret_turn(make_context())
 
-    assert decision.action is LearningManagerAction.FALLBACK_LEGACY_PIPELINE
-    assert decision.reason_code == "policy_denied"
+    assert decision.action is LearningManagerAction.CALL_CAPABILITY
+    assert decision.capability == "tutor_response"
+    assert decision.policy is CapabilityPolicy.SPECIALIST
+    assert decision.reason_code == "policy_repaired_from_manifest"
+    assert decision.proposal_source == "llm_policy_repaired"
     assert decision.turn_interpretation.understanding_status == "broad_but_incomplete"
     assert decision.turn_interpretation.teaching_move == "acknowledge_then_clarify"
     assert decision.turn_interpretation.missing_points == ("centralization",)
+
+
+def test_interpret_turn_preserves_interpretation_when_policy_repair_is_ambiguous() -> None:
+    payload = valid_payload(
+        capability="clarify_current_prompt",
+        policy="write_proposed",
+        turn_interpretation={
+            "learner_act": "term_definition_request",
+            "understanding_status": "unknown",
+            "understood_points": [],
+            "missing_points": ["term meaning"],
+            "teaching_move": "answer_question",
+            "recommended_capability": "clarify_current_prompt",
+            "should_advance_pipeline": False,
+            "reason_code": "term_question",
+        },
+    )
+    orchestrator = LearningManagerOrchestrator(
+        FakeLlm(payload),
+        capability_names=("clarify_current_prompt",),
+        capability_policies={"clarify_current_prompt": ("none", "specialist")},
+    )
+
+    decision = orchestrator.interpret_turn(make_context())
+
+    assert decision.action is LearningManagerAction.FALLBACK_LEGACY_PIPELINE
+    assert decision.reason_code == "ambiguous_policy_repair"
+    assert decision.turn_interpretation.learner_act == "term_definition_request"
+    assert decision.turn_interpretation.missing_points == ("term meaning",)
 
 
 def test_safe_metadata_excludes_raw_learner_text_and_model_output() -> None:

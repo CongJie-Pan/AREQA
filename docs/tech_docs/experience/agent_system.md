@@ -43,3 +43,22 @@
 * **底層邏輯**：Agentic 系統具備自我迭代的特性，若未設定邊界，它會無止盡地嘗試解決問題。
 * **坑位盲點**：未設立明確的退出機制（Exit Criteria），導致 Agent 在遇到無法解決的任務或工具失效時，陷入死迴圈（Endless Loops），最終耗盡 API 額度或運算資源。
 * **解決方案**：在系統外殼（Wrapper）或 Supervisor 層級建立防護網（Guardrails），例如限制最大迭代次數（Max Iterations），或在連續失敗兩次後強制降級（Fallback）回傳統的回覆模式。
+
+## Turn Interpretation Ownership
+
+問題不是 multi-agent 本身，而是「同一輪 user turn 有多個元件都在重新解讀意圖」，造成 ownership diffusion。
+
+目前系統若同時讓下列元件各自判斷 learner intent，就會形成架構壞味道：
+
+- Learning Manager / Orchestrator
+- Deterministic pipeline validator
+- Legacy rule-based DialogueActAgent
+
+現代 agentic system 應遵守 single-owner turn interpretation 原則：
+
+- 只能有一個 owner 負責解讀 user turn。
+- 其他元件只能根據這個 owner 的解讀結果執行、驗證或補局部欄位。
+- Pipeline validator 的責任是驗證安全性、狀態轉移與 policy，不應重新決定 learner intent。
+- DialogueActAgent 只能作為 bounded executor 或 fallback classifier，不應在 Learning Manager 已有有效解讀時重新搶奪回合解讀權。
+
+對 PELICAN 來說，Learning Manager / Orchestrator 應是 user turn interpretation 的 owner；pipeline 與 legacy agents 應退為 validator、executor 或 compatibility fallback。

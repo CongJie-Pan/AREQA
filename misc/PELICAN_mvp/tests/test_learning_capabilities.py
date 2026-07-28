@@ -6,6 +6,7 @@ from pelican_mvp.agents import (
     CapabilityRequest,
     CapabilityResult,
     LearningCapability,
+    repair_capability_policy,
 )
 
 
@@ -68,6 +69,50 @@ def test_capability_registry_rejects_policy_denied_before_handler_runs() -> None
     assert result.accepted is False
     assert result.reason_code == "policy_denied"
     assert called is False
+
+
+def test_manifest_policy_repair_corrects_single_policy_capability() -> None:
+    manifest = {
+        "tutor_response": ("specialist",),
+        "conversation_control": ("none",),
+        "diagnose_answer": ("write_proposed",),
+    }
+
+    tutor = repair_capability_policy("tutor_response", CapabilityPolicy.WRITE_PROPOSED, manifest)
+    control = repair_capability_policy("conversation_control", CapabilityPolicy.WRITE_PROPOSED, manifest)
+    diagnosis = repair_capability_policy("diagnose_answer", CapabilityPolicy.NONE, manifest)
+
+    assert tutor.accepted is True
+    assert tutor.repaired is True
+    assert tutor.effective_policy is CapabilityPolicy.SPECIALIST
+    assert control.effective_policy is CapabilityPolicy.NONE
+    assert diagnosis.effective_policy is CapabilityPolicy.WRITE_PROPOSED
+
+
+def test_manifest_policy_repair_rejects_ambiguous_policy_choice() -> None:
+    manifest = {"clarify_current_prompt": ("none", "specialist")}
+
+    result = repair_capability_policy(
+        "clarify_current_prompt",
+        CapabilityPolicy.WRITE_PROPOSED,
+        manifest,
+    )
+
+    assert result.accepted is False
+    assert result.repaired is False
+    assert result.reason_code == "ambiguous_policy_repair"
+
+
+def test_manifest_policy_repair_accepts_valid_pair_without_repair() -> None:
+    result = repair_capability_policy(
+        "resume_pipeline",
+        CapabilityPolicy.READ,
+        {"resume_pipeline": ("read", "specialist")},
+    )
+
+    assert result.accepted is True
+    assert result.repaired is False
+    assert result.effective_policy is CapabilityPolicy.READ
 
 
 def test_capability_registry_executes_handler_after_policy_validation() -> None:

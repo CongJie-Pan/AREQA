@@ -27,6 +27,7 @@ from .agents import (
     SkillAgentInput,
     SlowSimulatorAgent,
     StateAgent,
+    repair_capability_policy,
 )
 from .diagnosis import apply_diagnostic_result, classify_response, diagnostic_for, next_diagnostic_node, remediation_signal
 from .domain_skill import DomainCategory
@@ -576,6 +577,36 @@ class PelicanEngine:
             )
             return None
         capability_result = self.learning_capabilities.validate(request)
+        if not capability_result.accepted and capability_result.reason_code == "policy_denied":
+            repair = repair_capability_policy(
+                request.name,
+                request.policy,
+                self.learning_capabilities.policy_manifest(),
+            )
+            if repair.accepted and repair.repaired:
+                log_event(
+                    "pelican_learning_capability_policy_repaired",
+                    learner_id=self.state.learner_id,
+                    phase=self.state.phase,
+                    turn_id=self.state.turn_id,
+                    cycle_id=self.state.cycle_id,
+                    capability=repair.capability,
+                    policy=repair.effective_policy.value,
+                    target_phase=request.target_phase,
+                    outcome="accepted",
+                    reason_code=repair.reason_code,
+                    requested_policy=repair.requested_policy.value,
+                    allowed_policy_count=repair.allowed_policy_count,
+                )
+                request = CapabilityRequest(
+                    name=request.name,
+                    policy=repair.effective_policy,
+                    turn_id=request.turn_id,
+                    cycle_id=request.cycle_id,
+                    target_phase=request.target_phase,
+                    payload=request.payload,
+                )
+                capability_result = self.learning_capabilities.validate(request)
         if not capability_result.accepted:
             self._record_orchestration_trace(
                 decision,
@@ -583,7 +614,7 @@ class PelicanEngine:
                 reason_code=capability_result.reason_code,
             )
             return None
-        if capability_result.can_write_mastery and decision.policy is not CapabilityPolicy.WRITE_PROPOSED:
+        if capability_result.can_write_mastery and request.policy is not CapabilityPolicy.WRITE_PROPOSED:
             self._record_orchestration_trace(
                 decision,
                 outcome="rejected",
@@ -652,12 +683,70 @@ class PelicanEngine:
         if request.name == "clarify_current_prompt":
             if not self.state.current_node_id or not self.curriculum:
                 return None
-            dialogue_outcome = self._route_dialogue_act(answer, self.state.current_node_id)
+            dialogue_outcome = self._route_dialogue_act(
+                answer,
+                self.state.current_node_id,
+                turn_interpretation=decision.turn_interpretation,
+                force=True,
+            )
             if dialogue_outcome is not None:
                 self._log_orchestrated_capability_completed(request, dialogue_outcome, idempotency_key)
                 self._record_orchestration_trace(decision, outcome="accepted")
                 return dialogue_outcome
             return None
+        if request.name == "tutor_response":
+            if not self.state.current_node_id or not self.curriculum:
+                return None
+            strategy = (
+                self.state.strategy_decision.selected_strategy
+                if self.state.strategy_decision.selected_strategy
+                else TutoringStrategy.EXPLANATION
+            )
+            (
+                message,
+                source,
+                _validation_status,
+                proposal_reason,
+                _pedagogical_move,
+                _display_summary,
+                tutor_result,
+            ) = self._tutor_message(
+                strategy,
+                self.state.current_node_id,
+                evidence_signal=decision.turn_interpretation.understanding_status or decision.reason_code,
+                learner_answer=answer,
+                tutor_role=AgentRole.FAST_TUTOR_AGENT,
+                turn_interpretation=decision.turn_interpretation,
+            )
+            self._record_agent_result(
+                tutor_result,
+                node_id=self.state.current_node_id,
+                strategy=strategy.value,
+                skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+            )
+            self._record_methodology_event(
+                MethodologyEventType.PIPELINE_STAGE,
+                stage=MethodologyStage.TUTOR_RESPONSE,
+                input_ref=MethodologyRef("turn_interpretation", decision.reason_code, "orchestrated tutor response"),
+                output_ref=MethodologyRef("tutor_message", source, "tutor response"),
+                node_id=self.state.current_node_id,
+                strategy=strategy.value,
+                reason_code=proposal_reason,
+            )
+            self.state.current_prompt = message
+            self.state.current_prompt_source = source
+            self.store.save(self.state)
+            outcome = TurnOutcome(
+                message,
+                self.state.current_node_id,
+                None,
+                strategy,
+                (),
+                proposal_reason,
+            )
+            self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
+            self._record_orchestration_trace(decision, outcome="accepted")
+            return outcome
         if request.name == "resume_pipeline":
             outcome = self.start()
             self._log_orchestrated_capability_completed(request, outcome, idempotency_key)
@@ -1510,7 +1599,7 @@ class PelicanEngine:
             return self._handle_scope_mismatch(answer, signal)
         if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
             return self._handle_acceleration_request(answer)
-        dialogue_outcome = self._route_dialogue_act(answer, node_id)
+        dialogue_outcome = self._route_dialogue_act(answer, node_id, turn_interpretation=turn_interpretation)
         if dialogue_outcome is not None:
             return dialogue_outcome
         category = self._category_with_turn_interpretation(self._classify(answer), turn_interpretation)
@@ -1816,6 +1905,72 @@ class PelicanEngine:
             "too_easy：加速到下一個仍需確認的概念",
         )
 
+    def _transition_to_next_diagnostic_message(
+        self,
+        completed_node_id: str,
+        next_outcome: TurnOutcome,
+        *,
+        learner_answer: str,
+        turn_interpretation: TurnInterpretation | None = None,
+    ) -> tuple[str, str, str, AgentExecutionResult]:
+        """Generate a concept bridge before showing the next diagnostic prompt.
+
+        Args:
+            completed_node_id: Knowledge node just confirmed as mastered.
+            next_outcome: Diagnostic outcome produced by successor-first
+                selection. Its message is the next learner-facing question.
+            learner_answer: Latest learner answer passed only to the tutor model
+                for acknowledgement grounding. It is not written to safe trace
+                metadata by this helper.
+            turn_interpretation: Learning Manager interpretation to preserve
+                single-owner turn semantics through transition rendering.
+
+        Returns:
+            Tuple of bridge message, source, safe reason code, and tutor proposal
+            result for methodology tracing.
+
+        Side Effects:
+            Emits the same bounded tutor proposal logs as other tutor responses
+            through ``_tutor_message``. Raw learner text and prompts are not
+            emitted as structured metadata.
+        """
+        completed_label = self.curriculum.nodes[completed_node_id].label
+        next_label = (
+            self.curriculum.nodes[next_outcome.node_id].label
+            if next_outcome.node_id and next_outcome.node_id in self.curriculum.nodes
+            else "下一個知識點"
+        )
+        understood = ""
+        if turn_interpretation and turn_interpretation.understood_points:
+            understood = "、".join(turn_interpretation.understood_points[:2])
+        understood_text = understood or f"{completed_label} 的核心因果關係"
+        base_message = (
+            f"你剛剛抓到的重點是：{understood_text}。\n\n"
+            f"這表示「{completed_label}」這個知識點可以先視為理解了。\n\n"
+            f"接下來我們把時間往後推，看看它如何銜接到「{next_label}」。"
+            "也就是說，前面談的是日本如何建立近代國家的基礎；下一步要看的是，"
+            "這個近代國家後來為什麼會走向軍方影響力上升。\n\n"
+            f"{next_outcome.message}"
+        )
+        (
+            message,
+            source,
+            _validation_status,
+            reason,
+            _pedagogical_move,
+            _display_summary,
+            tutor_result,
+        ) = self._tutor_message(
+            TutoringStrategy.CONFIRMATION,
+            completed_node_id,
+            evidence_signal="correct_transition",
+            learner_answer=learner_answer,
+            base_message=base_message,
+            tutor_role=AgentRole.FAST_TUTOR_AGENT,
+            turn_interpretation=turn_interpretation,
+        )
+        return message, source, reason, tutor_result
+
     def _handle_tutoring(
         self,
         answer: str,
@@ -1833,7 +1988,7 @@ class PelicanEngine:
             return self._handle_scope_mismatch(answer, signal)
         if self.state.plan_source is PlanSource.GENERATED and signal == "too_easy":
             return self._handle_acceleration_request(answer)
-        dialogue_outcome = self._route_dialogue_act(answer, node_id)
+        dialogue_outcome = self._route_dialogue_act(answer, node_id, turn_interpretation=turn_interpretation)
         if dialogue_outcome is not None:
             return dialogue_outcome
         category = self._category_with_turn_interpretation(self._classify(answer), turn_interpretation)
@@ -1873,6 +2028,38 @@ class PelicanEngine:
                 self.state.phase = "diagnosis"
                 self.store.save(self.state)
                 next_outcome = self._present_next_diagnostic()
+                bridge_message, bridge_source, bridge_reason, bridge_result = self._transition_to_next_diagnostic_message(
+                    node_id,
+                    next_outcome,
+                    learner_answer=answer,
+                    turn_interpretation=turn_interpretation,
+                )
+                self._record_agent_result(
+                    bridge_result,
+                    node_id=node_id,
+                    strategy=TutoringStrategy.CONFIRMATION.value,
+                    skill_id=self.state.learning_plan.skill_id if self.state.learning_plan else None,
+                )
+                self._record_methodology_event(
+                    MethodologyEventType.PIPELINE_STAGE,
+                    stage=MethodologyStage.TUTOR_RESPONSE,
+                    input_ref=MethodologyRef("diagnostic_node", next_outcome.node_id or "next", "next diagnostic"),
+                    output_ref=MethodologyRef("tutor_message", bridge_source, "concept transition"),
+                    node_id=node_id,
+                    strategy=TutoringStrategy.CONFIRMATION.value,
+                    reason_code=bridge_reason,
+                )
+                self.state.current_prompt = bridge_message
+                self.state.current_prompt_source = bridge_source
+                self.store.save(self.state)
+                next_outcome = TurnOutcome(
+                    bridge_message,
+                    next_outcome.node_id,
+                    next_outcome.category,
+                    next_outcome.strategy,
+                    next_outcome.state_changes,
+                    next_outcome.next_reason,
+                )
                 return TurnOutcome(
                     f"說得對，這個知識點可以先視為理解了。\n\n{next_outcome.message}",
                     next_outcome.node_id,
@@ -1985,7 +2172,14 @@ class PelicanEngine:
         self.store.save(self.state)
         return TurnOutcome(message, node_id, category, strategy, tuple(changes), reason)
 
-    def _route_dialogue_act(self, answer: str, node_id: str) -> TurnOutcome | None:
+    def _route_dialogue_act(
+        self,
+        answer: str,
+        node_id: str,
+        *,
+        turn_interpretation: TurnInterpretation | None = None,
+        force: bool = False,
+    ) -> TurnOutcome | None:
         """Route conversational control turns before mastery diagnosis.
 
         The dialogue-act layer prevents learner clarification questions from
@@ -1995,6 +2189,10 @@ class PelicanEngine:
         """
         if self.state.plan_source is not PlanSource.GENERATED or not self._is_humanities_plan():
             return None
+        if not self._should_route_dialogue_act(turn_interpretation, force=force):
+            return None
+        if not force and self._is_tentative_answer_to_recent_prompt(answer):
+            return None
         interpretation = self.dialogue_act_agent.classify(
             answer,
             current_prompt=self.state.current_prompt,
@@ -2002,8 +2200,12 @@ class PelicanEngine:
             node_label=self.curriculum.nodes[node_id].label,
             context=self._agent_execution_context(),
         )
+        signal = self._dialogue_signal_from_turn_interpretation(
+            turn_interpretation,
+            fallback_signal=interpretation.signal,
+            node_id=node_id,
+        )
         self._record_agent_result(interpretation.result, node_id=node_id)
-        signal = interpretation.signal
         decision = self._dialogue_control_decision(signal)
         log_event(
             "pelican_dialogue_control_decided",
@@ -2029,6 +2231,134 @@ class PelicanEngine:
         if decision.act is LearnerDialogueAct.MICRO_CHECK_CONFUSION:
             return self._handle_micro_check_confusion(signal, node_id, decision=decision)
         return self._handle_term_clarification(signal, node_id, decision=decision)
+
+    def _dialogue_signal_from_turn_interpretation(
+        self,
+        turn_interpretation: TurnInterpretation | None,
+        *,
+        fallback_signal: DialogueActSignal,
+        node_id: str,
+    ) -> DialogueActSignal:
+        """Promote explicit Learning Manager dialogue acts into routeable signals."""
+        if not self._has_meaningful_turn_interpretation(turn_interpretation):
+            return fallback_signal
+        learner_act = turn_interpretation.learner_act.strip().lower()
+        if learner_act == "term_definition_request":
+            return DialogueActSignal(
+                LearnerDialogueAct.TERM_DEFINITION_REQUEST,
+                max(fallback_signal.confidence, 0.86),
+                target_text=fallback_signal.target_text or self.curriculum.nodes[node_id].label,
+                reason_code=turn_interpretation.reason_code or "learning_manager_term_definition",
+            )
+        if learner_act == "micro_check_confusion":
+            return DialogueActSignal(
+                LearnerDialogueAct.MICRO_CHECK_CONFUSION,
+                max(fallback_signal.confidence, 0.86),
+                target_text=fallback_signal.target_text or self.curriculum.nodes[node_id].label,
+                reason_code=turn_interpretation.reason_code or "learning_manager_micro_check",
+            )
+        if learner_act == "clarification_question" and fallback_signal.act is LearnerDialogueAct.CLARIFICATION_QUESTION:
+            return DialogueActSignal(
+                fallback_signal.act,
+                max(fallback_signal.confidence, 0.86),
+                target_text=fallback_signal.target_text,
+                reason_code=turn_interpretation.reason_code or fallback_signal.reason_code,
+            )
+        return fallback_signal
+
+    def _should_route_dialogue_act(
+        self,
+        turn_interpretation: TurnInterpretation | None,
+        *,
+        force: bool = False,
+    ) -> bool:
+        """Return whether the legacy dialogue-act gate may reinterpret the turn.
+
+        Learning Manager is the single owner of turn interpretation when it has
+        supplied a meaningful act. DialogueActAgent remains a bounded executor
+        for explicit learner clarification/control acts and a compatibility
+        fallback when no meaningful Learning Manager interpretation exists.
+        """
+        if force:
+            return True
+        if not self._has_meaningful_turn_interpretation(turn_interpretation):
+            return True
+        learner_act = turn_interpretation.learner_act.strip().lower()
+        return learner_act in {
+            "clarification_question",
+            "term_definition_request",
+            "micro_check_confusion",
+            "too_hard",
+            "too_easy",
+            "ready_to_continue",
+            "topic_shift",
+        }
+
+    def _has_meaningful_turn_interpretation(self, turn_interpretation: TurnInterpretation | None) -> bool:
+        """Return whether Learning Manager supplied non-default turn semantics."""
+        if turn_interpretation is None:
+            return False
+        if turn_interpretation.reason_code and turn_interpretation.reason_code != "unknown":
+            return True
+        if turn_interpretation.understood_points or turn_interpretation.missing_points:
+            return True
+        if turn_interpretation.understanding_status not in {"", "unknown"}:
+            return True
+        return turn_interpretation.teaching_move not in {"", "resume_pipeline"}
+
+    def _is_tentative_answer_to_recent_prompt(self, answer: str) -> bool:
+        """Detect hedged answers to choice/opinion prompts before dialogue routing.
+
+        In humanities tutoring, learners often answer with uncertainty markers
+        and a trailing question mark, such as "I think maybe X?". That is still
+        an answer attempt when the active prompt asks what they think or asks
+        them to choose among reforms.
+        """
+        text = answer.strip().lower()
+        if not text or not text.endswith(("?", "？")):
+            return False
+        tentative_markers = (
+            "我覺得",
+            "我觉得",
+            "可能是",
+            "應該是",
+            "应该是",
+            "也許是",
+            "也许是",
+            "大概是",
+            "maybe",
+            "i think",
+            "probably",
+        )
+        if not any(marker in text for marker in tentative_markers):
+            return False
+        prompt = " ".join(
+            part
+            for part in (
+                self.state.current_prompt or "",
+                self._last_assistant_prompt(),
+            )
+            if part
+        ).lower()
+        choice_prompt_markers = (
+            "你覺得",
+            "你觉得",
+            "哪一項",
+            "哪一项",
+            "哪個",
+            "哪个",
+            "選",
+            "choose",
+            "which",
+            "why",
+            "為什麼",
+            "为什么",
+            "最關鍵",
+            "最关键",
+            "影響最深",
+            "影响最深",
+        )
+        return any(marker in prompt for marker in choice_prompt_markers)
 
     def _dialogue_control_decision(self, signal: DialogueActSignal) -> DialogueControlDecision:
         """Convert a dialogue-act signal into the formal pre-diagnosis gate.
