@@ -226,3 +226,11 @@ def test_orchestrator_prompt_grants_base_policy_for_tool_backed_child_tasks():
     assert 'tool_policy="base"' in ORCHESTRATOR_SYSTEM_PROMPT
     assert "arithmetic" in ORCHESTRATOR_SYSTEM_PROMPT
     assert "tool-backed" in ORCHESTRATOR_SYSTEM_PROMPT
+
+
+def test_orchestrator_prompt_respects_explicit_subagent_routing():
+    """Explicit user delegation requests should override direct tool use."""
+    assert "Respect explicit user routing requests" in ORCHESTRATOR_SYSTEM_PROMPT
+    assert "call delegate_task even when the" in ORCHESTRATOR_SYSTEM_PROMPT
+    assert "user did not" in ORCHESTRATOR_SYSTEM_PROMPT
+    assert "ask for a child/subagent" in ORCHESTRATOR_SYSTEM_PROMPT
