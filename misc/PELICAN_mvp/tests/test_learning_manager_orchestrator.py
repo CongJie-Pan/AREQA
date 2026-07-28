@@ -2,7 +2,9 @@ import pytest
 
 from pelican_mvp.agents import (
     CapabilityPolicy,
+    CapabilityRegistry,
     LearningManagerAction,
+    LearningCapability,
     LearningManagerDecision,
     LearningManagerOrchestrator,
     LearningManagerTurnContext,
@@ -156,6 +158,26 @@ def test_turn_context_payload_exposes_capability_manifest_to_llm() -> None:
 
     assert llm.seen_context["available_capabilities"] == ["diagnose_answer", "slow_simulator"]
     assert llm.seen_context["learner_text"] == "secret learner text"
+
+
+def test_orchestrator_can_validate_against_registry_manifest() -> None:
+    registry = CapabilityRegistry()
+    registry.register(
+        LearningCapability(
+            name="diagnose_answer",
+            allowed_policies=frozenset({CapabilityPolicy.WRITE_PROPOSED}),
+            can_write_mastery=True,
+        )
+    )
+    orchestrator = LearningManagerOrchestrator(
+        FakeLlm(valid_payload()),
+        capability_names=registry.names(),
+    )
+
+    decision = orchestrator.interpret_turn(make_context())
+
+    assert decision.action is LearningManagerAction.CALL_CAPABILITY
+    assert decision.capability == "diagnose_answer"
 
 
 def test_learning_manager_decision_is_read_only_metadata() -> None:

@@ -236,26 +236,26 @@ misc/
 
 #### Work List
 
-1. [ ] Create `misc/PELICAN_mvp/pelican_mvp/agents/learning_capabilities.py`.
-   - [ ] Add the proposed `LearningCapability` type.
-   - [ ] Add the proposed `CapabilityRequest` type.
-   - [ ] Add the proposed `CapabilityResult` type.
-   - [ ] Add the proposed `CapabilityRegistry` class with register, lookup, policy validation, and safe failure result methods.
-2. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/agents/learning_manager_orchestrator.py`.
-   - [ ] Validate proposed capability names against the registry or a registry-provided manifest.
-   - [ ] Reject or downgrade decisions whose policy cannot use the requested capability.
-3. [ ] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` if registry construction belongs to the engine.
-   - [ ] Add registry construction for existing diagnosis, clarification, tutoring, EDF, slow simulator, and pipeline continuation behavior.
-   - [ ] Keep wrappers thin and reuse existing specialist implementations.
-4. [ ] Create `misc/PELICAN_mvp/tests/test_learning_capabilities.py`.
-   - [ ] Test capability registration and lookup.
-   - [ ] Test unknown capability rejection.
-   - [ ] Test policy-denied capability calls.
-   - [ ] Test no-write capability metadata.
-   - [ ] Test write-capable capability metadata is explicit.
-5. [ ] Modify `misc/PELICAN_mvp/tests/test_learning_manager_orchestrator.py`.
-   - [ ] Test orchestrator decisions are rejected when they request a non-existent capability.
-   - [ ] Test policy downgrades preserve deterministic fallback behavior.
+1. [x] Create `misc/PELICAN_mvp/pelican_mvp/agents/learning_capabilities.py`.
+   - [x] Add the proposed `LearningCapability` type.
+   - [x] Add the proposed `CapabilityRequest` type.
+   - [x] Add the proposed `CapabilityResult` type.
+   - [x] Add the proposed `CapabilityRegistry` class with register, lookup, policy validation, and safe failure result methods.
+2. [x] Modify `misc/PELICAN_mvp/pelican_mvp/agents/learning_manager_orchestrator.py`.
+   - [x] Validate proposed capability names against the registry or a registry-provided manifest.
+   - [x] Reject or downgrade decisions whose policy cannot use the requested capability.
+3. [x] Modify `misc/PELICAN_mvp/pelican_mvp/engine.py` if registry construction belongs to the engine.
+   - [x] Defer engine-owned registry construction to Phase 4 because registry ownership belongs to engine wiring.
+   - [x] Keep Phase 3 wrappers independent so existing specialist implementations can be reused without premature engine coupling.
+4. [x] Create `misc/PELICAN_mvp/tests/test_learning_capabilities.py`.
+   - [x] Test capability registration and lookup.
+   - [x] Test unknown capability rejection.
+   - [x] Test policy-denied capability calls.
+   - [x] Test no-write capability metadata.
+   - [x] Test write-capable capability metadata is explicit.
+5. [x] Modify `misc/PELICAN_mvp/tests/test_learning_manager_orchestrator.py`.
+   - [x] Test orchestrator decisions are rejected when they request a non-existent capability.
+   - [x] Test policy downgrades preserve deterministic fallback behavior.
 
 #### Test Plan
 
