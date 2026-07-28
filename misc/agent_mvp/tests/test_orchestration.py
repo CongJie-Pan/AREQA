@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.delegation import DelegationManager, build_child_system_prompt
-from core.orchestrator import OrchestratorAgent
+from core.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT, OrchestratorAgent
 from core.tools import ToolRegistry
 
 
@@ -219,3 +219,10 @@ def test_none_tool_policy_prompt_discourages_example_tool_calls():
 
     assert "Tool policy: none" in prompt
     assert "do not ask to call tools for examples" in prompt
+
+
+def test_orchestrator_prompt_grants_base_policy_for_tool_backed_child_tasks():
+    """Delegated tool-backed work should be routed with base tool access."""
+    assert 'tool_policy="base"' in ORCHESTRATOR_SYSTEM_PROMPT
+    assert "arithmetic" in ORCHESTRATOR_SYSTEM_PROMPT
+    assert "tool-backed" in ORCHESTRATOR_SYSTEM_PROMPT

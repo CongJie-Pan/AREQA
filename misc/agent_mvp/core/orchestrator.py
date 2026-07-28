@@ -22,6 +22,8 @@ Rules:
 - Delegate independent subtasks, not your entire job.
 - When delegating conceptual analysis, set tool_policy="none".
 - Set tool_policy="base" only when the child needs normal tools.
+- If the delegated task involves arithmetic, lookup, weather, or any tool-backed
+  action, set tool_policy="base" so the child can call the required normal tool.
 - Set tool_policy="delegate" only for a child orchestrator that must spawn workers.
 - For normal specialist children, set role="leaf".
 - For a child that must coordinate other children, set role exactly to "orchestrator".
