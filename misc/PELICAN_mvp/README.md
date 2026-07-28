@@ -46,7 +46,7 @@ pip install -r requirements.txt
 python -m pelican_mvp
 
 # dev mode
-python -m pelican_mvp --pelican-log debug --pelican-log-channels api,intake,skill,diagnosis,state,edf,memory,tutor,methodology
+python -m pelican_mvp --pelican-log info --pelican-log-channels methodology
 ```
 
 瀏覽器開啟：
