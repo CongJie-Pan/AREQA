@@ -76,6 +76,56 @@ class SafePelicanFormatter(logging.Formatter):
         return super().format(record)
 
 
+class CompactPelicanFormatter(SafePelicanFormatter):
+    """Render only populated safe structured fields for normal terminal logs.
+
+    ``info`` mode is intended for live debugging while using the app. Empty
+    allow-listed keys are omitted so progress and orchestration events stay
+    readable, while ``debug`` mode can still use ``SafePelicanFormatter`` for a
+    dense, fixed-column dump. The formatter reads only fields already accepted
+    by ``pelican_mvp.observability.log_event`` and does not inspect raw learner
+    answers, prompts, model output, credentials, or exception messages.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def format(self, record: logging.LogRecord) -> str:
+        super().format(record)
+        parts = [f"PELICAN {record.levelname}"]
+        for field in LOG_FIELDS:
+            value = getattr(record, field)
+            if value in {"", "-", None}:
+                continue
+            parts.append(f"{_compact_log_label(field)}={value}")
+        return " ".join(parts)
+
+
+def _compact_log_label(field: str) -> str:
+    """Return the compact terminal label used for one safe structured field."""
+    return {
+        "debug_channel": "channel",
+        "learner_token": "learner",
+        "reason_code": "reason",
+        "activity_code": "activity",
+        "activity_status": "status",
+        "detail_code": "detail",
+        "domain_category": "domain",
+        "api_status_code": "api_status",
+        "api_error_type": "api_error",
+        "skill_id": "skill",
+        "semantic_intent": "semantic",
+        "semantic_confidence": "confidence",
+        "learner_state": "edf",
+        "memory_event": "memory",
+        "remediation_reason": "remediation",
+        "turn_id": "turn",
+        "cycle_id": "cycle",
+        "target_phase": "target",
+        "idempotency_key": "idempotency",
+    }.get(field, field)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the MVP server after cleaning up stale local PELICAN listeners."""
     parser = argparse.ArgumentParser(description="Run the PELICAN MVP web server.")
@@ -147,24 +197,27 @@ def configure_runtime_logging(mode: str | None = None, channels: str | None = No
     handler.setLevel(logging.DEBUG if selected_mode == "debug" else logging.INFO)
     handler.filters.clear()
     handler.addFilter(channel_filter)
-    handler.setFormatter(
-        SafePelicanFormatter(
-            "PELICAN %(levelname)s channel=%(debug_channel)s event=%(event)s endpoint=%(endpoint)s "
-            "learner=%(learner_token)s phase=%(phase)s activity=%(activity_code)s "
-            "status=%(activity_status)s reason=%(reason_code)s detail=%(detail_code)s domain=%(domain_category)s "
-            "route=%(route)s api_status=%(api_status_code)s api_error=%(api_error_type)s "
-            "schema_mode=%(schema_mode)s schema_format=%(schema_format)s "
-            "schema_strict=%(schema_strict)s schema_fallback=%(schema_fallback)s "
-            "skill=%(skill_id)s skill_source=%(skill_source)s "
-            "intake_source=%(intake_source)s semantic=%(semantic_intent)s confidence=%(semantic_confidence)s "
-            "diagnostic_source=%(diagnostic_source)s "
-            "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "
-            "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s "
-            "turn=%(turn_id)s cycle=%(cycle_id)s action=%(action)s capability=%(capability)s "
-            "policy=%(policy)s target=%(target_phase)s confidence_bucket=%(confidence_bucket)s "
-            "proposal_source=%(proposal_source)s outcome=%(outcome)s idempotency=%(idempotency_key)s"
+    if selected_mode == "debug":
+        handler.setFormatter(
+            SafePelicanFormatter(
+                "PELICAN %(levelname)s channel=%(debug_channel)s event=%(event)s endpoint=%(endpoint)s "
+                "learner=%(learner_token)s phase=%(phase)s activity=%(activity_code)s "
+                "status=%(activity_status)s reason=%(reason_code)s detail=%(detail_code)s domain=%(domain_category)s "
+                "route=%(route)s api_status=%(api_status_code)s api_error=%(api_error_type)s "
+                "schema_mode=%(schema_mode)s schema_format=%(schema_format)s "
+                "schema_strict=%(schema_strict)s schema_fallback=%(schema_fallback)s "
+                "skill=%(skill_id)s skill_source=%(skill_source)s "
+                "intake_source=%(intake_source)s semantic=%(semantic_intent)s confidence=%(semantic_confidence)s "
+                "diagnostic_source=%(diagnostic_source)s "
+                "node=%(node_id)s edf=%(learner_state)s strategy=%(strategy)s "
+                "edf_transition=%(edf_transition)s memory=%(memory_event)s remediation=%(remediation_reason)s "
+                "turn=%(turn_id)s cycle=%(cycle_id)s action=%(action)s capability=%(capability)s "
+                "policy=%(policy)s target=%(target_phase)s confidence_bucket=%(confidence_bucket)s "
+                "proposal_source=%(proposal_source)s outcome=%(outcome)s idempotency=%(idempotency_key)s"
+            )
         )
-    )
+    else:
+        handler.setFormatter(CompactPelicanFormatter())
     logger.propagate = False
 
 

@@ -32,7 +32,7 @@ class TutorAgentResponse:
 
 
 class FastTutorAgent:
-    """Produce concise grounded tutor responses with fail-closed validation."""
+    """Produce concise grounded tutor responses with boundary validation."""
 
     role = AgentRole.FAST_TUTOR_AGENT
 
@@ -69,6 +69,7 @@ class FastTutorAgent:
             recent_safe_signals=recent_safe_signals,
             base_message=base_message,
             turn_interpretation=turn_interpretation,
+            context=context,
             slow_route=False,
         )
         return _response_from_proposal(self.role, proposal, status, reason)
@@ -88,6 +89,7 @@ def _candidate_or_fallback(
     recent_safe_signals: tuple[str, ...],
     base_message: str | None,
     turn_interpretation: TurnInterpretation | None,
+    context: AgentExecutionContext | None,
     slow_route: bool,
 ) -> tuple[BoundedTutorProposal, ProposalValidationStatus, str]:
     """Return a validated LLM candidate or explicit deterministic fallback."""
@@ -116,6 +118,8 @@ def _candidate_or_fallback(
                     if state.learning_plan
                     else {}
                 ),
+                recent_messages=context.recent_messages if context else (),
+                last_assistant_prompt=context.last_assistant_prompt if context else "",
                 turn_interpretation=turn_interpretation,
             )
             log_event(
@@ -182,108 +186,24 @@ def validate_tutor_proposal(
     *,
     domain_category: str | None = None,
 ) -> tuple[ProposalValidationStatus, str]:
-    """Validate a bounded tutor proposal before learner display."""
+    """Validate only structural and safety boundaries before learner display.
+
+    Pedagogical quality decisions belong to the Learning Manager, tutor agent
+    prompt contract, and proposal generation loop. This validator rejects only
+    proposals that are unsafe to route because they are empty, off-node,
+    strategy-inconsistent, or outside bounded display length.
+    """
     if proposal is None:
         return ProposalValidationStatus.REJECTED, "empty_tutor_proposal"
     if proposal.node_id != node_id:
         return ProposalValidationStatus.REJECTED, "off_node_tutor_proposal"
     if proposal.strategy != strategy.value:
         return ProposalValidationStatus.REJECTED, "strategy_mismatch"
-    if proposal.evidence_signal in {"unknown", "inability_to_respond"} and _is_question_only_inability_response(
-        proposal.response
-    ):
-        return ProposalValidationStatus.REJECTED, "question_only_inability_response"
-    if domain_category == "humanities" and proposal.evidence_signal in {
-        "unknown",
-        "inability_to_respond",
-        "incorrect",
-        "partial_correct",
-        "difficulty_in_understanding",
-    } and _lacks_humanities_explanation_cycle(proposal.response):
-        return ProposalValidationStatus.REJECTED, "thin_humanities_remediation"
-    if (
-        domain_category == "humanities"
-        and proposal.evidence_signal == "partial_correct"
-        and _lacks_partial_correct_acknowledgement(proposal.response)
-    ):
-        return ProposalValidationStatus.REJECTED, "missing_partial_acknowledgement"
     if len(proposal.response) > 900:
         return ProposalValidationStatus.REJECTED, "tutor_response_too_long"
     if len(proposal.response.strip()) < 8:
         return ProposalValidationStatus.REJECTED, "tutor_response_too_short"
     return ProposalValidationStatus.ACCEPTED, "accepted"
-
-
-def _is_question_only_inability_response(response: str) -> bool:
-    """Return whether an inability response keeps probing without teaching.
-
-    Args:
-        response: Candidate learner-facing tutor response.
-
-    Returns:
-        ``True`` when the response appears to be primarily another diagnostic
-        question. This is intentionally conservative: direct teaching may end
-        with one low-load check, but it must include explicit explanation
-        markers before the question.
-    """
-    text = response.strip()
-    if not any(mark in text for mark in ("?", "？", "你認為", "如何", "什麼")):
-        return False
-    teaching_markers = (
-        "重點",
-        "答案",
-        "先直接",
-        "先講",
-        "原因",
-        "因為",
-        "例如",
-        "也就是",
-        "這表示",
-        "所以",
-        "說明",
-    )
-    return not any(marker in text for marker in teaching_markers)
-
-
-def _lacks_humanities_explanation_cycle(response: str) -> bool:
-    """Return whether humanities remediation skips teaching before rechecking.
-
-    Humanities learners often need an explanatory narrative before a mastery
-    check. This validator blocks LLM proposals that continue probing or offer a
-    thin hint without asking one scaffolded causal/contextual micro-check.
-    """
-    text = response.strip()
-    explanation_markers = (
-        "背景",
-        "脈絡",
-        "原因",
-        "關鍵",
-        "因為",
-        "所以",
-        "先理解",
-        "先抓",
-        "這表示",
-        "這代表",
-    )
-    check_markers = (
-        "先不用完整重述",
-        "你可以先說說看",
-        "最關鍵",
-        "轉折點",
-        "原因是哪",
-        "影響是哪",
-        "只選一個",
-        "用自己的話",
-        "再說一次",
-        "重新說",
-        "解釋給我聽",
-        "說給我聽",
-        "複述",
-    )
-    return not (
-        any(marker in text for marker in explanation_markers)
-        and any(marker in text for marker in check_markers)
-    )
 
 
 def _concept_description_from_state(state: SessionState, node_id: str) -> str:
@@ -301,23 +221,6 @@ def _remediation_template_from_state(state: SessionState, node_id: str) -> str:
     if not state.learning_plan:
         return ""
     return state.learning_plan.remediation_templates.get(node_id, "")
-
-
-def _lacks_partial_correct_acknowledgement(response: str) -> bool:
-    """Return whether a partial-correct remediation ignores useful evidence."""
-    text = response.strip()
-    acknowledgement_markers = (
-        "你說",
-        "你提到",
-        "你抓到",
-        "你已經",
-        "這句",
-        "這個方向",
-        "對",
-        "沒錯",
-        "是對的",
-    )
-    return not any(marker in text for marker in acknowledgement_markers)
 
 
 def fallback_tutor_proposal(

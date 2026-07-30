@@ -31,12 +31,16 @@ class AgentExecutionContext:
         edf_state: Safe EDF learner-state label.
         edf_policy: Safe EDF policy label.
         recent_safe_signals: Bounded GUM signal labels.
+        recent_messages: Bounded recent learner-visible transcript turns used
+            only for response continuity.
+        last_assistant_prompt: Latest learner-visible assistant prompt used to
+            avoid repeating the same follow-up question.
 
     Compatibility:
-        This context intentionally excludes raw learner answers, prompts, model
-        output, credentials, provider payloads, and hidden reasoning. Agents that
-        need raw text for classification should receive it through a phase-local
-        method argument and must return only safe proposal metadata.
+        This context intentionally excludes hidden reasoning, model output,
+        credentials, provider payloads, and non-visible prompts. Recent messages
+        may contain learner-visible transcript text and must not be copied into
+        structured logs or safe proposal metadata.
     """
 
     learner_id: str | None = None
@@ -49,6 +53,8 @@ class AgentExecutionContext:
     edf_state: str = "unknown"
     edf_policy: str = "unknown"
     recent_safe_signals: tuple[str, ...] = ()
+    recent_messages: tuple[dict[str, str], ...] = ()
+    last_assistant_prompt: str = ""
 
     def to_log_fields(self) -> dict[str, str | int | None]:
         """Return allow-listed correlation fields for structured logs."""

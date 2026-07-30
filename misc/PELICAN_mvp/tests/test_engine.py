@@ -123,6 +123,56 @@ def test_llm_intake_topic_revision_resets_onboarding_topic(tmp_path: Path) -> No
     assert engine.state.learning_plan is None
 
 
+def test_llm_ambiguous_goal_answer_requests_clarification_without_advancing(tmp_path: Path) -> None:
+    class AmbiguousGoalLlm:
+        available = True
+
+        def intake_question(self, *, topic: str, domain_category: DomainCategory, stage: str, model_route=None):
+            return f"{topic} 的 {stage} 問題？"
+
+        def classify_intake_semantics(
+            self,
+            *,
+            current_topic: str,
+            answer: str,
+            stage: str,
+            domain_category: DomainCategory,
+            model_route=None,
+        ):
+            return IntakeSemanticSignal(
+                intent="ambiguous",
+                confidence=0.1,
+                reason_code="gibberish_or_unclear",
+            )
+
+        def intake_clarification(
+            self,
+            *,
+            topic: str,
+            domain_category: DomainCategory,
+            stage: str,
+            reason_code: str,
+            model_route=None,
+        ):
+            return "我不太確定你剛剛想表達的學習目的。你想看戰爭原因、重要戰役，還是先從概覽開始？"
+
+    engine = PelicanEngine(tmp_path, mode="llm")
+    engine.llm = AmbiguousGoalLlm()
+    engine.start()
+    engine.respond("日本二戰歷史")
+
+    outcome = engine.respond(". . .888")
+
+    assert "不太確定" in outcome.message
+    assert "戰爭原因" in outcome.message
+    assert engine.state.phase == "onboarding"
+    assert engine.state.intake_profile.intake_turns == 1
+    assert engine.state.intake_profile.goal_summary == "學習 日本二戰歷史"
+    assert engine.state.agent_proposals[-1].artifact_type == "intake_clarification"
+    assert engine.state.agent_proposals[-1].reason_code == "gibberish_or_unclear"
+    assert engine.state.methodology_events[-1].reason_code == "gibberish_or_unclear"
+
+
 def test_rule_intake_topic_revision_fallback_when_llm_unavailable(tmp_path: Path) -> None:
     engine = PelicanEngine(tmp_path)
     engine.start()
@@ -530,6 +580,39 @@ def test_orchestrator_diagnose_answer_dispatches_through_engine_handler(tmp_path
     assert engine.state.history
 
 
+def test_orchestrator_reroutes_correct_tutor_response_to_mastery_write(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.state.phase = "tutoring"
+    engine.state.current_node_id = "jianzhou_jurchen_origins"
+    engine.state.current_prompt = "請用一句話重述努爾哈赤如何擴張勢力。"
+    engine.state.current_expected_answer = "努爾哈赤整合建州女真"
+    engine.state.current_prompt_source = "llm"
+    interpretation = TurnInterpretation(
+        learner_act="answer_attempt",
+        understanding_status="correct",
+        understood_points=("努爾哈赤整合建州女真",),
+        teaching_move="acknowledge_then_advance",
+        recommended_capability="tutor_response",
+        should_advance_pipeline=True,
+        reason_code="correct_restatement",
+    )
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.CALL_CAPABILITY,
+        capability="tutor_response",
+        policy=CapabilityPolicy.SPECIALIST,
+        turn_interpretation=interpretation,
+    )
+
+    outcome = engine.respond("他整合建州女真各部，逐步擴張。")
+
+    assert outcome.category is ResponseCategory.CORRECT
+    assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.MASTERED
+    assert engine.state.current_node_id == "eight_banners_system"
+    assert "你剛剛的回答抓到" in outcome.message
+    assert engine.state.orchestration_trace[-1].reason_code == "tutor_response_rerouted_to_mastery_write"
+
+
 def test_engine_repairs_orchestrator_policy_denied_before_legacy_fallback(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -696,6 +779,12 @@ def test_orchestrator_rejects_conversation_control_for_pending_onboarding_answer
 
 
 def test_learning_manager_interpretation_guides_humanities_broad_answer(tmp_path: Path) -> None:
+    class UnavailableTutorProposalLlm:
+        available = True
+
+        def tutor_proposal(self, **kwargs):
+            raise LlmUnavailable("tutor unavailable", reason_codes=("llm_unavailable",))
+
     engine = _prepared_generated_humanities_engine(tmp_path)
     interpretation = TurnInterpretation(
         learner_act="answer_attempt",
@@ -708,6 +797,7 @@ def test_learning_manager_interpretation_guides_humanities_broad_answer(tmp_path
         reason_code="broad_humanities_answer",
     )
     engine.state.mode = "llm"
+    engine.llm = UnavailableTutorProposalLlm()
     engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
         LearningManagerAction.FALLBACK_LEGACY_PIPELINE,
         turn_interpretation=interpretation,
@@ -734,9 +824,80 @@ def test_generated_humanities_correct_restatement_bridges_before_next_diagnostic
     outcome = engine.respond("domain abolition")
 
     assert outcome.category is ResponseCategory.CORRECT
-    assert "接下來我們把時間往後推" in outcome.message
-    assert "這個知識點可以先視為理解了" in outcome.message
+    assert "你剛剛的回答抓到" in outcome.message
+    assert "這個概念「建州女真的崛起」可以先標記為掌握" in outcome.message
+    assert "接下來進入下一個概念：「八旗制度的建立」" in outcome.message
+    assert "先用一題確認你的起點" in outcome.message
+    assert "八旗制度為什麼有助於後金政權擴張" in outcome.message
+    assert not outcome.message.startswith("說得對，這個知識點可以先視為理解了")
     assert "\n\n" in outcome.message
+
+
+def test_generated_humanities_correct_diagnostic_acknowledges_before_next_question(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    interpretation = TurnInterpretation(
+        learner_act="answer_attempt",
+        understanding_status="correct",
+        understood_points=("努爾哈赤整合建州女真",),
+        teaching_move="acknowledge_then_advance",
+        recommended_capability="diagnose_answer",
+        should_advance_pipeline=True,
+        reason_code="correct_diagnostic",
+    )
+    engine.state.mode = "llm"
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.CALL_CAPABILITY,
+        capability="diagnose_answer",
+        policy=CapabilityPolicy.WRITE_PROPOSED,
+        turn_interpretation=interpretation,
+    )
+
+    outcome = engine.respond("努爾哈赤整合建州女真")
+
+    assert outcome.category is ResponseCategory.CORRECT
+    assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.MASTERED
+    assert "你剛剛的回答抓到：努爾哈赤整合建州女真" in outcome.message
+    assert "接下來進入下一個概念：「八旗制度的建立」" in outcome.message
+    assert "先用一題確認你的起點" in outcome.message
+
+
+def test_orchestrated_resume_generated_tutoring_does_not_replay_stale_praise(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.state.phase = "tutoring"
+    engine.state.current_node_id = "jianzhou_jurchen_origins"
+    engine.state.current_prompt = "太棒了！你的回答非常精確且完整。"
+    engine.state.current_prompt_source = "llm"
+    engine.state.nodes["jianzhou_jurchen_origins"].status = KnowledgeStatus.NOT_MASTERED
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.RESUME_PIPELINE,
+    )
+
+    outcome = engine.respond("好")
+
+    assert "太棒了！你的回答非常精確且完整" not in outcome.message
+    assert "我們還停在「建州女真的崛起」" in outcome.message
+    assert engine.state.nodes["jianzhou_jurchen_origins"].status is KnowledgeStatus.NOT_MASTERED
+    assert engine.state.current_node_id == "jianzhou_jurchen_origins"
+
+
+def test_orchestrated_resume_mastered_generated_node_advances_to_next_diagnostic(tmp_path: Path) -> None:
+    engine = _prepared_generated_humanities_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.state.phase = "tutoring"
+    engine.state.current_node_id = "jianzhou_jurchen_origins"
+    engine.state.current_prompt = "太棒了！你的回答非常精確且完整。"
+    engine.state.current_prompt_source = "llm"
+    engine.state.nodes["jianzhou_jurchen_origins"].status = KnowledgeStatus.MASTERED
+    engine.learning_manager_orchestrator = FakeLearningManagerOrchestrator(
+        LearningManagerAction.RESUME_PIPELINE,
+    )
+
+    outcome = engine.respond("好")
+
+    assert outcome.node_id == "eight_banners_system"
+    assert "八旗制度為什麼有助於後金政權擴張" in outcome.message
+    assert "太棒了！你的回答非常精確且完整" not in outcome.message
 
 
 def test_orchestrated_capability_logs_safe_same_turn_trace(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

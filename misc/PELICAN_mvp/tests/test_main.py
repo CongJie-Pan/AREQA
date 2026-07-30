@@ -91,6 +91,28 @@ def test_safe_pelican_formatter_prints_safe_reason_code() -> None:
     )
 
 
+def test_compact_pelican_formatter_omits_empty_structured_fields() -> None:
+    formatter = main_module.CompactPelicanFormatter()
+    record = logging.LogRecord(
+        name="pelican_mvp",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="pelican_activity",
+        args=(),
+        exc_info=None,
+    )
+    record.event = "pelican_activity"
+    record.debug_channel = "activity"
+    record.activity_code = "intake_question_generated"
+
+    output = formatter.format(record)
+
+    assert output == "PELICAN INFO event=pelican_activity channel=activity activity=intake_question_generated"
+    assert "api_status=-" not in output
+    assert "phase=-" not in output
+
+
 def test_configure_runtime_logging_filters_terminal_channels(capsys) -> None:
     logger = logging.getLogger("pelican_mvp")
     for handler in list(logger.handlers):
@@ -106,6 +128,7 @@ def test_configure_runtime_logging_filters_terminal_channels(capsys) -> None:
     assert "channel=api" in output
     assert "endpoint=/api/start" in output
     assert "learner=" in output
+    assert "phase=-" not in output
     assert "pelican_skill_loaded" not in output
 
 
@@ -173,6 +196,7 @@ def test_configure_runtime_logging_prints_orchestration_debug_fields(capsys) -> 
     assert "proposal_source=llm" in output
     assert "outcome=accepted" in output
     assert "idempotency=turn_1:snapshot:call_capability:diagnose_answer" in output
+    assert "api_status=-" not in output
     assert "private learner text" not in output
 
 

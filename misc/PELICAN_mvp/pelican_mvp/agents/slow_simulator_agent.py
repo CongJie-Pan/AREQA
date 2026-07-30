@@ -117,6 +117,7 @@ class SlowSimulatorAgent:
             recent_safe_signals=recent_safe_signals,
             base_message=base_message,
             turn_interpretation=turn_interpretation,
+            context=context,
             slow_route=True,
         )
         proposal = replace(

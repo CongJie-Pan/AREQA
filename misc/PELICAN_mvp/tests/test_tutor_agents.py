@@ -2,9 +2,8 @@ from pathlib import Path
 from dataclasses import replace
 
 from pelican_mvp.agents import FastTutorAgent, SlowSimulatorAgent
-from pelican_mvp.agents.fast_tutor_agent import _lacks_humanities_explanation_cycle
 from pelican_mvp.engine import PelicanEngine
-from pelican_mvp.models import AgentRole, BoundedTutorProposal, ProposalValidationStatus, TutoringStrategy
+from pelican_mvp.models import AgentRole, BoundedTutorProposal, ProposalValidationStatus, TranscriptEntry, TutoringStrategy
 
 
 class OffNodeTutorLlm:
@@ -70,6 +69,25 @@ class SlowChoiceLlm:
             response="Here is a short reframing of the current idea before the next check.",
             pedagogical_move="short_reframe",
             summary="Selected short reframe from candidate simulation.",
+            node_id=kwargs["node_id"],
+            strategy=kwargs["strategy"].value,
+            evidence_signal=kwargs["evidence_signal"],
+            source="llm",
+        )
+
+
+class RecordingTutorContextLlm:
+    available = True
+
+    def __init__(self) -> None:
+        self.kwargs = {}
+
+    def tutor_proposal(self, **kwargs) -> BoundedTutorProposal:
+        self.kwargs = kwargs
+        return BoundedTutorProposal(
+            response="我會承接上一題，不重複同一個檢核問題。",
+            pedagogical_move="contextual_follow_up",
+            summary="Uses recent tutor context.",
             node_id=kwargs["node_id"],
             strategy=kwargs["strategy"].value,
             evidence_signal=kwargs["evidence_signal"],
@@ -154,6 +172,34 @@ def test_slow_simulator_agent_accepts_valid_llm_candidate_selection(tmp_path: Pa
     assert "selection=llm" in response.result.display_summary
 
 
+def test_fast_tutor_agent_passes_recent_visible_context_to_llm(tmp_path: Path) -> None:
+    engine = prepared_engine(tmp_path)
+    engine.state.mode = "llm"
+    engine.state.transcript.append(
+        TranscriptEntry(
+            role="assistant",
+            text="你覺得廢藩置縣對建立軍隊有什麼好處？",
+            phase="tutoring",
+        )
+    )
+    llm = RecordingTutorContextLlm()
+    agent = FastTutorAgent(llm)
+
+    response = agent.propose_response(
+        state=engine.state,
+        curriculum=engine.curriculum,
+        strategy=TutoringStrategy.EXPLANATION,
+        node_id="math_intuition",
+        base_prompt=engine.state.current_prompt,
+        evidence_signal="partial_correct",
+        context=engine._learning_manager_turn_context("會更統一、行動一致?"),
+    )
+
+    assert response.validation_status is ProposalValidationStatus.ACCEPTED
+    assert llm.kwargs["last_assistant_prompt"] == "你覺得廢藩置縣對建立軍隊有什麼好處？"
+    assert llm.kwargs["recent_messages"][-1]["text"] == "你覺得廢藩置縣對建立軍隊有什麼好處？"
+
+
 def test_invalid_llm_tutor_proposal_falls_back_safely(tmp_path: Path) -> None:
     engine = prepared_engine(tmp_path)
     engine.state.mode = "llm"
@@ -173,7 +219,7 @@ def test_invalid_llm_tutor_proposal_falls_back_safely(tmp_path: Path) -> None:
     assert response.proposal.source == "rule"
 
 
-def test_question_only_unknown_tutor_proposal_falls_back_to_explanation(tmp_path: Path) -> None:
+def test_question_only_unknown_tutor_proposal_is_not_rejected_by_validator(tmp_path: Path) -> None:
     engine = prepared_engine(tmp_path)
     engine.state.mode = "llm"
     agent = FastTutorAgent(QuestionOnlyUnknownTutorLlm())
@@ -188,12 +234,13 @@ def test_question_only_unknown_tutor_proposal_falls_back_to_explanation(tmp_path
         base_message="沒關係，我先直接講「數學直覺」。\n\n重點是：先理解誤差代表猜測偏差。",
     )
 
-    assert response.validation_status is ProposalValidationStatus.FALLBACK_USED
-    assert response.result.reason_code == "question_only_inability_response"
-    assert "重點是" in response.proposal.response
+    assert response.validation_status is ProposalValidationStatus.ACCEPTED
+    assert response.result.reason_code == "accepted"
+    assert response.proposal.source == "llm"
+    assert response.proposal.response == "你認為這個概念還可以從哪個角度繼續拆解？"
 
 
-def test_humanities_partial_correct_without_acknowledgement_falls_back(tmp_path: Path) -> None:
+def test_humanities_partial_correct_without_acknowledgement_is_not_rejected_by_validator(tmp_path: Path) -> None:
     engine = prepared_engine(tmp_path)
     engine.state.mode = "llm"
     engine.state.intake_profile = replace(engine.state.intake_profile, domain_category="humanities")
@@ -211,15 +258,7 @@ def test_humanities_partial_correct_without_acknowledgement_falls_back(tmp_path:
         base_message="你說到改革與西化是對的，我再補一點。\n\n先不用完整重述。你可以先說說看最關鍵的轉折點是哪一個？",
     )
 
-    assert response.validation_status is ProposalValidationStatus.FALLBACK_USED
-    assert response.result.reason_code == "missing_partial_acknowledgement"
-    assert "你說到改革與西化是對的" in response.proposal.response
-
-
-def test_humanities_explanation_cycle_accepts_scaffolded_micro_check() -> None:
-    response = (
-        "先建立背景脈絡：這個事件的關鍵在於戰略主動權改變。"
-        "先不用完整重述。你可以先說說看最關鍵的轉折點是哪一個？"
-    )
-
-    assert _lacks_humanities_explanation_cycle(response) is False
+    assert response.validation_status is ProposalValidationStatus.ACCEPTED
+    assert response.result.reason_code == "accepted"
+    assert response.proposal.source == "llm"
+    assert "明治維新的背景脈絡" in response.proposal.response

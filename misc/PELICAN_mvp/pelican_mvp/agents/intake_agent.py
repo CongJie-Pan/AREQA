@@ -20,6 +20,7 @@ class IntakeInterpretation:
     goal_summary: str = ""
     intent: LearningIntent = LearningIntent.UNKNOWN
     level_hint: str = "unknown"
+    clarification_message: str = ""
     domain_resolution: DomainResolution | None = None
 
 
@@ -85,6 +86,45 @@ class IntakeAgent:
             display_summary=f"level:{level_hint}",
         )
         return IntakeInterpretation(result=result, level_hint=bound_agent_text(level_hint, 80) or "unknown")
+
+    def propose_clarification(
+        self,
+        *,
+        stage: str,
+        message: str,
+        reason_code: str,
+        source: str,
+        context: AgentExecutionContext | None = None,
+    ) -> IntakeInterpretation:
+        """Propose a bounded onboarding clarification without mutating state.
+
+        Args:
+            stage: Pending onboarding slot, such as ``goal`` or ``level``.
+            message: Learner-facing clarification selected by the engine.
+            reason_code: Safe semantic reason that triggered clarification.
+            source: Safe message source label, such as ``llm`` or ``rule``.
+            context: Optional turn context used only for safe artifact refs.
+
+        Returns:
+            A bounded clarification interpretation. ``PelicanEngine`` remains
+            responsible for recording the proposal and preserving the current
+            intake slot.
+        """
+        ref = safe_artifact_ref(
+            "learner_turn",
+            (context.turn_id if context else None) or "turn",
+            f"{stage} clarification",
+        )
+        result = self._result(
+            "intake_clarification",
+            ref,
+            reason_code,
+            display_summary=f"{stage}:{source}",
+        )
+        return IntakeInterpretation(
+            result=result,
+            clarification_message=bound_agent_text(message, 500),
+        )
 
     def _result(
         self,

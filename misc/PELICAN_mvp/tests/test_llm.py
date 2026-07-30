@@ -260,6 +260,11 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
         teaching_methodology={"sequencing": "先背景，再事件，最後因果。"},
         dialogue_act="micro_check_confusion",
         dialogue_target="turning_point",
+        last_assistant_prompt="你覺得廢藩置縣對建立軍隊有什麼好處？",
+        recent_messages=(
+            {"role": "assistant", "text": "你覺得廢藩置縣對建立軍隊有什麼好處？"},
+            {"role": "user", "text": "會更統一、行動一致?"},
+        ),
         turn_interpretation=TurnInterpretation(
             learner_act="answer_attempt",
             understanding_status="broad_but_incomplete",
@@ -280,6 +285,10 @@ def test_llm_tutor_proposal_prompt_includes_humanities_explain_check_contract() 
     assert "turn_interpretation:" in adapter.user_prompt
     assert "broad_but_incomplete" in adapter.user_prompt
     assert "acknowledge_then_clarify" in adapter.user_prompt
+    assert "last_assistant_prompt: 你覺得廢藩置縣對建立軍隊有什麼好處？" in adapter.user_prompt
+    assert "recent_visible_dialogue:" in adapter.user_prompt
+    assert "- user: 會更統一、行動一致?" in adapter.user_prompt
+    assert "avoid repeating the same micro-check" in adapter.user_prompt
     assert "start by acknowledging the specific useful idea" in adapter.user_prompt
     assert "先不用完整重述" in adapter.user_prompt
     assert "最關鍵的轉折點或原因" in adapter.user_prompt
@@ -729,3 +738,32 @@ def test_classify_intake_semantics_returns_bounded_signal() -> None:
     assert signal.new_topic == "春秋時期歷史"
     assert signal.confidence == 1.0
     assert signal.reason_code == "explicit_correction"
+
+
+def test_intake_clarification_returns_bounded_message() -> None:
+    class RecordingAdapter(LlmAdapter):
+        def __init__(self) -> None:
+            super().__init__(LlmConfig(api_key="test", model="legacy", base_url="test"))
+            self.model_seen = None
+            self.user_prompt = ""
+
+        def _json(self, system: str, user: str, *, model: str | None = None):
+            self.model_seen = model
+            self.user_prompt = user
+            return {
+                "message": "我不太確定你剛剛想表達的學習目的。你想看戰爭原因、重要戰役，還是先從概覽開始？",
+            }
+
+    adapter = RecordingAdapter()
+    message = adapter.intake_clarification(
+        topic="日本二戰歷史",
+        domain_category=DomainCategory.HUMANITIES,
+        stage="goal",
+        reason_code="gibberish_or_unclear",
+        model_route="humanities/model",
+    )
+
+    assert adapter.model_seen == "humanities/model"
+    assert "learner_answer" not in adapter.user_prompt
+    assert "reason_code: gibberish_or_unclear" in adapter.user_prompt
+    assert message == "我不太確定你剛剛想表達的學習目的。你想看戰爭原因、重要戰役，還是先從概覽開始？"

@@ -1084,6 +1084,8 @@ class LlmAdapter:
         teaching_methodology: dict[str, str] | None = None,
         dialogue_act: str = "",
         dialogue_target: str = "",
+        recent_messages: tuple[dict[str, str], ...] = (),
+        last_assistant_prompt: str = "",
         turn_interpretation: TurnInterpretation | None = None,
     ) -> BoundedTutorProposal | None:
         """Generate a bounded tutor proposal constrained by EDF/GUM state.
@@ -1111,6 +1113,10 @@ class LlmAdapter:
             teaching_methodology: Skill-authored pedagogy notes for this domain.
             dialogue_act: Optional bounded conversational role before diagnosis.
             dialogue_target: Optional short term from a clarification turn.
+            recent_messages: Bounded recent visible dialogue turns used to avoid
+                repeating the same micro-check.
+            last_assistant_prompt: Last assistant-visible prompt, used as a
+                repetition guard for the next tutor proposal.
             turn_interpretation: Optional safe Learning Manager teaching
                 interpretation used to acknowledge useful evidence and target
                 missing points.
@@ -1136,6 +1142,11 @@ class LlmAdapter:
             if turn_interpretation is not None
             else TurnInterpretation().to_dict()
         )
+        recent_dialogue_lines = "\n".join(
+            f"- {str(item.get('role', ''))[:32]}: {str(item.get('text', '')).strip()[:500]}"
+            for item in recent_messages[-6:]
+            if str(item.get("role", "")).strip() and str(item.get("text", "")).strip()
+        ) or "none"
         humanities_contract = (
             "domain_style_contract for humanities:\n"
             "- If current_signal is unknown, inability_to_respond, incorrect, partial_correct, or difficulty_in_understanding, do not keep probing first.\n"
@@ -1143,6 +1154,7 @@ class LlmAdapter:
             "- The mini-lesson should teach the missing knowledge in Traditional Chinese with narrative context, key actors/concepts, cause-effect links, and where this node sits in the knowledge map.\n"
             "- If current_signal is partial_correct, start by acknowledging the specific useful idea in latest_learner_answer before adding missing details. Do not ignore the learner's sentence.\n"
             "- If turn_interpretation.teaching_move is acknowledge_then_clarify, start by acknowledging understood_points, explain missing_points, and ask one gentle targeted follow-up. Do not replace this with a generic restart sentence.\n"
+            "- Use last_assistant_prompt and recent_visible_dialogue to avoid repeating the same micro-check. If the learner has already answered the previous question, acknowledge that answer and either ask a different sub-question or summarize and move toward the next concept.\n"
             "- End with a warm, low-pressure humanities micro-check rather than asking the learner to paraphrase the whole mini-lesson.\n"
             "- Prefer a scaffolded causal/context question. Example: 先不用完整重述。你可以先說說看：在剛剛這段裡，你覺得最關鍵的轉折點或原因是哪一個？如果一開始不好說，也可以只選一個你覺得重要的原因。\n"
             "- If the learner's next explanation is correct, the engine will unlock the next knowledge-map node; if not, the tutor should explain again based on that answer.\n"
@@ -1167,6 +1179,8 @@ class LlmAdapter:
             "recent_safe_signals: {recent_signals}\n"
             "latest_learner_answer: {learner_answer}\n"
             "current_prompt: {base_prompt}\n"
+            "last_assistant_prompt: {last_assistant_prompt}\n"
+            "recent_visible_dialogue:\n{recent_visible_dialogue}\n"
             "concept_description: {concept_description}\n"
             "expected_answer: {expected_answer}\n"
             "remediation_template: {remediation_template}\n"
@@ -1186,6 +1200,8 @@ class LlmAdapter:
                 recent_signals=", ".join(recent_signals[-5:]) or "none",
                 learner_answer=learner_answer[:800] or "none",
                 base_prompt=base_prompt,
+                last_assistant_prompt=last_assistant_prompt[:1000] or "none",
+                recent_visible_dialogue=recent_dialogue_lines[:1600],
                 concept_description=concept_description[:800] or "none",
                 expected_answer=expected_answer[:800] or "none",
                 remediation_template=remediation_template[:800] or "none",
@@ -1248,6 +1264,49 @@ class LlmAdapter:
         )
         question = str(payload.get("question", "")).strip()
         return question[:500] if question else None
+
+    def intake_clarification(
+        self,
+        *,
+        topic: str,
+        domain_category: DomainCategory,
+        stage: str,
+        reason_code: str,
+        model_route: str | None = None,
+    ) -> str | None:
+        """Generate one onboarding clarification after an unclear reply.
+
+        Args:
+            topic: Bounded learner topic from the onboarding state.
+            domain_category: Resolved teaching domain for domain-aware examples.
+            stage: Pending intake slot that still needs an answer.
+            reason_code: Safe semantic reason for the unclear reply.
+            model_route: Optional explicit route for tests or deployments.
+
+        Returns:
+            A single bounded learner-facing clarification, or ``None`` when the
+            model is unavailable or returns an empty payload.
+
+        Privacy:
+            The unclear raw learner answer is intentionally not passed here. The
+            model receives only the current topic, stage, domain, and safe reason
+            code so logs and generated text do not echo gibberish or accidental
+            personal data.
+        """
+        if not self.available:
+            return None
+        route = model_route or self.tutor_model_route()
+        payload = self._json(
+            "你是繁體中文學習訪談主持人。使用者剛剛在 onboarding 回覆不清楚，請產生一則自然、簡短的確認訊息。\n"
+            "不要責備使用者、不要教學、不要診斷細節、不要改變主題。只請使用者重新回答目前需要的欄位。",
+            f"topic: {topic}\ndomain_category: {domain_category.value}\nstage: {stage}\nreason_code: {reason_code}\n"
+            "stage=goal 時請確認學習目的或切入角度；stage=level 時請確認背景、經驗或熟悉度。\n"
+            "訊息要包含 2 到 4 個可直接選的方向，且只問一題。\n"
+            "輸出 JSON：{\"message\": str}",
+            model=route,
+        )
+        message = str(payload.get("message", "")).strip()
+        return message[:500] if message else None
 
     def classify_intake_semantics(
         self,
