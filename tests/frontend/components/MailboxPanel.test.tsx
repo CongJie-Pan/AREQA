@@ -1,7 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { message } from 'antd';
 import { MailboxPanel } from '../../../frontend/src/components/MailboxPanel';
 import { useMailboxStore } from '../../../frontend/src/store/mailbox';
 
@@ -101,5 +102,31 @@ describe('MailboxPanel', () => {
     fireEvent.click(screen.getByText(/Hello world/));
     
     expect(mockMarkAsRead).toHaveBeenCalledWith('1');
+  });
+
+  it('shows disabled notice when reply sending fails', async () => {
+    const messageError = vi.spyOn(message, 'error').mockImplementation(() => null as any);
+    mockSendReply.mockResolvedValue(false);
+    (useMailboxStore as any).mockReturnValue({
+      mails: [
+        { mail_id: '1', sender: 'Alice', recipient: 'User', content: 'Hello world', timestamp: 1600000000, is_read: true },
+      ],
+      loading: false,
+      fetchMails: mockFetchMails,
+      markAsRead: mockMarkAsRead,
+      sendReply: mockSendReply,
+      sendingReply: false,
+    });
+
+    render(<MailboxPanel />);
+    fireEvent.click(screen.getByText(/Hello world/));
+    fireEvent.change(screen.getByPlaceholderText(/寫信回覆給 Alice/), {
+      target: { value: 'reply content' },
+    });
+    fireEvent.click(screen.getByText(/發送信件/));
+
+    await waitFor(() => {
+      expect(messageError).toHaveBeenCalledWith('當前信件功能暫時停用，敬請見諒');
+    });
   });
 });

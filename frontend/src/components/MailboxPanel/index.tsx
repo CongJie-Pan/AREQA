@@ -80,7 +80,7 @@ export const MailboxPanel: React.FC<MailboxPanelProps> = ({ onClose }) => {
       setReplyContent('');
       message.success('信件已寄出！');
     } else {
-      message.error('發送信件失敗');
+      message.error('當前信件功能暫時停用，敬請見諒');
     }
   };
 
