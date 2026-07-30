@@ -8,6 +8,14 @@ import backend.services.compeer_scheduler as compeer
 from config import settings
 
 
+@pytest.fixture(autouse=True)
+def enable_mailbox_sending_for_compeer_tests():
+    original = settings.enable_mailbox_sending
+    settings.enable_mailbox_sending = True
+    yield
+    settings.enable_mailbox_sending = original
+
+
 @pytest.mark.parametrize(
     ("kwargs", "reason"),
     [

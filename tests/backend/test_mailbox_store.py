@@ -91,11 +91,12 @@ async def test_conversation_thread(temp_store):
 async def test_schedule_delayed_mail_persists_user_and_task_id(temp_store, caplog):
     caplog.set_level("INFO")
     store = temp_store
-    task_id = await store.schedule_delayed_mail(
-        "user1",
-        {"reply_content": "hello", "active_avatar": "柏拉圖"},
-        delay_seconds=300,
-    )
+    with patch("backend.mailbox_store._mailbox_sending_enabled", return_value=True):
+        task_id = await store.schedule_delayed_mail(
+            "user1",
+            {"reply_content": "hello", "active_avatar": "柏拉圖"},
+            delay_seconds=300,
+        )
 
     queued = list(store.redis.zsets["areqa:delayed_mail:user1"].keys())
     assert len(queued) == 1
@@ -105,6 +106,22 @@ async def test_schedule_delayed_mail_persists_user_and_task_id(temp_store, caplo
     assert payload["reply_content"] == "hello"
     assert "mailbox.scheduled" in caplog.text
     assert f"task_id={task_id}" in caplog.text
+    assert "hello" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_schedule_delayed_mail_is_disabled_by_default(temp_store, caplog):
+    caplog.set_level("INFO")
+    store = temp_store
+    task_id = await store.schedule_delayed_mail(
+        "user1",
+        {"task_id": "disabled-task", "reply_content": "hello"},
+        delay_seconds=300,
+    )
+
+    assert task_id == "disabled-task"
+    assert "areqa:delayed_mail:user1" not in store.redis.zsets
+    assert "mailbox.schedule_disabled task_id=disabled-task user_id=user1" in caplog.text
     assert "hello" not in caplog.text
 
 
@@ -194,16 +211,17 @@ async def test_ensure_delayed_task_schema_adds_missing_lease_columns(caplog):
 @pytest.mark.asyncio
 async def test_schedule_delayed_mail_skips_duplicate_task_id_in_redis(temp_store):
     store = temp_store
-    first_id = await store.schedule_delayed_mail(
-        "user1",
-        {"task_id": "same-task", "reply_content": "hello"},
-        delay_seconds=300,
-    )
-    second_id = await store.schedule_delayed_mail(
-        "user1",
-        {"task_id": "same-task", "reply_content": "hello again"},
-        delay_seconds=300,
-    )
+    with patch("backend.mailbox_store._mailbox_sending_enabled", return_value=True):
+        first_id = await store.schedule_delayed_mail(
+            "user1",
+            {"task_id": "same-task", "reply_content": "hello"},
+            delay_seconds=300,
+        )
+        second_id = await store.schedule_delayed_mail(
+            "user1",
+            {"task_id": "same-task", "reply_content": "hello again"},
+            delay_seconds=300,
+        )
 
     queued = list(store.redis.zsets["areqa:delayed_mail:user1"].keys())
     assert first_id == second_id == "same-task"
@@ -267,7 +285,10 @@ async def test_schedule_delayed_mail_survives_redis_failure_when_db_is_available
                         return "task-id"
                 return Cursor()
 
-        with patch("backend.mailbox_store.AsyncSession", return_value=FakeSession()):
+        with patch("backend.mailbox_store.AsyncSession", return_value=FakeSession()), patch(
+            "backend.mailbox_store._mailbox_sending_enabled",
+            return_value=True,
+        ):
             task_id = await store.schedule_delayed_mail(
                 "user1",
                 {"reply_content": "hello"},

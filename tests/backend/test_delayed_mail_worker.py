@@ -49,7 +49,7 @@ async def test_reconciled_task_is_delivered_exactly_once(caplog):
     store.claim_delayed_task.side_effect = [True, False]
     store.add_mail.return_value = "mail-1"
 
-    with patch(
+    with patch("backend.mailbox_store._mailbox_sending_enabled", return_value=True), patch(
         "services.connection_manager.ws_manager.broadcast_mail_alert",
         new_callable=AsyncMock,
     ):
@@ -83,7 +83,7 @@ async def test_notification_failure_does_not_undo_persisted_delivery(caplog):
     store.claim_delayed_task.return_value = True
     store.add_mail.return_value = "mail-2"
 
-    with patch(
+    with patch("backend.mailbox_store._mailbox_sending_enabled", return_value=True), patch(
         "services.connection_manager.ws_manager.broadcast_mail_alert",
         new_callable=AsyncMock,
         side_effect=RuntimeError("socket unavailable"),
@@ -114,8 +114,9 @@ async def test_unclaimable_due_task_is_removed_from_redis_queue(caplog):
     store = AsyncMock()
     store.claim_delayed_task.return_value = False
 
-    first = await run_delayed_mail_iteration(redis, store, "worker-1", now=1e12)
-    second = await run_delayed_mail_iteration(redis, store, "worker-1", now=1e12)
+    with patch("backend.mailbox_store._mailbox_sending_enabled", return_value=True):
+        first = await run_delayed_mail_iteration(redis, store, "worker-1", now=1e12)
+        second = await run_delayed_mail_iteration(redis, store, "worker-1", now=1e12)
 
     assert first == 0
     assert second == 0
@@ -147,7 +148,7 @@ async def test_database_reconciliation_restores_task_after_redis_enqueue_timeout
 
     store.restore_delayed_queue_from_db.side_effect = restore
     restored = await store.restore_delayed_queue_from_db()
-    with patch(
+    with patch("backend.mailbox_store._mailbox_sending_enabled", return_value=True), patch(
         "services.connection_manager.ws_manager.broadcast_mail_alert",
         new_callable=AsyncMock,
     ):
@@ -181,7 +182,10 @@ async def test_worker_ensures_schema_before_restore(caplog):
     store.ensure_delayed_task_schema.side_effect = ensure_schema
     store.restore_delayed_queue_from_db.side_effect = restore
 
-    with patch("backend.mailbox_store.get_redis", return_value=AsyncMock()), patch(
+    with patch("backend.mailbox_store._mailbox_sending_enabled", return_value=True), patch(
+        "backend.mailbox_store.get_redis",
+        return_value=AsyncMock(),
+    ), patch(
         "backend.mailbox_store.get_mailbox_store",
         return_value=store,
     ), patch(
@@ -195,3 +199,23 @@ async def test_worker_ensures_schema_before_restore(caplog):
     assert "mailbox.worker_starting" in caplog.text
     assert "mailbox.worker_restored" in caplog.text
     assert "mailbox.worker_started" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_run_delayed_mail_iteration_is_disabled_by_default(caplog):
+    caplog.set_level("INFO")
+    task = {
+        "task_id": "task-disabled",
+        "user_id": "user-disabled",
+        "sender": "AREQA",
+        "content": "safe content",
+    }
+    redis = WorkerRedis(task)
+    store = AsyncMock()
+
+    delivered = await run_delayed_mail_iteration(redis, store, "worker-disabled", now=1e12)
+
+    assert delivered == 0
+    store.claim_delayed_task.assert_not_awaited()
+    store.add_mail.assert_not_awaited()
+    assert "mailbox.worker_disabled worker_id=worker-disabled" in caplog.text

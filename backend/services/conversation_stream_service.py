@@ -200,7 +200,7 @@ class ConversationStreamService:
             try:
                 arguments = json.loads(tool_call_args)
                 avatar_name = arguments.get("avatar_name", "Unknown")
-                await self.tool_registry.execute(
+                result = await self.tool_registry.execute(
                     "schedule_letter",
                     {
                         "user_id": user_id,
@@ -213,9 +213,16 @@ class ConversationStreamService:
                     },
                     tool_budget,
                 )
-                notice = f"\n\n*(系統通知：已為您呼叫 {avatar_name or '對應角色'}，信件正在撰寫中，預計 5 分鐘後寄達。)*"
-                accumulator += notice
-                yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+                if result.status == "ok":
+                    notice = f"\n\n*(系統通知：已為您呼叫 {avatar_name or '對應角色'}，信件正在撰寫中，預計 5 分鐘後寄達。)*"
+                    accumulator += notice
+                    yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+                else:
+                    logger.info(
+                        "orchestration.mail_tool_disabled user_id=%s conversation_id=%s",
+                        user_id,
+                        conversation_id,
+                    )
             except Exception as exc:
                 logger.warning("orchestration.mail_tool_failed reason=%s", type(exc).__name__)
         yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator})}\n\n"

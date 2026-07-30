@@ -32,7 +32,8 @@ async def test_mailbox_flow(mock_store):
     mock_mb_store = MagicMock()
     mock_mb_store.schedule_delayed_mail = AsyncMock()
     
-    with patch("backend.services.compeer_scheduler.asyncio.sleep", side_effect=asyncio.CancelledError) as mock_sleep, \
+    with patch("config.settings.enable_mailbox_sending", True), \
+         patch("backend.services.compeer_scheduler.asyncio.sleep", side_effect=asyncio.CancelledError) as mock_sleep, \
          patch("gum_integration.generate_epistolary_letter_via_llm", new_callable=AsyncMock) as mock_gen_letter, \
          patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock) as mock_query, \
          patch("gum_integration.get_hot_memory_snapshot", new_callable=AsyncMock) as mock_snapshot, \

@@ -27,6 +27,16 @@ class DelayedMailTool:
         conversation_id = str(arguments.get("conversation_id", ""))
         task_id = str(arguments["task_id"])
         started = time.monotonic()
+        from config import settings
+
+        if not settings.enable_mailbox_sending:
+            return ToolResult(
+                tool_name="schedule_letter",
+                status="disabled",
+                content={"task_id": task_id, "avatar_name": avatar_name},
+                provenance=(),
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
         store = self._store_factory()
         await store.schedule_delayed_mail(
             user_id=user_id,

@@ -45,7 +45,10 @@ def test_post_send_reply_creates_user_mail(mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
     mock_store.schedule_delayed_mail.return_value = "task-123"
     
-    with patch("backend.main.time.time", return_value=1783650000):
+    with patch("backend.main.time.time", return_value=1783650000), patch(
+        "config.settings.enable_mailbox_sending",
+        True,
+    ):
         response = client.post("/api/v1/mailbox/send", json={"content": "這是我的回信", "recipient": "柏拉圖", "conversation_id": "thread-1"})
     assert response.status_code == 200
     assert response.json() == {"status": "success", "mail_id": "mock-uuid-123"}
@@ -76,10 +79,20 @@ def test_post_send_reply_schedules_durable_delayed_task(mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
     mock_store.schedule_delayed_mail.return_value = "task-123"
     
-    response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
+    with patch("config.settings.enable_mailbox_sending", True):
+        response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
     assert response.status_code == 200
     
     mock_store.schedule_delayed_mail.assert_called_once()
+
+
+def test_post_send_reply_is_disabled_by_default(mock_store):
+    response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Mailbox sending is disabled"
+    mock_store.add_mail.assert_not_called()
+    mock_store.schedule_delayed_mail.assert_not_called()
     
 def test_post_send_reply_validation():
     # Missing content

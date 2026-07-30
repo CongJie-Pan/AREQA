@@ -616,7 +616,15 @@ def _mailbox_reply_task_id(user_id: str, recipient: str, content: str, conversat
 
 @app.post("/api/v1/mailbox/send")
 async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depends(get_current_user)):
+    from config import settings
+
+    if not settings.enable_mailbox_sending:
+        logger.info("mailbox.send_disabled user_id=%s", current_user_id)
+        raise HTTPException(status_code=503, detail="Mailbox sending is disabled")
+
     store = get_mailbox_store()
+    # The original mailbox reply flow is preserved behind ENABLE_MAILBOX_SENDING
+    # so it can be re-enabled without rebuilding the feature.
     mail_id = await store.add_mail(user_id=current_user_id, sender="User", content=req.content, recipient=req.recipient, conversation_id=req.conversation_id)
     await store.mark_as_read(user_id=current_user_id, mail_id=mail_id)
     await store.schedule_delayed_mail(

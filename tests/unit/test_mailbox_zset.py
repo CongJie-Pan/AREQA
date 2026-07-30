@@ -13,7 +13,10 @@ async def test_schedule_delayed_mail():
     mock_redis = AsyncMock()
     mock_redis.zrange.return_value = []
     
-    with patch("mailbox_store.get_redis", return_value=mock_redis):
+    with patch("mailbox_store.get_redis", return_value=mock_redis), patch(
+        "mailbox_store._mailbox_sending_enabled",
+        return_value=True,
+    ):
         store = MailboxStore()
         store._db_available = False
         mail_data = {"subject": "Test"}

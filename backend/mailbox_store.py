@@ -233,6 +233,14 @@ class MailboxStore:
         mail_data = dict(mail_data)
         mail_data.setdefault("task_id", str(uuid.uuid4()))
         mail_data["user_id"] = user_id
+        if not _mailbox_sending_enabled():
+            logger.info(
+                "mailbox.schedule_disabled task_id=%s user_id=%s kind=%s",
+                mail_data["task_id"],
+                user_id,
+                mail_data.get("kind", "delayed_mail"),
+            )
+            return mail_data["task_id"]
         score = time.time() + delay_seconds
         should_enqueue_redis = True
         if await self._has_db():
@@ -501,6 +509,12 @@ class MailboxStore:
 _global_mailbox_store = None
 
 
+def _mailbox_sending_enabled() -> bool:
+    from config import settings
+
+    return bool(settings.enable_mailbox_sending)
+
+
 async def _release_owned_lock(redis, lock_key: str, owner: str) -> None:
     await redis.eval(
         """
@@ -583,6 +597,10 @@ async def run_delayed_mail_iteration(
     The bounded iteration is independently testable so recovery and exactly-once
     behavior do not depend on controlling an infinite worker loop.
     """
+
+    if not _mailbox_sending_enabled():
+        logger.info("mailbox.worker_disabled worker_id=%s", worker_id)
+        return 0
 
     delivered = 0
     due_tasks = 0
@@ -687,6 +705,9 @@ async def delayed_mail_worker():
     store = get_mailbox_store()
     worker_id = f"mailbox-{uuid.uuid4().hex}"
     logger.info("mailbox.worker_starting worker_id=%s", worker_id)
+    if not _mailbox_sending_enabled():
+        logger.info("mailbox.worker_disabled worker_id=%s", worker_id)
+        return
     await store.ensure_delayed_task_schema()
     restored = await store.restore_delayed_queue_from_db()
     logger.info("mailbox.worker_restored worker_id=%s restored=%s", worker_id, restored)

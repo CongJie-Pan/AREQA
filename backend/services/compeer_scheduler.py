@@ -884,6 +884,10 @@ async def schedule_areqa_care_letter(
     from memory_store import get_global_store
     from config import settings
 
+    if not settings.enable_mailbox_sending:
+        logger.info("compeer.mail_scheduling_disabled user_id=%s", user_id)
+        return None
+
     safe_cold_memory_context = cold_memory_context if allow_topic_specific else ""
     subject, content = await generate_areqa_care_letter_via_llm(
         user_id=user_id,
@@ -1011,6 +1015,12 @@ async def _process_proactive_user(store, user_id: str) -> None:
                 active_avatar = hot_mem.get("active_avatar")
 
     if avatar_summon and active_avatar:
+        from config import settings
+
+        if not settings.enable_mailbox_sending:
+            logger.info("compeer.avatar_mail_disabled user_id=%s", user_id)
+            return
+
         from gum_integration import (
             generate_epistolary_letter_via_llm,
             get_hot_memory_snapshot,
