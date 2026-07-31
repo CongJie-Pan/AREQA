@@ -331,6 +331,73 @@ async def test_evaluate_importance_gate_fails_low_importance():
     for _ in range(10):
         assert await compeer.evaluate_importance_gate(event) is False
 
+
+@pytest.mark.asyncio
+async def test_legacy_schedule_skips_when_mailbox_sending_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "enable_mailbox_sending", False)
+
+    with patch.object(
+        compeer,
+        "is_in_cooldown",
+        new=AsyncMock(),
+    ) as mock_in_cooldown:
+        await compeer.tick_proactive_schedule("default_user")
+
+    mock_in_cooldown.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_daily_scheduler_skips_reflection_after_today_attempt(monkeypatch):
+    today = datetime.now().strftime("%Y-%m-%d")
+    store = MagicMock()
+    store.redis = AsyncMock()
+    store.redis.scan = AsyncMock(return_value=(0, ["areqa:hot_memory:user-1"]))
+    store.get_hot_memory = AsyncMock(
+        return_value={"last_reflection_attempt_at": f"{today}T01:02:03"}
+    )
+    store.update_hot_memory_async = AsyncMock()
+
+    with patch("memory_store.get_global_store", return_value=store), patch(
+        "gum_integration.run_reflection",
+        new=AsyncMock(),
+    ) as mock_run_reflection, patch.object(
+        compeer.asyncio,
+        "sleep",
+        new=AsyncMock(side_effect=RuntimeError("stop loop")),
+    ):
+        with pytest.raises(RuntimeError, match="stop loop"):
+            await compeer.daily_scheduler_loop()
+
+    mock_run_reflection.assert_not_awaited()
+    store.update_hot_memory_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_daily_scheduler_records_attempt_before_reflection(monkeypatch):
+    store = MagicMock()
+    store.redis = AsyncMock()
+    store.redis.scan = AsyncMock(return_value=(0, ["areqa:hot_memory:user-1"]))
+    store.get_hot_memory = AsyncMock(return_value={})
+    store.update_hot_memory_async = AsyncMock()
+
+    with patch("memory_store.get_global_store", return_value=store), patch(
+        "gum_integration.run_reflection",
+        new=AsyncMock(return_value=[]),
+    ) as mock_run_reflection, patch.object(
+        compeer.asyncio,
+        "sleep",
+        new=AsyncMock(side_effect=RuntimeError("stop loop")),
+    ):
+        with pytest.raises(RuntimeError, match="stop loop"):
+            await compeer.daily_scheduler_loop()
+
+    store.update_hot_memory_async.assert_awaited_once()
+    assert store.update_hot_memory_async.await_args.args[:2] == (
+        "user-1",
+        "last_reflection_attempt_at",
+    )
+    mock_run_reflection.assert_awaited_once_with("user-1")
+
 @pytest.fixture
 def mock_store():
     store = MagicMock()

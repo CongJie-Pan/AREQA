@@ -224,8 +224,18 @@ def mock_schedule_path(monkeypatch, tmp_path):
     schedule_path.parent.mkdir(parents=True, exist_ok=True)
     return schedule_path
 
+
+@pytest.fixture
+def mailbox_sending_enabled(monkeypatch):
+    monkeypatch.setattr("config.settings.enable_mailbox_sending", True)
+
+
 @pytest.mark.asyncio
-async def test_tick_schedule_fires_within_window(mock_schedule_path, tmp_store):
+async def test_tick_schedule_fires_within_window(
+    mock_schedule_path,
+    tmp_store,
+    mailbox_sending_enabled,
+):
     store, fake_r = tmp_store
     now = datetime.now()
     mock_schedule_path.write_text(json.dumps([{
@@ -245,7 +255,9 @@ async def test_tick_schedule_fires_within_window(mock_schedule_path, tmp_store):
 
 @pytest.mark.asyncio
 async def test_tick_schedule_retains_event_until_mail_is_durable(
-    mock_schedule_path, tmp_store
+    mock_schedule_path,
+    tmp_store,
+    mailbox_sending_enabled,
 ):
     now = datetime.now()
     mock_schedule_path.write_text(json.dumps([{
@@ -267,7 +279,11 @@ async def test_tick_schedule_retains_event_until_mail_is_durable(
 
 
 @pytest.mark.asyncio
-async def test_tick_schedule_skips_outside_window(mock_schedule_path, tmp_store):
+async def test_tick_schedule_skips_outside_window(
+    mock_schedule_path,
+    tmp_store,
+    mailbox_sending_enabled,
+):
     store, fake_r = tmp_store
     now = datetime.now()
     future = now + timedelta(minutes=5)
@@ -284,7 +300,11 @@ async def test_tick_schedule_skips_outside_window(mock_schedule_path, tmp_store)
     mock_schedule.assert_not_awaited()
 
 @pytest.mark.asyncio
-async def test_tick_schedule_no_duplicate_fire(mock_schedule_path, tmp_store):
+async def test_tick_schedule_no_duplicate_fire(
+    mock_schedule_path,
+    tmp_store,
+    mailbox_sending_enabled,
+):
     store, fake_r = tmp_store
     now = datetime.now()
     mock_schedule_path.write_text(json.dumps([{
@@ -300,7 +320,11 @@ async def test_tick_schedule_no_duplicate_fire(mock_schedule_path, tmp_store):
     mock_schedule.assert_not_awaited()
 
 @pytest.mark.asyncio
-async def test_tick_schedule_cooldown_blocks_send(mock_schedule_path, tmp_store):
+async def test_tick_schedule_cooldown_blocks_send(
+    mock_schedule_path,
+    tmp_store,
+    mailbox_sending_enabled,
+):
     store, fake_r = tmp_store
     now = datetime.now()
     mock_schedule_path.write_text(json.dumps([{
@@ -314,6 +338,29 @@ async def test_tick_schedule_cooldown_blocks_send(mock_schedule_path, tmp_store)
     with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule:
         await compeer.tick_proactive_schedule("default_user")
     mock_schedule.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tick_schedule_mailbox_disabled_skips_due_event_without_marking_fired(
+    mock_schedule_path,
+    tmp_store,
+    monkeypatch,
+):
+    monkeypatch.setattr("config.settings.enable_mailbox_sending", False)
+    now = datetime.now()
+    mock_schedule_path.write_text(json.dumps([{
+        "Timing": now.strftime("%H:%M"),
+        "Content": "Test Alert",
+        "importance": 1.0,
+        "fired": False,
+    }]))
+
+    with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule:
+        await compeer.tick_proactive_schedule("default_user")
+
+    events = json.loads(mock_schedule_path.read_text())
+    mock_schedule.assert_not_awaited()
+    assert events[0]["fired"] is False
 
 @pytest.mark.asyncio
 async def test_proactive_check_endpoint_has_alert(tmp_store):

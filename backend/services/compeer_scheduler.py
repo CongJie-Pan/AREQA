@@ -494,9 +494,22 @@ async def tick_proactive_schedule(user_id: str):
     """
     Evaluate and trigger scheduled proactive care events for a user if their time has arrived.
 
+    Legacy schedule files are ignored while mailbox sending is disabled. This
+    keeps disabled deployments from repeatedly evaluating due events that cannot
+    produce a durable mailbox task.
+
     Args:
         user_id (str): The unique identifier for the user.
     """
+    from config import settings
+
+    if not settings.enable_mailbox_sending:
+        logger.debug(
+            "compeer.legacy_schedule_skipped user_id=%s reason=mailbox_disabled",
+            user_id,
+        )
+        return
+
     project_root = Path(__file__).resolve().parents[2]
     schedule_path = project_root / "data" / "gum_data" / f"schedule_{user_id}.json"
     
@@ -649,6 +662,9 @@ async def daily_scheduler_loop():
     """
     Background worker loop that runs daily reflections and schedule initialization 
     for all active users.
+
+    A reflection attempt is recorded before running reflection so empty or
+    failed-to-produce-insight runs do not retry every minute for the same user.
     """
     while True:
         try:
@@ -671,16 +687,19 @@ async def daily_scheduler_loop():
                 for user_id in all_users:
                     hot_mem = await store.get_hot_memory(user_id)
                     last_reflection = hot_mem.get("last_reflection_date")
+                    last_attempt = str(hot_mem.get("last_reflection_attempt_at") or "")
                     
                     if last_reflection != today_str:
+                        if last_attempt.startswith(today_str):
+                            continue
                         if now.hour >= 23 or last_reflection is None:
                             from gum_integration import run_reflection
-                            insights = await run_reflection(user_id)
                             await store.update_hot_memory_async(
                                 user_id,
                                 "last_reflection_attempt_at",
                                 now.isoformat(),
                             )
+                            insights = await run_reflection(user_id)
                             if insights:
                                 await initialize_daily_schedule(user_id, insights)
                                 await store.update_hot_memory_async(
