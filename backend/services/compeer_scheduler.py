@@ -156,8 +156,9 @@ def _log_proactive_preflight(
 
     log_level = logging.INFO
     if (
-        preflight.block_reason in {"absent_trigger", "inactivity_threshold"}
-        and preflight.scroll_count == 0
+        preflight.block_reason
+        in {"absent_trigger", "inactivity_threshold", "insufficient_scroll_evidence"}
+        and preflight.scroll_count < PROACTIVE_SCROLL_SIGNAL_THRESHOLD
         and not preflight.trigger_present
         and not preflight.avatar_pending
         and not preflight.existing_pending_task
@@ -1217,7 +1218,11 @@ async def _process_proactive_user(store, user_id: str) -> None:
         scroll_count = len(legacy_scroll_keys)
         signal_source = "legacy_hot_memory"
 
-    behavior_eval_level = logging.INFO if scroll_count > 0 else logging.DEBUG
+    behavior_eval_level = (
+        logging.INFO
+        if scroll_count >= PROACTIVE_SCROLL_SIGNAL_THRESHOLD
+        else logging.DEBUG
+    )
     logger.log(
         behavior_eval_level,
         "compeer.behavior_signals_evaluated user_id=%s iteration_id=%s "
