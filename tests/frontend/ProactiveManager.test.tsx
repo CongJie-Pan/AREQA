@@ -1,9 +1,6 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import {
-  MAILBOX_POLL_INTERVAL_MS,
-  ProactiveManager,
-} from '@/components/ProactiveManager';
+import { ProactiveManager } from '@/components/ProactiveManager';
 import { App } from 'antd';
 import { sendMessage } from '@/services/chat';
 import { useConversationStore } from '@/store/conversation';
@@ -160,52 +157,22 @@ describe('ProactiveManager', () => {
     expect(registeredNewMailCallback).toBeTypeOf('function');
   });
 
-  it('polls mailbox as a fallback when websocket new-mail events are unavailable', async () => {
+  it('refreshes mailbox only when websocket reports new mail', async () => {
     const intervalSpy = vi.spyOn(window, 'setInterval');
     await act(async () => {
       render(<ProactiveManager />);
       await Promise.resolve();
     });
 
-    expect(intervalSpy).toHaveBeenCalledWith(
-      expect.any(Function),
-      MAILBOX_POLL_INTERVAL_MS,
-    );
+    expect(intervalSpy).not.toHaveBeenCalled();
     expect(mockFetchMails).not.toHaveBeenCalled();
 
     await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(MAILBOX_POLL_INTERVAL_MS);
+      registeredNewMailCallback?.();
       await vi.dynamicImportSettled();
       await Promise.resolve();
     });
 
     expect(mockFetchMails).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not poll mailbox while websocket new-mail events are connected', async () => {
-    (hooks.useProactiveWebSocket as any).mockImplementation((callback: any, onNewMail: any) => {
-      registeredAlertCallback = callback;
-      registeredNewMailCallback = onNewMail;
-      return true;
-    });
-    const intervalSpy = vi.spyOn(window, 'setInterval');
-
-    await act(async () => {
-      render(<ProactiveManager />);
-      await Promise.resolve();
-    });
-
-    expect(intervalSpy).not.toHaveBeenCalledWith(
-      expect.any(Function),
-      MAILBOX_POLL_INTERVAL_MS,
-    );
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(MAILBOX_POLL_INTERVAL_MS);
-      await vi.dynamicImportSettled();
-    });
-
-    expect(mockFetchMails).not.toHaveBeenCalled();
   });
 });

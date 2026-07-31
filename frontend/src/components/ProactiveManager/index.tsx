@@ -3,8 +3,6 @@ import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
 import { getAuthToken } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 
-export const MAILBOX_POLL_INTERVAL_MS = 30000;
-
 const refreshMailbox = async () => {
   const { useMailboxStore } = await import('@/store/mailbox');
   await useMailboxStore.getState().fetchMails();
@@ -19,26 +17,11 @@ export const ProactiveManager: React.FC = () => {
     // Legacy alert payloads are intentionally ignored to avoid interrupting the chat.
   }, []);
 
-  // 以 hook 取代 setInterval
   const handleNewMail = useCallback(() => {
     void refreshMailbox();
   }, []);
 
-  const isMailboxWebSocketConnected = useProactiveWebSocket(handleAlert, handleNewMail);
-
-  useEffect(() => {
-    if (isMailboxWebSocketConnected) {
-      return undefined;
-    }
-
-    const intervalId = window.setInterval(() => {
-      void refreshMailbox();
-    }, MAILBOX_POLL_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [isMailboxWebSocketConnected]);
+  useProactiveWebSocket(handleAlert, handleNewMail);
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {
