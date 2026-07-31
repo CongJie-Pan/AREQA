@@ -62,6 +62,37 @@ describe('useProactiveWebSocket', () => {
     );
   });
 
+  it('returns false until websocket opens', async () => {
+    const onAlert = vi.fn();
+    const { result } = renderHook(() => useProactiveWebSocket(onAlert));
+
+    expect(result.current).toBe(false);
+
+    await flushPromises();
+
+    expect(result.current).toBe(false);
+  });
+
+  it('returns websocket connection status after open and close', async () => {
+    const onAlert = vi.fn();
+    const { result } = renderHook(() => useProactiveWebSocket(onAlert));
+
+    await flushPromises();
+    const ws = webSocketInstances[0];
+
+    await act(async () => {
+      if (ws.onopen) ws.onopen();
+    });
+
+    expect(result.current).toBe(true);
+
+    await act(async () => {
+      if (ws.onclose) ws.onclose();
+    });
+
+    expect(result.current).toBe(false);
+  });
+
   it('calls onAlert when has_alert is true', async () => {
     const onAlert = vi.fn();
     renderHook(() => useProactiveWebSocket(onAlert));
@@ -147,10 +178,13 @@ describe('useProactiveWebSocket', () => {
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     
     const ws2 = webSocketInstances[1];
-    if (ws2.onopen) ws2.onopen();
+    await act(async () => {
+      if (ws2.onopen) ws2.onopen();
+    });
     
-    if (ws2.onclose) ws2.onclose();
-    await flushPromises();
+    await act(async () => {
+      if (ws2.onclose) ws2.onclose();
+    });
     
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(webSocketInstances.length).toBe(3);

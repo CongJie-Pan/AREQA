@@ -78,6 +78,7 @@ describe('ProactiveManager', () => {
     (hooks.useProactiveWebSocket as any).mockImplementation((callback: any, onNewMail: any) => {
       registeredAlertCallback = callback;
       registeredNewMailCallback = onNewMail;
+      return false;
     });
   });
 
@@ -180,5 +181,31 @@ describe('ProactiveManager', () => {
     });
 
     expect(mockFetchMails).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not poll mailbox while websocket new-mail events are connected', async () => {
+    (hooks.useProactiveWebSocket as any).mockImplementation((callback: any, onNewMail: any) => {
+      registeredAlertCallback = callback;
+      registeredNewMailCallback = onNewMail;
+      return true;
+    });
+    const intervalSpy = vi.spyOn(window, 'setInterval');
+
+    await act(async () => {
+      render(<ProactiveManager />);
+      await Promise.resolve();
+    });
+
+    expect(intervalSpy).not.toHaveBeenCalledWith(
+      expect.any(Function),
+      MAILBOX_POLL_INTERVAL_MS,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MAILBOX_POLL_INTERVAL_MS);
+      await vi.dynamicImportSettled();
+    });
+
+    expect(mockFetchMails).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { logger } from '@/utils/logger';
 import { getAuthToken } from '../database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
@@ -11,6 +11,7 @@ export function useProactiveWebSocket(
   const wsRef = useRef<WebSocket | null>(null);
   const retryDelayRef = useRef(1000); // Initial backoff 1 second
   const userId = useAuthStore((state) => state.user?.id ?? null);
+  const [isConnected, setIsConnected] = useState(false);
   
   const onAlertRef = useRef(onAlert);
   const onNewMailRef = useRef(onNewMail);
@@ -67,17 +68,20 @@ export function useProactiveWebSocket(
         // On success: reset backoff
         wsRef.current.onopen = () => { 
           logger.info('WebSocket connected successfully');
+          setIsConnected(true);
           retryDelayRef.current = 1000; 
         };
         
         // On disconnect: exponential backoff reconnect (max 30s)
         wsRef.current.onclose = () => {
           logger.warn('WebSocket disconnected. Reconnecting...');
+          setIsConnected(false);
           timeoutId = setTimeout(connect, retryDelayRef.current);
           retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
         };
       } catch (e) {
         logger.error('WebSocket connection error', e instanceof Error ? e : new Error(String(e)));
+        setIsConnected(false);
         timeoutId = setTimeout(connect, retryDelayRef.current);
         retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
       }
@@ -94,4 +98,6 @@ export function useProactiveWebSocket(
       }
     };
   }, [userId]);
+
+  return isConnected;
 }

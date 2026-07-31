@@ -24,9 +24,13 @@ export const ProactiveManager: React.FC = () => {
     void refreshMailbox();
   }, []);
 
-  useProactiveWebSocket(handleAlert, handleNewMail);
+  const isMailboxWebSocketConnected = useProactiveWebSocket(handleAlert, handleNewMail);
 
   useEffect(() => {
+    if (isMailboxWebSocketConnected) {
+      return undefined;
+    }
+
     const intervalId = window.setInterval(() => {
       void refreshMailbox();
     }, MAILBOX_POLL_INTERVAL_MS);
@@ -34,7 +38,7 @@ export const ProactiveManager: React.FC = () => {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [isMailboxWebSocketConnected]);
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {
