@@ -27,6 +27,14 @@ from services.hot_memory_service import remove_typed_entry
 logger = logging.getLogger(__name__)
 
 
+def _auto_proactive_enabled() -> bool:
+    """Return whether automatic ComPeer proactive scheduling may run."""
+
+    from config import settings
+
+    return bool(settings.enable_compeer_auto_proactive)
+
+
 @dataclass(frozen=True)
 class ProactivePreflight:
     """Describe one proactive scheduling decision using safe metadata only.
@@ -669,6 +677,11 @@ async def daily_scheduler_loop():
     """
     while True:
         try:
+            if not _auto_proactive_enabled():
+                logger.debug("compeer.daily_scheduler_disabled reason=auto_proactive_disabled")
+                await asyncio.sleep(60)
+                continue
+
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
             from memory_store import get_global_store
@@ -1014,6 +1027,13 @@ async def _process_proactive_user(store, user_id: str) -> None:
     The scheduler records only eligibility metadata so operators can correlate a
     later mailbox task without exposing hot-memory or generated-message content.
     """
+
+    if not _auto_proactive_enabled():
+        logger.debug(
+            "compeer.auto_proactive_disabled user_id=%s source=process_user",
+            user_id,
+        )
+        return
 
     iteration_id = uuid.uuid4().hex
     trigger_proactive = False
@@ -1431,6 +1451,11 @@ async def proactive_scheduler_loop():
     logger.info("compeer.scheduler_started")
     while True:
         try:
+            if not _auto_proactive_enabled():
+                logger.debug("compeer.scheduler_disabled reason=auto_proactive_disabled")
+                await asyncio.sleep(10)
+                continue
+
             async with _send_lock:
                 from memory_store import get_global_store
                 store = get_global_store()

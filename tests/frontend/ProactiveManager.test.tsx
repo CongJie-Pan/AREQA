@@ -56,6 +56,7 @@ describe('ProactiveManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    delete process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY;
 
     global.fetch = vi.fn();
     (App.useApp as any).mockReturnValue({
@@ -104,7 +105,20 @@ describe('ProactiveManager', () => {
     expect(mockNotificationInfo).not.toHaveBeenCalled();
   });
 
+  it('should not log scroll action when ComPeer telemetry is disabled', async () => {
+    render(<ProactiveManager />);
+
+    Object.defineProperty(window, 'scrollY', { value: 500, configurable: true });
+    await act(async () => {
+      vi.advanceTimersByTime(5001);
+      window.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('should log scroll action with throttling', async () => {
+    process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY = 'true';
     (global.fetch as any).mockResolvedValue({
       json: async () => ({ status: 'ok' }),
     });

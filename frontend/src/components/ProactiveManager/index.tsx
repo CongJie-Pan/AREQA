@@ -25,6 +25,10 @@ export const ProactiveManager: React.FC = () => {
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY !== 'true') {
+      return;
+    }
+
     const logAction = async (action: string, context: Record<string, unknown>) => {
       try {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';

@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 import memory_store as mem_store_module
 from auth import get_current_user
 from backend.main import app
+from config import settings
 from memory_store import get_global_store, init_global_store
 import services.compeer_scheduler as compeer
 
@@ -99,7 +100,9 @@ def behavior_signal_store():
 @pytest.mark.asyncio
 async def test_log_action_behavior_signals_drive_compeer_schedule_once(
     behavior_signal_store,
+    monkeypatch,
 ):
+    monkeypatch.setattr(settings, "enable_compeer_auto_proactive", True)
     store, fake_redis = behavior_signal_store
 
     async with AsyncClient(

@@ -10,10 +10,13 @@ from config import settings
 
 @pytest.fixture(autouse=True)
 def enable_mailbox_sending_for_compeer_tests():
-    original = settings.enable_mailbox_sending
+    original_mailbox = settings.enable_mailbox_sending
+    original_auto_proactive = settings.enable_compeer_auto_proactive
     settings.enable_mailbox_sending = True
+    settings.enable_compeer_auto_proactive = True
     yield
-    settings.enable_mailbox_sending = original
+    settings.enable_mailbox_sending = original_mailbox
+    settings.enable_compeer_auto_proactive = original_auto_proactive
 
 
 @pytest.mark.parametrize(
@@ -468,6 +471,36 @@ def mock_store():
         "backend.services.compeer_scheduler.get_redis", return_value=store.redis
     ):
         yield store
+
+
+@pytest.mark.asyncio
+async def test_auto_proactive_disabled_skips_behavior_trigger_processing(
+    mock_store,
+    caplog,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "enable_compeer_auto_proactive", False)
+    mock_store.behavior_signals.extend(_recent_scroll_signals(6))
+    scheduled = AsyncMock(return_value="task-1")
+
+    with patch(
+        "gum_integration.detect_proactive_event_via_llm",
+        new=AsyncMock(),
+    ) as detect_event, patch.object(
+        compeer,
+        "_schedule_areqa_care_letter_safely",
+        new=scheduled,
+    ):
+        with caplog.at_level("DEBUG"):
+            await compeer._process_proactive_user(mock_store, "default_user")
+
+    detect_event.assert_not_awaited()
+    scheduled.assert_not_awaited()
+    mock_store.get_behavior_signals.assert_not_awaited()
+    mock_store.consume_behavior_signals.assert_not_awaited()
+    assert "compeer.auto_proactive_disabled" in caplog.text
+    assert "compeer.behavior_trigger_eligible" not in caplog.text
+
 
 def test_topic_specific_care_requires_working_memory_by_default():
     assert compeer.should_allow_topic_specific_care("", "User stuck on poem") is False
