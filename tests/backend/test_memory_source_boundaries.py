@@ -39,6 +39,38 @@ async def test_student_state_schema_does_not_request_memory_operations():
 
 
 @pytest.mark.asyncio
+async def test_definition_entry_question_prompt_calibrates_starting_state():
+    client = MagicMock()
+    response = MagicMock()
+    response.choices = [
+        MagicMock(
+            message=MagicMock(
+                content=(
+                    '{"learner_state":"STARTING",'
+                    '"pedagogical_strategy":"提供基礎背景與名詞拆解",'
+                    '"trigger_proactive":false}'
+                )
+            )
+        )
+    ]
+    client.chat.completions.create = AsyncMock(return_value=response)
+
+    result = await evaluate_student_state(
+        client,
+        "test-model",
+        [{"role": "user", "content": "什麼是 meta analysis 統合分析？"}],
+    )
+
+    assert result["learner_state"] == "STARTING"
+    assert result["trigger_proactive"] is False
+    assert "基礎背景" in result["pedagogical_strategy"]
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "什麼是 meta analysis 統合分析" in prompt
+    assert "詢問概念定義，應視為入門需求" in prompt
+    assert "不可預設為中階或高階理解" in prompt
+
+
+@pytest.mark.asyncio
 async def test_legacy_edf_memory_operations_are_ignored():
     store = MagicMock()
     store.update_learner_state_snapshot = AsyncMock()

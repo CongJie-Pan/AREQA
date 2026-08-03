@@ -84,9 +84,10 @@ async def evaluate_student_state(llm_client, model: str, latest_dialogue: list) 
 {latest_dialogue}
 
 請判斷目前的學習者狀態，並建議適合的教學策略。
+
 狀態定義參考：
 - NOT_STARTED: 用戶尚未開始實際閱讀或互動，只是詢問入門方向。此階段不應主動干預。
-- STARTING: 剛開始接觸，需要基礎背景與名詞解釋。
+- STARTING: 剛開始接觸，需要基礎背景與名詞解釋。若用戶以「什麼是／什么是／何謂／what is／define」詢問概念定義，應視為入門需求，即使概念本身較進階，也不可預設為中階或高階理解。
 - TINKERING: 正在嘗試理解、提出問題並建構概念。
 - RUN_REPEAT: 陷入盲目重複、鬼打牆，需要切換視角打破迴圈。
 - GIVING_UP: 因認知負荷過高、看不懂而感到挫折與放棄，需要情感安撫與降維打擊。
