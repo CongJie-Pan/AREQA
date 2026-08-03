@@ -62,5 +62,9 @@ describe('Citations structured sources', () => {
       window.dispatchEvent(new CustomEvent('open-citation-msg-2', { detail: { index: 1 } }));
     });
     expect(await screen.findByText('來源: https://example.com/source')).toBeInTheDocument();
+    const modalSourceLink = await screen.findByTitle('https://example.com/source');
+    expect(modalSourceLink).toHaveAttribute('href', 'https://example.com/source');
+    const modalOpenButton = await screen.findByTitle('在新分頁開啟文獻原文');
+    expect(modalOpenButton).toHaveAttribute('href', 'https://example.com/source');
   });
 });

@@ -50,7 +50,13 @@ function getDomain(url: string): string {
 }
 
 function getSourceUrl(src: CitationSource): string {
-  return src.url || (src.chunk_id?.startsWith('http') ? src.chunk_id : '');
+  const candidate = src.url || src.chunk_id || '';
+  try {
+    const urlObj = new URL(candidate);
+    return ['http:', 'https:'].includes(urlObj.protocol) ? urlObj.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -285,37 +291,84 @@ export function Citations({
           }
         }}
       >
-        {selectedSource && (
-          <div style={{ padding: '4px 0' }}>
-            <div style={{ marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#ffffff' }}>{selectedSource.title}</h3>
-              <div style={{ marginTop: '4px', color: 'rgba(255, 255, 255, 0.45)', fontSize: '12px' }}>
-                {getSourceUrl(selectedSource) ? `來源: ${getSourceUrl(selectedSource)}` : `識別碼: ${selectedSource.chunk_id}`}
+        {selectedSource && (() => {
+          const selectedSourceUrl = getSourceUrl(selectedSource);
+          return (
+            <div style={{ padding: '4px 0' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#ffffff' }}>{selectedSource.title}</h3>
+                <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                  {selectedSourceUrl ? (
+                    <>
+                      <a
+                        href={selectedSourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={selectedSourceUrl}
+                        style={{
+                          minWidth: 0,
+                          color: 'rgba(255, 255, 255, 0.62)',
+                          fontSize: '12px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        來源: {selectedSourceUrl}
+                      </a>
+                      <a
+                        href={selectedSourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="在新分頁開啟文獻原文"
+                        aria-label="在新分頁開啟文獻原文"
+                        style={{
+                          flexShrink: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          color: 'rgba(255, 255, 255, 0.75)'
+                        }}
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    </>
+                  ) : (
+                    <span style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: '12px' }}>
+                      識別碼: {selectedSource.chunk_id}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Divider style={{ margin: '12px 0', borderColor: 'rgba(255, 255, 255, 0.05)' }} />
+
+              <div style={{
+                position: 'relative',
+                padding: '16px 20px',
+                background: '#333333',
+                borderRadius: '12px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                lineHeight: 1.8,
+                fontSize: '15px',
+                color: '#f0f0f0'
+              }}>
+                <Quote size={24} style={{ position: 'absolute', top: '10px', left: '8px', opacity: 0.2, color: '#ff4d4f' }} />
+                <div style={{ position: 'relative', zIndex: 1 }}>
+                  {selectedSource.snippet}
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', textAlign: 'right', fontSize: '12px', color: '#bfbfbf' }}>
+                * 以上內容為 RAG 檢索之原文片段
               </div>
             </div>
-            <Divider style={{ margin: '12px 0', borderColor: 'rgba(255, 255, 255, 0.05)' }} />
-
-            <div style={{
-              position: 'relative',
-              padding: '16px 20px',
-              background: '#333333',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              lineHeight: 1.8,
-              fontSize: '15px',
-              color: '#f0f0f0'
-            }}>
-              <Quote size={24} style={{ position: 'absolute', top: '10px', left: '8px', opacity: 0.2, color: '#ff4d4f' }} />
-              <div style={{ position: 'relative', zIndex: 1 }}>
-                {selectedSource.snippet}
-              </div>
-            </div>
-
-            <div style={{ marginTop: '20px', textAlign: 'right', fontSize: '12px', color: '#bfbfbf' }}>
-              * 以上內容為 RAG 檢索之原文片段
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </Modal>
     </div>
   );
