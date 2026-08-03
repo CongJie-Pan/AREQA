@@ -6,6 +6,34 @@ import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
 import type { MessageFeedback, MessageFeedbackDetails, MessageFeedbackReason } from '@/database/schema';
 
+type MessageSearchResult = NonNullable<Message['searchResults']>[number];
+type MessageSource = NonNullable<Message['sources']>[number];
+
+function normalizeJsonArray<T>(value: unknown, fallback?: T[]): T[] | undefined {
+  if (Array.isArray(value)) return value as T[];
+  return fallback && fallback.length > 0 ? fallback : undefined;
+}
+
+function normalizeReasoning(value: unknown, fallback?: Message['reasoning']): Message['reasoning'] | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return fallback;
+  }
+
+  const reasoning = value as Record<string, unknown>;
+  if (typeof reasoning.content !== 'string') {
+    return fallback;
+  }
+
+  return {
+    content: reasoning.content,
+    ...(typeof reasoning.duration === 'number' ? { duration: reasoning.duration } : {}),
+  };
+}
+
+function jsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
 function handleAuthError(error: unknown): void {
   if ((error as { status?: number } | null)?.status === 401) {
     void useAuthStore.getState().invalidateSession();
@@ -111,6 +139,17 @@ export const syncService = {
             ? new Date(m.feedback_updated_at)
             : null;
           const localMsg = localMsgMap.get(m.id);
+          const cloudCitations = normalizeJsonArray<string>(m.citations, localMsg?.citations);
+          const cloudSearchResults = normalizeJsonArray<MessageSearchResult>(
+            m.search_results,
+            localMsg?.searchResults,
+          );
+          const cloudSources = normalizeJsonArray<MessageSource>(
+            m.sources,
+            localMsg?.sources,
+          );
+          const cloudSuggestions = normalizeJsonArray<string>(m.suggestions, localMsg?.suggestions);
+          const cloudReasoning = normalizeReasoning(m.reasoning, localMsg?.reasoning);
 
           if (
             !localMsg ||
@@ -118,7 +157,12 @@ export const syncService = {
             (localMsg.feedbackReason ?? null) !== cloudFeedbackReason ||
             (localMsg.feedbackComment ?? null) !== cloudFeedbackComment ||
             (localMsg.feedbackUpdatedAt?.getTime() ?? null) !==
-              (cloudFeedbackUpdatedAt?.getTime() ?? null)
+              (cloudFeedbackUpdatedAt?.getTime() ?? null) ||
+            !jsonEqual(localMsg.citations, cloudCitations) ||
+            !jsonEqual(localMsg.searchResults, cloudSearchResults) ||
+            !jsonEqual(localMsg.sources, cloudSources) ||
+            !jsonEqual(localMsg.suggestions, cloudSuggestions) ||
+            !jsonEqual(localMsg.reasoning, cloudReasoning)
           ) {
             msgsToUpsert.push({
               id: m.id,
@@ -131,6 +175,11 @@ export const syncService = {
               feedbackReason: cloudFeedbackReason,
               feedbackComment: cloudFeedbackComment,
               feedbackUpdatedAt: cloudFeedbackUpdatedAt,
+              citations: cloudCitations,
+              searchResults: cloudSearchResults,
+              sources: cloudSources,
+              suggestions: cloudSuggestions,
+              reasoning: cloudReasoning,
               createdAt: new Date(m.created_at)
             } as Message);
           }
@@ -190,6 +239,11 @@ export const syncService = {
         role: msg.role,
         content: msg.content,
         attachments: normalizeAttachmentMetadata(msg.attachments),
+        citations: msg.citations ?? null,
+        search_results: msg.searchResults ?? null,
+        sources: msg.sources ?? null,
+        suggestions: msg.suggestions ?? null,
+        reasoning: msg.reasoning ?? null,
         feedback: msg.feedback ?? null,
         feedback_reason: msg.feedbackReason ?? null,
         feedback_comment: msg.feedbackComment ?? null,

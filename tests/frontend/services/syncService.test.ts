@@ -2,6 +2,8 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { syncService } from '@/services/syncService';
 import { db } from '@/database/db';
+import { supabase } from '@/lib/supabase';
+import type { Message } from '@/database/schema';
 
 // Mock dependencies
 const mockReload = vi.fn();
@@ -32,6 +34,10 @@ vi.mock('@/database/db', async (importOriginal) => {
 // Create a variable to control what supabase returns
 let mockSupabaseResponse: any = { data: [], error: null };
 let mockSupabaseMsgResponse: any = { data: [], error: null };
+const { mockConversationUpsert, mockMessageUpsert } = vi.hoisted(() => ({
+  mockConversationUpsert: vi.fn(),
+  mockMessageUpsert: vi.fn(),
+}));
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -40,7 +46,7 @@ vi.mock('@/lib/supabase', () => ({
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockResolvedValue(mockSupabaseResponse),
-          upsert: vi.fn().mockResolvedValue({ error: null }),
+          upsert: mockConversationUpsert.mockResolvedValue({ error: null }),
           delete: vi.fn().mockReturnThis()
         };
       }
@@ -48,7 +54,7 @@ vi.mock('@/lib/supabase', () => ({
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockResolvedValue(mockSupabaseMsgResponse),
-          upsert: vi.fn().mockResolvedValue({ error: null })
+          upsert: mockMessageUpsert.mockResolvedValue({ error: null })
         };
       }
       return {
@@ -62,6 +68,8 @@ vi.mock('@/lib/supabase', () => ({
 describe('syncService - pullFromCloud', () => {
   beforeEach(async () => {
     mockReload.mockClear();
+    mockConversationUpsert.mockClear();
+    mockMessageUpsert.mockClear();
     await db.open();
     await db.conversations.clear();
     await db.messages.clear();
@@ -120,6 +128,17 @@ describe('syncService - pullFromCloud', () => {
           conversation_id: 'conv_1',
           role: 'assistant',
           content: 'Hello',
+          citations: ['https://example.com/source'],
+          search_results: [{ title: 'Source', url: 'https://example.com/source', snippet: 'Search snippet' }],
+          sources: [{
+            title: 'Structured Source',
+            snippet: 'Structured source snippet.',
+            score: 0.97,
+            chunk_id: 'https://example.com/source',
+            url: 'https://example.com/source',
+          }],
+          suggestions: ['請再解釋一次'],
+          reasoning: { content: 'Reasoning trace', duration: 120 },
           created_at: new Date().toISOString()
         }],
         error: null
@@ -140,6 +159,134 @@ describe('syncService - pullFromCloud', () => {
       expect(msgs.find((message) => message.id === 'msg_1')?.attachments).toEqual([
         { name: 'lesson.pdf', mediaType: 'application/pdf', sizeBytes: 2048 },
       ]);
+      const assistantMessage = msgs.find((message) => message.id === 'msg_2');
+      expect(assistantMessage?.citations).toEqual(['https://example.com/source']);
+      expect(assistantMessage?.searchResults).toEqual([
+        { title: 'Source', url: 'https://example.com/source', snippet: 'Search snippet' },
+      ]);
+      expect(assistantMessage?.sources).toEqual([{
+        title: 'Structured Source',
+        snippet: 'Structured source snippet.',
+        score: 0.97,
+        chunk_id: 'https://example.com/source',
+        url: 'https://example.com/source',
+      }]);
+      expect(assistantMessage?.suggestions).toEqual(['請再解釋一次']);
+      expect(assistantMessage?.reasoning).toEqual({ content: 'Reasoning trace', duration: 120 });
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('should push reference metadata to cloud messages', async () => {
+    const message: Message = {
+      id: 'msg_reference',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      role: 'assistant',
+      content: 'Answer with sources',
+      citations: ['https://example.com/source'],
+      searchResults: [{ title: 'Source', url: 'https://example.com/source', snippet: 'Search snippet' }],
+      sources: [{
+        title: 'Structured Source',
+        snippet: 'Structured source snippet.',
+        score: 0.97,
+        chunk_id: 'https://example.com/source',
+        url: 'https://example.com/source',
+      }],
+      suggestions: ['請再解釋一次'],
+      reasoning: { content: 'Reasoning trace', duration: 120 },
+      createdAt: new Date('2026-08-03T00:00:00.000Z'),
+    };
+
+    await syncService.pushMessage(message);
+
+    expect(supabase.from).toHaveBeenCalledWith('messages');
+    expect(mockMessageUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'msg_reference',
+      citations: ['https://example.com/source'],
+      search_results: [{ title: 'Source', url: 'https://example.com/source', snippet: 'Search snippet' }],
+      sources: [{
+        title: 'Structured Source',
+        snippet: 'Structured source snippet.',
+        score: 0.97,
+        chunk_id: 'https://example.com/source',
+        url: 'https://example.com/source',
+      }],
+      suggestions: ['請再解釋一次'],
+      reasoning: { content: 'Reasoning trace', duration: 120 },
+    }));
+  });
+
+  it('should preserve local reference metadata when legacy cloud rows omit it', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: TimerHandler, _delay?: number, ...args: unknown[]) => {
+      if (typeof callback === 'function') {
+        callback(...args);
+      }
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+
+    try {
+      const createdAt = new Date('2026-08-03T00:00:00.000Z');
+      await db.conversations.add({
+        id: 'conv_legacy',
+        userId: 'user_123',
+        title: 'Legacy cloud row',
+        createdAt,
+        updatedAt: createdAt,
+        messageCount: 1,
+        lastMessagePreview: 'Answer with local sources',
+      });
+      await db.messages.add({
+        id: 'msg_legacy',
+        userId: 'user_123',
+        conversationId: 'conv_legacy',
+        role: 'assistant',
+        content: 'Answer with local sources',
+        citations: ['https://example.com/local'],
+        sources: [{
+          title: 'Local Source',
+          snippet: 'Local source snippet.',
+          chunk_id: 'https://example.com/local',
+          url: 'https://example.com/local',
+        }],
+        createdAt,
+      });
+
+      mockSupabaseResponse = {
+        data: [{
+          id: 'conv_legacy',
+          user_id: 'user_123',
+          title: 'Legacy cloud row',
+          created_at: createdAt.toISOString(),
+          updated_at: new Date('2026-08-03T00:01:00.000Z').toISOString(),
+        }],
+        error: null,
+      };
+      mockSupabaseMsgResponse = {
+        data: [{
+          id: 'msg_legacy',
+          user_id: 'user_123',
+          conversation_id: 'conv_legacy',
+          role: 'assistant',
+          content: 'Answer with local sources',
+          feedback: 'liked',
+          created_at: createdAt.toISOString(),
+        }],
+        error: null,
+      };
+
+      await syncService.pullFromCloud();
+
+      const message = await db.messages.get('msg_legacy');
+      expect(message?.feedback).toBe('liked');
+      expect(message?.citations).toEqual(['https://example.com/local']);
+      expect(message?.sources).toEqual([{
+        title: 'Local Source',
+        snippet: 'Local source snippet.',
+        chunk_id: 'https://example.com/local',
+        url: 'https://example.com/local',
+      }]);
     } finally {
       setTimeoutSpy.mockRestore();
     }
