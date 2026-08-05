@@ -715,6 +715,16 @@ class VisualAnswerService:
         resolved_query = visual_query or self._visual_search_query(user_msg)[0]
         visual_context = visual_intent_text or resolved_query
         blocks: list[ImageBlock] = []
+        if visual_brief is not None and settings.enable_visual_preflight_parallel_providers:
+            return await self._resolve_preflight_parallel_images(
+                resolved_query=resolved_query,
+                visual_context=visual_context,
+                conversation_id=conversation_id,
+                model_client=model_client,
+                visual_brief=visual_brief,
+                allow_open_provider_fallback=allow_open_provider_fallback,
+            )
+
         if settings.enable_perplexity_visual_search:
             async def query_perplexity_images(
                 client: httpx.AsyncClient,
@@ -859,6 +869,123 @@ class VisualAnswerService:
                 )
                 self._log_image_block_selected(conversation_id, block, "og_image")
         return blocks
+
+    async def _resolve_preflight_parallel_images(
+        self,
+        *,
+        resolved_query: str,
+        visual_context: str,
+        conversation_id: str,
+        model_client: Any = None,
+        visual_brief: VisualBrief,
+        allow_open_provider_fallback: bool,
+    ) -> list[ImageBlock]:
+        """Query preflight providers concurrently and select one grounded image.
+
+        Preflight runs before the main answer model, so total latency matters
+        more than exhausting every provider in sequence. Each provider keeps its
+        own timeout and error logs, while this coordinator only logs safe
+        provider counts and merged candidate counts.
+        """
+
+        provider_tasks: list[asyncio.Task[tuple[str, list[ImageCandidate]]]] = []
+
+        async def run_perplexity() -> tuple[str, list[ImageCandidate]]:
+            async def query_perplexity_images(
+                client: httpx.AsyncClient,
+                query: str,
+                conversation_id: str,
+            ) -> list[ImageCandidate]:
+                return await self._query_perplexity_images(client, query, conversation_id, visual_brief)
+
+            async with httpx.AsyncClient(
+                timeout=settings.perplexity_visual_search_timeout_seconds,
+                follow_redirects=True,
+            ) as client:
+                return (
+                    "perplexity_images",
+                    await self._query_provider_candidates(
+                        provider="perplexity_images",
+                        query_func=query_perplexity_images,
+                        client=client,
+                        query=resolved_query,
+                        conversation_id=conversation_id,
+                    ),
+                )
+
+        async def run_open_provider(provider: str) -> tuple[str, list[ImageCandidate]]:
+            query_func = self._query_wikimedia if provider == "wikimedia" else self._query_openverse
+            async with httpx.AsyncClient(timeout=self.open_provider_timeout_seconds, follow_redirects=True) as client:
+                return (
+                    provider,
+                    await self._query_provider_candidates(
+                        provider=provider,
+                        query_func=query_func,
+                        client=client,
+                        query=resolved_query,
+                        conversation_id=conversation_id,
+                    ),
+                )
+
+        if settings.enable_perplexity_visual_search:
+            provider_tasks.append(asyncio.create_task(run_perplexity()))
+        if allow_open_provider_fallback:
+            provider_tasks.append(asyncio.create_task(run_open_provider("wikimedia")))
+            provider_tasks.append(asyncio.create_task(run_open_provider("openverse")))
+        else:
+            logger.info(
+                "visual.open_provider_fallback_skipped conversation_id=%s reason=preflight_budget",
+                conversation_id,
+            )
+
+        if not provider_tasks:
+            return []
+
+        logger.info(
+            "visual.parallel_provider_started conversation_id=%s provider_count=%s",
+            conversation_id,
+            len(provider_tasks),
+        )
+        provider_results = await asyncio.gather(*provider_tasks, return_exceptions=True)
+        candidates: list[ImageCandidate] = []
+        completed_provider_count = 0
+        for result in provider_results:
+            if isinstance(result, Exception):
+                logger.info(
+                    "visual.parallel_provider_failed conversation_id=%s reason=%s",
+                    conversation_id,
+                    type(result).__name__,
+                )
+                continue
+            provider, provider_candidates = result
+            completed_provider_count += 1
+            candidates.extend(provider_candidates)
+            logger.info(
+                "visual.parallel_provider_completed conversation_id=%s provider=%s candidate_count=%s",
+                conversation_id,
+                provider,
+                len(provider_candidates),
+            )
+
+        logger.info(
+            "visual.parallel_candidates_merged conversation_id=%s provider_count=%s candidate_count=%s",
+            conversation_id,
+            completed_provider_count,
+            len(candidates),
+        )
+        block = await self._select_image_block(
+            candidates,
+            resolved_query,
+            "parallel_preflight",
+            conversation_id,
+            visual_context,
+            model_client,
+            visual_brief,
+        )
+        if not block:
+            return []
+        self._log_image_block_selected(conversation_id, block, "parallel_preflight")
+        return [block]
 
     async def _block_from_result_safe(
         self,

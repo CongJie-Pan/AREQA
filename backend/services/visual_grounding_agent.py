@@ -232,14 +232,13 @@ class VisualGroundingAgent:
 
         teaching_context = self._teaching_context(response_policy, turn_plan)
         if not client:
-            return VisualBrief(
-                visual_type="diagram",
-                search_query=self._bound(fallback_query, 120) or "educational diagram",
-                caption_goal="Provide a concrete visual aid for the answer.",
-                reject_if=("wrong_visual_type", "decorative_or_generic_image"),
-                source="fallback",
+            brief = self._fallback_brief(
+                user_msg=user_msg,
+                fallback_query=fallback_query,
                 teaching_context=teaching_context,
             )
+            self._log_fallback_brief(conversation_id, brief, "missing_model_client")
+            return brief
 
         try:
             response = await asyncio.wait_for(
@@ -283,14 +282,13 @@ class VisualGroundingAgent:
                 conversation_id,
                 type(exc).__name__,
             )
-            return VisualBrief(
-                visual_type="diagram",
-                search_query=self._bound(fallback_query, 120) or "educational diagram",
-                caption_goal="Provide a concrete visual aid for the answer.",
-                reject_if=("wrong_visual_type", "decorative_or_generic_image"),
-                source="fallback",
+            brief = self._fallback_brief(
+                user_msg=user_msg,
+                fallback_query=fallback_query,
                 teaching_context=teaching_context,
             )
+            self._log_fallback_brief(conversation_id, brief, type(exc).__name__)
+            return brief
 
     def _messages(
         self,
@@ -381,6 +379,98 @@ class VisualGroundingAgent:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+    def _fallback_brief(
+        self,
+        *,
+        user_msg: str,
+        fallback_query: str,
+        teaching_context: VisualTeachingContext,
+    ) -> VisualBrief:
+        """Build a deterministic EDF-aligned brief when planning is unavailable.
+
+        The fallback avoids a generic ``diagram`` query by combining safe EDF
+        policy labels with broad visual-intent signals from the current prompt.
+        It does not attempt domain-specific factual translation; provider
+        prompts still receive the original bounded query for multilingual
+        search.
+        """
+
+        visual_type = self._fallback_visual_type(user_msg, fallback_query, teaching_context)
+        base_query = self._bound(fallback_query, 100) or self._bound(user_msg, 100) or "educational concept"
+        query_suffixes = {
+            "map": "educational labeled map",
+            "timeline": "educational timeline chart",
+            "flowchart": "educational flow diagram",
+            "chart": "educational chart diagram",
+            "comparison_chart": "educational comparison chart",
+        }
+        search_query = self._bound(
+            f"{base_query} {query_suffixes.get(visual_type, 'educational explanatory diagram')}",
+            120,
+        )
+        caption_goals = {
+            "map": "Help the learner connect the explanation to geography or spatial relationships.",
+            "timeline": "Help the learner see chronological order and major turning points.",
+            "flowchart": "Help the learner understand the process as connected steps.",
+            "chart": "Help the learner interpret the data or evidence pattern visually.",
+            "comparison_chart": "Help the learner compare key categories or sides at a glance.",
+        }
+        return VisualBrief(
+            visual_type=visual_type,
+            search_query=search_query,
+            caption_goal=caption_goals.get(visual_type, "Provide a concrete visual aid for the answer."),
+            reject_if=(
+                "wrong_visual_type",
+                "wrong_context",
+                "decorative_or_generic_image",
+                "product_photo",
+                "shopping_page",
+                "book_cover",
+            ),
+            source="edf_fallback",
+            teaching_context=teaching_context,
+        )
+
+    def _fallback_visual_type(
+        self,
+        user_msg: str,
+        fallback_query: str,
+        teaching_context: VisualTeachingContext,
+    ) -> str:
+        """Infer a broad visual type from EDF structure and prompt signals."""
+
+        text = f"{user_msg} {fallback_query}".lower()
+        if any(term in text for term in ("map", "geography", "geographic", "戰場", "戰役", "地圖", "地理", "版圖", "路線")):
+            return "map"
+        if any(term in text for term in ("timeline", "chronology", "history", "sequence", "年表", "時間線", "歷史", "演變")):
+            return "timeline"
+        if any(term in text for term in ("process", "workflow", "flow", "step", "流程", "步驟", "程序")):
+            return "flowchart"
+        if any(term in text for term in ("compare", "versus", "difference", "比較", "差異", "對照")):
+            return "comparison_chart"
+        if any(term in text for term in ("chart", "plot", "graph", "statistics", "data", "圖表", "統計", "數據", "效果量")):
+            return "chart"
+        if teaching_context.structure == "step_by_step":
+            return "flowchart"
+        return "diagram"
+
+    @staticmethod
+    def _log_fallback_brief(conversation_id: str, brief: VisualBrief, reason: str) -> None:
+        """Log deterministic fallback brief metadata without raw query text."""
+
+        teaching_context = brief.teaching_context or VisualTeachingContext()
+        logger.info(
+            "visual.brief_built conversation_id=%s visual_type=%s source=%s reason=%s reject_count=%s task_intent=%s answer_depth=%s turn_route=%s",
+            conversation_id,
+            brief.visual_type,
+            brief.source,
+            reason,
+            len(brief.reject_if),
+            teaching_context.task_intent,
+            teaching_context.answer_depth,
+            teaching_context.turn_route,
+        )
 
     @staticmethod
     def _parse_json(content: str) -> dict[str, Any]:

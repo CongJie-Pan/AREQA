@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -175,6 +176,44 @@ async def test_visual_grounding_agent_plans_with_edf_teaching_context():
     assert '"turn_route": "learning_help"' in user_message
     assert brief.teaching_context is not None
     assert brief.teaching_context.task_intent == "explain_text"
+
+
+@pytest.mark.asyncio
+async def test_visual_grounding_agent_builds_edf_fallback_brief_on_timeout(caplog):
+    """Planning fallback should remain teaching-aware when the model is slow."""
+
+    class _SlowCompletions:
+        async def create(self, **kwargs):
+            await asyncio.sleep(1)
+            return SimpleNamespace(choices=[])
+
+    caplog.set_level("INFO")
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_SlowCompletions()))
+    agent = VisualGroundingAgent(timeout_seconds=0.01)
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+    )
+
+    brief = await agent.plan(
+        client=client,
+        model="test-model",
+        user_msg="請解釋二戰歐洲戰場",
+        fallback_query="二戰歐洲戰場",
+        conversation_id="conversation-1",
+        response_policy=response_policy,
+        turn_plan=SimpleNamespace(route=SimpleNamespace(value="WEB_REQUIRED"), reason_code="EXTERNAL_SEARCH_REQUIRED"),
+    )
+
+    assert brief.source == "edf_fallback"
+    assert brief.visual_type == "map"
+    assert "educational labeled map" in brief.search_query
+    assert brief.teaching_context is not None
+    assert brief.teaching_context.task_intent == "explain_text"
+    assert "visual.brief_built" in caplog.text
 
 
 @pytest.mark.asyncio

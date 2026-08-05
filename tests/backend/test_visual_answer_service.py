@@ -563,7 +563,7 @@ async def test_resolve_planned_image_blocks_uses_visual_brief_cache_key(monkeypa
     assert observed["cache_key"] == VisualAnswerService._visual_brief_cache_key(brief)
     assert observed["cache_key"] != VisualAnswerService._cache_key(brief.search_query, "diagram")
     assert observed["allow_og_fallback"] is False
-    assert observed["allow_open_provider_fallback"] is False
+    assert observed["allow_open_provider_fallback"] is True
     assert "visual.cache_scope_selected" in caplog.text
     assert "scope=preflight" in caplog.text
     assert "visual_type=map" in caplog.text
@@ -618,6 +618,77 @@ async def test_preflight_skips_open_provider_and_og_fallback_when_perplexity_fai
     assert blocks == {}
     assert "visual.open_provider_fallback_skipped" in caplog.text
     assert "reason=preflight_budget" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_preflight_parallel_provider_fallback_uses_open_candidate(monkeypatch, caplog):
+    """Preflight should not lose images only because Perplexity is unavailable."""
+
+    import config as runtime_config
+
+    class _FakeGroundingAgent:
+        async def plan(self, **kwargs):
+            return VisualBrief(
+                visual_type="map",
+                search_query="World War II European Theater educational labeled map",
+                caption_goal="Help the learner connect the explanation to geography.",
+                reject_if=("wrong_visual_type", "product_photo", "book_cover"),
+            )
+
+        async def evaluate(self, **kwargs):
+            return VisualGroundingDecision(
+                accepted=True,
+                expected_visual_type="map",
+                candidate_visual_type="map",
+                reason="teaching_goal_match",
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    service._visual_grounding_agent = _FakeGroundingAgent()
+
+    async def no_perplexity_candidates(*args, **kwargs):
+        return []
+
+    async def wikimedia_candidate(*args, **kwargs):
+        return [
+            ImageCandidate(
+                provider="wikimedia",
+                image_url="https://upload.wikimedia.org/europe-map.png",
+                thumbnail_url="https://upload.wikimedia.org/europe-map.png",
+                source_url="https://commons.wikimedia.org/wiki/File:Europe_Map.png",
+                title="World War II European Theater labeled map",
+                caption="World War II European Theater labeled map",
+                license="Public domain",
+                width=1200,
+                height=800,
+            )
+        ]
+
+    async def no_openverse_candidates(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_parallel_providers", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_open_provider_fallback", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
+    monkeypatch.setattr(service, "_query_perplexity_images", no_perplexity_candidates)
+    monkeypatch.setattr(service, "_query_wikimedia", wikimedia_candidate)
+    monkeypatch.setattr(service, "_query_openverse", no_openverse_candidates)
+
+    blocks = await service.prepare_preflight_image_blocks(
+        user_msg="請解釋二戰歐洲戰場",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        existing_web_results=None,
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+    )
+
+    assert blocks["img_1"].provider == "wikimedia"
+    assert "visual.parallel_provider_started" in caplog.text
+    assert "visual.parallel_candidates_merged" in caplog.text
 
 
 @pytest.mark.asyncio
