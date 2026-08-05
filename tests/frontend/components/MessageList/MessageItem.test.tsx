@@ -35,12 +35,19 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       messageAttachmentDropdownIcon: 'messageAttachmentDropdownIcon',
       messageAttachmentDropdownName: 'messageAttachmentDropdownName',
       answerImageCard: 'answerImageCard',
-      answerImageLink: 'answerImageLink',
+      answerImageExplanation: 'answerImageExplanation',
+      answerImageButton: 'answerImageButton',
       answerImage: 'answerImage',
       answerImageCaption: 'answerImageCaption',
-      answerImageAttribution: 'answerImageAttribution',
+      answerImageCaptionText: 'answerImageCaptionText',
+      answerImageMetaLine: 'answerImageMetaLine',
       answerImageLicense: 'answerImageLicense',
       answerImageSource: 'answerImageSource',
+      answerImageLightbox: 'answerImageLightbox',
+      answerImageLightboxBody: 'answerImageLightboxBody',
+      answerImageLightboxImage: 'answerImageLightboxImage',
+      answerImageLightboxMeta: 'answerImageLightboxMeta',
+      answerImageLightboxSource: 'answerImageLightboxSource',
       content: 'content',
       streamingCursor: 'streamingCursor'
     },
@@ -180,7 +187,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('second.pdf')).toBeInTheDocument();
   });
 
-  it('renders illustrated answer blocks inline with a source link', () => {
+  it('renders illustrated answer blocks inline and opens a lightbox', () => {
     render(
       <MessageItem
         message={{
@@ -202,6 +209,8 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
               licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
               creator: 'Example Creator',
               attributionString: 'Example Creator / CC BY-SA 4.0',
+              attributionCaption: 'Forest plot example',
+              explanatoryCaption: '這張森林圖可以這樣看。',
               safetyStatus: 'pass',
               matchConfidence: 0.6,
             },
@@ -212,13 +221,21 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
 
     expect(screen.getByText('第一段')).toBeInTheDocument();
+    expect(screen.getByText('這張森林圖可以這樣看。')).toBeInTheDocument();
     expect(screen.getByAltText('Forest plot example')).toHaveAttribute(
       'src',
       'https://example.com/forest.png',
     );
-    expect(screen.getByText('example.com')).toHaveAttribute('href', 'https://example.com/article');
-    expect(screen.getByText('Example Creator / CC BY-SA 4.0')).toBeInTheDocument();
-    expect(screen.getByText('CC BY-SA 4.0')).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /放大檢視圖片/ })).toBeInTheDocument();
+    expect(screen.getByText('來源')).toHaveAttribute('href', 'https://example.com/article');
+    expect(screen.getByText('CC BY-SA 4.0')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /放大檢視圖片/ }));
+
+    expect(screen.getByText('View original source')).toHaveAttribute('href', 'https://example.com/article');
+    expect(screen.getByText('Attribution:')).toBeInTheDocument();
+    expect(screen.getByText(/Example Creator \/ CC BY-SA 4.0/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
       'href',
       'https://creativecommons.org/licenses/by-sa/4.0/',
     );

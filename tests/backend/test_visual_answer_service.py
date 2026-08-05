@@ -313,8 +313,45 @@ def test_select_image_block_prefers_open_licensed_candidate(caplog):
     assert payload["provider"] == "wikimedia"
     assert payload["license"] == "CC BY-SA 4.0"
     assert payload["creator"] == "Example Creator"
+    assert payload["tier"] == "wikimedia"
+    assert payload["attributionCaption"] == "Forest plot diagram for meta analysis"
+    assert "explanatoryCaption" not in payload
     assert payload["heuristicScore"] >= 0.65
+    assert payload["pedagogicalScore"] > 0
     assert "visual.image_selected" in caplog.text
+
+
+def test_image_block_debug_log_respects_config(monkeypatch, caplog):
+    """Image block diagnostics should be controlled by config settings."""
+
+    import config as runtime_config
+
+    caplog.set_level("INFO")
+    block = ImageBlock(
+        slot_id="visual-1",
+        topic="Forest plot",
+        purpose="diagram",
+        image_url="https://upload.wikimedia.org/example.png",
+        thumbnail_url="https://upload.wikimedia.org/thumb.png",
+        source_url="https://commons.wikimedia.org/wiki/File:Example.png",
+        source_domain="commons.wikimedia.org",
+        caption="Forest plot",
+        provider="wikimedia",
+        license="CC BY-SA 4.0",
+        safety_status="pass",
+        match_confidence=0.8,
+        explanatory_caption="caption",
+        pedagogical_score=0.7,
+    )
+
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_answer_debug_logs", False)
+    VisualAnswerService._log_image_block_selected("conversation-1", block, "test")
+    assert "visual.image_block_ready" not in caplog.text
+
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_answer_debug_logs", True)
+    VisualAnswerService._log_image_block_selected("conversation-1", block, "test")
+    assert "visual.image_block_ready" in caplog.text
+    assert "source_domain=commons.wikimedia.org" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -528,19 +528,35 @@ quoteBlockContent: css`
   `,
 
   answerImageCard: css`
-    width: min(100%, 560px);
-    margin: 16px auto;
+    width: min(100%, 520px);
+    margin: 18px auto;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.04);
+    border-radius: 18px;
+    background: transparent;
   `,
 
-  answerImageLink: css`
+  answerImageExplanation: css`
+    margin: 12px 0 10px;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 15px;
+    line-height: 1.8;
+  `,
+
+  answerImageButton: css`
     display: block;
     width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 18px;
     aspect-ratio: 16 / 9;
+    overflow: hidden;
     background: rgba(255, 255, 255, 0.06);
+    cursor: zoom-in;
+
+    &:focus-visible {
+      outline: 2px solid ${token.colorPrimary};
+      outline-offset: 3px;
+    }
   `,
 
   answerImage: css`
@@ -554,14 +570,20 @@ quoteBlockContent: css`
   answerImageCaption: css`
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 10px 12px;
-    color: rgba(255, 255, 255, 0.76);
-    font-size: 13px;
+    gap: 4px;
+    padding: 8px 2px 0;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
     line-height: 1.5;
   `,
 
-  answerImageAttribution: css`
+  answerImageCaptionText: css`
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 13px;
+    font-style: italic;
+  `,
+
+  answerImageMetaLine: css`
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -574,19 +596,10 @@ quoteBlockContent: css`
     display: inline-flex;
     align-items: center;
     min-height: 18px;
-    padding: 1px 6px;
+    padding: 1px 5px;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.74);
-
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    a:hover {
-      text-decoration: underline;
-    }
   `,
 
   answerImageSource: css`
@@ -596,6 +609,67 @@ quoteBlockContent: css`
     width: fit-content;
     color: ${token.colorLink};
     font-size: 12px;
+    text-decoration: none;
+
+    &:hover {
+      color: ${token.colorLinkHover};
+      text-decoration: underline;
+    }
+  `,
+
+  answerImageLightbox: css`
+    .ant-modal-content {
+      background: #111111;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .ant-modal-header {
+      background: transparent;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .ant-modal-title,
+    .ant-modal-close {
+      color: rgba(255, 255, 255, 0.88);
+    }
+  `,
+
+  answerImageLightboxBody: css`
+    display: grid;
+    gap: 16px;
+  `,
+
+  answerImageLightboxImage: css`
+    display: block;
+    width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+    border-radius: 8px;
+    background: #ffffff;
+  `,
+
+  answerImageLightboxMeta: css`
+    display: grid;
+    gap: 8px;
+    color: rgba(255, 255, 255, 0.74);
+    font-size: 13px;
+    line-height: 1.6;
+
+    p {
+      margin: 0;
+    }
+
+    a {
+      color: ${token.colorLink};
+    }
+  `,
+
+  answerImageLightboxSource: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    color: ${token.colorLink};
     text-decoration: none;
 
     &:hover {

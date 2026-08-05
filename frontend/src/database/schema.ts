@@ -76,15 +76,19 @@ export interface ImageBlock {
   sourceDomain: string;
   caption: string;
   provider?: 'wikimedia' | 'openverse' | 'og_image' | 'cache';
+  tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache';
   license?: string;
   licenseUrl?: string;
   creator?: string;
   attributionString?: string;
+  attributionCaption?: string;
+  explanatoryCaption?: string;
   width?: number;
   height?: number;
   safetyStatus: 'pass' | 'flagged' | 'unavailable';
   matchConfidence: number;
   heuristicScore?: number;
+  pedagogicalScore?: number;
 }
 
 /**

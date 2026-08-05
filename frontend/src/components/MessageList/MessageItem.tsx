@@ -285,61 +285,107 @@ function StreamingMarkdown({ content, markdownComponents }: { content: string, m
  * source attribution visible and rejects unsafe URLs before they reach the DOM.
  */
 function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnType<typeof useStyles>['styles'] }) {
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const imageUrl = block.thumbnailUrl || block.imageUrl;
   const safeImageUrl = isSafeUrl(imageUrl) ? imageUrl : '';
+  const safeFullImageUrl = isSafeUrl(block.imageUrl) ? block.imageUrl : safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
+  const safeLicenseUrl = isSafeUrl(block.licenseUrl) ? block.licenseUrl : '';
+  const displayCaption = block.attributionCaption || block.caption || block.topic;
+  const sourceLabel = block.sourceDomain || 'source';
+  const licenseLabel = block.license || (block.provider === 'og_image' ? 'License unknown' : '');
 
   if (!safeImageUrl || !safeSourceUrl || block.safetyStatus !== 'pass') {
     return null;
   }
 
   return (
-    <figure className={styles.answerImageCard}>
-      <a
-        href={safeSourceUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={styles.answerImageLink}
-        title={block.sourceUrl}
+    <>
+      {block.explanatoryCaption && (
+        <p className={styles.answerImageExplanation}>{block.explanatoryCaption}</p>
+      )}
+      <figure className={styles.answerImageCard}>
+        <button
+          type="button"
+          className={styles.answerImageButton}
+          onClick={() => setIsLightboxOpen(true)}
+          aria-label={`放大檢視圖片：${displayCaption}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={safeImageUrl}
+            alt={displayCaption}
+            className={styles.answerImage}
+            loading="lazy"
+          />
+        </button>
+        <figcaption className={styles.answerImageCaption}>
+          <span className={styles.answerImageCaptionText}>{displayCaption}</span>
+          <span className={styles.answerImageMetaLine}>
+            <span>{sourceLabel}</span>
+            {licenseLabel && <span className={styles.answerImageLicense}>{licenseLabel}</span>}
+            <a
+              href={safeSourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.answerImageSource}
+              title={block.sourceUrl}
+              onClick={(event) => event.stopPropagation()}
+            >
+              來源
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          </span>
+        </figcaption>
+      </figure>
+      <Modal
+        open={isLightboxOpen}
+        onCancel={() => setIsLightboxOpen(false)}
+        footer={null}
+        centered
+        width="min(92vw, 1080px)"
+        className={styles.answerImageLightbox}
+        title={displayCaption}
       >
+        <div className={styles.answerImageLightboxBody}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={safeImageUrl}
-          alt={block.caption || block.topic}
-          className={styles.answerImage}
-          loading="lazy"
-        />
-      </a>
-      <figcaption className={styles.answerImageCaption}>
-        <span>{block.caption}</span>
-        {(block.license || block.creator || block.attributionString) && (
-          <span className={styles.answerImageAttribution}>
-            {block.attributionString || block.creator}
-            {block.license && (
-              <span className={styles.answerImageLicense}>
-                {block.licenseUrl ? (
-                  <a href={block.licenseUrl} target="_blank" rel="noopener noreferrer">
-                    {block.license}
+          <img
+            src={safeFullImageUrl}
+            alt={displayCaption}
+            className={styles.answerImageLightboxImage}
+          />
+          <div className={styles.answerImageLightboxMeta}>
+            {block.explanatoryCaption && <p>{block.explanatoryCaption}</p>}
+            {(block.attributionString || block.creator) && (
+              <p>
+                <strong>Attribution:</strong> {block.attributionString || block.creator}
+              </p>
+            )}
+            {licenseLabel && (
+              <p>
+                <strong>License:</strong>{' '}
+                {safeLicenseUrl ? (
+                  <a href={safeLicenseUrl} target="_blank" rel="noopener noreferrer">
+                    {licenseLabel}
                   </a>
                 ) : (
-                  block.license
+                  licenseLabel
                 )}
-              </span>
+              </p>
             )}
-          </span>
-        )}
-        <a
-          href={safeSourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={styles.answerImageSource}
-          title={block.sourceUrl}
-        >
-          {block.sourceDomain || 'source'}
-          <ExternalLink size={12} aria-hidden="true" />
-        </a>
-      </figcaption>
-    </figure>
+            <a
+              href={safeSourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.answerImageLightboxSource}
+            >
+              View original source
+              <ExternalLink size={14} aria-hidden="true" />
+            </a>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

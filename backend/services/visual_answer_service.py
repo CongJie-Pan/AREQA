@@ -108,11 +108,14 @@ class ImageBlock:
         license_url: Optional provider license URL.
         creator: Optional creator/author display string.
         attribution_string: Optional attribution required by the provider.
+        attribution_caption: Short factual caption shown near attribution.
+        explanatory_caption: Pedagogical caption tied to the visible image.
         width: Optional image width.
         height: Optional image height.
         safety_status: Backend safety gate result.
         match_confidence: Conservative confidence score from metadata matching.
         heuristic_score: Cheap metadata-only relevance score.
+        pedagogical_score: Cheap instructional usefulness score.
     """
 
     slot_id: str
@@ -128,11 +131,14 @@ class ImageBlock:
     license_url: str = ""
     creator: str = ""
     attribution_string: str = ""
+    attribution_caption: str = ""
+    explanatory_caption: str = ""
     width: int | None = None
     height: int | None = None
     safety_status: str = "pass"
     match_confidence: float = 0.0
     heuristic_score: float = 0.0
+    pedagogical_score: float = 0.0
 
     def to_frontend(self) -> dict[str, Any]:
         """Return the camelCase wire shape consumed by the frontend."""
@@ -148,11 +154,17 @@ class ImageBlock:
             "sourceDomain": self.source_domain,
             "caption": self.caption,
             "provider": self.provider,
+            "tier": self.provider,
             "license": self.license,
             "safetyStatus": self.safety_status,
             "matchConfidence": self.match_confidence,
             "heuristicScore": self.heuristic_score,
+            "pedagogicalScore": self.pedagogical_score,
         }
+        if self.attribution_caption:
+            payload["attributionCaption"] = self.attribution_caption
+        if self.explanatory_caption:
+            payload["explanatoryCaption"] = self.explanatory_caption
         if self.license_url:
             payload["licenseUrl"] = self.license_url
         if self.creator:
@@ -383,6 +395,7 @@ class VisualAnswerService:
             )
             block = self._select_image_block(candidates, resolved_query, "wikimedia", conversation_id)
             if block:
+                self._log_image_block_selected(conversation_id, block, "open_provider")
                 return [block]
 
             candidates = await self._query_provider_candidates(
@@ -394,6 +407,7 @@ class VisualAnswerService:
             )
             block = self._select_image_block(candidates, resolved_query, "openverse", conversation_id)
             if block:
+                self._log_image_block_selected(conversation_id, block, "open_provider")
                 return [block]
 
         results = list(existing_web_results or [])
@@ -439,6 +453,7 @@ class VisualAnswerService:
                     block.source_domain,
                     "medium",
                 )
+                self._log_image_block_selected(conversation_id, block, "og_image")
         return blocks
 
     async def _block_from_result_safe(
@@ -776,9 +791,27 @@ class VisualAnswerService:
             caption=caption[:140],
             provider="og_image",
             license="unknown",
+            attribution_caption=caption[:140],
             safety_status="pass",
             match_confidence=0.6,
             heuristic_score=0.45,
+            pedagogical_score=0.0,
+        )
+
+    @staticmethod
+    def _log_image_block_selected(conversation_id: str, block: ImageBlock, stage: str) -> None:
+        """Emit opt-in visual diagnostics without logging image URLs or prompts."""
+
+        if not settings.enable_visual_answer_debug_logs:
+            return
+        logger.info(
+            "visual.image_block_ready conversation_id=%s stage=%s provider=%s source_domain=%s has_explanatory_caption=%s pedagogical_score=%.2f",
+            conversation_id,
+            stage,
+            block.provider,
+            block.source_domain or "unknown",
+            bool(block.explanatory_caption),
+            block.pedagogical_score,
         )
 
     def _candidate_to_block(self, candidate: ImageCandidate, score: float, index: int) -> ImageBlock:
@@ -787,6 +820,7 @@ class VisualAnswerService:
         parsed = urlparse(candidate.source_url)
         domain = parsed.netloc.replace("www.", "")
         caption = candidate.caption or candidate.title or f"Illustration from {domain}"
+        pedagogical_score = self._pedagogical_score(candidate)
         return ImageBlock(
             slot_id=f"visual-{index}",
             topic=(candidate.title or caption)[:80],
@@ -801,11 +835,13 @@ class VisualAnswerService:
             license_url=candidate.license_url,
             creator=candidate.creator,
             attribution_string=candidate.attribution_string,
+            attribution_caption=caption[:140],
             width=candidate.width,
             height=candidate.height,
             safety_status="pass",
             match_confidence=score,
             heuristic_score=score,
+            pedagogical_score=pedagogical_score,
         )
 
     def _heuristic_score(self, candidate: ImageCandidate, query: str) -> float:
@@ -820,7 +856,33 @@ class VisualAnswerService:
         purpose_bonus = 0.12 if _PURPOSE_TERMS & metadata_tokens else 0.0
         provider_bonus = _PROVIDER_PRIORITY.get(candidate.provider, 0.0)
         dimension_bonus = 0.08 if self._has_useful_dimensions(candidate) else 0.0
-        return min(overlap + purpose_bonus + provider_bonus + dimension_bonus, 1.0)
+        pedagogy_bonus = min(self._pedagogical_score(candidate) * 0.2, 0.2)
+        return min(overlap + purpose_bonus + provider_bonus + dimension_bonus + pedagogy_bonus, 1.0)
+
+    @staticmethod
+    def _pedagogical_score(candidate: ImageCandidate) -> float:
+        """Score cheap metadata signals for instructional usefulness."""
+
+        metadata = f"{candidate.title} {candidate.caption} {candidate.attribution_string}".lower()
+        signals = (
+            "forest plot",
+            "confidence interval",
+            "pooled effect",
+            "diamond",
+            "effect size",
+            "study weight",
+            "annotated",
+            "labeled",
+            "diagram",
+        )
+        score = sum(0.1 for signal in signals if signal in metadata)
+        if candidate.provider == "wikimedia":
+            score += 0.15
+        if len(candidate.caption) >= 80:
+            score += 0.1
+        if VisualAnswerService._has_useful_dimensions(candidate):
+            score += 0.1
+        return min(score, 1.0)
 
     @staticmethod
     def _is_safe_candidate(candidate: ImageCandidate) -> bool:
@@ -980,11 +1042,14 @@ class VisualAnswerService:
             license_url=str(payload.get("licenseUrl") or ""),
             creator=str(payload.get("creator") or ""),
             attribution_string=str(payload.get("attributionString") or ""),
+            attribution_caption=str(payload.get("attributionCaption") or ""),
+            explanatory_caption=str(payload.get("explanatoryCaption") or ""),
             width=VisualAnswerService._optional_int(payload.get("width")),
             height=VisualAnswerService._optional_int(payload.get("height")),
             safety_status=str(payload.get("safetyStatus") or "pass"),
             match_confidence=float(payload.get("matchConfidence") or 0.0),
             heuristic_score=float(payload.get("heuristicScore") or 0.0),
+            pedagogical_score=float(payload.get("pedagogicalScore") or 0.0),
         )
 
     @staticmethod
