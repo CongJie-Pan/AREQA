@@ -176,7 +176,7 @@ export function Citations({
                             }}
                           />
                         )}
-                        <span className={styles.sourceTitle} style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.title || domain || '文獻來源'}</span>
+                        <span className={styles.sourceTitle}>{src.title || domain || '文獻來源'}</span>
                         {sourceUrl && (
                           <a
                             href={sourceUrl}

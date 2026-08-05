@@ -96,6 +96,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     overflow-x: auto;
     gap: 10px;
     padding: 6px 2px 8px 2px;
+    width: 100%;
+    min-width: 0;
 
     // Smooth scrolling & hide scrollbar for webkit
     /* Scrollbar styling */
@@ -112,8 +114,12 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
     `,
 
-    sourceCard: css`
-    flex: 0 0 280px; /* Slightly wider cards for larger text */
+  sourceCard: css`
+    box-sizing: border-box;
+    flex: 0 0 280px;
+    width: 280px;
+    min-width: 280px;
+    max-width: 280px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -128,15 +134,18 @@ export const useStyles = createStyles(({ css, token }) => ({
       background: #282133;
       border-color: rgba(255, 255, 255, 0.2);
     }
-    `,
+  `,
 
-    sourceHeader: css`
+  sourceHeader: css`
     display: flex;
     align-items: center;
     gap: 8px;
-    `,
+    min-width: 0;
+  `,
 
-    sourceTitle: css`
+  sourceTitle: css`
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 14px;
     font-weight: 600;
     color: #ffffff;
