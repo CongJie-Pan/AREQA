@@ -392,6 +392,49 @@ async def test_prepare_preflight_image_blocks_uses_visual_brief_without_caption_
 
 
 @pytest.mark.asyncio
+async def test_preflight_skips_og_image_fallback_when_open_providers_fail(monkeypatch, caplog):
+    """Preflight should omit images instead of using ungrounded og:image previews."""
+
+    class _FakeGroundingAgent:
+        async def plan(self, **kwargs):
+            return VisualBrief(
+                visual_type="map",
+                search_query="Pacific War map Japanese expansion 1941 1945",
+                caption_goal="Show the geography of the Pacific War.",
+                reject_if=("document_scan", "book_cover"),
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    service._visual_grounding_agent = _FakeGroundingAgent()
+
+    async def no_candidates(*args, **kwargs):
+        return []
+
+    async def fail_og_scan(*args, **kwargs):
+        raise AssertionError("preflight should not scan og:image fallback")
+
+    monkeypatch.setattr(service, "_query_wikimedia", no_candidates)
+    monkeypatch.setattr(service, "_query_openverse", no_candidates)
+    monkeypatch.setattr(service, "_block_from_result_safe", fail_og_scan)
+
+    blocks = await service.prepare_preflight_image_blocks(
+        user_msg="第二次世界大戰日本戰況",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        existing_web_results=[{"url": "https://example.org/article"}],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+    )
+
+    assert blocks == {}
+    assert "visual.og_fallback_skipped" in caplog.text
+    assert "preflight_requires_grounded_provider" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_build_answer_blocks_uses_rewritten_visual_query(monkeypatch, caplog):
     """Visual rewrite should feed cache and providers without logging raw prompts."""
 

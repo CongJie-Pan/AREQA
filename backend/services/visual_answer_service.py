@@ -556,6 +556,7 @@ class VisualAnswerService:
                 conversation_id=conversation_id,
                 model_client=model_client,
                 visual_brief=visual_brief,
+                allow_og_fallback=visual_brief is None,
             )
             if not image_blocks:
                 await self._write_cache(cache_key, _NEGATIVE_CACHE_SENTINEL, 604800, conversation_id)
@@ -651,6 +652,7 @@ class VisualAnswerService:
         visual_intent_text: str | None = None,
         model_client: Any = None,
         visual_brief: VisualBrief | None = None,
+        allow_og_fallback: bool = True,
     ) -> list[ImageBlock]:
         """Resolve open-source providers first, then existing og:image fallback."""
 
@@ -697,6 +699,13 @@ class VisualAnswerService:
             if block:
                 self._log_image_block_selected(conversation_id, block, "open_provider")
                 return [block]
+
+        if not allow_og_fallback:
+            logger.info(
+                "visual.og_fallback_skipped conversation_id=%s reason=preflight_requires_grounded_provider",
+                conversation_id,
+            )
+            return []
 
         results = list(existing_web_results or [])
         if results:
