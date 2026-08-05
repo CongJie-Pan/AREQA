@@ -13,7 +13,7 @@ def _settings(**overrides):
     values = {
         "foreground_model_call_budget_general": 2,
         "foreground_model_call_budget_learning": 3,
-        "enable_policy_classifier_for_general_chat": False,
+        "enable_policy_classifier_for_general_chat": True,
         "enable_sync_long_term_memory_for_general_chat": False,
     }
     values.update(overrides)
@@ -41,7 +41,7 @@ def test_greeting_uses_static_route_without_foreground_model_work():
     assert plan.allow_long_term_memory_query is False
 
 
-def test_general_chat_does_not_require_policy_classifier_by_default():
+def test_general_chat_requires_policy_classifier_by_default():
     query = "今天心情有點普通"
 
     plan = TurnPlanService().plan(
@@ -53,9 +53,25 @@ def test_general_chat_does_not_require_policy_classifier_by_default():
     )
 
     assert plan.route == TurnRoute.GENERAL_CHAT
-    assert plan.requires_policy_classifier is False
+    assert plan.requires_policy_classifier is True
     assert plan.allow_long_term_memory_query is False
     assert plan.requires_suggestions is True
+
+
+def test_general_chat_can_disable_policy_classifier_with_runtime_flag():
+    query = "今天心情有點普通"
+
+    plan = TurnPlanService().plan(
+        user_message=query,
+        use_rag=False,
+        has_attachments=False,
+        search_decision=_search_decision(query),
+        settings=_settings(enable_policy_classifier_for_general_chat=False),
+    )
+
+    assert plan.route == TurnRoute.GENERAL_CHAT
+    assert plan.requires_policy_classifier is False
+    assert plan.allow_long_term_memory_query is False
 
 
 def test_learning_question_allows_policy_classifier_but_not_general_long_term_memory():

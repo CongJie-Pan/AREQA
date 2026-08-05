@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     enable_turn_plan_runtime: bool = True
     foreground_model_call_budget_general: int = 2
     foreground_model_call_budget_learning: int = 3
-    enable_policy_classifier_for_general_chat: bool = False
+    enable_policy_classifier_for_general_chat: bool = True
     enable_sync_long_term_memory_for_general_chat: bool = False
     enable_production_turn_trace_summary: bool = True
     turn_trace_slow_total_threshold_ms: int = 8000

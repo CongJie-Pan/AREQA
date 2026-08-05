@@ -394,6 +394,7 @@ async def test_execute_passes_structured_response_policy_to_prompt_assembly(
 
     assert prompt_assembly.await_args.kwargs["response_policy"] == response_policy
     assert "orchestration.response_policy_applied" in caplog.text
+    assert "source=classifier" in caplog.text
     assert "但是只能選一個" not in caplog.text
 
 
@@ -476,7 +477,7 @@ async def test_execute_logs_safe_turn_latency_trace(
 
 
 @pytest.mark.asyncio
-async def test_turn_plan_enabled_skips_general_policy_classifier(
+async def test_turn_plan_enabled_can_skip_general_policy_classifier_when_disabled(
     mock_router, mock_rag, mock_client, monkeypatch
 ):
     import config as runtime_config
@@ -512,6 +513,58 @@ async def test_turn_plan_enabled_skips_general_policy_classifier(
 
     mock_policy.assert_not_awaited()
     assert prompt_assembly.await_args.kwargs["turn_plan"].route.value == "GENERAL_CHAT"
+    assert "data: [DONE]" in events[-1]
+
+
+@pytest.mark.asyncio
+async def test_turn_plan_enabled_runs_general_policy_classifier_by_default(
+    mock_router, mock_rag, mock_client, monkeypatch, caplog
+):
+    import config as runtime_config
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_policy_classifier_for_general_chat", True)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    request = MagicMock()
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.DISCUSS_IDEA,
+        answer_depth=AnswerDepth.REFLECTIVE,
+        tone=ResponseTone.ANALYTICAL,
+        structure=ResponseStructure.ARGUMENT,
+        followup_mode=FollowupMode.OPTIONAL,
+        legacy_policy="PUSH_LIMIT",
+    )
+
+    async def llm_stream(*args, **kwargs):
+        yield 'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy) as mock_policy, \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]) as prompt_assembly:
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "這部電影的節奏很奇怪"}],
+            "turn-plan-general-policy-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    mock_policy.assert_awaited_once()
+    assert prompt_assembly.await_args.kwargs["turn_plan"].route.value == "GENERAL_CHAT"
+    assert prompt_assembly.await_args.kwargs["response_policy"] == response_policy
+    assert "orchestration.response_policy_applied" in caplog.text
+    assert "source=classifier" in caplog.text
     assert "data: [DONE]" in events[-1]
 
 

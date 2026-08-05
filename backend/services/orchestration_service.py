@@ -516,6 +516,7 @@ class OrchestrationService:
 
         # Node 5: Prompt Assembly
         response_policy = default_response_policy()
+        response_policy_source = "default"
         policy = response_policy.legacy_policy
         if policy_task:
             try:
@@ -525,6 +526,11 @@ class OrchestrationService:
                     if hasattr(policy_result, "legacy_policy")
                     else response_policy_from_legacy(policy_result)
                 )
+                response_policy_source = (
+                    "classifier"
+                    if hasattr(policy_result, "legacy_policy")
+                    else "legacy"
+                )
                 policy = response_policy.legacy_policy
                 trace.mark("policy_classifier_finished")
                 logger.info(
@@ -532,17 +538,9 @@ class OrchestrationService:
                     conversation_id,
                     policy,
                 )
-                logger.info(
-                    "orchestration.response_policy_applied conversation_id=%s metadata=%s",
-                    conversation_id,
-                    json.dumps(
-                        response_policy.safe_log_metadata(),
-                        ensure_ascii=False,
-                        sort_keys=True,
-                    ),
-                )
             except asyncio.TimeoutError:
                 policy_task.cancel()
+                response_policy_source = "timeout_fallback"
                 trace.mark("policy_classifier_timeout")
                 logger.warning(
                     "orchestration.dialogue_policy_timeout conversation_id=%s fallback=NORMAL",
@@ -552,6 +550,17 @@ class OrchestrationService:
                     f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '✅ 已完成基本分析，正在組織回答'}, ensure_ascii=False)}\n\n",
                     run_context.run_id,
                 )
+
+        logger.info(
+            "orchestration.response_policy_applied conversation_id=%s source=%s metadata=%s",
+            conversation_id,
+            response_policy_source,
+            json.dumps(
+                response_policy.safe_log_metadata(),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        )
 
         yield sse_adapter.encode_legacy(
             f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '➡️ 正在思考撰寫回答內容'}, ensure_ascii=False)}\n\n",
