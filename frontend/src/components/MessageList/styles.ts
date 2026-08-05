@@ -561,6 +561,34 @@ quoteBlockContent: css`
     line-height: 1.5;
   `,
 
+  answerImageAttribution: css`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 12px;
+  `,
+
+  answerImageLicense: css`
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.74);
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+  `,
+
   answerImageSource: css`
     display: inline-flex;
     align-items: center;

@@ -10,7 +10,7 @@ from backend.services.query_policy_service import (
     ResponseTone,
     TaskIntent,
 )
-from backend.services.visual_answer_service import ImageBlock, VisualAnswerService
+from backend.services.visual_answer_service import ImageBlock, ImageCandidate, VisualAnswerService
 
 
 def _policy(task_intent=TaskIntent.GENERAL_QA):
@@ -73,7 +73,7 @@ async def test_build_answer_blocks_interleaves_verified_images(monkeypatch, capl
     async def fake_search(**kwargs):
         return [{"url": "https://example.com/article"}]
 
-    async def fake_resolve(results, conversation_id):
+    async def fake_resolve(**kwargs):
         return [image]
 
     monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
@@ -107,8 +107,8 @@ async def test_build_answer_blocks_reuses_existing_web_results(monkeypatch, capl
     async def fail_search(**kwargs):
         raise AssertionError("existing web results should be reused")
 
-    async def fake_resolve(results, conversation_id):
-        assert results == [{"url": "https://example.com/article"}]
+    async def fake_resolve(**kwargs):
+        assert kwargs["existing_web_results"] == [{"url": "https://example.com/article"}]
         return [
             ImageBlock(
                 slot_id="visual-1",
@@ -141,4 +141,115 @@ async def test_build_answer_blocks_reuses_existing_web_results(monkeypatch, capl
     )
 
     assert [block["type"] for block in blocks] == ["paragraph", "image_block"]
-    assert "visual.search_reused" in caplog.text
+    assert "visual.slots_planned" in caplog.text
+
+
+def test_select_image_block_prefers_open_licensed_candidate(caplog):
+    """High-scoring Wikimedia candidates should become licensed image blocks."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    block = service._select_image_block(
+        [
+            ImageCandidate(
+                provider="wikimedia",
+                image_url="https://upload.wikimedia.org/example.png",
+                thumbnail_url="https://upload.wikimedia.org/thumb.png",
+                source_url="https://commons.wikimedia.org/wiki/File:Example.png",
+                title="Forest plot diagram",
+                caption="Forest plot diagram for meta analysis",
+                license="CC BY-SA 4.0",
+                license_url="https://creativecommons.org/licenses/by-sa/4.0/",
+                creator="Example Creator",
+                attribution_string="Example Creator / CC BY-SA 4.0",
+                width=900,
+                height=500,
+            )
+        ],
+        "forest plot meta analysis diagram",
+        "wikimedia",
+        "conversation-1",
+    )
+
+    assert block is not None
+    payload = block.to_frontend()
+    assert payload["provider"] == "wikimedia"
+    assert payload["license"] == "CC BY-SA 4.0"
+    assert payload["creator"] == "Example Creator"
+    assert payload["heuristicScore"] >= 0.65
+    assert "visual.image_selected" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_build_answer_blocks_uses_positive_cache(monkeypatch, caplog):
+    """Positive Redis cache hits should skip all providers."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+
+    async def fake_read_cache(cache_key, conversation_id):
+        return {
+            "type": "image_block",
+            "slotId": "visual-1",
+            "topic": "Cached image",
+            "purpose": "diagram",
+            "imageUrl": "https://example.com/cached.png",
+            "thumbnailUrl": "https://example.com/cached.png",
+            "sourceUrl": "https://example.com/source",
+            "sourceDomain": "example.com",
+            "caption": "Cached image",
+            "provider": "wikimedia",
+            "license": "CC0",
+            "safetyStatus": "pass",
+            "matchConfidence": 0.8,
+            "heuristicScore": 0.8,
+        }
+
+    async def fail_resolve(**kwargs):
+        raise AssertionError("providers should not run on positive cache hit")
+
+    monkeypatch.setattr(service, "_read_cache", fake_read_cache)
+    monkeypatch.setattr(service, "_resolve_images", fail_resolve)
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段",
+        user_msg="請解釋 meta analysis",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert [block["type"] for block in blocks] == ["paragraph", "image_block"]
+    assert blocks[1]["provider"] == "wikimedia"
+
+
+@pytest.mark.asyncio
+async def test_build_answer_blocks_uses_negative_cache(monkeypatch):
+    """Negative cache hits should skip provider calls and omit image blocks."""
+
+    service = VisualAnswerService()
+
+    async def fake_read_cache(cache_key, conversation_id):
+        return {"status": "negative"}
+
+    async def fail_resolve(**kwargs):
+        raise AssertionError("providers should not run on negative cache hit")
+
+    monkeypatch.setattr(service, "_read_cache", fake_read_cache)
+    monkeypatch.setattr(service, "_resolve_images", fail_resolve)
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段",
+        user_msg="請解釋 meta analysis",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert blocks == []

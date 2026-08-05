@@ -312,6 +312,22 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
       </a>
       <figcaption className={styles.answerImageCaption}>
         <span>{block.caption}</span>
+        {(block.license || block.creator || block.attributionString) && (
+          <span className={styles.answerImageAttribution}>
+            {block.attributionString || block.creator}
+            {block.license && (
+              <span className={styles.answerImageLicense}>
+                {block.licenseUrl ? (
+                  <a href={block.licenseUrl} target="_blank" rel="noopener noreferrer">
+                    {block.license}
+                  </a>
+                ) : (
+                  block.license
+                )}
+              </span>
+            )}
+          </span>
+        )}
         <a
           href={safeSourceUrl}
           target="_blank"

@@ -38,6 +38,8 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       answerImageLink: 'answerImageLink',
       answerImage: 'answerImage',
       answerImageCaption: 'answerImageCaption',
+      answerImageAttribution: 'answerImageAttribution',
+      answerImageLicense: 'answerImageLicense',
       answerImageSource: 'answerImageSource',
       content: 'content',
       streamingCursor: 'streamingCursor'
@@ -195,6 +197,11 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
               sourceUrl: 'https://example.com/article',
               sourceDomain: 'example.com',
               caption: 'Forest plot example',
+              provider: 'wikimedia',
+              license: 'CC BY-SA 4.0',
+              licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+              creator: 'Example Creator',
+              attributionString: 'Example Creator / CC BY-SA 4.0',
               safetyStatus: 'pass',
               matchConfidence: 0.6,
             },
@@ -210,6 +217,11 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       'https://example.com/forest.png',
     );
     expect(screen.getByText('example.com')).toHaveAttribute('href', 'https://example.com/article');
+    expect(screen.getByText('Example Creator / CC BY-SA 4.0')).toBeInTheDocument();
+    expect(screen.getByText('CC BY-SA 4.0')).toHaveAttribute(
+      'href',
+      'https://creativecommons.org/licenses/by-sa/4.0/',
+    );
     expect(screen.getByText('第二段')).toBeInTheDocument();
     expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });
