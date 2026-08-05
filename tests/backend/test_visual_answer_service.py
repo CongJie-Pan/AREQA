@@ -11,7 +11,7 @@ from backend.services.query_policy_service import (
     ResponseTone,
     TaskIntent,
 )
-from backend.services.visual_answer_service import ImageBlock, ImageCandidate, VisualAnswerService
+from backend.services.visual_answer_service import ImageBlock, ImageCandidate, PlannedImageSlot, VisualAnswerService
 from backend.services.visual_grounding_agent import VisualBrief, VisualGroundingDecision
 
 
@@ -39,6 +39,23 @@ class _RecordingHttpClient:
     async def get(self, url, **kwargs):
         self.last_headers = kwargs.get("headers") or {}
         request = httpx.Request("GET", url)
+        return httpx.Response(200, json=self.payload, request=request)
+
+
+class _RecordingPostClient:
+    """Small async HTTP client double that records the last POST request."""
+
+    def __init__(self, payload):
+        self.payload = payload
+        self.last_url = ""
+        self.last_headers = {}
+        self.last_json = {}
+
+    async def post(self, url, **kwargs):
+        self.last_url = url
+        self.last_headers = kwargs.get("headers") or {}
+        self.last_json = kwargs.get("json") or {}
+        request = httpx.Request("POST", url)
         return httpx.Response(200, json=self.payload, request=request)
 
 
@@ -97,7 +114,23 @@ def test_should_not_enrich_general_non_visual_prompt():
 def test_cache_key_uses_visual_schema_version():
     """Visual cache keys should invalidate pre-provider placeholder entries."""
 
-    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v3:diagram:")
+    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v4:diagram:")
+
+
+def test_visual_brief_cache_key_uses_preflight_scope():
+    """Preflight cache keys should not reuse generic diagram cache entries."""
+
+    brief = VisualBrief(
+        visual_type="map",
+        search_query="Pacific War map Japanese expansion 1941 1945",
+        caption_goal="Show the geography of the Pacific War.",
+        reject_if=("document_scan", "book_cover"),
+    )
+
+    key = VisualAnswerService._visual_brief_cache_key(brief)
+
+    assert key.startswith("visual_image:v4:preflight_map:")
+    assert key != VisualAnswerService._cache_key(brief.search_query, "diagram")
 
 
 def test_visual_search_query_rewrites_meta_analysis_prompt():
@@ -336,6 +369,44 @@ async def test_build_answer_blocks_interleaves_preverified_image_without_query()
 
 
 @pytest.mark.asyncio
+async def test_build_answer_blocks_auto_inserts_unused_preverified_image(caplog):
+    """Verified preflight images should render even if the model omits markers."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    image = ImageBlock(
+        slot_id="img_1",
+        topic="Pacific War map",
+        purpose="diagram",
+        image_url="https://upload.wikimedia.org/map.png",
+        thumbnail_url="https://upload.wikimedia.org/map-thumb.png",
+        source_url="https://commons.wikimedia.org/wiki/File:Pacific_War_Map.png",
+        source_domain="commons.wikimedia.org",
+        caption="Pacific War map",
+        license="CC BY-SA 4.0",
+        safety_status="pass",
+        match_confidence=0.8,
+    )
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段\n\n第二段",
+        user_msg="二戰日本戰況",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        planned_image_slots=[],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        preverified_image_blocks={"img_1": image},
+    )
+
+    assert [block["type"] for block in blocks] == ["paragraph", "image_block", "paragraph"]
+    assert blocks[1]["slotId"] == "img_1"
+    assert "visual.preverified_auto_inserted" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_prepare_preflight_image_blocks_uses_visual_brief_without_caption_leak(monkeypatch):
     """Preflight should search with the agent brief and avoid internal captions."""
 
@@ -389,6 +460,62 @@ async def test_prepare_preflight_image_blocks_uses_visual_brief_without_caption_
     assert observed["query"] == "Pacific War map Japanese expansion 1941 1945"
     assert observed["caption_hint"] == ""
     assert observed["visual_brief"].visual_type == "map"
+
+
+@pytest.mark.asyncio
+async def test_resolve_planned_image_blocks_uses_visual_brief_cache_key(monkeypatch, caplog):
+    """Preflight slot resolution should bypass stale generic diagram cache."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    brief = VisualBrief(
+        visual_type="map",
+        search_query="Pacific War map Japanese expansion 1941 1945",
+        caption_goal="Show the geography of the Pacific War.",
+        reject_if=("document_scan", "book_cover"),
+    )
+    observed = {}
+
+    async def fake_read_cache(cache_key, conversation_id):
+        observed["cache_key"] = cache_key
+        return None
+
+    async def fake_write_cache(*args, **kwargs):
+        return None
+
+    async def fake_resolve_images(**kwargs):
+        observed["allow_og_fallback"] = kwargs["allow_og_fallback"]
+        return []
+
+    monkeypatch.setattr(service, "_read_cache", fake_read_cache)
+    monkeypatch.setattr(service, "_write_cache", fake_write_cache)
+    monkeypatch.setattr(service, "_resolve_images", fake_resolve_images)
+
+    blocks = await service._resolve_planned_image_blocks(
+        planned_slots=[
+            PlannedImageSlot(
+                slot_id="img_1",
+                query=brief.search_query,
+                caption_hint="",
+                anchor_after_paragraph=0,
+            )
+        ],
+        existing_web_results=None,
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+        visual_brief=brief,
+    )
+
+    assert blocks == {}
+    assert observed["cache_key"] == VisualAnswerService._visual_brief_cache_key(brief)
+    assert observed["cache_key"] != VisualAnswerService._cache_key(brief.search_query, "diagram")
+    assert observed["allow_og_fallback"] is False
+    assert "visual.cache_scope_selected" in caplog.text
+    assert "scope=preflight" in caplog.text
+    assert "visual_type=map" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -662,6 +789,56 @@ async def test_select_image_block_uses_grounding_agent_to_reject_visual_mismatch
     assert "candidate_type=aircraft_photo" in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_select_image_block_rejects_preflight_candidate_when_grounding_unavailable(caplog):
+    """Preflight should not display candidates that could not be grounded."""
+
+    class _UnavailableGroundingAgent:
+        async def evaluate(self, *, candidate, **kwargs):
+            return VisualGroundingDecision(
+                accepted=True,
+                expected_visual_type="unknown",
+                candidate_visual_type="unknown",
+                reason="model_unavailable",
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    service._visual_grounding_agent = _UnavailableGroundingAgent()
+    brief = VisualBrief(
+        visual_type="map",
+        search_query="Pacific War map Japanese expansion 1941 1945",
+        caption_goal="Show the geography of the Pacific War.",
+        reject_if=("document_scan", "book_cover"),
+    )
+
+    block = await service._select_image_block(
+        [
+            ImageCandidate(
+                provider="perplexity_images",
+                image_url="https://cdn.example.org/pacific-map.jpg",
+                thumbnail_url="https://cdn.example.org/pacific-map.jpg",
+                source_url="https://example.org/pacific-war-map",
+                title="Pacific War map diagram",
+                caption="Pacific War map diagram",
+                license="unknown",
+                width=1200,
+                height=800,
+            )
+        ],
+        "Pacific War map diagram",
+        "perplexity_images",
+        "conversation-1",
+        "Show a map that helps explain World War II geography.",
+        SimpleNamespace(),
+        brief,
+    )
+
+    assert block is None
+    assert "visual.candidate_rejected" in caplog.text
+    assert "grounding_model_unavailable" in caplog.text
+
+
 def test_image_block_debug_log_respects_config(monkeypatch, caplog):
     """Image block diagnostics should be controlled by config settings."""
 
@@ -725,6 +902,102 @@ async def test_openverse_request_uses_optional_access_token(monkeypatch):
 
     assert client.last_headers["User-Agent"] == "AREQA-Test/1.0"
     assert client.last_headers["Authorization"] == "Bearer openverse-token"
+
+
+@pytest.mark.asyncio
+async def test_perplexity_image_request_uses_sonar_return_images(monkeypatch):
+    """Perplexity image provider should request structured Sonar image results."""
+
+    import config as runtime_config
+
+    service = VisualAnswerService()
+    client = _RecordingPostClient(
+        {
+            "images": [
+                {
+                    "image_url": "https://cdn.example.org/pacific-map.jpg",
+                    "origin_url": "https://example.org/pacific-war-map",
+                    "title": "Pacific War map",
+                    "width": 1200,
+                    "height": 800,
+                }
+            ]
+        }
+    )
+    brief = VisualBrief(
+        visual_type="map",
+        search_query="Pacific War map Japanese expansion 1941 1945",
+        caption_goal="Show the geography of the Pacific War.",
+        reject_if=("document_scan", "book_cover"),
+    )
+    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-token")
+    monkeypatch.setattr(runtime_config.settings, "perplexity_sonar_api_url", "https://api.perplexity.ai/v1/sonar")
+    monkeypatch.setattr(runtime_config.settings, "perplexity_visual_search_model", "sonar")
+
+    candidates = await service._query_perplexity_images(
+        client,
+        "Pacific War map Japanese expansion 1941 1945",
+        "conversation-1",
+        brief,
+    )
+
+    assert client.last_url == "https://api.perplexity.ai/v1/sonar"
+    assert client.last_headers["Authorization"] == "Bearer pplx-token"
+    assert client.last_json["model"] == "sonar"
+    assert client.last_json["return_images"] is True
+    assert client.last_json["num_images"] >= 4
+    assert candidates[0].provider == "perplexity_images"
+    assert candidates[0].image_url == "https://cdn.example.org/pacific-map.jpg"
+    assert candidates[0].source_url == "https://example.org/pacific-war-map"
+    assert candidates[0].width == 1200
+
+
+@pytest.mark.asyncio
+async def test_resolve_images_prefers_perplexity_image_provider(monkeypatch, caplog):
+    """Perplexity image candidates should run before Wikimedia/Openverse fallbacks."""
+
+    import config as runtime_config
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
+    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-token")
+
+    async def perplexity_candidate(client, query, conversation_id, visual_brief=None):
+        return [
+            ImageCandidate(
+                provider="perplexity_images",
+                image_url="https://cdn.example.org/pacific-map.jpg",
+                thumbnail_url="https://cdn.example.org/pacific-map.jpg",
+                source_url="https://example.org/pacific-war-map",
+                title="Pacific War map diagram",
+                caption="Pacific War map diagram",
+                license="unknown",
+                width=1200,
+                height=800,
+            )
+        ]
+
+    async def fail_wikimedia(*args, **kwargs):
+        raise AssertionError("Wikimedia should not run when Perplexity returns a selected image")
+
+    monkeypatch.setattr(service, "_query_perplexity_images", perplexity_candidate)
+    monkeypatch.setattr(service, "_query_wikimedia", fail_wikimedia)
+
+    blocks = await service._resolve_images(
+        user_msg="第二次世界大戰日本戰況",
+        visual_query="Pacific War map diagram",
+        existing_web_results=None,
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert len(blocks) == 1
+    assert blocks[0].provider == "perplexity_images"
+    assert blocks[0].image_url == "https://cdn.example.org/pacific-map.jpg"
+    assert "stage=perplexity_images" in caplog.text
 
 
 @pytest.mark.asyncio

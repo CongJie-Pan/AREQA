@@ -47,8 +47,9 @@ _IMAGE_META_PATTERN = re.compile(
 )
 _TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _NEGATIVE_CACHE_SENTINEL = {"status": "negative"}
-_VISUAL_CACHE_VERSION = "v3"
+_VISUAL_CACHE_VERSION = "v4"
 _PROVIDER_PRIORITY = {
+    "perplexity_images": 0.3,
     "wikimedia": 0.25,
     "openverse": 0.2,
     "og_image": 0.05,
@@ -337,13 +338,19 @@ class VisualAnswerService:
 
         try:
             if preverified_image_blocks is not None:
+                if not preverified_image_blocks:
+                    logger.info(
+                        "visual.preverified_unused conversation_id=%s available_image_count=0",
+                        conversation_id,
+                    )
+                    return []
                 if not planned_slots:
                     logger.info(
-                        "visual.preverified_unused conversation_id=%s available_image_count=%s",
+                        "visual.preverified_auto_inserted conversation_id=%s available_image_count=%s",
                         conversation_id,
                         len(preverified_image_blocks),
                     )
-                    return []
+                    return self._interleave_blocks(paragraphs, [next(iter(preverified_image_blocks.values()))])
                 rendered = self._interleave_blocks_at_planned_slots(
                     paragraphs,
                     planned_slots,
@@ -524,7 +531,17 @@ class VisualAnswerService:
                 conversation_id,
                 slot.slot_id,
             )
-            cache_key = self._cache_key(slot.query, "diagram")
+            cache_key = (
+                self._visual_brief_cache_key(visual_brief)
+                if visual_brief is not None
+                else self._cache_key(slot.query, "diagram")
+            )
+            if visual_brief is not None:
+                logger.info(
+                    "visual.cache_scope_selected conversation_id=%s scope=preflight visual_type=%s",
+                    conversation_id,
+                    visual_brief.visual_type,
+                )
             cached_block = await self._read_cache(cache_key, conversation_id)
             if cached_block == _NEGATIVE_CACHE_SENTINEL:
                 logger.info(
@@ -659,6 +676,38 @@ class VisualAnswerService:
         resolved_query = visual_query or self._visual_search_query(user_msg)[0]
         visual_context = visual_intent_text or resolved_query
         blocks: list[ImageBlock] = []
+        if settings.enable_perplexity_visual_search:
+            async def query_perplexity_images(
+                client: httpx.AsyncClient,
+                query: str,
+                conversation_id: str,
+            ) -> list[ImageCandidate]:
+                return await self._query_perplexity_images(client, query, conversation_id, visual_brief)
+
+            async with httpx.AsyncClient(
+                timeout=settings.perplexity_visual_search_timeout_seconds,
+                follow_redirects=True,
+            ) as client:
+                candidates = await self._query_provider_candidates(
+                    provider="perplexity_images",
+                    query_func=query_perplexity_images,
+                    client=client,
+                    query=resolved_query,
+                    conversation_id=conversation_id,
+                )
+                block = await self._select_image_block(
+                    candidates,
+                    resolved_query,
+                    "perplexity_images",
+                    conversation_id,
+                    visual_context,
+                    model_client,
+                    visual_brief,
+                )
+                if block:
+                    self._log_image_block_selected(conversation_id, block, "perplexity_images")
+                    return [block]
+
         async with httpx.AsyncClient(timeout=self.open_provider_timeout_seconds, follow_redirects=True) as client:
             candidates = await self._query_provider_candidates(
                 provider="wikimedia",
@@ -832,6 +881,64 @@ class VisualAnswerService:
                 )
             return []
 
+    async def _query_perplexity_images(
+        self,
+        client: httpx.AsyncClient,
+        query: str,
+        conversation_id: str,
+        visual_brief: VisualBrief | None = None,
+    ) -> list[ImageCandidate]:
+        """Query Perplexity Sonar image results as the first visual provider.
+
+        Sonar can return structured image results in addition to textual search
+        context. AREQA uses only the bounded image metadata here, then sends the
+        candidates through the same safety and grounding gates as Wikimedia and
+        Openverse. Structured logs expose only provider status and counts; they
+        never include raw queries, prompts, answer text, credentials, or URLs.
+        """
+
+        api_key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
+        if not api_key:
+            logger.info(
+                "visual.provider_skipped conversation_id=%s provider=perplexity_images reason=missing_api_key",
+                conversation_id,
+            )
+            return []
+
+        logger.info(
+            "visual.provider_started conversation_id=%s provider=perplexity_images timeout_seconds=%.1f",
+            conversation_id,
+            settings.perplexity_visual_search_timeout_seconds,
+        )
+        response = await client.post(
+            settings.perplexity_sonar_api_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.perplexity_visual_search_model,
+                "messages": self._perplexity_image_messages(query, visual_brief),
+                "return_images": True,
+                "num_images": max(self.max_images * 4, 4),
+                "web_search_options": {
+                    "search_context_size": "low",
+                },
+            },
+        )
+        response.raise_for_status()
+        candidates = [
+            candidate
+            for item in response.json().get("images") or []
+            if (candidate := self._perplexity_image_candidate(item)) is not None
+        ]
+        logger.info(
+            "visual.provider_completed conversation_id=%s provider=perplexity_images candidate_count=%s",
+            conversation_id,
+            len(candidates),
+        )
+        return candidates
+
     async def _query_wikimedia(
         self,
         client: httpx.AsyncClient,
@@ -970,6 +1077,60 @@ class VisualAnswerService:
         return headers
 
     @staticmethod
+    def _perplexity_image_messages(query: str, visual_brief: VisualBrief | None) -> list[dict[str, str]]:
+        """Build the Sonar prompt used only for image retrieval."""
+
+        system_prompt = (
+            "You are retrieving images for an educational answer. Find concrete, "
+            "non-decorative images that directly match the requested visual type "
+            "and could be embedded next to an explanation. Prefer diagrams, maps, "
+            "charts, timelines, labeled figures, or historically/source-relevant "
+            "photos when those match the request. Avoid book covers, document "
+            "scans, logos, unrelated photos, and generic thumbnails unless the "
+            "user explicitly asks for them."
+        )
+        user_payload = {
+            "image_search_query": query,
+            "visual_brief": (
+                {
+                    "visual_type": visual_brief.visual_type,
+                    "caption_goal": visual_brief.caption_goal,
+                    "reject_if": list(visual_brief.reject_if),
+                }
+                if visual_brief
+                else None
+            ),
+            "instruction": "Return image results with direct image URLs and source/origin URLs.",
+        }
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+        ]
+
+    @classmethod
+    def _perplexity_image_candidate(cls, item: Any) -> ImageCandidate | None:
+        """Convert one Sonar image result into AREQA's provider candidate model."""
+
+        if not isinstance(item, dict):
+            return None
+        image_url = str(item.get("image_url") or item.get("url") or "").strip()
+        source_url = str(item.get("origin_url") or item.get("source_url") or image_url).strip()
+        title = cls._clean_text(str(item.get("title") or ""))
+        if not image_url or not source_url:
+            return None
+        return ImageCandidate(
+            provider="perplexity_images",
+            image_url=image_url,
+            thumbnail_url=str(item.get("thumbnail_url") or image_url).strip(),
+            source_url=source_url,
+            title=title,
+            caption=title,
+            license="unknown",
+            width=cls._optional_int(item.get("width")),
+            height=cls._optional_int(item.get("height")),
+        )
+
+    @staticmethod
     def _visual_search_query(user_msg: str) -> tuple[str, str]:
         """Rewrite a user prompt into image-provider metadata language.
 
@@ -1092,7 +1253,7 @@ class VisualAnswerService:
                 conversation_id=conversation_id,
                 visual_brief=visual_brief,
             )
-            if decision.accepted:
+            if decision.accepted and not (visual_brief is not None and decision.reason == "model_unavailable"):
                 grounded_candidate = candidate
                 grounded_score = candidate_score
                 break
@@ -1444,6 +1605,37 @@ class VisualAnswerService:
         digest = hashlib.sha256(f"{_VISUAL_CACHE_VERSION}:{purpose}:{normalized}".encode("utf-8")).hexdigest()
         return f"visual_image:{_VISUAL_CACHE_VERSION}:{purpose}:{digest}"
 
+    @classmethod
+    def _visual_brief_cache_key(cls, brief: VisualBrief) -> str:
+        """Return a preflight cache key scoped to the agent's visual intent.
+
+        Preflight images are selected before answer generation and grounded
+        against a model-planned brief. They must not reuse older generic
+        diagram cache entries, because stale images can bypass the stricter
+        grounding path. The key intentionally hashes normalized brief metadata
+        and logs only the safe scope/type metadata at call sites.
+        """
+
+        purpose = f"preflight_{cls._safe_cache_purpose(brief.visual_type)}"
+        fingerprint = json.dumps(
+            {
+                "caption_goal": brief.caption_goal,
+                "reject_if": list(brief.reject_if),
+                "search_query": brief.search_query,
+                "visual_type": brief.visual_type,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        return cls._cache_key(fingerprint, purpose)
+
+    @staticmethod
+    def _safe_cache_purpose(value: str) -> str:
+        """Normalize cache purpose fragments to stable non-empty identifiers."""
+
+        normalized = re.sub(r"[^a-z0-9_]+", "_", str(value or "").lower()).strip("_")
+        return normalized or "visual"
+
     @staticmethod
     def _is_safe_cached_image_block(payload: dict[str, Any]) -> bool:
         """Return whether a cached frontend image block is still renderable.
@@ -1459,7 +1651,7 @@ class VisualAnswerService:
         source_domain = str(payload.get("sourceDomain") or "")
         provider = str(payload.get("provider") or "")
 
-        if provider not in {"wikimedia", "openverse", "og_image"}:
+        if provider not in {"perplexity_images", "wikimedia", "openverse", "og_image"}:
             return False
 
         for url in (image_url, thumbnail_url, source_url):
