@@ -602,6 +602,7 @@ class OrchestrationService:
                 user_id=user_id,
                 conversation_id=conversation_id,
                 model_client=self.client,
+                turn_plan=turn_plan if turn_plan_enabled else None,
             )
             trace.mark("visual_preflight_finished")
             final_messages = self._add_verified_visual_instruction(

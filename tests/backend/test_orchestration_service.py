@@ -776,6 +776,48 @@ async def test_turn_plan_enabled_runs_general_policy_classifier_by_default(
 
 
 @pytest.mark.asyncio
+async def test_visual_preflight_receives_learning_turn_plan_after_policy_timeout(
+    mock_router, mock_rag, mock_client, monkeypatch
+):
+    """Visual preflight should still run for learning routes after policy fallback."""
+
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight", True)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    service.visual_answer_service.prepare_preflight_image_blocks = AsyncMock(return_value={})
+    request = MagicMock()
+
+    async def llm_stream(*args, **kwargs):
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, side_effect=asyncio.TimeoutError), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": "請解釋第二次世界大戰歐洲戰場"}],
+            "learning-visual-timeout-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    kwargs = service.visual_answer_service.prepare_preflight_image_blocks.await_args.kwargs
+    assert kwargs["response_policy"].task_intent == TaskIntent.GENERAL_QA
+    assert kwargs["turn_plan"].route.value == "LEARNING_HELP"
+
+
+@pytest.mark.asyncio
 async def test_turn_plan_disabled_keeps_legacy_policy_classifier(
     mock_router, mock_rag, mock_client, monkeypatch
 ):

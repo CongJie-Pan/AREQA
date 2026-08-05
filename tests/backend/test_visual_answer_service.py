@@ -111,6 +111,15 @@ def test_should_not_enrich_general_non_visual_prompt():
     assert service.should_enrich(_policy(), "我在想產品定位") is False
 
 
+def test_should_attempt_preflight_for_learning_route_policy_fallback():
+    """Learning route should still allow visuals when policy classification times out."""
+
+    service = VisualAnswerService()
+    turn_plan = SimpleNamespace(route="LEARNING_HELP")
+
+    assert service._should_attempt_preflight(_policy(TaskIntent.GENERAL_QA), "第二次世界大戰歐洲戰場", turn_plan)
+
+
 def test_cache_key_uses_visual_schema_version():
     """Visual cache keys should invalidate pre-provider placeholder entries."""
 

@@ -270,13 +270,33 @@ class VisualAnswerService:
     def should_enrich(self, response_policy: ResponsePolicy, user_msg: str) -> bool:
         """Return whether this turn should attempt visual enrichment."""
 
+        return self._should_attempt_preflight(response_policy, user_msg, None)
+
+    def _should_attempt_preflight(
+        self,
+        response_policy: ResponsePolicy,
+        user_msg: str,
+        turn_plan: Any = None,
+    ) -> bool:
+        """Return whether the current turn should attempt visual retrieval.
+
+        Response policy classification is a bounded foreground model call and
+        can time out. The deterministic turn plan remains available in that
+        case, so learning-help routes are allowed to attempt preflight visuals
+        even when the response policy had to fall back to ``GENERAL_QA``.
+        """
+
         normalized = user_msg.lower()
         explicit_visual_request = any(keyword in normalized for keyword in _VISUAL_KEYWORDS)
+        route = getattr(turn_plan, "route", None)
+        route_value = getattr(route, "value", route)
+        is_learning_route = route_value == "LEARNING_HELP"
         return bool(
             self.max_images > 0
             and (
                 explicit_visual_request
                 or response_policy.task_intent == TaskIntent.EXPLAIN_TEXT
+                or is_learning_route
             )
         )
 
@@ -439,6 +459,7 @@ class VisualAnswerService:
         user_id: str,
         conversation_id: str,
         model_client: Any = None,
+        turn_plan: Any = None,
     ) -> dict[str, ImageBlock]:
         """Resolve verified images before the main answer model runs.
 
@@ -450,7 +471,7 @@ class VisualAnswerService:
 
         if not settings.enable_visual_preflight:
             return {}
-        if not self.should_enrich(response_policy, user_msg):
+        if not self._should_attempt_preflight(response_policy, user_msg, turn_plan):
             return {}
 
         visual_query, rewrite_rule = self._visual_search_query(user_msg)
