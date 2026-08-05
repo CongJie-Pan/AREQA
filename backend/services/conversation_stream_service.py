@@ -6,7 +6,9 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
+from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List
 
 from core import PublicAnswerFilter
@@ -14,6 +16,184 @@ from services.response_boundary_validator import StreamingResponseBoundaryFilter
 
 
 logger = logging.getLogger(__name__)
+
+_IMAGE_REQUEST_START = "[[AREQA_IMAGE_REQUEST"
+_IMAGE_REQUEST_END = "]]"
+_IMAGE_REQUEST_PATTERN = re.compile(r"\[\[AREQA_IMAGE_REQUEST(?P<body>.*?)\]\]", re.DOTALL)
+_IMAGE_REQUEST_ATTR_PATTERN = re.compile(
+    r"""(?P<key>id|query|caption_hint)\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
+    re.DOTALL,
+)
+_MAX_IMAGE_REQUEST_BUFFER_CHARS = 2000
+
+
+@dataclass(slots=True)
+class ImageRequestSlot:
+    """Model-planned visual slot stripped from the public answer stream.
+
+    Args:
+        slot_id: Stable model-provided slot identifier after validation.
+        query: Short provider-search query. This is treated as sensitive model
+            output and is never written to structured logs.
+        caption_hint: Optional pedagogical intent for the visual. This is
+            display metadata, not a verified image description.
+        anchor_after_paragraph: Zero-based public paragraph index after which
+            the resolved image should be inserted.
+    """
+
+    slot_id: str
+    query: str
+    caption_hint: str
+    anchor_after_paragraph: int
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return the internal accumulator payload used by orchestration."""
+
+        return {
+            "slot_id": self.slot_id,
+            "query": self.query,
+            "caption_hint": self.caption_hint,
+            "anchor_after_paragraph": self.anchor_after_paragraph,
+        }
+
+
+class ImageRequestMarkerFilter:
+    """Remove planned visual markers from public deltas while recording slots.
+
+    The filter owns the streaming privacy boundary for `AREQA_IMAGE_REQUEST`
+    markers. It never logs marker bodies, queries, captions, or public text.
+    Callers should use `feed()` before appending/yielding public content and
+    `finish()` after the provider stream ends to release non-marker trailing
+    text if the model emitted a malformed marker.
+    """
+
+    def __init__(self, *, max_slots: int = 2) -> None:
+        """Initialize an incremental marker parser.
+
+        Args:
+            max_slots: Hard cap on accepted visual slots for one answer.
+        """
+
+        self.max_slots = max(0, min(max_slots, 2))
+        self._pending = ""
+        self._public_accumulator = ""
+        self._slots: list[ImageRequestSlot] = []
+
+    @property
+    def slots(self) -> list[ImageRequestSlot]:
+        """Return accepted slots in stream order."""
+
+        return list(self._slots)
+
+    def feed(self, content: str) -> str:
+        """Strip complete visual markers from a streamed content fragment.
+
+        Args:
+            content: Provider text after public-output safety filters.
+
+        Returns:
+            Public text safe to append to the assistant message.
+        """
+
+        if not content and not self._pending:
+            return ""
+        text = self._pending + content
+        self._pending = ""
+        public_parts: list[str] = []
+
+        while text:
+            marker_start = text.find(_IMAGE_REQUEST_START)
+            if marker_start < 0:
+                partial_prefix_length = self._partial_marker_prefix_length(text)
+                if partial_prefix_length:
+                    public_parts.append(text[:-partial_prefix_length])
+                    self._pending = text[-partial_prefix_length:]
+                else:
+                    public_parts.append(text)
+                break
+            public_parts.append(text[:marker_start])
+            marker_end = text.find(_IMAGE_REQUEST_END, marker_start)
+            if marker_end < 0:
+                self._pending = text[marker_start:]
+                break
+            marker = text[marker_start : marker_end + len(_IMAGE_REQUEST_END)]
+            self._record_marker(marker)
+            text = text[marker_end + len(_IMAGE_REQUEST_END) :]
+
+        public_text = "".join(public_parts)
+        self._public_accumulator += public_text
+        if len(self._pending) > _MAX_IMAGE_REQUEST_BUFFER_CHARS:
+            # Treat an overlong unfinished marker as malformed text and release
+            # it. This prevents a model error from swallowing the rest of the
+            # answer while keeping valid short markers hidden from users.
+            self._public_accumulator += self._pending
+            released = self._pending
+            self._pending = ""
+            return public_text + released
+        return public_text
+
+    def finish(self) -> str:
+        """Release buffered malformed marker text after streaming completes."""
+
+        trailing = self._pending
+        self._pending = ""
+        self._public_accumulator += trailing
+        return trailing
+
+    def _record_marker(self, marker: str) -> None:
+        """Parse and store a complete image request marker if it is usable."""
+
+        if len(self._slots) >= self.max_slots:
+            return
+        match = _IMAGE_REQUEST_PATTERN.fullmatch(marker.strip())
+        if not match:
+            return
+        attrs = {
+            attr.group("key"): self._clean_attr(attr.group("value"))
+            for attr in _IMAGE_REQUEST_ATTR_PATTERN.finditer(match.group("body"))
+        }
+        slot_id = self._clean_slot_id(attrs.get("id", ""))
+        query = attrs.get("query", "")[:120].strip()
+        if not slot_id or not query:
+            return
+        caption_hint = attrs.get("caption_hint", "")[:180].strip()
+        self._slots.append(
+            ImageRequestSlot(
+                slot_id=slot_id,
+                query=query,
+                caption_hint=caption_hint,
+                anchor_after_paragraph=self._current_anchor_index(),
+            )
+        )
+
+    def _current_anchor_index(self) -> int:
+        """Return the paragraph index that should own the next image slot."""
+
+        paragraphs = [part.strip() for part in re.split(r"\n{2,}", self._public_accumulator) if part.strip()]
+        return max(len(paragraphs) - 1, 0)
+
+    @staticmethod
+    def _clean_slot_id(value: str) -> str:
+        """Normalize model-provided slot ids to a narrow internal shape."""
+
+        cleaned = re.sub(r"[^a-zA-Z0-9_-]", "", value.strip())[:40]
+        return cleaned
+
+    @staticmethod
+    def _clean_attr(value: str) -> str:
+        """Collapse marker attribute whitespace without interpreting escapes."""
+
+        return re.sub(r"\s+", " ", value).strip()
+
+    @staticmethod
+    def _partial_marker_prefix_length(text: str) -> int:
+        """Return trailing chars that may be the next marker start."""
+
+        max_length = min(len(text), len(_IMAGE_REQUEST_START) - 1)
+        for length in range(max_length, 0, -1):
+            if _IMAGE_REQUEST_START.startswith(text[-length:]):
+                return length
+        return 0
 
 
 def letter_task_id(
@@ -97,6 +277,7 @@ class ConversationStreamService:
             tool_budget = ToolBudgetTracker(ToolBudget())
 
         accumulator = ""
+        image_marker_filter = ImageRequestMarkerFilter(max_slots=2)
         output_filter = PublicAnswerFilter()
         boundary_filter = StreamingResponseBoundaryFilter()
         tool_call_name = ""
@@ -154,6 +335,8 @@ class ConversationStreamService:
                             reason,
                         )
                 if content:
+                    content = image_marker_filter.feed(content)
+                if content:
                     if trace:
                         trace.mark_once("first_answer_delta")
                     accumulator += content
@@ -176,6 +359,8 @@ class ConversationStreamService:
                     reason,
                 )
             if safe_trailing:
+                safe_trailing = image_marker_filter.feed(safe_trailing)
+            if safe_trailing:
                 accumulator += safe_trailing
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': safe_trailing}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
         final_text, final_reasons = boundary_filter.finish()
@@ -186,8 +371,19 @@ class ConversationStreamService:
                 reason,
             )
         if final_text:
+            final_text = image_marker_filter.feed(final_text)
+        marker_trailing = image_marker_filter.finish()
+        if marker_trailing:
+            final_text = f"{final_text}{marker_trailing}"
+        if final_text:
             accumulator += final_text
             yield f"data: {json.dumps({'choices': [{'delta': {'content': final_text}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+        if image_marker_filter.slots:
+            logger.info(
+                "visual.slot_marker_detected conversation_id=%s slot_count=%s",
+                conversation_id,
+                len(image_marker_filter.slots),
+            )
         logger.info(
             "orchestration.stream_completed conversation_id=%s elapsed_ms=%s",
             conversation_id,
@@ -225,4 +421,4 @@ class ConversationStreamService:
                     )
             except Exception as exc:
                 logger.warning("orchestration.mail_tool_failed reason=%s", type(exc).__name__)
-        yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator})}\n\n"
+        yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator, 'image_slots': [slot.to_payload() for slot in image_marker_filter.slots]}, ensure_ascii=False)}\n\n"

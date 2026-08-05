@@ -193,6 +193,110 @@ async def test_build_answer_blocks_interleaves_verified_images(monkeypatch, capl
 
 
 @pytest.mark.asyncio
+async def test_build_answer_blocks_uses_planned_image_slot_anchor(monkeypatch, caplog):
+    """Model-planned slots should control retrieval query and image placement."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    image = ImageBlock(
+        slot_id="visual-1",
+        topic="Forest plot",
+        purpose="diagram",
+        image_url="https://example.com/forest.png",
+        thumbnail_url="https://example.com/forest.png",
+        source_url="https://example.com/article",
+        source_domain="example.com",
+        caption="Forest plot example",
+        license="unknown",
+        safety_status="pass",
+        match_confidence=0.8,
+    )
+    observed = {}
+
+    async def fake_read_cache(cache_key, conversation_id):
+        observed["cache_key"] = cache_key
+        return None
+
+    async def fake_write_cache(*args, **kwargs):
+        return None
+
+    async def fake_resolve(**kwargs):
+        observed["visual_query"] = kwargs["visual_query"]
+        return [image]
+
+    monkeypatch.setattr(service, "_read_cache", fake_read_cache)
+    monkeypatch.setattr(service, "_write_cache", fake_write_cache)
+    monkeypatch.setattr(service, "_resolve_images", fake_resolve)
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段\n\n第二段",
+        user_msg="一般問題不含圖",
+        response_policy=_policy(TaskIntent.GENERAL_QA),
+        planned_image_slots=[{
+            "slot_id": "img_1",
+            "query": "forest plot meta analysis example",
+            "caption_hint": "用這張圖理解信賴區間與整體效果",
+            "anchor_after_paragraph": 1,
+        }],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert [block["type"] for block in blocks] == ["paragraph", "paragraph", "image_block"]
+    assert blocks[2]["slotId"] == "img_1"
+    assert blocks[2]["explanatoryCaption"] == "用這張圖理解信賴區間與整體效果"
+    assert observed["visual_query"] == "forest plot meta analysis example"
+    assert "visual.slot_resolution_completed" in caplog.text
+    assert "forest plot meta analysis" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_build_answer_blocks_returns_pending_block_when_planned_slot_unresolved(monkeypatch, caplog):
+    """Unresolved planned slots should keep placement without showing broken images."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+
+    async def fake_read_cache(*args, **kwargs):
+        return None
+
+    async def fake_write_cache(*args, **kwargs):
+        return None
+
+    async def fake_resolve(**kwargs):
+        return []
+
+    monkeypatch.setattr(service, "_read_cache", fake_read_cache)
+    monkeypatch.setattr(service, "_write_cache", fake_write_cache)
+    monkeypatch.setattr(service, "_resolve_images", fake_resolve)
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段\n\n第二段",
+        user_msg="一般問題不含圖",
+        response_policy=_policy(TaskIntent.GENERAL_QA),
+        planned_image_slots=[{
+            "slot_id": "img_1",
+            "query": "abstract visual query",
+            "caption_hint": "正在找概念圖",
+            "anchor_after_paragraph": 0,
+        }],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert [block["type"] for block in blocks] == ["paragraph", "image_block", "paragraph"]
+    assert blocks[1]["status"] == "pending"
+    assert blocks[1]["safetyStatus"] == "unavailable"
+    assert "visual.slot_resolution_failed" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_build_answer_blocks_uses_rewritten_visual_query(monkeypatch, caplog):
     """Visual rewrite should feed cache and providers without logging raw prompts."""
 

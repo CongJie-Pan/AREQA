@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.services.conversation_context_service import ConversationContext
+from backend.services.conversation_stream_service import ConversationStreamService
 from backend.services.orchestration_service import OrchestrationService
 from backend.services.query_policy_service import (
     AnswerDepth,
@@ -46,6 +47,96 @@ def test_attachment_grounding_instruction_forbids_metadata_guessing():
     assert "只能根據實際可讀取的附件內容回答" in result[0]["content"]
     assert "不得根據檔名" in result[0]["content"]
     assert "解析失敗" in result[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_strips_image_request_markers(mock_client, caplog):
+    """Planned visual markers should be captured but never streamed publicly."""
+
+    caplog.set_level(logging.INFO)
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+    service = ConversationStreamService(mock_client, MagicMock())
+
+    async def chunks():
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = (
+            '第一段\n\n[[AREQA_IMAGE_REQUEST id="img_1" '
+            'query="forest plot meta analysis example" caption_hint="森林圖輔助理解"]]'
+            "\n\n第二段"
+        )
+        chunk.choices[0].delta.tool_calls = None
+        yield chunk
+
+    mock_client.chat.completions.create = AsyncMock(return_value=chunks())
+
+    events = [event async for event in service.stream(
+        user_id="u1",
+        conversation_id="visual-conv",
+        last_user_msg="什麼是統合分析",
+        messages=[{"role": "user", "content": "什麼是統合分析"}],
+        force_think=False,
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.0,
+        request=request,
+    )]
+
+    streamed = "".join(events)
+    assert "AREQA_IMAGE_REQUEST" not in streamed
+    accumulator_event = next(event for event in events if event.startswith("event: accumulator"))
+    data_line = next(line for line in accumulator_event.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line[6:])
+    assert payload["accumulator"] == "第一段\n\n\n\n第二段"
+    assert payload["image_slots"][0]["slot_id"] == "img_1"
+    assert payload["image_slots"][0]["anchor_after_paragraph"] == 0
+    assert "visual.slot_marker_detected" in caplog.text
+    assert "forest plot" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_buffers_split_image_request_marker(mock_client):
+    """Split marker starts should not leak partial marker text to the client."""
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+    service = ConversationStreamService(mock_client, MagicMock())
+
+    async def chunks():
+        for content in (
+            "第一段\n\n[[AREQA_",
+            'IMAGE_REQUEST id="img_1" query="forest plot" caption_hint="圖解"]]',
+            "\n\n第二段",
+        ):
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = content
+            chunk.choices[0].delta.tool_calls = None
+            yield chunk
+
+    mock_client.chat.completions.create = AsyncMock(return_value=chunks())
+
+    events = [event async for event in service.stream(
+        user_id="u1",
+        conversation_id="visual-conv",
+        last_user_msg="什麼是統合分析",
+        messages=[{"role": "user", "content": "什麼是統合分析"}],
+        force_think=False,
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.0,
+        request=request,
+    )]
+
+    streamed = "".join(events)
+    assert "AREQA_" not in streamed
+    accumulator_event = next(event for event in events if event.startswith("event: accumulator"))
+    data_line = next(line for line in accumulator_event.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line[6:])
+    assert payload["image_slots"][0]["slot_id"] == "img_1"
 
 
 @pytest.mark.asyncio
@@ -433,6 +524,50 @@ async def test_execute_passes_accumulated_answer_to_suggestions(
 
     assert not any(event.startswith("event: accumulator") for event in events)
     assert mock_suggestion.generate_suggestions.await_args.kwargs["answer_text"] == "answer"
+
+
+@pytest.mark.asyncio
+async def test_execute_passes_planned_image_slots_to_visual_service(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+    request = MagicMock()
+    mock_suggestion.generate_suggestions.return_value = []
+    service.visual_answer_service.build_answer_blocks = AsyncMock(return_value=[])
+    planned_slots = [{
+        "slot_id": "img_1",
+        "query": "forest plot meta analysis example",
+        "caption_hint": "森林圖輔助理解",
+        "anchor_after_paragraph": 0,
+    }]
+
+    async def llm_stream(*args, **kwargs):
+        yield 'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n'
+        yield f"event: accumulator\ndata: {json.dumps({'accumulator': 'answer', 'image_slots': planned_slots}, ensure_ascii=False)}\n\n"
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "什麼是統合分析"}],
+            "planned-slot-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    assert not any(event.startswith("event: accumulator") for event in events)
+    assert service.visual_answer_service.build_answer_blocks.await_args.kwargs["planned_image_slots"] == planned_slots
 
 
 @pytest.mark.asyncio

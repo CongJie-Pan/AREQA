@@ -37,6 +37,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       answerImageCard: 'answerImageCard',
       answerImageExplanation: 'answerImageExplanation',
       answerImageButton: 'answerImageButton',
+      answerImageSkeleton: 'answerImageSkeleton',
       answerImage: 'answerImage',
       answerImageCaption: 'answerImageCaption',
       answerImageCaptionText: 'answerImageCaptionText',
@@ -239,6 +240,40 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       'href',
       'https://creativecommons.org/licenses/by-sa/4.0/',
     );
+    expect(screen.getByText('第二段')).toBeInTheDocument();
+    expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
+  });
+
+  it('renders pending planned image blocks as an inline skeleton', () => {
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: 'fallback text',
+          answerBlocks: [
+            { type: 'paragraph', text: '第一段' },
+            {
+              type: 'image_block',
+              slotId: 'img-1',
+              topic: 'Visual aid',
+              purpose: 'diagram',
+              imageUrl: '',
+              sourceUrl: '',
+              sourceDomain: '',
+              caption: '正在找概念圖',
+              status: 'pending',
+              safetyStatus: 'unavailable',
+              matchConfidence: 0,
+            },
+            { type: 'paragraph', text: '第二段' },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByText('第一段')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: '圖片搜尋中' })).toBeInTheDocument();
+    expect(screen.getByText('正在找概念圖')).toBeInTheDocument();
     expect(screen.getByText('第二段')).toBeInTheDocument();
     expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });

@@ -146,6 +146,10 @@ class ConversationContextService:
             response_policy or default_response_policy(),
             RESPONSE_POLICY_OVERLAYS,
         )
+        system_prompt += self._visual_slot_instruction(
+            response_policy or default_response_policy(),
+            last_user_msg,
+        )
 
         if trace:
             trace.mark("hot_memory_snapshot_started")
@@ -435,6 +439,44 @@ class ConversationContextService:
             f"\n- structure: {response_policy.structure.value}，{structure_rules[response_policy.structure]}"
             f"\n- followup_mode: {response_policy.followup_mode.value}，{followup_rules[response_policy.followup_mode]}"
             f"{guardrail}"
+        )
+
+    @staticmethod
+    def _visual_slot_instruction(response_policy: ResponsePolicy, last_user_msg: str) -> str:
+        """Return the optional inline visual-slot contract for suitable turns.
+
+        Args:
+            response_policy: Decision-stage policy for the current answer.
+            last_user_msg: Latest user-authored message used only for cheap
+                visual-intent detection.
+
+        Returns:
+            A prompt block that lets the model request image placement, or an
+            empty string when the turn should remain text-only.
+        """
+
+        normalized = last_user_msg.lower()
+        explicit_visual = any(
+            keyword in normalized
+            for keyword in (
+                "圖",
+                "圖片",
+                "圖解",
+                "示意圖",
+                "diagram",
+                "image",
+                "visual",
+                "chart",
+                "plot",
+            )
+        )
+        if response_policy.task_intent != TaskIntent.EXPLAIN_TEXT and not explicit_visual:
+            return ""
+        return (
+            "\n\n【圖文交錯規則】如果某個概念高度依賴視覺理解，可以在最適合的位置插入最多 2 個圖片請求標記。"
+            "標記格式必須完全符合："
+            '[[AREQA_IMAGE_REQUEST id="img_1" query="short concrete image search query" caption_hint="這張圖要幫助使用者理解的重點"]]'
+            "。query 必須具體且可搜尋；不得輸出圖片 URL；不得為了裝飾而插圖；標記前後仍要用自然文字銜接。"
         )
 
     @staticmethod

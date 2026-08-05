@@ -559,6 +559,20 @@ quoteBlockContent: css`
     }
   `,
 
+  answerImageSkeleton: css`
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 18px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.06),
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.06)
+    );
+    background-size: 200% 100%;
+    animation: ${fadeIn} 180ms ease-out;
+  `,
+
   answerImage: css`
     display: block;
     width: 100%;

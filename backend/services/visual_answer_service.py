@@ -156,6 +156,7 @@ class ImageBlock:
             "provider": self.provider,
             "tier": self.provider,
             "license": self.license,
+            "status": "resolved",
             "safetyStatus": self.safety_status,
             "matchConfidence": self.match_confidence,
             "heuristicScore": self.heuristic_score,
@@ -209,6 +210,25 @@ class ImageCandidate:
     attribution_string: str = ""
     width: int | None = None
     height: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedImageSlot:
+    """Validated internal visual placement request from the answer model.
+
+    Args:
+        slot_id: Stable slot identifier used to anchor the resolved block.
+        query: Provider-search query. This is model output and must not be
+            written to logs.
+        caption_hint: Optional pedagogical intent for the visual.
+        anchor_after_paragraph: Zero-based paragraph index after which the
+            image should be inserted.
+    """
+
+    slot_id: str
+    query: str
+    caption_hint: str = ""
+    anchor_after_paragraph: int = 0
 
 
 class VisualAnswerService:
@@ -268,6 +288,7 @@ class VisualAnswerService:
         existing_web_results: list[dict[str, Any]] | None,
         user_id: str,
         conversation_id: str,
+        planned_image_slots: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Build frontend answer blocks for the completed answer text.
 
@@ -275,6 +296,8 @@ class VisualAnswerService:
             answer_text: Completed public assistant answer.
             user_msg: Latest user message, used only for retrieval query creation.
             response_policy: Structured policy selected earlier in orchestration.
+            planned_image_slots: Optional model-planned visual requests already
+                stripped from the public answer stream.
             tool_registry: Existing tool registry for web search execution.
             tool_budget: Current run tool budget.
             existing_web_results: Web results already fetched for this turn.
@@ -289,17 +312,35 @@ class VisualAnswerService:
         """
 
         paragraphs = self._split_paragraphs(answer_text)
-        if not paragraphs or not self.should_enrich(response_policy, user_msg):
+        planned_slots = self._planned_slots_from_payload(planned_image_slots or [])
+        if not paragraphs or (not planned_slots and not self.should_enrich(response_policy, user_msg)):
             return []
 
         logger.info(
             "visual.slots_planned conversation_id=%s slot_count=%s reason=%s",
             conversation_id,
-            min(self.max_images, len(paragraphs)),
-            "policy_or_explicit_visual",
+            len(planned_slots) if planned_slots else min(self.max_images, len(paragraphs)),
+            "model_planned" if planned_slots else "policy_or_explicit_visual",
         )
 
         try:
+            if planned_slots:
+                image_blocks = await self._resolve_planned_image_blocks(
+                    planned_slots=planned_slots,
+                    existing_web_results=existing_web_results,
+                    tool_registry=tool_registry,
+                    tool_budget=tool_budget,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                )
+                if not image_blocks:
+                    logger.info(
+                        "visual.image_omitted conversation_id=%s reason=no_verified_image",
+                        conversation_id,
+                    )
+                    return self._interleave_pending_slots(paragraphs, planned_slots)
+                return self._interleave_blocks_at_planned_slots(paragraphs, planned_slots, image_blocks)
+
             visual_query, rewrite_rule = self._visual_search_query(user_msg)
             if rewrite_rule != "identity":
                 logger.info(
@@ -341,6 +382,113 @@ class VisualAnswerService:
 
         await self._write_cache(cache_key, image_blocks[0].to_frontend(), 2592000, conversation_id)
         return self._interleave_blocks(paragraphs, image_blocks)
+
+    async def _resolve_planned_image_blocks(
+        self,
+        *,
+        planned_slots: list[PlannedImageSlot],
+        existing_web_results: list[dict[str, Any]] | None,
+        tool_registry: Any,
+        tool_budget: Any,
+        user_id: str,
+        conversation_id: str,
+    ) -> dict[str, ImageBlock]:
+        """Resolve model-planned visual requests into verified image blocks.
+
+        Args:
+            planned_slots: Validated slot requests in model stream order.
+            existing_web_results: Optional web results already available.
+            tool_registry: Existing tool registry for fallback web search.
+            tool_budget: Shared foreground tool budget.
+            user_id: User id required by the search tool.
+            conversation_id: Correlation id for privacy-safe logs.
+
+        Returns:
+            Mapping from planned slot id to selected image block.
+        """
+
+        resolved: dict[str, ImageBlock] = {}
+        for slot in planned_slots[: self.max_images]:
+            logger.info(
+                "visual.slot_resolution_started conversation_id=%s slot_id=%s",
+                conversation_id,
+                slot.slot_id,
+            )
+            cache_key = self._cache_key(slot.query, "diagram")
+            cached_block = await self._read_cache(cache_key, conversation_id)
+            if cached_block == _NEGATIVE_CACHE_SENTINEL:
+                logger.info(
+                    "visual.slot_resolution_failed conversation_id=%s slot_id=%s reason=negative_cache",
+                    conversation_id,
+                    slot.slot_id,
+                )
+                continue
+            if isinstance(cached_block, dict):
+                resolved[slot.slot_id] = self._apply_slot_metadata(
+                    self._image_block_from_frontend(cached_block),
+                    slot,
+                )
+                logger.info(
+                    "visual.slot_resolution_completed conversation_id=%s slot_id=%s source=cache",
+                    conversation_id,
+                    slot.slot_id,
+                )
+                continue
+
+            image_blocks = await self._resolve_images(
+                user_msg=slot.query,
+                visual_query=slot.query,
+                existing_web_results=existing_web_results,
+                tool_registry=tool_registry,
+                tool_budget=tool_budget,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+            if not image_blocks:
+                await self._write_cache(cache_key, _NEGATIVE_CACHE_SENTINEL, 604800, conversation_id)
+                logger.info(
+                    "visual.slot_resolution_failed conversation_id=%s slot_id=%s reason=no_verified_image",
+                    conversation_id,
+                    slot.slot_id,
+                )
+                continue
+            block = self._apply_slot_metadata(image_blocks[0], slot)
+            await self._write_cache(cache_key, block.to_frontend(), 2592000, conversation_id)
+            resolved[slot.slot_id] = block
+            logger.info(
+                "visual.slot_resolution_completed conversation_id=%s slot_id=%s source=provider",
+                conversation_id,
+                slot.slot_id,
+            )
+        return resolved
+
+    @staticmethod
+    def _apply_slot_metadata(block: ImageBlock, slot: PlannedImageSlot) -> ImageBlock:
+        """Return a resolved image block anchored to a planned visual slot."""
+
+        return ImageBlock(
+            slot_id=slot.slot_id,
+            topic=block.topic,
+            purpose=block.purpose,
+            image_url=block.image_url,
+            thumbnail_url=block.thumbnail_url,
+            source_url=block.source_url,
+            source_domain=block.source_domain,
+            caption=block.caption,
+            provider=block.provider,
+            license=block.license,
+            license_url=block.license_url,
+            creator=block.creator,
+            attribution_string=block.attribution_string,
+            attribution_caption=block.attribution_caption,
+            explanatory_caption=slot.caption_hint or block.explanatory_caption,
+            width=block.width,
+            height=block.height,
+            safety_status=block.safety_status,
+            match_confidence=block.match_confidence,
+            heuristic_score=block.heuristic_score,
+            pedagogical_score=block.pedagogical_score,
+        )
 
     async def _search_image_sources(
         self,
@@ -422,6 +570,12 @@ class VisualAnswerService:
             if not api_key:
                 logger.info(
                     "visual.image_omitted conversation_id=%s reason=missing_search_api_key",
+                    conversation_id,
+                )
+                return []
+            if not hasattr(tool_registry, "execute"):
+                logger.info(
+                    "visual.image_omitted conversation_id=%s reason=missing_search_tool",
                     conversation_id,
                 )
                 return []
@@ -1105,6 +1259,84 @@ class VisualAnswerService:
         ascii_tokens = re.findall(r"[a-z0-9]{2,}", lowered)
         cjk_tokens = re.findall(r"[\u4e00-\u9fff]{2,}", lowered)
         return set(ascii_tokens + cjk_tokens)
+
+    @staticmethod
+    def _planned_slots_from_payload(payload: list[dict[str, Any]]) -> list[PlannedImageSlot]:
+        """Validate model-planned image slot payloads from the stream accumulator.
+
+        Args:
+            payload: Untrusted structured marker payload from the answer model.
+
+        Returns:
+            A capped list of safe planned slots. Raw query and caption content
+            are retained only for retrieval/display and are not logged here.
+        """
+
+        slots: list[PlannedImageSlot] = []
+        seen: set[str] = set()
+        for index, item in enumerate(payload[:2]):
+            slot_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(item.get("slot_id") or f"img_{index + 1}"))[:40]
+            query = VisualAnswerService._clean_text(str(item.get("query") or ""))[:120]
+            if not slot_id or not query or slot_id in seen:
+                continue
+            seen.add(slot_id)
+            caption_hint = VisualAnswerService._clean_text(str(item.get("caption_hint") or ""))[:180]
+            anchor_after_paragraph = max(0, VisualAnswerService._optional_int(item.get("anchor_after_paragraph")) or 0)
+            slots.append(
+                PlannedImageSlot(
+                    slot_id=slot_id,
+                    query=query,
+                    caption_hint=caption_hint,
+                    anchor_after_paragraph=anchor_after_paragraph,
+                )
+            )
+        return slots
+
+    @staticmethod
+    def _pending_block(slot: PlannedImageSlot) -> dict[str, Any]:
+        """Return a frontend pending block for unresolved planned visuals."""
+
+        return {
+            "type": "image_block",
+            "slotId": slot.slot_id,
+            "topic": slot.caption_hint or "Visual aid",
+            "purpose": "diagram",
+            "imageUrl": "",
+            "thumbnailUrl": "",
+            "sourceUrl": "",
+            "sourceDomain": "",
+            "caption": slot.caption_hint or "正在尋找合適圖片",
+            "safetyStatus": "unavailable",
+            "matchConfidence": 0.0,
+            "status": "pending",
+        }
+
+    @staticmethod
+    def _interleave_pending_slots(paragraphs: list[str], planned_slots: list[PlannedImageSlot]) -> list[dict[str, Any]]:
+        """Interleave pending image placeholders at planned paragraph anchors."""
+
+        return VisualAnswerService._interleave_blocks_at_planned_slots(paragraphs, planned_slots, {})
+
+    @staticmethod
+    def _interleave_blocks_at_planned_slots(
+        paragraphs: list[str],
+        planned_slots: list[PlannedImageSlot],
+        image_blocks: dict[str, ImageBlock],
+    ) -> list[dict[str, Any]]:
+        """Interleave resolved or pending image blocks after planned anchors."""
+
+        output: list[dict[str, Any]] = []
+        slots_by_anchor: dict[int, list[PlannedImageSlot]] = {}
+        max_anchor = max(len(paragraphs) - 1, 0)
+        for slot in planned_slots:
+            anchor = min(max(slot.anchor_after_paragraph, 0), max_anchor)
+            slots_by_anchor.setdefault(anchor, []).append(slot)
+        for paragraph_index, paragraph in enumerate(paragraphs):
+            output.append({"type": "paragraph", "text": paragraph})
+            for slot in slots_by_anchor.get(paragraph_index, []):
+                block = image_blocks.get(slot.slot_id)
+                output.append(block.to_frontend() if block else VisualAnswerService._pending_block(slot))
+        return output
 
     @staticmethod
     def _interleave_blocks(paragraphs: list[str], image_blocks: list[ImageBlock]) -> list[dict[str, Any]]:

@@ -83,6 +83,7 @@ export interface ImageBlock {
   attributionString?: string;
   attributionCaption?: string;
   explanatoryCaption?: string;
+  status?: 'pending' | 'resolved' | 'error';
   width?: number;
   height?: number;
   safetyStatus: 'pass' | 'flagged' | 'unavailable';

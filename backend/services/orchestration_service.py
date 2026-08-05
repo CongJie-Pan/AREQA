@@ -600,21 +600,36 @@ class OrchestrationService:
 
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
+        planned_image_slots: list[dict[str, Any]] = []
         async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace):
             if event.startswith("event: accumulator\n"):
                 try:
                     data_line = next(line for line in event.splitlines() if line.startswith("data: "))
-                    answer_content_accumulator = json.loads(data_line[6:]).get("accumulator", "")
+                    accumulator_payload = json.loads(data_line[6:])
+                    answer_content_accumulator = accumulator_payload.get("accumulator", "")
+                    image_slots_payload = accumulator_payload.get("image_slots", [])
+                    if isinstance(image_slots_payload, list):
+                        planned_image_slots = [
+                            slot for slot in image_slots_payload if isinstance(slot, dict)
+                        ]
                 except (StopIteration, json.JSONDecodeError, TypeError):
                     answer_content_accumulator = ""
+                    planned_image_slots = []
                 continue
             yield sse_adapter.encode_legacy(event, run_context.run_id)
+        if planned_image_slots:
+            logger.info(
+                "visual.answer_slots_collected conversation_id=%s slot_count=%s",
+                conversation_id,
+                len(planned_image_slots),
+            )
 
         # Node 7: Post-generation
         answer_blocks = await self.visual_answer_service.build_answer_blocks(
             answer_text=answer_content_accumulator,
             user_msg=last_user_msg,
             response_policy=response_policy,
+            planned_image_slots=planned_image_slots,
             tool_registry=self.tool_registry,
             tool_budget=run_state.tool_budget,
             existing_web_results=run_state.web_search_results,
@@ -622,6 +637,12 @@ class OrchestrationService:
             conversation_id=conversation_id,
         )
         if answer_blocks:
+            logger.info(
+                "visual.answer_blocks_emitted conversation_id=%s block_count=%s image_block_count=%s",
+                conversation_id,
+                len(answer_blocks),
+                sum(1 for block in answer_blocks if block.get("type") == "image_block"),
+            )
             yield sse_adapter.encode_legacy(
                 f"event: answer_blocks\ndata: {json.dumps(answer_blocks, ensure_ascii=False)}\n\n",
                 run_context.run_id,
