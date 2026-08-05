@@ -946,46 +946,59 @@ class VisualAnswerService:
             conversation_id,
             len(provider_tasks),
         )
-        provider_results = await asyncio.gather(*provider_tasks, return_exceptions=True)
         candidates: list[ImageCandidate] = []
         completed_provider_count = 0
-        for result in provider_results:
-            if isinstance(result, Exception):
-                logger.info(
-                    "visual.parallel_provider_failed conversation_id=%s reason=%s",
-                    conversation_id,
-                    type(result).__name__,
-                )
-                continue
-            provider, provider_candidates = result
-            completed_provider_count += 1
-            candidates.extend(provider_candidates)
-            logger.info(
-                "visual.parallel_provider_completed conversation_id=%s provider=%s candidate_count=%s",
-                conversation_id,
-                provider,
-                len(provider_candidates),
-            )
+        pending = set(provider_tasks)
+        try:
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        provider, provider_candidates = task.result()
+                    except Exception as exc:
+                        logger.info(
+                            "visual.parallel_provider_failed conversation_id=%s reason=%s",
+                            conversation_id,
+                            type(exc).__name__,
+                        )
+                        continue
+                    completed_provider_count += 1
+                    candidates.extend(provider_candidates)
+                    logger.info(
+                        "visual.parallel_provider_completed conversation_id=%s provider=%s candidate_count=%s",
+                        conversation_id,
+                        provider,
+                        len(provider_candidates),
+                    )
 
-        logger.info(
-            "visual.parallel_candidates_merged conversation_id=%s provider_count=%s candidate_count=%s",
-            conversation_id,
-            completed_provider_count,
-            len(candidates),
-        )
-        block = await self._select_image_block(
-            candidates,
-            resolved_query,
-            "parallel_preflight",
-            conversation_id,
-            visual_context,
-            model_client,
-            visual_brief,
-        )
-        if not block:
-            return []
-        self._log_image_block_selected(conversation_id, block, "parallel_preflight")
-        return [block]
+                logger.info(
+                    "visual.parallel_candidates_merged conversation_id=%s provider_count=%s candidate_count=%s pending_provider_count=%s",
+                    conversation_id,
+                    completed_provider_count,
+                    len(candidates),
+                    len(pending),
+                )
+                if not candidates:
+                    continue
+                block = await self._select_image_block(
+                    candidates,
+                    resolved_query,
+                    "parallel_preflight",
+                    conversation_id,
+                    visual_context,
+                    model_client,
+                    visual_brief,
+                )
+                if block:
+                    for task in pending:
+                        task.cancel()
+                    self._log_image_block_selected(conversation_id, block, "parallel_preflight")
+                    return [block]
+        finally:
+            for task in pending:
+                task.cancel()
+
+        return []
 
     async def _block_from_result_safe(
         self,

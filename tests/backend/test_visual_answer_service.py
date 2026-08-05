@@ -692,6 +692,76 @@ async def test_preflight_parallel_provider_fallback_uses_open_candidate(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_preflight_parallel_selects_fast_provider_before_slow_perplexity(monkeypatch, caplog):
+    """Preflight should use an early grounded provider without waiting for PPLX."""
+
+    import config as runtime_config
+
+    class _FastGroundingAgent:
+        async def evaluate(self, **kwargs):
+            return VisualGroundingDecision(
+                accepted=True,
+                expected_visual_type="map",
+                candidate_visual_type="map",
+                reason="teaching_goal_match",
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    service._visual_grounding_agent = _FastGroundingAgent()
+    brief = VisualBrief(
+        visual_type="map",
+        search_query="World War II European Theater educational labeled map",
+        caption_goal="Help the learner connect the explanation to geography.",
+        reject_if=("wrong_visual_type", "product_photo", "book_cover"),
+    )
+
+    async def slow_perplexity_candidates(*args, **kwargs):
+        await asyncio.sleep(1)
+        return []
+
+    async def wikimedia_candidate(*args, **kwargs):
+        return [
+            ImageCandidate(
+                provider="wikimedia",
+                image_url="https://upload.wikimedia.org/europe-map.png",
+                thumbnail_url="https://upload.wikimedia.org/europe-map.png",
+                source_url="https://commons.wikimedia.org/wiki/File:Europe_Map.png",
+                title="World War II European Theater labeled map",
+                caption="World War II European Theater labeled map",
+                license="Public domain",
+                width=1200,
+                height=800,
+            )
+        ]
+
+    async def no_openverse_candidates(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_parallel_providers", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_open_provider_fallback", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
+    monkeypatch.setattr(service, "_query_perplexity_images", slow_perplexity_candidates)
+    monkeypatch.setattr(service, "_query_wikimedia", wikimedia_candidate)
+    monkeypatch.setattr(service, "_query_openverse", no_openverse_candidates)
+
+    started_at = asyncio.get_running_loop().time()
+    blocks = await service._resolve_preflight_parallel_images(
+        resolved_query=brief.search_query,
+        visual_context=brief.grounding_intent(),
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+        visual_brief=brief,
+        allow_open_provider_fallback=True,
+    )
+    elapsed = asyncio.get_running_loop().time() - started_at
+
+    assert blocks[0].provider == "wikimedia"
+    assert elapsed < 0.5
+    assert "pending_provider_count=" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_prepare_preflight_image_blocks_returns_empty_on_timeout(monkeypatch, caplog):
     """Preflight should never block the main answer beyond its configured budget."""
 
