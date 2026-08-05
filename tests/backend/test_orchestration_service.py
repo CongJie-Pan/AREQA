@@ -7,6 +7,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 from backend.services.conversation_context_service import ConversationContext
 from backend.services.orchestration_service import OrchestrationService
+from backend.services.query_policy_service import (
+    AnswerDepth,
+    FollowupMode,
+    ResponsePolicy,
+    ResponseStructure,
+    ResponseTone,
+    TaskIntent,
+)
 from unittest.mock import patch
 
 
@@ -339,6 +347,54 @@ async def test_execute_emits_visible_status_before_memory_work(
     assert fourth.startswith("event: action")
     assert "請解釋 dependency injection" not in fourth
     assert '"reason_code": "USER_DISABLED"' in fourth
+
+
+@pytest.mark.asyncio
+async def test_execute_passes_structured_response_policy_to_prompt_assembly(
+    mock_router, mock_rag, mock_suggestion, mock_client, caplog, monkeypatch
+):
+    import config as runtime_config
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", False)
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+    request = MagicMock()
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.ANSWER_EXAM,
+        answer_depth=AnswerDepth.DIRECT,
+        tone=ResponseTone.PLAIN,
+        structure=ResponseStructure.SHORT,
+        followup_mode=FollowupMode.NONE,
+        legacy_policy="NORMAL",
+    )
+
+    async def llm_stream(*args, **kwargs):
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]) as prompt_assembly:
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": "但是只能選一個"}],
+            "response-policy-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    assert prompt_assembly.await_args.kwargs["response_policy"] == response_policy
+    assert "orchestration.response_policy_applied" in caplog.text
+    assert "但是只能選一個" not in caplog.text
 
 
 @pytest.mark.asyncio

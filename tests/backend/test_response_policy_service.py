@@ -1,0 +1,146 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from backend.services.query_policy_service import (
+    AnswerDepth,
+    FollowupMode,
+    ResponseStructure,
+    ResponseTone,
+    TaskIntent,
+    classify_dialogue_policy_impl,
+    classify_response_policy_impl,
+    default_response_policy,
+    response_policy_from_dict,
+    response_policy_from_legacy,
+)
+
+
+def _mock_chat_response(content: str):
+    """Build a minimal OpenAI-compatible chat completion response."""
+
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+            )
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_classify_response_policy_parses_valid_json(caplog):
+    """Valid classifier JSON should become an allowlisted ResponsePolicy."""
+
+    caplog.set_level("INFO")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "EXPLAIN_TEXT",
+              "answer_depth": "SCAFFOLDED",
+              "tone": "PLAIN",
+              "structure": "STEP_BY_STEP",
+              "followup_mode": "OPTIONAL",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "我聽不懂，可以白話一點嗎？",
+        [],
+    )
+
+    assert policy.task_intent is TaskIntent.EXPLAIN_TEXT
+    assert policy.answer_depth is AnswerDepth.SCAFFOLDED
+    assert policy.tone is ResponseTone.PLAIN
+    assert policy.structure is ResponseStructure.STEP_BY_STEP
+    assert policy.followup_mode is FollowupMode.OPTIONAL
+    assert "orchestration.response_policy_selected" in caplog.text
+    assert "我聽不懂" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_classify_response_policy_falls_back_on_invalid_json(caplog):
+    """Malformed model output should fail closed to plain scaffolded tutoring."""
+
+    caplog.set_level("WARNING")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response("not-json")
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "任何問題",
+        [],
+    )
+
+    assert policy == default_response_policy()
+    assert "orchestration.response_policy_failed" in caplog.text
+    assert "任何問題" not in caplog.text
+
+
+def test_response_policy_from_dict_sanitizes_unknown_values():
+    """Unsupported enum values should not reopen deep response behavior."""
+
+    policy = response_policy_from_dict(
+        {
+            "task_intent": "UNKNOWN",
+            "answer_depth": "TOO_DEEP",
+            "tone": "DRAMATIC",
+            "structure": "ESSAY",
+            "followup_mode": "ALWAYS",
+            "legacy_policy": "BAD",
+        }
+    )
+
+    assert policy == default_response_policy()
+
+
+def test_response_policy_from_legacy_push_limit_allows_reflection():
+    """Legacy PUSH_LIMIT should map to reflective depth for old call sites."""
+
+    policy = response_policy_from_legacy("PUSH_LIMIT")
+
+    assert policy.task_intent is TaskIntent.DISCUSS_IDEA
+    assert policy.answer_depth is AnswerDepth.REFLECTIVE
+    assert policy.tone is ResponseTone.ANALYTICAL
+    assert policy.legacy_policy == "PUSH_LIMIT"
+
+
+@pytest.mark.asyncio
+async def test_classify_dialogue_policy_impl_preserves_string_contract():
+    """The old classifier API should still return only the legacy policy name."""
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "DISCUSS_IDEA",
+              "answer_depth": "DEEP_DIVE",
+              "tone": "ANALYTICAL",
+              "structure": "ARGUMENT",
+              "followup_mode": "OPTIONAL",
+              "legacy_policy": "PUSH_LIMIT"
+            }
+            """
+        )
+    )
+
+    policy = await classify_dialogue_policy_impl(
+        mock_client,
+        "test-model",
+        "你覺得這個問題的核心是什麼？",
+        [],
+    )
+
+    assert policy == "PUSH_LIMIT"

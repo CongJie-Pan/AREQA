@@ -17,6 +17,15 @@ import re
 from typing import Any, Awaitable, Callable, Dict, List
 
 from memory_gate import is_sensitive_context_query, requests_recent_working_context_recall
+from services.query_policy_service import (
+    AnswerDepth,
+    FollowupMode,
+    ResponsePolicy,
+    ResponseStructure,
+    ResponseTone,
+    TaskIntent,
+    default_response_policy,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -61,6 +70,7 @@ class ConversationContextService:
         explicit_recall_memory_timeout_ms: int | None = None,
         enable_explicit_recall_memory_cache: bool | None = None,
         explicit_recall_memory_cache_ttl_seconds: int | None = None,
+        response_policy: ResponsePolicy | None = None,
     ) -> ConversationContext:
         """Build the final prompt from independently policy-checked sources.
 
@@ -86,6 +96,8 @@ class ConversationContextService:
                 explicit long-term recall.
             enable_explicit_recall_memory_cache: Optional cache override.
             explicit_recall_memory_cache_ttl_seconds: Optional TTL override.
+            response_policy: Optional EDF decision that constrains the final
+                answer depth, tone, structure, and follow-up behavior.
 
         Returns:
             Finalized messages plus explicit learner-understanding metadata.
@@ -96,6 +108,7 @@ class ConversationContextService:
             SYSTEM_PROMPT_NORMAL,
             SYSTEM_PROMPT_WITH_RAG,
             SYSTEM_PROMPT_WITH_RAG_THINK,
+            RESPONSE_POLICY_OVERLAYS,
         )
 
         new_messages = [message.copy() for message in messages]
@@ -128,6 +141,10 @@ class ConversationContextService:
             "\n【使用者狀態規則】除非有獨立且已驗證的學習證據，否則將使用者的理解程度視為 unknown；"
             "不得聲稱使用者已理解、掌握或熟悉某個概念。使用者提及成績、焦慮、困難或偏好時，"
             "只能就當前需求提供協助，不得將其改寫成你對使用者能力、情緒、人格或學習進度的判定。"
+        )
+        system_prompt += self._response_policy_instruction(
+            response_policy or default_response_policy(),
+            RESPONSE_POLICY_OVERLAYS,
         )
 
         if trace:
@@ -356,6 +373,69 @@ class ConversationContextService:
                 ttl_seconds=cache_ttl_seconds,
             )
         return content
+
+    @staticmethod
+    def _response_policy_instruction(
+        response_policy: ResponsePolicy,
+        overlays: dict[str, str],
+    ) -> str:
+        """Translate an EDF response policy into final prompt constraints.
+
+        Args:
+            response_policy: Decision-stage policy selected for this turn.
+            overlays: Reusable style snippets owned by ``backend.main``.
+
+        Returns:
+            A Traditional Chinese prompt block that constrains the Feedback
+            stage without changing public API or SSE contracts.
+
+        Compatibility:
+            RAG/source, attachment-grounding, memory, and learner-state rules
+            remain higher-level prompt context. This block controls answer
+            shape only; it must not authorize unsupported citations, memory
+            claims, tool use, or roleplay.
+        """
+
+        task_rules = {
+            TaskIntent.EXPLAIN_TEXT: "任務是解釋文本或概念。先說白話意思，再拆成少量重點。",
+            TaskIntent.ANSWER_EXAM: "任務是考題或選項作答。先給答案，再給簡短判斷理由。",
+            TaskIntent.DISCUSS_IDEA: "任務是觀點討論。可以整理立場、脈絡與不同視角。",
+            TaskIntent.WRITE_NOTE: "任務是整理或續寫筆記。直接產出可保存、可使用的文字。",
+            TaskIntent.GENERAL_QA: "任務是一般問答。用剛好足夠的深度回答，不主動加重。",
+        }
+        structure_rules = {
+            ResponseStructure.SHORT: "格式要短：答案優先，最多補充必要理由。",
+            ResponseStructure.STEP_BY_STEP: "格式採分步解釋：每一步只處理一個理解點。",
+            ResponseStructure.NOTE_DRAFT: "格式採筆記草稿：輸出可直接整理進筆記的段落或列點。",
+            ResponseStructure.ARGUMENT: "格式採論述：先提出核心判斷，再展開理由與取捨。",
+        }
+        followup_rules = {
+            FollowupMode.NONE: "結尾不要加引導問題。",
+            FollowupMode.OPTIONAL: "若自然且有幫助，結尾最多加一個簡短引導問題。",
+            FollowupMode.REQUIRED: "結尾必須用一個簡短問題引導使用者回應或檢查理解。",
+        }
+
+        depth_overlay = overlays.get(response_policy.answer_depth.value, "")
+        tone_overlay = overlays.get(response_policy.tone.value, "")
+        guardrail = ""
+        if response_policy.answer_depth in {AnswerDepth.DIRECT, AnswerDepth.SCAFFOLDED}:
+            guardrail = (
+                "\n【過度深度防護】本回合不得預設開啟歷史厚重感、哲學大哉問、"
+                "文學評論腔或「表面上...實則...」式宏大評論；只有使用者明確要求"
+                "核心、本質、反思、比較、觀點或延伸時才可使用。"
+            )
+        if response_policy.tone in {ResponseTone.ANALYTICAL, ResponseTone.LITERARY}:
+            guardrail += "\n【深度表達邊界】即使使用分析或文學語氣，也必須先回答使用者的具體問題。"
+
+        return (
+            "\n\n【本回合回答策略】"
+            f"\n- task_intent: {response_policy.task_intent.value}，{task_rules[response_policy.task_intent]}"
+            f"\n- answer_depth: {response_policy.answer_depth.value}{depth_overlay}"
+            f"\n- tone: {response_policy.tone.value}{tone_overlay}"
+            f"\n- structure: {response_policy.structure.value}，{structure_rules[response_policy.structure]}"
+            f"\n- followup_mode: {response_policy.followup_mode.value}，{followup_rules[response_policy.followup_mode]}"
+            f"{guardrail}"
+        )
 
     @staticmethod
     def _learner_state_instruction(learner_state: str) -> str:

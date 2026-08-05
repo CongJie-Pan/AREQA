@@ -35,7 +35,10 @@ from services.conversation_stream_service import ConversationStreamService
 from services.post_turn_service import PostTurnService
 from services.query_policy_service import (
     classify_dialogue_policy_impl,
+    classify_response_policy_impl,
+    default_response_policy,
     parse_and_decompose_query_impl,
+    response_policy_from_legacy,
 )
 from services.turn_latency_trace import TurnLatencyTrace
 from services.turn_plan_service import TurnPlan, TurnPlanService
@@ -117,20 +120,23 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dic
     """
     return await parse_and_decompose_query_impl(query, client)
 
-async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: str, chat_history: list) -> str:
-    """
-    Analyze the user's message to determine the appropriate pedagogical dialogue policy.
+async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: str, chat_history: list):
+    """Return the structured EDF response policy for orchestration.
 
     Args:
-        client (AsyncOpenAI): The OpenAI async client instance.
-        model (str): The model identifier to use for classification.
-        user_msg (str): The latest user message.
-        chat_history (list): The list of previous conversation messages.
+        client: OpenAI-compatible async client.
+        model: Policy classifier model identifier.
+        user_msg: Latest user-authored message. It is sent to the classifier but
+            never logged here.
+        chat_history: Recent conversation messages for policy context.
 
     Returns:
-        str: The selected dialogue policy (e.g., 'NORMAL', 'PROBE_UNDERSTANDING').
+        A ``ResponsePolicy`` from ``query_policy_service``. The function name is
+        intentionally kept for compatibility with existing tests and patch
+        points that used the previous string-only dialogue policy.
     """
-    return await classify_dialogue_policy_impl(client, model, user_msg, chat_history)
+
+    return await classify_response_policy_impl(client, model, user_msg, chat_history)
 
 
 class OrchestrationService:
@@ -509,15 +515,31 @@ class OrchestrationService:
                 yield sse_adapter.encode_legacy(event, run_context.run_id)
 
         # Node 5: Prompt Assembly
-        policy = "NORMAL"
+        response_policy = default_response_policy()
+        policy = response_policy.legacy_policy
         if policy_task:
             try:
-                policy = await asyncio.wait_for(policy_task, timeout=1.5)
+                policy_result = await asyncio.wait_for(policy_task, timeout=1.5)
+                response_policy = (
+                    policy_result
+                    if hasattr(policy_result, "legacy_policy")
+                    else response_policy_from_legacy(policy_result)
+                )
+                policy = response_policy.legacy_policy
                 trace.mark("policy_classifier_finished")
                 logger.info(
                     "orchestration.dialogue_policy_selected conversation_id=%s policy=%s",
                     conversation_id,
                     policy,
+                )
+                logger.info(
+                    "orchestration.response_policy_applied conversation_id=%s metadata=%s",
+                    conversation_id,
+                    json.dumps(
+                        response_policy.safe_log_metadata(),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
                 )
             except asyncio.TimeoutError:
                 policy_task.cancel()
@@ -549,6 +571,7 @@ class OrchestrationService:
             context_prompt=run_state.context_prompt,
             trace=trace,
             turn_plan=turn_plan if turn_plan_enabled else None,
+            response_policy=response_policy,
         )
         trace.mark("prompt_assembly_finished")
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
@@ -899,7 +922,7 @@ class OrchestrationService:
             trace.mark("web_search_finished")
         yield "event: results_obj\n\n"
 
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None) -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -913,6 +936,10 @@ class OrchestrationService:
             context_results_obj (Any): The retrieval results object.
             last_user_msg (str): The latest user message.
             context_prompt (str): The formatted context text block. Defaults to "".
+            response_policy (Any): Structured EDF policy controlling answer
+                depth, tone, structure, and follow-up behavior. Accepts ``None``
+                for legacy call sites, which lets context assembly use its
+                conservative default.
 
         Returns:
             List[Dict[str, str]]: The finalized list of messages ready to be sent to the LLM.
@@ -948,6 +975,7 @@ class OrchestrationService:
             explicit_recall_memory_timeout_ms=settings.explicit_recall_memory_timeout_ms,
             enable_explicit_recall_memory_cache=settings.enable_explicit_recall_memory_cache,
             explicit_recall_memory_cache_ttl_seconds=settings.explicit_recall_memory_cache_ttl_seconds,
+            response_policy=response_policy,
         )
         logger.info(
             "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s",

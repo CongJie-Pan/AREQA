@@ -6,6 +6,14 @@ import asyncio
 import pytest
 
 from backend.services.conversation_context_service import ConversationContextService
+from backend.services.query_policy_service import (
+    AnswerDepth,
+    FollowupMode,
+    ResponsePolicy,
+    ResponseStructure,
+    ResponseTone,
+    TaskIntent,
+)
 from services.explicit_memory_cache import explicit_memory_cache
 
 
@@ -341,3 +349,123 @@ async def test_sensitive_recent_question_keeps_cross_conversation_hot_focus_clos
 
     memory_query_tool.execute.assert_not_awaited()
     assert snapshot_loader.await_args.kwargs["include_cross_conversation_focus"] is False
+
+
+@pytest.mark.asyncio
+async def test_direct_response_policy_adds_answer_first_constraints():
+    """DIRECT policy should suppress broad analytical expansion."""
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-direct",
+        messages=[{"role": "user", "content": "但是只能選一個"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="但是只能選一個",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-direct",
+        response_policy=ResponsePolicy(
+            task_intent=TaskIntent.ANSWER_EXAM,
+            answer_depth=AnswerDepth.DIRECT,
+            tone=ResponseTone.PLAIN,
+            structure=ResponseStructure.SHORT,
+            followup_mode=FollowupMode.NONE,
+            legacy_policy="NORMAL",
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "task_intent: ANSWER_EXAM" in system_prompt
+    assert "先給答案，再給簡短判斷理由" in system_prompt
+    assert "深度控制：DIRECT" in system_prompt
+    assert "結尾不要加引導問題" in system_prompt
+    assert "過度深度防護" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_scaffolded_response_policy_adds_plain_step_constraints():
+    """SCAFFOLDED policy should keep explanations local and plain."""
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-scaffold",
+        messages=[{"role": "user", "content": "我聽不懂，可以白話些嗎"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="我聽不懂，可以白話些嗎",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-scaffold",
+        response_policy=ResponsePolicy(
+            task_intent=TaskIntent.EXPLAIN_TEXT,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.PLAIN,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.OPTIONAL,
+            legacy_policy="NORMAL",
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "task_intent: EXPLAIN_TEXT" in system_prompt
+    assert "深度控制：SCAFFOLDED" in system_prompt
+    assert "語氣控制：PLAIN" in system_prompt
+    assert "不要上升到宏大框架" in system_prompt
+    assert "過度深度防護" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_deep_dive_response_policy_enables_reflective_overlay():
+    """DEEP_DIVE policy should preserve AREQA's reflective strength on demand."""
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-deep",
+        messages=[{"role": "user", "content": "為什麼戰爭會使人喪失人性？"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="為什麼戰爭會使人喪失人性？",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-deep",
+        response_policy=ResponsePolicy(
+            task_intent=TaskIntent.DISCUSS_IDEA,
+            answer_depth=AnswerDepth.DEEP_DIVE,
+            tone=ResponseTone.ANALYTICAL,
+            structure=ResponseStructure.ARGUMENT,
+            followup_mode=FollowupMode.OPTIONAL,
+            legacy_policy="PUSH_LIMIT",
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "task_intent: DISCUSS_IDEA" in system_prompt
+    assert "深度控制：DEEP_DIVE" in system_prompt
+    assert "語氣控制：ANALYTICAL" in system_prompt
+    assert "允許展開歷史、哲學、文學或跨領域深度分析" in system_prompt
+    assert "過度深度防護" not in system_prompt

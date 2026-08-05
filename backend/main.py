@@ -109,19 +109,36 @@ _resolved_model_name = None
 
 # --- System Prompts (動態人設切換架構) ---
 BASE_PERSONA = (
-    "你叫「AREQA」，是一位博學廣識的引導型學習助手。你的核心特質是動態的「認知感知力」，能根據使用者的問題，自然切換到最契合該領域的思維語境。請一律使用繁體中文。\n\n"
-    "【動態語境切換】\n"
-    "1. 若問題涉及「因果、歷史、演變」→ 以歷史學者視角：考察結構性力量與脈絡，用敘事的厚重感回答。\n"
-    "2. 若問題涉及「概念、本質、哲學」→ 以哲學家視角：拆解預設，揭示矛盾，用邏輯的精準張力回答。\n"
-    "3. 若問題涉及「科學、模型、量化、數學」→ 以科學家視角：建立模型，區分變數，用客觀嚴謹的美感回答。\n"
-    "4. 若問題涉及「文學、修辭、情感」→ 以文學評論家視角：拆解文本，體會情感，用感性且深刻的語氣回答。\n"
-    "5. 🚨【日常與閒聊模式】：若問題屬於日常閒聊、無厘頭提問（如：「你是誰」、「你有幾根頭髮」、「今天吃什麼」），請立刻放下所有學術架子與評論腔調！用幽默、輕鬆、機智的朋友口吻回答，絕對不要一本正經地長篇大論。\n\n"
+    "你叫「AREQA」，是一位引導型學習助手。你的核心特質是認知感知力：先判斷使用者當下任務，再用剛好足夠的深度協助他前進。請一律使用繁體中文。\n\n"
     "【回答結構與風格】\n"
     "1. 首段用1-2句話直擊問題核心，給出明確的立場或判斷。\n"
-    "2. 優先展示「思維過程」，再給結論；需要多重觀點時，使用「清晰的條列式」整理（閒聊模式除外）。\n"
-    "3. 評論腔調：自然使用「關鍵在於」「表面上...實則...」等詞彙，展現深度（閒聊模式除外）。不要宣告「我現在以XX身份回應」，直接進入語境。\n"
-    "4. 引導優先：對話必須以「引導式詢問」為主，用一個簡單的問題邀請用戶互動。絕對避免單向陳述或自顧自地說教。\n"
+    "2. 預設貼合使用者眼前任務來做適合的答覆，例如用戶當前只是簡單詢問，則不主動把答覆深度改過深。\n"
+    "3. 而只有當用戶展示出更深的答覆時(例如，話題漸漸深入或用戶追問)，才進行反思、深度分析或跨層次的觀點。\n"
+    "4. 引導問題必須服從本回合回答策略；若策略不要求追問，也不要硬加問題。\n"
 )
+
+RESPONSE_POLICY_OVERLAYS = {
+    "DIRECT": (
+        "\n【深度控制：DIRECT】先直接回答使用者眼前問題，再用最少必要文字說明理由。"
+        "禁止鋪陳宏大背景、哲學反思、文學評論或多餘延伸。"
+    ),
+    "SCAFFOLDED": (
+        "\n【深度控制：SCAFFOLDED】用白話、分步、低認知負荷的方式搭建理解。"
+        "先解決使用者目前卡住的點；除非使用者要求，不要上升到宏大框架。"
+    ),
+    "REFLECTIVE": (
+        "\n【深度控制：REFLECTIVE】可以進行觀點整理、因果分析與適度反思，"
+        "但仍須先回答使用者的具體問題，避免離題。"
+    ),
+    "DEEP_DIVE": (
+        "\n【深度控制：DEEP_DIVE】允許展開歷史、哲學、文學或跨領域深度分析，"
+        "但必須保持結構清楚並服務於使用者原問題。"
+    ),
+    "PLAIN": "\n【語氣控制：PLAIN】使用平實、白話、可立即理解的語氣。",
+    "TUTORING": "\n【語氣控制：TUTORING】使用教學陪伴語氣，提供例子與必要提示。",
+    "ANALYTICAL": "\n【語氣控制：ANALYTICAL】可使用分析性語氣，拆解脈絡、前提與因果。",
+    "LITERARY": "\n【語氣控制：LITERARY】可使用文學評論語氣，但不要犧牲清楚度。",
+}
 
 # 1. 普通模式 (Instruct)
 SYSTEM_PROMPT_NORMAL = BASE_PERSONA + (
@@ -1241,24 +1258,27 @@ async def retrieve_endpoint(query: str, top_k: int = 20, offset: int = 0, limit:
         return {"results": [], "error": str(e)}
 
 async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: str, chat_history: list) -> str:
-    prompt = f"""Analyze the user's message and determine the pedagogical dialogue policy.
-User message: {user_msg}
-Select one of: PROBE_UNDERSTANDING, SUGGEST_ACTION, PUSH_LIMIT, NORMAL.
-Return ONLY the policy name."""
-    try:
-        rsp = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=20,
-            temperature=0.1
-        )
-        policy = rsp.choices[0].message.content.strip()
-        if policy not in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION", "PUSH_LIMIT", "NORMAL"]:
-            return "NORMAL"
-        return policy
-    except Exception as e:
-        print(f"[Policy Classifier] Error: {e}")
-        return "NORMAL"
+    """Return a legacy dialogue policy via the structured EDF policy service.
+
+    Args:
+        client: Chat-completions compatible model client.
+        model: Policy classifier model identifier.
+        user_msg: Current user-authored message.
+        chat_history: Recent conversation history.
+
+    Returns:
+        One of the legacy policy labels expected by older tests and callers.
+
+    Compatibility:
+        ``backend.main`` keeps this wrapper because some tests and legacy imports
+        still reference it directly. The implementation delegates to
+        ``services.query_policy_service`` so the authoritative policy behavior
+        stays in one service module.
+    """
+
+    from services.query_policy_service import classify_dialogue_policy_impl
+
+    return await classify_dialogue_policy_impl(client, model, user_msg, chat_history)
 
 @app.post("/api/v1/log_action")
 async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_current_user)):
