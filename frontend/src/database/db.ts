@@ -92,6 +92,13 @@ class PerplexityQADatabase extends Dexie {
       settings: 'key',
     });
 
+    // Version 4: Structured illustrated answer blocks are stored on messages.
+    this.version(4).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
+      settings: 'key',
+    });
+
     // Handle multi-tab upgrades
     this.on('versionchange', () => {
       window.location.reload();

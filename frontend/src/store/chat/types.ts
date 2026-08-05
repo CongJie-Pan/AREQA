@@ -3,7 +3,7 @@
  * Types for managing chat state with Zustand
  */
 
-import type { AttachmentMetadata, Message, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
+import type { AnswerBlock, AttachmentMetadata, Message, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 import type { CitationSource } from '@/components/Citations';
 
 export type SearchMode = 'auto' | 'always' | 'never';
@@ -60,6 +60,8 @@ export interface ChatState {
   currentContent: string;
   /** Citation URLs from response */
   currentCitations: string[];
+  /** Structured display blocks from the current response stream. */
+  currentAnswerBlocks: AnswerBlock[];
 
   // Selection/Quote state
   /** Selected text for quoting in ChatInput */
@@ -125,12 +127,14 @@ export interface ChatActions {
   endThinking: () => void;
   /** Append content to answer */
   appendContent: (content: string) => void;
-  /** End streaming and finalize message; pass finalSources to avoid race condition */
-  endStreaming: (finalSources?: CitationSource[]) => void;
+  /** End streaming and finalize message; pass final payloads to avoid race conditions */
+  endStreaming: (finalSources?: CitationSource[], finalAnswerBlocks?: AnswerBlock[]) => void;
 
   // Citations
   /** Set citation URLs */
   setCitations: (citations: string[]) => void;
+  /** Set structured illustrated answer blocks */
+  setAnswerBlocks: (blocks: AnswerBlock[]) => void;
 
   // Selection/Quote actions
   /** Set text to be quoted in next message */

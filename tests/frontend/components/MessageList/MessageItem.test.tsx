@@ -34,6 +34,11 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       messageAttachmentDropdownItem: 'messageAttachmentDropdownItem',
       messageAttachmentDropdownIcon: 'messageAttachmentDropdownIcon',
       messageAttachmentDropdownName: 'messageAttachmentDropdownName',
+      answerImageCard: 'answerImageCard',
+      answerImageLink: 'answerImageLink',
+      answerImage: 'answerImage',
+      answerImageCaption: 'answerImageCaption',
+      answerImageSource: 'answerImageSource',
       content: 'content',
       streamingCursor: 'streamingCursor'
     },
@@ -171,5 +176,41 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(attachmentList.closest('.messageAttachmentList')).toBeNull();
     expect(screen.getByText('first.pdf')).toBeInTheDocument();
     expect(screen.getByText('second.pdf')).toBeInTheDocument();
+  });
+
+  it('renders illustrated answer blocks inline with a source link', () => {
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: 'fallback text',
+          answerBlocks: [
+            { type: 'paragraph', text: '第一段' },
+            {
+              type: 'image_block',
+              slotId: 'visual-1',
+              topic: 'Forest plot',
+              purpose: 'diagram',
+              imageUrl: 'https://example.com/forest.png',
+              sourceUrl: 'https://example.com/article',
+              sourceDomain: 'example.com',
+              caption: 'Forest plot example',
+              safetyStatus: 'pass',
+              matchConfidence: 0.6,
+            },
+            { type: 'paragraph', text: '第二段' },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByText('第一段')).toBeInTheDocument();
+    expect(screen.getByAltText('Forest plot example')).toHaveAttribute(
+      'src',
+      'https://example.com/forest.png',
+    );
+    expect(screen.getByText('example.com')).toHaveAttribute('href', 'https://example.com/article');
+    expect(screen.getByText('第二段')).toBeInTheDocument();
+    expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });
 });

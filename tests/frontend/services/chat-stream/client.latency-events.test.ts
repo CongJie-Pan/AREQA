@@ -109,4 +109,34 @@ describe('chat stream visible latency events', () => {
     expect((request.body as FormData).getAll('attachments')).toEqual([attachment]);
     expect((request.body as FormData).get('messages')).toContain('請摘要附件');
   });
+
+  it('dispatches structured answer blocks from SSE', async () => {
+    const blocks = [{ type: 'paragraph', text: '第一段' }];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        streamResponse([
+          `event: answer_blocks\ndata: ${JSON.stringify(blocks)}\n\n`,
+          'data: [DONE]\n\n',
+        ])
+      )
+    );
+    const onAnswerBlocks = vi.fn();
+
+    await createChatStream(
+      [{ role: 'user', content: '請圖解' }],
+      {
+        onThinkingStart: vi.fn(),
+        onThinkingContent: vi.fn(),
+        onThinkingEnd: vi.fn(),
+        onContent: vi.fn(),
+        onCitations: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+        onAnswerBlocks,
+      }
+    );
+
+    expect(onAnswerBlocks).toHaveBeenCalledWith(blocks);
+  });
 });

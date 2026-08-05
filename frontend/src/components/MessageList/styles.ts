@@ -527,6 +527,55 @@ quoteBlockContent: css`
     min-width: 0;
   `,
 
+  answerImageCard: css`
+    width: min(100%, 560px);
+    margin: 16px auto;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+  `,
+
+  answerImageLink: css`
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: rgba(255, 255, 255, 0.06);
+  `,
+
+  answerImage: css`
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #ffffff;
+  `,
+
+  answerImageCaption: css`
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 13px;
+    line-height: 1.5;
+  `,
+
+  answerImageSource: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+    color: ${token.colorLink};
+    font-size: 12px;
+    text-decoration: none;
+
+    &:hover {
+      color: ${token.colorLinkHover};
+      text-decoration: underline;
+    }
+  `,
+
   // Scroll to bottom button
   scrollButton: css`
     position: sticky;

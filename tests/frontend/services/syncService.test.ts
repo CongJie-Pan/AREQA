@@ -137,6 +137,21 @@ describe('syncService - pullFromCloud', () => {
             chunk_id: 'https://example.com/source',
             url: 'https://example.com/source',
           }],
+          answer_blocks: [
+            { type: 'paragraph', text: 'Hello' },
+            {
+              type: 'image_block',
+              slotId: 'visual-1',
+              topic: 'Forest plot',
+              purpose: 'diagram',
+              imageUrl: 'https://example.com/forest.png',
+              sourceUrl: 'https://example.com/source',
+              sourceDomain: 'example.com',
+              caption: 'Forest plot example',
+              safetyStatus: 'pass',
+              matchConfidence: 0.6,
+            },
+          ],
           suggestions: ['請再解釋一次'],
           reasoning: { content: 'Reasoning trace', duration: 120 },
           created_at: new Date().toISOString()
@@ -171,6 +186,21 @@ describe('syncService - pullFromCloud', () => {
         chunk_id: 'https://example.com/source',
         url: 'https://example.com/source',
       }]);
+      expect(assistantMessage?.answerBlocks).toEqual([
+        { type: 'paragraph', text: 'Hello' },
+        {
+          type: 'image_block',
+          slotId: 'visual-1',
+          topic: 'Forest plot',
+          purpose: 'diagram',
+          imageUrl: 'https://example.com/forest.png',
+          sourceUrl: 'https://example.com/source',
+          sourceDomain: 'example.com',
+          caption: 'Forest plot example',
+          safetyStatus: 'pass',
+          matchConfidence: 0.6,
+        },
+      ]);
       expect(assistantMessage?.suggestions).toEqual(['請再解釋一次']);
       expect(assistantMessage?.reasoning).toEqual({ content: 'Reasoning trace', duration: 120 });
     } finally {
@@ -194,6 +224,9 @@ describe('syncService - pullFromCloud', () => {
         chunk_id: 'https://example.com/source',
         url: 'https://example.com/source',
       }],
+      answerBlocks: [
+        { type: 'paragraph', text: 'Answer with sources' },
+      ],
       suggestions: ['請再解釋一次'],
       reasoning: { content: 'Reasoning trace', duration: 120 },
       createdAt: new Date('2026-08-03T00:00:00.000Z'),
@@ -213,6 +246,9 @@ describe('syncService - pullFromCloud', () => {
         chunk_id: 'https://example.com/source',
         url: 'https://example.com/source',
       }],
+      answer_blocks: [
+        { type: 'paragraph', text: 'Answer with sources' },
+      ],
       suggestions: ['請再解釋一次'],
       reasoning: { content: 'Reasoning trace', duration: 120 },
     }));

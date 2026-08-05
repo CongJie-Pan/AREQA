@@ -6,6 +6,7 @@
  * Message role types
  */
 import type { CitationSource } from '@/components/Citations';
+import type { AnswerBlock } from '@/database/schema';
 export type MessageRole = 'user' | 'assistant' | 'system';
 
 /**
@@ -169,6 +170,8 @@ export interface StreamCallbacks {
   onStatus?: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => void;
   /** Called when structured sources payload is pushed */
   onSources?: (sources: CitationSource[]) => void;
+  /** Called when structured illustrated answer blocks are pushed */
+  onAnswerBlocks?: (blocks: AnswerBlock[]) => void;
   /** Called when suggested follow-up questions are received */
   onSuggestions?: (suggestions: string[]) => void;
 }

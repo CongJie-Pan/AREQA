@@ -68,4 +68,33 @@ describe('Chat Store', () => {
       isStreaming: true,
     });
   });
+
+  it('persists answer blocks when streaming ends', () => {
+    const state = useChatStore.getState();
+    const messageId = state.addAssistantMessage('conversation-1');
+    const blocks = [
+      { type: 'paragraph' as const, text: '第一段' },
+      {
+        type: 'image_block' as const,
+        slotId: 'visual-1',
+        topic: 'Forest plot',
+        purpose: 'diagram' as const,
+        imageUrl: 'https://example.com/forest.png',
+        sourceUrl: 'https://example.com/article',
+        sourceDomain: 'example.com',
+        caption: 'Forest plot example',
+        safetyStatus: 'pass' as const,
+        matchConfidence: 0.6,
+      },
+    ];
+
+    state.startStreaming(messageId);
+    state.appendContent('第一段');
+    state.setAnswerBlocks(blocks);
+    state.endStreaming(undefined, blocks);
+
+    const message = useChatStore.getState().messages.find((item) => item.id === messageId);
+    expect(message?.answerBlocks).toEqual(blocks);
+    expect(useChatStore.getState().currentAnswerBlocks).toEqual([]);
+  });
 });

@@ -11,7 +11,7 @@ import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import type { ChatStore, DisplayMessage } from './types';
 import type { CitationSource } from '@/components/Citations';
-import type { AttachmentMetadata, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
+import type { AnswerBlock, AttachmentMetadata, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 
 /**
  * Initial state for the chat store
@@ -25,6 +25,7 @@ const initialState = {
   isThinking: false,
   currentContent: '',
   currentCitations: [] as string[],
+  currentAnswerBlocks: [] as AnswerBlock[],
   quotedText: null as string | null,
   error: null as Error | null,
   tokenUsage: null as { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null,
@@ -173,6 +174,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       isThinking: false,
       currentContent: '',
       currentCitations: [],
+      currentAnswerBlocks: [],
       error: null,
       tokenUsage: null,
       ragStatus: 'idle',
@@ -253,15 +255,19 @@ export const useChatStore = create<ChatStore>((set) => ({
   },
 
   /**
-   * End streaming and finalize the message
-   * Accepts optional sources to avoid race conditions where setRagSources
-   * may not have committed to Zustand state before endStreaming reads it.
+   * End streaming and finalize the message.
+   *
+   * Accepts optional final payloads to avoid races where metadata SSE events
+   * have not committed to Zustand before the terminal event is processed.
    */
-  endStreaming: (finalSources?: CitationSource[]) => {
+  endStreaming: (finalSources?: CitationSource[], finalAnswerBlocks?: AnswerBlock[]) => {
     set((state) => {
       // Prefer explicitly passed sources (from local closure) over state.ragSources
       // to avoid the race condition on cold-start / fast SSE delivery.
       const sourcesToPersist = finalSources ?? (state.ragSources.length > 0 ? state.ragSources : undefined);
+      const answerBlocksToPersist = finalAnswerBlocks ?? (
+        state.currentAnswerBlocks.length > 0 ? state.currentAnswerBlocks : undefined
+      );
 
       // Finalize the streaming message if we have one
       if (state.currentStreamingId) {
@@ -278,6 +284,7 @@ export const useChatStore = create<ChatStore>((set) => ({
                   // Persist structured RAG sources onto the message so the
                   // Citations panel survives after streaming ends
                   sources: sourcesToPersist,
+                  answerBlocks: answerBlocksToPersist,
                   isStreaming: false,
                 }
               : msg
@@ -288,6 +295,7 @@ export const useChatStore = create<ChatStore>((set) => ({
           ragStatus: 'idle' as const,
           ragMessage: '',
           ragSources: [],
+          currentAnswerBlocks: [],
         };
       }
 
@@ -308,6 +316,23 @@ export const useChatStore = create<ChatStore>((set) => ({
       messages: state.currentStreamingId
         ? state.messages.map((msg) =>
             msg.id === state.currentStreamingId ? { ...msg, citations } : msg
+          )
+        : state.messages,
+    }));
+  },
+
+  /**
+   * Set structured illustrated answer blocks for the streaming assistant reply.
+   *
+   * The backend owns image verification. The store only mirrors the payload
+   * onto the current message so rendering remains live during streaming.
+   */
+  setAnswerBlocks: (blocks: AnswerBlock[]) => {
+    set((state) => ({
+      currentAnswerBlocks: blocks,
+      messages: state.currentStreamingId
+        ? state.messages.map((msg) =>
+            msg.id === state.currentStreamingId ? { ...msg, answerBlocks: blocks } : msg
           )
         : state.messages,
     }));
@@ -344,6 +369,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       isThinking: false,
       currentContent: '',
       currentCitations: [],
+      currentAnswerBlocks: [],
       quotedText: null,
       error: null,
       ragStatus: 'idle',

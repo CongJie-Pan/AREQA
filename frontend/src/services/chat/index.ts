@@ -19,7 +19,7 @@ import { databaseService } from '@/services/database';
 import { ValidationError, normalizeError } from '@/utils/error';
 import { sanitizeMessagesForAPI } from '@/utils/sanitizer';
 import type { ChatMessage } from '@/services/chat-stream/types';
-import type { Message } from '@/database/schema';
+import type { AnswerBlock, Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
@@ -218,6 +218,7 @@ export async function sendMessage(
   let answerContent = '';
   let citations: string[] = [];
   let sourcesPayload: CitationSource[] = [];
+  let answerBlocksPayload: AnswerBlock[] = [];
   let suggestionsList: string[] = [];
   let completed = false;
 
@@ -263,6 +264,11 @@ export async function sendMessage(
         chatStore.setRagSources(sources);
       },
 
+      onAnswerBlocks: (blocks: AnswerBlock[]) => {
+        answerBlocksPayload = blocks;
+        chatStore.setAnswerBlocks(blocks);
+      },
+
       onSuggestions: (suggestions: string[]) => {
         suggestionsList = suggestions;
         chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
@@ -272,7 +278,10 @@ export async function sendMessage(
         completed = true;
         // Pass sourcesPayload directly to avoid race condition where
         // state.ragSources may not yet be set when endStreaming reads it.
-        chatStore.endStreaming(sourcesPayload.length > 0 ? sourcesPayload : undefined);
+        chatStore.endStreaming(
+          sourcesPayload.length > 0 ? sourcesPayload : undefined,
+          answerBlocksPayload.length > 0 ? answerBlocksPayload : undefined,
+        );
 
         if (suggestions && suggestions.length > 0) {
           suggestionsList = suggestions;
@@ -286,6 +295,7 @@ export async function sendMessage(
         if (thinkingContent) messageData.reasoning = { content: thinkingContent, duration: thinkingDuration };
         if (citations.length > 0) messageData.citations = citations;
         if (sourcesPayload.length > 0) messageData.sources = sourcesPayload;
+        if (answerBlocksPayload.length > 0) messageData.answerBlocks = answerBlocksPayload;
         if (suggestionsList.length > 0) messageData.suggestions = suggestionsList;
         if (shouldPersist) {
           await databaseService.message.add(conversationIdForSave, {
@@ -647,6 +657,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
     reasoning: undefined,
     citations: undefined,
     sources: undefined,
+    answerBlocks: undefined,
     suggestions: undefined,
     isStreaming: true,
   });
@@ -662,6 +673,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
   let answerContent = '';
   let citations: string[] = [];
   let sourcesPayload: CitationSource[] = [];
+  let answerBlocksPayload: AnswerBlock[] = [];
   let suggestionsList: string[] = [];
 
   try {
@@ -704,6 +716,11 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           chatStore.setRagSources(sources);
         },
 
+        onAnswerBlocks: (blocks: AnswerBlock[]) => {
+          answerBlocksPayload = blocks;
+          chatStore.setAnswerBlocks(blocks);
+        },
+
         onSuggestions: (suggestions: string[]) => {
           suggestionsList = suggestions;
           chatStore.updateAssistantMessage(messageId, { suggestions });
@@ -712,7 +729,10 @@ export async function regenerateMessage(messageId: string): Promise<void> {
         onDone: async (suggestions?: string[]) => {
           // Pass sourcesPayload directly to avoid race condition where
           // state.ragSources may not yet be set when endStreaming reads it.
-          chatStore.endStreaming(sourcesPayload.length > 0 ? sourcesPayload : undefined);
+          chatStore.endStreaming(
+            sourcesPayload.length > 0 ? sourcesPayload : undefined,
+            answerBlocksPayload.length > 0 ? answerBlocksPayload : undefined,
+          );
 
           // Update message with final suggestions if received in done event
           if (suggestions && suggestions.length > 0) {
@@ -744,6 +764,10 @@ export async function regenerateMessage(messageId: string): Promise<void> {
 
           if (sourcesPayload.length > 0) {
             messageData.sources = sourcesPayload;
+          }
+
+          if (answerBlocksPayload.length > 0) {
+            messageData.answerBlocks = answerBlocksPayload;
           }
 
           if (suggestionsList.length > 0) {
@@ -894,6 +918,7 @@ export async function editUserMessage(
   let answerContent = '';
   let citations: string[] = [];
   let sourcesPayload: CitationSource[] = [];
+  let answerBlocksPayload: AnswerBlock[] = [];
   let suggestionsList: string[] = [];
 
   try {
@@ -936,13 +961,21 @@ export async function editUserMessage(
           chatStore.setRagSources(sources);
         },
 
+        onAnswerBlocks: (blocks: AnswerBlock[]) => {
+          answerBlocksPayload = blocks;
+          chatStore.setAnswerBlocks(blocks);
+        },
+
         onSuggestions: (suggestions: string[]) => {
           suggestionsList = suggestions;
           chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
         },
 
         onDone: async (suggestions?: string[]) => {
-          chatStore.endStreaming();
+          chatStore.endStreaming(
+            sourcesPayload.length > 0 ? sourcesPayload : undefined,
+            answerBlocksPayload.length > 0 ? answerBlocksPayload : undefined,
+          );
 
           // Update message with final suggestions if received in done event
           if (suggestions && suggestions.length > 0) {
@@ -974,6 +1007,10 @@ export async function editUserMessage(
 
           if (sourcesPayload.length > 0) {
             messageData.sources = sourcesPayload;
+          }
+
+          if (answerBlocksPayload.length > 0) {
+            messageData.answerBlocks = answerBlocksPayload;
           }
 
           if (suggestionsList.length > 0) {

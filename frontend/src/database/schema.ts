@@ -49,6 +49,38 @@ export interface MessageFeedbackDetails {
 }
 
 /**
+ * Structured display blocks for illustrated assistant answers.
+ *
+ * Compatibility:
+ * - `Message.content` remains the plain-text fallback and copy/export source.
+ * - Blocks are display metadata produced by the backend; user-authored Markdown
+ *   image URLs are not promoted into this structure.
+ */
+export type AnswerBlock = ParagraphBlock | ImageBlock;
+
+/** Text paragraph rendered through the existing safe Markdown renderer. */
+export interface ParagraphBlock {
+  type: 'paragraph';
+  text: string;
+}
+
+/** Verified image card rendered inline with source attribution. */
+export interface ImageBlock {
+  type: 'image_block';
+  slotId: string;
+  topic: string;
+  purpose: 'diagram' | 'photo' | 'portrait' | 'chart' | 'example';
+  imageUrl: string;
+  thumbnailUrl?: string;
+  sourceUrl: string;
+  sourceDomain: string;
+  caption: string;
+  license?: string;
+  safetyStatus: 'pass' | 'flagged' | 'unavailable';
+  matchConfidence: number;
+}
+
+/**
  * Message entity
  * Represents a single message in a conversation
  */
@@ -88,6 +120,8 @@ export interface Message {
     chunk_id: string;
     url?: string;
   }>;
+  /** Structured paragraph and image blocks for illustrated answers. */
+  answerBlocks?: AnswerBlock[];
   /** Suggested follow-up questions (optional) */
   suggestions?: string[];
   /** User feedback for assistant messages. */

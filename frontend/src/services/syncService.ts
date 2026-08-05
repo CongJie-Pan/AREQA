@@ -1,6 +1,6 @@
 import { db, getCurrentUserId } from '@/database/db';
 import { supabase } from '@/lib/supabase';
-import type { Conversation, Message } from '@/database/schema';
+import type { AnswerBlock, Conversation, Message } from '@/database/schema';
 import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
@@ -148,6 +148,10 @@ export const syncService = {
             m.sources,
             localMsg?.sources,
           );
+          const cloudAnswerBlocks = normalizeJsonArray<AnswerBlock>(
+            m.answer_blocks,
+            localMsg?.answerBlocks,
+          );
           const cloudSuggestions = normalizeJsonArray<string>(m.suggestions, localMsg?.suggestions);
           const cloudReasoning = normalizeReasoning(m.reasoning, localMsg?.reasoning);
 
@@ -161,6 +165,7 @@ export const syncService = {
             !jsonEqual(localMsg.citations, cloudCitations) ||
             !jsonEqual(localMsg.searchResults, cloudSearchResults) ||
             !jsonEqual(localMsg.sources, cloudSources) ||
+            !jsonEqual(localMsg.answerBlocks, cloudAnswerBlocks) ||
             !jsonEqual(localMsg.suggestions, cloudSuggestions) ||
             !jsonEqual(localMsg.reasoning, cloudReasoning)
           ) {
@@ -178,6 +183,7 @@ export const syncService = {
               citations: cloudCitations,
               searchResults: cloudSearchResults,
               sources: cloudSources,
+              answerBlocks: cloudAnswerBlocks,
               suggestions: cloudSuggestions,
               reasoning: cloudReasoning,
               createdAt: new Date(m.created_at)
@@ -242,6 +248,7 @@ export const syncService = {
         citations: msg.citations ?? null,
         search_results: msg.searchResults ?? null,
         sources: msg.sources ?? null,
+        answer_blocks: msg.answerBlocks ?? null,
         suggestions: msg.suggestions ?? null,
         reasoning: msg.reasoning ?? null,
         feedback: msg.feedback ?? null,

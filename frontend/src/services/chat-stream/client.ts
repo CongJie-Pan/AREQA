@@ -229,6 +229,11 @@ export async function createChatStream(
             continue;
           }
 
+          if (eventType === 'answer_blocks') {
+            callbacks.onAnswerBlocks?.(chunk); // chunk is an array of structured display blocks
+            continue;
+          }
+
           if (eventType === 'citations') {
             callbacks.onCitations?.(chunk); // chunk is an array of URL strings
             continue;

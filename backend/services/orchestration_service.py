@@ -49,6 +49,7 @@ from services.turn_intake_service import (
     is_stop_roleplay_request as _is_stop_roleplay_request,
     normalize_avatar_name as _normalize_avatar_name,
 )
+from services.visual_answer_service import VisualAnswerService
 
 
 logger = logging.getLogger(__name__)
@@ -170,6 +171,7 @@ class OrchestrationService:
             self.memory_query_tool,
         )
         self.post_turn_service = PostTurnService(suggestion_service)
+        self.visual_answer_service = VisualAnswerService()
         self.turn_intake_service = TurnIntakeService(client)
         self.turn_plan_service = TurnPlanService(self.memory_policy)
         self.web_search_tool = WebSearchTool()
@@ -609,6 +611,21 @@ class OrchestrationService:
             yield sse_adapter.encode_legacy(event, run_context.run_id)
 
         # Node 7: Post-generation
+        answer_blocks = await self.visual_answer_service.build_answer_blocks(
+            answer_text=answer_content_accumulator,
+            user_msg=last_user_msg,
+            response_policy=response_policy,
+            tool_registry=self.tool_registry,
+            tool_budget=run_state.tool_budget,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if answer_blocks:
+            yield sse_adapter.encode_legacy(
+                f"event: answer_blocks\ndata: {json.dumps(answer_blocks, ensure_ascii=False)}\n\n",
+                run_context.run_id,
+            )
+
         async for event in self._node_post_generation(last_user_msg, answer_content_accumulator, context_results_obj, use_rag, use_web_search, trace=trace):
             yield sse_adapter.encode_legacy(event, run_context.run_id)
 

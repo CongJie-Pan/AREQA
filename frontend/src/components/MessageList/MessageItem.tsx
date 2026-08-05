@@ -10,7 +10,7 @@ import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Copy, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Copy, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -19,6 +19,8 @@ import { RAGStatusPanel } from '@/components/RAGStatusPanel';
 import type { CitationSource } from '@/components/Citations';
 import type { DisplayMessage } from '@/store/chat';
 import type {
+  AnswerBlock,
+  ImageBlock,
   MessageFeedback,
   MessageFeedbackDetails,
   MessageFeedbackReason,
@@ -273,6 +275,86 @@ function StreamingMarkdown({ content, markdownComponents }: { content: string, m
     >
       {processedContent}
     </ReactMarkdown>
+  );
+}
+
+/**
+ * Render one verified image block inside an assistant answer.
+ *
+ * The backend owns retrieval and safety verification. This component keeps the
+ * source attribution visible and rejects unsafe URLs before they reach the DOM.
+ */
+function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnType<typeof useStyles>['styles'] }) {
+  const imageUrl = block.thumbnailUrl || block.imageUrl;
+  const safeImageUrl = isSafeUrl(imageUrl) ? imageUrl : '';
+  const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
+
+  if (!safeImageUrl || !safeSourceUrl || block.safetyStatus !== 'pass') {
+    return null;
+  }
+
+  return (
+    <figure className={styles.answerImageCard}>
+      <a
+        href={safeSourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={styles.answerImageLink}
+        title={block.sourceUrl}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={safeImageUrl}
+          alt={block.caption || block.topic}
+          className={styles.answerImage}
+          loading="lazy"
+        />
+      </a>
+      <figcaption className={styles.answerImageCaption}>
+        <span>{block.caption}</span>
+        <a
+          href={safeSourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.answerImageSource}
+          title={block.sourceUrl}
+        >
+          {block.sourceDomain || 'source'}
+          <ExternalLink size={12} aria-hidden="true" />
+        </a>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * Render structured illustrated answer blocks in backend-provided order.
+ */
+function AnswerBlocksRenderer({
+  blocks,
+  markdownComponents,
+  styles,
+}: {
+  blocks: AnswerBlock[];
+  markdownComponents: Components;
+  styles: ReturnType<typeof useStyles>['styles'];
+}) {
+  return (
+    <>
+      {blocks.map((block, index) => {
+        if (block.type === 'image_block') {
+          return <ImageBlockCard key={block.slotId || `image-${index}`} block={block} styles={styles} />;
+        }
+
+        return (
+          <StreamingMarkdown
+            key={`paragraph-${index}`}
+            content={block.text}
+            markdownComponents={markdownComponents}
+          />
+        );
+      })}
+    </>
   );
 }
 
@@ -673,7 +755,15 @@ export const MessageItem = memo(function MessageItem({
             >
               {/* Message Content */}
               <div className={styles.content}>
-                <StreamingMarkdown content={message.content} markdownComponents={markdownComponents} />
+                {message.answerBlocks && message.answerBlocks.length > 0 ? (
+                  <AnswerBlocksRenderer
+                    blocks={message.answerBlocks}
+                    markdownComponents={markdownComponents}
+                    styles={styles}
+                  />
+                ) : (
+                  <StreamingMarkdown content={message.content} markdownComponents={markdownComponents} />
+                )}
                 {/* Streaming cursor */}
                 {isStreaming && !thinking?.isThinking && (
                   <span className={styles.streamingCursor} />
