@@ -22,6 +22,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 import redis.asyncio as aioredis
 
+from config import settings
 from services.query_policy_service import ResponsePolicy, TaskIntent
 
 logger = logging.getLogger(__name__)
@@ -571,8 +572,7 @@ class VisualAnswerService:
         """
 
         headers = {
-            "User-Agent": os.environ.get("AREQA_VISUAL_USER_AGENT", _DEFAULT_VISUAL_USER_AGENT).strip()
-            or _DEFAULT_VISUAL_USER_AGENT,
+            "User-Agent": settings.areqa_visual_user_agent.strip() or _DEFAULT_VISUAL_USER_AGENT,
         }
         if provider == "openverse":
             token = (
@@ -620,7 +620,7 @@ class VisualAnswerService:
     def _wikimedia_debug_logs_enabled() -> bool:
         """Return whether detailed Wikimedia failure logs are enabled."""
 
-        return os.environ.get("WIKIMEDIA_IMAGE_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "on"}
+        return bool(settings.wikimedia_image_debug_logs)
 
     def _select_image_block(
         self,

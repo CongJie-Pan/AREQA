@@ -255,9 +255,11 @@ def test_select_image_block_prefers_open_licensed_candidate(caplog):
 async def test_wikimedia_request_uses_configured_user_agent(monkeypatch):
     """Wikimedia requests should identify AREQA with a stable User-Agent."""
 
+    import config as runtime_config
+
     service = VisualAnswerService()
     client = _RecordingHttpClient({"query": {"pages": {}}})
-    monkeypatch.setenv("AREQA_VISUAL_USER_AGENT", "AREQA-Test/1.0")
+    monkeypatch.setattr(runtime_config.settings, "areqa_visual_user_agent", "AREQA-Test/1.0")
 
     await service._query_wikimedia(client, "meta analysis", "conversation-1")
 
@@ -268,9 +270,11 @@ async def test_wikimedia_request_uses_configured_user_agent(monkeypatch):
 async def test_openverse_request_uses_optional_access_token(monkeypatch):
     """Openverse requests should use an optional bearer token when configured."""
 
+    import config as runtime_config
+
     service = VisualAnswerService()
     client = _RecordingHttpClient({"results": []})
-    monkeypatch.setenv("AREQA_VISUAL_USER_AGENT", "AREQA-Test/1.0")
+    monkeypatch.setattr(runtime_config.settings, "areqa_visual_user_agent", "AREQA-Test/1.0")
     monkeypatch.setenv("OPENVERSE_ACCESS_TOKEN", "openverse-token")
 
     await service._query_openverse(client, "meta analysis", "conversation-1")
@@ -333,6 +337,8 @@ async def test_resolve_images_continues_after_provider_http_error(monkeypatch, c
 async def test_wikimedia_debug_logs_include_safe_http_metadata(monkeypatch, caplog):
     """Detailed Wikimedia failure logs should be opt-in and privacy-preserving."""
 
+    import config as runtime_config
+
     caplog.set_level("INFO")
     service = VisualAnswerService()
 
@@ -349,7 +355,7 @@ async def test_wikimedia_debug_logs_include_safe_http_metadata(monkeypatch, capl
     async def no_openverse_candidates(client, query, conversation_id):
         return []
 
-    monkeypatch.setenv("WIKIMEDIA_IMAGE_DEBUG_LOGS", "true")
+    monkeypatch.setattr(runtime_config.settings, "wikimedia_image_debug_logs", True)
     monkeypatch.setattr(service, "_query_wikimedia", fail_wikimedia)
     monkeypatch.setattr(service, "_query_openverse", no_openverse_candidates)
 
