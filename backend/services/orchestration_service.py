@@ -635,6 +635,7 @@ class OrchestrationService:
             existing_web_results=run_state.web_search_results,
             user_id=user_id,
             conversation_id=conversation_id,
+            model_client=self.client,
         )
         if answer_blocks:
             logger.info(

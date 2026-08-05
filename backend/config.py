@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     areqa_visual_user_agent: str = "AREQA/0.1 (https://congjie-pan.github.io/; contact: smartjay1206@gmail.com)"
     wikimedia_image_debug_logs: bool = True
     enable_visual_answer_debug_logs: bool = True
+    visual_grounding_timeout_seconds: float = 1.5
+    visual_grounding_max_candidates: int = 3
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.

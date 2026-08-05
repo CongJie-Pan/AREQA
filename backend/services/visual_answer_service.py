@@ -24,6 +24,7 @@ import redis.asyncio as aioredis
 
 from config import settings
 from services.query_policy_service import ResponsePolicy, TaskIntent
+from services.visual_grounding_agent import VisualGroundingAgent
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ _IMAGE_META_PATTERN = re.compile(
 )
 _TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _NEGATIVE_CACHE_SENTINEL = {"status": "negative"}
-_VISUAL_CACHE_VERSION = "v2"
+_VISUAL_CACHE_VERSION = "v3"
 _PROVIDER_PRIORITY = {
     "wikimedia": 0.25,
     "openverse": 0.2,
@@ -263,6 +264,7 @@ class VisualAnswerService:
         self.open_provider_timeout_seconds = open_provider_timeout_seconds
         self.max_images = max(0, min(max_images, 2))
         self._redis_factory = redis_factory
+        self._visual_grounding_agent = VisualGroundingAgent()
 
     def should_enrich(self, response_policy: ResponsePolicy, user_msg: str) -> bool:
         """Return whether this turn should attempt visual enrichment."""
@@ -289,6 +291,7 @@ class VisualAnswerService:
         user_id: str,
         conversation_id: str,
         planned_image_slots: list[dict[str, Any]] | None = None,
+        model_client: Any = None,
     ) -> list[dict[str, Any]]:
         """Build frontend answer blocks for the completed answer text.
 
@@ -305,6 +308,8 @@ class VisualAnswerService:
                 external tool call in WEB_REQUIRED turns.
             user_id: Current user identifier for tool cache scoping.
             conversation_id: Current conversation identifier for safe logs.
+            model_client: Optional OpenAI-compatible client for visual grounding
+                checks. When omitted, grounding fails open.
 
         Returns:
             Ordered paragraph and image blocks. Returns an empty list when visual
@@ -332,6 +337,7 @@ class VisualAnswerService:
                     tool_budget=tool_budget,
                     user_id=user_id,
                     conversation_id=conversation_id,
+                    model_client=model_client,
                 )
                 if not image_blocks:
                     logger.info(
@@ -358,11 +364,13 @@ class VisualAnswerService:
             image_blocks = await self._resolve_images(
                 user_msg=user_msg,
                 visual_query=visual_query,
+                visual_intent_text=user_msg,
                 existing_web_results=existing_web_results,
                 tool_registry=tool_registry,
                 tool_budget=tool_budget,
                 user_id=user_id,
                 conversation_id=conversation_id,
+                model_client=model_client,
             )
         except Exception as exc:
             logger.warning(
@@ -392,6 +400,7 @@ class VisualAnswerService:
         tool_budget: Any,
         user_id: str,
         conversation_id: str,
+        model_client: Any = None,
     ) -> dict[str, ImageBlock]:
         """Resolve model-planned visual requests into verified image blocks.
 
@@ -402,6 +411,7 @@ class VisualAnswerService:
             tool_budget: Shared foreground tool budget.
             user_id: User id required by the search tool.
             conversation_id: Correlation id for privacy-safe logs.
+            model_client: Optional OpenAI-compatible client for visual grounding.
 
         Returns:
             Mapping from planned slot id to selected image block.
@@ -438,11 +448,13 @@ class VisualAnswerService:
             image_blocks = await self._resolve_images(
                 user_msg=slot.query,
                 visual_query=slot.query,
+                visual_intent_text=self._slot_visual_intent(slot),
                 existing_web_results=existing_web_results,
                 tool_registry=tool_registry,
                 tool_budget=tool_budget,
                 user_id=user_id,
                 conversation_id=conversation_id,
+                model_client=model_client,
             )
             if not image_blocks:
                 await self._write_cache(cache_key, _NEGATIVE_CACHE_SENTINEL, 604800, conversation_id)
@@ -490,6 +502,13 @@ class VisualAnswerService:
             pedagogical_score=block.pedagogical_score,
         )
 
+    @staticmethod
+    def _slot_visual_intent(slot: PlannedImageSlot) -> str:
+        """Combine slot query and caption intent for visual grounding."""
+
+        parts = [slot.query.strip(), slot.caption_hint.strip()]
+        return "\n".join(part for part in parts if part)
+
     async def _search_image_sources(
         self,
         *,
@@ -528,10 +547,13 @@ class VisualAnswerService:
         user_id: str,
         conversation_id: str,
         visual_query: str | None = None,
+        visual_intent_text: str | None = None,
+        model_client: Any = None,
     ) -> list[ImageBlock]:
         """Resolve open-source providers first, then existing og:image fallback."""
 
         resolved_query = visual_query or self._visual_search_query(user_msg)[0]
+        visual_context = visual_intent_text or resolved_query
         blocks: list[ImageBlock] = []
         async with httpx.AsyncClient(timeout=self.open_provider_timeout_seconds, follow_redirects=True) as client:
             candidates = await self._query_provider_candidates(
@@ -541,7 +563,14 @@ class VisualAnswerService:
                 query=resolved_query,
                 conversation_id=conversation_id,
             )
-            block = self._select_image_block(candidates, resolved_query, "wikimedia", conversation_id)
+            block = await self._select_image_block(
+                candidates,
+                resolved_query,
+                "wikimedia",
+                conversation_id,
+                visual_context,
+                model_client,
+            )
             if block:
                 self._log_image_block_selected(conversation_id, block, "open_provider")
                 return [block]
@@ -553,7 +582,14 @@ class VisualAnswerService:
                 query=resolved_query,
                 conversation_id=conversation_id,
             )
-            block = self._select_image_block(candidates, resolved_query, "openverse", conversation_id)
+            block = await self._select_image_block(
+                candidates,
+                resolved_query,
+                "openverse",
+                conversation_id,
+                visual_context,
+                model_client,
+            )
             if block:
                 self._log_image_block_selected(conversation_id, block, "open_provider")
                 return [block]
@@ -884,14 +920,16 @@ class VisualAnswerService:
 
         return bool(settings.wikimedia_image_debug_logs)
 
-    def _select_image_block(
+    async def _select_image_block(
         self,
         candidates: list[ImageCandidate],
         query: str,
         provider: str,
         conversation_id: str,
+        visual_intent_text: str = "",
+        model_client: Any = None,
     ) -> ImageBlock | None:
-        """Select the strongest candidate using cheap metadata heuristics."""
+        """Select the strongest grounded candidate using metadata and an agent."""
 
         scored = [
             (self._heuristic_score(candidate, query), candidate)
@@ -906,7 +944,8 @@ class VisualAnswerService:
                 len(candidates),
             )
             return None
-        score, candidate = max(scored, key=lambda item: item[0])
+        scored.sort(key=lambda item: item[0], reverse=True)
+        score, candidate = scored[0]
         self._log_candidate_decision(
             conversation_id=conversation_id,
             provider=provider,
@@ -924,13 +963,49 @@ class VisualAnswerService:
                 score,
             )
             return None
-        block = self._candidate_to_block(candidate, score, 1)
+
+        grounded_candidate: ImageCandidate | None = None
+        grounded_score = 0.0
+        max_grounding_candidates = max(1, int(getattr(settings, "visual_grounding_max_candidates", 3)))
+        for candidate_score, candidate in scored[:max_grounding_candidates]:
+            if candidate_score < 0.4:
+                continue
+            decision = await self._visual_grounding_agent.evaluate(
+                client=model_client,
+                model=settings.model_policy_classifier,
+                visual_intent=visual_intent_text or query,
+                candidate=candidate,
+                conversation_id=conversation_id,
+            )
+            if decision.accepted:
+                grounded_candidate = candidate
+                grounded_score = candidate_score
+                break
+            logger.info(
+                "visual.candidate_rejected conversation_id=%s provider=%s reason=grounding_%s expected_type=%s candidate_type=%s",
+                conversation_id,
+                provider,
+                decision.reason,
+                decision.expected_visual_type,
+                decision.candidate_visual_type,
+            )
+
+        if grounded_candidate is None:
+            logger.info(
+                "visual.image_omitted conversation_id=%s reason=grounding_rejected provider=%s checked_candidate_count=%s threshold=0.40",
+                conversation_id,
+                provider,
+                min(max_grounding_candidates, len(scored)),
+            )
+            return None
+
+        block = self._candidate_to_block(grounded_candidate, grounded_score, 1)
         logger.info(
             "visual.image_selected conversation_id=%s source_domain=%s provider=%s confidence_bucket=%s",
             conversation_id,
             block.source_domain,
             block.provider,
-            "high" if score >= 0.65 else "medium",
+            "high" if grounded_score >= 0.65 else "medium",
         )
         return block
 
@@ -1091,15 +1166,25 @@ class VisualAnswerService:
 
         metadata = f"{candidate.title} {candidate.caption} {candidate.attribution_string}".lower()
         signals = (
-            "forest plot",
-            "confidence interval",
-            "pooled effect",
-            "diamond",
-            "effect size",
-            "study weight",
             "annotated",
             "labeled",
             "diagram",
+            "chart",
+            "map",
+            "timeline",
+            "process",
+            "flow",
+            "overview",
+            "comparison",
+            "structure",
+            "model",
+            "figure",
+            "illustration",
+            "visualization",
+            "framework",
+            "steps",
+            "axis",
+            "legend",
         )
         score = sum(0.1 for signal in signals if signal in metadata)
         if candidate.provider == "wikimedia":

@@ -12,6 +12,7 @@ from backend.services.query_policy_service import (
     TaskIntent,
 )
 from backend.services.visual_answer_service import ImageBlock, ImageCandidate, VisualAnswerService
+from backend.services.visual_grounding_agent import VisualGroundingDecision
 
 
 class _FakeRedis:
@@ -96,7 +97,7 @@ def test_should_not_enrich_general_non_visual_prompt():
 def test_cache_key_uses_visual_schema_version():
     """Visual cache keys should invalidate pre-provider placeholder entries."""
 
-    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v2:diagram:")
+    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v3:diagram:")
 
 
 def test_visual_search_query_rewrites_meta_analysis_prompt():
@@ -385,12 +386,13 @@ async def test_build_answer_blocks_reuses_existing_web_results(monkeypatch, capl
     assert "visual.slots_planned" in caplog.text
 
 
-def test_select_image_block_prefers_open_licensed_candidate(caplog):
+@pytest.mark.asyncio
+async def test_select_image_block_prefers_open_licensed_candidate(caplog):
     """High-scoring Wikimedia candidates should become licensed image blocks."""
 
     caplog.set_level("INFO")
     service = VisualAnswerService()
-    block = service._select_image_block(
+    block = await service._select_image_block(
         [
             ImageCandidate(
                 provider="wikimedia",
@@ -426,12 +428,13 @@ def test_select_image_block_prefers_open_licensed_candidate(caplog):
     assert "visual.candidate_top_scored" in caplog.text
 
 
-def test_select_image_block_logs_low_score_candidate_metadata_without_raw_query(caplog):
+@pytest.mark.asyncio
+async def test_select_image_block_logs_low_score_candidate_metadata_without_raw_query(caplog):
     """Low-score omissions should expose safe ranking metadata for debugging."""
 
     caplog.set_level("INFO")
     service = VisualAnswerService()
-    block = service._select_image_block(
+    block = await service._select_image_block(
         [
             ImageCandidate(
                 provider="openverse",
@@ -457,6 +460,69 @@ def test_select_image_block_logs_low_score_candidate_metadata_without_raw_query(
     assert "source_domain=images.example.org" in caplog.text
     assert "dimension_bucket=small" in caplog.text
     assert "private raw visual query" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_select_image_block_uses_grounding_agent_to_reject_visual_mismatch(caplog):
+    """Grounding should reject a high-score candidate when metadata contradicts intent."""
+
+    class _FakeGroundingAgent:
+        async def evaluate(self, *, candidate, **kwargs):
+            if "aircraft" in candidate.title.lower():
+                return VisualGroundingDecision(
+                    accepted=False,
+                    expected_visual_type="map",
+                    candidate_visual_type="aircraft_photo",
+                    reason="visual_type_mismatch",
+                )
+            return VisualGroundingDecision(
+                accepted=True,
+                expected_visual_type="map",
+                candidate_visual_type="map",
+                reason="purpose_match",
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    service._visual_grounding_agent = _FakeGroundingAgent()
+
+    block = await service._select_image_block(
+        [
+            ImageCandidate(
+                provider="wikimedia",
+                image_url="https://upload.wikimedia.org/aircraft.png",
+                thumbnail_url="https://upload.wikimedia.org/aircraft-thumb.png",
+                source_url="https://commons.wikimedia.org/wiki/File:Aircraft.png",
+                title="World War II aircraft map diagram",
+                caption="Aircraft photo with map metadata words",
+                license="CC BY 2.0",
+                width=900,
+                height=500,
+            ),
+            ImageCandidate(
+                provider="wikimedia",
+                image_url="https://upload.wikimedia.org/map.png",
+                thumbnail_url="https://upload.wikimedia.org/map-thumb.png",
+                source_url="https://commons.wikimedia.org/wiki/File:Pacific_War_Map.png",
+                title="Pacific War map diagram",
+                caption="Map showing Pacific War movement",
+                license="CC BY-SA 4.0",
+                width=900,
+                height=500,
+            ),
+        ],
+        "World War II Pacific War map diagram",
+        "wikimedia",
+        "conversation-1",
+        "Show a map that helps explain World War II geography.",
+        SimpleNamespace(),
+    )
+
+    assert block is not None
+    assert block.image_url == "https://upload.wikimedia.org/map.png"
+    assert block.source_domain == "commons.wikimedia.org"
+    assert "visual.candidate_rejected" in caplog.text
+    assert "candidate_type=aircraft_photo" in caplog.text
 
 
 def test_image_block_debug_log_respects_config(monkeypatch, caplog):
