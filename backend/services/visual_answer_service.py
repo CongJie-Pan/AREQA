@@ -500,16 +500,28 @@ class VisualAnswerService:
             brief.visual_type,
             brief.source,
         )
-        blocks = await self._resolve_planned_image_blocks(
-            planned_slots=[slot],
-            existing_web_results=existing_web_results,
-            tool_registry=tool_registry,
-            tool_budget=tool_budget,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            model_client=model_client,
-            visual_brief=brief,
-        )
+        timeout_seconds = max(0.1, float(settings.visual_preflight_timeout_seconds))
+        try:
+            blocks = await asyncio.wait_for(
+                self._resolve_planned_image_blocks(
+                    planned_slots=[slot],
+                    existing_web_results=existing_web_results,
+                    tool_registry=tool_registry,
+                    tool_budget=tool_budget,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    model_client=model_client,
+                    visual_brief=brief,
+                ),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            logger.info(
+                "visual.preflight_timeout conversation_id=%s timeout_seconds=%.1f",
+                conversation_id,
+                timeout_seconds,
+            )
+            blocks = {}
         logger.info(
             "visual.preflight_completed conversation_id=%s resolved_image_count=%s",
             conversation_id,
@@ -595,6 +607,9 @@ class VisualAnswerService:
                 model_client=model_client,
                 visual_brief=visual_brief,
                 allow_og_fallback=visual_brief is None,
+                allow_open_provider_fallback=(
+                    visual_brief is None or settings.enable_visual_preflight_open_provider_fallback
+                ),
             )
             if not image_blocks:
                 await self._write_cache(cache_key, _NEGATIVE_CACHE_SENTINEL, 604800, conversation_id)
@@ -691,8 +706,9 @@ class VisualAnswerService:
         model_client: Any = None,
         visual_brief: VisualBrief | None = None,
         allow_og_fallback: bool = True,
+        allow_open_provider_fallback: bool = True,
     ) -> list[ImageBlock]:
-        """Resolve open-source providers first, then existing og:image fallback."""
+        """Resolve provider images with caller-controlled fallback breadth."""
 
         resolved_query = visual_query or self._visual_search_query(user_msg)[0]
         visual_context = visual_intent_text or resolved_query
@@ -728,6 +744,13 @@ class VisualAnswerService:
                 if block:
                     self._log_image_block_selected(conversation_id, block, "perplexity_images")
                     return [block]
+
+        if not allow_open_provider_fallback:
+            logger.info(
+                "visual.open_provider_fallback_skipped conversation_id=%s reason=preflight_budget",
+                conversation_id,
+            )
+            return []
 
         async with httpx.AsyncClient(timeout=self.open_provider_timeout_seconds, follow_redirects=True) as client:
             candidates = await self._query_provider_candidates(
@@ -1262,7 +1285,11 @@ class VisualAnswerService:
 
         grounded_candidate: ImageCandidate | None = None
         grounded_score = 0.0
-        max_grounding_candidates = max(1, int(getattr(settings, "visual_grounding_max_candidates", 3)))
+        max_grounding_candidates = (
+            max(1, int(getattr(settings, "visual_preflight_grounding_max_candidates", 1)))
+            if visual_brief is not None
+            else max(1, int(getattr(settings, "visual_grounding_max_candidates", 3)))
+        )
         for candidate_score, candidate in scored[:max_grounding_candidates]:
             if candidate_score < 0.4:
                 continue

@@ -48,12 +48,15 @@ class Settings(BaseSettings):
     wikimedia_image_debug_logs: bool = True
     enable_visual_answer_debug_logs: bool = True
     enable_visual_preflight: bool = True
+    visual_preflight_timeout_seconds: float = 6.0
+    enable_visual_preflight_open_provider_fallback: bool = False
     enable_perplexity_visual_search: bool = True
     perplexity_visual_search_model: str = "sonar"
-    perplexity_visual_search_timeout_seconds: float = 8.0
+    perplexity_visual_search_timeout_seconds: float = 4.5
     perplexity_sonar_api_url: str = "https://api.perplexity.ai/v1/sonar"
     visual_grounding_timeout_seconds: float = 1.5
     visual_grounding_max_candidates: int = 3
+    visual_preflight_grounding_max_candidates: int = 1
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.

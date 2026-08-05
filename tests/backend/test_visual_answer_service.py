@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import httpx
@@ -494,6 +495,7 @@ async def test_resolve_planned_image_blocks_uses_visual_brief_cache_key(monkeypa
 
     async def fake_resolve_images(**kwargs):
         observed["allow_og_fallback"] = kwargs["allow_og_fallback"]
+        observed["allow_open_provider_fallback"] = kwargs["allow_open_provider_fallback"]
         return []
 
     monkeypatch.setattr(service, "_read_cache", fake_read_cache)
@@ -522,14 +524,17 @@ async def test_resolve_planned_image_blocks_uses_visual_brief_cache_key(monkeypa
     assert observed["cache_key"] == VisualAnswerService._visual_brief_cache_key(brief)
     assert observed["cache_key"] != VisualAnswerService._cache_key(brief.search_query, "diagram")
     assert observed["allow_og_fallback"] is False
+    assert observed["allow_open_provider_fallback"] is False
     assert "visual.cache_scope_selected" in caplog.text
     assert "scope=preflight" in caplog.text
     assert "visual_type=map" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_preflight_skips_og_image_fallback_when_open_providers_fail(monkeypatch, caplog):
-    """Preflight should omit images instead of using ungrounded og:image previews."""
+async def test_preflight_skips_open_provider_and_og_fallback_when_perplexity_fails(monkeypatch, caplog):
+    """Preflight should fail fast instead of chaining slower fallback providers."""
+
+    import config as runtime_config
 
     class _FakeGroundingAgent:
         async def plan(self, **kwargs):
@@ -544,14 +549,20 @@ async def test_preflight_skips_og_image_fallback_when_open_providers_fail(monkey
     service = VisualAnswerService()
     service._visual_grounding_agent = _FakeGroundingAgent()
 
-    async def no_candidates(*args, **kwargs):
+    async def no_perplexity_candidates(*args, **kwargs):
         return []
+
+    async def fail_open_provider(*args, **kwargs):
+        raise AssertionError("preflight should not query open providers after Perplexity fails")
 
     async def fail_og_scan(*args, **kwargs):
         raise AssertionError("preflight should not scan og:image fallback")
 
-    monkeypatch.setattr(service, "_query_wikimedia", no_candidates)
-    monkeypatch.setattr(service, "_query_openverse", no_candidates)
+    monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_open_provider_fallback", False)
+    monkeypatch.setattr(service, "_query_perplexity_images", no_perplexity_candidates)
+    monkeypatch.setattr(service, "_query_wikimedia", fail_open_provider)
+    monkeypatch.setattr(service, "_query_openverse", fail_open_provider)
     monkeypatch.setattr(service, "_block_from_result_safe", fail_og_scan)
 
     blocks = await service.prepare_preflight_image_blocks(
@@ -566,8 +577,50 @@ async def test_preflight_skips_og_image_fallback_when_open_providers_fail(monkey
     )
 
     assert blocks == {}
-    assert "visual.og_fallback_skipped" in caplog.text
-    assert "preflight_requires_grounded_provider" in caplog.text
+    assert "visual.open_provider_fallback_skipped" in caplog.text
+    assert "reason=preflight_budget" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_prepare_preflight_image_blocks_returns_empty_on_timeout(monkeypatch, caplog):
+    """Preflight should never block the main answer beyond its configured budget."""
+
+    import config as runtime_config
+
+    class _FakeGroundingAgent:
+        async def plan(self, **kwargs):
+            return VisualBrief(
+                visual_type="diagram",
+                search_query="slow visual query",
+                caption_goal="Show the concept.",
+                reject_if=("decorative",),
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    service._visual_grounding_agent = _FakeGroundingAgent()
+    monkeypatch.setattr(runtime_config.settings, "visual_preflight_timeout_seconds", 0.01)
+
+    async def slow_resolve_planned(**kwargs):
+        await asyncio.sleep(1)
+        return {"img_1": object()}
+
+    monkeypatch.setattr(service, "_resolve_planned_image_blocks", slow_resolve_planned)
+
+    blocks = await service.prepare_preflight_image_blocks(
+        user_msg="請圖解二戰歐洲戰場",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        existing_web_results=None,
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+    )
+
+    assert blocks == {}
+    assert "visual.preflight_timeout" in caplog.text
+    assert "timeout_seconds=0.1" in caplog.text
 
 
 @pytest.mark.asyncio
