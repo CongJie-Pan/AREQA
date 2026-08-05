@@ -13,6 +13,20 @@ from backend.services.query_policy_service import (
 from backend.services.visual_answer_service import ImageBlock, ImageCandidate, VisualAnswerService
 
 
+class _FakeRedis:
+    """Minimal async Redis double for visual cache read tests."""
+
+    def __init__(self, value):
+        self.value = value
+        self.closed = False
+
+    async def get(self, key):
+        return self.value
+
+    async def aclose(self):
+        self.closed = True
+
+
 def _policy(task_intent=TaskIntent.GENERAL_QA):
     """Build a minimal response policy for visual service tests."""
 
@@ -48,6 +62,49 @@ def test_should_not_enrich_general_non_visual_prompt():
     service = VisualAnswerService()
 
     assert service.should_enrich(_policy(), "我在想產品定位") is False
+
+
+def test_cache_key_uses_visual_schema_version():
+    """Visual cache keys should invalidate pre-provider placeholder entries."""
+
+    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v2:diagram:")
+
+
+@pytest.mark.asyncio
+async def test_read_cache_rejects_stale_placeholder_image_block(monkeypatch, caplog):
+    """Stale placeholder image cache should not render broken cards."""
+
+    caplog.set_level("INFO")
+    cached_value = """
+    {
+      "status": "hit",
+      "image_block": {
+        "type": "image_block",
+        "slotId": "visual-1",
+        "topic": "Meta analysis diagram",
+        "purpose": "diagram",
+        "imageUrl": "https://example.com/meta.png",
+        "thumbnailUrl": "https://example.com/meta.png",
+        "sourceUrl": "https://example.com/source",
+        "sourceDomain": "example.com",
+        "caption": "Meta analysis diagram",
+        "provider": "wikimedia",
+        "license": "unknown",
+        "safetyStatus": "pass",
+        "matchConfidence": 0.8,
+        "heuristicScore": 0.8
+      }
+    }
+    """
+    redis = _FakeRedis(cached_value)
+    service = VisualAnswerService(redis_factory=lambda *args, **kwargs: redis)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
+
+    block = await service._read_cache("visual_image:v1:diagram:old", "conversation-1")
+
+    assert block is None
+    assert redis.closed is True
+    assert "visual.cache_rejected" in caplog.text
 
 
 @pytest.mark.asyncio

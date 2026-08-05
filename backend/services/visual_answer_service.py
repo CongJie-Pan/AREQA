@@ -45,10 +45,16 @@ _IMAGE_META_PATTERN = re.compile(
 )
 _TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _NEGATIVE_CACHE_SENTINEL = {"status": "negative"}
+_VISUAL_CACHE_VERSION = "v2"
 _PROVIDER_PRIORITY = {
     "wikimedia": 0.25,
     "openverse": 0.2,
     "og_image": 0.05,
+}
+_PLACEHOLDER_DOMAINS = {
+    "example.com",
+    "example.org",
+    "example.net",
 }
 _PURPOSE_TERMS = {
     "diagram",
@@ -667,7 +673,16 @@ class VisualAnswerService:
             )
             if payload.get("status") == "negative":
                 return _NEGATIVE_CACHE_SENTINEL
-            return payload.get("image_block") if isinstance(payload.get("image_block"), dict) else None
+            image_block = payload.get("image_block")
+            if not isinstance(image_block, dict):
+                return None
+            if not self._is_safe_cached_image_block(image_block):
+                logger.info(
+                    "visual.cache_rejected conversation_id=%s reason=unsafe_cached_image",
+                    conversation_id,
+                )
+                return None
+            return image_block
         except Exception:
             logger.info("visual.cache_miss conversation_id=%s", conversation_id)
             return None
@@ -714,8 +729,42 @@ class VisualAnswerService:
         """Return a privacy-preserving cache key for a visual slot."""
 
         normalized = " ".join(sorted(cls._tokens(query)))
-        digest = hashlib.sha256(f"{purpose}:{normalized}".encode("utf-8")).hexdigest()
-        return f"visual_image:{purpose}:{digest}"
+        digest = hashlib.sha256(f"{_VISUAL_CACHE_VERSION}:{purpose}:{normalized}".encode("utf-8")).hexdigest()
+        return f"visual_image:{_VISUAL_CACHE_VERSION}:{purpose}:{digest}"
+
+    @staticmethod
+    def _is_safe_cached_image_block(payload: dict[str, Any]) -> bool:
+        """Return whether a cached frontend image block is still renderable.
+
+        Cached visual blocks can outlive provider behavior changes. Revalidating
+        the public URL shape on read prevents stale placeholder blocks from
+        bypassing the provider safety gates after a deployment.
+        """
+
+        image_url = str(payload.get("imageUrl") or "")
+        thumbnail_url = str(payload.get("thumbnailUrl") or image_url)
+        source_url = str(payload.get("sourceUrl") or "")
+        source_domain = str(payload.get("sourceDomain") or "")
+        provider = str(payload.get("provider") or "")
+
+        if provider not in {"wikimedia", "openverse", "og_image"}:
+            return False
+
+        for url in (image_url, thumbnail_url, source_url):
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                return False
+            if parsed.netloc.lower().removeprefix("www.") in _PLACEHOLDER_DOMAINS:
+                return False
+
+        parsed_source = urlparse(source_url)
+        normalized_source_domain = parsed_source.netloc.lower().removeprefix("www.")
+        if source_domain and source_domain.lower().removeprefix("www.") in _PLACEHOLDER_DOMAINS:
+            return False
+        if normalized_source_domain in _PLACEHOLDER_DOMAINS:
+            return False
+
+        return True
 
     @staticmethod
     def _image_block_from_frontend(payload: dict[str, Any]) -> ImageBlock:
