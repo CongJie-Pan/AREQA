@@ -24,7 +24,7 @@ import redis.asyncio as aioredis
 
 from config import settings
 from services.query_policy_service import ResponsePolicy, TaskIntent
-from services.visual_grounding_agent import VisualGroundingAgent
+from services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
 
 logger = logging.getLogger(__name__)
 
@@ -453,15 +453,24 @@ class VisualAnswerService:
                 conversation_id,
                 rewrite_rule,
             )
+        brief = await self._visual_grounding_agent.plan(
+            client=model_client,
+            model=settings.model_policy_classifier,
+            user_msg=user_msg,
+            fallback_query=visual_query,
+            conversation_id=conversation_id,
+        )
         slot = PlannedImageSlot(
             slot_id="img_1",
-            query=visual_query,
-            caption_hint="Use this verified image only if it directly helps explain the answer.",
+            query=brief.search_query,
+            caption_hint="",
             anchor_after_paragraph=0,
         )
         logger.info(
-            "visual.preflight_started conversation_id=%s slot_count=1",
+            "visual.preflight_started conversation_id=%s slot_count=1 visual_type=%s brief_source=%s",
             conversation_id,
+            brief.visual_type,
+            brief.source,
         )
         blocks = await self._resolve_planned_image_blocks(
             planned_slots=[slot],
@@ -471,6 +480,7 @@ class VisualAnswerService:
             user_id=user_id,
             conversation_id=conversation_id,
             model_client=model_client,
+            visual_brief=brief,
         )
         logger.info(
             "visual.preflight_completed conversation_id=%s resolved_image_count=%s",
@@ -489,6 +499,7 @@ class VisualAnswerService:
         user_id: str,
         conversation_id: str,
         model_client: Any = None,
+        visual_brief: VisualBrief | None = None,
     ) -> dict[str, ImageBlock]:
         """Resolve model-planned visual requests into verified image blocks.
 
@@ -500,6 +511,7 @@ class VisualAnswerService:
             user_id: User id required by the search tool.
             conversation_id: Correlation id for privacy-safe logs.
             model_client: Optional OpenAI-compatible client for visual grounding.
+            visual_brief: Optional preflight visual plan used for grounding.
 
         Returns:
             Mapping from planned slot id to selected image block.
@@ -543,6 +555,7 @@ class VisualAnswerService:
                 user_id=user_id,
                 conversation_id=conversation_id,
                 model_client=model_client,
+                visual_brief=visual_brief,
             )
             if not image_blocks:
                 await self._write_cache(cache_key, _NEGATIVE_CACHE_SENTINEL, 604800, conversation_id)
@@ -637,6 +650,7 @@ class VisualAnswerService:
         visual_query: str | None = None,
         visual_intent_text: str | None = None,
         model_client: Any = None,
+        visual_brief: VisualBrief | None = None,
     ) -> list[ImageBlock]:
         """Resolve open-source providers first, then existing og:image fallback."""
 
@@ -658,6 +672,7 @@ class VisualAnswerService:
                 conversation_id,
                 visual_context,
                 model_client,
+                visual_brief,
             )
             if block:
                 self._log_image_block_selected(conversation_id, block, "open_provider")
@@ -677,6 +692,7 @@ class VisualAnswerService:
                 conversation_id,
                 visual_context,
                 model_client,
+                visual_brief,
             )
             if block:
                 self._log_image_block_selected(conversation_id, block, "open_provider")
@@ -1016,6 +1032,7 @@ class VisualAnswerService:
         conversation_id: str,
         visual_intent_text: str = "",
         model_client: Any = None,
+        visual_brief: VisualBrief | None = None,
     ) -> ImageBlock | None:
         """Select the strongest grounded candidate using metadata and an agent."""
 
@@ -1064,6 +1081,7 @@ class VisualAnswerService:
                 visual_intent=visual_intent_text or query,
                 candidate=candidate,
                 conversation_id=conversation_id,
+                visual_brief=visual_brief,
             )
             if decision.accepted:
                 grounded_candidate = candidate
@@ -1210,12 +1228,13 @@ class VisualAnswerService:
         domain = parsed.netloc.replace("www.", "")
         caption = candidate.caption or candidate.title or f"Illustration from {domain}"
         pedagogical_score = self._pedagogical_score(candidate)
+        display_image_url = self._display_image_url(candidate)
         return ImageBlock(
             slot_id=f"visual-{index}",
             topic=(candidate.title or caption)[:80],
             purpose="diagram",
-            image_url=candidate.image_url,
-            thumbnail_url=candidate.thumbnail_url or candidate.image_url,
+            image_url=display_image_url,
+            thumbnail_url=display_image_url,
             source_url=candidate.source_url,
             source_domain=domain,
             caption=caption[:140],
@@ -1291,6 +1310,8 @@ class VisualAnswerService:
             parsed = urlparse(url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 return False
+        if not VisualAnswerService._display_image_url(candidate):
+            return False
         lowered = f"{candidate.image_url} {candidate.title} {candidate.caption}".lower()
         if any(term in lowered for term in _NEGATIVE_TERMS):
             return False
@@ -1299,6 +1320,31 @@ class VisualAnswerService:
         if candidate.height is not None and candidate.height < 160:
             return False
         return True
+
+    @staticmethod
+    def _display_image_url(candidate: ImageCandidate) -> str:
+        """Return the best browser-displayable image URL for a candidate."""
+
+        for url in (candidate.thumbnail_url, candidate.image_url):
+            if VisualAnswerService._is_browser_display_image_url(url):
+                return url
+        return ""
+
+    @staticmethod
+    def _is_browser_display_image_url(url: str) -> bool:
+        """Return whether a URL is likely renderable by browser img/lightbox."""
+
+        parsed = urlparse(str(url or ""))
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+        path = parsed.path.lower()
+        unsupported_extensions = (".tif", ".tiff", ".pdf", ".djvu", ".jp2")
+        supported_extensions = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg")
+        if path.endswith(unsupported_extensions):
+            return False
+        if path.endswith(supported_extensions):
+            return True
+        return any(f"{extension}/" in path for extension in supported_extensions)
 
     @staticmethod
     def _has_useful_dimensions(candidate: ImageCandidate) -> bool:

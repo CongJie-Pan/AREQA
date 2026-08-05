@@ -288,7 +288,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const imageUrl = block.thumbnailUrl || block.imageUrl;
   const safeImageUrl = isSafeUrl(imageUrl) ? imageUrl : '';
-  const safeFullImageUrl = isSafeUrl(block.imageUrl) ? block.imageUrl : safeImageUrl;
+  const safeFullImageUrl = safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
   const safeLicenseUrl = isSafeUrl(block.licenseUrl) ? block.licenseUrl : '';
   const displayCaption = block.attributionCaption || block.caption || block.topic;

@@ -53,6 +53,38 @@ class VisualGroundingDecision:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class VisualBrief:
+    """Model-planned visual retrieval brief for one answer.
+
+    Args:
+        visual_type: Short visual type the answer needs, such as map or chart.
+        search_query: Concrete provider-search query.
+        caption_goal: What the image should help the learner understand.
+        reject_if: Generic candidate traits that should be rejected.
+        source: Safe source label for observability.
+    """
+
+    visual_type: str
+    search_query: str
+    caption_goal: str
+    reject_if: tuple[str, ...]
+    source: str = "agent"
+
+    def grounding_intent(self) -> str:
+        """Return a compact JSON intent for candidate grounding."""
+
+        return json.dumps(
+            {
+                "visual_type": self.visual_type,
+                "caption_goal": self.caption_goal,
+                "search_query": self.search_query,
+                "reject_if": list(self.reject_if),
+            },
+            ensure_ascii=False,
+        )
+
+
 class VisualGroundingAgent:
     """Prompt-engineered sub-agent for visual/caption consistency.
 
@@ -86,6 +118,7 @@ class VisualGroundingAgent:
         visual_intent: str,
         candidate: VisualCandidate,
         conversation_id: str,
+        visual_brief: VisualBrief | None = None,
     ) -> VisualGroundingDecision:
         """Ask the visual grounding model whether a candidate matches intent.
 
@@ -97,6 +130,8 @@ class VisualGroundingAgent:
                 to the model but never logged.
             candidate: Provider-normalized image candidate metadata.
             conversation_id: Correlation id for safe operational logs.
+            visual_brief: Optional planned visual brief. When present, the
+                model must judge fit against this explicit visual goal.
 
         Returns:
             A bounded grounding decision. Unexpected model failures return a
@@ -109,7 +144,7 @@ class VisualGroundingAgent:
             response = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=model,
-                    messages=self._messages(visual_intent, candidate),
+                    messages=self._messages(visual_intent, candidate, visual_brief),
                     temperature=0,
                     max_tokens=180,
                 ),
@@ -140,7 +175,78 @@ class VisualGroundingAgent:
             )
             return VisualGroundingDecision(True, "unknown", "unknown", "model_unavailable")
 
-    def _messages(self, visual_intent: str, candidate: VisualCandidate) -> list[dict[str, str]]:
+    async def plan(
+        self,
+        *,
+        client: Any,
+        model: str,
+        user_msg: str,
+        fallback_query: str,
+        conversation_id: str,
+    ) -> VisualBrief:
+        """Ask the agent what kind of visual would best support the answer."""
+
+        if not client:
+            return VisualBrief(
+                visual_type="diagram",
+                search_query=self._bound(fallback_query, 120) or "educational diagram",
+                caption_goal="Provide a concrete visual aid for the answer.",
+                reject_if=("wrong_visual_type", "decorative_or_generic_image"),
+                source="fallback",
+            )
+
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model,
+                    messages=self._planning_messages(user_msg, fallback_query),
+                    temperature=0,
+                    max_tokens=220,
+                ),
+                timeout=self.timeout_seconds,
+            )
+            content = str(response.choices[0].message.content or "")
+            payload = self._parse_json(content)
+            reject_if = tuple(
+                self._safe_label(item)
+                for item in payload.get("reject_if", [])
+                if item
+            )[:6]
+            brief = VisualBrief(
+                visual_type=self._safe_label(payload.get("visual_type")),
+                search_query=self._bound(str(payload.get("search_query") or fallback_query), 120),
+                caption_goal=self._bound(str(payload.get("caption_goal") or ""), 180),
+                reject_if=reject_if or ("wrong_visual_type", "decorative_or_generic_image"),
+                source="agent",
+            )
+            logger.info(
+                "visual.brief_planned conversation_id=%s visual_type=%s source=%s reject_count=%s",
+                conversation_id,
+                brief.visual_type,
+                brief.source,
+                len(brief.reject_if),
+            )
+            return brief
+        except Exception as exc:
+            logger.info(
+                "visual.brief_planning_failed conversation_id=%s reason=%s",
+                conversation_id,
+                type(exc).__name__,
+            )
+            return VisualBrief(
+                visual_type="diagram",
+                search_query=self._bound(fallback_query, 120) or "educational diagram",
+                caption_goal="Provide a concrete visual aid for the answer.",
+                reject_if=("wrong_visual_type", "decorative_or_generic_image"),
+                source="fallback",
+            )
+
+    def _messages(
+        self,
+        visual_intent: str,
+        candidate: VisualCandidate,
+        visual_brief: VisualBrief | None = None,
+    ) -> list[dict[str, str]]:
         """Build the prompt contract for one visual consistency decision."""
 
         candidate_payload = {
@@ -162,14 +268,52 @@ class VisualGroundingAgent:
             "metadata. Do not assume the image shows something unless the metadata "
             "supports it. Return only valid JSON with keys: accepted (boolean), "
             "expected_visual_type (short noun), candidate_visual_type (short noun), "
-            "reason (short snake_case). Reject when the intent expects one kind of "
-            "visual, such as a map, chart, diagram, portrait, timeline, or process, "
-            "but the candidate metadata indicates a different subject or visual kind."
+            "reason (short snake_case). If a visual brief is provided, accept only "
+            "candidates that match its visual_type and caption_goal. Reject images "
+            "that are merely topically related but visually unsuitable, including "
+            "book covers, document scans, portraits, logos, generic illustrations, "
+            "or photos when the brief asks for another visual type."
         )
         user_prompt = json.dumps(
             {
                 "visual_intent": self._bound(visual_intent, 360),
+                "visual_brief": (
+                    {
+                        "visual_type": visual_brief.visual_type,
+                        "caption_goal": visual_brief.caption_goal,
+                        "search_query": visual_brief.search_query,
+                        "reject_if": list(visual_brief.reject_if),
+                    }
+                    if visual_brief
+                    else None
+                ),
                 "candidate": candidate_payload,
+            },
+            ensure_ascii=False,
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _planning_messages(self, user_msg: str, fallback_query: str) -> list[dict[str, str]]:
+        """Build the prompt contract for one visual planning decision."""
+
+        system_prompt = (
+            "You are a visual planning sub-agent for an educational chat app. "
+            "Decide what single image would most concretely help a learner. "
+            "Prefer visual forms that explain structure, geography, timelines, "
+            "processes, comparison, data, or visual appearance. Return only JSON "
+            "with keys: visual_type (short noun), search_query (concrete English "
+            "image-search query), caption_goal (one sentence), reject_if (array "
+            "of short snake_case candidate traits to reject). Do not choose a "
+            "document, book cover, or generic decorative image unless the user "
+            "explicitly asks for that object."
+        )
+        user_prompt = json.dumps(
+            {
+                "user_question": self._bound(user_msg, 360),
+                "fallback_query": self._bound(fallback_query, 120),
             },
             ensure_ascii=False,
         )

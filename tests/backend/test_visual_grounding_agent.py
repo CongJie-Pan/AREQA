@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.services.visual_answer_service import ImageCandidate
-from backend.services.visual_grounding_agent import VisualGroundingAgent
+from backend.services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
 
 
 class _FakeCompletions:
@@ -90,3 +90,65 @@ async def test_visual_grounding_agent_sends_domain_instead_of_full_source_url():
     user_message = completions.last_kwargs["messages"][1]["content"]
     assert "commons.wikimedia.org" in user_message
     assert "https://commons.wikimedia.org/wiki/File:Example.png" not in user_message
+
+
+@pytest.mark.asyncio
+async def test_visual_grounding_agent_plans_visual_brief_without_logging_raw_question(caplog):
+    """Visual planning should produce a generic brief before image retrieval."""
+
+    caplog.set_level("INFO")
+    completions = _FakeCompletions(
+        """
+        {
+          "visual_type": "map",
+          "search_query": "Pacific War map Japanese expansion 1941 1945",
+          "caption_goal": "Help the learner see Japan's expansion and retreat geographically.",
+          "reject_if": ["book_cover", "document_scan", "portrait"]
+        }
+        """
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    agent = VisualGroundingAgent(timeout_seconds=1.0)
+
+    brief = await agent.plan(
+        client=client,
+        model="test-model",
+        user_msg="private raw question about World War II Japan",
+        fallback_query="World War II Japan",
+        conversation_id="conversation-1",
+    )
+
+    assert brief.visual_type == "map"
+    assert brief.search_query == "Pacific War map Japanese expansion 1941 1945"
+    assert "document_scan" in brief.reject_if
+    assert "visual.brief_planned" in caplog.text
+    assert "private raw question" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_visual_grounding_agent_includes_visual_brief_in_grounding_prompt():
+    """Grounding should judge candidates against the planned visual brief."""
+
+    completions = _FakeCompletions(
+        '{"accepted": false, "expected_visual_type": "map", "candidate_visual_type": "document", "reason": "visual_type_mismatch"}'
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    agent = VisualGroundingAgent(timeout_seconds=1.0)
+
+    await agent.evaluate(
+        client=client,
+        model="test-model",
+        visual_intent="Pacific War map Japanese expansion 1941 1945",
+        visual_brief=VisualBrief(
+            visual_type="map",
+            search_query="Pacific War map Japanese expansion 1941 1945",
+            caption_goal="Show the geography of the Pacific War.",
+            reject_if=("document_scan", "book_cover"),
+        ),
+        candidate=_candidate(),
+        conversation_id="conversation-1",
+    )
+
+    user_message = completions.last_kwargs["messages"][1]["content"]
+    assert '"visual_type": "map"' in user_message
+    assert "document_scan" in user_message

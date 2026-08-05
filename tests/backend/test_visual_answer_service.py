@@ -12,7 +12,7 @@ from backend.services.query_policy_service import (
     TaskIntent,
 )
 from backend.services.visual_answer_service import ImageBlock, ImageCandidate, VisualAnswerService
-from backend.services.visual_grounding_agent import VisualGroundingDecision
+from backend.services.visual_grounding_agent import VisualBrief, VisualGroundingDecision
 
 
 class _FakeRedis:
@@ -336,6 +336,62 @@ async def test_build_answer_blocks_interleaves_preverified_image_without_query()
 
 
 @pytest.mark.asyncio
+async def test_prepare_preflight_image_blocks_uses_visual_brief_without_caption_leak(monkeypatch):
+    """Preflight should search with the agent brief and avoid internal captions."""
+
+    class _FakeGroundingAgent:
+        async def plan(self, **kwargs):
+            return VisualBrief(
+                visual_type="map",
+                search_query="Pacific War map Japanese expansion 1941 1945",
+                caption_goal="Show the geography of the Pacific War.",
+                reject_if=("document_scan", "book_cover"),
+            )
+
+    service = VisualAnswerService()
+    service._visual_grounding_agent = _FakeGroundingAgent()
+    observed = {}
+    image = ImageBlock(
+        slot_id="img_1",
+        topic="Pacific War map",
+        purpose="diagram",
+        image_url="https://upload.wikimedia.org/map.png",
+        thumbnail_url="https://upload.wikimedia.org/map.png",
+        source_url="https://commons.wikimedia.org/wiki/File:Pacific_War_Map.png",
+        source_domain="commons.wikimedia.org",
+        caption="Pacific War map",
+        license="CC BY-SA 4.0",
+        safety_status="pass",
+        match_confidence=0.8,
+    )
+
+    async def fake_resolve_planned(**kwargs):
+        slot = kwargs["planned_slots"][0]
+        observed["query"] = slot.query
+        observed["caption_hint"] = slot.caption_hint
+        observed["visual_brief"] = kwargs["visual_brief"]
+        return {"img_1": image}
+
+    monkeypatch.setattr(service, "_resolve_planned_image_blocks", fake_resolve_planned)
+
+    blocks = await service.prepare_preflight_image_blocks(
+        user_msg="第二次世界大戰日本戰況",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        existing_web_results=None,
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+    )
+
+    assert blocks == {"img_1": image}
+    assert observed["query"] == "Pacific War map Japanese expansion 1941 1945"
+    assert observed["caption_hint"] == ""
+    assert observed["visual_brief"].visual_type == "map"
+
+
+@pytest.mark.asyncio
 async def test_build_answer_blocks_uses_rewritten_visual_query(monkeypatch, caplog):
     """Visual rewrite should feed cache and providers without logging raw prompts."""
 
@@ -557,7 +613,7 @@ async def test_select_image_block_uses_grounding_agent_to_reject_visual_mismatch
     )
 
     assert block is not None
-    assert block.image_url == "https://upload.wikimedia.org/map.png"
+    assert block.image_url == "https://upload.wikimedia.org/map-thumb.png"
     assert block.source_domain == "commons.wikimedia.org"
     assert "visual.candidate_rejected" in caplog.text
     assert "candidate_type=aircraft_photo" in caplog.text
