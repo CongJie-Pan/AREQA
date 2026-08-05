@@ -589,6 +589,12 @@ class VisualAnswerService:
             )
 
         async with httpx.AsyncClient(timeout=self.page_timeout_seconds, follow_redirects=True) as client:
+            logger.info(
+                "visual.og_image_scan_started conversation_id=%s result_count=%s timeout_seconds=%.1f",
+                conversation_id,
+                len(results),
+                self.page_timeout_seconds,
+            )
             for result in results:
                 if len(blocks) >= self.max_images:
                     break
@@ -686,7 +692,11 @@ class VisualAnswerService:
         """Query Wikimedia Commons for openly licensed image candidates."""
 
         endpoint = os.environ.get("WIKIMEDIA_COMMONS_API_URL", "https://commons.wikimedia.org/w/api.php")
-        logger.info("visual.provider_started conversation_id=%s provider=wikimedia", conversation_id)
+        logger.info(
+            "visual.provider_started conversation_id=%s provider=wikimedia timeout_seconds=%.1f",
+            conversation_id,
+            self.open_provider_timeout_seconds,
+        )
         response = await client.get(
             endpoint,
             params={
@@ -748,7 +758,11 @@ class VisualAnswerService:
         """Query Openverse for Creative Commons image candidates."""
 
         endpoint = os.environ.get("OPENVERSE_IMAGE_API_URL", "https://api.openverse.org/v1/images")
-        logger.info("visual.provider_started conversation_id=%s provider=openverse", conversation_id)
+        logger.info(
+            "visual.provider_started conversation_id=%s provider=openverse timeout_seconds=%.1f",
+            conversation_id,
+            self.open_provider_timeout_seconds,
+        )
         response = await client.get(
             endpoint,
             params={
@@ -885,13 +899,29 @@ class VisualAnswerService:
             if self._is_safe_candidate(candidate)
         ]
         if not scored:
-            return None
-        score, candidate = max(scored, key=lambda item: item[0])
-        if score < 0.4:
             logger.info(
-                "visual.image_omitted conversation_id=%s reason=low_score provider=%s",
+                "visual.image_omitted conversation_id=%s reason=no_safe_candidates provider=%s candidate_count=%s threshold=0.40",
                 conversation_id,
                 provider,
+                len(candidates),
+            )
+            return None
+        score, candidate = max(scored, key=lambda item: item[0])
+        self._log_candidate_decision(
+            conversation_id=conversation_id,
+            provider=provider,
+            candidate=candidate,
+            candidate_count=len(candidates),
+            safe_candidate_count=len(scored),
+            top_score=score,
+            threshold=0.4,
+        )
+        if score < 0.4:
+            logger.info(
+                "visual.image_omitted conversation_id=%s reason=low_score provider=%s top_score=%.2f threshold=0.40",
+                conversation_id,
+                provider,
+                score,
             )
             return None
         block = self._candidate_to_block(candidate, score, 1)
@@ -903,6 +933,48 @@ class VisualAnswerService:
             "high" if score >= 0.65 else "medium",
         )
         return block
+
+    @staticmethod
+    def _log_candidate_decision(
+        *,
+        conversation_id: str,
+        provider: str,
+        candidate: ImageCandidate,
+        candidate_count: int,
+        safe_candidate_count: int,
+        top_score: float,
+        threshold: float,
+    ) -> None:
+        """Log safe candidate-ranking metadata for image retrieval debugging.
+
+        The event intentionally excludes raw search queries, user prompts,
+        model output, and full image/source URLs. It records only the provider,
+        source domain, license label, dimension bucket, candidate counts, and
+        score threshold needed to explain selection or low-score omission.
+        """
+
+        domain = urlparse(candidate.source_url).netloc.replace("www.", "") or "unknown"
+        if candidate.width and candidate.height:
+            if candidate.width >= 800 and candidate.height >= 400:
+                dimension_bucket = "large"
+            elif candidate.width >= 400 and candidate.height >= 250:
+                dimension_bucket = "medium"
+            else:
+                dimension_bucket = "small"
+        else:
+            dimension_bucket = "unknown"
+        logger.info(
+            "visual.candidate_top_scored conversation_id=%s provider=%s candidate_count=%s safe_candidate_count=%s top_score=%.2f threshold=%.2f source_domain=%s license=%s dimension_bucket=%s",
+            conversation_id,
+            provider,
+            candidate_count,
+            safe_candidate_count,
+            top_score,
+            threshold,
+            domain,
+            candidate.license or "unknown",
+            dimension_bucket,
+        )
 
     async def _block_from_result(
         self,

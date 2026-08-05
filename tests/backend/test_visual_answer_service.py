@@ -423,6 +423,40 @@ def test_select_image_block_prefers_open_licensed_candidate(caplog):
     assert payload["heuristicScore"] >= 0.65
     assert payload["pedagogicalScore"] > 0
     assert "visual.image_selected" in caplog.text
+    assert "visual.candidate_top_scored" in caplog.text
+
+
+def test_select_image_block_logs_low_score_candidate_metadata_without_raw_query(caplog):
+    """Low-score omissions should expose safe ranking metadata for debugging."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    block = service._select_image_block(
+        [
+            ImageCandidate(
+                provider="openverse",
+                image_url="https://cdn.example.org/image.png",
+                thumbnail_url="https://cdn.example.org/thumb.png",
+                source_url="https://images.example.org/page",
+                title="Unrelated classroom",
+                caption="A classroom photo",
+                license="cc0",
+                width=300,
+                height=180,
+            )
+        ],
+        "private raw visual query",
+        "openverse",
+        "conversation-1",
+    )
+
+    assert block is None
+    assert "visual.candidate_top_scored" in caplog.text
+    assert "top_score=" in caplog.text
+    assert "threshold=0.40" in caplog.text
+    assert "source_domain=images.example.org" in caplog.text
+    assert "dimension_bucket=small" in caplog.text
+    assert "private raw visual query" not in caplog.text
 
 
 def test_image_block_debug_log_respects_config(monkeypatch, caplog):
