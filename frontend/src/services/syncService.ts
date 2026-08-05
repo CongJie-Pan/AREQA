@@ -197,11 +197,11 @@ export const syncService = {
         }
       }
 
-      // Only reload if we actually pulled new data, and add a small delay to ensure session is stored
+      // Keep cloud reconciliation non-disruptive. A full page reload tears down
+      // active chat streams and WebSocket connections, which makes normal
+      // background sync look like an unexpected refresh to the user.
       if (dataChanged) {
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
+        logger.info('Pulled updated cloud data into local database');
       }
     } catch (e) {
       handleAuthError(e);
