@@ -41,6 +41,21 @@ class _RecordingHttpClient:
         return httpx.Response(200, json=self.payload, request=request)
 
 
+class _SequentialPageClient:
+    """Async page client double for ordered og:image fallback tests."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+
+    async def get(self, url):
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        request = httpx.Request("GET", url)
+        response.request = request
+        return response
+
+
 def _policy(task_intent=TaskIntent.GENERAL_QA):
     """Build a minimal response policy for visual service tests."""
 
@@ -82,6 +97,15 @@ def test_cache_key_uses_visual_schema_version():
     """Visual cache keys should invalidate pre-provider placeholder entries."""
 
     assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v2:diagram:")
+
+
+def test_visual_search_query_rewrites_meta_analysis_prompt():
+    """Abstract learning prompts should become image-provider metadata queries."""
+
+    query, rule = VisualAnswerService._visual_search_query("什麼是 : meta analysis 統合分析")
+
+    assert query == "meta analysis forest plot diagram"
+    assert rule == "meta_analysis_forest_plot"
 
 
 @pytest.mark.asyncio
@@ -166,6 +190,48 @@ async def test_build_answer_blocks_interleaves_verified_images(monkeypatch, capl
     assert blocks[1]["sourceDomain"] == "example.com"
     assert "visual.slots_planned" in caplog.text
     assert "請用圖解" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_build_answer_blocks_uses_rewritten_visual_query(monkeypatch, caplog):
+    """Visual rewrite should feed cache and providers without logging raw prompts."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    observed = {}
+
+    async def fake_read_cache(cache_key, conversation_id):
+        observed["cache_key"] = cache_key
+        return None
+
+    async def fake_resolve(**kwargs):
+        observed["visual_query"] = kwargs["visual_query"]
+        return []
+
+    async def fake_write_cache(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "_read_cache", fake_read_cache)
+    monkeypatch.setattr(service, "_write_cache", fake_write_cache)
+    monkeypatch.setattr(service, "_resolve_images", fake_resolve)
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段",
+        user_msg="什麼是 : meta analysis 統合分析",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert blocks == []
+    assert observed["visual_query"] == "meta analysis forest plot diagram"
+    assert observed["cache_key"] == VisualAnswerService._cache_key("meta analysis forest plot diagram", "diagram")
+    assert "visual.query_rewritten" in caplog.text
+    assert "meta_analysis_forest_plot" in caplog.text
+    assert "什麼是" not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -373,6 +439,44 @@ async def test_wikimedia_debug_logs_include_safe_http_metadata(monkeypatch, capl
     assert "retry_after=30" in caplog.text
     assert "wiki_error_code=badaccess" in caplog.text
     assert "private raw query" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_og_image_fallback_continues_after_page_timeout(caplog):
+    """One slow web result should not abort remaining og:image candidates."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    timeout_request = httpx.Request("GET", "https://slow.example.org/article")
+    client = _SequentialPageClient(
+        [
+            httpx.ConnectTimeout("connection timed out", request=timeout_request),
+            httpx.Response(
+                200,
+                text='<html><head><meta property="og:image" content="https://cdn.example.org/meta.png"><title>Meta Analysis</title></head></html>',
+            ),
+        ]
+    )
+
+    first = await service._block_from_result_safe(
+        client,
+        {"url": "https://slow.example.org/article", "title": "Slow result"},
+        1,
+        "conversation-1",
+    )
+    second = await service._block_from_result_safe(
+        client,
+        {"url": "https://source.example.org/article", "title": "Meta Analysis"},
+        1,
+        "conversation-1",
+    )
+
+    assert first is None
+    assert second is not None
+    assert second.image_url == "https://cdn.example.org/meta.png"
+    assert "visual.og_image_failed" in caplog.text
+    assert "source_domain=slow.example.org" in caplog.text
+    assert "ConnectTimeout" in caplog.text
 
 
 @pytest.mark.asyncio

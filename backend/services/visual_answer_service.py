@@ -76,6 +76,18 @@ _NEGATIVE_TERMS = {
     "sprite",
 }
 _DEFAULT_VISUAL_USER_AGENT = "AREQA/0.1 visual-answer-retrieval"
+_VISUAL_QUERY_REWRITE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
+    (
+        "meta_analysis_forest_plot",
+        re.compile(r"\bmeta[-\s]?analysis\b|統合分析|元分析", re.IGNORECASE),
+        "meta analysis forest plot diagram",
+    ),
+    (
+        "systematic_review_prisma",
+        re.compile(r"\bsystematic review\b|系統性文獻回顧|系統性回顧", re.IGNORECASE),
+        "systematic review PRISMA flow diagram",
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,7 +288,14 @@ class VisualAnswerService:
         )
 
         try:
-            cache_key = self._cache_key(user_msg, "diagram")
+            visual_query, rewrite_rule = self._visual_search_query(user_msg)
+            if rewrite_rule != "identity":
+                logger.info(
+                    "visual.query_rewritten conversation_id=%s rule=%s",
+                    conversation_id,
+                    rewrite_rule,
+                )
+            cache_key = self._cache_key(visual_query, "diagram")
             cached_block = await self._read_cache(cache_key, conversation_id)
             if cached_block == _NEGATIVE_CACHE_SENTINEL:
                 return []
@@ -285,6 +304,7 @@ class VisualAnswerService:
 
             image_blocks = await self._resolve_images(
                 user_msg=user_msg,
+                visual_query=visual_query,
                 existing_web_results=existing_web_results,
                 tool_registry=tool_registry,
                 tool_budget=tool_budget,
@@ -347,19 +367,21 @@ class VisualAnswerService:
         tool_budget: Any,
         user_id: str,
         conversation_id: str,
+        visual_query: str | None = None,
     ) -> list[ImageBlock]:
         """Resolve open-source providers first, then existing og:image fallback."""
 
+        resolved_query = visual_query or self._visual_search_query(user_msg)[0]
         blocks: list[ImageBlock] = []
         async with httpx.AsyncClient(timeout=self.open_provider_timeout_seconds, follow_redirects=True) as client:
             candidates = await self._query_provider_candidates(
                 provider="wikimedia",
                 query_func=self._query_wikimedia,
                 client=client,
-                query=user_msg,
+                query=resolved_query,
                 conversation_id=conversation_id,
             )
-            block = self._select_image_block(candidates, user_msg, "wikimedia", conversation_id)
+            block = self._select_image_block(candidates, resolved_query, "wikimedia", conversation_id)
             if block:
                 return [block]
 
@@ -367,10 +389,10 @@ class VisualAnswerService:
                 provider="openverse",
                 query_func=self._query_openverse,
                 client=client,
-                query=user_msg,
+                query=resolved_query,
                 conversation_id=conversation_id,
             )
-            block = self._select_image_block(candidates, user_msg, "openverse", conversation_id)
+            block = self._select_image_block(candidates, resolved_query, "openverse", conversation_id)
             if block:
                 return [block]
 
@@ -390,7 +412,7 @@ class VisualAnswerService:
                 )
                 return []
             results = await self._search_image_sources(
-                user_msg=user_msg,
+                user_msg=resolved_query,
                 tool_registry=tool_registry,
                 tool_budget=tool_budget,
                 user_id=user_id,
@@ -402,7 +424,12 @@ class VisualAnswerService:
             for result in results:
                 if len(blocks) >= self.max_images:
                     break
-                block = await self._block_from_result(client, result, len(blocks) + 1)
+                block = await self._block_from_result_safe(
+                    client,
+                    result,
+                    len(blocks) + 1,
+                    conversation_id,
+                )
                 if not block:
                     continue
                 blocks.append(block)
@@ -413,6 +440,33 @@ class VisualAnswerService:
                     "medium",
                 )
         return blocks
+
+    async def _block_from_result_safe(
+        self,
+        client: httpx.AsyncClient,
+        result: dict[str, Any],
+        index: int,
+        conversation_id: str,
+    ) -> ImageBlock | None:
+        """Extract an og:image block without aborting fallback iteration.
+
+        Existing web results point at arbitrary third-party pages. Slow or
+        unreachable pages are expected, so one timeout should not suppress all
+        remaining image candidates for the turn.
+        """
+
+        try:
+            return await self._block_from_result(client, result, index)
+        except Exception as exc:
+            source_domain = self._safe_result_domain(result)
+            logger.info(
+                "visual.og_image_failed conversation_id=%s source_domain=%s reason=%s status_code=%s",
+                conversation_id,
+                source_domain or "unknown",
+                type(exc).__name__,
+                self._http_status_code(exc) or "unknown",
+            )
+            return None
 
     async def _query_provider_candidates(
         self,
@@ -584,12 +638,37 @@ class VisualAnswerService:
         return headers
 
     @staticmethod
+    def _visual_search_query(user_msg: str) -> tuple[str, str]:
+        """Rewrite a user prompt into image-provider metadata language.
+
+        Open image providers primarily match titles, captions, and filenames.
+        For abstract learning questions, a stable rule-based rewrite improves
+        hit rate without adding another foreground model call or logging raw
+        prompt text.
+        """
+
+        normalized = " ".join(str(user_msg or "").strip().split())
+        for rule_name, pattern, rewritten_query in _VISUAL_QUERY_REWRITE_RULES:
+            if pattern.search(normalized):
+                return rewritten_query, rule_name
+        fallback = normalized[:120] if normalized else "educational diagram"
+        return fallback, "identity"
+
+    @staticmethod
     def _http_status_code(exc: Exception) -> int | None:
         """Extract an HTTP status code from httpx exceptions when available."""
 
         response = getattr(exc, "response", None)
         status_code = getattr(response, "status_code", None)
         return status_code if isinstance(status_code, int) else None
+
+    @staticmethod
+    def _safe_result_domain(result: dict[str, Any]) -> str:
+        """Return a sanitized source domain for fallback logs."""
+
+        source_url = str(result.get("url") or "")
+        parsed = urlparse(source_url)
+        return parsed.netloc.replace("www.", "") if parsed.netloc else ""
 
     @staticmethod
     def _http_response_header(exc: Exception, header: str) -> str:
