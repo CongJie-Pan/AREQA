@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from backend.services.conversation_context_service import ConversationContext
 from backend.services.conversation_stream_service import ConversationStreamService
 from backend.services.orchestration_service import OrchestrationService
+from backend.services.visual_answer_service import ImageBlock
 from backend.services.query_policy_service import (
     AnswerDepth,
     FollowupMode,
@@ -47,6 +48,36 @@ def test_attachment_grounding_instruction_forbids_metadata_guessing():
     assert "只能根據實際可讀取的附件內容回答" in result[0]["content"]
     assert "不得根據檔名" in result[0]["content"]
     assert "解析失敗" in result[0]["content"]
+
+
+def test_verified_visual_instruction_injects_inventory():
+    """Verified image inventory should be available before main generation."""
+
+    messages = [{"role": "system", "content": "base prompt"}]
+    image = ImageBlock(
+        slot_id="img_1",
+        topic="Pacific War map",
+        purpose="diagram",
+        image_url="https://upload.wikimedia.org/map.png",
+        thumbnail_url="https://upload.wikimedia.org/map-thumb.png",
+        source_url="https://commons.wikimedia.org/wiki/File:Pacific_War_Map.png",
+        source_domain="commons.wikimedia.org",
+        caption="Pacific War map",
+        license="CC BY-SA 4.0",
+        safety_status="pass",
+        match_confidence=0.8,
+    )
+
+    result = OrchestrationService._add_verified_visual_instruction(
+        messages,
+        {"img_1": image},
+    )
+
+    system_prompt = result[0]["content"]
+    assert "已驗證圖片清單" in system_prompt
+    assert "[[AREQA_VERIFIED_IMAGE id=\"img_1\"]]" in system_prompt
+    assert "Pacific War map" in system_prompt
+    assert "https://upload.wikimedia.org" not in system_prompt
 
 
 @pytest.mark.asyncio
@@ -137,6 +168,47 @@ async def test_llm_stream_buffers_split_image_request_marker(mock_client):
     data_line = next(line for line in accumulator_event.splitlines() if line.startswith("data: "))
     payload = json.loads(data_line[6:])
     assert payload["image_slots"][0]["slot_id"] == "img_1"
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_strips_verified_image_markers(mock_client):
+    """Verified image markers should be captured without requiring a query."""
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+    service = ConversationStreamService(mock_client, MagicMock())
+
+    async def chunks():
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = (
+            '第一段\n\n[[AREQA_VERIFIED_IMAGE id="img_1"]]\n\n第二段'
+        )
+        chunk.choices[0].delta.tool_calls = None
+        yield chunk
+
+    mock_client.chat.completions.create = AsyncMock(return_value=chunks())
+
+    events = [event async for event in service.stream(
+        user_id="u1",
+        conversation_id="visual-conv",
+        last_user_msg="二戰日本戰況",
+        messages=[{"role": "user", "content": "二戰日本戰況"}],
+        force_think=False,
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.0,
+        request=request,
+    )]
+
+    streamed = "".join(events)
+    assert "AREQA_VERIFIED_IMAGE" not in streamed
+    accumulator_event = next(event for event in events if event.startswith("event: accumulator"))
+    data_line = next(line for line in accumulator_event.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line[6:])
+    assert payload["image_slots"][0]["slot_id"] == "img_1"
+    assert payload["image_slots"][0]["query"] == ""
 
 
 @pytest.mark.asyncio

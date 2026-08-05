@@ -292,6 +292,7 @@ class VisualAnswerService:
         conversation_id: str,
         planned_image_slots: list[dict[str, Any]] | None = None,
         model_client: Any = None,
+        preverified_image_blocks: dict[str, ImageBlock] | None = None,
     ) -> list[dict[str, Any]]:
         """Build frontend answer blocks for the completed answer text.
 
@@ -310,6 +311,9 @@ class VisualAnswerService:
             conversation_id: Current conversation identifier for safe logs.
             model_client: Optional OpenAI-compatible client for visual grounding
                 checks. When omitted, grounding fails open.
+            preverified_image_blocks: Optional images resolved before main
+                generation. When present, only model-used verified image markers
+                are rendered; unresolved placeholders are not emitted.
 
         Returns:
             Ordered paragraph and image blocks. Returns an empty list when visual
@@ -317,7 +321,10 @@ class VisualAnswerService:
         """
 
         paragraphs = self._split_paragraphs(answer_text)
-        planned_slots = self._planned_slots_from_payload(planned_image_slots or [])
+        planned_slots = self._planned_slots_from_payload(
+            planned_image_slots or [],
+            require_query=preverified_image_blocks is None,
+        )
         if not paragraphs or (not planned_slots and not self.should_enrich(response_policy, user_msg)):
             return []
 
@@ -329,6 +336,29 @@ class VisualAnswerService:
         )
 
         try:
+            if preverified_image_blocks is not None:
+                if not planned_slots:
+                    logger.info(
+                        "visual.preverified_unused conversation_id=%s available_image_count=%s",
+                        conversation_id,
+                        len(preverified_image_blocks),
+                    )
+                    return []
+                rendered = self._interleave_blocks_at_planned_slots(
+                    paragraphs,
+                    planned_slots,
+                    preverified_image_blocks,
+                    include_pending=False,
+                )
+                resolved_count = sum(1 for block in rendered if block.get("type") == "image_block")
+                if resolved_count == 0:
+                    logger.info(
+                        "visual.image_omitted conversation_id=%s reason=no_used_verified_image",
+                        conversation_id,
+                    )
+                    return []
+                return rendered
+
             if planned_slots:
                 image_blocks = await self._resolve_planned_image_blocks(
                     planned_slots=planned_slots,
@@ -344,7 +374,7 @@ class VisualAnswerService:
                         "visual.image_omitted conversation_id=%s reason=no_verified_image",
                         conversation_id,
                     )
-                    return self._interleave_pending_slots(paragraphs, planned_slots)
+                    return []
                 return self._interleave_blocks_at_planned_slots(paragraphs, planned_slots, image_blocks)
 
             visual_query, rewrite_rule = self._visual_search_query(user_msg)
@@ -390,6 +420,64 @@ class VisualAnswerService:
 
         await self._write_cache(cache_key, image_blocks[0].to_frontend(), 2592000, conversation_id)
         return self._interleave_blocks(paragraphs, image_blocks)
+
+    async def prepare_preflight_image_blocks(
+        self,
+        *,
+        user_msg: str,
+        response_policy: ResponsePolicy,
+        existing_web_results: list[dict[str, Any]] | None,
+        tool_registry: Any,
+        tool_budget: Any,
+        user_id: str,
+        conversation_id: str,
+        model_client: Any = None,
+    ) -> dict[str, ImageBlock]:
+        """Resolve verified images before the main answer model runs.
+
+        The preflight path lets the answer model write with knowledge of actual
+        verified images instead of requesting images after generation. It keeps
+        image selection fail-soft: if no verified image is found, the main model
+        simply receives no visual inventory.
+        """
+
+        if not settings.enable_visual_preflight:
+            return {}
+        if not self.should_enrich(response_policy, user_msg):
+            return {}
+
+        visual_query, rewrite_rule = self._visual_search_query(user_msg)
+        if rewrite_rule != "identity":
+            logger.info(
+                "visual.preflight_query_rewritten conversation_id=%s rule=%s",
+                conversation_id,
+                rewrite_rule,
+            )
+        slot = PlannedImageSlot(
+            slot_id="img_1",
+            query=visual_query,
+            caption_hint="Use this verified image only if it directly helps explain the answer.",
+            anchor_after_paragraph=0,
+        )
+        logger.info(
+            "visual.preflight_started conversation_id=%s slot_count=1",
+            conversation_id,
+        )
+        blocks = await self._resolve_planned_image_blocks(
+            planned_slots=[slot],
+            existing_web_results=existing_web_results,
+            tool_registry=tool_registry,
+            tool_budget=tool_budget,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            model_client=model_client,
+        )
+        logger.info(
+            "visual.preflight_completed conversation_id=%s resolved_image_count=%s",
+            conversation_id,
+            len(blocks),
+        )
+        return blocks
 
     async def _resolve_planned_image_blocks(
         self,
@@ -1418,11 +1506,18 @@ class VisualAnswerService:
         return set(ascii_tokens + cjk_tokens)
 
     @staticmethod
-    def _planned_slots_from_payload(payload: list[dict[str, Any]]) -> list[PlannedImageSlot]:
+    def _planned_slots_from_payload(
+        payload: list[dict[str, Any]],
+        *,
+        require_query: bool = True,
+    ) -> list[PlannedImageSlot]:
         """Validate model-planned image slot payloads from the stream accumulator.
 
         Args:
             payload: Untrusted structured marker payload from the answer model.
+            require_query: Whether an image search query is required. Verified
+                preflight markers only need a slot id because retrieval already
+                happened before generation.
 
         Returns:
             A capped list of safe planned slots. Raw query and caption content
@@ -1434,7 +1529,7 @@ class VisualAnswerService:
         for index, item in enumerate(payload[:2]):
             slot_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(item.get("slot_id") or f"img_{index + 1}"))[:40]
             query = VisualAnswerService._clean_text(str(item.get("query") or ""))[:120]
-            if not slot_id or not query or slot_id in seen:
+            if not slot_id or slot_id in seen or (require_query and not query):
                 continue
             seen.add(slot_id)
             caption_hint = VisualAnswerService._clean_text(str(item.get("caption_hint") or ""))[:180]
@@ -1442,7 +1537,7 @@ class VisualAnswerService:
             slots.append(
                 PlannedImageSlot(
                     slot_id=slot_id,
-                    query=query,
+                    query=query or slot_id,
                     caption_hint=caption_hint,
                     anchor_after_paragraph=anchor_after_paragraph,
                 )
@@ -1479,6 +1574,8 @@ class VisualAnswerService:
         paragraphs: list[str],
         planned_slots: list[PlannedImageSlot],
         image_blocks: dict[str, ImageBlock],
+        *,
+        include_pending: bool = True,
     ) -> list[dict[str, Any]]:
         """Interleave resolved or pending image blocks after planned anchors."""
 
@@ -1492,7 +1589,10 @@ class VisualAnswerService:
             output.append({"type": "paragraph", "text": paragraph})
             for slot in slots_by_anchor.get(paragraph_index, []):
                 block = image_blocks.get(slot.slot_id)
-                output.append(block.to_frontend() if block else VisualAnswerService._pending_block(slot))
+                if block:
+                    output.append(block.to_frontend())
+                elif include_pending:
+                    output.append(VisualAnswerService._pending_block(slot))
         return output
 
     @staticmethod

@@ -18,8 +18,10 @@ from services.response_boundary_validator import StreamingResponseBoundaryFilter
 logger = logging.getLogger(__name__)
 
 _IMAGE_REQUEST_START = "[[AREQA_IMAGE_REQUEST"
+_VERIFIED_IMAGE_START = "[[AREQA_VERIFIED_IMAGE"
 _IMAGE_REQUEST_END = "]]"
 _IMAGE_REQUEST_PATTERN = re.compile(r"\[\[AREQA_IMAGE_REQUEST(?P<body>.*?)\]\]", re.DOTALL)
+_VERIFIED_IMAGE_PATTERN = re.compile(r"\[\[AREQA_VERIFIED_IMAGE(?P<body>.*?)\]\]", re.DOTALL)
 _IMAGE_REQUEST_ATTR_PATTERN = re.compile(
     r"""(?P<key>id|query|caption_hint)\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
     re.DOTALL,
@@ -102,7 +104,7 @@ class ImageRequestMarkerFilter:
         public_parts: list[str] = []
 
         while text:
-            marker_start = text.find(_IMAGE_REQUEST_START)
+            marker_start = self._next_marker_start(text)
             if marker_start < 0:
                 partial_prefix_length = self._partial_marker_prefix_length(text)
                 if partial_prefix_length:
@@ -145,7 +147,12 @@ class ImageRequestMarkerFilter:
 
         if len(self._slots) >= self.max_slots:
             return
-        match = _IMAGE_REQUEST_PATTERN.fullmatch(marker.strip())
+        stripped_marker = marker.strip()
+        match = _IMAGE_REQUEST_PATTERN.fullmatch(stripped_marker)
+        marker_kind = "request"
+        if not match:
+            match = _VERIFIED_IMAGE_PATTERN.fullmatch(stripped_marker)
+            marker_kind = "verified"
         if not match:
             return
         attrs = {
@@ -154,7 +161,7 @@ class ImageRequestMarkerFilter:
         }
         slot_id = self._clean_slot_id(attrs.get("id", ""))
         query = attrs.get("query", "")[:120].strip()
-        if not slot_id or not query:
+        if not slot_id or (marker_kind == "request" and not query):
             return
         caption_hint = attrs.get("caption_hint", "")[:180].strip()
         self._slots.append(
@@ -165,6 +172,20 @@ class ImageRequestMarkerFilter:
                 anchor_after_paragraph=self._current_anchor_index(),
             )
         )
+
+    @staticmethod
+    def _next_marker_start(text: str) -> int:
+        """Return the next supported marker start offset, or -1."""
+
+        starts = [
+            index
+            for index in (
+                text.find(_IMAGE_REQUEST_START),
+                text.find(_VERIFIED_IMAGE_START),
+            )
+            if index >= 0
+        ]
+        return min(starts) if starts else -1
 
     def _current_anchor_index(self) -> int:
         """Return the paragraph index that should own the next image slot."""
@@ -189,9 +210,10 @@ class ImageRequestMarkerFilter:
     def _partial_marker_prefix_length(text: str) -> int:
         """Return trailing chars that may be the next marker start."""
 
-        max_length = min(len(text), len(_IMAGE_REQUEST_START) - 1)
+        marker_starts = (_IMAGE_REQUEST_START, _VERIFIED_IMAGE_START)
+        max_length = min(len(text), max(len(start) for start in marker_starts) - 1)
         for length in range(max_length, 0, -1):
-            if _IMAGE_REQUEST_START.startswith(text[-length:]):
+            if any(start.startswith(text[-length:]) for start in marker_starts):
                 return length
         return 0
 

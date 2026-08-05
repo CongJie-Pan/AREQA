@@ -455,6 +455,11 @@ class ConversationContextService:
             empty string when the turn should remain text-only.
         """
 
+        from config import settings
+
+        if settings.enable_visual_preflight:
+            return ""
+
         normalized = last_user_msg.lower()
         explicit_visual = any(
             keyword in normalized

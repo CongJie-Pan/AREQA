@@ -297,20 +297,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
 
   if (visualStatus === 'pending') {
-    return (
-      <figure className={styles.answerImageCard}>
-        <div
-          className={styles.answerImageSkeleton}
-          role="status"
-          aria-label="圖片搜尋中"
-        />
-        <figcaption className={styles.answerImageCaption}>
-          <span className={styles.answerImageCaptionText}>
-            {block.caption || block.explanatoryCaption || '正在尋找合適圖片'}
-          </span>
-        </figcaption>
-      </figure>
-    );
+    return null;
   }
 
   if (!safeImageUrl || !safeSourceUrl || block.safetyStatus !== 'pass') {

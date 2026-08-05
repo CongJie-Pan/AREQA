@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from fastapi import Request
 from openai import AsyncOpenAI
 
+from config import settings
 from gum_integration import (
     push_observation,
     query_cold_memory_for_context,
@@ -589,6 +590,25 @@ class OrchestrationService:
         if has_attachments:
             final_messages = self._add_attachment_grounding_instruction(final_messages)
 
+        preverified_image_blocks = None
+        if settings.enable_visual_preflight:
+            trace.mark("visual_preflight_started")
+            preverified_image_blocks = await self.visual_answer_service.prepare_preflight_image_blocks(
+                user_msg=last_user_msg,
+                response_policy=response_policy,
+                existing_web_results=run_state.web_search_results,
+                tool_registry=self.tool_registry,
+                tool_budget=run_state.tool_budget,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                model_client=self.client,
+            )
+            trace.mark("visual_preflight_finished")
+            final_messages = self._add_verified_visual_instruction(
+                final_messages,
+                preverified_image_blocks,
+            )
+
         effective_max_tokens = max_tokens
         if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
             effective_max_tokens = 1500
@@ -636,13 +656,25 @@ class OrchestrationService:
             user_id=user_id,
             conversation_id=conversation_id,
             model_client=self.client,
+            preverified_image_blocks=preverified_image_blocks,
         )
         if answer_blocks:
+            resolved_image_block_count = sum(
+                1
+                for block in answer_blocks
+                if block.get("type") == "image_block" and block.get("status", "resolved") == "resolved"
+            )
+            pending_image_slot_count = sum(
+                1
+                for block in answer_blocks
+                if block.get("type") == "image_block" and block.get("status") == "pending"
+            )
             logger.info(
-                "visual.answer_blocks_emitted conversation_id=%s block_count=%s image_block_count=%s",
+                "visual.answer_blocks_emitted conversation_id=%s block_count=%s resolved_image_block_count=%s pending_image_slot_count=%s",
                 conversation_id,
                 len(answer_blocks),
-                sum(1 for block in answer_blocks if block.get("type") == "image_block"),
+                resolved_image_block_count,
+                pending_image_slot_count,
             )
             yield sse_adapter.encode_legacy(
                 f"event: answer_blocks\ndata: {json.dumps(answer_blocks, ensure_ascii=False)}\n\n",
@@ -741,6 +773,50 @@ class OrchestrationService:
             "若附件內容為空、解析失敗或只有 metadata，必須明確告知目前無法讀取文件內容，"
             "並請使用者改傳可讀版本。"
         )
+        for message in messages:
+            if message.get("role") == "system" and isinstance(message.get("content"), str):
+                message["content"] = f'{message["content"]}\n\n{instruction}'
+                return messages
+        messages.insert(0, {"role": "system", "content": instruction})
+        return messages
+
+    @staticmethod
+    def _add_verified_visual_instruction(
+        messages: List[Dict[str, Any]],
+        image_blocks: dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Add verified image inventory and marker rules to the answer prompt."""
+
+        instruction: str
+        if not image_blocks:
+            instruction = (
+                "【已驗證圖片狀態】本回合沒有可用的已驗證圖片。"
+                "不得輸出 [[AREQA_IMAGE_REQUEST ...]] 或 [[AREQA_VERIFIED_IMAGE ...]]；"
+                "若需要視覺輔助，請只用文字描述，不要假裝已插入圖片。"
+            )
+        else:
+            inventory = [
+                {
+                    "id": slot_id,
+                    "topic": block.topic,
+                    "caption": block.caption,
+                    "source_domain": block.source_domain,
+                    "license": block.license,
+                    "width": block.width,
+                    "height": block.height,
+                }
+                for slot_id, block in image_blocks.items()
+            ]
+            instruction = (
+                "【已驗證圖片清單】以下圖片已由系統搜尋與驗證，可在回答中自然引用。"
+                "你只能使用清單中的 id，不能自行編造圖片、URL 或來源。"
+                "若圖片能幫助理解，請在最自然的位置輸出標記："
+                '[[AREQA_VERIFIED_IMAGE id="img_1"]]。'
+                "標記前後要用自然文字銜接，並依據圖片 caption/source 寫解釋；"
+                "不得輸出 [[AREQA_IMAGE_REQUEST ...]]。"
+                f"\n<verified_images>{json.dumps(inventory, ensure_ascii=False)}</verified_images>"
+            )
+
         for message in messages:
             if message.get("role") == "system" and isinstance(message.get("content"), str):
                 message["content"] = f'{message["content"]}\n\n{instruction}'

@@ -255,8 +255,8 @@ async def test_build_answer_blocks_uses_planned_image_slot_anchor(monkeypatch, c
 
 
 @pytest.mark.asyncio
-async def test_build_answer_blocks_returns_pending_block_when_planned_slot_unresolved(monkeypatch, caplog):
-    """Unresolved planned slots should keep placement without showing broken images."""
+async def test_build_answer_blocks_omits_unresolved_planned_slot(monkeypatch, caplog):
+    """Unresolved planned slots should not emit broken pending image blocks."""
 
     caplog.set_level("INFO")
     service = VisualAnswerService()
@@ -291,10 +291,48 @@ async def test_build_answer_blocks_returns_pending_block_when_planned_slot_unres
         conversation_id="conversation-1",
     )
 
-    assert [block["type"] for block in blocks] == ["paragraph", "image_block", "paragraph"]
-    assert blocks[1]["status"] == "pending"
-    assert blocks[1]["safetyStatus"] == "unavailable"
+    assert blocks == []
     assert "visual.slot_resolution_failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_build_answer_blocks_interleaves_preverified_image_without_query():
+    """Preflight images should render from verified id-only markers."""
+
+    service = VisualAnswerService()
+    image = ImageBlock(
+        slot_id="img_1",
+        topic="Pacific War map",
+        purpose="diagram",
+        image_url="https://upload.wikimedia.org/map.png",
+        thumbnail_url="https://upload.wikimedia.org/map-thumb.png",
+        source_url="https://commons.wikimedia.org/wiki/File:Pacific_War_Map.png",
+        source_domain="commons.wikimedia.org",
+        caption="Pacific War map",
+        license="CC BY-SA 4.0",
+        safety_status="pass",
+        match_confidence=0.8,
+    )
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段\n\n第二段",
+        user_msg="二戰日本戰況",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        planned_image_slots=[{
+            "slot_id": "img_1",
+            "anchor_after_paragraph": 0,
+        }],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        preverified_image_blocks={"img_1": image},
+    )
+
+    assert [block["type"] for block in blocks] == ["paragraph", "image_block", "paragraph"]
+    assert blocks[1]["slotId"] == "img_1"
+    assert blocks[1]["status"] == "resolved"
 
 
 @pytest.mark.asyncio
