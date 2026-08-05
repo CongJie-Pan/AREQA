@@ -13,7 +13,7 @@ from backend.services.query_policy_service import (
     TaskIntent,
 )
 from backend.services.visual_answer_service import ImageBlock, ImageCandidate, PlannedImageSlot, VisualAnswerService
-from backend.services.visual_grounding_agent import VisualBrief, VisualGroundingDecision
+from backend.services.visual_grounding_agent import VisualBrief, VisualGroundingDecision, VisualTeachingContext
 
 
 class _FakeRedis:
@@ -124,7 +124,7 @@ def test_should_attempt_preflight_for_learning_route_policy_fallback():
 def test_cache_key_uses_visual_schema_version():
     """Visual cache keys should invalidate pre-provider placeholder entries."""
 
-    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v4:diagram:")
+    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v5:diagram:")
 
 
 def test_visual_brief_cache_key_uses_preflight_scope():
@@ -135,12 +135,41 @@ def test_visual_brief_cache_key_uses_preflight_scope():
         search_query="Pacific War map Japanese expansion 1941 1945",
         caption_goal="Show the geography of the Pacific War.",
         reject_if=("document_scan", "book_cover"),
+        teaching_context=VisualTeachingContext(
+            task_intent="explain_text",
+            answer_depth="scaffolded",
+            tone="tutoring",
+            structure="step_by_step",
+            followup_mode="optional",
+            legacy_policy="normal",
+            turn_route="learning_help",
+            turn_reason="learning_help",
+        ),
     )
 
     key = VisualAnswerService._visual_brief_cache_key(brief)
+    alternate_context_key = VisualAnswerService._visual_brief_cache_key(
+        VisualBrief(
+            visual_type=brief.visual_type,
+            search_query=brief.search_query,
+            caption_goal=brief.caption_goal,
+            reject_if=brief.reject_if,
+            teaching_context=VisualTeachingContext(
+                task_intent="general_qa",
+                answer_depth="direct",
+                tone="plain",
+                structure="short",
+                followup_mode="none",
+                legacy_policy="normal",
+                turn_route="general_chat",
+                turn_reason="general_chat",
+            ),
+        )
+    )
 
-    assert key.startswith("visual_image:v4:preflight_map:")
+    assert key.startswith("visual_image:v5:preflight_map:")
     assert key != VisualAnswerService._cache_key(brief.search_query, "diagram")
+    assert key != alternate_context_key
 
 
 def test_visual_search_query_rewrites_meta_analysis_prompt():
@@ -483,6 +512,16 @@ async def test_resolve_planned_image_blocks_uses_visual_brief_cache_key(monkeypa
         search_query="Pacific War map Japanese expansion 1941 1945",
         caption_goal="Show the geography of the Pacific War.",
         reject_if=("document_scan", "book_cover"),
+        teaching_context=VisualTeachingContext(
+            task_intent="explain_text",
+            answer_depth="scaffolded",
+            tone="tutoring",
+            structure="step_by_step",
+            followup_mode="optional",
+            legacy_policy="normal",
+            turn_route="learning_help",
+            turn_reason="learning_help",
+        ),
     )
     observed = {}
 
@@ -872,6 +911,16 @@ async def test_select_image_block_rejects_preflight_candidate_when_grounding_una
         search_query="Pacific War map Japanese expansion 1941 1945",
         caption_goal="Show the geography of the Pacific War.",
         reject_if=("document_scan", "book_cover"),
+        teaching_context=VisualTeachingContext(
+            task_intent="explain_text",
+            answer_depth="scaffolded",
+            tone="tutoring",
+            structure="step_by_step",
+            followup_mode="optional",
+            legacy_policy="normal",
+            turn_route="learning_help",
+            turn_reason="learning_help",
+        ),
     )
 
     block = await service._select_image_block(
@@ -991,6 +1040,16 @@ async def test_perplexity_image_request_uses_sonar_return_images(monkeypatch):
         search_query="Pacific War map Japanese expansion 1941 1945",
         caption_goal="Show the geography of the Pacific War.",
         reject_if=("document_scan", "book_cover"),
+        teaching_context=VisualTeachingContext(
+            task_intent="explain_text",
+            answer_depth="scaffolded",
+            tone="tutoring",
+            structure="step_by_step",
+            followup_mode="optional",
+            legacy_policy="normal",
+            turn_route="learning_help",
+            turn_reason="learning_help",
+        ),
     )
     monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-token")
     monkeypatch.setattr(runtime_config.settings, "perplexity_sonar_api_url", "https://api.perplexity.ai/v1/sonar")
@@ -1008,6 +1067,9 @@ async def test_perplexity_image_request_uses_sonar_return_images(monkeypatch):
     assert client.last_json["model"] == "sonar"
     assert client.last_json["return_images"] is True
     assert client.last_json["num_images"] >= 4
+    assert client.last_json["messages"][1]["content"].find('"task_intent": "explain_text"') >= 0
+    assert client.last_json["messages"][1]["content"].find('"answer_depth": "scaffolded"') >= 0
+    assert client.last_json["messages"][1]["content"].find("shopping pages") >= 0
     assert candidates[0].provider == "perplexity_images"
     assert candidates[0].image_url == "https://cdn.example.org/pacific-map.jpg"
     assert candidates[0].source_url == "https://example.org/pacific-war-map"

@@ -47,7 +47,7 @@ _IMAGE_META_PATTERN = re.compile(
 )
 _TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _NEGATIVE_CACHE_SENTINEL = {"status": "negative"}
-_VISUAL_CACHE_VERSION = "v4"
+_VISUAL_CACHE_VERSION = "v5"
 _PROVIDER_PRIORITY = {
     "perplexity_images": 0.3,
     "wikimedia": 0.25,
@@ -487,6 +487,8 @@ class VisualAnswerService:
             user_msg=user_msg,
             fallback_query=visual_query,
             conversation_id=conversation_id,
+            response_policy=response_policy,
+            turn_plan=turn_plan,
         )
         slot = PlannedImageSlot(
             slot_id="img_1",
@@ -1126,12 +1128,20 @@ class VisualAnswerService:
 
         system_prompt = (
             "You are retrieving images for an educational answer. Find concrete, "
-            "non-decorative images that directly match the requested visual type "
-            "and could be embedded next to an explanation. Prefer diagrams, maps, "
-            "charts, timelines, labeled figures, or historically/source-relevant "
-            "photos when those match the request. Avoid book covers, document "
-            "scans, logos, unrelated photos, and generic thumbnails unless the "
-            "user explicitly asks for them."
+            "non-decorative images that directly support the current teaching "
+            "strategy, not just the topic keywords. Match the requested visual "
+            "type and learning purpose so the image can be embedded next to an "
+            "explanation. Prefer diagrams, maps, charts, timelines, labeled "
+            "figures, or historically/source-relevant photos when those match "
+            "the request. Prefer educational, museum, archive, university, and "
+            "Wikimedia-style sources. Avoid book covers, document scans, logos, "
+            "shopping/product pages, unrelated photos, and generic thumbnails "
+            "unless the user explicitly asks for them."
+        )
+        teaching_context = (
+            visual_brief.teaching_context.to_prompt_payload()
+            if visual_brief and visual_brief.teaching_context is not None
+            else None
         )
         user_payload = {
             "image_search_query": query,
@@ -1140,10 +1150,31 @@ class VisualAnswerService:
                     "visual_type": visual_brief.visual_type,
                     "caption_goal": visual_brief.caption_goal,
                     "reject_if": list(visual_brief.reject_if),
+                    "teaching_context": teaching_context,
                 }
                 if visual_brief
                 else None
             ),
+            "source_preferences": {
+                "prefer": [
+                    "educational diagrams",
+                    "labeled maps",
+                    "timelines",
+                    "charts",
+                    "museums",
+                    "archives",
+                    "universities",
+                    "Wikimedia Commons",
+                ],
+                "reject": [
+                    "shopping pages",
+                    "product photos",
+                    "book covers",
+                    "document scans",
+                    "decorative thumbnails",
+                    "generic stock images",
+                ],
+            },
             "instruction": "Return image results with direct image URLs and source/origin URLs.",
         }
         return [
@@ -1670,6 +1701,11 @@ class VisualAnswerService:
                 "caption_goal": brief.caption_goal,
                 "reject_if": list(brief.reject_if),
                 "search_query": brief.search_query,
+                "teaching_context": (
+                    brief.teaching_context.to_prompt_payload()
+                    if brief.teaching_context is not None
+                    else None
+                ),
                 "visual_type": brief.visual_type,
             },
             ensure_ascii=False,

@@ -3,6 +3,14 @@ from types import SimpleNamespace
 import pytest
 
 from backend.services.visual_answer_service import ImageCandidate
+from backend.services.query_policy_service import (
+    AnswerDepth,
+    FollowupMode,
+    ResponsePolicy,
+    ResponseStructure,
+    ResponseTone,
+    TaskIntent,
+)
 from backend.services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
 
 
@@ -123,6 +131,50 @@ async def test_visual_grounding_agent_plans_visual_brief_without_logging_raw_que
     assert "document_scan" in brief.reject_if
     assert "visual.brief_planned" in caplog.text
     assert "private raw question" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_visual_grounding_agent_plans_with_edf_teaching_context():
+    """Visual planning should use EDF policy metadata to shape image search."""
+
+    completions = _FakeCompletions(
+        """
+        {
+          "visual_type": "map",
+          "search_query": "World War II European Theater educational map 1939 1945",
+          "caption_goal": "Help the learner connect the war narrative to geography.",
+          "reject_if": ["book_cover", "product_photo", "document_scan"]
+        }
+        """
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    agent = VisualGroundingAgent(timeout_seconds=1.0)
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+    )
+    turn_plan = SimpleNamespace(route=SimpleNamespace(value="LEARNING_HELP"), reason_code="LEARNING_HELP")
+
+    brief = await agent.plan(
+        client=client,
+        model="test-model",
+        user_msg="請解釋二戰歐洲戰場",
+        fallback_query="World War II European Theater",
+        conversation_id="conversation-1",
+        response_policy=response_policy,
+        turn_plan=turn_plan,
+    )
+
+    user_message = completions.last_kwargs["messages"][1]["content"]
+    assert '"task_intent": "explain_text"' in user_message
+    assert '"answer_depth": "scaffolded"' in user_message
+    assert '"structure": "step_by_step"' in user_message
+    assert '"turn_route": "learning_help"' in user_message
+    assert brief.teaching_context is not None
+    assert brief.teaching_context.task_intent == "explain_text"
 
 
 @pytest.mark.asyncio

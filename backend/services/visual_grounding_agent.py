@@ -54,6 +54,45 @@ class VisualGroundingDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class VisualTeachingContext:
+    """Privacy-safe teaching policy metadata for visual retrieval.
+
+    Args:
+        task_intent: EDF task intent selected for this turn.
+        answer_depth: EDF answer-depth constraint selected for this turn.
+        tone: EDF response tone selected for this turn.
+        structure: EDF answer structure selected for this turn.
+        followup_mode: EDF follow-up policy selected for this turn.
+        legacy_policy: Compatibility policy label used by orchestration.
+        turn_route: Deterministic turn-plan route when available.
+        turn_reason: Deterministic turn-plan reason code when available.
+    """
+
+    task_intent: str = "unknown"
+    answer_depth: str = "unknown"
+    tone: str = "unknown"
+    structure: str = "unknown"
+    followup_mode: str = "unknown"
+    legacy_policy: str = "unknown"
+    turn_route: str = "unknown"
+    turn_reason: str = "unknown"
+
+    def to_prompt_payload(self) -> dict[str, str]:
+        """Return bounded metadata safe to send to model-assisted retrieval."""
+
+        return {
+            "task_intent": self.task_intent,
+            "answer_depth": self.answer_depth,
+            "tone": self.tone,
+            "structure": self.structure,
+            "followup_mode": self.followup_mode,
+            "legacy_policy": self.legacy_policy,
+            "turn_route": self.turn_route,
+            "turn_reason": self.turn_reason,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class VisualBrief:
     """Model-planned visual retrieval brief for one answer.
 
@@ -63,6 +102,8 @@ class VisualBrief:
         caption_goal: What the image should help the learner understand.
         reject_if: Generic candidate traits that should be rejected.
         source: Safe source label for observability.
+        teaching_context: Optional EDF teaching metadata used to align image
+            retrieval with the answer strategy.
     """
 
     visual_type: str
@@ -70,19 +111,20 @@ class VisualBrief:
     caption_goal: str
     reject_if: tuple[str, ...]
     source: str = "agent"
+    teaching_context: VisualTeachingContext | None = None
 
     def grounding_intent(self) -> str:
         """Return a compact JSON intent for candidate grounding."""
 
-        return json.dumps(
-            {
-                "visual_type": self.visual_type,
-                "caption_goal": self.caption_goal,
-                "search_query": self.search_query,
-                "reject_if": list(self.reject_if),
-            },
-            ensure_ascii=False,
-        )
+        payload = {
+            "visual_type": self.visual_type,
+            "caption_goal": self.caption_goal,
+            "search_query": self.search_query,
+            "reject_if": list(self.reject_if),
+        }
+        if self.teaching_context is not None:
+            payload["teaching_context"] = self.teaching_context.to_prompt_payload()
+        return json.dumps(payload, ensure_ascii=False)
 
 
 class VisualGroundingAgent:
@@ -183,9 +225,12 @@ class VisualGroundingAgent:
         user_msg: str,
         fallback_query: str,
         conversation_id: str,
+        response_policy: Any = None,
+        turn_plan: Any = None,
     ) -> VisualBrief:
         """Ask the agent what kind of visual would best support the answer."""
 
+        teaching_context = self._teaching_context(response_policy, turn_plan)
         if not client:
             return VisualBrief(
                 visual_type="diagram",
@@ -193,13 +238,14 @@ class VisualGroundingAgent:
                 caption_goal="Provide a concrete visual aid for the answer.",
                 reject_if=("wrong_visual_type", "decorative_or_generic_image"),
                 source="fallback",
+                teaching_context=teaching_context,
             )
 
         try:
             response = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=model,
-                    messages=self._planning_messages(user_msg, fallback_query),
+                    messages=self._planning_messages(user_msg, fallback_query, teaching_context),
                     temperature=0,
                     max_tokens=220,
                 ),
@@ -218,13 +264,17 @@ class VisualGroundingAgent:
                 caption_goal=self._bound(str(payload.get("caption_goal") or ""), 180),
                 reject_if=reject_if or ("wrong_visual_type", "decorative_or_generic_image"),
                 source="agent",
+                teaching_context=teaching_context,
             )
             logger.info(
-                "visual.brief_planned conversation_id=%s visual_type=%s source=%s reject_count=%s",
+                "visual.brief_planned conversation_id=%s visual_type=%s source=%s reject_count=%s task_intent=%s answer_depth=%s turn_route=%s",
                 conversation_id,
                 brief.visual_type,
                 brief.source,
                 len(brief.reject_if),
+                teaching_context.task_intent,
+                teaching_context.answer_depth,
+                teaching_context.turn_route,
             )
             return brief
         except Exception as exc:
@@ -239,6 +289,7 @@ class VisualGroundingAgent:
                 caption_goal="Provide a concrete visual aid for the answer.",
                 reject_if=("wrong_visual_type", "decorative_or_generic_image"),
                 source="fallback",
+                teaching_context=teaching_context,
             )
 
     def _messages(
@@ -296,24 +347,33 @@ class VisualGroundingAgent:
             {"role": "user", "content": user_prompt},
         ]
 
-    def _planning_messages(self, user_msg: str, fallback_query: str) -> list[dict[str, str]]:
+    def _planning_messages(
+        self,
+        user_msg: str,
+        fallback_query: str,
+        teaching_context: VisualTeachingContext,
+    ) -> list[dict[str, str]]:
         """Build the prompt contract for one visual planning decision."""
 
         system_prompt = (
             "You are a visual planning sub-agent for an educational chat app. "
-            "Decide what single image would most concretely help a learner. "
+            "Decide what single image would most concretely help the current "
+            "teaching strategy, not merely what is topically related. "
             "Prefer visual forms that explain structure, geography, timelines, "
             "processes, comparison, data, or visual appearance. Return only JSON "
             "with keys: visual_type (short noun), search_query (concrete English "
             "image-search query), caption_goal (one sentence), reject_if (array "
             "of short snake_case candidate traits to reject). Do not choose a "
-            "document, book cover, or generic decorative image unless the user "
-            "explicitly asks for that object."
+            "document, book cover, product image, shopping result, or generic "
+            "decorative image unless the user explicitly asks for that object. "
+            "Use the EDF teaching context to choose a visual suited to the "
+            "answer depth, structure, and learner-facing explanation style."
         )
         user_prompt = json.dumps(
             {
                 "user_question": self._bound(user_msg, 360),
                 "fallback_query": self._bound(fallback_query, 120),
+                "teaching_context": teaching_context.to_prompt_payload(),
             },
             ensure_ascii=False,
         )
@@ -332,6 +392,28 @@ class VisualGroundingAgent:
             stripped = fenced.group(1)
         parsed = json.loads(stripped)
         return parsed if isinstance(parsed, dict) else {}
+
+    @classmethod
+    def _teaching_context(cls, response_policy: Any = None, turn_plan: Any = None) -> VisualTeachingContext:
+        """Extract safe EDF/turn-plan labels without coupling to concrete types."""
+
+        route = getattr(turn_plan, "route", None)
+        return VisualTeachingContext(
+            task_intent=cls._safe_enum_value(getattr(response_policy, "task_intent", None)),
+            answer_depth=cls._safe_enum_value(getattr(response_policy, "answer_depth", None)),
+            tone=cls._safe_enum_value(getattr(response_policy, "tone", None)),
+            structure=cls._safe_enum_value(getattr(response_policy, "structure", None)),
+            followup_mode=cls._safe_enum_value(getattr(response_policy, "followup_mode", None)),
+            legacy_policy=cls._safe_label(getattr(response_policy, "legacy_policy", None)),
+            turn_route=cls._safe_enum_value(route),
+            turn_reason=cls._safe_label(getattr(turn_plan, "reason_code", None)),
+        )
+
+    @classmethod
+    def _safe_enum_value(cls, value: Any) -> str:
+        """Return a stable label from Enum-like values for prompts and logs."""
+
+        return cls._safe_label(getattr(value, "value", value))
 
     @staticmethod
     def _safe_label(value: Any) -> str:
