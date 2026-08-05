@@ -134,6 +134,7 @@ class VisualAnswerService:
         response_policy: ResponsePolicy,
         tool_registry: Any,
         tool_budget: Any,
+        existing_web_results: list[dict[str, Any]] | None,
         user_id: str,
         conversation_id: str,
     ) -> list[dict[str, Any]]:
@@ -145,6 +146,9 @@ class VisualAnswerService:
             response_policy: Structured policy selected earlier in orchestration.
             tool_registry: Existing tool registry for web search execution.
             tool_budget: Current run tool budget.
+            existing_web_results: Web results already fetched for this turn.
+                These are preferred so illustrated answers do not spend a second
+                external tool call in WEB_REQUIRED turns.
             user_id: Current user identifier for tool cache scoping.
             conversation_id: Current conversation identifier for safe logs.
 
@@ -173,14 +177,22 @@ class VisualAnswerService:
         )
 
         try:
-            results = await self._search_image_sources(
-                user_msg=user_msg,
-                tool_registry=tool_registry,
-                tool_budget=tool_budget,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                api_key=api_key,
-            )
+            results = list(existing_web_results or [])
+            if results:
+                logger.info(
+                    "visual.search_reused conversation_id=%s result_count=%s",
+                    conversation_id,
+                    len(results),
+                )
+            else:
+                results = await self._search_image_sources(
+                    user_msg=user_msg,
+                    tool_registry=tool_registry,
+                    tool_budget=tool_budget,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    api_key=api_key,
+                )
             image_blocks = await self._resolve_images(results, conversation_id)
         except Exception as exc:
             logger.warning(

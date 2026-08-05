@@ -12,6 +12,7 @@ class ConversationRunState:
 
     context_results: Any = None
     context_prompt: str = ""
+    web_search_results: list[dict[str, Any]] = field(default_factory=list)
     tool_budget: ToolBudgetTracker = field(
         default_factory=lambda: ToolBudgetTracker(ToolBudget())
     )

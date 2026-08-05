@@ -617,6 +617,7 @@ class OrchestrationService:
             response_policy=response_policy,
             tool_registry=self.tool_registry,
             tool_budget=run_state.tool_budget,
+            existing_web_results=run_state.web_search_results,
             user_id=user_id,
             conversation_id=conversation_id,
         )
@@ -922,6 +923,7 @@ class OrchestrationService:
             return
 
         results = tool_result.content["results"]
+        run_state.web_search_results = list(results)
         yield f"event: tool_completed\ndata: {json.dumps({'tool_name': 'web_search', 'display_message': '已完成資料查找', 'result_count': len(results), 'latency_ms': tool_result.latency_ms, 'cache_status': tool_result.cache_status}, ensure_ascii=False)}\n\n"
         
         logger.info(

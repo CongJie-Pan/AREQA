@@ -86,6 +86,7 @@ async def test_build_answer_blocks_interleaves_verified_images(monkeypatch, capl
         response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
         tool_registry=SimpleNamespace(),
         tool_budget=None,
+        existing_web_results=None,
         user_id="user-1",
         conversation_id="conversation-1",
     )
@@ -94,3 +95,50 @@ async def test_build_answer_blocks_interleaves_verified_images(monkeypatch, capl
     assert blocks[1]["sourceDomain"] == "example.com"
     assert "visual.slots_planned" in caplog.text
     assert "請用圖解" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_build_answer_blocks_reuses_existing_web_results(monkeypatch, caplog):
+    """WEB_REQUIRED turns should not spend a second external search call."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+
+    async def fail_search(**kwargs):
+        raise AssertionError("existing web results should be reused")
+
+    async def fake_resolve(results, conversation_id):
+        assert results == [{"url": "https://example.com/article"}]
+        return [
+            ImageBlock(
+                slot_id="visual-1",
+                topic="Meta analysis",
+                purpose="diagram",
+                image_url="https://example.com/meta.png",
+                thumbnail_url="https://example.com/meta.png",
+                source_url="https://example.com/article",
+                source_domain="example.com",
+                caption="Meta analysis diagram",
+                license="unknown",
+                safety_status="pass",
+                match_confidence=0.6,
+            )
+        ]
+
+    monkeypatch.setenv("PERPLEXITY_API_KEY", "test-key")
+    monkeypatch.setattr(service, "_search_image_sources", fail_search)
+    monkeypatch.setattr(service, "_resolve_images", fake_resolve)
+
+    blocks = await service.build_answer_blocks(
+        answer_text="第一段",
+        user_msg="什麼是 meta analysis 統合分析",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=[{"url": "https://example.com/article"}],
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert [block["type"] for block in blocks] == ["paragraph", "image_block"]
+    assert "visual.search_reused" in caplog.text
