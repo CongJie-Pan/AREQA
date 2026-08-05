@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from backend.services.query_policy_service import (
@@ -25,6 +26,19 @@ class _FakeRedis:
 
     async def aclose(self):
         self.closed = True
+
+
+class _RecordingHttpClient:
+    """Small async HTTP client double that records the last request options."""
+
+    def __init__(self, payload):
+        self.payload = payload
+        self.last_headers = {}
+
+    async def get(self, url, **kwargs):
+        self.last_headers = kwargs.get("headers") or {}
+        request = httpx.Request("GET", url)
+        return httpx.Response(200, json=self.payload, request=request)
 
 
 def _policy(task_intent=TaskIntent.GENERAL_QA):
@@ -235,6 +249,124 @@ def test_select_image_block_prefers_open_licensed_candidate(caplog):
     assert payload["creator"] == "Example Creator"
     assert payload["heuristicScore"] >= 0.65
     assert "visual.image_selected" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_wikimedia_request_uses_configured_user_agent(monkeypatch):
+    """Wikimedia requests should identify AREQA with a stable User-Agent."""
+
+    service = VisualAnswerService()
+    client = _RecordingHttpClient({"query": {"pages": {}}})
+    monkeypatch.setenv("AREQA_VISUAL_USER_AGENT", "AREQA-Test/1.0")
+
+    await service._query_wikimedia(client, "meta analysis", "conversation-1")
+
+    assert client.last_headers["User-Agent"] == "AREQA-Test/1.0"
+
+
+@pytest.mark.asyncio
+async def test_openverse_request_uses_optional_access_token(monkeypatch):
+    """Openverse requests should use an optional bearer token when configured."""
+
+    service = VisualAnswerService()
+    client = _RecordingHttpClient({"results": []})
+    monkeypatch.setenv("AREQA_VISUAL_USER_AGENT", "AREQA-Test/1.0")
+    monkeypatch.setenv("OPENVERSE_ACCESS_TOKEN", "openverse-token")
+
+    await service._query_openverse(client, "meta analysis", "conversation-1")
+
+    assert client.last_headers["User-Agent"] == "AREQA-Test/1.0"
+    assert client.last_headers["Authorization"] == "Bearer openverse-token"
+
+
+@pytest.mark.asyncio
+async def test_resolve_images_continues_after_provider_http_error(monkeypatch, caplog):
+    """Provider failure should fall through to the next image source."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    calls = []
+
+    async def fail_wikimedia(client, query, conversation_id):
+        calls.append("wikimedia")
+        request = httpx.Request("GET", "https://commons.wikimedia.org/w/api.php")
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    async def openverse_candidate(client, query, conversation_id):
+        calls.append("openverse")
+        return [
+            ImageCandidate(
+                provider="openverse",
+                image_url="https://images.openverse.org/meta-analysis.png",
+                thumbnail_url="https://images.openverse.org/meta-analysis-thumb.png",
+                source_url="https://openverse.org/image/meta-analysis",
+                title="Meta analysis forest plot diagram",
+                caption="Meta analysis forest plot diagram",
+                license="cc0",
+                width=900,
+                height=500,
+            )
+        ]
+
+    monkeypatch.setattr(service, "_query_wikimedia", fail_wikimedia)
+    monkeypatch.setattr(service, "_query_openverse", openverse_candidate)
+
+    blocks = await service._resolve_images(
+        user_msg="meta analysis forest plot diagram",
+        existing_web_results=None,
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert calls == ["wikimedia", "openverse"]
+    assert len(blocks) == 1
+    assert blocks[0].provider == "openverse"
+    assert "visual.provider_failed" in caplog.text
+    assert "HTTPStatusError" in caplog.text
+    assert "status_code=429" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_wikimedia_debug_logs_include_safe_http_metadata(monkeypatch, caplog):
+    """Detailed Wikimedia failure logs should be opt-in and privacy-preserving."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+
+    async def fail_wikimedia(client, query, conversation_id):
+        request = httpx.Request("GET", "https://commons.wikimedia.org/w/api.php")
+        response = httpx.Response(
+            403,
+            json={"error": {"code": "badaccess"}},
+            headers={"content-type": "application/json", "retry-after": "30"},
+            request=request,
+        )
+        raise httpx.HTTPStatusError("forbidden", request=request, response=response)
+
+    async def no_openverse_candidates(client, query, conversation_id):
+        return []
+
+    monkeypatch.setenv("WIKIMEDIA_IMAGE_DEBUG_LOGS", "true")
+    monkeypatch.setattr(service, "_query_wikimedia", fail_wikimedia)
+    monkeypatch.setattr(service, "_query_openverse", no_openverse_candidates)
+
+    await service._resolve_images(
+        user_msg="private raw query should not be logged",
+        existing_web_results=[],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert "visual.wikimedia_failed_debug" in caplog.text
+    assert "status_code=403" in caplog.text
+    assert "retry_after=30" in caplog.text
+    assert "wiki_error_code=badaccess" in caplog.text
+    assert "private raw query" not in caplog.text
 
 
 @pytest.mark.asyncio

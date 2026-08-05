@@ -74,6 +74,7 @@ _NEGATIVE_TERMS = {
     "watermark",
     "sprite",
 }
+_DEFAULT_VISUAL_USER_AGENT = "AREQA/0.1 visual-answer-retrieval"
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,12 +351,24 @@ class VisualAnswerService:
 
         blocks: list[ImageBlock] = []
         async with httpx.AsyncClient(timeout=self.open_provider_timeout_seconds, follow_redirects=True) as client:
-            candidates = await self._query_wikimedia(client, user_msg, conversation_id)
+            candidates = await self._query_provider_candidates(
+                provider="wikimedia",
+                query_func=self._query_wikimedia,
+                client=client,
+                query=user_msg,
+                conversation_id=conversation_id,
+            )
             block = self._select_image_block(candidates, user_msg, "wikimedia", conversation_id)
             if block:
                 return [block]
 
-            candidates = await self._query_openverse(client, user_msg, conversation_id)
+            candidates = await self._query_provider_candidates(
+                provider="openverse",
+                query_func=self._query_openverse,
+                client=client,
+                query=user_msg,
+                conversation_id=conversation_id,
+            )
             block = self._select_image_block(candidates, user_msg, "openverse", conversation_id)
             if block:
                 return [block]
@@ -400,6 +413,46 @@ class VisualAnswerService:
                 )
         return blocks
 
+    async def _query_provider_candidates(
+        self,
+        *,
+        provider: str,
+        query_func: Any,
+        client: httpx.AsyncClient,
+        query: str,
+        conversation_id: str,
+    ) -> list[ImageCandidate]:
+        """Query one image provider without aborting the whole visual flow.
+
+        Provider APIs are external dependencies with independent availability
+        and rate-limit behavior. A single provider failure should only remove
+        that provider from the current turn, then allow the remaining open
+        provider and existing web-result fallback to run. The structured log
+        records only the provider identifier and exception type.
+        """
+
+        try:
+            return await query_func(client, query, conversation_id)
+        except Exception as exc:
+            status_code = self._http_status_code(exc)
+            logger.info(
+                "visual.provider_failed conversation_id=%s provider=%s reason=%s status_code=%s",
+                conversation_id,
+                provider,
+                type(exc).__name__,
+                status_code or "unknown",
+            )
+            if provider == "wikimedia" and self._wikimedia_debug_logs_enabled():
+                logger.info(
+                    "visual.wikimedia_failed_debug conversation_id=%s status_code=%s content_type=%s retry_after=%s wiki_error_code=%s",
+                    conversation_id,
+                    status_code or "unknown",
+                    self._http_response_header(exc, "content-type") or "unknown",
+                    self._http_response_header(exc, "retry-after") or "none",
+                    self._wikimedia_error_code(exc) or "unknown",
+                )
+            return []
+
     async def _query_wikimedia(
         self,
         client: httpx.AsyncClient,
@@ -424,6 +477,7 @@ class VisualAnswerService:
                 "format": "json",
                 "origin": "*",
             },
+            headers=self._provider_headers("wikimedia"),
         )
         response.raise_for_status()
         pages = (response.json().get("query") or {}).get("pages") or {}
@@ -478,6 +532,7 @@ class VisualAnswerService:
                 "license": "cc0,by,by-sa,pdm",
                 "page_size": "8",
             },
+            headers=self._provider_headers("openverse"),
         )
         response.raise_for_status()
         results = response.json().get("results") or []
@@ -504,6 +559,68 @@ class VisualAnswerService:
             len(candidates),
         )
         return candidates
+
+    @classmethod
+    def _provider_headers(cls, provider: str) -> dict[str, str]:
+        """Build provider request headers without exposing credentials in logs.
+
+        Wikimedia and Openverse both accept public requests, but a stable
+        User-Agent makes AREQA identifiable to provider infrastructure and
+        reduces anonymous-client blocking. Openverse can optionally use an
+        OAuth bearer token to raise rate limits when configured.
+        """
+
+        headers = {
+            "User-Agent": os.environ.get("AREQA_VISUAL_USER_AGENT", _DEFAULT_VISUAL_USER_AGENT).strip()
+            or _DEFAULT_VISUAL_USER_AGENT,
+        }
+        if provider == "openverse":
+            token = (
+                os.environ.get("OPENVERSE_ACCESS_TOKEN", "").strip()
+                or os.environ.get("OPENVERSE_API_TOKEN", "").strip()
+            )
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    @staticmethod
+    def _http_status_code(exc: Exception) -> int | None:
+        """Extract an HTTP status code from httpx exceptions when available."""
+
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+        return status_code if isinstance(status_code, int) else None
+
+    @staticmethod
+    def _http_response_header(exc: Exception, header: str) -> str:
+        """Return one safe response header from an httpx exception."""
+
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
+        if not headers:
+            return ""
+        return str(headers.get(header, "")).strip()[:80]
+
+    @staticmethod
+    def _wikimedia_error_code(exc: Exception) -> str:
+        """Return the MediaWiki API error code for debug logs, if present."""
+
+        response = getattr(exc, "response", None)
+        if not response:
+            return ""
+        try:
+            payload = response.json()
+        except Exception:
+            return ""
+        error = payload.get("error") if isinstance(payload, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        return str(code or "").strip()[:80]
+
+    @staticmethod
+    def _wikimedia_debug_logs_enabled() -> bool:
+        """Return whether detailed Wikimedia failure logs are enabled."""
+
+        return os.environ.get("WIKIMEDIA_IMAGE_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "on"}
 
     def _select_image_block(
         self,
