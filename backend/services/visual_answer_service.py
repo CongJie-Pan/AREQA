@@ -50,6 +50,8 @@ _NEGATIVE_CACHE_SENTINEL = {"status": "negative"}
 _VISUAL_CACHE_VERSION = "v5"
 _PROVIDER_PRIORITY = {
     "perplexity_images": 0.3,
+    "serpapi_images": 0.28,
+    "tavily_images": 0.26,
     "wikimedia": 0.25,
     "openverse": 0.2,
     "og_image": 0.05,
@@ -79,6 +81,11 @@ _NEGATIVE_TERMS = {
 }
 _DEFAULT_VISUAL_USER_AGENT = "AREQA/0.1 visual-answer-retrieval"
 _VISUAL_QUERY_REWRITE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
+    (
+        "chinese_temple_church_comparison",
+        re.compile(r"(寺廟.*教會|教會.*寺廟|temple.*church|church.*temple)", re.IGNORECASE),
+        "Chinese temple folk religion Christian church social organization comparison diagram",
+    ),
     (
         "meta_analysis_forest_plot",
         re.compile(r"\bmeta[-\s]?analysis\b|統合分析|元分析", re.IGNORECASE),
@@ -710,7 +717,16 @@ class VisualAnswerService:
         allow_og_fallback: bool = True,
         allow_open_provider_fallback: bool = True,
     ) -> list[ImageBlock]:
-        """Resolve provider images with caller-controlled fallback breadth."""
+        """Resolve provider images with caller-controlled fallback breadth.
+
+        The provider waterfall keeps the existing verified-image privacy and
+        safety contract: every external provider only yields normalized
+        ``ImageCandidate`` metadata, and this service still owns scoring,
+        visual grounding, cache writes, and final ``ImageBlock`` creation.
+        Structured logs emitted from this path use stable provider identifiers,
+        correlation ids, counts, and safe reason codes only; they must not log
+        raw prompts, full URLs, credentials, or model output.
+        """
 
         resolved_query = visual_query or self._visual_search_query(user_msg)[0]
         visual_context = visual_intent_text or resolved_query
@@ -804,6 +820,28 @@ class VisualAnswerService:
             if block:
                 self._log_image_block_selected(conversation_id, block, "open_provider")
                 return [block]
+
+        block = await self._resolve_paid_provider_image(
+            provider="tavily_images",
+            query=resolved_query,
+            conversation_id=conversation_id,
+            visual_context=visual_context,
+            model_client=model_client,
+            visual_brief=visual_brief,
+        )
+        if block:
+            return [block]
+
+        block = await self._resolve_paid_provider_image(
+            provider="serpapi_images",
+            query=resolved_query,
+            conversation_id=conversation_id,
+            visual_context=visual_context,
+            model_client=model_client,
+            visual_brief=visual_brief,
+        )
+        if block:
+            return [block]
 
         if not allow_og_fallback:
             logger.info(
@@ -998,7 +1036,96 @@ class VisualAnswerService:
             for task in pending:
                 task.cancel()
 
+        block = await self._resolve_paid_provider_image(
+            provider="tavily_images",
+            query=resolved_query,
+            conversation_id=conversation_id,
+            visual_context=visual_context,
+            model_client=model_client,
+            visual_brief=visual_brief,
+        )
+        if block:
+            return [block]
+
+        block = await self._resolve_paid_provider_image(
+            provider="serpapi_images",
+            query=resolved_query,
+            conversation_id=conversation_id,
+            visual_context=visual_context,
+            model_client=model_client,
+            visual_brief=visual_brief,
+        )
+        if block:
+            return [block]
+
         return []
+
+    async def _resolve_paid_provider_image(
+        self,
+        *,
+        provider: str,
+        query: str,
+        conversation_id: str,
+        visual_context: str,
+        model_client: Any = None,
+        visual_brief: VisualBrief | None = None,
+    ) -> ImageBlock | None:
+        """Resolve one optional paid image provider into a verified block.
+
+        Args:
+            provider: Provider identifier, currently ``tavily_images`` or
+                ``serpapi_images``.
+            query: Provider-ready visual query. This is not written to logs.
+            conversation_id: Correlation id for safe structured logs.
+            visual_context: Bounded visual intent sent only to grounding.
+            model_client: Optional OpenAI-compatible grounding client.
+            visual_brief: Optional preflight brief used by grounding.
+
+        Returns:
+            The first verified image block selected from the provider, or
+            ``None`` when the provider is disabled, unconfigured, fails, returns
+            no candidates, or all candidates fail the existing gates.
+        """
+
+        if provider == "tavily_images":
+            enabled = bool(settings.enable_tavily_visual_search)
+            timeout_seconds = float(settings.tavily_visual_search_timeout_seconds)
+            query_func = self._query_tavily_images
+        elif provider == "serpapi_images":
+            enabled = bool(settings.enable_serpapi_visual_search)
+            timeout_seconds = float(settings.serpapi_visual_search_timeout_seconds)
+            query_func = self._query_serpapi_images
+        else:
+            return None
+
+        if not enabled:
+            logger.info(
+                "visual.provider_skipped conversation_id=%s provider=%s reason=disabled",
+                conversation_id,
+                provider,
+            )
+            return None
+
+        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+            candidates = await self._query_provider_candidates(
+                provider=provider,
+                query_func=query_func,
+                client=client,
+                query=query,
+                conversation_id=conversation_id,
+            )
+        block = await self._select_image_block(
+            candidates,
+            query,
+            provider,
+            conversation_id,
+            visual_context,
+            model_client,
+            visual_brief,
+        )
+        if block:
+            self._log_image_block_selected(conversation_id, block, provider)
+        return block
 
     async def _block_from_result_safe(
         self,
@@ -1240,6 +1367,120 @@ class VisualAnswerService:
         )
         return candidates
 
+    async def _query_tavily_images(
+        self,
+        client: httpx.AsyncClient,
+        query: str,
+        conversation_id: str,
+    ) -> list[ImageCandidate]:
+        """Query Tavily Search for source-grounded image candidates.
+
+        Args:
+            client: Async HTTP client configured with provider timeout.
+            query: Provider-ready visual query. Never logged.
+            conversation_id: Correlation id for privacy-safe structured logs.
+
+        Returns:
+            Normalized image candidates from Tavily's top-level image results
+            and result-scoped images. Missing API keys and malformed image
+            payloads fail soft by returning an empty list.
+        """
+
+        api_key = os.environ.get("TAVILY_API_KEY", "").strip()
+        if not api_key:
+            logger.info(
+                "visual.provider_skipped conversation_id=%s provider=tavily_images reason=missing_api_key",
+                conversation_id,
+            )
+            return []
+
+        logger.info(
+            "visual.provider_started conversation_id=%s provider=tavily_images timeout_seconds=%.1f",
+            conversation_id,
+            settings.tavily_visual_search_timeout_seconds,
+        )
+        response = await client.post(
+            settings.tavily_search_api_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "query": query,
+                "search_depth": "basic",
+                "max_results": 5,
+                "include_images": True,
+                "include_image_descriptions": True,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        candidates = self._tavily_image_candidates(payload)
+        logger.info(
+            "visual.provider_completed conversation_id=%s provider=tavily_images candidate_count=%s",
+            conversation_id,
+            len(candidates),
+        )
+        return candidates
+
+    async def _query_serpapi_images(
+        self,
+        client: httpx.AsyncClient,
+        query: str,
+        conversation_id: str,
+    ) -> list[ImageCandidate]:
+        """Query SerpAPI Google Images for broad public-web image candidates.
+
+        Args:
+            client: Async HTTP client configured with provider timeout.
+            query: Provider-ready visual query. Never logged.
+            conversation_id: Correlation id for privacy-safe structured logs.
+
+        Returns:
+            Normalized Google Images candidates from SerpAPI's
+            ``images_results`` array. Missing API keys and malformed payloads
+            fail soft by returning an empty list.
+        """
+
+        api_key = os.environ.get("SERPAPI_API_KEY", "").strip()
+        if not api_key:
+            logger.info(
+                "visual.provider_skipped conversation_id=%s provider=serpapi_images reason=missing_api_key",
+                conversation_id,
+            )
+            return []
+
+        logger.info(
+            "visual.provider_started conversation_id=%s provider=serpapi_images timeout_seconds=%.1f",
+            conversation_id,
+            settings.serpapi_visual_search_timeout_seconds,
+        )
+        response = await client.get(
+            settings.serpapi_google_images_api_url,
+            params={
+                "engine": "google_images",
+                "q": query,
+                "ijn": "0",
+                "safe": "active",
+                "api_key": api_key,
+            },
+            headers=self._provider_headers("serpapi_images"),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        image_results = payload.get("images_results") or payload.get("image_results") or []
+        candidates = [
+            candidate
+            for item in image_results
+            if (candidate := self._serpapi_image_candidate(item)) is not None
+        ]
+        logger.info(
+            "visual.provider_completed conversation_id=%s provider=serpapi_images candidate_count=%s",
+            conversation_id,
+            len(candidates),
+        )
+        return candidates
+
     @classmethod
     def _provider_headers(cls, provider: str) -> dict[str, str]:
         """Build provider request headers without exposing credentials in logs.
@@ -1345,6 +1586,96 @@ class VisualAnswerService:
             height=cls._optional_int(item.get("height")),
         )
 
+    @classmethod
+    def _tavily_image_candidates(cls, payload: Any) -> list[ImageCandidate]:
+        """Normalize Tavily image payloads into provider-agnostic candidates."""
+
+        if not isinstance(payload, dict):
+            return []
+
+        candidates: list[ImageCandidate] = []
+        for item in payload.get("images") or []:
+            candidate = cls._tavily_image_candidate(item, None)
+            if candidate is not None:
+                candidates.append(candidate)
+
+        for result in payload.get("results") or []:
+            if not isinstance(result, dict):
+                continue
+            source_url = str(result.get("url") or "").strip() or None
+            result_title = cls._clean_text(str(result.get("title") or ""))
+            for item in result.get("images") or []:
+                candidate = cls._tavily_image_candidate(item, source_url, result_title)
+                if candidate is not None:
+                    candidates.append(candidate)
+
+        return candidates
+
+    @classmethod
+    def _tavily_image_candidate(
+        cls,
+        item: Any,
+        source_url: str | None,
+        fallback_title: str = "",
+    ) -> ImageCandidate | None:
+        """Convert one Tavily image result into AREQA's candidate model."""
+
+        if isinstance(item, str):
+            image_url = item.strip()
+            title = fallback_title
+            description = fallback_title
+            resolved_source_url = source_url or image_url
+        elif isinstance(item, dict):
+            image_url = str(item.get("url") or item.get("image_url") or item.get("src") or "").strip()
+            title = cls._clean_text(str(item.get("title") or fallback_title))
+            description = cls._clean_text(str(item.get("description") or item.get("alt") or title))
+            resolved_source_url = str(
+                item.get("source_url")
+                or item.get("source")
+                or item.get("origin_url")
+                or source_url
+                or image_url
+            ).strip()
+        else:
+            return None
+
+        if not image_url or not resolved_source_url:
+            return None
+        return ImageCandidate(
+            provider="tavily_images",
+            image_url=image_url,
+            thumbnail_url=image_url,
+            source_url=resolved_source_url,
+            title=title,
+            caption=description or title,
+            license="unknown",
+        )
+
+    @classmethod
+    def _serpapi_image_candidate(cls, item: Any) -> ImageCandidate | None:
+        """Convert one SerpAPI Google Images result into AREQA's candidate model."""
+
+        if not isinstance(item, dict):
+            return None
+        image_url = str(item.get("original") or item.get("image") or item.get("link") or "").strip()
+        thumbnail_url = str(item.get("thumbnail") or image_url).strip()
+        source_url = str(item.get("link") or item.get("source_url") or image_url).strip()
+        title = cls._clean_text(str(item.get("title") or item.get("source") or ""))
+        if not image_url or not source_url:
+            return None
+        return ImageCandidate(
+            provider="serpapi_images",
+            image_url=image_url,
+            thumbnail_url=thumbnail_url,
+            source_url=source_url,
+            title=title,
+            caption=title,
+            license="unknown",
+            creator=cls._clean_text(str(item.get("source") or "")),
+            width=cls._optional_int(item.get("original_width") or item.get("width")),
+            height=cls._optional_int(item.get("original_height") or item.get("height")),
+        )
+
     @staticmethod
     def _visual_search_query(user_msg: str) -> tuple[str, str]:
         """Rewrite a user prompt into image-provider metadata language.
@@ -1359,6 +1690,8 @@ class VisualAnswerService:
         for rule_name, pattern, rewritten_query in _VISUAL_QUERY_REWRITE_RULES:
             if pattern.search(normalized):
                 return rewritten_query, rule_name
+        if normalized and not normalized.isascii():
+            return "educational explanatory diagram", "generic_non_english_visual_query"
         fallback = normalized[:120] if normalized else "educational diagram"
         return fallback, "identity"
 

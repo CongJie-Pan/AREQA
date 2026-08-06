@@ -397,7 +397,6 @@ class VisualGroundingAgent:
         """
 
         visual_type = self._fallback_visual_type(user_msg, fallback_query, teaching_context)
-        base_query = self._bound(fallback_query, 100) or self._bound(user_msg, 100) or "educational concept"
         query_suffixes = {
             "map": "educational labeled map",
             "timeline": "educational timeline chart",
@@ -405,8 +404,15 @@ class VisualGroundingAgent:
             "chart": "educational chart diagram",
             "comparison_chart": "educational comparison chart",
         }
+        suffix = query_suffixes.get(visual_type, "educational explanatory diagram")
+        base_limit = max(20, 119 - len(suffix))
+        base_query = (
+            self._bound(fallback_query, base_limit)
+            or self._bound(user_msg, base_limit)
+            or "educational concept"
+        )
         search_query = self._bound(
-            f"{base_query} {query_suffixes.get(visual_type, 'educational explanatory diagram')}",
+            f"{base_query} {suffix}",
             120,
         )
         caption_goals = {

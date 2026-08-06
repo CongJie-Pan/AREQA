@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     perplexity_visual_search_model: str = "sonar"
     perplexity_visual_search_timeout_seconds: float = 4.5
     perplexity_sonar_api_url: str = "https://api.perplexity.ai/v1/sonar"
+    enable_tavily_visual_search: bool = True
+    tavily_visual_search_timeout_seconds: float = 3.0
+    tavily_search_api_url: str = "https://api.tavily.com/search"
+    enable_serpapi_visual_search: bool = True
+    serpapi_visual_search_timeout_seconds: float = 3.0
+    serpapi_google_images_api_url: str = "https://serpapi.com/search"
     visual_grounding_timeout_seconds: float = 1.5
     visual_grounding_max_candidates: int = 3
     visual_preflight_grounding_max_candidates: int = 2

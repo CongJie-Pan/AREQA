@@ -36,9 +36,11 @@ class _RecordingHttpClient:
     def __init__(self, payload):
         self.payload = payload
         self.last_headers = {}
+        self.last_params = {}
 
     async def get(self, url, **kwargs):
         self.last_headers = kwargs.get("headers") or {}
+        self.last_params = kwargs.get("params") or {}
         request = httpx.Request("GET", url)
         return httpx.Response(200, json=self.payload, request=request)
 
@@ -179,6 +181,27 @@ def test_visual_search_query_rewrites_meta_analysis_prompt():
 
     assert query == "meta analysis forest plot diagram"
     assert rule == "meta_analysis_forest_plot"
+
+
+def test_visual_search_query_rewrites_temple_church_comparison_prompt():
+    """Temple/church abstract comparison should become a short provider query."""
+
+    query, rule = VisualAnswerService._visual_search_query(
+        "為什麼中華文明的寺廟沒有辦法像西方的教會那樣子有社群與嚴密章程"
+    )
+
+    assert query == "Chinese temple folk religion Christian church social organization comparison diagram"
+    assert rule == "chinese_temple_church_comparison"
+    assert "為什麼" not in query
+
+
+def test_visual_search_query_uses_generic_safe_query_for_unknown_non_english_prompt():
+    """Unknown non-English prompts should not leak raw text into provider queries."""
+
+    query, rule = VisualAnswerService._visual_search_query("這是一個沒有已知 rewrite rule 的抽象問題")
+
+    assert query == "educational explanatory diagram"
+    assert rule == "generic_non_english_visual_query"
 
 
 @pytest.mark.asyncio
@@ -1157,6 +1180,112 @@ async def test_openverse_request_uses_optional_access_token(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_tavily_image_request_uses_search_images(monkeypatch):
+    """Tavily visual provider should request image-rich search results."""
+
+    import config as runtime_config
+
+    service = VisualAnswerService()
+    client = _RecordingPostClient(
+        {
+            "images": [
+                {
+                    "url": "https://images.example.org/temple-church-diagram.png",
+                    "description": "Temple and church organization comparison diagram",
+                    "source_url": "https://example.org/temple-church-comparison",
+                }
+            ],
+            "results": [],
+        }
+    )
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-token")
+    monkeypatch.setattr(runtime_config.settings, "tavily_search_api_url", "https://api.tavily.com/search")
+
+    candidates = await service._query_tavily_images(
+        client,
+        "Chinese temple folk religion Christian church social organization comparison diagram",
+        "conversation-1",
+    )
+
+    assert client.last_url == "https://api.tavily.com/search"
+    assert client.last_headers["Authorization"] == "Bearer tvly-token"
+    assert client.last_json["include_images"] is True
+    assert client.last_json["include_image_descriptions"] is True
+    assert candidates[0].provider == "tavily_images"
+    assert candidates[0].image_url == "https://images.example.org/temple-church-diagram.png"
+    assert candidates[0].source_url == "https://example.org/temple-church-comparison"
+
+
+@pytest.mark.asyncio
+async def test_tavily_image_request_returns_empty_without_api_key(caplog):
+    """Missing Tavily credentials should skip the provider without failing."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    client = _RecordingPostClient({"images": []})
+
+    candidates = await service._query_tavily_images(client, "visual query", "conversation-1")
+
+    assert candidates == []
+    assert "provider=tavily_images reason=missing_api_key" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_serpapi_image_request_uses_google_images(monkeypatch):
+    """SerpAPI provider should query the Google Images engine and normalize results."""
+
+    import config as runtime_config
+
+    service = VisualAnswerService()
+    client = _RecordingHttpClient(
+        {
+            "images_results": [
+                {
+                    "original": "https://cdn.example.org/comparison-chart.jpg",
+                    "thumbnail": "https://cdn.example.org/comparison-chart-thumb.jpg",
+                    "link": "https://example.org/church-temple-comparison",
+                    "title": "Chinese temple and Christian church comparison chart",
+                    "source": "example.org",
+                    "original_width": 1200,
+                    "original_height": 800,
+                }
+            ]
+        }
+    )
+    monkeypatch.setenv("SERPAPI_API_KEY", "serpapi-token")
+    monkeypatch.setattr(runtime_config.settings, "serpapi_google_images_api_url", "https://serpapi.com/search")
+
+    candidates = await service._query_serpapi_images(
+        client,
+        "Chinese temple folk religion Christian church social organization comparison diagram",
+        "conversation-1",
+    )
+
+    assert client.last_params["engine"] == "google_images"
+    assert client.last_params["safe"] == "active"
+    assert client.last_params["api_key"] == "serpapi-token"
+    assert candidates[0].provider == "serpapi_images"
+    assert candidates[0].image_url == "https://cdn.example.org/comparison-chart.jpg"
+    assert candidates[0].thumbnail_url == "https://cdn.example.org/comparison-chart-thumb.jpg"
+    assert candidates[0].source_url == "https://example.org/church-temple-comparison"
+    assert candidates[0].width == 1200
+
+
+@pytest.mark.asyncio
+async def test_serpapi_image_request_returns_empty_without_api_key(caplog):
+    """Missing SerpAPI credentials should skip the provider without failing."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    client = _RecordingHttpClient({"image_results": []})
+
+    candidates = await service._query_serpapi_images(client, "visual query", "conversation-1")
+
+    assert candidates == []
+    assert "provider=serpapi_images reason=missing_api_key" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_perplexity_image_request_uses_sonar_return_images(monkeypatch):
     """Perplexity image provider should request structured Sonar image results."""
 
@@ -1313,6 +1442,73 @@ async def test_resolve_images_continues_after_provider_http_error(monkeypatch, c
     assert "visual.provider_failed" in caplog.text
     assert "HTTPStatusError" in caplog.text
     assert "status_code=429" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_resolve_images_falls_back_from_tavily_to_serpapi(monkeypatch, caplog):
+    """SerpAPI should run after Tavily when earlier providers do not select an image."""
+
+    import config as runtime_config
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    calls = []
+
+    async def no_perplexity_candidates(*args, **kwargs):
+        calls.append("perplexity")
+        return []
+
+    async def no_wikimedia_candidates(*args, **kwargs):
+        calls.append("wikimedia")
+        return []
+
+    async def no_openverse_candidates(*args, **kwargs):
+        calls.append("openverse")
+        return []
+
+    async def no_tavily_candidates(*args, **kwargs):
+        calls.append("tavily")
+        return []
+
+    async def serpapi_candidate(*args, **kwargs):
+        calls.append("serpapi")
+        return [
+            ImageCandidate(
+                provider="serpapi_images",
+                image_url="https://cdn.example.org/chinese-temple-church-comparison.png",
+                thumbnail_url="https://cdn.example.org/chinese-temple-church-comparison.png",
+                source_url="https://example.org/chinese-temple-church-comparison",
+                title="Chinese temple Christian church social organization comparison diagram",
+                caption="Chinese temple Christian church social organization comparison diagram",
+                license="unknown",
+                width=1200,
+                height=800,
+            )
+        ]
+
+    monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_tavily_visual_search", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_serpapi_visual_search", True)
+    monkeypatch.setattr(service, "_query_perplexity_images", no_perplexity_candidates)
+    monkeypatch.setattr(service, "_query_wikimedia", no_wikimedia_candidates)
+    monkeypatch.setattr(service, "_query_openverse", no_openverse_candidates)
+    monkeypatch.setattr(service, "_query_tavily_images", no_tavily_candidates)
+    monkeypatch.setattr(service, "_query_serpapi_images", serpapi_candidate)
+
+    blocks = await service._resolve_images(
+        user_msg="寺廟和教會比較",
+        visual_query="Chinese temple Christian church social organization comparison diagram",
+        existing_web_results=[],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert calls == ["perplexity", "wikimedia", "openverse", "tavily", "serpapi"]
+    assert len(blocks) == 1
+    assert blocks[0].provider == "serpapi_images"
+    assert "stage=serpapi_images" in caplog.text
 
 
 @pytest.mark.asyncio
