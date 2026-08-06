@@ -9,7 +9,7 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-07-22（依目前 GitHub Codespace、frontend / backend 實際代碼與腳本校正）
+> **最後更新**：2026-08-06（依目前 GitHub Codespace、frontend / backend 實際代碼與腳本校正）
 
 > 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 與 `backend/main.py` 的實際 route 為準。
 
@@ -34,7 +34,7 @@
 - 安裝 `frontend/node_modules`
 - 在 shell 啟動時自動啟用 `backend/.venv`
 
-`postAttachCommand` 會執行 `.devcontainer/on-attach.sh`，負責檢查 `agy` / `drift` / `codex`，必要時初始化 `.drift`，並嘗試啟動 Redis。注意：目前這個 Codespace 映像沒有 `redis-server` service / `redis-cli`，因此 `on-attach.sh` 可能顯示 Redis 啟動失敗；若功能需要 Redis，請設定外部 `REDIS_URL`，或在 Codespace 中自行安裝並啟動 Redis。
+`postAttachCommand` 會執行 `.devcontainer/on-attach.sh`，負責檢查 `agy` / `drift` / `codex`，必要時初始化 `.drift`，並嘗試啟動 Redis。注意：目前這個 Codespace 映像沒有可用的 `redis-server` service，因此 `on-attach.sh` 會顯示 Redis 啟動失敗；若功能需要 Redis，請設定外部 `REDIS_URL`，或在 Codespace 中自行安裝並啟動 Redis。
 
 ### 啟動完整開發服務
 
@@ -109,9 +109,11 @@ drift scan backend frontend --force
 - `OPENROUTER_API_KEY`: 主 LLM、標題生成、GUM、記憶總結、建議問題與 embedding / retrieval 相關流程。
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 與後端 JWKS 驗證來源。
 - `JWT_SECRET`: Supabase HS 系列 JWT 驗證；若 JWT 演算法不是 HS 系列，後端會改走 Supabase JWKS。
-- `REDIS_URL`: hot memory、user profile、working memory、mailbox cache、RAG cache 與 WS ticket。預設為 `redis://localhost:6379`，但目前 Codespace 沒有可用的本機 Redis service。
+- `REDIS_URL`: hot memory、user profile、working memory、mailbox cache、RAG cache、visual answer cache 與 WS ticket。預設為 `redis://localhost:6379`，但目前 Codespace 沒有可用的本機 Redis service。
 - `DATABASE_URL`: PostgreSQL / pgvector，供 GUM、cold memory、agent jobs 使用。
-- `PERPLEXITY_API_KEY`: Web search；未設定時 web search 會回退到一般對話。
+- `PERPLEXITY_API_KEY`: Web search 與 visual image search；未設定時 web search / image preflight 會 fail-soft，不阻斷主回答。
+- `TAVILY_API_KEY`: 選配 visual image provider；未設定時 Tavily 圖片查詢會 fail-soft 並交給下一個 provider。
+- `SERPAPI_API_KEY`: 選配 SerpAPI Google Images provider；未設定時 SerpAPI 圖片查詢會 fail-soft，不阻斷主回答。
 
 選配：
 
@@ -119,6 +121,11 @@ drift scan backend frontend --force
 - `MAILBOX_DATABASE_URL`: mailbox 專用資料庫 URL，優先於 `DATABASE_URL`；失敗時回退到 Redis。
 - `NEXT_PUBLIC_BACKEND_URL`: 前端直連 FastAPI 的 base URL，預設使用 `http://localhost:8000` 或 `http://127.0.0.1:8000`。
 - `ENABLE_INTERNAL_RAG=true`: 啟用本地文件 RAG，需另備 `data/rag/faiss_index/` 與 `data/rag/bm25_index/`。
+- `ENABLE_VISUAL_PREFLIGHT=true`: 主模型輸出前先嘗試搜尋可用圖片，預設開啟。
+- `ENABLE_VISUAL_PREFLIGHT_PARALLEL_PROVIDERS=true`: preflight 圖片搜尋併發查詢 Perplexity / Wikimedia / Openverse，預設開啟。
+- `PERPLEXITY_VISUAL_SEARCH_TIMEOUT_SECONDS`: Perplexity image search 單次 timeout，預設 `4.5` 秒。
+- `VISUAL_PREFLIGHT_TIMEOUT_SECONDS`: 整體圖片 preflight timeout，預設 `6.0` 秒。
+- `ENABLE_VISUAL_ANSWER_DEBUG_LOGS=true`: 輸出隱私安全的 visual answer 診斷 log；不記錄 raw prompt、圖片 URL、使用者原文或金鑰。
 
 ---
 
@@ -169,6 +176,8 @@ backend/
 │   ├── post_turn_service.py        # 回答後建議問題與背景 side effects
 │   ├── query_policy_service.py     # HyDE 查詢拆解與 dialogue policy classifier
 │   ├── attachment_service.py       # multipart 附件驗證、文字/圖片內容抽取
+│   ├── visual_answer_service.py    # 圖文回答 preflight、provider 查詢、候選評分與 image blocks
+│   ├── visual_grounding_agent.py   # 圖片意圖規劃與候選圖 grounding 檢查
 │   ├── memory_ingestion_service.py # user evidence → candidate/profile/cold memory 政策
 │   ├── hot_memory_service.py       # typed hot memory entries 與 provenance helper
 │   ├── memory_semantic_analyzer.py # 選配 OpenRouter 語意候選分析
@@ -190,7 +199,7 @@ backend/
         └── ...                     # 其他 GUM / RAG 運行時資料
 
 # 補充：
-# - hot memory、user profile、working memory、behavior signals、mailbox、delayed mail 主要存於 Redis
+# - hot memory、user profile、working memory、behavior signals、mailbox、delayed mail、visual cache 主要存於 Redis
 # - GUM / cold memory 的正式資料層優先使用 GUM_DATABASE_URL 或 DATABASE_URL 指向的 PostgreSQL
 # - 本地 data/gum_data 主要是 GUM 運行時資料目錄，不再是主資料庫說明
 ```
@@ -304,8 +313,8 @@ frontend/src/
 │  Backend  (FastAPI · Python 3.11 in Codespace)                │
 │  Port 8000                                                   │
 │  ┌──────────────┬──────────────┬─────────────┬───────────┐  │
-│  │Orchestration │  GUM / Memory │  Mailbox   │ ComPeer   │  │
-│  │  RAG / Web   │  cold/hot    │  Store      │ Scheduler │  │
+│  │Orchestration │  GUM / Memory │  Visual    │ ComPeer   │  │
+│  │RAG/Web/Image │  cold/hot     │  Answers   │ Scheduler │  │
 │  └──────────────┴──────────────┴─────────────┴───────────┘  │
 └──────────┬──────────────────────────────────────────────────┘
            │
@@ -313,6 +322,7 @@ frontend/src/
     │  External Services   │
     │  OpenRouter (LLM)    │
     │  Perplexity Search   │
+    │  Wikimedia/Openverse │
     │  Supabase Auth/JWKS  │
     │  Redis Cache         │
     │  PostgreSQL / pgvector│
@@ -355,15 +365,17 @@ flowchart TD
             N4A["④-A 文件 RAG Retrieval（選配）\nENABLE_INTERNAL_RAG=true\nFAISS + BM25 + RRF Fusion\n+ Reranker + 注意力重排"]
             N4B["④-B Web Search Tool\nPerplexity / web_search\nsearch_mode: auto / always / never\nRedis 快取"]
             N5["⑤ Context Assembly\nConversationContextService\nworking memory / explicit recall\ncold memory / learner_state\nattachments grounding"]
-            N6["⑥ LLM Streaming\nConversationStreamService\nOpenRouter SSE + tool registry\nweb_search / schedule_letter\n<think> 分離 · OpenCC 繁體轉換"]
-            N7["⑦ Post-turn Work\nPostTurnService\nSuggestionService event\n記憶寫入與背景 side effects"]
+            N5B["⑥ Visual Preflight（選配）\nVisualAnswerService + VisualGroundingAgent\nEDF teaching context → visual brief\nPerplexity/Wikimedia/Openverse 併發候選\nverified image inventory → main model"]
+            N6["⑦ LLM Streaming\nConversationStreamService\nOpenRouter SSE + tool registry\nweb_search / schedule_letter\n<think> 分離 · OpenCC 繁體轉換"]
+            N7["⑧ Post-turn Work\nPostTurnService\nSuggestionService event\n記憶寫入與背景 side effects"]
             N1 --> N2
             N2 --> N3
             N3 --> N4A
             N3 --> N4B
             N4A --> N5
             N4B --> N5
-            N5 --> N6
+            N5 --> N5B
+            N5B --> N6
             N6 --> N7
         end
     end
@@ -376,6 +388,7 @@ flowchart TD
     N4A -->|"寫入 RAG 快取"| RedisCache
     HotMem -->|"讀取 working_memory\n+ learner_state + chat_avatar:{conversation_id}"| N5
     ColdMem -->|"依 MemoryPolicy 查詢 retrieved_memory"| N5
+    N5B -->|"若找到 verified image\n以 slot inventory 注入 prompt"| N6
     N6 -->|"串流 SSE · event: sources/suggestions/done"| UI_Chat
     N7 -.->|"user evidence / memory ingestion"| HotMem
     Config -.->|"提供模型名稱 / RAG 閾值"| ORCH_NODES
@@ -511,14 +524,23 @@ flowchart TD
 - **文件 RAG（選配）**: `src/main/python/services/rag_service.py` 在 `ENABLE_INTERNAL_RAG=true` 時載入本地 `data/rag/faiss_index/` 與 `data/rag/bm25_index/`，整合 `FAISS` 向量檢索與 `BM25` 關鍵字檢索，透過倒數排名融合 (`RRF`) 與 API 重排模型 (`Reranker`) 取得最相關段落。
 - **使用者冷記憶檢索**: `backend/cold_memory.py` 使用 `DATABASE_URL` 連到 PostgreSQL，從 `propositions` 做全文檢索、從選配 `vec_memory` 做 pgvector 向量檢索，再以 RRF 融合結果。
 - **注意力重排序 (Lost in the Middle Reordering)**: 將最高關聯度文獻置首尾，優化 LLM 長上下文注意力。
-- **Perplexity 聯網檢索**: 整合 Perplexity Search API (`/search` 端點)，動態決定 `max_results (3~20)`，並以對話 ID + 問題的 MD5 雜湊進行 Redis 快取（TTL 24小時）。
+- **Perplexity 聯網檢索**: 整合 Perplexity Search / Sonar 類搜尋能力，動態決定 `max_results`，並以對話 ID + 問題的 MD5 雜湊進行 Redis 快取（TTL 24 小時）。
 - **HyDE 查詢分解**: 使用 LLM 將使用者問題拆解為 `exact_entity` / `abstract_concept` 兩類子查詢，提升混合檢索的召回率。
 - **Search Mode 與 Agent Routing**: `/api/v1/stream` 支援 `search_mode: auto | always | never`。`SearchPolicy` 與 `TutorAgent` 會在 rollout 設定允許時決定是否進行外部搜尋；`TurnPlanService` 再把 search decision 轉成前景執行計畫與模型呼叫預算。
 - **Tool Registry**: `ConversationStreamService` 透過 `ToolRegistry` 管理前景工具，目前包含 `web_search` 與 `schedule_letter`。外部工具呼叫會受到 `ToolBudgetTracker` 約束。
 - **附件 Grounding**: `/api/v1/stream` 可接收 JSON 或 `multipart/form-data`。附件由 `attachment_service.py` 驗證總大小、類型與內容，文字/圖片內容會作為 request-scoped grounding 注入當輪上下文，不寫入長期記憶。
 - **文獻渲染與防閃爍**: 前端以卡片網格展示引用文獻，支援 favicon、一鍵跳轉。使用 `remend` 自癒 Markdown 解析與 `useDeferredValue`，確保串流過程畫面不閃爍。行內引用為金色圓角標籤（Golden Citation Chips），點擊彈出對應 Modal。
 
-### 2. 教育認知與 EDF 教學策略模組
+### 2. 圖文回答與視覺 Grounding (Visual Answers)
+
+- **Visual Preflight**: `visual_answer_service.py` 會在主模型開始輸出前嘗試準備 verified image inventory。此流程受 `ENABLE_VISUAL_PREFLIGHT` 與 `VISUAL_PREFLIGHT_TIMEOUT_SECONDS` 控制，預設 fail-soft；找不到圖不會阻斷主回答。
+- **Visual Planning Agent**: `visual_grounding_agent.py` 依使用者問題、EDF response policy 與 turn route 產生 `VisualBrief`，包含 `visual_type`、搜尋 query、caption goal 與 reject rules。若 agent timeout，會以 EDF metadata 產生 bounded fallback brief。
+- **併發圖片 Provider**: preflight 預設併發查詢 Perplexity image search、Wikimedia 與 Openverse；若仍找不到 verified image，會依序嘗試 Tavily 與 SerpAPI。設定由 `ENABLE_VISUAL_PREFLIGHT_PARALLEL_PROVIDERS`、`ENABLE_PERPLEXITY_VISUAL_SEARCH`、`ENABLE_TAVILY_VISUAL_SEARCH`、`ENABLE_SERPAPI_VISUAL_SEARCH` 與各 provider timeout 控制。
+- **候選圖驗證**: 圖片候選會先經尺寸、授權、placeholder、domain 與 metadata 評分，再由 visual grounding agent 檢查候選是否符合要求的 visual type，避免「文字說是地圖，實際顯示文件掃描或照片」。
+- **Visual Cache**: visual cache 使用 Redis，cache key 會包含 visual brief 與版本號，避免不同 teaching context 共用錯誤圖片；negative cache 用來降低重複查詢成本。
+- **隱私安全 Log**: visual debug log 只記錄 provider、candidate_count、reason code、visual_type、timeout 與 source domain；不記錄 raw query、raw prompt、使用者原文、圖片 URL 或 API key。
+
+### 3. 教育認知與 EDF 教學策略模組
 
 - **學習者狀態判定 (EDF)**: 系統追蹤對話歷史，即時分析學習狀態：
   - `NOT_STARTED` / `STARTING` / `TINKERING` / `RUN_REPEAT` / `GIVING_UP` / `MASTERY` / `CHITCHAT`
@@ -528,7 +550,7 @@ flowchart TD
 - **Policy Classifier**: LLM 判定 `PROBE_UNDERSTANDING` / `SUGGEST_ACTION` / `PUSH_LIMIT` / `NORMAL`，但是否前景執行由 turn plan 與設定旗標控制，避免一般聊天無限制增加模型呼叫。
 - **回答邊界保護**: `response_boundary_validator.py` 與 public output filter 會在串流輸出階段檢查模型是否越界代替使用者自述，降低記憶污染與角色污染風險。
 
-### 3. 記憶管理系統 (GUM + MemoryStore)
+### 4. 記憶管理系統 (GUM + MemoryStore)
 
 - **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`current_focus` 與每筆 `recent_learning_points` 都綁定 `conversation_id`；主聊天路徑只注入目前 conversation 的暫時脈絡，legacy unscoped points 不會進入新對話。
 - **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`。Observation 正常以 17 筆批次處理，閒置 reflection 或 `POST /api/v1/memory/flush` 也能處理未滿批次的 pending observations。
@@ -542,7 +564,7 @@ flowchart TD
 - **ObservationQueueWorker**: 去抖動 (3s debounce) 批次處理觀察訊息，防止高頻寫入。
 - **低資訊問候短路**: `你好`、`hi`、`在嗎` 這類低資訊訊息會直接回固定寒暄，不會進入 long-term memory retrieval，也不會擴寫上一輪任務脈絡。
 
-### 4. 主動關懷與信箱系統 (ComPeer & Mailbox)
+### 5. 主動關懷與信箱系統 (ComPeer & Mailbox)
 
 - **行為遙測**: `POST /api/v1/log_action` 接收前端 scroll、互動等行為，scroll 純寫熱記憶，其他有意義互動推送至 GUM。
 - **ComPeer Scheduler**: `compeer_scheduler.py` 包含 proactive + daily 兩個排程迴圈；觸發時不再彈出角色扮演視窗，而是排一封延遲送達的 AREQA 關懷信，預設延遲為 120 秒，可由 `COMPEER_DELIVERY_DELAY_SECONDS` 設定。
@@ -551,19 +573,20 @@ flowchart TD
 - **WebSocket 推播**: `ConnectionManager` (`services/connection_manager.py`) 管理持久連線，目前主動關懷 UX 只依賴 `broadcast_mail_alert` 更新信箱。
 - **冷卻機制**: `compeer_rejected` 動作觸發 30 分鐘動態冷卻，防止過度打擾。
 
-### 5. 記憶可視化面板 (GumPanel)
+### 6. 記憶可視化面板 (GumPanel)
 
 - **GumPanel** (`src/components/GumPanel/index.tsx`): 記憶資產面板，只呈現正式 Cold Memory 與 user profile 記憶，可查看、刪除、編輯並支援批次刪除；候選核准/拒絕不再是主要使用者流程。
 - **動態人物畫像**: 調用 `GET /api/v1/memory/summary`，透過 OpenRouter 上配置的結構化模型生成 `sentence1 / sentence2 / hashtags`。
 - **Redis + 本地雙層快取**: MD5 Hash 校驗確保記憶無變動時毫秒級回應。
 
-### 6. 模型與服務配置
+### 7. 模型與服務配置
 
 - **集中式預設模型**: `backend/config.py` 定義 `model_policy_classifier`、`model_hyde_decomposer`、`model_main_instruct`、`model_main_thinking`、`model_gum`、`model_zpd_query`，目前預設為 `google/gemini-3.1-flash-lite`。
-- **專用模型例外**: 部分服務有專用模型設定，例如 memory summary 使用 `qwen/qwen3-235b-a22b-2507`，`router_service.py` 使用 `qwen/qwen3-vl-8b-instruct`，`cold_memory.py` 的 embedding 使用 `qwen/qwen3-embedding-8b`。
+- **專用模型例外**: 部分服務有專用模型設定，例如 suggestion 使用 `google/gemini-2.5-flash-lite`，`router_service.py` 使用 `qwen/qwen3-vl-8b-instruct`，`cold_memory.py` 的 embedding 預設使用 `openai/text-embedding-3-small`。
 - **OpenRouter 統一出口**: 主 LLM、標題生成、GUM、推薦問題、embedding 與部分檢索相關流程共用 `OPENROUTER_API_KEY`。
+- **Visual Search 例外**: Perplexity image search 使用 `PERPLEXITY_API_KEY` 與 `perplexity_visual_search_model`，目前預設模型為 `sonar`；Tavily 與 SerpAPI 分別使用 `TAVILY_API_KEY`、`SERPAPI_API_KEY` 作為選配圖片 provider。
 
-### 7. 前端元件架構
+### 8. 前端元件架構
 
 | 元件 | 路徑 | 功能 |
 |------|------|------|
@@ -690,17 +713,17 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   ```
 - **手動 API 驗證**: FastAPI Swagger UI 可透過後端 `/docs` 檢查與測試端點。
 - **測試覆蓋範圍**:
-  - `tests/backend` 主要覆蓋 GUM、memory、ComPeer、Perplexity、RAG pipeline、SSE 與 runtime contract。
+  - `tests/backend` 主要覆蓋 GUM、memory、ComPeer、Perplexity、visual answers、visual grounding、RAG pipeline、SSE 與 runtime contract。
   - `tests/frontend` 主要覆蓋 auth / sync / websocket / mailbox / selection / store / chat 與 integration 行為。
 - **測試注意事項**:
   - 前端 `Supabase Auth UI`、`fake-indexeddb` 與部分 WebSocket 行為在測試環境中使用本地 mocks，以避免 jsdom 與外部登入流量造成不穩定。
   - `syncService` 在有資料變更時會延遲觸發 reload，測試需等待該延遲行為。
   - `tests/backend/test_rag_pipeline.py` 使用 synthetic fixture 驗證 RAG pipeline 的融合與過濾邏輯，不依賴大型離線 FAISS / BM25 產物；若要在實際服務啟用本地 RAG，仍需準備對應索引檔。
-- **目前 Codespace 輕量驗證 (2026-07-22)**:
+- **目前 Codespace 輕量驗證 (2026-08-06)**:
   - Node.js `v20.20.2`、npm `10.8.2`、`backend/.venv/bin/python` `3.11.15`。
   - 根目錄與前端 npm scripts 已確認存在。
-  - 目前 Codespace 沒有可用的本機 Redis service；需要 Redis 功能時請設定外部 `REDIS_URL` 或自行安裝 Redis。
-  - 本次 README 更新未重跑完整 `npm run test:all`、前端 build 或後端 pytest；上述指令仍是目前建議的完整驗證入口。
+  - 目前 Codespace 沒有可用的本機 Redis service；`service redis-server status` 會回報 `redis-server: unrecognized service`，需要 Redis 功能時請設定外部 `REDIS_URL` 或自行安裝 Redis。
+  - 本次 README 更新只做文件校正，未重跑完整 `npm run test:all`、前端 build 或後端 pytest；上述指令仍是目前建議的完整驗證入口。
 - **人工回歸驗證建議**:
   1. `DELETE /api/v1/memory/working`
   2. 新 conversation 只送 `你好`，確認回覆是固定寒暄，且不會帶出 README / React / 文言文脈絡

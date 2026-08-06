@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Scientist Agent"
+  short_description: "Investigate root causes through evidence and experiments"
+  default_prompt: "Use $research-scientist-agent to investigate this problem like a scientist, gather evidence, test hypotheses, and identify the root cause."
