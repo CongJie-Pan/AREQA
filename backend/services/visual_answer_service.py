@@ -965,6 +965,25 @@ class VisualAnswerService:
                     ),
                 )
 
+        async def run_paid_provider(provider: str) -> tuple[str, list[ImageCandidate]]:
+            if provider == "tavily_images":
+                query_func = self._query_tavily_images
+                timeout_seconds = settings.tavily_visual_search_timeout_seconds
+            else:
+                query_func = self._query_serpapi_images
+                timeout_seconds = settings.serpapi_visual_search_timeout_seconds
+            async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+                return (
+                    provider,
+                    await self._query_provider_candidates(
+                        provider=provider,
+                        query_func=query_func,
+                        client=client,
+                        query=resolved_query,
+                        conversation_id=conversation_id,
+                    ),
+                )
+
         if settings.enable_perplexity_visual_search:
             provider_tasks.append(asyncio.create_task(run_perplexity()))
         if allow_open_provider_fallback:
@@ -975,6 +994,10 @@ class VisualAnswerService:
                 "visual.open_provider_fallback_skipped conversation_id=%s reason=preflight_budget",
                 conversation_id,
             )
+        if settings.enable_tavily_visual_search:
+            provider_tasks.append(asyncio.create_task(run_paid_provider("tavily_images")))
+        if settings.enable_serpapi_visual_search:
+            provider_tasks.append(asyncio.create_task(run_paid_provider("serpapi_images")))
 
         if not provider_tasks:
             return []
@@ -1008,55 +1031,32 @@ class VisualAnswerService:
                         provider,
                         len(provider_candidates),
                     )
-
-                logger.info(
-                    "visual.parallel_candidates_merged conversation_id=%s provider_count=%s candidate_count=%s pending_provider_count=%s",
-                    conversation_id,
-                    completed_provider_count,
-                    len(candidates),
-                    len(pending),
-                )
-                if not candidates:
-                    continue
-                block = await self._select_image_block(
-                    candidates,
-                    resolved_query,
-                    "parallel_preflight",
-                    conversation_id,
-                    visual_context,
-                    model_client,
-                    visual_brief,
-                )
-                if block:
-                    for task in pending:
-                        task.cancel()
-                    self._log_image_block_selected(conversation_id, block, "parallel_preflight")
-                    return [block]
+                    logger.info(
+                        "visual.parallel_candidates_merged conversation_id=%s provider_count=%s candidate_count=%s pending_provider_count=%s",
+                        conversation_id,
+                        completed_provider_count,
+                        len(candidates),
+                        len(pending),
+                    )
+                    if not provider_candidates:
+                        continue
+                    block = await self._select_image_block(
+                        provider_candidates,
+                        resolved_query,
+                        provider,
+                        conversation_id,
+                        visual_context,
+                        model_client,
+                        visual_brief,
+                    )
+                    if block:
+                        for pending_task in pending:
+                            pending_task.cancel()
+                        self._log_image_block_selected(conversation_id, block, provider)
+                        return [block]
         finally:
             for task in pending:
                 task.cancel()
-
-        block = await self._resolve_paid_provider_image(
-            provider="tavily_images",
-            query=resolved_query,
-            conversation_id=conversation_id,
-            visual_context=visual_context,
-            model_client=model_client,
-            visual_brief=visual_brief,
-        )
-        if block:
-            return [block]
-
-        block = await self._resolve_paid_provider_image(
-            provider="serpapi_images",
-            query=resolved_query,
-            conversation_id=conversation_id,
-            visual_context=visual_context,
-            model_client=model_client,
-            visual_brief=visual_brief,
-        )
-        if block:
-            return [block]
 
         return []
 

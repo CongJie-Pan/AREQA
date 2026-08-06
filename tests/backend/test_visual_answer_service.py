@@ -785,6 +785,115 @@ async def test_preflight_parallel_selects_fast_provider_before_slow_perplexity(m
 
 
 @pytest.mark.asyncio
+async def test_preflight_parallel_can_select_paid_provider_after_open_provider_rejection(monkeypatch, caplog):
+    """Paid providers should get a preflight chance when open candidates fail grounding."""
+
+    import config as runtime_config
+
+    class _ProviderAwareGroundingAgent:
+        def __init__(self):
+            self.checked_providers = []
+
+        async def evaluate(self, **kwargs):
+            candidate = kwargs["candidate"]
+            self.checked_providers.append(candidate.provider)
+            if candidate.provider == "serpapi_images":
+                return VisualGroundingDecision(
+                    accepted=True,
+                    expected_visual_type="map",
+                    candidate_visual_type="map",
+                    reason="teaching_goal_match",
+                )
+            return VisualGroundingDecision(
+                accepted=False,
+                expected_visual_type="map",
+                candidate_visual_type="document_scan",
+                reason="document_scan_not_map",
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    grounding_agent = _ProviderAwareGroundingAgent()
+    service._visual_grounding_agent = grounding_agent
+    brief = VisualBrief(
+        visual_type="map",
+        search_query="World War II Europe battlefield status educational labeled map",
+        caption_goal="Show the European battlefield status on a map.",
+        reject_if=("book_cover", "document_scan", "wrong_visual_type"),
+    )
+
+    async def slow_perplexity_candidates(*args, **kwargs):
+        await asyncio.sleep(1)
+        return []
+
+    async def rejected_wikimedia_candidate(*args, **kwargs):
+        return [
+            ImageCandidate(
+                provider="wikimedia",
+                image_url="https://upload.wikimedia.org/document-scan.png",
+                thumbnail_url="https://upload.wikimedia.org/document-scan.png",
+                source_url="https://commons.wikimedia.org/wiki/File:Document_Scan.png",
+                title="World War II Europe document scan",
+                caption="World War II Europe document scan",
+                license="Public domain",
+                width=1200,
+                height=800,
+            )
+        ]
+
+    async def no_openverse_candidates(*args, **kwargs):
+        return []
+
+    async def no_tavily_candidates(*args, **kwargs):
+        return []
+
+    async def serpapi_map_candidate(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return [
+            ImageCandidate(
+                provider="serpapi_images",
+                image_url="https://cdn.example.org/wwii-europe-map.png",
+                thumbnail_url="https://cdn.example.org/wwii-europe-map.png",
+                source_url="https://example.org/wwii-europe-map",
+                title="World War II Europe battlefield status labeled map",
+                caption="World War II Europe battlefield status labeled map",
+                license="unknown",
+                width=1200,
+                height=800,
+            )
+        ]
+
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_parallel_providers", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_open_provider_fallback", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_tavily_visual_search", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_serpapi_visual_search", True)
+    monkeypatch.setattr(service, "_query_perplexity_images", slow_perplexity_candidates)
+    monkeypatch.setattr(service, "_query_wikimedia", rejected_wikimedia_candidate)
+    monkeypatch.setattr(service, "_query_openverse", no_openverse_candidates)
+    monkeypatch.setattr(service, "_query_tavily_images", no_tavily_candidates)
+    monkeypatch.setattr(service, "_query_serpapi_images", serpapi_map_candidate)
+
+    started_at = asyncio.get_running_loop().time()
+    blocks = await service._resolve_preflight_parallel_images(
+        resolved_query=brief.search_query,
+        visual_context=brief.grounding_intent(),
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+        visual_brief=brief,
+        allow_open_provider_fallback=True,
+    )
+    elapsed = asyncio.get_running_loop().time() - started_at
+
+    assert blocks[0].provider == "serpapi_images"
+    assert elapsed < 0.5
+    assert grounding_agent.checked_providers.count("wikimedia") == 1
+    assert "visual.parallel_provider_started conversation_id=conversation-1 provider_count=5" in caplog.text
+    assert "provider=wikimedia reason=grounding_document_scan_not_map" in caplog.text
+    assert "stage=serpapi_images" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_prepare_preflight_image_blocks_returns_empty_on_timeout(monkeypatch, caplog):
     """Preflight should never block the main answer beyond its configured budget."""
 
