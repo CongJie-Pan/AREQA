@@ -196,12 +196,52 @@ def test_visual_search_query_rewrites_temple_church_comparison_prompt():
 
 
 def test_visual_search_query_uses_generic_safe_query_for_unknown_non_english_prompt():
-    """Unknown non-English prompts should not leak raw text into provider queries."""
+    """Unknown non-English prompts should preserve topic context for providers."""
 
     query, rule = VisualAnswerService._visual_search_query("這是一個沒有已知 rewrite rule 的抽象問題")
 
-    assert query == "educational explanatory diagram"
+    assert query == (
+        "這是一個沒有已知 rewrite rule 的抽象問題 "
+        "educational explanatory diagram Wikimedia Commons educational source"
+    )
     assert rule == "generic_non_english_visual_query"
+
+
+def test_visual_search_query_adds_generic_map_and_source_hints_for_non_english_prompt():
+    """Non-English map requests should avoid topic-free generic image search."""
+
+    query, rule = VisualAnswerService._visual_search_query("二戰歐洲戰場戰況與地圖呈現")
+
+    assert rule == "generic_non_english_visual_query"
+    assert "二戰歐洲戰場戰況與地圖呈現" in query
+    assert "educational labeled map" in query
+    assert "Wikimedia Commons archive university source" in query
+
+
+def test_source_quality_score_matches_education_suffix_without_broad_substring():
+    """Trusted source scoring should not treat arbitrary substrings as domains."""
+
+    trusted_candidate = ImageCandidate(
+        provider="serpapi_images",
+        image_url="https://cdn.example.org/map.png",
+        thumbnail_url="https://cdn.example.org/map-thumb.png",
+        source_url="https://maps.library.example.edu/world-war-map",
+        title="World War map",
+        caption="World War map",
+        license="unknown",
+    )
+    unrelated_candidate = ImageCandidate(
+        provider="serpapi_images",
+        image_url="https://cdn.example.org/map.png",
+        thumbnail_url="https://cdn.example.org/map-thumb.png",
+        source_url="https://scheduled.example.com/world-war-map",
+        title="World War map",
+        caption="World War map",
+        license="unknown",
+    )
+
+    assert VisualAnswerService._source_quality_score(trusted_candidate) > 0
+    assert VisualAnswerService._source_quality_score(unrelated_candidate) == 0
 
 
 @pytest.mark.asyncio
@@ -1098,6 +1138,66 @@ async def test_select_image_block_logs_low_score_candidate_metadata_without_raw_
     assert "source_domain=images.example.org" in caplog.text
     assert "dimension_bucket=small" in caplog.text
     assert "private raw visual query" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_select_image_block_prioritizes_trusted_source_over_low_quality_domain(caplog):
+    """Source quality should keep social and marketplace results from dominating."""
+
+    class _RecordingGroundingAgent:
+        def __init__(self):
+            self.checked_domains = []
+
+        async def evaluate(self, *, candidate, **kwargs):
+            self.checked_domains.append(candidate.source_url)
+            return VisualGroundingDecision(
+                accepted=True,
+                expected_visual_type="map",
+                candidate_visual_type="map",
+                reason="purpose_match",
+            )
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    grounding_agent = _RecordingGroundingAgent()
+    service._visual_grounding_agent = grounding_agent
+
+    block = await service._select_image_block(
+        [
+            ImageCandidate(
+                provider="serpapi_images",
+                image_url="https://i.pinimg.com/example-map.png",
+                thumbnail_url="https://i.pinimg.com/example-map-thumb.png",
+                source_url="https://pinterest.com/pin/example-map",
+                title="World War II Europe battlefield map",
+                caption="World War II Europe battlefield map",
+                license="unknown",
+                width=900,
+                height=500,
+            ),
+            ImageCandidate(
+                provider="serpapi_images",
+                image_url="https://upload.wikimedia.org/example-map.png",
+                thumbnail_url="https://upload.wikimedia.org/example-map-thumb.png",
+                source_url="https://commons.wikimedia.org/wiki/File:World_War_II_Europe_map.png",
+                title="World War II Europe battlefield map",
+                caption="World War II Europe battlefield map",
+                license="Public domain",
+                width=900,
+                height=500,
+            ),
+        ],
+        "World War II Europe battlefield map educational labeled map Wikimedia Commons",
+        "serpapi_images",
+        "conversation-1",
+        "Show a reliable educational battlefield map.",
+        SimpleNamespace(),
+    )
+
+    assert block is not None
+    assert block.source_domain == "commons.wikimedia.org"
+    assert grounding_agent.checked_domains[0].startswith("https://commons.wikimedia.org/")
+    assert "source_domain=commons.wikimedia.org" in caplog.text
 
 
 @pytest.mark.asyncio

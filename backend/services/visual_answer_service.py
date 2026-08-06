@@ -71,6 +71,41 @@ _PURPOSE_TERMS = {
     "示意圖",
     "圖解",
 }
+_VISUAL_TYPE_HINTS: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    (
+        "map",
+        ("地圖", "地图", "戰場", "战场", "戰況", "战况", "map", "battlefield"),
+        "educational labeled map",
+    ),
+    ("chart", ("圖表", "图表", "統計", "统计", "chart", "graph", "plot"), "educational chart"),
+    (
+        "diagram",
+        ("流程", "架構", "结构", "示意", "圖解", "图解", "diagram", "flow"),
+        "educational explanatory diagram",
+    ),
+)
+_TRUSTED_SOURCE_DOMAINS = (
+    "commons.wikimedia.org",
+    "wikimedia.org",
+    "wikipedia.org",
+    "worldhistory.org",
+    "loc.gov",
+    "archives.gov",
+    "iwm.org.uk",
+    "ushmm.org",
+    ".edu",
+    ".museum",
+)
+_LOW_QUALITY_SOURCE_DOMAINS = (
+    "pinterest.",
+    "reddit.com",
+    "taobao.com",
+    "tmall.",
+    "carousell.",
+    "quizlet.com",
+    "teacherspayteachers.com",
+    "studocu.com",
+)
 _NEGATIVE_TERMS = {
     "logo",
     "icon",
@@ -1681,9 +1716,11 @@ class VisualAnswerService:
         """Rewrite a user prompt into image-provider metadata language.
 
         Open image providers primarily match titles, captions, and filenames.
-        For abstract learning questions, a stable rule-based rewrite improves
-        hit rate without adding another foreground model call or logging raw
-        prompt text.
+        For abstract learning questions, stable rule-based rewrites improve hit
+        rate without adding another foreground model call. Unknown non-English
+        prompts keep a bounded topic string and append generic visual/source
+        hints so public image search has enough topic context. Structured logs
+        only emit the rewrite rule name, never this provider query.
         """
 
         normalized = " ".join(str(user_msg or "").strip().split())
@@ -1691,9 +1728,37 @@ class VisualAnswerService:
             if pattern.search(normalized):
                 return rewritten_query, rule_name
         if normalized and not normalized.isascii():
-            return "educational explanatory diagram", "generic_non_english_visual_query"
+            return (
+                VisualAnswerService._generic_visual_search_query(normalized),
+                "generic_non_english_visual_query",
+            )
         fallback = normalized[:120] if normalized else "educational diagram"
         return fallback, "identity"
+
+    @staticmethod
+    def _generic_visual_search_query(normalized_prompt: str) -> str:
+        """Build a provider-ready query for non-English prompts without topic loss.
+
+        Args:
+            normalized_prompt: User text after whitespace normalization.
+
+        Returns:
+            A bounded query that preserves the topic and adds provider-neutral
+            visual/source hints. The string is intended for outbound image
+            provider requests only and must not be written to structured logs.
+        """
+
+        lowered = normalized_prompt.lower()
+        visual_hint = "educational explanatory diagram"
+        source_hint = "Wikimedia Commons educational source"
+        for _, keywords, hint in _VISUAL_TYPE_HINTS:
+            if any(keyword in lowered for keyword in keywords):
+                visual_hint = hint
+                if "map" in hint:
+                    source_hint = "Wikimedia Commons archive university source"
+                break
+        topic = normalized_prompt[:90].strip()
+        return f"{topic} {visual_hint} {source_hint}".strip()[:160]
 
     @staticmethod
     def _http_status_code(exc: Exception) -> int | None:
@@ -1987,7 +2052,46 @@ class VisualAnswerService:
         provider_bonus = _PROVIDER_PRIORITY.get(candidate.provider, 0.0)
         dimension_bonus = 0.08 if self._has_useful_dimensions(candidate) else 0.0
         pedagogy_bonus = min(self._pedagogical_score(candidate) * 0.2, 0.2)
-        return min(overlap + purpose_bonus + provider_bonus + dimension_bonus + pedagogy_bonus, 1.0)
+        source_quality = self._source_quality_score(candidate)
+        score = (
+            overlap
+            + purpose_bonus
+            + provider_bonus
+            + dimension_bonus
+            + pedagogy_bonus
+            + source_quality
+        )
+        return min(max(score, 0.0), 1.0)
+
+    @staticmethod
+    def _source_quality_score(candidate: ImageCandidate) -> float:
+        """Score source-domain reliability using provider metadata only.
+
+        Returns:
+            A small positive boost for stable educational/archive/encyclopedic
+            sources and a penalty for social, marketplace, or worksheet-hosting
+            domains that often rank highly in image search but fail grounding.
+        """
+
+        domain = urlparse(candidate.source_url).netloc.lower().removeprefix("www.")
+        if not domain:
+            return 0.0
+        if any(source in domain for source in _LOW_QUALITY_SOURCE_DOMAINS):
+            return -0.25
+        if any(
+            VisualAnswerService._domain_matches_source_quality_pattern(domain, source)
+            for source in _TRUSTED_SOURCE_DOMAINS
+        ):
+            return 0.18
+        return 0.0
+
+    @staticmethod
+    def _domain_matches_source_quality_pattern(domain: str, pattern: str) -> bool:
+        """Return whether a sanitized domain matches a source-quality pattern."""
+
+        if pattern.startswith("."):
+            return domain.endswith(pattern)
+        return domain == pattern or domain.endswith(f".{pattern}") or pattern in domain
 
     @staticmethod
     def _pedagogical_score(candidate: ImageCandidate) -> float:
