@@ -289,6 +289,25 @@ export const useStyles = createStyles(({ css, token }) => ({
     ol {
       margin: 0 0 10px;
       padding-left: 22px;
+      list-style-position: outside;
+    }
+
+    ul {
+      list-style-type: disc;
+    }
+
+    ol {
+      list-style-type: decimal;
+    }
+
+    li {
+      display: list-item;
+      padding-left: 2px;
+    }
+
+    li::marker {
+      color: rgba(255, 255, 255, 0.72);
+      font-weight: 600;
     }
 
     blockquote {

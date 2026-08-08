@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { Citations } from '@/components/Citations';
 import { normalizeCitationMarkers } from '@/components/MessageList/MessageItem';
 
@@ -83,6 +83,27 @@ describe('Citations structured sources', () => {
     expect(screen.getByText('第二點').tagName).toBe('LI');
     expect(screen.getByText('第一項').tagName).toBe('LI');
     expect(screen.getAllByRole('listitem')).toHaveLength(4);
+  });
+
+  it('keeps Markdown list structure inside the expanded source modal', async () => {
+    render(React.createElement(Citations, {
+      messageId: 'msg-modal-list',
+      sources: [{
+        title: 'Markdown List Source',
+        chunk_id: 'https://example.com/modal-list-source',
+        url: 'https://example.com/modal-list-source',
+        snippet: '- 第一點\n- 第二點\n\n1. 第一項\n2. 第二項',
+      }],
+      defaultExpanded: true,
+    }));
+
+    fireEvent.click(screen.getByText('Markdown List Source'));
+
+    expect(await screen.findByText('文獻原文詳情')).toBeInTheDocument();
+    expect(screen.getAllByRole('list')).toHaveLength(4);
+    expect(screen.getAllByRole('list')[2].tagName).toBe('UL');
+    expect(screen.getAllByRole('list')[3].tagName).toBe('OL');
+    expect(screen.getAllByRole('listitem')).toHaveLength(8);
   });
 
   it('opens only in-range citations for the same message', async () => {
