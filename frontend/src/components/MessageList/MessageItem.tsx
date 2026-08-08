@@ -35,6 +35,7 @@ import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/u
 const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
+const ANSWER_BLOCK_STAGGER_MS = 42;
 
 /**
  * Safe URL protocols whitelist
@@ -331,6 +332,13 @@ function getImageAspectRatio(block: ImageBlock): React.CSSProperties {
   return { aspectRatio: `${block.width} / ${block.height}` };
 }
 
+function getAnswerBlockRevealStyle(index: number): React.CSSProperties {
+  return {
+    '--answer-block-index': index,
+    '--answer-block-delay': `${Math.min(index, 8) * ANSWER_BLOCK_STAGGER_MS}ms`,
+  } as React.CSSProperties;
+}
+
 /**
  * Render one verified image block inside an assistant answer.
  *
@@ -483,14 +491,24 @@ function AnswerBlocksRenderer({
       {blocks.map((block, index) => {
         if (block.type === 'image_block') {
           return (
-            <div className={styles.answerBlockReveal} key={block.slotId || `image-${index}`}>
+            <div
+              className={styles.answerBlockReveal}
+              data-answer-block-index={index}
+              key={block.slotId || `image-${index}`}
+              style={getAnswerBlockRevealStyle(index)}
+            >
               <ImageBlockCard block={block} styles={styles} />
             </div>
           );
         }
 
         return (
-          <div className={styles.answerBlockReveal} key={`paragraph-${index}`}>
+          <div
+            className={styles.answerBlockReveal}
+            data-answer-block-index={index}
+            key={`paragraph-${index}`}
+            style={getAnswerBlockRevealStyle(index)}
+          >
             <StreamingMarkdown
               content={block.text}
               markdownComponents={markdownComponents}
@@ -894,11 +912,11 @@ export const MessageItem = memo(function MessageItem({
             {/* Message Bubble */}
             <div 
               ref={setBubbleRef}
-              className={cx(styles.bubble, styles.assistantBubble)}
+              className={cx(styles.bubble, styles.assistantBubble, styles.assistantBubbleReveal)}
               data-role="assistant-bubble"
             >
               {/* Message Content */}
-              <div className={styles.content}>
+              <div className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}>
                 {message.answerBlocks && message.answerBlocks.length > 0 ? (
                   <AnswerBlocksRenderer
                     blocks={message.answerBlocks}
@@ -918,7 +936,7 @@ export const MessageItem = memo(function MessageItem({
               {((message.sources && message.sources.length > 0) || 
                 (ragInfo?.sources && ragInfo.sources.length > 0) || 
                 (message.citations && message.citations.length > 0)) && (
-                <div className={styles.citationsWrapper}>
+                <div className={cx(styles.citationsWrapper, styles.citationsReveal)}>
                   <Citations 
                     messageId={message.id}
                     citations={message.citations || []} 
