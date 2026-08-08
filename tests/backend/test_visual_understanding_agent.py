@@ -42,6 +42,13 @@ class _DictCompletions:
         }
 
 
+class _MissingChoicesCompletions:
+    """Completion double with malformed provider response."""
+
+    async def create(self, **kwargs):
+        return {"unexpected": "shape"}
+
+
 @pytest.mark.asyncio
 async def test_visual_understanding_agent_sends_image_url_content_part():
     """The understanding agent should send the selected image itself to the model."""
@@ -136,3 +143,46 @@ async def test_visual_understanding_agent_accepts_dict_content_parts():
     assert result.source == "vision_model"
     assert result.image_type == "chart"
     assert result.how_to_read == ("Read the axis.",)
+
+
+@pytest.mark.asyncio
+async def test_visual_understanding_agent_logs_provider_call_stage(caplog):
+    """Provider-call failures should identify the failing stage."""
+
+    caplog.set_level("INFO")
+    agent = VisualUnderstandingAgent(timeout_seconds=1.0)
+
+    result = await agent.analyze(
+        client=SimpleNamespace(),
+        model="google/gemini-3.1-flash-lite",
+        image_url="https://example.edu/chart.png",
+        user_msg="請解釋這張圖",
+        visual_brief=None,
+        conversation_id="conversation-1",
+    )
+
+    assert result.source == "provider_unavailable"
+    assert "stage=provider_call" in caplog.text
+    assert "reason=AttributeError" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_visual_understanding_agent_logs_response_extract_stage(caplog):
+    """Malformed response containers should identify response extraction."""
+
+    caplog.set_level("INFO")
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_MissingChoicesCompletions()))
+    agent = VisualUnderstandingAgent(timeout_seconds=1.0)
+
+    result = await agent.analyze(
+        client=client,
+        model="google/gemini-3.1-flash-lite",
+        image_url="https://example.edu/chart.png",
+        user_msg="請解釋這張圖",
+        visual_brief=None,
+        conversation_id="conversation-1",
+    )
+
+    assert result.source == "provider_unavailable"
+    assert "stage=response_extract" in caplog.text
+    assert "reason=ValueError" in caplog.text

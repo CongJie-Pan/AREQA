@@ -106,10 +106,10 @@ class VisualUnderstandingAgent:
 
         source_domain = self._safe_domain(image_url)
         if not client:
-            self._log_unavailable(conversation_id, model, source_domain, "missing_model_client")
+            self._log_unavailable(conversation_id, model, source_domain, "validation", "missing_model_client")
             return VisualUnderstandingResult(source="missing_model_client")
         if not self._is_safe_image_url(image_url):
-            self._log_unavailable(conversation_id, model, source_domain, "invalid_image_url")
+            self._log_unavailable(conversation_id, model, source_domain, "validation", "invalid_image_url")
             return VisualUnderstandingResult(source="invalid_image_url")
 
         try:
@@ -124,10 +124,26 @@ class VisualUnderstandingAgent:
                     temperature=0,
                     max_tokens=500,
                 )
-            content = self._response_content(response)
-            result = self._result_from_payload(self._parse_json(content))
         except Exception as exc:
-            self._log_unavailable(conversation_id, model, source_domain, type(exc).__name__)
+            self._log_unavailable(conversation_id, model, source_domain, "provider_call", type(exc).__name__)
+            return VisualUnderstandingResult(source="provider_unavailable")
+
+        try:
+            content = self._response_content(response)
+        except Exception as exc:
+            self._log_unavailable(conversation_id, model, source_domain, "response_extract", type(exc).__name__)
+            return VisualUnderstandingResult(source="provider_unavailable")
+
+        try:
+            payload = self._parse_json(content)
+        except Exception as exc:
+            self._log_unavailable(conversation_id, model, source_domain, "json_parse", type(exc).__name__)
+            return VisualUnderstandingResult(source="provider_unavailable")
+
+        try:
+            result = self._result_from_payload(payload)
+        except Exception as exc:
+            self._log_unavailable(conversation_id, model, source_domain, "payload_validate", type(exc).__name__)
             return VisualUnderstandingResult(source="provider_unavailable")
 
         logger.info(
@@ -326,14 +342,16 @@ class VisualUnderstandingAgent:
         conversation_id: str,
         model: str,
         source_domain: str,
+        stage: str,
         reason: str,
     ) -> None:
         """Emit the stable failure event for image-understanding fallbacks."""
 
         logger.info(
-            "visual.understanding_unavailable conversation_id=%s model=%s source_domain=%s reason=%s",
+            "visual.understanding_unavailable conversation_id=%s model=%s source_domain=%s stage=%s reason=%s",
             conversation_id,
             model,
             source_domain or "unknown",
+            stage,
             reason,
         )
