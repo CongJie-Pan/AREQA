@@ -171,28 +171,54 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  sourceSnippetFrame: css`
+    max-height: calc(15px * 1.6 * 3);
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
+  `,
+
   sourceSnippet: css`
     font-size: 15px;
     color: rgba(255, 255, 255, 0.7);
     line-height: 1.6;
-    
-    // Clamp to 3 lines
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
 
     p,
-    ul,
-    ol,
     blockquote {
       margin: 0;
     }
 
+    p + p,
+    p + ul,
+    p + ol,
+    ul + p,
+    ol + p {
+      margin-top: 4px;
+    }
+
     ul,
     ol {
-      padding-left: 18px;
+      display: block;
+      margin: 0;
+      padding-left: 22px;
+      list-style-position: outside;
+    }
+
+    ul {
+      list-style-type: disc;
+    }
+
+    ol {
+      list-style-type: decimal;
+    }
+
+    li {
+      display: list-item;
+      padding-left: 2px;
+    }
+
+    li::marker {
+      color: rgba(255, 255, 255, 0.62);
+      font-weight: 600;
     }
 
     strong {

@@ -111,18 +111,28 @@ const citationMarkdownComponents: Components = {
  * Returns:
  *   A Markdown-rendered block with raw HTML skipped and unsafe elements removed.
  */
-function CitationMarkdown({ content, className }: { content: string; className: string }) {
+function CitationMarkdown({
+  content,
+  className,
+  contentClassName,
+}: {
+  content: string;
+  className: string;
+  contentClassName?: string;
+}) {
   return (
     <div className={className}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={citationMarkdownComponents}
-        disallowedElements={['img', 'script', 'iframe', 'object', 'embed']}
-        skipHtml
-        unwrapDisallowed
-      >
-        {content}
-      </ReactMarkdown>
+      <div className={contentClassName}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={citationMarkdownComponents}
+          disallowedElements={['img', 'script', 'iframe', 'object', 'embed']}
+          skipHtml
+          unwrapDisallowed
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -280,7 +290,11 @@ export function Citations({
                           </a>
                         )}
                       </div>
-                      <CitationMarkdown className={styles.sourceSnippet} content={src.snippet} />
+                      <CitationMarkdown
+                        className={styles.sourceSnippetFrame}
+                        contentClassName={styles.sourceSnippet}
+                        content={src.snippet}
+                      />
                     </div>
                   );
                 })}

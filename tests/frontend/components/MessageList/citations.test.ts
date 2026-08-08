@@ -89,6 +89,24 @@ describe('Citations structured sources', () => {
     expect(screen.getByText('bad').closest('a')).toBeNull();
   });
 
+  it('renders Markdown list items inside source cards', () => {
+    render(React.createElement(Citations, {
+      messageId: 'msg-list',
+      sources: [{
+        title: 'Markdown List Source',
+        chunk_id: 'https://example.com/list-source',
+        url: 'https://example.com/list-source',
+        snippet: '- 第一點\n- 第二點\n\n1. 第一項\n2. 第二項',
+      }],
+      defaultExpanded: true,
+    }));
+
+    expect(screen.getByText('第一點').tagName).toBe('LI');
+    expect(screen.getByText('第二點').tagName).toBe('LI');
+    expect(screen.getByText('第一項').tagName).toBe('LI');
+    expect(screen.getAllByRole('listitem')).toHaveLength(4);
+  });
+
   it('opens only in-range citations for the same message', async () => {
     render(React.createElement(Citations, {
       messageId: 'msg-2',
