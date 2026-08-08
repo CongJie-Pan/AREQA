@@ -27,6 +27,29 @@ function renderMessage(message: DisplayMessage) {
 }
 
 describe('MessageItem visual answer rendering', () => {
+  it('stagger-reveals answer blocks from top to bottom', () => {
+    const { container } = renderMessage(
+      assistantMessage([
+        {
+          type: 'paragraph',
+          text: '第一段。',
+        },
+        {
+          type: 'paragraph',
+          text: '第二段。',
+        },
+      ]),
+    );
+
+    const blocks = Array.from(container.querySelectorAll('[data-answer-block-index]'));
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toHaveAttribute('data-answer-block-index', '0');
+    expect(blocks[1]).toHaveAttribute('data-answer-block-index', '1');
+    expect(blocks[0]).toHaveStyle({ '--answer-block-delay': '0ms' });
+    expect(blocks[1]).toHaveStyle({ '--answer-block-delay': '42ms' });
+  });
+
   it('keeps a stable skeleton slot for pending image blocks', () => {
     renderMessage(
       assistantMessage([

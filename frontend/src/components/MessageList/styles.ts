@@ -16,6 +16,30 @@ const fadeIn = keyframes`
   }
 `;
 
+const verticalReveal = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+`;
+
+const messageShellReveal = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+`;
+
 const cursorBlink = keyframes`
   0%, 50% {
     opacity: 1;
@@ -366,6 +390,15 @@ export const useStyles = createStyles(({ css, token }) => ({
     color: #f0f0f0;
     align-self: flex-start;
   `,
+
+  assistantBubbleReveal: css`
+    animation: ${messageShellReveal} 200ms ease-out both;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  `,
+
 content: css`
   font-size: 16px;
   line-height: 1.8;
@@ -464,6 +497,32 @@ content: css`
   }
 `,
 
+streamingContentReveal: css`
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: -1px;
+    left: 0;
+    height: 18px;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      rgba(19, 15, 24, 0),
+      rgba(19, 15, 24, 0.88)
+    );
+    opacity: 0.55;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::after {
+      display: none;
+    }
+  }
+`,
+
 quoteBlock: css`
   display: flex;
   align-items: flex-start;
@@ -525,7 +584,15 @@ quoteBlockContent: css`
   `,
 
   answerBlockReveal: css`
-    animation: ${fadeIn} 180ms ease-out both;
+    animation: ${verticalReveal} 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--answer-block-delay, 0ms);
+    will-change: opacity, transform, filter;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      filter: none;
+      transform: none;
+    }
   `,
 
   thinkingPanelWrapper: css`
@@ -540,13 +607,25 @@ quoteBlockContent: css`
     min-width: 0;
   `,
 
+  citationsReveal: css`
+    animation: ${verticalReveal} 240ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  `,
+
   answerImageCard: css`
     width: min(100%, 520px);
     margin: 18px auto;
     overflow: hidden;
     border-radius: 18px;
     background: transparent;
-    animation: ${fadeIn} 220ms ease-out both;
+    animation: ${verticalReveal} 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
   `,
 
   answerImageExplanation: css`
@@ -554,6 +633,11 @@ quoteBlockContent: css`
     color: rgba(255, 255, 255, 0.86);
     font-size: 15px;
     line-height: 1.8;
+    animation: ${verticalReveal} 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
   `,
 
   answerImageButton: css`

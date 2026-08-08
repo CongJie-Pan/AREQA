@@ -3,13 +3,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Modal, Input, Dropdown, MenuProps, message, Button } from 'antd';
-import { User, LogOut, Edit3, MessageSquareText } from 'lucide-react';
+import { User, LogOut, Edit3, MessageSquareText, BrainCircuit } from 'lucide-react';
 import { Auth as SupabaseAuth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/lib/supabase';
 import { initializeAuth, useAuthStore } from '@/store/auth';
 
-export function UserAuthUI() {
+export interface UserAuthUIProps {
+  /** Opens the learner memory panel from the authenticated avatar menu. */
+  onOpenMemory?: () => void;
+}
+
+export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
   const user = useAuthStore((state) => state.user);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -76,6 +81,16 @@ export function UserAuthUI() {
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
 
   const menuItems: MenuProps['items'] = [
+    ...(onOpenMemory
+      ? [
+          {
+            key: 'memory',
+            icon: <BrainCircuit size={16} />,
+            label: '瀏覽記憶',
+            onClick: onOpenMemory,
+          },
+        ]
+      : []),
     {
       key: 'edit',
       icon: <Edit3 size={16} />,

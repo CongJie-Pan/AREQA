@@ -369,14 +369,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
   }, [antMessageApi]);
 
   return (
-    <div className={cx(styles.container, className)}>
+    <div className={cx('areqa-chat-shell', styles.container, className)}>
       {/* Sidebar Overlay (mobile) */}
       {sidebarOpen && (
         <div className={styles.sidebarOverlay} onClick={closeSidebar} />
       )}
 
       {/* Sidebar */}
-      <div className={cx(styles.sidebar, sidebarOpen && styles.sidebarOpen)}>
+      <div className={cx('areqa-chat-sidebar', styles.sidebar, sidebarOpen && styles.sidebarOpen)}>
         <ConversationList
           onSelect={handleConversationSelect}
           onNew={handleNewConversation}
@@ -389,10 +389,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
       </div>
 
       {/* Main Content */}
-      <div className={styles.main}>
+      <div className={cx('areqa-chat-main', styles.main)}>
         {/* Header */}
-        <div className={styles.header}>
-          <div className={styles.headerLeft}>
+        <div className={cx('areqa-chat-header', styles.header)}>
+          <div className={cx('areqa-chat-header-left', styles.headerLeft)}>
             <button
               className={cx(styles.menuButton, sidebarOpen && styles.menuButtonVisible)}
               onClick={toggleSidebar}
@@ -405,7 +405,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
             </h1>
           </div>
           
-          <div className={styles.headerRight}>
+          <div className={cx('areqa-chat-header-right', styles.headerRight)}>
             {!gumPanelType && !isEmpty && (
               <Dropdown
                 menu={{
@@ -463,7 +463,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
         )}
 
         {/* Content Area */}
-        <div className={cx(styles.content, isEmpty && !gumPanelType && styles.contentEmpty)}>
+        <div
+          className={cx(
+            'areqa-chat-content',
+            isEmpty && !gumPanelType && 'areqa-chat-content-empty',
+            styles.content,
+            isEmpty && !gumPanelType && styles.contentEmpty,
+          )}
+        >
           {gumPanelType === 'mailbox' ? (
             <MailboxPanel onClose={() => setGumPanelType(null)} />
           ) : gumPanelType === 'memory' ? (
@@ -475,7 +482,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
           ) : (
             <>
               {/* Message List */}
-              <div id="export-chat-container" className={styles.messageArea}>
+              <div id="export-chat-container" className={cx('areqa-chat-message-area', styles.messageArea)}>
                 <MessageList 
                   onRegenerate={handleRegenerate} 
                   onEdit={handleEdit} 
@@ -484,7 +491,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
               </div>
 
               {/* Chat Input */}
-              <div className={styles.inputArea}>
+              <div className={cx('areqa-chat-input-area', styles.inputArea)}>
                 <ChatInput
                   key={activeConversationId ?? 'new'}
                   onSend={handleSend}

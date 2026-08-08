@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image';
 import { App, Dropdown, Input, Modal, Spin } from 'antd';
 import type { MenuProps } from 'antd';
-import { MoreHorizontal, Pencil, Pin, PinOff, Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, BrainCircuit, Mail as MailIcon } from 'lucide-react';
+import { MoreHorizontal, Pencil, Pin, PinOff, Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
 import { useConversationStore } from '@/store/conversation';
 import { useMailboxStore } from '@/store/mailbox';
 import { useStyles } from './styles';
@@ -257,10 +257,6 @@ export function ConversationList({
           <span>新對話</span>
         </button>
         <div className={styles.divider} />
-        <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('memory')}>
-          <BrainCircuit size={18} />
-          <span>瀏覽記憶</span>
-        </button>
         <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('mailbox')}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
             <MailIcon size={18} />
@@ -387,7 +383,7 @@ export function ConversationList({
       </div>
 
       {/* User Auth UI Area */}
-      <UserAuthUI />
+      <UserAuthUI onOpenMemory={() => onSelectGumPanel?.('memory')} />
       <Modal
         confirmLoading={isRenaming}
         okButtonProps={{ disabled: !renameValue.trim() }}
