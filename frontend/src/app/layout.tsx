@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
-import { ConfigProvider, theme, App } from 'antd';
+import { AppProviders } from './providers';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 import { PwaLaunchScreen } from '@/components/PwaLaunchScreen';
@@ -50,26 +50,11 @@ export default function RootLayout({
       >
         <ErrorBoundary>
           <AntdRegistry>
-            <ConfigProvider
-              theme={{
-                algorithm: theme.darkAlgorithm,
-                token: {
-                  colorPrimary: '#d8a25c',
-                  colorInfo: '#d8a25c',
-                  colorBgBase: '#130f18',
-                  colorBgContainer: '#1e1826',
-                  colorBgElevated: '#1e1826',
-                  colorBgLayout: '#130f18',
-                  colorTextBase: '#f0f0f0',
-                },
-              }}
-            >
-              <App>
-                <PwaLaunchScreen />
-                {children}
-                <PwaInstallPrompt />
-              </App>
-            </ConfigProvider>
+            <AppProviders>
+              <PwaLaunchScreen />
+              {children}
+              <PwaInstallPrompt />
+            </AppProviders>
           </AntdRegistry>
         </ErrorBoundary>
       </body>
