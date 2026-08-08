@@ -83,6 +83,12 @@ export interface ImageBlock {
   attributionString?: string;
   attributionCaption?: string;
   explanatoryCaption?: string;
+  visionSummary?: string;
+  visibleElements?: string[];
+  howToRead?: string[];
+  visionConfidence?: 'high' | 'medium' | 'low' | 'unknown' | string;
+  visionLimitations?: string[];
+  visionSource?: 'vision_model' | 'missing_model_client' | 'invalid_image_url' | 'provider_unavailable' | string;
   status?: 'pending' | 'resolved' | 'error';
   width?: number;
   height?: number;

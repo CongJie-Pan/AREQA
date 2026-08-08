@@ -151,6 +151,12 @@ class ImageBlock:
         match_confidence: Conservative confidence score from metadata matching.
         heuristic_score: Cheap metadata-only relevance score.
         pedagogical_score: Cheap instructional usefulness score.
+        vision_summary: Optional vision-model summary of visible content.
+        visible_elements: Optional bounded list of visible image elements.
+        how_to_read: Optional ordered reading guidance from the vision model.
+        vision_confidence: Optional confidence label from the vision model.
+        vision_limitations: Optional bounded uncertainty notes.
+        vision_source: Stable source label for image-understanding metadata.
     """
 
     slot_id: str
@@ -174,6 +180,12 @@ class ImageBlock:
     match_confidence: float = 0.0
     heuristic_score: float = 0.0
     pedagogical_score: float = 0.0
+    vision_summary: str = ""
+    visible_elements: tuple[str, ...] = ()
+    how_to_read: tuple[str, ...] = ()
+    vision_confidence: str = "unknown"
+    vision_limitations: tuple[str, ...] = ()
+    vision_source: str = "unavailable"
 
     def to_frontend(self) -> dict[str, Any]:
         """Return the camelCase wire shape consumed by the frontend."""
@@ -207,6 +219,18 @@ class ImageBlock:
             payload["creator"] = self.creator
         if self.attribution_string:
             payload["attributionString"] = self.attribution_string
+        if self.vision_summary:
+            payload["visionSummary"] = self.vision_summary
+        if self.visible_elements:
+            payload["visibleElements"] = list(self.visible_elements)
+        if self.how_to_read:
+            payload["howToRead"] = list(self.how_to_read)
+        if self.vision_confidence and self.vision_confidence != "unknown":
+            payload["visionConfidence"] = self.vision_confidence
+        if self.vision_limitations:
+            payload["visionLimitations"] = list(self.vision_limitations)
+        if self.vision_source and self.vision_source != "unavailable":
+            payload["visionSource"] = self.vision_source
         if self.width is not None:
             payload["width"] = self.width
         if self.height is not None:
@@ -693,6 +717,12 @@ class VisualAnswerService:
             match_confidence=block.match_confidence,
             heuristic_score=block.heuristic_score,
             pedagogical_score=block.pedagogical_score,
+            vision_summary=block.vision_summary,
+            visible_elements=block.visible_elements,
+            how_to_read=block.how_to_read,
+            vision_confidence=block.vision_confidence,
+            vision_limitations=block.vision_limitations,
+            vision_source=block.vision_source,
         )
 
     @staticmethod
@@ -2354,7 +2384,26 @@ class VisualAnswerService:
             match_confidence=float(payload.get("matchConfidence") or 0.0),
             heuristic_score=float(payload.get("heuristicScore") or 0.0),
             pedagogical_score=float(payload.get("pedagogicalScore") or 0.0),
+            vision_summary=str(payload.get("visionSummary") or ""),
+            visible_elements=VisualAnswerService._string_tuple(payload.get("visibleElements"), 10, 140),
+            how_to_read=VisualAnswerService._string_tuple(payload.get("howToRead"), 8, 180),
+            vision_confidence=str(payload.get("visionConfidence") or "unknown"),
+            vision_limitations=VisualAnswerService._string_tuple(payload.get("visionLimitations"), 6, 160),
+            vision_source=str(payload.get("visionSource") or "unavailable"),
         )
+
+    @staticmethod
+    def _string_tuple(value: Any, max_items: int, max_length: int) -> tuple[str, ...]:
+        """Convert cached list payloads into bounded string tuples."""
+
+        if not isinstance(value, list):
+            return ()
+        output: list[str] = []
+        for item in value[:max_items]:
+            text = VisualAnswerService._clean_text(str(item or ""))[:max_length]
+            if text:
+                output.append(text)
+        return tuple(output)
 
     @staticmethod
     def _split_paragraphs(answer_text: str) -> list[str]:

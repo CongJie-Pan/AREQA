@@ -50,6 +50,7 @@ from services.turn_intake_service import (
     is_stop_roleplay_request as _is_stop_roleplay_request,
     normalize_avatar_name as _normalize_avatar_name,
 )
+from services.output_image_service import OutputImageService
 from services.visual_answer_service import VisualAnswerService
 
 
@@ -173,6 +174,7 @@ class OrchestrationService:
         )
         self.post_turn_service = PostTurnService(suggestion_service)
         self.visual_answer_service = VisualAnswerService()
+        self.output_image_service = OutputImageService()
         self.turn_intake_service = TurnIntakeService(client)
         self.turn_plan_service = TurnPlanService(self.memory_policy)
         self.web_search_tool = WebSearchTool()
@@ -593,7 +595,8 @@ class OrchestrationService:
         preverified_image_blocks = None
         if settings.enable_visual_preflight:
             trace.mark("visual_preflight_started")
-            preverified_image_blocks = await self.visual_answer_service.prepare_preflight_image_blocks(
+            preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
+                visual_answer_service=self.visual_answer_service,
                 user_msg=last_user_msg,
                 response_policy=response_policy,
                 existing_web_results=run_state.web_search_results,
@@ -801,6 +804,11 @@ class OrchestrationService:
                     "id": slot_id,
                     "topic": block.topic,
                     "caption": block.caption,
+                    "vision_summary": block.vision_summary,
+                    "visible_elements": list(block.visible_elements),
+                    "how_to_read": list(block.how_to_read),
+                    "vision_confidence": block.vision_confidence,
+                    "vision_limitations": list(block.vision_limitations),
                     "source_domain": block.source_domain,
                     "license": block.license,
                     "width": block.width,
@@ -813,7 +821,8 @@ class OrchestrationService:
                 "你只能使用清單中的 id，不能自行編造圖片、URL 或來源。"
                 "若圖片能幫助理解，請在最自然的位置輸出標記："
                 '[[AREQA_VERIFIED_IMAGE id="img_1"]]。'
-                "標記前後要用自然文字銜接，並依據圖片 caption/source 寫解釋；"
+                "標記前後要用自然文字銜接，並優先依據 vision_summary、visible_elements、how_to_read 解釋這張圖；"
+                "若 vision_summary 為空，才退回依據圖片 caption/source 做有限解釋；"
                 "不得輸出 [[AREQA_IMAGE_REQUEST ...]]。"
                 f"\n<verified_images>{json.dumps(inventory, ensure_ascii=False)}</verified_images>"
             )

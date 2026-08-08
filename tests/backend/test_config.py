@@ -15,6 +15,7 @@ def test_settings_loads_defaults():
     assert s.model_suggestion == "google/gemini-2.5-flash-lite"
     assert s.model_cold_memory_embedding == "openai/text-embedding-3-small"
     assert s.model_memory_semantic_analyzer == "google/gemini-2.5-flash-lite"
+    assert s.model_visual_understanding == "google/gemini-3.1-flash-lite"
     assert s.memory_semantic_analysis_enabled is False
     assert s.memory_semantic_shadow_mode is True
     assert s.memory_semantic_match_min_confidence == 0.85
@@ -50,6 +51,7 @@ def test_settings_can_be_overridden_by_env():
         'MODEL_SUGGESTION': 'google/gemini-2.5-flash-lite',
         'MODEL_COLD_MEMORY_EMBEDDING': 'openai/text-embedding-3-small',
         'MODEL_MEMORY_SEMANTIC_ANALYZER': 'google/gemini-2.5-flash-lite',
+        'MODEL_VISUAL_UNDERSTANDING': 'google/gemini-3.1-flash-lite',
         'MEMORY_SEMANTIC_ANALYSIS_ENABLED': 'true',
         'ENABLE_TURN_PLAN_RUNTIME': 'true',
         'FOREGROUND_MODEL_CALL_BUDGET_GENERAL': '4',
@@ -72,6 +74,7 @@ def test_settings_can_be_overridden_by_env():
         assert s.model_suggestion == 'google/gemini-2.5-flash-lite'
         assert s.model_cold_memory_embedding == 'openai/text-embedding-3-small'
         assert s.model_memory_semantic_analyzer == 'google/gemini-2.5-flash-lite'
+        assert s.model_visual_understanding == 'google/gemini-3.1-flash-lite'
         assert s.memory_semantic_analysis_enabled is True
         assert s.enable_turn_plan_runtime is True
         assert s.foreground_model_call_budget_general == 4

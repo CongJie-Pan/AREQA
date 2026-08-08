@@ -66,6 +66,11 @@ def test_verified_visual_instruction_injects_inventory():
         license="CC BY-SA 4.0",
         safety_status="pass",
         match_confidence=0.8,
+        vision_summary="A map showing Pacific War expansion and retreat.",
+        visible_elements=("island chains", "movement arrows"),
+        how_to_read=("Compare arrows across years.",),
+        vision_confidence="high",
+        vision_source="vision_model",
     )
 
     result = OrchestrationService._add_verified_visual_instruction(
@@ -77,6 +82,9 @@ def test_verified_visual_instruction_injects_inventory():
     assert "已驗證圖片清單" in system_prompt
     assert "[[AREQA_VERIFIED_IMAGE id=\"img_1\"]]" in system_prompt
     assert "Pacific War map" in system_prompt
+    assert "vision_summary" in system_prompt
+    assert "movement arrows" in system_prompt
+    assert "how_to_read" in system_prompt
     assert "https://upload.wikimedia.org" not in system_prompt
 
 

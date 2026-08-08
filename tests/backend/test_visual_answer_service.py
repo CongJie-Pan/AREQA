@@ -195,6 +195,36 @@ def test_visual_search_query_rewrites_meta_analysis_prompt():
     assert rule == "meta_analysis_forest_plot"
 
 
+def test_image_block_frontend_payload_includes_vision_analysis():
+    """Image blocks should carry vision-model analysis to prompt and UI layers."""
+
+    block = ImageBlock(
+        slot_id="img_1",
+        topic="Forest plot",
+        purpose="diagram",
+        image_url="https://example.edu/forest.png",
+        thumbnail_url="https://example.edu/forest.png",
+        source_url="https://example.edu/source",
+        source_domain="example.edu",
+        caption="Forest plot example",
+        vision_summary="A forest plot with study rows, confidence intervals, and a summary diamond.",
+        visible_elements=("null line OR=1", "95% CI", "summary diamond"),
+        how_to_read=("Check whether intervals cross the null line.",),
+        vision_confidence="high",
+        vision_limitations=("Small labels may be hard to read.",),
+        vision_source="vision_model",
+    )
+
+    payload = block.to_frontend()
+    restored = VisualAnswerService._image_block_from_frontend(payload)
+
+    assert payload["visionSummary"].startswith("A forest plot")
+    assert payload["visibleElements"] == ["null line OR=1", "95% CI", "summary diamond"]
+    assert payload["howToRead"] == ["Check whether intervals cross the null line."]
+    assert restored.vision_summary == block.vision_summary
+    assert restored.visible_elements == block.visible_elements
+
+
 @pytest.mark.parametrize(
     ("prompt", "expected_query", "expected_rule"),
     [

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     model_suggestion: str = "google/gemini-2.5-flash-lite"
     model_cold_memory_embedding: str = "openai/text-embedding-3-small"
     model_memory_semantic_analyzer: str = "google/gemini-2.5-flash-lite"
+    model_visual_understanding: str = "google/gemini-3.1-flash-lite"
 
     # RAG Parameters
     rag_max_docs: int = 7
@@ -64,6 +65,8 @@ class Settings(BaseSettings):
     visual_grounding_timeout_seconds: float = 1.5
     visual_grounding_max_candidates: int = 3
     visual_preflight_grounding_max_candidates: int = 2
+    enable_visual_understanding: bool = True
+    visual_understanding_timeout_seconds: float = 4.0
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.
