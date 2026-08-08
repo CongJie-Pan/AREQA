@@ -277,4 +277,19 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('第二段')).toBeInTheDocument();
     expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });
+
+  it('uses Streamdown animated spans for streaming assistant markdown', () => {
+    const { container } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '串流動畫測試',
+        }}
+        isStreaming={true}
+      />
+    );
+
+    expect(screen.getByText('串')).toBeInTheDocument();
+    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+  });
 });

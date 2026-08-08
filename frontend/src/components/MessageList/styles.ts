@@ -29,15 +29,6 @@ const verticalReveal = keyframes`
   }
 `;
 
-const softReveal = keyframes`
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-`;
-
 const messageShellReveal = keyframes`
   from {
     opacity: 0;
@@ -511,53 +502,6 @@ streamingContentReveal: css`
 
   @media (prefers-reduced-motion: reduce) {
     transform: none;
-  }
-`,
-
-streamingMarkdownRows: css`
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-`,
-
-streamingMarkdownMask: css`
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 calc(100% - 24px),
-    rgba(0, 0, 0, 0.45) calc(100% - 8px),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    #000 calc(100% - 24px),
-    rgba(0, 0, 0, 0.45) calc(100% - 8px),
-    transparent 100%
-  );
-
-  @media (prefers-reduced-motion: reduce) {
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-`,
-
-streamingRowBase: css`
-  > :first-child {
-    margin-top: 0;
-  }
-
-  > :last-child {
-    margin-bottom: 0;
-  }
-`,
-
-streamingRowReveal: css`
-  opacity: 0;
-  animation: ${softReveal} 220ms ease-out both;
-  will-change: opacity;
-
-  @media (prefers-reduced-motion: reduce) {
-    opacity: 1;
-    animation: none;
   }
 `,
 

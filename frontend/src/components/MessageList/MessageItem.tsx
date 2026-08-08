@@ -7,6 +7,8 @@
 
 import React, { memo, useCallback, useState } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
+import { Streamdown, type Components as StreamdownComponents } from 'streamdown';
+import { math } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -26,7 +28,6 @@ import type {
   MessageFeedbackReason,
 } from '@/database/schema';
 import { useStyles } from './styles';
-import remend from 'remend';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
@@ -36,6 +37,15 @@ const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
 const ANSWER_BLOCK_STAGGER_MS = 42;
+const STREAMDOWN_ANIMATION = {
+  animation: 'fadeIn',
+  duration: 160,
+  easing: 'ease-out',
+  sep: 'char',
+  stagger: 6,
+} as const;
+const STREAMDOWN_PLUGINS = { math };
+const STREAMDOWN_LINK_SAFETY = { enabled: false };
 
 /**
  * Safe URL protocols whitelist
@@ -117,90 +127,6 @@ function useThrottledValue<T>(value: T, delayMs: number): T {
   }, [delayMs, value]);
 
   return throttledValue;
-}
-
-function getRevealLineType(line: string): string {
-  const trimmed = line.trim();
-  if (/^(```|~~~)/.test(trimmed)) return 'fence';
-  if (/^\$\$/.test(trimmed)) return 'math';
-  if (/^#{1,6}\s+/.test(trimmed)) return 'heading';
-  if (/^([-*_]\s*){3,}$/.test(trimmed)) return 'rule';
-  if (/^>/.test(trimmed)) return 'quote';
-  if (/^(\s*)([-*+]|\d+[.)])\s+/.test(line)) return 'list';
-  if (trimmed.includes('|')) return 'table';
-  return 'paragraph';
-}
-
-/**
- * Split rendered Markdown into top-level reveal units.
- *
- * Args:
- *   content: Markdown content after citation and math normalization.
- *
- * Returns:
- *   Markdown fragments that can be rendered independently with a vertical
- *   stagger. Structural blocks are kept intact so lists, tables, quotes, code
- *   fences, and display math do not break while streaming.
- */
-export function splitMarkdownRevealRows(content: string): string[] {
-  const rows: string[] = [];
-  const current: string[] = [];
-  let currentType = '';
-  let fencedBy: '```' | '~~~' | '$$' | null = null;
-
-  const flush = () => {
-    const row = current.join('\n').trim();
-    if (row) rows.push(row);
-    current.length = 0;
-    currentType = '';
-  };
-
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      flush();
-      continue;
-    }
-
-    if (fencedBy) {
-      current.push(line);
-      if (trimmed.startsWith(fencedBy)) {
-        fencedBy = null;
-        flush();
-      }
-      continue;
-    }
-
-    const lineType = getRevealLineType(line);
-    if (lineType === 'fence' || lineType === 'math') {
-      flush();
-      fencedBy = lineType === 'fence' && trimmed.startsWith('~~~') ? '~~~' : lineType === 'fence' ? '```' : '$$';
-      current.push(line);
-      if (lineType === 'math' && trimmed.length > 2 && trimmed.endsWith('$$')) {
-        fencedBy = null;
-        flush();
-      }
-      continue;
-    }
-
-    if (lineType === 'heading' || lineType === 'rule') {
-      flush();
-      current.push(line);
-      flush();
-      continue;
-    }
-
-    if (currentType && currentType !== lineType) {
-      flush();
-    }
-
-    currentType = lineType;
-    current.push(line);
-  }
-
-  flush();
-  return rows;
 }
 
 const createMarkdownComponents = (
@@ -380,57 +306,31 @@ export function normalizeCitationMarkers(content: string): string {
 function StreamingMarkdown({
   content,
   markdownComponents,
-  styles,
   isStreaming,
 }: {
   content: string;
   markdownComponents: Components;
-  styles: ReturnType<typeof useStyles>['styles'];
   isStreaming?: boolean;
 }) {
   const throttledContent = useThrottledValue(content, STREAMING_MARKDOWN_FLUSH_MS);
   const deferredContent = React.useDeferredValue(throttledContent);
   const processedContent = React.useMemo(() => {
-    let text = deferredContent;
-    try {
-      // Use remend to safely close incomplete markdown tags during streaming
-      text = remend(text);
-    } catch {
-      // remend might fail on some Edge cases
-    }
-    return normalizeDisplayMathBlocks(normalizeCitationMarkers(text));
+    return normalizeDisplayMathBlocks(normalizeCitationMarkers(deferredContent));
   }, [deferredContent]);
-  const revealRows = React.useMemo(() => splitMarkdownRevealRows(processedContent), [processedContent]);
 
   return (
-    <div className={[
-      styles.streamingMarkdownRows,
-      isStreaming && styles.streamingMarkdownMask,
-    ].filter(Boolean).join(' ')}>
-      {revealRows.map((row, index) => {
-        const rowClassName = [
-          styles.streamingRowBase,
-          styles.streamingRowReveal,
-        ].filter(Boolean).join(' ');
-
-        return (
-          <div
-            className={rowClassName}
-            data-streaming-row-index={index}
-            key={`row-${index}`}
-          >
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
-              components={markdownComponents}
-              disallowedElements={['script', 'iframe', 'object', 'embed']}
-            >
-              {row}
-            </ReactMarkdown>
-          </div>
-        );
-      })}
-    </div>
+    <Streamdown
+      animated={STREAMDOWN_ANIMATION}
+      components={markdownComponents as StreamdownComponents}
+      controls={false}
+      disallowedElements={['script', 'iframe', 'object', 'embed']}
+      isAnimating={isStreaming}
+      linkSafety={STREAMDOWN_LINK_SAFETY}
+      mode="streaming"
+      plugins={STREAMDOWN_PLUGINS}
+    >
+      {processedContent}
+    </Streamdown>
   );
 }
 
@@ -633,7 +533,6 @@ function AnswerBlocksRenderer({
             <StreamingMarkdown
               content={block.text}
               markdownComponents={markdownComponents}
-              styles={styles}
               isStreaming={false}
             />
           </div>
@@ -1050,7 +949,6 @@ export const MessageItem = memo(function MessageItem({
                   <StreamingMarkdown
                     content={message.content}
                     markdownComponents={markdownComponents}
-                    styles={styles}
                     isStreaming={isStreaming && !thinking?.isThinking}
                   />
                 )}

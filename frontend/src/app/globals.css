@@ -1,8 +1,20 @@
 @import "tailwindcss";
+@import "streamdown/styles.css";
+
+@source "../../node_modules/streamdown/dist/*.js";
 
 :root {
   --background: #130f18;
   --foreground: #f0f0f0;
+  --card: #1b1622;
+  --card-foreground: #f0f0f0;
+  --muted: #26202f;
+  --muted-foreground: rgba(255, 255, 255, 0.62);
+  --border: rgba(255, 255, 255, 0.13);
+  --input: rgba(255, 255, 255, 0.13);
+  --primary: #f0f0f0;
+  --primary-foreground: #130f18;
+  --radius: 0.625rem;
 }
 
 html {
