@@ -500,26 +500,36 @@ content: css`
 streamingContentReveal: css`
   position: relative;
 
-  &::after {
-    content: "";
-    position: absolute;
-    right: 0;
-    bottom: -1px;
-    left: 0;
-    height: 18px;
-    pointer-events: none;
-    background: linear-gradient(
-      to bottom,
-      rgba(19, 15, 24, 0),
-      rgba(19, 15, 24, 0.88)
-    );
-    opacity: 0.55;
+  @media (prefers-reduced-motion: reduce) {
+    transform: none;
+  }
+`,
+
+streamingMarkdownRows: css`
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+`,
+
+streamingRowReveal: css`
+  opacity: 0;
+  animation: ${verticalReveal} 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--streaming-row-delay, 0ms);
+  will-change: opacity, transform, filter;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    &::after {
-      display: none;
-    }
+    opacity: 1;
+    animation: none;
+    filter: none;
+    transform: none;
   }
 `,
 
@@ -660,9 +670,28 @@ quoteBlockContent: css`
   answerImagePendingFrame: css`
     position: relative;
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     overflow: hidden;
     border-radius: 18px;
     background: rgba(255, 255, 255, 0.05);
+  `,
+
+  answerImagePendingLabel: css`
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    z-index: 1;
+    max-width: calc(100% - 32px);
+    transform: translateX(-50%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: center;
   `,
 
   answerImageSkeletonLayer: css`

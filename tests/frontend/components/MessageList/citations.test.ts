@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { Citations } from '@/components/Citations';
-import { normalizeCitationMarkers } from '@/components/MessageList/MessageItem';
+import { normalizeCitationMarkers, splitMarkdownRevealRows } from '@/components/MessageList/MessageItem';
 
 describe('normalizeCitationMarkers', () => {
   it('converts Markdown-style 文獻 markers into clickable citation links', () => {
@@ -20,6 +20,28 @@ describe('normalizeCitationMarkers', () => {
   it('does not rewrite an existing Markdown link', () => {
     const content = '[文獻5](https://example.com/source)';
     expect(normalizeCitationMarkers(content)).toBe(content);
+  });
+});
+
+describe('splitMarkdownRevealRows', () => {
+  it('creates top-level reveal rows without splitting structural Markdown blocks', () => {
+    expect(splitMarkdownRevealRows([
+      '# 標題',
+      '',
+      '第一段內容',
+      '',
+      '- 重點一',
+      '- 重點二',
+      '',
+      '```ts',
+      'const value = 1;',
+      '```',
+    ].join('\n'))).toEqual([
+      '# 標題',
+      '第一段內容',
+      '- 重點一\n- 重點二',
+      '```ts\nconst value = 1;\n```',
+    ]);
   });
 });
 
