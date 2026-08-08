@@ -129,6 +129,31 @@ function useThrottledValue<T>(value: T, delayMs: number): T {
   return throttledValue;
 }
 
+/**
+ * Preserve the live-stream rendering mode after the terminal SSE packet.
+ *
+ * Args:
+ *   isStreaming: Whether this mounted message is currently receiving content.
+ *
+ * Returns:
+ *   True once this component instance has participated in a live stream.
+ *
+ * Side Effects:
+ *   Stores a mount-local flag. This is intentionally not persisted because
+ *   reloaded historical messages should use the normal static structured view.
+ */
+function useHasLiveStreamed(isStreaming?: boolean): boolean {
+  const [hasLiveStreamed, setHasLiveStreamed] = React.useState(Boolean(isStreaming));
+
+  React.useEffect(() => {
+    if (isStreaming) {
+      setHasLiveStreamed(true);
+    }
+  }, [isStreaming]);
+
+  return hasLiveStreamed;
+}
+
 const createMarkdownComponents = (
   messageId: string,
   enableMathCopy: boolean,
@@ -307,13 +332,16 @@ function StreamingMarkdown({
   content,
   markdownComponents,
   isStreaming,
+  hasLiveStreamed,
 }: {
   content: string;
   markdownComponents: Components;
   isStreaming?: boolean;
+  hasLiveStreamed?: boolean;
 }) {
   const throttledContent = useThrottledValue(content, STREAMING_MARKDOWN_FLUSH_MS);
   const deferredContent = React.useDeferredValue(throttledContent);
+  const shouldKeepAnimatedDom = useHasLiveStreamed(isStreaming || hasLiveStreamed);
   const processedContent = React.useMemo(() => {
     return normalizeDisplayMathBlocks(normalizeCitationMarkers(deferredContent));
   }, [deferredContent]);
@@ -324,7 +352,7 @@ function StreamingMarkdown({
       components={markdownComponents as StreamdownComponents}
       controls={false}
       disallowedElements={['script', 'iframe', 'object', 'embed']}
-      isAnimating={isStreaming}
+      isAnimating={shouldKeepAnimatedDom}
       linkSafety={STREAMDOWN_LINK_SAFETY}
       mode="streaming"
       plugins={STREAMDOWN_PLUGINS}
@@ -542,6 +570,29 @@ function AnswerBlocksRenderer({
   );
 }
 
+function ImageBlocksRenderer({ blocks, styles }: { blocks: AnswerBlock[]; styles: ReturnType<typeof useStyles>['styles'] }) {
+  return (
+    <>
+      {blocks.map((block, index) => {
+        if (block.type !== 'image_block') {
+          return null;
+        }
+
+        return (
+          <div
+            className={styles.answerBlockReveal}
+            data-answer-block-index={index}
+            key={block.slotId || `streamed-image-${index}`}
+            style={getAnswerBlockRevealStyle(index)}
+          >
+            <ImageBlockCard block={block} styles={styles} />
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * MessageItem displays a single chat message
  */
@@ -560,11 +611,14 @@ export const MessageItem = memo(function MessageItem({
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
   const isUser = message.role === 'user';
+  const hasLiveStreamed = useHasLiveStreamed(isStreaming && !thinking?.isThinking);
   const legacyMessage = React.useMemo(
     () => splitLegacyAttachmentMarker(message.content),
     [message.content],
   );
   const displayContent = isUser ? legacyMessage.content : message.content;
+  const hasAnswerBlocks = Boolean(message.answerBlocks && message.answerBlocks.length > 0);
+  const shouldUseStructuredAnswerBlocks = hasAnswerBlocks && (!hasLiveStreamed || !message.content);
   const displayAttachments = React.useMemo(() => {
     if (message.attachments && message.attachments.length > 0) return message.attachments;
     return createLegacyAttachmentMetadata(legacyMessage.legacyCount);
@@ -939,18 +993,24 @@ export const MessageItem = memo(function MessageItem({
             >
               {/* Message Content */}
               <div className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}>
-                {message.answerBlocks && message.answerBlocks.length > 0 ? (
+                {shouldUseStructuredAnswerBlocks ? (
                   <AnswerBlocksRenderer
-                    blocks={message.answerBlocks}
+                    blocks={message.answerBlocks ?? []}
                     markdownComponents={markdownComponents}
                     styles={styles}
                   />
                 ) : (
-                  <StreamingMarkdown
-                    content={message.content}
-                    markdownComponents={markdownComponents}
-                    isStreaming={isStreaming && !thinking?.isThinking}
-                  />
+                  <>
+                    <StreamingMarkdown
+                      content={message.content}
+                      markdownComponents={markdownComponents}
+                      isStreaming={isStreaming && !thinking?.isThinking}
+                      hasLiveStreamed={hasLiveStreamed}
+                    />
+                    {hasLiveStreamed && hasAnswerBlocks && (
+                      <ImageBlocksRenderer blocks={message.answerBlocks ?? []} styles={styles} />
+                    )}
+                  </>
                 )}
                 {/* Streaming cursor */}
                 {isStreaming && !thinking?.isThinking && (

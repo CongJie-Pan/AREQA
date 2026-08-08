@@ -292,4 +292,74 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('串')).toBeInTheDocument();
     expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
   });
+
+  it('keeps Streamdown animated spans after live streaming ends', () => {
+    const { container, rerender } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '串流動畫測試',
+        }}
+        isStreaming={true}
+      />
+    );
+
+    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+
+    rerender(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '串流動畫測試完成',
+        }}
+        isStreaming={false}
+      />
+    );
+
+    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+  });
+
+  it('does not replace live streamed markdown with paragraph answer blocks at completion', () => {
+    const streamedContent = '串流期間已顯示的回答';
+    const { container, rerender } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: streamedContent,
+        }}
+        isStreaming={true}
+      />
+    );
+
+    rerender(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: streamedContent,
+          answerBlocks: [
+            { type: 'paragraph', text: '不應在完成瞬間替換成這段' },
+            {
+              type: 'image_block',
+              slotId: 'visual-after-stream',
+              topic: 'Forest plot',
+              purpose: 'diagram',
+              imageUrl: 'https://example.com/forest.png',
+              sourceUrl: 'https://example.com/article',
+              sourceDomain: 'example.com',
+              caption: 'Forest plot example',
+              provider: 'wikimedia',
+              explanatoryCaption: '完成後補上的圖片說明。',
+              safetyStatus: 'pass',
+              matchConfidence: 0.6,
+            },
+          ],
+        }}
+        isStreaming={false}
+      />
+    );
+
+    expect(container).toHaveTextContent(streamedContent);
+    expect(screen.queryByText('不應在完成瞬間替換成這段')).not.toBeInTheDocument();
+    expect(screen.getByText('完成後補上的圖片說明。')).toBeInTheDocument();
+  });
 });
