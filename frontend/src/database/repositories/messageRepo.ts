@@ -156,6 +156,8 @@ export const messageRepo = {
           conv.updatedAt = new Date();
         });
     });
+
+    syncService.deleteMessage(id);
   },
 
   /**

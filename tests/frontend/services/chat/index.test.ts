@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendMessage, regenerateMessage } from '@/services/chat';
+import { sendMessage, regenerateMessage, editUserMessage } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -66,6 +66,11 @@ describe('Chat Service', () => {
       addAssistantMessage: vi.fn().mockReturnValue('assistant-msg-id'),
       addAssistantMessageAt: vi.fn().mockReturnValue('assistant-msg-id'),
       updateAssistantMessage: vi.fn(),
+      updateMessageContent: vi.fn((id, content) => {
+        mockChatStore.messages = mockChatStore.messages.map((message) =>
+          message.id === id ? { ...message, content } : message
+        );
+      }),
       startStreaming: vi.fn(),
       stopStreaming: vi.fn(),
       setError: vi.fn(),
@@ -76,6 +81,7 @@ describe('Chat Service', () => {
       endThinking: vi.fn(),
       endStreaming: vi.fn(),
       setCitations: vi.fn(),
+      setAnswerBlocks: vi.fn(),
       setRagStatus: vi.fn(),
       setRagSources: vi.fn(),
     };
@@ -375,6 +381,44 @@ describe('Chat Service', () => {
       expect(databaseService.message.delete).not.toHaveBeenCalled();
       expect(databaseService.message.update).not.toHaveBeenCalled();
       expect(mockChatStore.startStreaming).toHaveBeenCalledWith(targetId);
+    });
+  });
+
+  describe('editUserMessage', () => {
+    it('deletes superseded assistant replies before saving the edited response', async () => {
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'old question', conversationId: 'test-conv-id' },
+        { id: 'assistant-old', role: 'assistant', content: 'old answer', conversationId: 'test-conv-id' },
+      ];
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('new answer');
+        await callbacks.onDone();
+      });
+
+      await editUserMessage('user-1', 'edited question');
+
+      expect(mockChatStore.updateMessageContent).toHaveBeenCalledWith('user-1', 'edited question');
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('assistant-old');
+      expect(databaseService.message.update).toHaveBeenCalledWith('user-1', { content: 'edited question' });
+      expect(databaseService.message.delete).toHaveBeenCalledWith('assistant-old');
+      expect(databaseService.message.add).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({
+          id: 'assistant-msg-id',
+          role: 'assistant',
+          content: 'new answer',
+        }),
+      );
+      expect(createChatStream).toHaveBeenCalledWith(
+        [{ role: 'user', content: 'edited question' }],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        false,
+        false,
+        'auto',
+        'test-conv-id',
+      );
     });
   });
 });

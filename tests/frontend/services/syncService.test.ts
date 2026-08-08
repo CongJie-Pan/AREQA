@@ -38,6 +38,10 @@ const { mockConversationUpsert, mockMessageUpsert } = vi.hoisted(() => ({
   mockConversationUpsert: vi.fn(),
   mockMessageUpsert: vi.fn(),
 }));
+const { mockMessageDelete, mockMessageDeleteEq } = vi.hoisted(() => ({
+  mockMessageDelete: vi.fn(),
+  mockMessageDeleteEq: vi.fn(),
+}));
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -54,7 +58,8 @@ vi.mock('@/lib/supabase', () => ({
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockResolvedValue(mockSupabaseMsgResponse),
-          upsert: mockMessageUpsert.mockResolvedValue({ error: null })
+          upsert: mockMessageUpsert.mockResolvedValue({ error: null }),
+          delete: mockMessageDelete
         };
       }
       return {
@@ -70,6 +75,10 @@ describe('syncService - pullFromCloud', () => {
     mockReload.mockClear();
     mockConversationUpsert.mockClear();
     mockMessageUpsert.mockClear();
+    mockMessageDelete.mockClear();
+    mockMessageDeleteEq.mockClear();
+    mockMessageDelete.mockReturnValue({ eq: mockMessageDeleteEq });
+    mockMessageDeleteEq.mockReturnValue({ eq: mockMessageDeleteEq });
     await db.open();
     await db.conversations.clear();
     await db.messages.clear();
@@ -92,7 +101,7 @@ describe('syncService - pullFromCloud', () => {
     expect(convs).toHaveLength(0);
   });
 
-  it('should save data to Dexie and reload if cloud has data', async () => {
+  it('should save cloud data to Dexie without forcing a page reload', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: TimerHandler, _delay?: number, ...args: unknown[]) => {
       if (typeof callback === 'function') {
         callback(...args);
@@ -161,7 +170,7 @@ describe('syncService - pullFromCloud', () => {
 
       await syncService.pullFromCloud();
 
-      expect(mockReload).toHaveBeenCalledOnce();
+      expect(mockReload).not.toHaveBeenCalled();
 
       const convs = await db.conversations.toArray();
       expect(convs).toHaveLength(1);
@@ -252,6 +261,15 @@ describe('syncService - pullFromCloud', () => {
       suggestions: ['請再解釋一次'],
       reasoning: { content: 'Reasoning trace', duration: 120 },
     }));
+  });
+
+  it('should delete one cloud message scoped to the current user', async () => {
+    await syncService.deleteMessage('assistant_old');
+
+    expect(supabase.from).toHaveBeenCalledWith('messages');
+    expect(mockMessageDelete).toHaveBeenCalledOnce();
+    expect(mockMessageDeleteEq).toHaveBeenNthCalledWith(1, 'id', 'assistant_old');
+    expect(mockMessageDeleteEq).toHaveBeenNthCalledWith(2, 'user_id', 'user_123');
   });
 
   it('should preserve local reference metadata when legacy cloud rows omit it', async () => {

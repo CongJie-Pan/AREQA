@@ -304,6 +304,29 @@ export const syncService = {
   },
 
   /**
+   * Deletes one message from Supabase for the current user.
+   *
+   * Local message deletion is used by edit/regenerate flows to remove
+   * superseded assistant replies. The cloud delete keeps reload-time sync from
+   * reintroducing those stale replies into IndexedDB.
+   */
+  async deleteMessage(id: string) {
+    const userId = getCurrentUserId();
+    if (!userId || userId === 'default_user') return;
+
+    try {
+      await supabase
+        .from('messages')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
+    } catch (e) {
+      handleAuthError(e);
+      logger.error('Delete message error', e instanceof Error ? e : new Error(String(e)));
+    }
+  },
+
+  /**
    * Deletes a conversation from Supabase
    */
   async deleteConversation(id: string) {
