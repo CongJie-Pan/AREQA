@@ -36,7 +36,6 @@ const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
 const ANSWER_BLOCK_STAGGER_MS = 42;
-const STREAMING_ROW_STAGGER_MS = 38;
 
 /**
  * Safe URL protocols whitelist
@@ -378,20 +377,16 @@ export function normalizeCitationMarkers(content: string): string {
   });
 }
 
-function getStreamingRowRevealStyle(index: number): React.CSSProperties {
-  return {
-    '--streaming-row-delay': `${Math.min(index, 14) * STREAMING_ROW_STAGGER_MS}ms`,
-  } as React.CSSProperties;
-}
-
 function StreamingMarkdown({
   content,
   markdownComponents,
   styles,
+  isStreaming,
 }: {
   content: string;
   markdownComponents: Components;
   styles: ReturnType<typeof useStyles>['styles'];
+  isStreaming?: boolean;
 }) {
   const throttledContent = useThrottledValue(content, STREAMING_MARKDOWN_FLUSH_MS);
   const deferredContent = React.useDeferredValue(throttledContent);
@@ -408,24 +403,33 @@ function StreamingMarkdown({
   const revealRows = React.useMemo(() => splitMarkdownRevealRows(processedContent), [processedContent]);
 
   return (
-    <div className={styles.streamingMarkdownRows}>
-      {revealRows.map((row, index) => (
-        <div
-          className={styles.streamingRowReveal}
-          data-streaming-row-index={index}
-          key={`${index}-${row}`}
-          style={getStreamingRowRevealStyle(index)}
-        >
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
-            components={markdownComponents}
-            disallowedElements={['script', 'iframe', 'object', 'embed']}
+    <div className={[
+      styles.streamingMarkdownRows,
+      isStreaming && styles.streamingMarkdownMask,
+    ].filter(Boolean).join(' ')}>
+      {revealRows.map((row, index) => {
+        const rowClassName = [
+          styles.streamingRowBase,
+          styles.streamingRowReveal,
+        ].filter(Boolean).join(' ');
+
+        return (
+          <div
+            className={rowClassName}
+            data-streaming-row-index={index}
+            key={`row-${index}`}
           >
-            {row}
-          </ReactMarkdown>
-        </div>
-      ))}
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
+              components={markdownComponents}
+              disallowedElements={['script', 'iframe', 'object', 'embed']}
+            >
+              {row}
+            </ReactMarkdown>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -630,6 +634,7 @@ function AnswerBlocksRenderer({
               content={block.text}
               markdownComponents={markdownComponents}
               styles={styles}
+              isStreaming={false}
             />
           </div>
         );
@@ -1046,6 +1051,7 @@ export const MessageItem = memo(function MessageItem({
                     content={message.content}
                     markdownComponents={markdownComponents}
                     styles={styles}
+                    isStreaming={isStreaming && !thinking?.isThinking}
                   />
                 )}
                 {/* Streaming cursor */}

@@ -29,6 +29,15 @@ const verticalReveal = keyframes`
   }
 `;
 
+const softReveal = keyframes`
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+`;
+
 const messageShellReveal = keyframes`
   from {
     opacity: 0;
@@ -511,12 +520,27 @@ streamingMarkdownRows: css`
   gap: 0;
 `,
 
-streamingRowReveal: css`
-  opacity: 0;
-  animation: ${verticalReveal} 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: var(--streaming-row-delay, 0ms);
-  will-change: opacity, transform, filter;
+streamingMarkdownMask: css`
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 24px),
+    rgba(0, 0, 0, 0.45) calc(100% - 8px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 24px),
+    rgba(0, 0, 0, 0.45) calc(100% - 8px),
+    transparent 100%
+  );
 
+  @media (prefers-reduced-motion: reduce) {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+`,
+
+streamingRowBase: css`
   > :first-child {
     margin-top: 0;
   }
@@ -524,12 +548,16 @@ streamingRowReveal: css`
   > :last-child {
     margin-bottom: 0;
   }
+`,
+
+streamingRowReveal: css`
+  opacity: 0;
+  animation: ${softReveal} 220ms ease-out both;
+  will-change: opacity;
 
   @media (prefers-reduced-motion: reduce) {
     opacity: 1;
     animation: none;
-    filter: none;
-    transform: none;
   }
 `,
 
