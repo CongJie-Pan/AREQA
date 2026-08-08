@@ -18,7 +18,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     cursor: pointer;
     user-select: none;
     color: ${token.colorTextSecondary};
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 600;
 
     &:hover {
       color: ${token.colorText};
@@ -36,7 +37,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   count: css`
     color: ${token.colorTextQuaternary};
-    font-size: 12px;
+    font-size: 13px;
   `,
 
   list: css`
@@ -146,16 +147,32 @@ export const useStyles = createStyles(({ css, token }) => ({
   sourceTitle: css`
     flex: 1 1 auto;
     min-width: 0;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     color: #ffffff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    `,
 
-    sourceSnippet: css`
-    font-size: 13px;
+    p {
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    strong {
+      font-weight: 700;
+    }
+
+    a {
+      color: #ffffff;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  `,
+
+  sourceSnippet: css`
+    font-size: 15px;
     color: rgba(255, 255, 255, 0.7);
     line-height: 1.6;
     
@@ -165,5 +182,113 @@ export const useStyles = createStyles(({ css, token }) => ({
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
+
+    p,
+    ul,
+    ol,
+    blockquote {
+      margin: 0;
+    }
+
+    ul,
+    ol {
+      padding-left: 18px;
+    }
+
+    strong {
+      color: rgba(255, 255, 255, 0.88);
+      font-weight: 700;
+    }
+
+    em {
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    code {
+      padding: 1px 4px;
+      border-radius: ${token.borderRadiusXS}px;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.92em;
+    }
+
+    a {
+      color: #8cc8ff;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  `,
+
+  modalSourceTitle: css`
+    margin: 0;
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.45;
+
+    p {
+      margin: 0;
+    }
+
+    strong {
+      font-weight: 700;
+    }
+
+    a {
+      color: #ffffff;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  `,
+
+  modalSourceSnippet: css`
+    position: relative;
+    z-index: 1;
+    color: #f0f0f0;
+    font-size: 16px;
+    line-height: 1.8;
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    p:last-child,
+    ul:last-child,
+    ol:last-child,
+    blockquote:last-child {
+      margin-bottom: 0;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 10px;
+      padding-left: 22px;
+    }
+
+    blockquote {
+      margin: 0 0 10px;
+      padding-left: 12px;
+      border-left: 3px solid rgba(255, 77, 79, 0.5);
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    strong {
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: ${token.borderRadiusXS}px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      font-size: 0.92em;
+    }
+
+    a {
+      color: #8cc8ff;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
   `,
 }));

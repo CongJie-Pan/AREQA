@@ -6,6 +6,8 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import ReactMarkdown, { Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ChevronRight, ExternalLink, BookOpen, Quote } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Modal, Divider } from 'antd';
@@ -57,6 +59,72 @@ function getSourceUrl(src: CitationSource): string {
   } catch {
     return '';
   }
+}
+
+/**
+ * Validate Markdown links before rendering source text.
+ *
+ * Args:
+ *   url: Raw href emitted by the Markdown parser.
+ *
+ * Returns:
+ *   True when the href is safe to attach to the DOM. Source snippets come from
+ *   retrieval providers, so we only allow user-inspectable web/mail links and
+ *   local anchors instead of executable or browser-privileged protocols.
+ */
+function isSafeMarkdownUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const urlObj = new URL(url);
+    return ['http:', 'https:', 'mailto:'].includes(urlObj.protocol);
+  } catch {
+    return url.startsWith('#') || url.startsWith('/');
+  }
+}
+
+const citationMarkdownComponents: Components = {
+  a: ({ href, children }) => {
+    if (!isSafeMarkdownUrl(href)) {
+      return <span>{children}</span>;
+    }
+
+    return (
+      <a
+        href={href}
+        target={href?.startsWith('#') ? undefined : '_blank'}
+        rel={href?.startsWith('#') ? undefined : 'noopener noreferrer'}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </a>
+    );
+  },
+};
+
+/**
+ * Render citation provider text as constrained Markdown.
+ *
+ * Args:
+ *   content: Source title or snippet from the retrieval backend.
+ *   className: Presentation class for the target citation surface.
+ *
+ * Returns:
+ *   A Markdown-rendered block with raw HTML skipped and unsafe elements removed.
+ */
+function CitationMarkdown({ content, className }: { content: string; className: string }) {
+  return (
+    <div className={className}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={citationMarkdownComponents}
+        disallowedElements={['img', 'script', 'iframe', 'object', 'embed']}
+        skipHtml
+        unwrapDisallowed
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 /**
@@ -176,7 +244,10 @@ export function Citations({
                             }}
                           />
                         )}
-                        <span className={styles.sourceTitle}>{src.title || domain || '文獻來源'}</span>
+                        <CitationMarkdown
+                          className={styles.sourceTitle}
+                          content={src.title || domain || '文獻來源'}
+                        />
                         {sourceUrl && (
                           <a
                             href={sourceUrl}
@@ -209,9 +280,7 @@ export function Citations({
                           </a>
                         )}
                       </div>
-                      <div className={styles.sourceSnippet}>
-                        {src.snippet}
-                      </div>
+                      <CitationMarkdown className={styles.sourceSnippet} content={src.snippet} />
                     </div>
                   );
                 })}
@@ -296,7 +365,10 @@ export function Citations({
           return (
             <div style={{ padding: '4px 0' }}>
               <div style={{ marginBottom: '16px' }}>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#ffffff' }}>{selectedSource.title}</h3>
+                <CitationMarkdown
+                  className={styles.modalSourceTitle}
+                  content={selectedSource.title || '文獻來源'}
+                />
                 <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                   {selectedSourceUrl ? (
                     <>
@@ -354,13 +426,11 @@ export function Citations({
                 borderRadius: '12px',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 lineHeight: 1.8,
-                fontSize: '15px',
+                fontSize: '16px',
                 color: '#f0f0f0'
               }}>
                 <Quote size={24} style={{ position: 'absolute', top: '10px', left: '8px', opacity: 0.2, color: '#ff4d4f' }} />
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                  {selectedSource.snippet}
-                </div>
+                <CitationMarkdown className={styles.modalSourceSnippet} content={selectedSource.snippet} />
               </div>
 
               <div style={{ marginTop: '20px', textAlign: 'right', fontSize: '12px', color: '#bfbfbf' }}>

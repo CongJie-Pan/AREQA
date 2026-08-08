@@ -46,6 +46,27 @@ describe('Citations structured sources', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
+  it('renders source card text as safe Markdown', () => {
+    render(React.createElement(Citations, {
+      messageId: 'msg-markdown',
+      sources: [{
+        title: '**NASA** Starship Reference',
+        chunk_id: 'https://example.com/markdown-source',
+        url: 'https://example.com/markdown-source',
+        snippet: 'Includes **bold evidence** and [paper](https://example.com/paper). [bad](javascript:alert(1))',
+      }],
+      defaultExpanded: true,
+    }));
+
+    expect(screen.getByText('NASA').tagName).toBe('STRONG');
+    expect(screen.getByText('bold evidence').tagName).toBe('STRONG');
+    expect(screen.getByRole('link', { name: 'paper' })).toHaveAttribute(
+      'href',
+      'https://example.com/paper',
+    );
+    expect(screen.getByText('bad').closest('a')).toBeNull();
+  });
+
   it('opens only in-range citations for the same message', async () => {
     render(React.createElement(Citations, {
       messageId: 'msg-2',
