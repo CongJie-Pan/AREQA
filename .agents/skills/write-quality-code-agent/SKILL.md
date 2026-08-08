@@ -27,6 +27,8 @@ When requested to write, refactor, or debug code, you MUST strictly follow this 
 
 3. **Execute (Implementation)**:
    - Use the `write_file` tool to create or overwrite files with your high-quality code.
+   - For primary implementation changes, add concise runtime logs that make the new or changed behavior debuggable from the terminal. Prefer existing project logging utilities and stable event names. Logs MUST expose safe operational metadata such as component name, branch, state transition, counters, timing, provider name, or non-sensitive identifiers, and MUST NOT log raw user text, prompts, model output, credentials, tokens, secrets, API keys, or unnecessary personal data.
+   - Keep logging proportional to the change: add logs at important entry points, fallback paths, provider calls, validation failures, skipped branches, and error boundaries, but avoid noisy per-token, per-render, or tight-loop logs unless explicitly debugging a performance issue.
    - If necessary and safe, use the `run_shell_command` tool to run linters (e.g., `npm run lint`) or tests to verify your implementation.
 
 # Required Documentation and Comment Standard
@@ -35,6 +37,7 @@ When requested to write, refactor, or debug code, you MUST strictly follow this 
 - **Document Design Rationale**: Comments and docstrings MUST explain non-obvious design rationale, invariants, ownership boundaries, compatibility constraints, failure semantics, retry/idempotency behavior, and critical structured-log emissions.
 - **Inline Comments Must Explain Why**: Add inline comments only at complex decisions, state transitions, concurrency boundaries, policy checks, fallback paths, or error-handling branches where the reason is not obvious from the code. Do not write comments that merely repeat syntax, assignments, conditions, or control flow.
 - **Structured Logging Documentation**: When adding or changing critical structured logs, document the stable event name, safe metadata, correlation identifiers, log level, and privacy boundary. Never log or document instructions to log raw user text, prompts, model output, credentials, tokens, or unnecessary personal data.
+- **Terminal Debuggability**: Major implementation edits should leave enough safe structured logs for engineers to diagnose behavior from terminal output during local runs, CI logs, or service logs. If logging is intentionally omitted because the change is purely presentational, covered by existing logs, or would create noise, state that rationale in the final summary.
 - **Keep Comments Current**: Update or remove stale comments when changing behavior. Documentation must describe the implemented behavior, not historical intent.
 - **Language Policy for Comments**: All code comments and docstrings MUST be written in English, even when user-facing explanations are in Traditional Chinese.
 
