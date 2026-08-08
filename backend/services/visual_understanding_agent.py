@@ -124,7 +124,7 @@ class VisualUnderstandingAgent:
                     temperature=0,
                     max_tokens=500,
                 )
-            content = str(response.choices[0].message.content or "")
+            content = self._response_content(response)
             result = self._result_from_payload(self._parse_json(content))
         except Exception as exc:
             self._log_unavailable(conversation_id, model, source_domain, type(exc).__name__)
@@ -227,6 +227,52 @@ class VisualUnderstandingAgent:
         if not isinstance(payload, dict):
             raise ValueError("visual_understanding_payload_not_object")
         return payload
+
+    @staticmethod
+    def _response_content(response: Any) -> str:
+        """Extract text content from common OpenAI-compatible response shapes.
+
+        Some providers return SDK objects while others return dictionary-like
+        payloads or content-part arrays. The vision step should fail only when
+        usable text is genuinely absent, not because a provider used a slightly
+        different response container.
+        """
+
+        choices = (
+            response.get("choices")
+            if isinstance(response, dict)
+            else getattr(response, "choices", None)
+        )
+        if not choices:
+            raise ValueError("visual_understanding_missing_choices")
+        first_choice = choices[0]
+        message = (
+            first_choice.get("message")
+            if isinstance(first_choice, dict)
+            else getattr(first_choice, "message", None)
+        )
+        if message is None:
+            raise ValueError("visual_understanding_missing_message")
+        content = (
+            message.get("content")
+            if isinstance(message, dict)
+            else getattr(message, "content", None)
+        )
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for part in content:
+                if isinstance(part, str):
+                    text_parts.append(part)
+                elif isinstance(part, dict):
+                    text = part.get("text")
+                    if isinstance(text, str):
+                        text_parts.append(text)
+            joined = "\n".join(text_parts).strip()
+            if joined:
+                return joined
+        raise ValueError("visual_understanding_missing_content")
 
     @staticmethod
     def _safe_text_tuple(value: Any, max_items: int, max_length: int) -> tuple[str, ...]:

@@ -24,6 +24,24 @@ class _FakeCompletions:
         )
 
 
+class _DictCompletions:
+    """Completion double returning dictionary/list content provider shape."""
+
+    def __init__(self, content):
+        self.content = content
+
+    async def create(self, **kwargs):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": self.content,
+                    }
+                }
+            ]
+        }
+
+
 @pytest.mark.asyncio
 async def test_visual_understanding_agent_sends_image_url_content_part():
     """The understanding agent should send the selected image itself to the model."""
@@ -86,3 +104,35 @@ async def test_visual_understanding_agent_invalid_image_url_fails_soft():
 
     assert completions.last_kwargs is None
     assert result.source == "invalid_image_url"
+
+
+@pytest.mark.asyncio
+async def test_visual_understanding_agent_accepts_dict_content_parts():
+    """Provider-specific response containers should not cause false failures."""
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=_DictCompletions(
+                [
+                    {
+                        "type": "text",
+                        "text": '{"image_type":"chart","summary":"A chart.","visible_elements":["axis"],"how_to_read":["Read the axis."],"limitations":[],"confidence":"medium"}',
+                    }
+                ]
+            )
+        )
+    )
+    agent = VisualUnderstandingAgent(timeout_seconds=1.0)
+
+    result = await agent.analyze(
+        client=client,
+        model="google/gemini-3.1-flash-lite",
+        image_url="https://example.edu/chart.png",
+        user_msg="請解釋這張圖",
+        visual_brief=None,
+        conversation_id="conversation-1",
+    )
+
+    assert result.source == "vision_model"
+    assert result.image_type == "chart"
+    assert result.how_to_read == ("Read the axis.",)

@@ -2,6 +2,7 @@
 import { saveAs } from 'file-saver';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
 import type { DisplayMessage } from '@/store/chat';
+import type { ImageBlock } from '@/database/schema';
 
 export const formatSourcesForMarkdown = (message: DisplayMessage): string => {
   if (!message.sources?.length) return '';
@@ -20,6 +21,71 @@ export const formatSourcesForMarkdown = (message: DisplayMessage): string => {
   return `#### 文獻來源\n\n${lines.join('\n')}\n\n`;
 };
 
+const markdownLine = (value: string | undefined | null): string => {
+  return String(value || '').trim();
+};
+
+const markdownList = (items: string[] | undefined, indent = ''): string => {
+  if (!items?.length) return '';
+  return items
+    .map((item) => markdownLine(item))
+    .filter(Boolean)
+    .map((item) => `${indent}- ${item}`)
+    .join('\n');
+};
+
+const formatImageBlockForMarkdown = (block: ImageBlock, index: number): string => {
+  const lines: string[] = [];
+  const title = markdownLine(block.topic || block.caption || `圖片 ${index + 1}`);
+  const imageUrl = markdownLine(block.imageUrl || block.thumbnailUrl);
+  const sourceUrl = markdownLine(block.sourceUrl);
+
+  lines.push(`##### 圖片 ${index + 1}: ${title}`);
+  if (imageUrl) {
+    lines.push(`![${title}](${imageUrl})`);
+    lines.push(`- 圖片 URL: ${imageUrl}`);
+  }
+  if (markdownLine(block.caption)) lines.push(`- 圖說: ${block.caption}`);
+  if (sourceUrl) lines.push(`- 來源: [${block.sourceDomain || sourceUrl}](${sourceUrl})`);
+  if (markdownLine(block.provider)) lines.push(`- Provider: ${block.provider}`);
+  if (markdownLine(block.license)) lines.push(`- 授權: ${block.license}`);
+  if (markdownLine(block.creator)) lines.push(`- 作者: ${block.creator}`);
+  if (markdownLine(block.attributionString)) lines.push(`- Attribution: ${block.attributionString}`);
+  if (markdownLine(block.visionSummary)) lines.push(`- 圖像理解摘要: ${block.visionSummary}`);
+  if (markdownLine(block.visionConfidence)) lines.push(`- 圖像理解信心: ${block.visionConfidence}`);
+
+  const visibleElements = markdownList(block.visibleElements, '  ');
+  if (visibleElements) {
+    lines.push('- 圖中可見元素:');
+    lines.push(visibleElements);
+  }
+
+  const howToRead = markdownList(block.howToRead, '  ');
+  if (howToRead) {
+    lines.push('- 讀圖方式:');
+    lines.push(howToRead);
+  }
+
+  const limitations = markdownList(block.visionLimitations, '  ');
+  if (limitations) {
+    lines.push('- 圖像理解限制:');
+    lines.push(limitations);
+  }
+
+  return `${lines.join('\n')}\n\n`;
+};
+
+export const formatAnswerBlocksForMarkdown = (message: DisplayMessage): string => {
+  const imageBlocks = (message.answerBlocks || []).filter(
+    (block): block is ImageBlock => block.type === 'image_block'
+  );
+  if (!imageBlocks.length) return '';
+
+  return `#### 圖片資訊\n\n${imageBlocks
+    .map((block, index) => formatImageBlockForMarkdown(block, index))
+    .join('')}`;
+};
+
 export const exportToMarkdown = (messages: DisplayMessage[]) => {
   let content = '# AREQA 對話紀錄\n\n';
   
@@ -32,6 +98,7 @@ export const exportToMarkdown = (messages: DisplayMessage[]) => {
     }
     
     content += `${msg.content}\n\n`;
+    content += formatAnswerBlocksForMarkdown(msg);
     content += formatSourcesForMarkdown(msg);
     content += '---\n\n';
   });
