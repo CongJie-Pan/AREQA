@@ -217,6 +217,36 @@ async def test_visual_grounding_agent_builds_edf_fallback_brief_on_timeout(caplo
 
 
 @pytest.mark.asyncio
+async def test_visual_grounding_agent_fallback_preserves_known_visual_affordance():
+    """Planning fallback should keep specialized visual types from deterministic affordances."""
+
+    agent = VisualGroundingAgent(timeout_seconds=0.01)
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.GENERAL_QA,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.PLAIN,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+    )
+
+    brief = await agent.plan(
+        client=None,
+        model="test-model",
+        user_msg="什麼是 : meta analysis 統合分析",
+        fallback_query="meta analysis forest plot diagram",
+        conversation_id="conversation-1",
+        response_policy=response_policy,
+        turn_plan=SimpleNamespace(route=SimpleNamespace(value="GENERAL_CHAT"), reason_code="GENERAL_CHAT"),
+    )
+
+    assert brief.source == "edf_fallback"
+    assert brief.visual_type == "forest_plot"
+    assert "forest plot" in brief.search_query
+    assert "confidence intervals" in brief.caption_goal
+    assert "not_meta_analysis" in brief.reject_if
+
+
+@pytest.mark.asyncio
 async def test_visual_grounding_agent_includes_visual_brief_in_grounding_prompt():
     """Grounding should judge candidates against the planned visual brief."""
 

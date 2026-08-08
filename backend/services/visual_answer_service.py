@@ -24,6 +24,7 @@ import redis.asyncio as aioredis
 
 from config import settings
 from services.query_policy_service import ResponsePolicy, TaskIntent
+from services.visual_affordance_registry import match_visual_affordance
 from services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
 
 logger = logging.getLogger(__name__)
@@ -120,16 +121,6 @@ _VISUAL_QUERY_REWRITE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "chinese_temple_church_comparison",
         re.compile(r"(寺廟.*教會|教會.*寺廟|temple.*church|church.*temple)", re.IGNORECASE),
         "Chinese temple folk religion Christian church social organization comparison diagram",
-    ),
-    (
-        "meta_analysis_forest_plot",
-        re.compile(r"\bmeta[-\s]?analysis\b|統合分析|元分析", re.IGNORECASE),
-        "meta analysis forest plot diagram",
-    ),
-    (
-        "systematic_review_prisma",
-        re.compile(r"\bsystematic review\b|系統性文獻回顧|系統性回顧", re.IGNORECASE),
-        "systematic review PRISMA flow diagram",
     ),
 )
 
@@ -330,6 +321,8 @@ class VisualAnswerService:
 
         normalized = user_msg.lower()
         explicit_visual_request = any(keyword in normalized for keyword in _VISUAL_KEYWORDS)
+        affordance = match_visual_affordance(user_msg)
+        known_visual_affordance = bool(affordance and affordance.preflight_trigger)
         route = getattr(turn_plan, "route", None)
         route_value = getattr(route, "value", route)
         is_learning_route = route_value == "LEARNING_HELP"
@@ -337,6 +330,7 @@ class VisualAnswerService:
             self.max_images > 0
             and (
                 explicit_visual_request
+                or known_visual_affordance
                 or response_policy.task_intent == TaskIntent.EXPLAIN_TEXT
                 or is_learning_route
             )
@@ -1724,6 +1718,9 @@ class VisualAnswerService:
         """
 
         normalized = " ".join(str(user_msg or "").strip().split())
+        affordance = match_visual_affordance(normalized)
+        if affordance is not None:
+            return affordance.search_query, affordance.rule_name
         for rule_name, pattern, rewritten_query in _VISUAL_QUERY_REWRITE_RULES:
             if pattern.search(normalized):
                 return rewritten_query, rule_name

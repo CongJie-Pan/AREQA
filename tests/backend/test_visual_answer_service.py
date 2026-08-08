@@ -123,6 +123,18 @@ def test_should_attempt_preflight_for_learning_route_policy_fallback():
     assert service._should_attempt_preflight(_policy(TaskIntent.GENERAL_QA), "第二次世界大戰歐洲戰場", turn_plan)
 
 
+def test_should_attempt_preflight_for_known_visual_affordance_without_visual_keyword():
+    """Known educational visual affordances should not depend on explicit image wording."""
+
+    service = VisualAnswerService()
+
+    assert service._should_attempt_preflight(
+        _policy(TaskIntent.GENERAL_QA),
+        "什麼是 : meta analysis 統合分析",
+        SimpleNamespace(route="GENERAL_CHAT"),
+    )
+
+
 def test_cache_key_uses_visual_schema_version():
     """Visual cache keys should invalidate pre-provider placeholder entries."""
 
@@ -181,6 +193,39 @@ def test_visual_search_query_rewrites_meta_analysis_prompt():
 
     assert query == "meta analysis forest plot diagram"
     assert rule == "meta_analysis_forest_plot"
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_query", "expected_rule"),
+    [
+        (
+            "系統性文獻回顧是什麼",
+            "systematic review PRISMA flow diagram",
+            "systematic_review_prisma",
+        ),
+        (
+            "請解釋 AUC 和 ROC",
+            "ROC curve AUC diagnostic test graph",
+            "roc_auc_curve",
+        ),
+        (
+            "Kaplan-Meier 存活曲線怎麼看",
+            "Kaplan Meier survival curve example",
+            "kaplan_meier_survival_curve",
+        ),
+    ],
+)
+def test_visual_search_query_rewrites_generalized_visual_affordances(
+    prompt,
+    expected_query,
+    expected_rule,
+):
+    """Visual affordance rules should be a reusable registry, not one prompt special case."""
+
+    query, rule = VisualAnswerService._visual_search_query(prompt)
+
+    assert query == expected_query
+    assert rule == expected_rule
 
 
 def test_visual_search_query_rewrites_temple_church_comparison_prompt():

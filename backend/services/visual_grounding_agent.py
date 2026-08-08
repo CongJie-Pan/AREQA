@@ -18,6 +18,7 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from config import settings
+from services.visual_affordance_registry import match_visual_affordance
 
 
 logger = logging.getLogger(__name__)
@@ -397,6 +398,7 @@ class VisualGroundingAgent:
         """
 
         visual_type = self._fallback_visual_type(user_msg, fallback_query, teaching_context)
+        affordance = match_visual_affordance(f"{user_msg} {fallback_query}")
         query_suffixes = {
             "map": "educational labeled map",
             "timeline": "educational timeline chart",
@@ -404,7 +406,10 @@ class VisualGroundingAgent:
             "chart": "educational chart diagram",
             "comparison_chart": "educational comparison chart",
         }
-        suffix = query_suffixes.get(visual_type, "educational explanatory diagram")
+        suffix = affordance.query_suffix if affordance is not None else query_suffixes.get(
+            visual_type,
+            "educational explanatory diagram",
+        )
         base_limit = max(20, 119 - len(suffix))
         base_query = (
             self._bound(fallback_query, base_limit)
@@ -425,8 +430,14 @@ class VisualGroundingAgent:
         return VisualBrief(
             visual_type=visual_type,
             search_query=search_query,
-            caption_goal=caption_goals.get(visual_type, "Provide a concrete visual aid for the answer."),
-            reject_if=(
+            caption_goal=(
+                affordance.caption_goal
+                if affordance is not None
+                else caption_goals.get(visual_type, "Provide a concrete visual aid for the answer.")
+            ),
+            reject_if=affordance.reject_if
+            if affordance is not None
+            else (
                 "wrong_visual_type",
                 "wrong_context",
                 "decorative_or_generic_image",
@@ -447,6 +458,9 @@ class VisualGroundingAgent:
         """Infer a broad visual type from EDF structure and prompt signals."""
 
         text = f"{user_msg} {fallback_query}".lower()
+        affordance = match_visual_affordance(text)
+        if affordance is not None:
+            return affordance.visual_type
         if any(term in text for term in ("map", "geography", "geographic", "戰場", "戰役", "地圖", "地理", "版圖", "路線")):
             return "map"
         if any(term in text for term in ("timeline", "chronology", "history", "sequence", "年表", "時間線", "歷史", "演變")):
