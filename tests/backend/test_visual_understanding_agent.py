@@ -72,6 +72,7 @@ async def test_visual_understanding_agent_sends_image_url_content_part():
         client=client,
         model="google/gemini-3.1-flash-lite",
         image_url="https://example.edu/forest-plot.webp",
+        image_part={"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
         user_msg="什麼是 meta analysis 統合分析",
         visual_brief=VisualBrief(
             visual_type="forest_plot",
@@ -85,7 +86,7 @@ async def test_visual_understanding_agent_sends_image_url_content_part():
     content = completions.last_kwargs["messages"][1]["content"]
     assert content[1] == {
         "type": "image_url",
-        "image_url": {"url": "https://example.edu/forest-plot.webp"},
+        "image_url": {"url": "data:image/png;base64,AA=="},
     }
     assert result.image_type == "forest_plot"
     assert "summary diamond" in result.visible_elements
@@ -186,3 +187,29 @@ async def test_visual_understanding_agent_logs_response_extract_stage(caplog):
     assert result.source == "provider_unavailable"
     assert "stage=response_extract" in caplog.text
     assert "reason=ValueError" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_visual_understanding_agent_logs_client_shape(caplog):
+    """Client capability logs should explain provider-call AttributeError cases."""
+
+    caplog.set_level("INFO")
+    completions = _FakeCompletions(
+        '{"image_type":"chart","summary":"A chart.","visible_elements":[],"how_to_read":[],"limitations":[],"confidence":"medium"}'
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    agent = VisualUnderstandingAgent(timeout_seconds=1.0)
+
+    await agent.analyze(
+        client=client,
+        model="google/gemini-3.1-flash-lite",
+        image_url="https://example.edu/chart.png",
+        user_msg="請解釋這張圖",
+        visual_brief=None,
+        conversation_id="conversation-1",
+    )
+
+    assert "visual.understanding_client_shape" in caplog.text
+    assert "has_chat=True" in caplog.text
+    assert "has_completions=True" in caplog.text
+    assert "has_create=True" in caplog.text

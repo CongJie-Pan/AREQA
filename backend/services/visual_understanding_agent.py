@@ -82,6 +82,7 @@ class VisualUnderstandingAgent:
         client: Any,
         model: str,
         image_url: str,
+        image_part: dict[str, Any] | None = None,
         user_msg: str,
         visual_brief: VisualBrief | None,
         conversation_id: str,
@@ -92,6 +93,8 @@ class VisualUnderstandingAgent:
             client: OpenAI-compatible async client.
             model: Vision-capable model route.
             image_url: Public HTTP(S) image URL selected by visual grounding.
+            image_part: Optional prepared image content part. When omitted, the
+                agent falls back to a remote ``image_url`` part.
             user_msg: Latest user message. Sent to the model for task context
                 but never written to logs.
             visual_brief: Optional visual plan used to focus the reading.
@@ -111,13 +114,15 @@ class VisualUnderstandingAgent:
         if not self._is_safe_image_url(image_url):
             self._log_unavailable(conversation_id, model, source_domain, "validation", "invalid_image_url")
             return VisualUnderstandingResult(source="invalid_image_url")
+        self._log_client_shape(conversation_id, model, client)
+        resolved_image_part = image_part or {"type": "image_url", "image_url": {"url": image_url}}
 
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 response = await client.chat.completions.create(
                     model=model,
                     messages=self._messages(
-                        image_url=image_url,
+                        image_part=resolved_image_part,
                         user_msg=user_msg,
                         visual_brief=visual_brief,
                     ),
@@ -161,7 +166,7 @@ class VisualUnderstandingAgent:
     @staticmethod
     def _messages(
         *,
-        image_url: str,
+        image_part: dict[str, Any],
         user_msg: str,
         visual_brief: VisualBrief | None,
     ) -> list[dict[str, Any]]:
@@ -210,7 +215,7 @@ class VisualUnderstandingAgent:
                             + json.dumps(task_payload, ensure_ascii=False)
                         ),
                     },
-                    {"type": "image_url", "image_url": {"url": image_url}},
+                    image_part,
                 ],
             },
         ]
@@ -336,6 +341,23 @@ class VisualUnderstandingAgent:
         """Extract a privacy-safe domain label for structured logs."""
 
         return urlparse(str(image_url or "")).netloc.lower().removeprefix("www.")
+
+    @staticmethod
+    def _log_client_shape(conversation_id: str, model: str, client: Any) -> None:
+        """Log safe client capability metadata before provider calls."""
+
+        chat = getattr(client, "chat", None)
+        completions = getattr(chat, "completions", None) if chat is not None else None
+        create = getattr(completions, "create", None) if completions is not None else None
+        logger.info(
+            "visual.understanding_client_shape conversation_id=%s model=%s client_type=%s has_chat=%s has_completions=%s has_create=%s",
+            conversation_id,
+            model,
+            type(client).__name__,
+            chat is not None,
+            completions is not None,
+            callable(create),
+        )
 
     @staticmethod
     def _log_unavailable(

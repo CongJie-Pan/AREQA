@@ -26,7 +26,11 @@ class _FakeVisualAnswerService:
 class _FakeUnderstandingAgent:
     """Vision-understanding double that returns deterministic analysis."""
 
+    def __init__(self):
+        self.last_kwargs = {}
+
     async def analyze(self, **kwargs):
+        self.last_kwargs = kwargs
         return VisualUnderstandingResult(
             image_type="forest_plot",
             summary="A forest plot with confidence intervals and a summary diamond.",
@@ -37,11 +41,31 @@ class _FakeUnderstandingAgent:
         )
 
 
+class _FakeVisualInputService:
+    """Image input double that returns an attachment-style data URI part."""
+
+    async def prepare_image_part(self, **kwargs):
+        return type(
+            "FakeVisualImageInput",
+            (),
+            {
+                "content_part": {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,AA=="},
+                }
+            },
+        )()
+
+
 @pytest.mark.asyncio
 async def test_output_image_service_enriches_preflight_blocks():
     """OutputImageService should coordinate retrieval and vision understanding."""
 
-    service = OutputImageService(understanding_agent=_FakeUnderstandingAgent())
+    understanding_agent = _FakeUnderstandingAgent()
+    service = OutputImageService(
+        understanding_agent=understanding_agent,
+        visual_input_service=_FakeVisualInputService(),
+    )
 
     blocks = await service.prepare_preflight_image_blocks(
         visual_answer_service=_FakeVisualAnswerService(),
@@ -61,3 +85,7 @@ async def test_output_image_service_enriches_preflight_blocks():
     assert block.visible_elements == ("95% CI", "summary diamond")
     assert block.how_to_read == ("Read the diamond as the pooled effect.",)
     assert block.explanatory_caption == block.vision_summary
+    assert understanding_agent.last_kwargs["image_part"] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,AA=="},
+    }

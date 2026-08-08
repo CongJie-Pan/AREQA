@@ -14,6 +14,7 @@ from typing import Any
 
 from config import settings
 from services.visual_answer_service import ImageBlock, VisualAnswerService
+from services.visual_input_service import VisualInputService
 from services.visual_understanding_agent import (
     VisualUnderstandingAgent,
     VisualUnderstandingResult,
@@ -36,14 +37,18 @@ class OutputImageService:
         self,
         *,
         understanding_agent: VisualUnderstandingAgent | None = None,
+        visual_input_service: VisualInputService | None = None,
     ) -> None:
         """Initialize the output-image coordinator.
 
         Args:
             understanding_agent: Optional test double or custom vision agent.
+            visual_input_service: Optional test double or custom image input
+                preparation service.
         """
 
         self.understanding_agent = understanding_agent or VisualUnderstandingAgent()
+        self.visual_input_service = visual_input_service or VisualInputService()
 
     async def prepare_preflight_image_blocks(
         self,
@@ -97,10 +102,15 @@ class OutputImageService:
 
         enriched: dict[str, ImageBlock] = {}
         for slot_id, block in blocks.items():
+            image_input = await self.visual_input_service.prepare_image_part(
+                image_url=block.image_url,
+                conversation_id=conversation_id,
+            )
             result = await self.understanding_agent.analyze(
                 client=model_client,
                 model=settings.model_visual_understanding,
                 image_url=block.image_url,
+                image_part=image_input.content_part,
                 user_msg=user_msg,
                 visual_brief=None,
                 conversation_id=conversation_id,
