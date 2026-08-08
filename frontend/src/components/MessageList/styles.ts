@@ -25,6 +25,15 @@ const cursorBlink = keyframes`
   }
 `;
 
+const imageSkeletonShimmer = keyframes`
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+`;
+
 export const useStyles = createStyles(({ css, token }) => ({
   // MessageList styles
   container: css`
@@ -515,6 +524,10 @@ quoteBlockContent: css`
     animation: ${cursorBlink} 1s step-end infinite;
   `,
 
+  answerBlockReveal: css`
+    animation: ${fadeIn} 180ms ease-out both;
+  `,
+
   thinkingPanelWrapper: css`
     margin-bottom: 12px;
   `,
@@ -533,6 +546,7 @@ quoteBlockContent: css`
     overflow: hidden;
     border-radius: 18px;
     background: transparent;
+    animation: ${fadeIn} 220ms ease-out both;
   `,
 
   answerImageExplanation: css`
@@ -543,12 +557,12 @@ quoteBlockContent: css`
   `,
 
   answerImageButton: css`
+    position: relative;
     display: block;
     width: 100%;
     padding: 0;
     border: 0;
     border-radius: 18px;
-    aspect-ratio: 16 / 9;
     overflow: hidden;
     background: rgba(255, 255, 255, 0.06);
     cursor: zoom-in;
@@ -559,9 +573,27 @@ quoteBlockContent: css`
     }
   `,
 
+  answerImagePendingFrame: css`
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.05);
+  `,
+
+  answerImageSkeletonLayer: css`
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 220ms ease;
+  `,
+
   answerImageSkeleton: css`
     width: 100%;
-    aspect-ratio: 16 / 9;
+    height: 100%;
+    min-height: 180px;
     border-radius: 18px;
     background: linear-gradient(
       90deg,
@@ -569,8 +601,8 @@ quoteBlockContent: css`
       rgba(255, 255, 255, 0.12),
       rgba(255, 255, 255, 0.06)
     );
-    background-size: 200% 100%;
-    animation: ${fadeIn} 180ms ease-out;
+    background-size: 400% 100%;
+    animation: ${imageSkeletonShimmer} 1.2s ease-in-out infinite;
   `,
 
   answerImage: css`
@@ -579,6 +611,14 @@ quoteBlockContent: css`
     height: 100%;
     object-fit: contain;
     background: #ffffff;
+    opacity: 0;
+    transform: scale(0.992);
+    transition: opacity 260ms ease, transform 260ms ease;
+  `,
+
+  answerImageLoaded: css`
+    opacity: 1;
+    transform: scale(1);
   `,
 
   answerImageCaption: css`
@@ -589,6 +629,14 @@ quoteBlockContent: css`
     color: rgba(255, 255, 255, 0.72);
     font-size: 12px;
     line-height: 1.5;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 220ms ease 80ms, transform 220ms ease 80ms;
+  `,
+
+  answerImageCaptionVisible: css`
+    opacity: 1;
+    transform: translateY(0);
   `,
 
   answerImageCaptionText: css`

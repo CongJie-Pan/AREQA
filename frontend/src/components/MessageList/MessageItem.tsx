@@ -34,6 +34,7 @@ import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/u
 
 const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
+const STREAMING_MARKDOWN_FLUSH_MS = 56;
 
 /**
  * Safe URL protocols whitelist
@@ -77,6 +78,44 @@ const FEEDBACK_OPTIONS: Array<{ value: MessageFeedbackReason; label: string }> =
 
 function isMobileFeedbackViewport(): boolean {
   return window.matchMedia('(max-width: 768px)').matches;
+}
+
+/**
+ * Throttle high-frequency text updates while preserving the final value.
+ *
+ * Args:
+ *   value: Latest streaming value from the chat store.
+ *   delayMs: Minimum interval between rendered updates.
+ *
+ * Returns:
+ *   A display value updated at a stable cadence. This keeps markdown parsing
+ *   from running on every token packet while still flushing the final packet.
+ */
+function useThrottledValue<T>(value: T, delayMs: number): T {
+  const [throttledValue, setThrottledValue] = React.useState(value);
+  const lastFlushRef = React.useRef(0);
+  const pendingValueRef = React.useRef(value);
+
+  React.useEffect(() => {
+    pendingValueRef.current = value;
+    const now = window.performance.now();
+    const elapsed = now - lastFlushRef.current;
+
+    if (elapsed >= delayMs) {
+      lastFlushRef.current = now;
+      setThrottledValue(value);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      lastFlushRef.current = window.performance.now();
+      setThrottledValue(pendingValueRef.current);
+    }, delayMs - elapsed);
+
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return throttledValue;
 }
 
 const createMarkdownComponents = (
@@ -254,7 +293,8 @@ export function normalizeCitationMarkers(content: string): string {
 }
 
 function StreamingMarkdown({ content, markdownComponents }: { content: string, markdownComponents: Components }) {
-  const deferredContent = React.useDeferredValue(content);
+  const throttledContent = useThrottledValue(content, STREAMING_MARKDOWN_FLUSH_MS);
+  const deferredContent = React.useDeferredValue(throttledContent);
   const processedContent = React.useMemo(() => {
     let text = deferredContent;
     try {
@@ -278,6 +318,19 @@ function StreamingMarkdown({ content, markdownComponents }: { content: string, m
   );
 }
 
+function getImageAspectRatio(block: ImageBlock): React.CSSProperties {
+  if (!block.width || !block.height || block.width <= 0 || block.height <= 0) {
+    return { aspectRatio: '16 / 9' };
+  }
+
+  const ratio = block.width / block.height;
+  if (ratio < 0.75 || ratio > 2.6) {
+    return { aspectRatio: '16 / 9' };
+  }
+
+  return { aspectRatio: `${block.width} / ${block.height}` };
+}
+
 /**
  * Render one verified image block inside an assistant answer.
  *
@@ -286,6 +339,7 @@ function StreamingMarkdown({ content, markdownComponents }: { content: string, m
  */
 function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnType<typeof useStyles>['styles'] }) {
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
   const imageUrl = block.thumbnailUrl || block.imageUrl;
   const safeImageUrl = isSafeUrl(imageUrl) ? imageUrl : '';
   const safeFullImageUrl = safeImageUrl;
@@ -295,9 +349,20 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const sourceLabel = block.sourceDomain || 'source';
   const licenseLabel = block.license || (block.provider === 'og_image' ? 'License unknown' : '');
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
+  const imageFrameStyle = getImageAspectRatio(block);
+
+  React.useEffect(() => {
+    setIsImageLoaded(false);
+  }, [safeImageUrl]);
 
   if (visualStatus === 'pending') {
-    return null;
+    return (
+      <figure className={styles.answerImageCard} aria-label="圖片載入中">
+        <div className={styles.answerImagePendingFrame} style={imageFrameStyle}>
+          <div className={styles.answerImageSkeleton} data-testid="answer-image-skeleton" />
+        </div>
+      </figure>
+    );
   }
 
   if (!safeImageUrl || !safeSourceUrl || block.safetyStatus !== 'pass') {
@@ -313,18 +378,25 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
         <button
           type="button"
           className={styles.answerImageButton}
+          style={imageFrameStyle}
           onClick={() => setIsLightboxOpen(true)}
           aria-label={`放大檢視圖片：${displayCaption}`}
         >
+          {!isImageLoaded && (
+            <span className={styles.answerImageSkeletonLayer} aria-hidden="true" data-testid="answer-image-skeleton">
+              <span className={styles.answerImageSkeleton} />
+            </span>
+          )}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={safeImageUrl}
             alt={displayCaption}
-            className={styles.answerImage}
+            className={`${styles.answerImage} ${isImageLoaded ? styles.answerImageLoaded : ''}`}
             loading="lazy"
+            onLoad={() => setIsImageLoaded(true)}
           />
         </button>
-        <figcaption className={styles.answerImageCaption}>
+        <figcaption className={`${styles.answerImageCaption} ${isImageLoaded ? styles.answerImageCaptionVisible : ''}`}>
           <span className={styles.answerImageCaptionText}>{displayCaption}</span>
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
@@ -410,15 +482,20 @@ function AnswerBlocksRenderer({
     <>
       {blocks.map((block, index) => {
         if (block.type === 'image_block') {
-          return <ImageBlockCard key={block.slotId || `image-${index}`} block={block} styles={styles} />;
+          return (
+            <div className={styles.answerBlockReveal} key={block.slotId || `image-${index}`}>
+              <ImageBlockCard block={block} styles={styles} />
+            </div>
+          );
         }
 
         return (
-          <StreamingMarkdown
-            key={`paragraph-${index}`}
-            content={block.text}
-            markdownComponents={markdownComponents}
-          />
+          <div className={styles.answerBlockReveal} key={`paragraph-${index}`}>
+            <StreamingMarkdown
+              content={block.text}
+              markdownComponents={markdownComponents}
+            />
+          </div>
         );
       })}
     </>

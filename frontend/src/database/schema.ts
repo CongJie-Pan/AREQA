@@ -69,14 +69,14 @@ export interface ImageBlock {
   type: 'image_block';
   slotId: string;
   topic: string;
-  purpose: 'diagram' | 'photo' | 'portrait' | 'chart' | 'example';
+  purpose: 'diagram' | 'photo' | 'portrait' | 'chart' | 'example' | string;
   imageUrl: string;
   thumbnailUrl?: string;
   sourceUrl: string;
   sourceDomain: string;
   caption: string;
-  provider?: 'wikimedia' | 'openverse' | 'og_image' | 'cache';
-  tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache';
+  provider?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | string;
+  tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | string;
   license?: string;
   licenseUrl?: string;
   creator?: string;
