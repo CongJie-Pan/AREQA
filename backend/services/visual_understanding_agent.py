@@ -118,8 +118,8 @@ class VisualUnderstandingAgent:
         resolved_image_part = image_part or {"type": "image_url", "image_url": {"url": image_url}}
 
         try:
-            async with asyncio.timeout(self.timeout_seconds):
-                response = await client.chat.completions.create(
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
                     model=model,
                     messages=self._messages(
                         image_part=resolved_image_part,
@@ -128,7 +128,9 @@ class VisualUnderstandingAgent:
                     ),
                     temperature=0,
                     max_tokens=500,
-                )
+                ),
+                timeout=self.timeout_seconds,
+            )
         except Exception as exc:
             self._log_unavailable(conversation_id, model, source_domain, "provider_call", type(exc).__name__)
             return VisualUnderstandingResult(source="provider_unavailable")

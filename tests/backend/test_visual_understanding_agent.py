@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -213,3 +214,27 @@ async def test_visual_understanding_agent_logs_client_shape(caplog):
     assert "has_chat=True" in caplog.text
     assert "has_completions=True" in caplog.text
     assert "has_create=True" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_visual_understanding_agent_uses_python_310_compatible_timeout(monkeypatch):
+    """The deployed Render runtime is Python 3.10, where asyncio.timeout is absent."""
+
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+    completions = _FakeCompletions(
+        '{"image_type":"chart","summary":"A chart.","visible_elements":[],"how_to_read":[],"limitations":[],"confidence":"medium"}'
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    agent = VisualUnderstandingAgent(timeout_seconds=1.0)
+
+    result = await agent.analyze(
+        client=client,
+        model="google/gemini-3.1-flash-lite",
+        image_url="https://example.edu/chart.png",
+        user_msg="請解釋這張圖",
+        visual_brief=None,
+        conversation_id="conversation-1",
+    )
+
+    assert completions.last_kwargs is not None
+    assert result.source == "vision_model"
