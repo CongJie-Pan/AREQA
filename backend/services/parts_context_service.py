@@ -33,6 +33,7 @@ _MAX_FIELD_CHARS = 80
 _MAX_THEME_CHARS = 56
 _MAX_INSTRUCTION_CHARS = 360
 _MAX_MISSING_FIELDS = 5
+_MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS = 2400
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +105,7 @@ class PartsContextService:
         *,
         user_message: str,
         response_policy: ResponsePolicy | None,
+        previous_assistant_context: str = "",
         turn_plan: Any = None,
         use_rag: bool = False,
         use_web_search: bool = False,
@@ -120,6 +122,9 @@ class PartsContextService:
             user_message: Latest user-authored message. It is sent only to the
                 rewrite model and is never logged by this service.
             response_policy: Existing EDF policy selected for the turn.
+            previous_assistant_context: Previous assistant response text used
+                only to resolve follow-up references. Citation/source noise is
+                stripped before the rewrite call.
             turn_plan: Optional foreground route plan used for deterministic
                 context shaping.
             use_rag: Whether the turn includes local RAG context.
@@ -173,6 +178,7 @@ class PartsContextService:
             rewritten = await asyncio.wait_for(
                 self._rewrite_with_model(
                     user_message=user_message,
+                    previous_assistant_context=previous_assistant_context,
                     response_policy=policy,
                     turn_plan=turn_plan,
                     use_rag=use_rag,
@@ -303,6 +309,7 @@ class PartsContextService:
         self,
         *,
         user_message: str,
+        previous_assistant_context: str,
         response_policy: ResponsePolicy,
         turn_plan: Any,
         use_rag: bool,
@@ -314,6 +321,7 @@ class PartsContextService:
     ) -> dict[str, Any]:
         """Call the policy model to rewrite latest query into strict PARTS JSON."""
 
+        previous_context = self.clean_previous_assistant_context(previous_assistant_context)
         prompt = f"""Rewrite the latest user request into AREQA LearnLM PARTS JSON.
 Return JSON only:
 {{
@@ -334,6 +342,8 @@ Rules:
 - DIRECT/exam turns: keep direct; do not force tutoring/follow-up.
 - Terse learning-topic turns without explicit "完整/總結/整理/列出/時間線/年表/答案/重點" are possible learning entry points.
 - Learning entry points: prefer warm subject coach + first exploration step + 蘇格拉底式問答；一次一小步；一小段背景；一個開放式問題；不要一次列完整內容.
+- Use Previous assistant context only to resolve follow-up references. If the latest request says 那/這個/為何/怎麼辦, preserve the prior topic in theme and composed_instruction.
+- Do not copy citation markers or source-list noise into PARTS fields.
 - PARTS never overrides citations, attachment grounding, memory, tools, or safety.
 
 Route: {self._route_name(turn_plan)}
@@ -342,6 +352,9 @@ Web active: {bool(use_web_search)}
 Attachment grounded: {bool(has_attachments)}
 Response policy:
 {json.dumps(response_policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True)}
+
+Previous assistant context:
+{previous_context or "(none)"}
 
 Latest user request:
 {user_message}"""
@@ -373,6 +386,29 @@ Latest user request:
         if not isinstance(parsed, dict):
             raise ValueError("non_object_parts_payload")
         return parsed
+
+    @classmethod
+    def clean_previous_assistant_context(cls, value: Any) -> str:
+        """Strip citation noise from previous assistant text for rewrite context."""
+
+        text = re.sub(r"\s+", " ", str(value or "")).strip()
+        if not text:
+            return ""
+
+        citation_heading_pattern = (
+            r"(?:^|\s)(?:#{1,6}\s*)?"
+            r"(?:文獻來源|參考文獻|資料來源|References|Sources)\b"
+        )
+        text = re.split(citation_heading_pattern, text, maxsplit=1, flags=re.IGNORECASE)[0]
+        text = re.sub(r"【文獻\s*\d+(?:\s*[,，、]\s*\d+)*】", "", text)
+        text = re.sub(r"\[(?:文獻\s*)?\d+(?:\s*[,，]\s*\d+)*\]", "", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) <= _MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS:
+            return text
+
+        head_chars = _MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS // 2
+        tail_chars = _MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS - head_chars
+        return f"{text[:head_chars]} ... {text[-tail_chars:]}"
 
     def _context_from_payload(
         self,

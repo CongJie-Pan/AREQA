@@ -1094,6 +1094,7 @@ class OrchestrationService:
             parts_context = await self.parts_context_service.build(
                 user_message=last_user_msg,
                 response_policy=response_policy,
+                previous_assistant_context=self._previous_assistant_context(messages),
                 turn_plan=turn_plan,
                 use_rag=use_rag,
                 use_web_search=use_web_search,
@@ -1145,6 +1146,14 @@ class OrchestrationService:
         )
         return context.messages
 
+    @staticmethod
+    def _previous_assistant_context(messages: List[Dict[str, Any]]) -> str:
+        """Return the previous assistant message for PARTS follow-up resolution."""
+
+        for message in reversed(messages or []):
+            if message.get("role") == "assistant":
+                return str(message.get("content") or "")
+        return ""
 
     async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None, trace: Optional[TurnLatencyTrace] = None) -> AsyncGenerator[str, None]:
         """

@@ -105,6 +105,7 @@ Use one bounded policy-model call before the main answer when enabled:
 ```text
 Input:
 - latest user message
+- previous assistant response text after citation/source cleanup
 - recent route from TurnPlanService
 - ResponsePolicy enum values
 - whether RAG, web, or attachments are active
@@ -133,6 +134,11 @@ Rules:
 - Do not copy the full user message into `theme`.
 - Do not infer learner ability unless explicitly provided or verified.
 - For direct-answer turns, preserve directness and avoid forced tutoring.
+- Use the previous assistant context only to resolve follow-up references such
+  as `那`, `這個`, or `為何`; preserve the prior topic when building `theme`,
+  `act`, and `composed_instruction`.
+- Strip citation markers and source-list sections before passing previous
+  assistant context into the rewrite prompt.
 - If JSON is invalid, timeout occurs, or confidence is too low, use deterministic
   fallback PARTS.
 
@@ -243,6 +249,7 @@ Data flow:
 
 ```text
 latest user message
+  + cleaned previous assistant context
   -> TurnPlanService
   -> ResponsePolicy
   -> PartsContextService

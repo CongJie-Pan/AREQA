@@ -128,6 +128,54 @@ async def test_parts_context_debug_logs_emit_sensitive_payload_when_enabled(capl
 
 
 @pytest.mark.asyncio
+async def test_parts_context_rewrite_uses_clean_previous_assistant_context_for_followup():
+    """Follow-up rewrites should get prior assistant context without citation noise."""
+
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "persona": "歷史思考教練",
+              "act": "承接前文分析日本為何未優先透過商業發展解決資源困境",
+              "recipient": "程度未知的學習者，不假設已掌握日本近現代史或經濟史脈絡",
+              "theme": "二戰前日本面對資源困境時的商業外交與軍事擴張選擇",
+              "structure": "承接前文 + 一小段歷史背景 + 因果分析 + 一個開放式追問",
+              "composed_instruction": "請承接上一輪日本二戰歷史脈絡，說明當時日本為何沒有優先透過發展商業或外交談判處理資源困境，而轉向軍事擴張。",
+              "confidence": "high",
+              "missing_fields": ["recipient_level"]
+            }
+            """
+        )
+    )
+
+    previous = """
+    日本涉入第二次世界大戰並非單一事件所致【文獻13】。
+    面對當時國際上的經濟制裁與資源短缺，日本政府為何會選擇南進？
+
+    #### 文獻來源
+    1. 測試來源
+    """
+
+    context = await PartsContextService().build(
+        user_message="那為何不要發展商業 ?",
+        previous_assistant_context=previous,
+        response_policy=_policy(task_intent=TaskIntent.DISCUSS_IDEA, structure=ResponseStructure.ARGUMENT),
+        client=client,
+        model="policy-model",
+    )
+
+    prompt = client.chat.completions.create.await_args.kwargs["messages"][1]["content"]
+    assert "Previous assistant context:" in prompt
+    assert "日本涉入第二次世界大戰並非單一事件所致" in prompt
+    assert "經濟制裁與資源短缺" in prompt
+    assert "【文獻13】" not in prompt
+    assert "測試來源" not in prompt
+    assert context.persona == "歷史思考教練"
+    assert context.theme == "二戰前日本面對資源困境時的商業外交與軍事擴張選擇"
+
+
+@pytest.mark.asyncio
 async def test_parts_context_rewrite_invalid_json_falls_back(caplog):
     """Malformed rewrite output should fall back without blocking answer flow."""
 

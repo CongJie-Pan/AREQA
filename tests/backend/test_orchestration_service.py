@@ -950,7 +950,11 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
         await service._node_prompt_assembly(
             user_id="u1",
             conversation_id="parts-conv",
-            messages=[{"role": "user", "content": "我算這題對嗎？"}],
+            messages=[
+                {"role": "user", "content": "請先教我運算順序"},
+                {"role": "assistant", "content": "先從括號與次方開始檢查。"},
+                {"role": "user", "content": "我算這題對嗎？"},
+            ],
             use_rag=False,
             use_web_search=False,
             force_think=False,
@@ -962,6 +966,7 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
     service.parts_context_service.build.assert_awaited_once()
     parts_kwargs = service.parts_context_service.build.await_args.kwargs
     assert parts_kwargs["response_policy"] == response_policy
+    assert parts_kwargs["previous_assistant_context"] == "先從括號與次方開始檢查。"
     assert parts_kwargs["client"] is mock_client
     assert parts_kwargs["model"] == "policy-model"
     assert parts_kwargs["enable_llm_rewrite"] is True
