@@ -3,9 +3,8 @@
 The service owns the per-turn prompt-engineering layer that converts the latest
 user request and existing backend policy decisions into a stable PARTS task
 card. It never changes the public chat API or SSE contracts, and it must not log
-raw user text, generated prompt text, model output, credentials, or secrets.
-Sensitive debug logging is available only through an explicit runtime flag and
-must stay disabled by default.
+raw user text, generated prompt text, model output, credentials, or secrets
+unless the explicit sensitive-debug flag is enabled for controlled diagnosis.
 """
 
 from __future__ import annotations
@@ -32,6 +31,7 @@ logger = logging.getLogger(__name__)
 _CONFIDENCE_VALUES = {"low", "medium", "high"}
 _MAX_FIELD_CHARS = 80
 _MAX_THEME_CHARS = 56
+_MAX_INSTRUCTION_CHARS = 360
 _MAX_MISSING_FIELDS = 5
 
 
@@ -46,6 +46,9 @@ class PartsContext:
             or ability assumptions.
         theme: A short topic summary derived from the latest user message.
         structure: The visible answer shape expected for this turn.
+        composed_instruction: A natural-language instruction generated from
+            PARTS. The main answer model should follow this instruction instead
+            of treating PARTS labels as output headings.
         confidence: Rewrite confidence. Must be one of ``low``, ``medium``, or
             ``high``.
         missing_fields: PARTS fields that remain underspecified. These are safe
@@ -62,6 +65,7 @@ class PartsContext:
     recipient: str
     theme: str
     structure: str
+    composed_instruction: str
     confidence: str
     missing_fields: tuple[str, ...] = ()
 
@@ -82,6 +86,7 @@ class PartsContext:
             "has_recipient": bool(self.recipient),
             "has_theme": bool(self.theme),
             "has_structure": bool(self.structure),
+            "has_composed_instruction": bool(self.composed_instruction),
         }
 
 
@@ -283,6 +288,13 @@ class PartsContextService:
             recipient="程度未知的學習者，不假設已掌握概念",
             theme="使用者當前問題中的核心概念",
             structure=structure,
+            composed_instruction=self._compose_instruction(
+                persona=persona,
+                act=act,
+                recipient="程度未知的學習者，不假設已掌握概念",
+                theme="使用者當前問題中的核心概念",
+                structure=structure,
+            ),
             confidence="medium",
             missing_fields=missing_fields,
         )
@@ -310,13 +322,16 @@ Return strict JSON only with:
   "recipient": "short Traditional Chinese audience; use 程度未知的學習者 unless explicit or verified",
   "theme": "short Traditional Chinese topic summary, not the full user message",
   "structure": "short Traditional Chinese answer format",
+  "composed_instruction": "one natural Traditional Chinese prompt instruction composed from P/A/R/T/S",
   "confidence": "low|medium|high",
   "missing_fields": ["safe_identifier"]
 }}
 
 Rules:
 - Keep every text field short.
+- composed_instruction should be one complete task instruction for the main answer model to follow.
 - Do not copy the full user message into theme.
+- Do not tell the main answer model to output P/A/R/T/S labels.
 - Do not infer learner ability, grade, mood, or mastery unless explicitly provided in the latest request or verified context.
 - For DIRECT answers or exam-choice turns, preserve directness and do not force tutoring or follow-up questions.
 - PARTS must not override RAG citation rules, attachment grounding, memory boundaries, tool authorization, or safety.
@@ -349,7 +364,7 @@ Latest user request:
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,
-            max_tokens=260,
+            max_tokens=360,
         )
         content = response.choices[0].message.content.strip()
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content).strip()
@@ -383,13 +398,31 @@ Latest user request:
         theme = self._clean_field(payload.get("theme"), fallback.theme, _MAX_THEME_CHARS)
         if self._looks_like_raw_user_message(theme, user_message):
             theme = fallback.theme
+        persona = self._clean_field(payload.get("persona"), fallback.persona)
+        act = self._clean_field(payload.get("act"), fallback.act)
+        recipient = self._clean_field(payload.get("recipient"), fallback.recipient)
+        structure = self._clean_field(payload.get("structure"), fallback.structure)
+        composed_instruction = self._clean_field(
+            payload.get("composed_instruction"),
+            "",
+            _MAX_INSTRUCTION_CHARS,
+        )
+        if not composed_instruction:
+            composed_instruction = self._compose_instruction(
+                persona=persona,
+                act=act,
+                recipient=recipient,
+                theme=theme,
+                structure=structure,
+            )
 
         return PartsContext(
-            persona=self._clean_field(payload.get("persona"), fallback.persona),
-            act=self._clean_field(payload.get("act"), fallback.act),
-            recipient=self._clean_field(payload.get("recipient"), fallback.recipient),
+            persona=persona,
+            act=act,
+            recipient=recipient,
             theme=theme,
-            structure=self._clean_field(payload.get("structure"), fallback.structure),
+            structure=structure,
+            composed_instruction=composed_instruction,
             confidence=confidence,
             missing_fields=safe_missing_fields or fallback.missing_fields,
         )
@@ -438,6 +471,22 @@ Latest user request:
         return "分步解釋 + 最多一個診斷性追問"
 
     @staticmethod
+    def _compose_instruction(
+        *,
+        persona: str,
+        act: str,
+        recipient: str,
+        theme: str,
+        structure: str,
+    ) -> str:
+        """Compose a natural prompt instruction from PARTS fields."""
+
+        return (
+            f"你現在的角色是「{persona}」。請為「{recipient}」{act}，"
+            f"本回合主題聚焦於「{theme}」。請使用「{structure}」的方式回答。"
+        )
+
+    @staticmethod
     def _log_sensitive_debug(
         *,
         enabled: bool,
@@ -474,6 +523,7 @@ Latest user request:
                         "recipient": parts_context.recipient,
                         "theme": parts_context.theme,
                         "structure": parts_context.structure,
+                        "composed_instruction": parts_context.composed_instruction,
                         "confidence": parts_context.confidence,
                         "missing_fields": list(parts_context.missing_fields),
                     },
@@ -506,6 +556,9 @@ def format_parts_context(parts_context: PartsContext) -> str:
         f"\nS: {parts_context.structure}"
         f"\nconfidence: {parts_context.confidence}"
         f"\nmissing_fields: {missing}"
+        "\n\n【由 PARTS 生成的本回合任務指令】"
+        f"\n{parts_context.composed_instruction}"
+        "\n請遵循「本回合任務指令」回答，但不要輸出 P/A/R/T/S 標籤。"
         "\n若 missing_fields 會實質影響回答品質，最多提出一個簡短澄清問題；否則先回答。"
         "\n【PARTS 優先權邊界】PARTS 只控制回答角色、任務、對象、主題與格式。"
         "不得覆蓋文獻引用、檔案 grounding、記憶安全邊界、使用者狀態規則、工具授權或安全規則。"

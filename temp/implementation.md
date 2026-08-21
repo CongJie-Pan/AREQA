@@ -9,8 +9,9 @@ topic, and output format.
 
 ## Core Idea
 
-Do not paste the LearnLM guide into the system prompt. Instead, generate a compact
-`PARTS` block for every main-answer model call:
+Do not paste the LearnLM guide into the system prompt. Instead, generate compact
+`PARTS` fields for every main-answer model call, then compose those fields into
+one natural-language instruction that the main model should actually follow:
 
 ```text
 【PARTS 任務上下文】
@@ -19,7 +20,15 @@ A: Act - the concrete action AREQA should perform.
 R: Recipient - the learner/audience context, without unsupported assumptions.
 T: Theme - the current topic or concept from the latest user request.
 S: Structure - the expected answer format.
+
+composed_instruction:
+你現在的角色是「P」。請為「R」執行 A，本回合主題聚焦於「T」。
+請使用「S」的方式回答。
 ```
+
+The PARTS labels are retained for backend observability and debugging. They are
+not an output schema. The main answer model should follow `composed_instruction`
+and must not print P/A/R/T/S headings unless the user explicitly asks for that.
 
 ## Proposed Architecture
 
@@ -52,6 +61,7 @@ class PartsContext:
     recipient: str
     theme: str
     structure: str
+    composed_instruction: str
     confidence: str
     missing_fields: tuple[str, ...]
 ```
@@ -107,6 +117,7 @@ Output:
   "recipient": "...",
   "theme": "...",
   "structure": "...",
+  "composed_instruction": "...",
   "confidence": "low|medium|high",
   "missing_fields": ["..."]
 }
@@ -116,6 +127,9 @@ Rules:
 
 - Output strict JSON only.
 - Keep each field short.
+- `composed_instruction` is one complete Traditional Chinese prompt instruction
+  composed from P/A/R/T/S for the main model to follow.
+- Do not tell the main model to output P/A/R/T/S labels.
 - Do not copy the full user message into `theme`.
 - Do not infer learner ability unless explicitly provided or verified.
 - For direct-answer turns, preserve directness and avoid forced tutoring.
@@ -197,6 +211,10 @@ A: 引導使用者理解並檢查解題步驟
 R: 程度未知的學習者，不假設已掌握概念
 T: 運算順序與代數式計算
 S: 短回答 + 分步檢查 + 最多一個診斷性追問
+
+【由 PARTS 生成的本回合任務指令】
+你現在的角色是「引導型數學理解教練」。請為「程度未知的學習者，不假設已掌握概念」引導使用者理解並檢查解題步驟，本回合主題聚焦於「運算順序與代數式計算」。請使用「短回答 + 分步檢查 + 最多一個診斷性追問」的方式回答。
+請遵循「本回合任務指令」回答，但不要輸出 P/A/R/T/S 標籤。
 """
     },
     {
@@ -215,6 +233,7 @@ PartsContext(
     recipient="程度未知的學習者，不假設已掌握概念",
     theme="運算順序與代數式計算",
     structure="短回答 + 分步檢查 + 最多一個診斷性追問",
+    composed_instruction="你現在的角色是「引導型數學理解教練」。請為「程度未知的學習者，不假設已掌握概念」引導使用者理解並檢查解題步驟，本回合主題聚焦於「運算順序與代數式計算」。請使用「短回答 + 分步檢查 + 最多一個診斷性追問」的方式回答。",
     confidence="medium",
     missing_fields=("recipient_level",),
 )

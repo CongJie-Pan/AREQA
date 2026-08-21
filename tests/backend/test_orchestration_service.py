@@ -925,6 +925,7 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
         recipient="程度未知的學習者",
         theme="運算順序",
         structure="分步檢查",
+        composed_instruction="你現在的角色是「引導型數學理解教練」。請檢查解題步驟。",
         confidence="high",
         missing_fields=(),
     )

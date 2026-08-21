@@ -468,6 +468,7 @@ async def test_parts_context_is_injected_after_response_policy():
             recipient="程度未知的學習者，不假設已掌握概念",
             theme="運算順序與代數式計算",
             structure="短回答 + 分步檢查 + 最多一個診斷性追問",
+            composed_instruction="你現在的角色是「引導型數學理解教練」。請檢查解題步驟並指出可能錯誤。",
             confidence="high",
             missing_fields=("recipient_level",),
         ),
@@ -478,6 +479,9 @@ async def test_parts_context_is_injected_after_response_policy():
     assert "【PARTS 任務上下文】" in system_prompt
     assert "P: 引導型數學理解教練" in system_prompt
     assert "T: 運算順序與代數式計算" in system_prompt
+    assert "【由 PARTS 生成的本回合任務指令】" in system_prompt
+    assert "請遵循「本回合任務指令」回答，但不要輸出 P/A/R/T/S 標籤" in system_prompt
+    assert "請檢查解題步驟並指出可能錯誤" in system_prompt
     assert "不得覆蓋文獻引用" in system_prompt
 
 
@@ -509,6 +513,7 @@ async def test_rag_rules_remain_above_parts_context():
             recipient="程度未知的學習者，不假設已掌握概念",
             theme="資料中的核心概念",
             structure="分步解釋 + 引用文獻",
+            composed_instruction="你現在的角色是「資料導讀教練」。請根據提供的參考資料回答並維持引用格式。",
             confidence="high",
             missing_fields=(),
         ),
