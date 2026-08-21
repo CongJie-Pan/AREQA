@@ -72,32 +72,7 @@ class ConversationContextService:
         explicit_recall_memory_cache_ttl_seconds: int | None = None,
         response_policy: ResponsePolicy | None = None,
     ) -> ConversationContext:
-        """Build the final prompt from independently policy-checked sources.
-
-        Args:
-            user_id: Owner of all memory queried for this prompt.
-            conversation_id: Conversation scope for working context.
-            messages: Existing chat messages.
-            use_rag: Whether local retrieval supplied context.
-            use_web_search: Whether external search supplied context.
-            force_think: Whether the reasoning prompt is enabled.
-            context_results_obj: Retrieval result marker for this run.
-            last_user_msg: Current user-authored message.
-            context_prompt: Untrusted retrieval context block.
-            client: Model client used by the memory-query tool.
-            snapshot_loader: Prompt-safe hot-memory snapshot boundary.
-            store: Memory store used only for operational learner state and roleplay.
-            chat_avatar_key: Conversation-scoped roleplay key.
-            trace: Optional foreground latency trace.
-            allow_long_term_memory_query: Optional TurnPlan override for whether
-                long-term memory may run in this foreground turn.
-            memory_skip_reason: Safe reason code from the current turn plan.
-            explicit_recall_memory_timeout_ms: Optional timeout override for
-                explicit long-term recall.
-            enable_explicit_recall_memory_cache: Optional cache override.
-            explicit_recall_memory_cache_ttl_seconds: Optional TTL override.
-            response_policy: Optional EDF decision that constrains the final
-                answer depth, tone, structure, and follow-up behavior.
+        """Build final model messages from independently policy-checked sources.
 
         Returns:
             Finalized messages plus explicit learner-understanding metadata.
@@ -383,23 +358,10 @@ class ConversationContextService:
         response_policy: ResponsePolicy,
         overlays: dict[str, str],
     ) -> str:
-        """Translate an EDF response policy into final prompt constraints.
+        """Translate an EDF response policy into final prompt constraints."""
+        from config import settings
 
-        Args:
-            response_policy: Decision-stage policy selected for this turn.
-            overlays: Reusable style snippets owned by ``backend.main``.
-
-        Returns:
-            A Traditional Chinese prompt block that constrains the Feedback
-            stage without changing public API or SSE contracts.
-
-        Compatibility:
-            RAG/source, attachment-grounding, memory, and learner-state rules
-            remain higher-level prompt context. This block controls answer
-            shape only; it must not authorize unsupported citations, memory
-            claims, tool use, or roleplay.
-        """
-
+        enable_learnlm = getattr(settings, "enable_learnlm_prompt_policy", True)
         task_rules = {
             TaskIntent.EXPLAIN_TEXT: "任務是解釋文本或概念。先說白話意思，再拆成少量重點。",
             TaskIntent.ANSWER_EXAM: "任務是考題或選項作答。先給答案，再給簡短判斷理由。",
@@ -421,6 +383,10 @@ class ConversationContextService:
 
         depth_overlay = overlays.get(response_policy.answer_depth.value, "")
         tone_overlay = overlays.get(response_policy.tone.value, "")
+        strategy_val = getattr(response_policy, "pedagogical_strategy", None)
+        strategy_name = strategy_val.value if strategy_val else "NONE"
+        strategy_overlay = overlays.get(strategy_name, "") if enable_learnlm else ""
+
         guardrail = ""
         if response_policy.answer_depth in {AnswerDepth.DIRECT, AnswerDepth.SCAFFOLDED}:
             guardrail = (
@@ -430,6 +396,27 @@ class ConversationContextService:
             )
         if response_policy.tone in {ResponseTone.ANALYTICAL, ResponseTone.LITERARY}:
             guardrail += "\n【深度表達邊界】即使使用分析或文學語氣，也必須先回答使用者的具體問題。"
+        if response_policy.answer_depth == AnswerDepth.DIRECT or response_policy.followup_mode == FollowupMode.NONE:
+            guardrail += (
+                "\n【過度教學防護】非概念解釋或非學習求助任務時，嚴禁強加反問或硬套教學語氣。"
+                "當使用者僅要求直接答案、考題解答或進行日常閒聊時，請直接回答，不得反問或展開多餘教學。"
+            )
+
+        strategy_line = (
+            f"\n- pedagogical_strategy: {strategy_name}{strategy_overlay}"
+            if (enable_learnlm and strategy_name != "NONE")
+            else ""
+        )
+        version_line = (
+            f"\n- policy_version: {response_policy.policy_version}"
+            if (enable_learnlm and getattr(response_policy, "policy_version", None))
+            else ""
+        )
+        priority_boundary = (
+            "\n【優先權與安全邊界條款】本回合回答策略與教學引導僅控制回答的結構、語氣與說明方式。"
+            "絕對不得違反上述【外部資料安全邊界】、【文獻引用格式】與【使用者狀態規則】。"
+            "若教學引導與事實引用或記憶安全邊界衝突，必須無條件優先遵守事實引用與安全邊界。"
+        )
 
         return (
             "\n\n【本回合回答策略】"
@@ -438,7 +425,10 @@ class ConversationContextService:
             f"\n- tone: {response_policy.tone.value}{tone_overlay}"
             f"\n- structure: {response_policy.structure.value}，{structure_rules[response_policy.structure]}"
             f"\n- followup_mode: {response_policy.followup_mode.value}，{followup_rules[response_policy.followup_mode]}"
+            f"{strategy_line}"
+            f"{version_line}"
             f"{guardrail}"
+            f"{priority_boundary}"
         )
 
     @staticmethod

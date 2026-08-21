@@ -6,6 +6,7 @@ import pytest
 from backend.services.query_policy_service import (
     AnswerDepth,
     FollowupMode,
+    PedagogicalStrategy,
     ResponseStructure,
     ResponseTone,
     TaskIntent,
@@ -44,6 +45,8 @@ async def test_classify_response_policy_parses_valid_json(caplog):
               "tone": "PLAIN",
               "structure": "STEP_BY_STEP",
               "followup_mode": "OPTIONAL",
+              "pedagogical_strategy": "ACTIVE_SCAFFOLDING",
+              "policy_version": "learnlm-v1",
               "legacy_policy": "NORMAL"
             }
             """
@@ -62,7 +65,10 @@ async def test_classify_response_policy_parses_valid_json(caplog):
     assert policy.tone is ResponseTone.PLAIN
     assert policy.structure is ResponseStructure.STEP_BY_STEP
     assert policy.followup_mode is FollowupMode.OPTIONAL
+    assert policy.pedagogical_strategy is PedagogicalStrategy.ACTIVE_SCAFFOLDING
+    assert policy.policy_version == "learnlm-v1"
     assert "orchestration.response_policy_selected" in caplog.text
+    assert "ACTIVE_SCAFFOLDING" in caplog.text
     assert "我聽不懂" not in caplog.text
 
 
@@ -98,11 +104,23 @@ def test_response_policy_from_dict_sanitizes_unknown_values():
             "tone": "DRAMATIC",
             "structure": "ESSAY",
             "followup_mode": "ALWAYS",
+            "pedagogical_strategy": "MAGIC_TEACHING",
             "legacy_policy": "BAD",
         }
     )
 
     assert policy == default_response_policy()
+    assert policy.pedagogical_strategy is PedagogicalStrategy.ACTIVE_SCAFFOLDING
+
+
+def test_response_policy_safe_log_metadata_contains_observability_fields():
+    """Metadata should include pedagogical strategy and policy version."""
+
+    policy = default_response_policy()
+    meta = policy.safe_log_metadata()
+
+    assert meta["pedagogical_strategy"] == "ACTIVE_SCAFFOLDING"
+    assert meta["policy_version"] == "learnlm-v1"
 
 
 def test_response_policy_from_legacy_push_limit_allows_reflection():
@@ -113,6 +131,7 @@ def test_response_policy_from_legacy_push_limit_allows_reflection():
     assert policy.task_intent is TaskIntent.DISCUSS_IDEA
     assert policy.answer_depth is AnswerDepth.REFLECTIVE
     assert policy.tone is ResponseTone.ANALYTICAL
+    assert policy.pedagogical_strategy is PedagogicalStrategy.METACOGNITIVE_REFLECTION
     assert policy.legacy_policy == "PUSH_LIMIT"
 
 
@@ -130,6 +149,8 @@ async def test_classify_dialogue_policy_impl_preserves_string_contract():
               "tone": "ANALYTICAL",
               "structure": "ARGUMENT",
               "followup_mode": "OPTIONAL",
+              "pedagogical_strategy": "METACOGNITIVE_REFLECTION",
+              "policy_version": "learnlm-v1",
               "legacy_policy": "PUSH_LIMIT"
             }
             """
@@ -144,3 +165,4 @@ async def test_classify_dialogue_policy_impl_preserves_string_contract():
     )
 
     assert policy == "PUSH_LIMIT"
+

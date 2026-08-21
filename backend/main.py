@@ -138,6 +138,19 @@ RESPONSE_POLICY_OVERLAYS = {
     "TUTORING": "\n【語氣控制：TUTORING】使用教學陪伴語氣，提供例子與必要提示。",
     "ANALYTICAL": "\n【語氣控制：ANALYTICAL】可使用分析性語氣，拆解脈絡、前提與因果。",
     "LITERARY": "\n【語氣控制：LITERARY】可使用文學評論語氣，但不要犧牲清楚度。",
+    "NONE": "",
+    "ACTIVE_SCAFFOLDING": (
+        "\n【教學策略：主動鷹架】使用白話微小步階提示，引導使用者自行推導，給予層次式線索而非一口氣灌輸全套解答。"
+    ),
+    "COGNITIVE_LOAD_REDUCTION": (
+        "\n【教學策略：降低認知負荷】簡化專有名詞，拆解複雜度，一次只處理一個核心點，避免長篇贅述。"
+    ),
+    "METACOGNITIVE_REFLECTION": (
+        "\n【教學策略：後設認知反思】在給出分析後，鼓勵使用者回顧其思考歷程或策略選擇（例如：你覺得哪一步最關鍵？）。"
+    ),
+    "GUIDED_QUESTIONING": (
+        "\n【教學策略：啟發式提問】以探究式提問引導注意力，幫助使用者釐清迷思概念。"
+    ),
 }
 
 # 1. 普通模式 (Instruct)

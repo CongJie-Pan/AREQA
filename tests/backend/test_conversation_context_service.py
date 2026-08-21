@@ -469,3 +469,133 @@ async def test_deep_dive_response_policy_enables_reflective_overlay():
     assert "語氣控制：ANALYTICAL" in system_prompt
     assert "允許展開歷史、哲學、文學或跨領域深度分析" in system_prompt
     assert "過度深度防護" not in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_learnlm_active_scaffolding_injects_pedagogical_strategy_and_priority_claim():
+    """Active scaffolding should inject LearnLM strategy and priority claims."""
+
+    from backend.services.query_policy_service import PedagogicalStrategy
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-scaffold-learnlm",
+        messages=[{"role": "user", "content": "請引導我解開這道數學題"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="請引導我解開這道數學題",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-scaffold-learnlm",
+        response_policy=ResponsePolicy(
+            task_intent=TaskIntent.EXPLAIN_TEXT,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.REQUIRED,
+            pedagogical_strategy=PedagogicalStrategy.ACTIVE_SCAFFOLDING,
+            policy_version="learnlm-v1",
+            legacy_policy="PROBE_UNDERSTANDING",
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "pedagogical_strategy: ACTIVE_SCAFFOLDING" in system_prompt
+    assert "教學策略：主動鷹架" in system_prompt
+    assert "policy_version: learnlm-v1" in system_prompt
+    assert "優先權與安全邊界條款" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_learnlm_direct_answer_enforces_over_tutoring_guardrail():
+    """Direct answers must include over-tutoring guardrail and suppress forced questions."""
+
+    from backend.services.query_policy_service import PedagogicalStrategy
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-direct-learnlm",
+        messages=[{"role": "user", "content": "只要告訴我答案選 A 還是 B"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="只要告訴我答案選 A 還是 B",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-direct-learnlm",
+        response_policy=ResponsePolicy(
+            task_intent=TaskIntent.ANSWER_EXAM,
+            answer_depth=AnswerDepth.DIRECT,
+            tone=ResponseTone.PLAIN,
+            structure=ResponseStructure.SHORT,
+            followup_mode=FollowupMode.NONE,
+            pedagogical_strategy=PedagogicalStrategy.NONE,
+            policy_version="learnlm-v1",
+            legacy_policy="NORMAL",
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "結尾不要加引導問題" in system_prompt
+    assert "過度教學防護" in system_prompt
+    assert "不得反問或展開多餘教學" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_rag_and_memory_boundaries_have_priority_over_learnlm_policy():
+    """RAG citation rules and memory boundaries must remain superior to prompt policies."""
+
+    from backend.services.query_policy_service import PedagogicalStrategy
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-rag-priority",
+        messages=[{"role": "user", "content": "根據這份資料說明原理"}],
+        use_rag=True,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj={"status": "ok"},
+        last_user_msg="根據這份資料說明原理",
+        context_prompt="[文獻1] 測試資料\n內容: 太陽從東邊升起。",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-rag-priority",
+        response_policy=ResponsePolicy(
+            task_intent=TaskIntent.EXPLAIN_TEXT,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.OPTIONAL,
+            pedagogical_strategy=PedagogicalStrategy.ACTIVE_SCAFFOLDING,
+            policy_version="learnlm-v1",
+            legacy_policy="NORMAL",
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "已注入 <context> 參考資料，請嚴格依文獻回答並標註來源" in system_prompt
+    assert "外部資料安全邊界" in system_prompt
+    assert "使用者狀態規則" in system_prompt
+    assert "優先權與安全邊界條款" in system_prompt
+    assert "絕對不得違反上述【外部資料安全邊界】" in system_prompt
+
