@@ -28,6 +28,7 @@ def test_settings_loads_defaults():
     assert s.enable_parts_prompt_context is True
     assert s.enable_parts_llm_rewrite is True
     assert s.parts_rewrite_timeout_ms == 800
+    assert s.enable_parts_prompt_debug_logs is False
     assert s.enable_production_turn_trace_summary is True
     assert s.turn_trace_slow_total_threshold_ms == 8000
     assert s.turn_trace_slow_first_token_threshold_ms == 5000
@@ -61,6 +62,7 @@ def test_settings_can_be_overridden_by_env():
         'ENABLE_PARTS_PROMPT_CONTEXT': 'false',
         'ENABLE_PARTS_LLM_REWRITE': 'false',
         'PARTS_REWRITE_TIMEOUT_MS': '250',
+        'ENABLE_PARTS_PROMPT_DEBUG_LOGS': 'true',
         'TURN_TRACE_SLOW_TOTAL_THRESHOLD_MS': '9000',
         'EXPLICIT_RECALL_MEMORY_TIMEOUT_MS': '1500',
         'ENABLE_EXPLICIT_RECALL_MEMORY_CACHE': 'false',
@@ -87,6 +89,7 @@ def test_settings_can_be_overridden_by_env():
         assert s.enable_parts_prompt_context is False
         assert s.enable_parts_llm_rewrite is False
         assert s.parts_rewrite_timeout_ms == 250
+        assert s.enable_parts_prompt_debug_logs is True
         assert s.turn_trace_slow_total_threshold_ms == 9000
         assert s.explicit_recall_memory_timeout_ms == 1500
         assert s.enable_explicit_recall_memory_cache is False

@@ -86,6 +86,44 @@ async def test_parts_context_rewrite_parses_valid_json_without_logging_user_text
 
 
 @pytest.mark.asyncio
+async def test_parts_context_debug_logs_emit_sensitive_payload_when_enabled(caplog):
+    """Explicit debug mode should expose prompt, raw text, and PARTS fields."""
+
+    caplog.set_level(logging.WARNING)
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "persona": "引導型數學理解教練",
+              "act": "檢查解題步驟",
+              "recipient": "程度未知的學習者",
+              "theme": "運算順序",
+              "structure": "分步檢查",
+              "confidence": "high",
+              "missing_fields": []
+            }
+            """
+        )
+    )
+
+    await PartsContextService().build(
+        user_message="我算這題對嗎？",
+        response_policy=_policy(),
+        client=client,
+        model="policy-model",
+        enable_debug_logs=True,
+    )
+
+    assert "parts_context.debug_rewrite_prompt_sensitive" in caplog.text
+    assert "parts_context.debug_rewrite_selected_sensitive" in caplog.text
+    assert "我算這題對嗎" in caplog.text
+    assert "Rewrite the latest user request" in caplog.text
+    assert "引導型數學理解教練" in caplog.text
+    assert "運算順序" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_parts_context_rewrite_invalid_json_falls_back(caplog):
     """Malformed rewrite output should fall back without blocking answer flow."""
 

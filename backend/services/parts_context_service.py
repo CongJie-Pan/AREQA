@@ -4,6 +4,8 @@ The service owns the per-turn prompt-engineering layer that converts the latest
 user request and existing backend policy decisions into a stable PARTS task
 card. It never changes the public chat API or SSE contracts, and it must not log
 raw user text, generated prompt text, model output, credentials, or secrets.
+Sensitive debug logging is available only through an explicit runtime flag and
+must stay disabled by default.
 """
 
 from __future__ import annotations
@@ -105,6 +107,7 @@ class PartsContextService:
         model: str | None = None,
         enable_llm_rewrite: bool = True,
         timeout_ms: int = 800,
+        enable_debug_logs: bool = False,
     ) -> PartsContext:
         """Build a per-turn PARTS context.
 
@@ -121,6 +124,10 @@ class PartsContextService:
             model: Existing policy classifier model identifier.
             enable_llm_rewrite: Whether the bounded LLM rewrite path is enabled.
             timeout_ms: Rewrite timeout in milliseconds.
+            enable_debug_logs: Explicit sensitive-debug switch. When enabled,
+                terminal logs include raw user text, the rewrite prompt, and
+                PARTS field values for local diagnosis. Keep disabled outside
+                controlled development sessions.
 
         Returns:
             A validated ``PartsContext``. Fallback is returned for all provider,
@@ -168,6 +175,7 @@ class PartsContextService:
                     has_attachments=has_attachments,
                     client=client,
                     model=model,
+                    enable_debug_logs=enable_debug_logs,
                 ),
                 timeout=timeout_seconds,
             )
@@ -179,6 +187,12 @@ class PartsContextService:
                 route_name,
                 json.dumps(candidate.safe_log_metadata(), sort_keys=True),
             )
+            self._log_sensitive_debug(
+                enabled=enable_debug_logs,
+                event="parts_context.debug_rewrite_selected_sensitive",
+                user_message=user_message,
+                parts_context=candidate,
+            )
             return candidate
         except Exception as exc:
             logger.warning(
@@ -186,6 +200,12 @@ class PartsContextService:
                 route_name,
                 type(exc).__name__,
                 json.dumps(fallback.safe_log_metadata(), sort_keys=True),
+            )
+            self._log_sensitive_debug(
+                enabled=enable_debug_logs,
+                event="parts_context.debug_rewrite_fallback_sensitive",
+                user_message=user_message,
+                parts_context=fallback,
             )
             return fallback
 
@@ -278,6 +298,7 @@ class PartsContextService:
         has_attachments: bool,
         client: Any,
         model: str,
+        enable_debug_logs: bool,
     ) -> dict[str, Any]:
         """Call the policy model to rewrite latest query into strict PARTS JSON."""
 
@@ -309,6 +330,18 @@ Response policy:
 
 Latest user request:
 {user_message}"""
+        if enable_debug_logs:
+            logger.warning(
+                "parts_context.debug_rewrite_prompt_sensitive payload=%s",
+                json.dumps(
+                    {
+                        "user_message": user_message,
+                        "rewrite_prompt": prompt,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            )
         response = await client.chat.completions.create(
             model=model,
             messages=[
@@ -403,6 +436,52 @@ Latest user request:
         if policy.structure == ResponseStructure.ARGUMENT:
             return "核心判斷 + 理由 + 取捨"
         return "分步解釋 + 最多一個診斷性追問"
+
+    @staticmethod
+    def _log_sensitive_debug(
+        *,
+        enabled: bool,
+        event: str,
+        user_message: str,
+        parts_context: PartsContext,
+    ) -> None:
+        """Emit opt-in sensitive PARTS debug logs.
+
+        Args:
+            enabled: Explicit runtime switch. No sensitive payload is logged
+                when false.
+            event: Stable debug event name ending with ``_sensitive``.
+            user_message: Raw latest user text.
+            parts_context: PARTS field values selected for prompt injection.
+
+        Side effects:
+            Writes a warning-level terminal log containing raw user text and
+            PARTS field values. This is intentionally noisy and must remain
+            opt-in because it may contain private user data.
+        """
+
+        if not enabled:
+            return
+        logger.warning(
+            "%s payload=%s",
+            event,
+            json.dumps(
+                {
+                    "user_message": user_message,
+                    "parts": {
+                        "persona": parts_context.persona,
+                        "act": parts_context.act,
+                        "recipient": parts_context.recipient,
+                        "theme": parts_context.theme,
+                        "structure": parts_context.structure,
+                        "confidence": parts_context.confidence,
+                        "missing_fields": list(parts_context.missing_fields),
+                    },
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        )
 
 
 def format_parts_context(parts_context: PartsContext) -> str:

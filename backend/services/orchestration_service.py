@@ -1101,6 +1101,7 @@ class OrchestrationService:
                 model=settings.model_policy_classifier,
                 enable_llm_rewrite=settings.enable_parts_llm_rewrite,
                 timeout_ms=settings.parts_rewrite_timeout_ms,
+                enable_debug_logs=settings.enable_parts_prompt_debug_logs,
             )
             if trace:
                 trace.mark("parts_context_finished")

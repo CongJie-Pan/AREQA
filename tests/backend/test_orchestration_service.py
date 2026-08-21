@@ -916,6 +916,7 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
     monkeypatch.setattr(runtime_config.settings, "enable_parts_prompt_context", True)
     monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite", True)
     monkeypatch.setattr(runtime_config.settings, "parts_rewrite_timeout_ms", 321)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_prompt_debug_logs", True)
     monkeypatch.setattr(runtime_config.settings, "model_policy_classifier", "policy-model")
     service = OrchestrationService(mock_router, mock_rag, None, mock_client)
     parts_context = PartsContext(
@@ -964,6 +965,7 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
     assert parts_kwargs["model"] == "policy-model"
     assert parts_kwargs["enable_llm_rewrite"] is True
     assert parts_kwargs["timeout_ms"] == 321
+    assert parts_kwargs["enable_debug_logs"] is True
     context_kwargs = service.context_service.build_conversation_context.await_args.kwargs
     assert context_kwargs["parts_context"] == parts_context
 
