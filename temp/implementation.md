@@ -166,7 +166,7 @@ PARTS 只控制回答角色、任務、對象、主題與格式。
 5. Add feature flags:
    - `enable_parts_prompt_context = True`
    - `enable_parts_llm_rewrite = True`
-   - `parts_rewrite_timeout_ms = 800`
+   - `parts_rewrite_timeout_ms = 1500`
 6. Keep public API and SSE contracts unchanged.
 
 ## Tests
