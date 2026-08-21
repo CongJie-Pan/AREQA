@@ -334,6 +334,8 @@ Rules:
 - Do not tell the main answer model to output P/A/R/T/S labels.
 - Do not infer learner ability, grade, mood, or mastery unless explicitly provided in the latest request or verified context.
 - For DIRECT answers or exam-choice turns, preserve directness and do not force tutoring or follow-up questions.
+- For terse learning-topic requests, do not automatically turn them into a full encyclopedia-style summary. If the user did not explicitly ask for a complete timeline, full summary, key-point list, or final answer, treat the request as a possible learning entry point.
+- For learning entry points, prefer a warm subject-matter coach persona, an act that opens the first step of exploration, and a structure such as 蘇格拉底式問答；一次只進行一個小步驟；先給一小段背景，再提出一個開放式問題；不要一次列出完整內容.
 - PARTS must not override RAG citation rules, attachment grounding, memory boundaries, tool authorization, or safety.
 
 Route: {self._route_name(turn_plan)}

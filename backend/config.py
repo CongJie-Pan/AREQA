@@ -4,8 +4,8 @@ class Settings(BaseSettings):
     # LLM Model Names
     model_policy_classifier: str = "google/gemini-3.1-flash-lite"
     model_hyde_decomposer: str = "google/gemini-3.1-flash-lite"
-    model_main_instruct: str = "google/gemini-3.1-flash-lite"
-    model_main_thinking: str = "google/gemini-3.1-flash-lite"
+    model_main_instruct: str = "google/gemini-3.7-flash"
+    model_main_thinking: str = "google/gemini-3.7-flash"
     model_gum: str = "google/gemini-3.1-flash-lite"
     model_zpd_query: str = "google/gemini-3.1-flash-lite"
     model_suggestion: str = "google/gemini-2.5-flash-lite"
