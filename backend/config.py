@@ -33,8 +33,6 @@ class Settings(BaseSettings):
     foreground_model_call_budget_learning: int = 3
     enable_policy_classifier_for_general_chat: bool = True
     enable_sync_long_term_memory_for_general_chat: bool = False
-    enable_learnlm_prompt_policy: bool = True
-    learnlm_policy_version: str = "learnlm-v1"
     enable_production_turn_trace_summary: bool = True
     turn_trace_slow_total_threshold_ms: int = 8000
     turn_trace_slow_first_token_threshold_ms: int = 5000

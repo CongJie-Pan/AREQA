@@ -58,16 +58,6 @@ class FollowupMode(str, Enum):
     REQUIRED = "REQUIRED"
 
 
-class PedagogicalStrategy(str, Enum):
-    """Google LearnLM pedagogical strategy grounded in learning science."""
-
-    NONE = "NONE"
-    ACTIVE_SCAFFOLDING = "ACTIVE_SCAFFOLDING"
-    COGNITIVE_LOAD_REDUCTION = "COGNITIVE_LOAD_REDUCTION"
-    METACOGNITIVE_REFLECTION = "METACOGNITIVE_REFLECTION"
-    GUIDED_QUESTIONING = "GUIDED_QUESTIONING"
-
-
 ALLOWED_LEGACY_POLICIES = {
     "PROBE_UNDERSTANDING",
     "SUGGEST_ACTION",
@@ -87,8 +77,6 @@ class ResponsePolicy:
         structure: The expected answer shape.
         followup_mode: Whether a follow-up question should be omitted, optional,
             or required.
-        pedagogical_strategy: Google LearnLM learning-science strategy.
-        policy_version: Version identifier for observability.
         legacy_policy: Compatibility policy used by older orchestration code for
             token budgeting and tests.
 
@@ -103,8 +91,6 @@ class ResponsePolicy:
     tone: ResponseTone
     structure: ResponseStructure
     followup_mode: FollowupMode
-    pedagogical_strategy: PedagogicalStrategy = PedagogicalStrategy.NONE
-    policy_version: str = "learnlm-v1"
     legacy_policy: str = "NORMAL"
 
     def safe_log_metadata(self) -> dict[str, str]:
@@ -116,8 +102,6 @@ class ResponsePolicy:
             "tone": self.tone.value,
             "structure": self.structure.value,
             "followup_mode": self.followup_mode.value,
-            "pedagogical_strategy": self.pedagogical_strategy.value,
-            "policy_version": self.policy_version,
             "legacy_policy": self.legacy_policy,
         }
 
@@ -135,8 +119,6 @@ def default_response_policy() -> ResponsePolicy:
         tone=ResponseTone.TUTORING,
         structure=ResponseStructure.STEP_BY_STEP,
         followup_mode=FollowupMode.OPTIONAL,
-        pedagogical_strategy=PedagogicalStrategy.ACTIVE_SCAFFOLDING,
-        policy_version="learnlm-v1",
         legacy_policy="NORMAL",
     )
 
@@ -167,7 +149,6 @@ def response_policy_from_dict(payload: Any) -> ResponsePolicy:
     legacy_policy = str(payload.get("legacy_policy") or fallback.legacy_policy).strip()
     if legacy_policy not in ALLOWED_LEGACY_POLICIES:
         legacy_policy = fallback.legacy_policy
-    policy_version = str(payload.get("policy_version") or fallback.policy_version).strip()
     return ResponsePolicy(
         task_intent=_coerce_enum(TaskIntent, payload.get("task_intent"), fallback.task_intent),
         answer_depth=_coerce_enum(AnswerDepth, payload.get("answer_depth"), fallback.answer_depth),
@@ -182,12 +163,6 @@ def response_policy_from_dict(payload: Any) -> ResponsePolicy:
             payload.get("followup_mode"),
             fallback.followup_mode,
         ),
-        pedagogical_strategy=_coerce_enum(
-            PedagogicalStrategy,
-            payload.get("pedagogical_strategy"),
-            fallback.pedagogical_strategy,
-        ),
-        policy_version=policy_version,
         legacy_policy=legacy_policy,
     )
 
@@ -215,8 +190,6 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             tone=ResponseTone.ANALYTICAL,
             structure=ResponseStructure.ARGUMENT,
             followup_mode=FollowupMode.OPTIONAL,
-            pedagogical_strategy=PedagogicalStrategy.METACOGNITIVE_REFLECTION,
-            policy_version="learnlm-v1",
             legacy_policy=legacy_policy,
         )
     if legacy_policy == "SUGGEST_ACTION":
@@ -226,8 +199,6 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             tone=ResponseTone.TUTORING,
             structure=ResponseStructure.STEP_BY_STEP,
             followup_mode=FollowupMode.OPTIONAL,
-            pedagogical_strategy=PedagogicalStrategy.ACTIVE_SCAFFOLDING,
-            policy_version="learnlm-v1",
             legacy_policy=legacy_policy,
         )
     if legacy_policy == "PROBE_UNDERSTANDING":
@@ -237,8 +208,6 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             tone=ResponseTone.TUTORING,
             structure=ResponseStructure.STEP_BY_STEP,
             followup_mode=FollowupMode.REQUIRED,
-            pedagogical_strategy=PedagogicalStrategy.GUIDED_QUESTIONING,
-            policy_version="learnlm-v1",
             legacy_policy=legacy_policy,
         )
     return default_response_policy()
@@ -355,18 +324,15 @@ Return strict JSON only with these fields:
   "tone": "PLAIN" | "TUTORING" | "ANALYTICAL" | "LITERARY",
   "structure": "SHORT" | "STEP_BY_STEP" | "NOTE_DRAFT" | "ARGUMENT",
   "followup_mode": "NONE" | "OPTIONAL" | "REQUIRED",
-  "pedagogical_strategy": "NONE" | "ACTIVE_SCAFFOLDING" | "COGNITIVE_LOAD_REDUCTION" | "METACOGNITIVE_REFLECTION" | "GUIDED_QUESTIONING",
-  "policy_version": "learnlm-v1",
   "legacy_policy": "PROBE_UNDERSTANDING" | "SUGGEST_ACTION" | "PUSH_LIMIT" | "NORMAL"
 }}
 
 Decision rules:
-- If the user asks "I do not understand", "what does this mean", or asks for a plain explanation, choose EXPLAIN_TEXT, SCAFFOLDED, PLAIN, STEP_BY_STEP, ACTIVE_SCAFFOLDING or COGNITIVE_LOAD_REDUCTION.
-- If the user asks for a forced-choice answer, exam answer, or "only choose one", choose ANSWER_EXAM, DIRECT, PLAIN, SHORT, followup NONE, pedagogical_strategy NONE.
+- If the user asks "I do not understand", "what does this mean", or asks for a plain explanation, choose EXPLAIN_TEXT, SCAFFOLDED, PLAIN, STEP_BY_STEP.
+- If the user asks for a forced-choice answer, exam answer, or "only choose one", choose ANSWER_EXAM, DIRECT, PLAIN, SHORT, followup NONE.
 - If the user asks to complete, revise, or polish notes, choose WRITE_NOTE, SCAFFOLDED, TUTORING, NOTE_DRAFT.
-- If the user asks for the core, essence, viewpoint, reflection, historical meaning, literary feeling, or "what do you think", choose DISCUSS_IDEA with REFLECTIVE or DEEP_DIVE, METACOGNITIVE_REFLECTION.
+- If the user asks for the core, essence, viewpoint, reflection, historical meaning, literary feeling, or "what do you think", choose DISCUSS_IDEA with REFLECTIVE or DEEP_DIVE.
 - Prefer SCAFFOLDED over DEEP_DIVE unless the user explicitly requests deeper reflection.
-- For non-academic or direct QA requests, set pedagogical_strategy to NONE to prevent over-tutoring.
 - The legacy policy is for compatibility: PROBE_UNDERSTANDING for eliciting reasoning, SUGGEST_ACTION for concrete next steps, PUSH_LIMIT for reflective/deep extension, otherwise NORMAL.
 
 Recent history:
@@ -381,7 +347,7 @@ Current user message:
                 {"role": "system", "content": "Return only valid JSON. Do not explain."},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=240,
+            max_tokens=220,
             temperature=0.1,
         )
         content = response.choices[0].message.content.strip()
