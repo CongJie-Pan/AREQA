@@ -565,18 +565,6 @@ quoteBlockContent: css`
     animation: ${cursorBlink} 1s step-end infinite;
   `,
 
-  answerBlockReveal: css`
-    animation: ${verticalReveal} 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: var(--answer-block-delay, 0ms);
-    will-change: opacity, transform, filter;
-
-    @media (prefers-reduced-motion: reduce) {
-      animation: none;
-      filter: none;
-      transform: none;
-    }
-  `,
-
   thinkingPanelWrapper: css`
     margin-bottom: 12px;
   `,

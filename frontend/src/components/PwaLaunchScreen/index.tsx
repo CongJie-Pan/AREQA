@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createStyles } from 'antd-style';
+import Image from 'next/image';
 
 const LAUNCH_SCREEN_VISIBLE_MS = 1800;
 const LAUNCH_SCREEN_FADE_MS = 280;
@@ -85,12 +86,14 @@ export function PwaLaunchScreen() {
 
   return (
     <div className={cx(styles.overlay, isFadingOut && styles.hidden)} aria-hidden="true">
-      <img
-        className={styles.image}
-        src="/icon/start_screen.png"
+      <Image
         alt=""
-        decoding="async"
+        className={styles.image}
         draggable={false}
+        fill
+        priority
+        sizes="100vw"
+        src="/icon/start_screen.png"
       />
     </div>
   );

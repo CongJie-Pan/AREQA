@@ -36,14 +36,6 @@ import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/u
 const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
-const ANSWER_BLOCK_STAGGER_MS = 42;
-const STREAMDOWN_ANIMATION = {
-  animation: 'fadeIn',
-  duration: 160,
-  easing: 'ease-out',
-  sep: 'char',
-  stagger: 6,
-} as const;
 const STREAMDOWN_PLUGINS = { math };
 const STREAMDOWN_LINK_SAFETY = { enabled: false };
 
@@ -348,7 +340,7 @@ function StreamingMarkdown({
 
   return (
     <Streamdown
-      animated={STREAMDOWN_ANIMATION}
+      animated
       components={markdownComponents as StreamdownComponents}
       controls={false}
       disallowedElements={['script', 'iframe', 'object', 'embed']}
@@ -373,13 +365,6 @@ function getImageAspectRatio(block: ImageBlock): React.CSSProperties {
   }
 
   return { aspectRatio: `${block.width} / ${block.height}` };
-}
-
-function getAnswerBlockRevealStyle(index: number): React.CSSProperties {
-  return {
-    '--answer-block-index': index,
-    '--answer-block-delay': `${Math.min(index, 8) * ANSWER_BLOCK_STAGGER_MS}ms`,
-  } as React.CSSProperties;
 }
 
 /**
@@ -541,10 +526,8 @@ function AnswerBlocksRenderer({
         if (block.type === 'image_block') {
           return (
             <div
-              className={styles.answerBlockReveal}
               data-answer-block-index={index}
               key={block.slotId || `image-${index}`}
-              style={getAnswerBlockRevealStyle(index)}
             >
               <ImageBlockCard block={block} styles={styles} />
             </div>
@@ -553,10 +536,8 @@ function AnswerBlocksRenderer({
 
         return (
           <div
-            className={styles.answerBlockReveal}
             data-answer-block-index={index}
             key={`paragraph-${index}`}
-            style={getAnswerBlockRevealStyle(index)}
           >
             <StreamingMarkdown
               content={block.text}
@@ -580,10 +561,8 @@ function ImageBlocksRenderer({ blocks, styles }: { blocks: AnswerBlock[]; styles
 
         return (
           <div
-            className={styles.answerBlockReveal}
             data-answer-block-index={index}
             key={block.slotId || `streamed-image-${index}`}
-            style={getAnswerBlockRevealStyle(index)}
           >
             <ImageBlockCard block={block} styles={styles} />
           </div>
