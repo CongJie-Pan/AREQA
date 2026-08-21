@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from backend.services.conversation_context_service import ConversationContext
 from backend.services.conversation_stream_service import ConversationStreamService
 from backend.services.orchestration_service import OrchestrationService
+from backend.services.parts_context_service import PartsContext
 from backend.services.visual_answer_service import ImageBlock
 from backend.services.query_policy_service import (
     AnswerDepth,
@@ -902,6 +903,69 @@ async def test_prompt_assembly_passes_explicit_recall_memory_runtime_settings(
     assert kwargs["enable_explicit_recall_memory_cache"] is True
     assert kwargs["explicit_recall_memory_cache_ttl_seconds"] == 77
     assert kwargs["memory_skip_reason"] == "EXPLICIT_RECALL_REQUEST"
+
+
+@pytest.mark.asyncio
+async def test_prompt_assembly_builds_and_passes_parts_context(
+    mock_router, mock_rag, mock_client, monkeypatch
+):
+    """Prompt assembly should add PARTS context without changing public APIs."""
+
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_prompt_context", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite", True)
+    monkeypatch.setattr(runtime_config.settings, "parts_rewrite_timeout_ms", 321)
+    monkeypatch.setattr(runtime_config.settings, "model_policy_classifier", "policy-model")
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    parts_context = PartsContext(
+        persona="引導型數學理解教練",
+        act="檢查解題步驟",
+        recipient="程度未知的學習者",
+        theme="運算順序",
+        structure="分步檢查",
+        confidence="high",
+        missing_fields=(),
+    )
+    service.parts_context_service.build = AsyncMock(return_value=parts_context)
+    service.context_service.build_conversation_context = AsyncMock(
+        return_value=ConversationContext(
+            messages=[{"role": "user", "content": "answer"}],
+            learner_understanding="unknown",
+            retrieved_memory=False,
+        )
+    )
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        legacy_policy="NORMAL",
+    )
+
+    with patch("memory_store.get_global_store", return_value=None):
+        await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="parts-conv",
+            messages=[{"role": "user", "content": "我算這題對嗎？"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="我算這題對嗎？",
+            response_policy=response_policy,
+        )
+
+    service.parts_context_service.build.assert_awaited_once()
+    parts_kwargs = service.parts_context_service.build.await_args.kwargs
+    assert parts_kwargs["response_policy"] == response_policy
+    assert parts_kwargs["client"] is mock_client
+    assert parts_kwargs["model"] == "policy-model"
+    assert parts_kwargs["enable_llm_rewrite"] is True
+    assert parts_kwargs["timeout_ms"] == 321
+    context_kwargs = service.context_service.build_conversation_context.await_args.kwargs
+    assert context_kwargs["parts_context"] == parts_context
 
 
 @pytest.mark.asyncio

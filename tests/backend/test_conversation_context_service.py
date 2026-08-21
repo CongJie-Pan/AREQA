@@ -6,6 +6,7 @@ import asyncio
 import pytest
 
 from backend.services.conversation_context_service import ConversationContextService
+from backend.services.parts_context_service import PartsContext
 from backend.services.query_policy_service import (
     AnswerDepth,
     FollowupMode,
@@ -429,6 +430,95 @@ async def test_scaffolded_response_policy_adds_plain_step_constraints():
     assert "語氣控制：PLAIN" in system_prompt
     assert "不要上升到宏大框架" in system_prompt
     assert "過度深度防護" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_parts_context_is_injected_after_response_policy():
+    """PARTS context should be available to the main model each turn."""
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-parts",
+        messages=[{"role": "user", "content": "我算這題對嗎？"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="我算這題對嗎？",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-parts",
+        response_policy=ResponsePolicy(
+            task_intent=TaskIntent.EXPLAIN_TEXT,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.OPTIONAL,
+            legacy_policy="NORMAL",
+        ),
+        parts_context=PartsContext(
+            persona="引導型數學理解教練",
+            act="檢查解題步驟並指出可能錯誤",
+            recipient="程度未知的學習者，不假設已掌握概念",
+            theme="運算順序與代數式計算",
+            structure="短回答 + 分步檢查 + 最多一個診斷性追問",
+            confidence="high",
+            missing_fields=("recipient_level",),
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "【本回合回答策略】" in system_prompt
+    assert "【PARTS 任務上下文】" in system_prompt
+    assert "P: 引導型數學理解教練" in system_prompt
+    assert "T: 運算順序與代數式計算" in system_prompt
+    assert "不得覆蓋文獻引用" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_rag_rules_remain_above_parts_context():
+    """PARTS must not weaken RAG citation and untrusted-context boundaries."""
+
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-rag-parts",
+        messages=[{"role": "user", "content": "根據資料解釋"}],
+        use_rag=True,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj={"status": "ok"},
+        last_user_msg="根據資料解釋",
+        context_prompt="[文獻1] 測試資料\n內容: 測試。",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-rag-parts",
+        parts_context=PartsContext(
+            persona="資料導讀教練",
+            act="根據提供的參考資料回答並維持引用格式",
+            recipient="程度未知的學習者，不假設已掌握概念",
+            theme="資料中的核心概念",
+            structure="分步解釋 + 引用文獻",
+            confidence="high",
+            missing_fields=(),
+        ),
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "已注入 <context> 參考資料，請嚴格依文獻回答並標註來源" in system_prompt
+    assert "外部資料安全邊界" in system_prompt
+    assert "【PARTS 優先權邊界】" in system_prompt
+    assert "不得覆蓋文獻引用" in system_prompt
 
 
 @pytest.mark.asyncio

@@ -51,6 +51,7 @@ from services.turn_intake_service import (
     normalize_avatar_name as _normalize_avatar_name,
 )
 from services.output_image_service import OutputImageService
+from services.parts_context_service import PartsContextService
 from services.visual_answer_service import VisualAnswerService
 
 
@@ -175,6 +176,7 @@ class OrchestrationService:
         self.post_turn_service = PostTurnService(suggestion_service)
         self.visual_answer_service = VisualAnswerService()
         self.output_image_service = OutputImageService()
+        self.parts_context_service = PartsContextService()
         self.turn_intake_service = TurnIntakeService(client)
         self.turn_plan_service = TurnPlanService(self.memory_policy)
         self.web_search_tool = WebSearchTool()
@@ -1083,6 +1085,26 @@ class OrchestrationService:
         from config import settings
         from memory_store import get_global_store
 
+        parts_context = None
+        if settings.enable_parts_prompt_context:
+            if trace:
+                trace.mark("parts_context_started")
+                if settings.enable_parts_llm_rewrite and self.client:
+                    trace.increment_model_call("parts_context_rewrite")
+            parts_context = await self.parts_context_service.build(
+                user_message=last_user_msg,
+                response_policy=response_policy,
+                turn_plan=turn_plan,
+                use_rag=use_rag,
+                use_web_search=use_web_search,
+                client=self.client,
+                model=settings.model_policy_classifier,
+                enable_llm_rewrite=settings.enable_parts_llm_rewrite,
+                timeout_ms=settings.parts_rewrite_timeout_ms,
+            )
+            if trace:
+                trace.mark("parts_context_finished")
+
         context = await self.context_service.build_conversation_context(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -1112,6 +1134,7 @@ class OrchestrationService:
             enable_explicit_recall_memory_cache=settings.enable_explicit_recall_memory_cache,
             explicit_recall_memory_cache_ttl_seconds=settings.explicit_recall_memory_cache_ttl_seconds,
             response_policy=response_policy,
+            parts_context=parts_context,
         )
         logger.info(
             "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s",
