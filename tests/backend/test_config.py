@@ -27,7 +27,7 @@ def test_settings_loads_defaults():
     assert s.enable_sync_long_term_memory_for_general_chat is False
     assert s.enable_parts_prompt_context is True
     assert s.enable_parts_llm_rewrite is True
-    assert s.parts_rewrite_timeout_ms == 1500
+    assert s.parts_rewrite_timeout_ms == 2500
     assert s.enable_parts_prompt_debug_logs is True
     assert s.enable_production_turn_trace_summary is True
     assert s.turn_trace_slow_total_threshold_ms == 8000

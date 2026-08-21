@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     enable_sync_long_term_memory_for_general_chat: bool = False
     enable_parts_prompt_context: bool = True
     enable_parts_llm_rewrite: bool = True
-    parts_rewrite_timeout_ms: int = 1500
+    parts_rewrite_timeout_ms: int = 2500
     enable_parts_prompt_debug_logs: bool = True
     enable_production_turn_trace_summary: bool = True
     turn_trace_slow_total_threshold_ms: int = 8000

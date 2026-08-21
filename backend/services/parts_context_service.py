@@ -314,29 +314,27 @@ class PartsContextService:
     ) -> dict[str, Any]:
         """Call the policy model to rewrite latest query into strict PARTS JSON."""
 
-        prompt = f"""Rewrite the latest user request into a compact LearnLM PARTS task context for AREQA.
-Return strict JSON only with:
+        prompt = f"""Rewrite the latest user request into AREQA LearnLM PARTS JSON.
+Return JSON only:
 {{
-  "persona": "short Traditional Chinese role",
-  "act": "short Traditional Chinese action",
-  "recipient": "short Traditional Chinese audience; use 程度未知的學習者 unless explicit or verified",
-  "theme": "short Traditional Chinese topic summary, not the full user message",
-  "structure": "short Traditional Chinese answer format",
-  "composed_instruction": "one natural Traditional Chinese prompt instruction composed from P/A/R/T/S",
+  "persona": "short zh-TW role",
+  "act": "short zh-TW action",
+  "recipient": "short zh-TW audience; use 程度未知的學習者 unless explicit/verified",
+  "theme": "short zh-TW topic, not full user text",
+  "structure": "short zh-TW answer shape",
+  "composed_instruction": "one natural zh-TW instruction composed from PARTS",
   "confidence": "low|medium|high",
   "missing_fields": ["safe_identifier"]
 }}
 
 Rules:
-- Keep every text field short.
-- composed_instruction should be one complete task instruction for the main answer model to follow.
-- Do not copy the full user message into theme.
-- Do not tell the main answer model to output P/A/R/T/S labels.
-- Do not infer learner ability, grade, mood, or mastery unless explicitly provided in the latest request or verified context.
-- For DIRECT answers or exam-choice turns, preserve directness and do not force tutoring or follow-up questions.
-- For terse learning-topic requests, do not automatically turn them into a full encyclopedia-style summary. If the user did not explicitly ask for a complete timeline, full summary, key-point list, or final answer, treat the request as a possible learning entry point.
-- For learning entry points, prefer a warm subject-matter coach persona, an act that opens the first step of exploration, and a structure such as 蘇格拉底式問答；一次只進行一個小步驟；先給一小段背景，再提出一個開放式問題；不要一次列出完整內容.
-- PARTS must not override RAG citation rules, attachment grounding, memory boundaries, tool authorization, or safety.
+- Short fields. Do not copy full user text into theme.
+- composed_instruction is for the main answer model to follow; never ask it to print P/A/R/T/S labels.
+- Do not infer learner level, grade, mood, or mastery unless explicit/verified.
+- DIRECT/exam turns: keep direct; do not force tutoring/follow-up.
+- Terse learning-topic turns without explicit "完整/總結/整理/列出/時間線/年表/答案/重點" are possible learning entry points.
+- Learning entry points: prefer warm subject coach + first exploration step + 蘇格拉底式問答；一次一小步；一小段背景；一個開放式問題；不要一次列完整內容.
+- PARTS never overrides citations, attachment grounding, memory, tools, or safety.
 
 Route: {self._route_name(turn_plan)}
 RAG active: {bool(use_rag)}
