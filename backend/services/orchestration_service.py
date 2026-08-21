@@ -797,7 +797,7 @@ class OrchestrationService:
         if not image_blocks:
             instruction = (
                 "【已驗證圖片狀態】本回合沒有可用的已驗證圖片。"
-                "不得輸出 [[AREQA_IMAGE_REQUEST ...]] 或 [[AREQA_VERIFIED_IMAGE ...]]；"
+                "不得輸出 <AREQA_IMAGE_SLOT .../>、[[AREQA_IMAGE_REQUEST ...]] 或 [[AREQA_VERIFIED_IMAGE ...]]；"
                 "若需要視覺輔助，請只用文字描述，不要假裝已插入圖片。"
             )
         else:
@@ -825,7 +825,7 @@ class OrchestrationService:
                 '[[AREQA_VERIFIED_IMAGE id="img_1"]]。'
                 "標記前後要用自然文字銜接，並優先依據 vision_summary、visible_elements、how_to_read 解釋這張圖；"
                 "若 vision_summary 為空，才退回依據圖片 caption/source 做有限解釋；"
-                "不得輸出 [[AREQA_IMAGE_REQUEST ...]]。"
+                "不得輸出 <AREQA_IMAGE_SLOT .../> 或 [[AREQA_IMAGE_REQUEST ...]]。"
                 f"\n<verified_images>{json.dumps(inventory, ensure_ascii=False)}</verified_images>"
             )
 
@@ -1094,7 +1094,7 @@ class OrchestrationService:
             parts_context = await self.parts_context_service.build(
                 user_message=last_user_msg,
                 response_policy=response_policy,
-                previous_assistant_context=self._previous_assistant_context(messages),
+                recent_conversation_context=self._recent_conversation_context(messages),
                 turn_plan=turn_plan,
                 use_rag=use_rag,
                 use_web_search=use_web_search,
@@ -1147,13 +1147,42 @@ class OrchestrationService:
         return context.messages
 
     @staticmethod
-    def _previous_assistant_context(messages: List[Dict[str, Any]]) -> str:
-        """Return the previous assistant message for PARTS follow-up resolution."""
+    def _recent_conversation_context(messages: List[Dict[str, Any]], max_turns: int = 5) -> str:
+        """Return a bounded recent conversation window for PARTS reference resolution.
 
-        for message in reversed(messages or []):
-            if message.get("role") == "assistant":
-                return str(message.get("content") or "")
-        return ""
+        Args:
+            messages: Chat messages before prompt assembly. The latest user
+                message may be present and is excluded because it is already
+                passed separately as ``user_message``.
+            max_turns: Number of prior user/assistant pairs to include.
+
+        Returns:
+            A role-labeled plain-text context window. The PARTS service performs
+            citation/source cleanup so this helper can preserve headings,
+            numbered lists, and bold subheadings from the original messages.
+        """
+
+        prior_messages = list(messages or [])
+        if prior_messages and prior_messages[-1].get("role") == "user":
+            prior_messages = prior_messages[:-1]
+
+        max_messages = max(max_turns, 1) * 2
+        selected = [
+            message
+            for message in prior_messages
+            if message.get("role") in {"user", "assistant"} and str(message.get("content") or "").strip()
+        ][-max_messages:]
+
+        role_labels = {
+            "user": "User",
+            "assistant": "Assistant",
+        }
+        blocks: List[str] = []
+        for message in selected:
+            role = str(message.get("role") or "")
+            content = str(message.get("content") or "").strip()
+            blocks.append(f"{role_labels.get(role, role)}:\n{content}")
+        return "\n\n".join(blocks)
 
     async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None, trace: Optional[TurnLatencyTrace] = None) -> AsyncGenerator[str, None]:
         """

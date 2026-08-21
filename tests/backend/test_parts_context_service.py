@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from textwrap import dedent
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -44,6 +45,38 @@ def _mock_chat_response(content: str):
             )
         ]
     )
+
+
+def test_clean_recent_conversation_context_removes_source_sections_without_truncating_later_turns():
+    """Source-list cleanup should not delete later turns in the recent window."""
+
+    raw_context = dedent(
+        """
+        User:
+        日本二戰歷史過程
+
+        Assistant:
+        第一階段：戰爭的開端與背景【文獻1】
+
+        #### 文獻來源
+        1. 測試來源
+
+        User:
+        當時日本商業發展如何 ?
+
+        Assistant:
+        1. **國家政策全面轉向軍需**
+        2. **基礎物資匱乏**
+        """
+    )
+
+    cleaned = PartsContextService.clean_recent_conversation_context(raw_context)
+
+    assert "第一階段：戰爭的開端與背景" in cleaned
+    assert "User:\n當時日本商業發展如何 ?" in cleaned
+    assert "2. **基礎物資匱乏**" in cleaned
+    assert "【文獻1】" not in cleaned
+    assert "測試來源" not in cleaned
 
 
 @pytest.mark.asyncio
@@ -128,8 +161,8 @@ async def test_parts_context_debug_logs_emit_sensitive_payload_when_enabled(capl
 
 
 @pytest.mark.asyncio
-async def test_parts_context_rewrite_uses_clean_previous_assistant_context_for_followup():
-    """Follow-up rewrites should get prior assistant context without citation noise."""
+async def test_parts_context_rewrite_uses_clean_recent_conversation_context_for_followup():
+    """Follow-up rewrites should get recent turns without citation/source noise."""
 
     client = MagicMock()
     client.chat.completions.create = AsyncMock(
@@ -149,24 +182,36 @@ async def test_parts_context_rewrite_uses_clean_previous_assistant_context_for_f
         )
     )
 
-    previous = """
+    recent_context = dedent(
+        """
+    User:
+    日本二戰歷史過程
+
+    Assistant:
     日本涉入第二次世界大戰並非單一事件所致【文獻13】。
+    為了清楚梳理脈絡，我們可以先從**第一階段：戰爭的開端與背景**來看：
+    1. **擴張初期與國際孤立（1931–1937年）**
+    2. **結盟與戰事擴大（1940–1941年）**
     面對當時國際上的經濟制裁與資源短缺，日本政府為何會選擇南進？
 
     #### 文獻來源
     1. 測試來源
     """
+    )
 
     context = await PartsContextService().build(
         user_message="那為何不要發展商業 ?",
-        previous_assistant_context=previous,
+        recent_conversation_context=recent_context,
         response_policy=_policy(task_intent=TaskIntent.DISCUSS_IDEA, structure=ResponseStructure.ARGUMENT),
         client=client,
         model="policy-model",
     )
 
     prompt = client.chat.completions.create.await_args.kwargs["messages"][1]["content"]
-    assert "Previous assistant context:" in prompt
+    assert "Recent conversation context:" in prompt
+    assert "User:\n日本二戰歷史過程" in prompt
+    assert "**第一階段：戰爭的開端與背景**" in prompt
+    assert "2. **結盟與戰事擴大（1940–1941年）**" in prompt
     assert "日本涉入第二次世界大戰並非單一事件所致" in prompt
     assert "經濟制裁與資源短缺" in prompt
     assert "【文獻13】" not in prompt
@@ -322,6 +367,11 @@ def test_format_parts_context_includes_priority_boundary():
     assert "記憶安全邊界" in prompt
     assert "最多提出一個簡短澄清問題" in prompt
     assert "【由 PARTS 生成的本回合任務指令】" in prompt
+    assert "【LearnLM 教學互動規則】" in prompt
+    assert "啟發主動學習" in prompt
+    assert "深層元認知與反思" in prompt
+    assert "支持與引導" in prompt
+    assert "圖文並茂" in prompt
     assert "不要輸出 P/A/R/T/S 標籤" in prompt
 
 

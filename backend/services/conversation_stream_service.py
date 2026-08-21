@@ -19,11 +19,13 @@ logger = logging.getLogger(__name__)
 
 _IMAGE_REQUEST_START = "[[AREQA_IMAGE_REQUEST"
 _VERIFIED_IMAGE_START = "[[AREQA_VERIFIED_IMAGE"
+_IMAGE_SLOT_START = "<AREQA_IMAGE_SLOT"
 _IMAGE_REQUEST_END = "]]"
 _IMAGE_REQUEST_PATTERN = re.compile(r"\[\[AREQA_IMAGE_REQUEST(?P<body>.*?)\]\]", re.DOTALL)
 _VERIFIED_IMAGE_PATTERN = re.compile(r"\[\[AREQA_VERIFIED_IMAGE(?P<body>.*?)\]\]", re.DOTALL)
+_IMAGE_SLOT_PATTERN = re.compile(r"<AREQA_IMAGE_SLOT(?P<body>.*?)/?>", re.DOTALL)
 _IMAGE_REQUEST_ATTR_PATTERN = re.compile(
-    r"""(?P<key>id|query|caption_hint)\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
+    r"""(?P<key>id|query|caption_hint|caption|alt)\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
     re.DOTALL,
 )
 _MAX_IMAGE_REQUEST_BUFFER_CHARS = 2000
@@ -62,11 +64,13 @@ class ImageRequestSlot:
 class ImageRequestMarkerFilter:
     """Remove planned visual markers from public deltas while recording slots.
 
-    The filter owns the streaming privacy boundary for `AREQA_IMAGE_REQUEST`
-    markers. It never logs marker bodies, queries, captions, or public text.
-    Callers should use `feed()` before appending/yielding public content and
-    `finish()` after the provider stream ends to release non-marker trailing
-    text if the model emitted a malformed marker.
+    The filter owns the streaming privacy boundary for model-emitted image
+    markers. It accepts the legacy ``[[AREQA_IMAGE_REQUEST ...]]`` marker, the
+    verified-image marker used by preflight, and the public ``<AREQA_IMAGE_SLOT
+    .../>`` alias. It never logs marker bodies, queries, captions, alt text, or
+    public text. Callers should use `feed()` before appending/yielding public
+    content and `finish()` after the provider stream ends to release non-marker
+    trailing text if the model emitted a malformed marker.
     """
 
     def __init__(self, *, max_slots: int = 2) -> None:
@@ -114,13 +118,13 @@ class ImageRequestMarkerFilter:
                     public_parts.append(text)
                 break
             public_parts.append(text[:marker_start])
-            marker_end = text.find(_IMAGE_REQUEST_END, marker_start)
+            marker_end, marker_end_token = self._marker_end(text, marker_start)
             if marker_end < 0:
                 self._pending = text[marker_start:]
                 break
-            marker = text[marker_start : marker_end + len(_IMAGE_REQUEST_END)]
+            marker = text[marker_start : marker_end + len(marker_end_token)]
             self._record_marker(marker)
-            text = text[marker_end + len(_IMAGE_REQUEST_END) :]
+            text = text[marker_end + len(marker_end_token) :]
 
         public_text = "".join(public_parts)
         self._public_accumulator += public_text
@@ -154,6 +158,9 @@ class ImageRequestMarkerFilter:
             match = _VERIFIED_IMAGE_PATTERN.fullmatch(stripped_marker)
             marker_kind = "verified"
         if not match:
+            match = _IMAGE_SLOT_PATTERN.fullmatch(stripped_marker)
+            marker_kind = "slot"
+        if not match:
             return
         attrs = {
             attr.group("key"): self._clean_attr(attr.group("value"))
@@ -161,9 +168,9 @@ class ImageRequestMarkerFilter:
         }
         slot_id = self._clean_slot_id(attrs.get("id", ""))
         query = attrs.get("query", "")[:120].strip()
-        if not slot_id or (marker_kind == "request" and not query):
+        if not slot_id or (marker_kind in {"request", "slot"} and not query):
             return
-        caption_hint = attrs.get("caption_hint", "")[:180].strip()
+        caption_hint = (attrs.get("caption_hint") or attrs.get("caption") or attrs.get("alt") or "")[:180].strip()
         self._slots.append(
             ImageRequestSlot(
                 slot_id=slot_id,
@@ -182,10 +189,25 @@ class ImageRequestMarkerFilter:
             for index in (
                 text.find(_IMAGE_REQUEST_START),
                 text.find(_VERIFIED_IMAGE_START),
+                text.find(_IMAGE_SLOT_START),
             )
             if index >= 0
         ]
         return min(starts) if starts else -1
+
+    @staticmethod
+    def _marker_end(text: str, marker_start: int) -> tuple[int, str]:
+        """Return the marker end offset and terminator for a supported marker.
+
+        XML-like image slots are intentionally treated as internal control
+        markers, not public HTML. The whole tag is stripped before any content
+        reaches the client, and malformed trailing tags are released only at
+        stream finish through the existing fallback path.
+        """
+
+        if text.startswith(_IMAGE_SLOT_START, marker_start):
+            return text.find(">", marker_start), ">"
+        return text.find(_IMAGE_REQUEST_END, marker_start), _IMAGE_REQUEST_END
 
     def _current_anchor_index(self) -> int:
         """Return the paragraph index that should own the next image slot."""
@@ -210,7 +232,7 @@ class ImageRequestMarkerFilter:
     def _partial_marker_prefix_length(text: str) -> int:
         """Return trailing chars that may be the next marker start."""
 
-        marker_starts = (_IMAGE_REQUEST_START, _VERIFIED_IMAGE_START)
+        marker_starts = (_IMAGE_REQUEST_START, _VERIFIED_IMAGE_START, _IMAGE_SLOT_START)
         max_length = min(len(text), max(len(start) for start in marker_starts) - 1)
         for length in range(max_length, 0, -1):
             if any(start.startswith(text[-length:]) for start in marker_starts):

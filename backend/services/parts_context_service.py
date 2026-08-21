@@ -33,7 +33,7 @@ _MAX_FIELD_CHARS = 80
 _MAX_THEME_CHARS = 56
 _MAX_INSTRUCTION_CHARS = 360
 _MAX_MISSING_FIELDS = 5
-_MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS = 2400
+_MAX_RECENT_CONVERSATION_CONTEXT_CHARS = 3600
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +105,7 @@ class PartsContextService:
         *,
         user_message: str,
         response_policy: ResponsePolicy | None,
-        previous_assistant_context: str = "",
+        recent_conversation_context: Any = "",
         turn_plan: Any = None,
         use_rag: bool = False,
         use_web_search: bool = False,
@@ -122,9 +122,10 @@ class PartsContextService:
             user_message: Latest user-authored message. It is sent only to the
                 rewrite model and is never logged by this service.
             response_policy: Existing EDF policy selected for the turn.
-            previous_assistant_context: Previous assistant response text used
-                only to resolve follow-up references. Citation/source noise is
-                stripped before the rewrite call.
+            recent_conversation_context: Recent cleaned conversation turns used
+                only to resolve follow-up references. It should preserve roles,
+                headings, numbered lists, and bold subheadings while excluding
+                citations and source-list noise.
             turn_plan: Optional foreground route plan used for deterministic
                 context shaping.
             use_rag: Whether the turn includes local RAG context.
@@ -178,7 +179,7 @@ class PartsContextService:
             rewritten = await asyncio.wait_for(
                 self._rewrite_with_model(
                     user_message=user_message,
-                    previous_assistant_context=previous_assistant_context,
+                    recent_conversation_context=recent_conversation_context,
                     response_policy=policy,
                     turn_plan=turn_plan,
                     use_rag=use_rag,
@@ -309,7 +310,7 @@ class PartsContextService:
         self,
         *,
         user_message: str,
-        previous_assistant_context: str,
+        recent_conversation_context: Any,
         response_policy: ResponsePolicy,
         turn_plan: Any,
         use_rag: bool,
@@ -321,7 +322,7 @@ class PartsContextService:
     ) -> dict[str, Any]:
         """Call the policy model to rewrite latest query into strict PARTS JSON."""
 
-        previous_context = self.clean_previous_assistant_context(previous_assistant_context)
+        recent_context = self.clean_recent_conversation_context(recent_conversation_context)
         prompt = f"""Rewrite the latest user request into AREQA LearnLM PARTS JSON.
 Return JSON only:
 {{
@@ -342,7 +343,7 @@ Rules:
 - DIRECT/exam turns: keep direct; do not force tutoring/follow-up.
 - Terse learning-topic turns without explicit "完整/總結/整理/列出/時間線/年表/答案/重點" are possible learning entry points.
 - Learning entry points: prefer warm subject coach + first exploration step + 蘇格拉底式問答；一次一小步；一小段背景；一個開放式問題；不要一次列完整內容.
-- Use Previous assistant context only to resolve follow-up references. If the latest request says 那/這個/為何/怎麼辦, preserve the prior topic in theme and composed_instruction.
+- Use Recent conversation context only to resolve follow-up references. If the latest request says 那/這個/為何/怎麼辦/第 N 階段/第 N 點/你說的, preserve the referenced prior topic in theme and composed_instruction.
 - Do not copy citation markers or source-list noise into PARTS fields.
 - PARTS never overrides citations, attachment grounding, memory, tools, or safety.
 
@@ -353,8 +354,8 @@ Attachment grounded: {bool(has_attachments)}
 Response policy:
 {json.dumps(response_policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True)}
 
-Previous assistant context:
-{previous_context or "(none)"}
+Recent conversation context:
+{recent_context or "(none)"}
 
 Latest user request:
 {user_message}"""
@@ -388,26 +389,38 @@ Latest user request:
         return parsed
 
     @classmethod
-    def clean_previous_assistant_context(cls, value: Any) -> str:
-        """Strip citation noise from previous assistant text for rewrite context."""
+    def clean_recent_conversation_context(cls, value: Any) -> str:
+        """Strip citation noise from recent conversation text for rewrite context.
 
-        text = re.sub(r"\s+", " ", str(value or "")).strip()
+        Args:
+            value: A formatted recent conversation string. The orchestration
+                service owns selecting the message window and labeling roles.
+
+        Returns:
+            A bounded string that preserves role labels, headings, numbered
+            lists, and bold subheadings while removing citation markers and
+            source-list sections.
+        """
+
+        text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
         if not text:
             return ""
 
         citation_heading_pattern = (
-            r"(?:^|\s)(?:#{1,6}\s*)?"
+            r"(?:^|\n)\s*(?:#{1,6}\s*)?"
             r"(?:文獻來源|參考文獻|資料來源|References|Sources)\b"
+            r".*?(?=\n\n(?:User|Assistant):|\Z)"
         )
-        text = re.split(citation_heading_pattern, text, maxsplit=1, flags=re.IGNORECASE)[0]
+        text = re.sub(citation_heading_pattern, "", text, flags=re.IGNORECASE | re.DOTALL)
         text = re.sub(r"【文獻\s*\d+(?:\s*[,，、]\s*\d+)*】", "", text)
         text = re.sub(r"\[(?:文獻\s*)?\d+(?:\s*[,，]\s*\d+)*\]", "", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        if len(text) <= _MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS:
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if len(text) <= _MAX_RECENT_CONVERSATION_CONTEXT_CHARS:
             return text
 
-        head_chars = _MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS // 2
-        tail_chars = _MAX_PREVIOUS_ASSISTANT_CONTEXT_CHARS - head_chars
+        head_chars = _MAX_RECENT_CONVERSATION_CONTEXT_CHARS // 2
+        tail_chars = _MAX_RECENT_CONVERSATION_CONTEXT_CHARS - head_chars
         return f"{text[:head_chars]} ... {text[-tail_chars:]}"
 
     def _context_from_payload(
@@ -595,6 +608,11 @@ def format_parts_context(parts_context: PartsContext) -> str:
         "\n\n【由 PARTS 生成的本回合任務指令】"
         f"\n{parts_context.composed_instruction}"
         "\n請遵循「本回合任務指令」回答，但不要輸出 P/A/R/T/S 標籤。"
+        "\n\n【LearnLM 教學互動規則】"
+        "\n- 啟發主動學習：除非使用者明確要求標準答案、考試作答或完整整理，否則不要急著一次給完標準答案；優先用開放式引導問題，促使使用者分析動機、因果關係與判斷依據。"
+        "\n- 深層元認知與反思：當使用者提出看法時，先指出其推理中正確或可取之處，再追問為什麼會得出該結論，引導使用者檢視自己的思考歷程。"
+        "\n- 支持與引導：當使用者困惑或回答有偏差時，給予溫和提示、關鍵線索或可比較選項；避免直接公布完整答案，除非使用者要求或安全/正確性需要。"
+        "\n- 圖文並茂：當圖像、地圖、流程圖或示意圖能實質幫助理解時，依系統圖片規則使用已授權的圖片請求或圖片引用標記；若沒有可用圖片，不要輸出失敗文字或假裝已插圖。"
         "\n若 missing_fields 會實質影響回答品質，最多提出一個簡短澄清問題；否則先回答。"
         "\n【PARTS 優先權邊界】PARTS 只控制回答角色、任務、對象、主題與格式。"
         "不得覆蓋文獻引用、檔案 grounding、記憶安全邊界、使用者狀態規則、工具授權或安全規則。"

@@ -488,8 +488,9 @@ class ConversationContextService:
         return (
             "\n\n【圖文交錯規則】如果某個概念高度依賴視覺理解，可以在最適合的位置插入最多 2 個圖片請求標記。"
             "標記格式必須完全符合："
-            '[[AREQA_IMAGE_REQUEST id="img_1" query="short concrete image search query" caption_hint="這張圖要幫助使用者理解的重點"]]'
+            '<AREQA_IMAGE_SLOT id="img_1" alt="short accessible image description" caption="這張圖要幫助使用者理解的重點" query="short concrete image search query"/>'
             "。query 必須具體且可搜尋；不得輸出圖片 URL；不得為了裝飾而插圖；標記前後仍要用自然文字銜接。"
+            "如果系統找不到可驗證圖片，該標記會被靜默省略；不要輸出圖片失敗、找不到圖片或佔位文字。"
         )
 
     @staticmethod

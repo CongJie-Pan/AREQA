@@ -86,7 +86,22 @@ def test_verified_visual_instruction_injects_inventory():
     assert "vision_summary" in system_prompt
     assert "movement arrows" in system_prompt
     assert "how_to_read" in system_prompt
+    assert "不得輸出 <AREQA_IMAGE_SLOT .../>" in system_prompt
     assert "https://upload.wikimedia.org" not in system_prompt
+
+
+def test_verified_visual_instruction_forbids_all_image_markers_when_empty():
+    """Missing preverified images should not let any visual marker leak."""
+
+    messages = [{"role": "system", "content": "base prompt"}]
+
+    result = OrchestrationService._add_verified_visual_instruction(messages, {})
+
+    system_prompt = result[0]["content"]
+    assert "本回合沒有可用的已驗證圖片" in system_prompt
+    assert "不得輸出 <AREQA_IMAGE_SLOT .../>" in system_prompt
+    assert "[[AREQA_IMAGE_REQUEST ...]]" in system_prompt
+    assert "[[AREQA_VERIFIED_IMAGE ...]]" in system_prompt
 
 
 @pytest.mark.asyncio
@@ -137,6 +152,54 @@ async def test_llm_stream_strips_image_request_markers(mock_client, caplog):
 
 
 @pytest.mark.asyncio
+async def test_llm_stream_strips_areqa_image_slot_markers(mock_client, caplog):
+    """Gemini-like AREQA image slot tags should be captured but never streamed."""
+
+    caplog.set_level(logging.INFO)
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+    service = ConversationStreamService(mock_client, MagicMock())
+
+    async def chunks():
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = (
+            '第一段\n\n<AREQA_IMAGE_SLOT id="img_1" alt="中國東北地圖" '
+            'caption="中國東北（滿洲）地理位置" query="中國東北 滿洲 地圖"/>\n\n第二段'
+        )
+        chunk.choices[0].delta.tool_calls = None
+        yield chunk
+
+    mock_client.chat.completions.create = AsyncMock(return_value=chunks())
+
+    events = [event async for event in service.stream(
+        user_id="u1",
+        conversation_id="visual-conv",
+        last_user_msg="請圖解滿洲位置",
+        messages=[{"role": "user", "content": "請圖解滿洲位置"}],
+        force_think=False,
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.0,
+        request=request,
+    )]
+
+    public_stream = "".join(event for event in events if not event.startswith("event: accumulator"))
+    assert "AREQA_IMAGE_SLOT" not in public_stream
+    assert "中國東北 滿洲 地圖" not in public_stream
+    accumulator_event = next(event for event in events if event.startswith("event: accumulator"))
+    data_line = next(line for line in accumulator_event.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line[6:])
+    assert payload["accumulator"] == "第一段\n\n\n\n第二段"
+    assert payload["image_slots"][0]["slot_id"] == "img_1"
+    assert payload["image_slots"][0]["query"] == "中國東北 滿洲 地圖"
+    assert payload["image_slots"][0]["caption_hint"] == "中國東北（滿洲）地理位置"
+    assert payload["image_slots"][0]["anchor_after_paragraph"] == 0
+    assert "visual.slot_marker_detected" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_llm_stream_buffers_split_image_request_marker(mock_client):
     """Split marker starts should not leak partial marker text to the client."""
 
@@ -177,6 +240,52 @@ async def test_llm_stream_buffers_split_image_request_marker(mock_client):
     data_line = next(line for line in accumulator_event.splitlines() if line.startswith("data: "))
     payload = json.loads(data_line[6:])
     assert payload["image_slots"][0]["slot_id"] == "img_1"
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_buffers_split_areqa_image_slot_marker(mock_client):
+    """Split AREQA image slot tags should not leak partial tag text."""
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+    service = ConversationStreamService(mock_client, MagicMock())
+
+    async def chunks():
+        for content in (
+            "第一段\n\n<AREQA_",
+            'IMAGE_SLOT id="img_1" alt="滿洲地圖" ',
+            'caption="中國東北位置" query="中國東北 滿洲 地圖"/>',
+            "\n\n第二段",
+        ):
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = content
+            chunk.choices[0].delta.tool_calls = None
+            yield chunk
+
+    mock_client.chat.completions.create = AsyncMock(return_value=chunks())
+
+    events = [event async for event in service.stream(
+        user_id="u1",
+        conversation_id="visual-conv",
+        last_user_msg="請圖解滿洲位置",
+        messages=[{"role": "user", "content": "請圖解滿洲位置"}],
+        force_think=False,
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.0,
+        request=request,
+    )]
+
+    public_stream = "".join(event for event in events if not event.startswith("event: accumulator"))
+    assert "AREQA_" not in public_stream
+    assert "IMAGE_SLOT" not in public_stream
+    accumulator_event = next(event for event in events if event.startswith("event: accumulator"))
+    data_line = next(line for line in accumulator_event.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line[6:])
+    assert payload["image_slots"][0]["slot_id"] == "img_1"
+    assert payload["image_slots"][0]["query"] == "中國東北 滿洲 地圖"
 
 
 @pytest.mark.asyncio
@@ -951,6 +1060,16 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
             user_id="u1",
             conversation_id="parts-conv",
             messages=[
+                {"role": "user", "content": "日本二戰歷史過程"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "先看**第一階段：戰爭的開端與背景**。\n"
+                        "1. **擴張初期與國際孤立**\n"
+                        "2. **結盟與戰事擴大**\n\n"
+                        "#### 文獻來源\n1. 測試來源"
+                    ),
+                },
                 {"role": "user", "content": "請先教我運算順序"},
                 {"role": "assistant", "content": "先從括號與次方開始檢查。"},
                 {"role": "user", "content": "我算這題對嗎？"},
@@ -966,7 +1085,12 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
     service.parts_context_service.build.assert_awaited_once()
     parts_kwargs = service.parts_context_service.build.await_args.kwargs
     assert parts_kwargs["response_policy"] == response_policy
-    assert parts_kwargs["previous_assistant_context"] == "先從括號與次方開始檢查。"
+    assert "recent_conversation_context" in parts_kwargs
+    assert "User:\n日本二戰歷史過程" in parts_kwargs["recent_conversation_context"]
+    assert "Assistant:\n先看**第一階段：戰爭的開端與背景**" in parts_kwargs["recent_conversation_context"]
+    assert "2. **結盟與戰事擴大**" in parts_kwargs["recent_conversation_context"]
+    assert "Assistant:\n先從括號與次方開始檢查。" in parts_kwargs["recent_conversation_context"]
+    assert "我算這題對嗎？" not in parts_kwargs["recent_conversation_context"]
     assert parts_kwargs["client"] is mock_client
     assert parts_kwargs["model"] == "policy-model"
     assert parts_kwargs["enable_llm_rewrite"] is True

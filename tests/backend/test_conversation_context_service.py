@@ -18,6 +18,32 @@ from backend.services.query_policy_service import (
 from services.explicit_memory_cache import explicit_memory_cache
 
 
+def test_visual_slot_instruction_uses_areqa_image_slot(monkeypatch):
+    """Visual prompt should request AREQA-owned XML-like image slot tags."""
+
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight", False)
+    instruction = ConversationContextService._visual_slot_instruction(
+        ResponsePolicy(
+            task_intent=TaskIntent.EXPLAIN_TEXT,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.OPTIONAL,
+            legacy_policy="NORMAL",
+        ),
+        "請給我圖解",
+    )
+
+    assert "<AREQA_IMAGE_SLOT" in instruction
+    assert 'alt="short accessible image description"' in instruction
+    assert 'caption="這張圖要幫助使用者理解的重點"' in instruction
+    assert 'query="short concrete image search query"' in instruction
+    assert "靜默省略" in instruction
+    assert "[[AREQA_IMAGE_REQUEST" not in instruction
+
+
 @pytest.mark.asyncio
 async def test_context_prompt_forbids_unsupported_learner_state_claims():
     """The final prompt must not let a disclosure become a learner-state fact."""
