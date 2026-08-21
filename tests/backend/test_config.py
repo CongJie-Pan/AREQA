@@ -28,7 +28,7 @@ def test_settings_loads_defaults():
     assert s.enable_parts_prompt_context is True
     assert s.enable_parts_llm_rewrite is True
     assert s.parts_rewrite_timeout_ms == 800
-    assert s.enable_parts_prompt_debug_logs is False
+    assert s.enable_parts_prompt_debug_logs is True
     assert s.enable_production_turn_trace_summary is True
     assert s.turn_trace_slow_total_threshold_ms == 8000
     assert s.turn_trace_slow_first_token_threshold_ms == 5000
