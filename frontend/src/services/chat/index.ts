@@ -11,7 +11,7 @@
 
 import { API_CONFIG } from '@/config/api';
 import { useChatStore } from '@/store/chat';
-import type { DisplayMessage } from '@/store/chat';
+import type { DisplayMessage, StreamingImageSlot } from '@/store/chat';
 import type { CitationSource } from '@/components/Citations';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -267,6 +267,10 @@ export async function sendMessage(
       onAnswerBlocks: (blocks: AnswerBlock[]) => {
         answerBlocksPayload = blocks;
         chatStore.setAnswerBlocks(blocks);
+      },
+
+      onImageSlot: (slot: StreamingImageSlot) => {
+        chatStore.addImageSlot(slot);
       },
 
       onSuggestions: (suggestions: string[]) => {
@@ -721,6 +725,10 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           chatStore.setAnswerBlocks(blocks);
         },
 
+        onImageSlot: (slot: StreamingImageSlot) => {
+          chatStore.addImageSlot(slot);
+        },
+
         onSuggestions: (suggestions: string[]) => {
           suggestionsList = suggestions;
           chatStore.updateAssistantMessage(messageId, { suggestions });
@@ -964,6 +972,10 @@ export async function editUserMessage(
         onAnswerBlocks: (blocks: AnswerBlock[]) => {
           answerBlocksPayload = blocks;
           chatStore.setAnswerBlocks(blocks);
+        },
+
+        onImageSlot: (slot: StreamingImageSlot) => {
+          chatStore.addImageSlot(slot);
         },
 
         onSuggestions: (suggestions: string[]) => {

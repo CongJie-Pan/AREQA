@@ -132,9 +132,6 @@ class OutputImageService:
     ) -> ImageBlock:
         """Return ``block`` with vision-model analysis attached."""
 
-        explanatory_caption = block.explanatory_caption
-        if not explanatory_caption and result.summary:
-            explanatory_caption = result.summary
         return ImageBlock(
             slot_id=block.slot_id,
             topic=block.topic,
@@ -150,7 +147,9 @@ class OutputImageService:
             creator=block.creator,
             attribution_string=block.attribution_string,
             attribution_caption=block.attribution_caption,
-            explanatory_caption=explanatory_caption,
+            # Vision summaries ground answer generation but are not localized,
+            # reviewed user-facing copy. Only explicit captions may reach UI.
+            explanatory_caption=block.explanatory_caption,
             width=block.width,
             height=block.height,
             safety_status=block.safety_status,

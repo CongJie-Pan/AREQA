@@ -17,6 +17,8 @@ import type { ChatMessage, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 
+const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+
 /**
  * Creates a streaming chat request to the local AI backend
  *
@@ -231,6 +233,22 @@ export async function createChatStream(
 
           if (eventType === 'answer_blocks') {
             callbacks.onAnswerBlocks?.(chunk); // chunk is an array of structured display blocks
+            continue;
+          }
+
+          if (eventType === 'image_slot') {
+            const slotId = typeof chunk.slotId === 'string' ? chunk.slotId.trim() : '';
+            const contentOffset = Number.isSafeInteger(chunk.contentOffset) ? chunk.contentOffset : -1;
+            const anchorAfterParagraph = Number.isSafeInteger(chunk.anchorAfterParagraph)
+              ? chunk.anchorAfterParagraph
+              : -1;
+            if (
+              STREAM_IMAGE_SLOT_ID_PATTERN.test(slotId) &&
+              contentOffset >= 0 &&
+              anchorAfterParagraph >= 0
+            ) {
+              callbacks.onImageSlot?.({ slotId, contentOffset, anchorAfterParagraph });
+            }
             continue;
           }
 

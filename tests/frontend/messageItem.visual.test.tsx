@@ -27,7 +27,7 @@ function renderMessage(message: DisplayMessage) {
 }
 
 describe('MessageItem visual answer rendering', () => {
-  it('stagger-reveals answer blocks from top to bottom', () => {
+  it('renders answer blocks in backend-provided order', () => {
     const { container } = renderMessage(
       assistantMessage([
         {
@@ -46,8 +46,6 @@ describe('MessageItem visual answer rendering', () => {
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toHaveAttribute('data-answer-block-index', '0');
     expect(blocks[1]).toHaveAttribute('data-answer-block-index', '1');
-    expect(blocks[0]).toHaveStyle({ '--answer-block-delay': '0ms' });
-    expect(blocks[1]).toHaveStyle({ '--answer-block-delay': '42ms' });
   });
 
   it('keeps a stable skeleton slot for pending image blocks', () => {

@@ -19,7 +19,7 @@ import { SuggestedQuestions } from '@/components/SuggestedQuestions';
 import { Citations } from '@/components/Citations';
 import { RAGStatusPanel } from '@/components/RAGStatusPanel';
 import type { CitationSource } from '@/components/Citations';
-import type { DisplayMessage } from '@/store/chat';
+import type { DisplayMessage, StreamingImageSlot } from '@/store/chat';
 import type {
   AnswerBlock,
   ImageBlock,
@@ -551,20 +551,116 @@ function AnswerBlocksRenderer({
   );
 }
 
-function ImageBlocksRenderer({ blocks, styles }: { blocks: AnswerBlock[]; styles: ReturnType<typeof useStyles>['styles'] }) {
+type LiveAnswerPart =
+  | { type: 'text'; key: string; text: string }
+  | { type: 'image_slot'; key: string; slot: StreamingImageSlot };
+
+/**
+ * Build stable live-render parts around backend-authorized image offsets.
+ *
+ * Args:
+ *   content: Public marker-free answer text.
+ *   slots: Privacy-safe marker positions from the SSE stream.
+ *
+ * Returns:
+ *   Text and image-slot parts with keys that remain stable as later slots arrive.
+ */
+function buildLiveAnswerParts(content: string, slots: StreamingImageSlot[]): LiveAnswerPart[] {
+  const orderedSlots = [...slots].sort((left, right) =>
+    left.contentOffset - right.contentOffset || left.slotId.localeCompare(right.slotId)
+  );
+  const parts: LiveAnswerPart[] = [];
+  let cursor = 0;
+  let textKey = 'live-text-start';
+
+  for (const slot of orderedSlots) {
+    const offset = Math.min(Math.max(slot.contentOffset, cursor), content.length);
+    parts.push({ type: 'text', key: textKey, text: content.slice(cursor, offset) });
+    parts.push({ type: 'image_slot', key: `live-image-${slot.slotId}`, slot });
+    cursor = offset;
+    textKey = `live-text-after-${slot.slotId}`;
+  }
+  parts.push({ type: 'text', key: textKey, text: content.slice(cursor) });
+  return parts;
+}
+
+/** Create a display-only skeleton while the final verified block is pending. */
+function pendingImageBlock(slot: StreamingImageSlot): ImageBlock {
+  return {
+    type: 'image_block',
+    slotId: slot.slotId,
+    topic: 'Visual aid',
+    purpose: 'diagram',
+    imageUrl: '',
+    sourceUrl: '',
+    sourceDomain: '',
+    caption: '正在尋找合適圖片',
+    status: 'pending',
+    safetyStatus: 'unavailable',
+    matchConfidence: 0,
+  };
+}
+
+/**
+ * Render the live answer without replacing already-mounted Markdown nodes.
+ *
+ * Final image metadata resolves the existing slot in place. Text continues to
+ * use the original public Markdown, while historical messages remain backed by
+ * persisted ``answerBlocks`` for deterministic reloads.
+ */
+function LiveOrderedAnswerRenderer({
+  content,
+  slots,
+  blocks,
+  markdownComponents,
+  styles,
+  isStreaming,
+  hasLiveStreamed,
+}: {
+  content: string;
+  slots: StreamingImageSlot[];
+  blocks: AnswerBlock[];
+  markdownComponents: Components;
+  styles: ReturnType<typeof useStyles>['styles'];
+  isStreaming: boolean;
+  hasLiveStreamed: boolean;
+}) {
+  const parts = React.useMemo(() => buildLiveAnswerParts(content, slots), [content, slots]);
+  const imageBlocks = React.useMemo(
+    () => new Map(
+      blocks
+        .filter((block): block is ImageBlock => block.type === 'image_block')
+        .map((block) => [block.slotId, block]),
+    ),
+    [blocks],
+  );
+  const lastTextKey = [...parts].reverse().find((part) => part.type === 'text')?.key;
+
   return (
     <>
-      {blocks.map((block, index) => {
-        if (block.type !== 'image_block') {
-          return null;
+      {parts.map((part) => {
+        if (part.type === 'text') {
+          if (!part.text) return null;
+          return (
+            <div data-live-answer-part={part.key} key={part.key}>
+              <StreamingMarkdown
+                content={part.text}
+                markdownComponents={markdownComponents}
+                isStreaming={isStreaming && part.key === lastTextKey}
+                hasLiveStreamed={hasLiveStreamed}
+              />
+            </div>
+          );
         }
 
+        const imageBlock = imageBlocks.get(part.slot.slotId);
+        if (!imageBlock && !isStreaming) return null;
         return (
           <div
-            data-answer-block-index={index}
-            key={block.slotId || `streamed-image-${index}`}
+            data-live-answer-part={part.key}
+            key={part.key}
           >
-            <ImageBlockCard block={block} styles={styles} />
+            <ImageBlockCard block={imageBlock ?? pendingImageBlock(part.slot)} styles={styles} />
           </div>
         );
       })}
@@ -597,7 +693,9 @@ export const MessageItem = memo(function MessageItem({
   );
   const displayContent = isUser ? legacyMessage.content : message.content;
   const hasAnswerBlocks = Boolean(message.answerBlocks && message.answerBlocks.length > 0);
-  const shouldUseStructuredAnswerBlocks = hasAnswerBlocks && (!hasLiveStreamed || !message.content);
+  const liveImageSlots = message.streamImageSlots ?? [];
+  const shouldUseLiveOrderedAnswer = hasLiveStreamed && liveImageSlots.length > 0;
+  const shouldUseStructuredAnswerBlocks = hasAnswerBlocks && !shouldUseLiveOrderedAnswer;
   const displayAttachments = React.useMemo(() => {
     if (message.attachments && message.attachments.length > 0) return message.attachments;
     return createLegacyAttachmentMetadata(legacyMessage.legacyCount);
@@ -972,24 +1070,29 @@ export const MessageItem = memo(function MessageItem({
             >
               {/* Message Content */}
               <div className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}>
-                {shouldUseStructuredAnswerBlocks ? (
+                {shouldUseLiveOrderedAnswer ? (
+                  <LiveOrderedAnswerRenderer
+                    content={message.content}
+                    slots={liveImageSlots}
+                    blocks={message.answerBlocks ?? []}
+                    markdownComponents={markdownComponents}
+                    styles={styles}
+                    isStreaming={isStreaming && !thinking?.isThinking}
+                    hasLiveStreamed={hasLiveStreamed}
+                  />
+                ) : shouldUseStructuredAnswerBlocks ? (
                   <AnswerBlocksRenderer
                     blocks={message.answerBlocks ?? []}
                     markdownComponents={markdownComponents}
                     styles={styles}
                   />
                 ) : (
-                  <>
-                    <StreamingMarkdown
-                      content={message.content}
-                      markdownComponents={markdownComponents}
-                      isStreaming={isStreaming && !thinking?.isThinking}
-                      hasLiveStreamed={hasLiveStreamed}
-                    />
-                    {hasLiveStreamed && hasAnswerBlocks && (
-                      <ImageBlocksRenderer blocks={message.answerBlocks ?? []} styles={styles} />
-                    )}
-                  </>
+                  <StreamingMarkdown
+                    content={message.content}
+                    markdownComponents={markdownComponents}
+                    isStreaming={isStreaming && !thinking?.isThinking}
+                    hasLiveStreamed={hasLiveStreamed}
+                  />
                 )}
                 {/* Streaming cursor */}
                 {isStreaming && !thinking?.isThinking && (

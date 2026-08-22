@@ -84,8 +84,30 @@ async def test_output_image_service_enriches_preflight_blocks():
     assert block.vision_summary.startswith("A forest plot")
     assert block.visible_elements == ("95% CI", "summary diamond")
     assert block.how_to_read == ("Read the diamond as the pooled effect.",)
-    assert block.explanatory_caption == block.vision_summary
+    assert block.explanatory_caption == ""
     assert understanding_agent.last_kwargs["image_part"] == {
         "type": "image_url",
         "image_url": {"url": "data:image/png;base64,AA=="},
     }
+
+
+def test_output_image_service_preserves_only_explicit_explanatory_caption():
+    """Vision analysis must not replace reviewed user-facing caption copy."""
+
+    original = ImageBlock(
+        slot_id="img_1",
+        topic="Forest plot",
+        purpose="diagram",
+        image_url="https://example.edu/forest.png",
+        thumbnail_url="https://example.edu/forest.png",
+        source_url="https://example.edu/source",
+        source_domain="example.edu",
+        caption="Forest plot example",
+        explanatory_caption="這張圖呈現各研究的效果量。",
+    )
+    result = VisualUnderstandingResult(summary="An internal English summary.", source="vision_model")
+
+    enriched = OutputImageService._apply_understanding(original, result)
+
+    assert enriched.explanatory_caption == "這張圖呈現各研究的效果量。"
+    assert enriched.vision_summary == "An internal English summary."

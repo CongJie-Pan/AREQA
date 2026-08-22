@@ -289,7 +289,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(screen.getByText('串')).toBeInTheDocument();
+    expect(screen.getByText('串流動畫測試')).toBeInTheDocument();
     expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
   });
 
@@ -319,7 +319,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
   });
 
-  it('does not replace live streamed markdown with paragraph answer blocks at completion', () => {
+  it('uses final structured blocks immediately when no live image slot event exists', () => {
     const streamedContent = '串流期間已顯示的回答';
     const { container, rerender } = render(
       <MessageItem
@@ -337,7 +337,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
           ...baseMessage,
           content: streamedContent,
           answerBlocks: [
-            { type: 'paragraph', text: '不應在完成瞬間替換成這段' },
+            { type: 'paragraph', text: '圖片前段' },
             {
               type: 'image_block',
               slotId: 'visual-after-stream',
@@ -352,14 +352,93 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
               safetyStatus: 'pass',
               matchConfidence: 0.6,
             },
+            { type: 'paragraph', text: '圖片後段' },
           ],
         }}
         isStreaming={false}
       />
     );
 
-    expect(container).toHaveTextContent(streamedContent);
-    expect(screen.queryByText('不應在完成瞬間替換成這段')).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent(streamedContent);
+    const blocks = Array.from(container.querySelectorAll('[data-answer-block-index]'));
+    expect(blocks).toHaveLength(3);
+    expect(blocks[0]).toHaveTextContent('圖片前段');
+    expect(blocks[1]).toHaveTextContent('完成後補上的圖片說明。');
+    expect(blocks[2]).toHaveTextContent('圖片後段');
     expect(screen.getByText('完成後補上的圖片說明。')).toBeInTheDocument();
+  });
+
+  it('keeps live text nodes stable while resolving an image at its streamed slot', () => {
+    const before = '圖片前段';
+    const after = '\n\n圖片後段';
+    const content = `${before}${after}`;
+    const answerBlocks = [
+      { type: 'paragraph' as const, text: before },
+      {
+        type: 'image_block' as const,
+        slotId: 'img_1',
+        topic: 'Forest plot',
+        purpose: 'diagram',
+        imageUrl: 'https://example.com/forest.png',
+        sourceUrl: 'https://example.com/article',
+        sourceDomain: 'example.com',
+        caption: 'Forest plot example',
+        safetyStatus: 'pass' as const,
+        matchConfidence: 0.8,
+      },
+      { type: 'paragraph' as const, text: '圖片後段' },
+    ];
+    const liveMessage = {
+      ...baseMessage,
+      content,
+      streamImageSlots: [{
+        slotId: 'img_1',
+        anchorAfterParagraph: 0,
+        contentOffset: before.length,
+      }],
+    };
+    const { container, rerender, unmount } = render(
+      <MessageItem message={liveMessage} isStreaming={true} />
+    );
+
+    const initialParts = Array.from(container.querySelectorAll('[data-live-answer-part]'));
+    expect(initialParts.map((part) => part.getAttribute('data-live-answer-part'))).toEqual([
+      'live-text-start',
+      'live-image-img_1',
+      'live-text-after-img_1',
+    ]);
+    expect(screen.getByRole('status', { name: '圖片搜尋中' })).toBeInTheDocument();
+    const stableBeforeNode = initialParts[0];
+
+    rerender(
+      <MessageItem
+        message={{ ...liveMessage, answerBlocks }}
+        isStreaming={false}
+      />
+    );
+
+    const resolvedParts = Array.from(container.querySelectorAll('[data-live-answer-part]'));
+    expect(resolvedParts[0]).toBe(stableBeforeNode);
+    expect(resolvedParts.map((part) => part.getAttribute('data-live-answer-part'))).toEqual([
+      'live-text-start',
+      'live-image-img_1',
+      'live-text-after-img_1',
+    ]);
+    expect(screen.getByAltText('Forest plot example')).toBeInTheDocument();
+
+    unmount();
+    const historical = render(
+      <MessageItem
+        message={{ ...baseMessage, content, answerBlocks }}
+        isStreaming={false}
+      />
+    );
+    const historicalBlocks = Array.from(
+      historical.container.querySelectorAll('[data-answer-block-index]')
+    );
+    expect(historicalBlocks).toHaveLength(3);
+    expect(historicalBlocks[0]).toHaveTextContent(before);
+    expect(historicalBlocks[1].querySelector('img')).toHaveAttribute('alt', 'Forest plot example');
+    expect(historicalBlocks[2]).toHaveTextContent('圖片後段');
   });
 });

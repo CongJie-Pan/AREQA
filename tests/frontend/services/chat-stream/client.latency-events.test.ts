@@ -139,4 +139,39 @@ describe('chat stream visible latency events', () => {
 
     expect(onAnswerBlocks).toHaveBeenCalledWith(blocks);
   });
+
+  it('dispatches only validated privacy-safe image slot metadata', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        streamResponse([
+          'event: image_slot\ndata: {"slotId":"img_1","anchorAfterParagraph":1,"contentOffset":12}\n\n',
+          'event: image_slot\ndata: {"slotId":"","anchorAfterParagraph":-1,"contentOffset":"bad"}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      )
+    );
+    const onImageSlot = vi.fn();
+
+    await createChatStream(
+      [{ role: 'user', content: '請圖解' }],
+      {
+        onThinkingStart: vi.fn(),
+        onThinkingContent: vi.fn(),
+        onThinkingEnd: vi.fn(),
+        onContent: vi.fn(),
+        onCitations: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+        onImageSlot,
+      }
+    );
+
+    expect(onImageSlot).toHaveBeenCalledOnce();
+    expect(onImageSlot).toHaveBeenCalledWith({
+      slotId: 'img_1',
+      anchorAfterParagraph: 1,
+      contentOffset: 12,
+    });
+  });
 });

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.services.conversation_context_service import ConversationContext
-from backend.services.conversation_stream_service import ConversationStreamService
+from backend.services.conversation_stream_service import ConversationStreamService, ImageRequestMarkerFilter
 from backend.services.orchestration_service import OrchestrationService
 from backend.services.parts_context_service import PartsContext
 from backend.services.visual_answer_service import ImageBlock
@@ -196,7 +196,34 @@ async def test_llm_stream_strips_areqa_image_slot_markers(mock_client, caplog):
     assert payload["image_slots"][0]["query"] == "中國東北 滿洲 地圖"
     assert payload["image_slots"][0]["caption_hint"] == "中國東北（滿洲）地理位置"
     assert payload["image_slots"][0]["anchor_after_paragraph"] == 0
+    image_slot_event = next(event for event in events if event.startswith("event: image_slot"))
+    image_slot_data = json.loads(next(
+        line[6:] for line in image_slot_event.splitlines() if line.startswith("data: ")
+    ))
+    assert image_slot_data == {
+        "slotId": "img_1",
+        "anchorAfterParagraph": 0,
+        "contentOffset": len("第一段\n\n"),
+    }
+    assert "query" not in image_slot_event
+    assert "caption" not in image_slot_event
     assert "visual.slot_marker_detected" in caplog.text
+
+
+def test_image_marker_filter_positions_marker_inside_one_chunk_with_utf16_offset():
+    """One provider packet may contain paragraphs, emoji, and an image marker."""
+
+    marker_filter = ImageRequestMarkerFilter(max_slots=2)
+    prefix = "😀第一段\n\n第二段"
+    public = marker_filter.feed(
+        f'{prefix}[[AREQA_VERIFIED_IMAGE id="img_1"]]\n\n第三段'
+    )
+
+    slot = marker_filter.drain_new_slots()[0]
+    assert public == f"{prefix}\n\n第三段"
+    assert slot.anchor_after_paragraph == 1
+    assert slot.content_offset == len(prefix.encode("utf-16-le")) // 2
+    assert marker_filter.drain_new_slots() == []
 
 
 @pytest.mark.asyncio

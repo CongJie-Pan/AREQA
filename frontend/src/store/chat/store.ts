@@ -13,6 +13,8 @@ import type { ChatStore, DisplayMessage } from './types';
 import type { CitationSource } from '@/components/Citations';
 import type { AnswerBlock, AttachmentMetadata, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 
+const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+
 /**
  * Initial state for the chat store
  */
@@ -166,7 +168,10 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   // Streaming processing
   startStreaming: (messageId: string) => {
-    set({
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        message.id === messageId ? { ...message, streamImageSlots: [] } : message
+      ),
       isStreaming: true,
       currentStreamingId: messageId,
       thinkingContent: '',
@@ -180,7 +185,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       ragStatus: 'idle',
       ragMessage: '',
       ragSources: [],
-    });
+    }));
   },
 
   /**
@@ -334,6 +339,45 @@ export const useChatStore = create<ChatStore>((set) => ({
         ? state.messages.map((msg) =>
             msg.id === state.currentStreamingId ? { ...msg, answerBlocks: blocks } : msg
           )
+        : state.messages,
+    }));
+  },
+
+  /**
+   * Record a live image marker exactly once.
+   *
+   * Args:
+   *   slot: Privacy-safe marker position validated at the SSE boundary.
+   *
+   * Side Effects:
+   *   Atomically updates only the active streaming message. Invalid, duplicate,
+   *   or excess slots are ignored without changing state.
+   *
+   * The backend already bounds markers to two per answer. The store repeats
+   * that boundary and validates offsets because SSE payloads are untrusted at
+   * the browser boundary. Raw marker queries and captions never reach state.
+   */
+  addImageSlot: (slot) => {
+    if (
+      !STREAM_IMAGE_SLOT_ID_PATTERN.test(slot.slotId) ||
+      !Number.isSafeInteger(slot.contentOffset) ||
+      slot.contentOffset < 0 ||
+      !Number.isSafeInteger(slot.anchorAfterParagraph) ||
+      slot.anchorAfterParagraph < 0
+    ) {
+      return;
+    }
+
+    set((state) => ({
+      messages: state.currentStreamingId
+        ? state.messages.map((message) => {
+            if (message.id !== state.currentStreamingId) return message;
+            const slots = message.streamImageSlots ?? [];
+            if (slots.some((item) => item.slotId === slot.slotId) || slots.length >= 2) {
+              return message;
+            }
+            return { ...message, streamImageSlots: [...slots, slot] };
+          })
         : state.messages,
     }));
   },

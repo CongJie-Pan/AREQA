@@ -82,6 +82,7 @@ describe('Chat Service', () => {
       endStreaming: vi.fn(),
       setCitations: vi.fn(),
       setAnswerBlocks: vi.fn(),
+      addImageSlot: vi.fn(),
       setRagStatus: vi.fn(),
       setRagSources: vi.fn(),
     };
@@ -125,6 +126,20 @@ describe('Chat Service', () => {
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
       expect(createChatStream).toHaveBeenCalled();
       expect(result).toEqual({ completed: true });
+    });
+
+    it('forwards streamed image slots into the chat store', async () => {
+      mockChatStore.messages = [{ id: 'msg-prev', role: 'user', content: 'previous' }];
+      const slot = { slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 8 };
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('圖片前段');
+        callbacks.onImageSlot?.(slot);
+        await callbacks.onDone();
+      });
+
+      await sendMessage('請圖解');
+
+      expect(mockChatStore.addImageSlot).toHaveBeenCalledWith(slot);
     });
 
     it('does not persist guest conversations while still returning the answer', async () => {

@@ -43,21 +43,45 @@ class ImageRequestSlot:
             display metadata, not a verified image description.
         anchor_after_paragraph: Zero-based public paragraph index after which
             the resolved image should be inserted.
+        content_offset: UTF-16 code-unit offset in the public answer where the
+            marker appeared. This matches JavaScript ``String.slice`` offsets.
     """
 
     slot_id: str
     query: str
     caption_hint: str
     anchor_after_paragraph: int
+    content_offset: int
 
     def to_payload(self) -> dict[str, Any]:
-        """Return the internal accumulator payload used by orchestration."""
+        """Return the private accumulator payload used by orchestration.
+
+        Returns:
+            Complete slot metadata for backend-only image resolution. Unlike
+            ``to_stream_payload``, this includes private retrieval context.
+        """
 
         return {
             "slot_id": self.slot_id,
             "query": self.query,
             "caption_hint": self.caption_hint,
             "anchor_after_paragraph": self.anchor_after_paragraph,
+            "content_offset": self.content_offset,
+        }
+
+    def to_stream_payload(self) -> dict[str, Any]:
+        """Return privacy-safe positioning metadata for the public SSE stream.
+
+        Returns:
+            A camelCase payload containing only the stable slot identifier and
+            public-text positions. Retrieval queries and captions remain inside
+            the backend accumulator boundary.
+        """
+
+        return {
+            "slotId": self.slot_id,
+            "anchorAfterParagraph": self.anchor_after_paragraph,
+            "contentOffset": self.content_offset,
         }
 
 
@@ -84,12 +108,28 @@ class ImageRequestMarkerFilter:
         self._pending = ""
         self._public_accumulator = ""
         self._slots: list[ImageRequestSlot] = []
+        self._drained_slot_count = 0
 
     @property
     def slots(self) -> list[ImageRequestSlot]:
         """Return accepted slots in stream order."""
 
         return list(self._slots)
+
+    def drain_new_slots(self) -> list[ImageRequestSlot]:
+        """Return slots recorded since the previous drain call.
+
+        Returns:
+            Newly recorded slots in marker order. Existing slots remain
+            available through ``slots`` for final answer-block construction.
+
+        Side Effects:
+            Advances an internal delivery cursor so each slot is emitted once.
+        """
+
+        new_slots = self._slots[self._drained_slot_count :]
+        self._drained_slot_count = len(self._slots)
+        return list(new_slots)
 
     def feed(self, content: str) -> str:
         """Strip complete visual markers from a streamed content fragment.
@@ -123,7 +163,7 @@ class ImageRequestMarkerFilter:
                 self._pending = text[marker_start:]
                 break
             marker = text[marker_start : marker_end + len(marker_end_token)]
-            self._record_marker(marker)
+            self._record_marker(marker, "".join(public_parts))
             text = text[marker_end + len(marker_end_token) :]
 
         public_text = "".join(public_parts)
@@ -146,8 +186,15 @@ class ImageRequestMarkerFilter:
         self._public_accumulator += trailing
         return trailing
 
-    def _record_marker(self, marker: str) -> None:
-        """Parse and store a complete image request marker if it is usable."""
+    def _record_marker(self, marker: str, public_prefix: str) -> None:
+        """Parse and store a complete image request marker if it is usable.
+
+        Args:
+            marker: Complete internal image marker.
+            public_prefix: Public text accumulated in the current ``feed`` call
+                before this marker. It is required because provider chunks may
+                contain several paragraphs and a marker in one packet.
+        """
 
         if len(self._slots) >= self.max_slots:
             return
@@ -171,12 +218,14 @@ class ImageRequestMarkerFilter:
         if not slot_id or (marker_kind in {"request", "slot"} and not query):
             return
         caption_hint = (attrs.get("caption_hint") or attrs.get("caption") or attrs.get("alt") or "")[:180].strip()
+        public_text_before_marker = self._public_accumulator + public_prefix
         self._slots.append(
             ImageRequestSlot(
                 slot_id=slot_id,
                 query=query,
                 caption_hint=caption_hint,
-                anchor_after_paragraph=self._current_anchor_index(),
+                anchor_after_paragraph=self._current_anchor_index(public_text_before_marker),
+                content_offset=self._utf16_length(public_text_before_marker),
             )
         )
 
@@ -209,11 +258,18 @@ class ImageRequestMarkerFilter:
             return text.find(">", marker_start), ">"
         return text.find(_IMAGE_REQUEST_END, marker_start), _IMAGE_REQUEST_END
 
-    def _current_anchor_index(self) -> int:
-        """Return the paragraph index that should own the next image slot."""
+    @staticmethod
+    def _current_anchor_index(public_text: str) -> int:
+        """Return the paragraph index that owns a marker in ``public_text``."""
 
-        paragraphs = [part.strip() for part in re.split(r"\n{2,}", self._public_accumulator) if part.strip()]
+        paragraphs = [part.strip() for part in re.split(r"\n{2,}", public_text) if part.strip()]
         return max(len(paragraphs) - 1, 0)
+
+    @staticmethod
+    def _utf16_length(value: str) -> int:
+        """Return the JavaScript-compatible string offset for ``value``."""
+
+        return len(value.encode("utf-16-le")) // 2
 
     @staticmethod
     def _clean_slot_id(value: str) -> str:
@@ -278,7 +334,30 @@ class ConversationStreamService:
         tool_budget: Any = None,
         trace: Any = None,
     ) -> AsyncGenerator[str, None]:
-        """Yield legacy-compatible SSE chunks and a final accumulator event."""
+        """Yield filtered answer deltas and typed metadata events.
+
+        Args:
+            user_id: Current user identifier for authorized tool execution.
+            conversation_id: Correlation identifier for privacy-safe logs.
+            last_user_msg: Latest user text, retained inside backend boundaries.
+            messages: Provider-ready conversation messages.
+            force_think: Whether the reasoning-capable model route is enabled.
+            max_tokens: Maximum provider completion tokens.
+            temperature: Provider sampling temperature.
+            top_p: Provider nucleus sampling value.
+            repetition_penalty: Provider repetition penalty.
+            request: FastAPI request used to detect disconnects.
+            tool_budget: Optional foreground tool budget tracker.
+            trace: Optional turn latency trace.
+
+        Yields:
+            Legacy-compatible SSE answer chunks, privacy-safe ``image_slot``
+            events, and one private accumulator event consumed by orchestration.
+
+        Side Effects:
+            Calls the configured model and optional letter tool, and emits
+            bounded structured lifecycle logs without raw prompts or markers.
+        """
 
         if not self.client:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
@@ -385,6 +464,8 @@ class ConversationStreamService:
                         trace.mark_once("first_answer_delta")
                     accumulator += content
                     yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+                for slot in image_marker_filter.drain_new_slots():
+                    yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
                 await asyncio.sleep(0)
         except Exception as exc:
             if trace:
@@ -407,6 +488,8 @@ class ConversationStreamService:
             if safe_trailing:
                 accumulator += safe_trailing
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': safe_trailing}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+            for slot in image_marker_filter.drain_new_slots():
+                yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
         final_text, final_reasons = boundary_filter.finish()
         for reason in final_reasons:
             logger.warning(
@@ -422,6 +505,8 @@ class ConversationStreamService:
         if final_text:
             accumulator += final_text
             yield f"data: {json.dumps({'choices': [{'delta': {'content': final_text}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+        for slot in image_marker_filter.drain_new_slots():
+            yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
         if image_marker_filter.slots:
             logger.info(
                 "visual.slot_marker_detected conversation_id=%s slot_count=%s",

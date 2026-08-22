@@ -7,6 +7,7 @@
  */
 import type { CitationSource } from '@/components/Citations';
 import type { AnswerBlock } from '@/database/schema';
+import type { StreamingImageSlot } from '@/store/chat/types';
 export type MessageRole = 'user' | 'assistant' | 'system';
 
 /**
@@ -172,6 +173,8 @@ export interface StreamCallbacks {
   onSources?: (sources: CitationSource[]) => void;
   /** Called when structured illustrated answer blocks are pushed */
   onAnswerBlocks?: (blocks: AnswerBlock[]) => void;
+  /** Called when a live image marker fixes an image's public text position. */
+  onImageSlot?: (slot: StreamingImageSlot) => void;
   /** Called when suggested follow-up questions are received */
   onSuggestions?: (suggestions: string[]) => void;
 }

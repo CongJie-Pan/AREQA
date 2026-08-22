@@ -8,6 +8,16 @@ import type { CitationSource } from '@/components/Citations';
 
 export type SearchMode = 'auto' | 'always' | 'never';
 
+/** Privacy-safe location of an image marker in the live public answer. */
+export interface StreamingImageSlot {
+  /** Stable identifier shared with the final ImageBlock. */
+  slotId: string;
+  /** Zero-based paragraph anchor retained for diagnostics and replay tests. */
+  anchorAfterParagraph: number;
+  /** UTF-16 code-unit offset used by JavaScript String.slice. */
+  contentOffset: number;
+}
+
 /**
  * Display message for UI rendering
  * Extends database Message with streaming state
@@ -17,6 +27,8 @@ export interface DisplayMessage extends Message {
   isStreaming?: boolean;
   /** Suggested follow-up questions */
   suggestions?: string[];
+  /** Transient marker positions used only by the mounted live renderer. */
+  streamImageSlots?: StreamingImageSlot[];
 }
 
 /**
@@ -135,6 +147,8 @@ export interface ChatActions {
   setCitations: (citations: string[]) => void;
   /** Set structured illustrated answer blocks */
   setAnswerBlocks: (blocks: AnswerBlock[]) => void;
+  /** Record one image marker without exposing its private retrieval metadata. */
+  addImageSlot: (slot: StreamingImageSlot) => void;
 
   // Selection/Quote actions
   /** Set text to be quoted in next message */

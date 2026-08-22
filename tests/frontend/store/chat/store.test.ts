@@ -97,4 +97,20 @@ describe('Chat Store', () => {
     expect(message?.answerBlocks).toEqual(blocks);
     expect(useChatStore.getState().currentAnswerBlocks).toEqual([]);
   });
+
+  it('records validated image slots once and keeps them on the live message', () => {
+    const state = useChatStore.getState();
+    const messageId = state.addAssistantMessage('conversation-1');
+    state.startStreaming(messageId);
+
+    state.addImageSlot({ slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 5 });
+    state.addImageSlot({ slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 5 });
+    state.addImageSlot({ slotId: 'invalid', anchorAfterParagraph: -1, contentOffset: -1 });
+    state.endStreaming();
+
+    const message = useChatStore.getState().messages.find((item) => item.id === messageId);
+    expect(message?.streamImageSlots).toEqual([
+      { slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 5 },
+    ]);
+  });
 });
