@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LearnLM 3.4 Analysis Pipeline Lab</title>
+    <link rel="stylesheet" href="./pipeline.css" />
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [["\\(", "\\)"]],
+          displayMath: [["\\[", "\\]"]],
+        },
+        chtml: {
+          matchFontHeight: false,
+        },
+      };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand-block">
+          <div class="mark">3.4</div>
+          <div>
+            <h1>Analysis Pipeline Lab</h1>
+            <p>LearnLM 研究分析模擬環境</p>
+          </div>
+        </div>
+        <div class="research-note">
+          <span class="note-label">核心問題</span>
+          <p>怎麼從大量對話評分與開放式回饋，得到公平、可解釋、帶有不確定性的模型比較？</p>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="dataset-section" aria-labelledby="datasetTitle">
+          <div class="dataset-heading">
+            <div>
+              <p class="eyebrow">Step 0 · 先不急著分析</p>
+              <h2 id="datasetTitle">先看看你拿到的研究資料</h2>
+              <p class="section-copy">
+                這是一份縮小版模擬資料。先觀察每一列代表什麼，以及哪些 ID 會重複出現；後面的分析關卡都從這裡開始。
+              </p>
+            </div>
+            <span class="simulation-badge">SIMULATED DATA</span>
+          </div>
+
+          <div class="metric-grid" aria-label="Dataset summary">
+            <div class="metric-item">
+              <span class="metric-value" id="rowMetric">0</span>
+              <span class="metric-label">預覽資料列</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value" id="evaluatorMetric">0</span>
+              <span class="metric-label">評分者</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value" id="scenarioMetric">0</span>
+              <span class="metric-label">學習情境</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value" id="modelMetric">0</span>
+              <span class="metric-label">受評模型</span>
+            </div>
+          </div>
+
+          <div class="dataset-grid">
+            <section class="dataset-table-panel" aria-labelledby="previewTitle">
+              <div class="panel-heading">
+                <div>
+                  <h3 id="previewTitle">資料預覽</h3>
+                  <p class="mini-copy">每列是一位專家對一次模型教學互動的評分。</p>
+                </div>
+                <span class="row-count" id="rowCount">0 rows</span>
+              </div>
+              <div id="datasetPreview"></div>
+            </section>
+
+            <aside class="dictionary-panel" aria-labelledby="dictionaryTitle">
+              <h3 id="dictionaryTitle">欄位怎麼讀</h3>
+              <dl class="field-list">
+                <div>
+                  <dt>evaluator</dt>
+                  <dd>負責評分的專家；同一人會評多次。</dd>
+                </div>
+                <div>
+                  <dt>scenario</dt>
+                  <dd>學習任務；同一情境會測試不同模型。</dd>
+                </div>
+                <div>
+                  <dt>model</dt>
+                  <dd>這次教學對話使用的模型。</dd>
+                </div>
+                <div>
+                  <dt>score</dt>
+                  <dd>專家給出的教學品質分數。</dd>
+                </div>
+                <div>
+                  <dt>feedback</dt>
+                  <dd>後續會進行質化編碼的文字回饋。</dd>
+                </div>
+              </dl>
+            </aside>
+          </div>
+
+          <div class="observation-strip">
+            <div>
+              <strong>第一個觀察線索</strong>
+              <span>E01 與 S01 都出現不只一次，表示資料列不是彼此完全獨立。</span>
+            </div>
+            <button class="primary-button" id="startAnalysisButton" type="button">開始分析</button>
+          </div>
+        </section>
+
+        <section class="analysis-layout" id="analysisGuide" aria-labelledby="stageTitle">
+          <aside class="sidebar" aria-label="Pipeline progress">
+            <div class="guide-label">
+              <span class="eyebrow">Guided analysis</span>
+              <h2>分析流程</h2>
+              <p>完成判斷後，下一個研究步驟才會解鎖。</p>
+            </div>
+            <nav class="stage-list" id="stageList" aria-label="Stages"></nav>
+          </aside>
+
+          <div class="guide-workspace">
+            <section class="topbar">
+              <div>
+                <p class="eyebrow" id="stageEyebrow">Stage 1</p>
+                <h2 id="stageTitle">建立研究資料</h2>
+              </div>
+              <div class="progress-meter" aria-label="Completion">
+                <div class="progress-track">
+                  <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <span id="progressText">1 / 6</span>
+              </div>
+            </section>
+
+            <section class="stage-content">
+              <div class="brief" id="stageBrief"></div>
+              <div class="interaction-grid">
+                <section class="evidence-panel" id="evidencePanel"></section>
+                <section class="task-panel" id="taskPanel"></section>
+              </div>
+            </section>
+
+            <section class="control-row">
+              <button class="ghost-button" id="backButton" type="button">Back</button>
+              <button class="primary-button" id="nextButton" type="button">Complete Stage</button>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./pipeline.js"></script>
+  </body>
+</html>
