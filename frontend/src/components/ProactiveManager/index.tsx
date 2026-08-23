@@ -2,6 +2,11 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
 import { getAuthToken } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import {
+  isCompeerEnabled,
+  isCompeerTelemetryEnabled,
+  isMailboxEnabled,
+} from '@/config/features';
 
 const refreshMailbox = async () => {
   const { useMailboxStore } = await import('@/store/mailbox');
@@ -11,21 +16,27 @@ const refreshMailbox = async () => {
 export const ProactiveManager: React.FC = () => {
   const lastScrollTime = useRef(0);
   const lastScrollY = useRef(-1);
+  const mailboxEnabled = isMailboxEnabled();
+  const compeerEnabled = isCompeerEnabled();
 
   const handleAlert = useCallback(() => {
     // ComPeer care now arrives asynchronously through mailbox letters.
     // Legacy alert payloads are intentionally ignored to avoid interrupting the chat.
-  }, []);
+  }, [compeerEnabled]);
 
   const handleNewMail = useCallback(() => {
     void refreshMailbox();
   }, []);
 
-  useProactiveWebSocket(handleAlert, handleNewMail);
+  useProactiveWebSocket(
+    handleAlert,
+    mailboxEnabled ? handleNewMail : undefined,
+    { enabled: mailboxEnabled },
+  );
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY !== 'true') {
+    if (!compeerEnabled || !isCompeerTelemetryEnabled()) {
       return;
     }
 

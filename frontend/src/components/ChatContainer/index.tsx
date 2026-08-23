@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabase';
 import { initializeAuth, useAuthStore } from '@/store/auth';
 import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
+import { isCompeerEnabled, isMailboxEnabled } from '@/config/features';
 import { useStyles } from './styles';
 
 /**
@@ -84,6 +85,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [isChatReady, setIsChatReady] = useState(false);
+  const mailboxEnabled = isMailboxEnabled();
+  const compeerEnabled = isCompeerEnabled();
   const user = useAuthStore((state) => state.user);
   const isAuthInitialized = useAuthStore((state) => state.isInitialized);
   const validateSession = useAuthStore((state) => state.validateSession);
@@ -102,6 +105,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
     (state) => state.activeConversationId
   );
   const landingPromptSent = useRef(false);
+
+  useEffect(() => {
+    if (!mailboxEnabled && gumPanelType === 'mailbox') {
+      setGumPanelType(null);
+    }
+  }, [gumPanelType, mailboxEnabled]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -471,7 +480,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
             isEmpty && !gumPanelType && styles.contentEmpty,
           )}
         >
-          {gumPanelType === 'mailbox' ? (
+          {mailboxEnabled && gumPanelType === 'mailbox' ? (
             <MailboxPanel onClose={() => setGumPanelType(null)} />
           ) : gumPanelType === 'memory' ? (
             <GumPanel
@@ -527,7 +536,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
       <TextSelectionToolbar />
 
       {/* Proactive Polling & Telemetry */}
-      <ProactiveManager />
+      {(mailboxEnabled || compeerEnabled) && <ProactiveManager />}
 
       <AuthPrompt open={showAuthPrompt && !user} onDismiss={dismissAuthPrompt} />
     </div>

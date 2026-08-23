@@ -4,14 +4,31 @@ import { getAuthToken } from '../database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { useAuthStore } from '@/store/auth';
 
+interface ProactiveWebSocketOptions {
+  enabled?: boolean;
+}
+
+/**
+ * Connect to the proactive notification WebSocket when mailbox notifications are enabled.
+ *
+ * Args:
+ *   onAlert: Callback for legacy interruptive alerts. Callers may ignore it.
+ *   onNewMail: Optional callback for mailbox-delivery notifications.
+ *   options: Runtime controls for archived notification surfaces.
+ *
+ * Returns:
+ *   Whether the WebSocket is currently open.
+ */
 export function useProactiveWebSocket(
   onAlert: (content: string, senderName?: string) => void,
-  onNewMail?: (sender: string) => void
+  onNewMail?: (sender: string) => void,
+  options: ProactiveWebSocketOptions = {},
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const retryDelayRef = useRef(1000); // Initial backoff 1 second
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const [isConnected, setIsConnected] = useState(false);
+  const enabled = options.enabled ?? true;
   
   const onAlertRef = useRef(onAlert);
   const onNewMailRef = useRef(onNewMail);
@@ -23,6 +40,11 @@ export function useProactiveWebSocket(
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
+
+    if (!enabled) {
+      setIsConnected(false);
+      return;
+    }
 
     async function connect() {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
@@ -97,7 +119,7 @@ export function useProactiveWebSocket(
         wsRef.current.close();
       }
     };
-  }, [userId]);
+  }, [userId, enabled]);
 
   return isConnected;
 }

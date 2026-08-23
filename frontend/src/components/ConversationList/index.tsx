@@ -12,6 +12,7 @@ import type { MenuProps } from 'antd';
 import { MoreHorizontal, Pencil, Pin, PinOff, Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
 import { useConversationStore } from '@/store/conversation';
 import { useMailboxStore } from '@/store/mailbox';
+import { isMailboxEnabled } from '@/config/features';
 import { useStyles } from './styles';
 import { SidePanelType } from '@/types/panel';
 import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
@@ -65,10 +66,14 @@ export function ConversationList({
 
 
   const { unreadCount, fetchMails } = useMailboxStore();
+  const mailboxEnabled = isMailboxEnabled();
 
   useEffect(() => {
+    if (!mailboxEnabled) {
+      return;
+    }
     fetchMails();
-  }, [fetchMails]);
+  }, [fetchMails, mailboxEnabled]);
 
   useEffect(() => {
     try {
@@ -257,23 +262,25 @@ export function ConversationList({
           <span>新對話</span>
         </button>
         <div className={styles.divider} />
-        <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('mailbox')}>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <MailIcon size={18} />
-            {unreadCount > 0 && (
-              <span style={{ 
-                position: 'absolute', top: -4, right: -4, 
-                backgroundColor: 'red', color: 'white', 
-                borderRadius: '50%', width: 14, height: 14, 
-                fontSize: 10, display: 'flex', 
-                justifyContent: 'center', alignItems: 'center' 
-              }}>
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </div>
-          <span>信箱</span>
-        </button>
+        {mailboxEnabled && (
+          <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('mailbox')}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <MailIcon size={18} />
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute', top: -4, right: -4,
+                  backgroundColor: 'red', color: 'white',
+                  borderRadius: '50%', width: 14, height: 14,
+                  fontSize: 10, display: 'flex',
+                  justifyContent: 'center', alignItems: 'center'
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
+            <span>信箱</span>
+          </button>
+        )}
       </div>
 
       {/* List Area */}
