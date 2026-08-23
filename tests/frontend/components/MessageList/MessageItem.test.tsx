@@ -307,7 +307,13 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container.querySelector('annotation')).toHaveTextContent('\\theta');
   });
 
-  it('renders Markdown tables without the Streamdown card frame', () => {
+  it('renders Markdown tables with a visible frame and copy action', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
     const { container } = render(
       <MessageItem
         message={{
@@ -317,13 +323,21 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
+    const frame = container.querySelector('.areqa-markdown-table-frame');
     const scrollRegion = screen.getByLabelText('可水平捲動的資料表');
+    const copyButton = screen.getByRole('button', { name: '複製表格' });
+    expect(frame).toBeInTheDocument();
     expect(scrollRegion).toHaveClass('areqa-markdown-table-scroll');
     expect(scrollRegion).toHaveAttribute('tabindex', '0');
     expect(scrollRegion.querySelector('table')).toHaveClass('areqa-markdown-table');
+    expect(copyButton).toHaveClass('areqa-markdown-table-copy');
     expect(screen.getByRole('columnheader', { name: '名稱' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: '42' })).toBeInTheDocument();
     expect(container.querySelector('[data-streamdown="table-wrapper"]')).not.toBeInTheDocument();
+
+    fireEvent.click(copyButton);
+
+    expect(writeText).toHaveBeenCalledWith('名稱\t數值\ntheta\t42');
   });
 
   it('keeps Streamdown animated spans after live streaming ends', () => {

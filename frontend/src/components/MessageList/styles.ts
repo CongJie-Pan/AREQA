@@ -471,19 +471,60 @@ content: css`
     }
   }
 
-  .areqa-markdown-table-scroll {
+  .areqa-markdown-table-frame {
     width: 100%;
     margin: 16px 0;
+    border: 2px solid rgba(148, 163, 184, 0.62);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.18);
+    overflow: hidden;
+  }
+
+  .areqa-markdown-table-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.46);
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .areqa-markdown-table-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid rgba(148, 163, 184, 0.58);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.84);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+
+    &:hover {
+      border-color: rgba(203, 213, 225, 0.78);
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgba(216, 162, 92, 0.55);
+      outline-offset: 2px;
+    }
+  }
+
+  .areqa-markdown-table-scroll {
+    width: 100%;
     overflow-x: auto;
-    border-top: 1px solid rgba(255, 255, 255, 0.14);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
     outline: none;
     scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
     scrollbar-width: thin;
 
     &:focus-visible {
-      border-color: rgba(216, 162, 92, 0.55);
-      box-shadow: 0 0 0 2px rgba(216, 162, 92, 0.16);
+      box-shadow: inset 0 0 0 2px rgba(216, 162, 92, 0.45);
     }
   }
 
@@ -501,13 +542,15 @@ content: css`
     min-width: 120px;
     padding: 10px 14px;
     border: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-right: 1px solid rgba(148, 163, 184, 0.42);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.42);
     text-align: left;
     vertical-align: top;
   }
 
   .areqa-markdown-table th {
-    border-bottom-color: rgba(255, 255, 255, 0.2);
+    border-bottom-width: 2px;
+    border-bottom-color: rgba(148, 163, 184, 0.58);
     background: rgba(255, 255, 255, 0.045);
     color: rgba(255, 255, 255, 0.92);
     font-weight: 600;
@@ -524,6 +567,11 @@ content: css`
 
   .areqa-markdown-table tbody tr:last-child td {
     border-bottom: 0;
+  }
+
+  .areqa-markdown-table th:last-child,
+  .areqa-markdown-table td:last-child {
+    border-right: 0;
   }
 
   @media (max-width: 768px) {

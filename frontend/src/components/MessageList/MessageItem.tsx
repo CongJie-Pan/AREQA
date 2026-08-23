@@ -92,6 +92,16 @@ function isMobileFeedbackViewport(): boolean {
   return window.matchMedia('(max-width: 768px)').matches;
 }
 
+function tableElementToClipboardText(table: HTMLTableElement): string {
+  return Array.from(table.rows)
+    .map((row) =>
+      Array.from(row.cells)
+        .map((cell) => (cell.innerText ?? cell.textContent ?? '').replace(/\s+/g, ' ').trim())
+        .join('\t')
+    )
+    .join('\n');
+}
+
 /**
  * Throttle high-frequency text updates while preserving the final value.
  *
@@ -159,20 +169,40 @@ const createMarkdownComponents = (
   messageId: string,
   enableMathCopy: boolean,
   onCopyMath: (latex: string) => void,
+  onCopyTable: (tableText: string) => void,
 ): Components => ({
   table: ({ children, className, node, ...props }) => {
     void node;
     const tableClassName = ['areqa-markdown-table', className].filter(Boolean).join(' ');
 
     return (
-      <div
-        aria-label="可水平捲動的資料表"
-        className="areqa-markdown-table-scroll"
-        tabIndex={0}
-      >
-        <table className={tableClassName} {...props}>
-          {children}
-        </table>
+      <div className="areqa-markdown-table-frame">
+        {enableMathCopy && (
+          <div className="areqa-markdown-table-toolbar">
+            <button
+              aria-label="複製表格"
+              className="areqa-markdown-table-copy"
+              type="button"
+              onClick={(event) => {
+                const frame = event.currentTarget.closest('.areqa-markdown-table-frame');
+                const table = frame?.querySelector('table');
+                onCopyTable(table && 'rows' in table ? tableElementToClipboardText(table as HTMLTableElement) : '');
+              }}
+            >
+              <Copy size={14} aria-hidden="true" />
+              <span>Copy</span>
+            </button>
+          </div>
+        )}
+        <div
+          aria-label="可水平捲動的資料表"
+          className="areqa-markdown-table-scroll"
+          tabIndex={0}
+        >
+          <table className={tableClassName} {...props}>
+            {children}
+          </table>
+        </div>
       </div>
     );
   },
@@ -810,9 +840,23 @@ export const MessageItem = memo(function MessageItem({
     }
   }, [antMessageApi]);
 
+  const handleCopyTable = useCallback(async (tableText: string) => {
+    if (!tableText.trim()) {
+      antMessageApi.error?.('複製表格失敗');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(tableText);
+      antMessageApi.success?.('已複製表格');
+    } catch {
+      antMessageApi.error?.('複製表格失敗');
+    }
+  }, [antMessageApi]);
+
   const markdownComponents = React.useMemo(
-    () => createMarkdownComponents(message.id, !isUser, handleCopyMath),
-    [handleCopyMath, isUser, message.id]
+    () => createMarkdownComponents(message.id, !isUser, handleCopyMath, handleCopyTable),
+    [handleCopyMath, handleCopyTable, isUser, message.id]
   );
 
   // Edit mode state
