@@ -43,6 +43,8 @@ def test_settings_loads_defaults():
     assert s.compeer_proactive_mail_min_interval_seconds == 21600
     assert s.compeer_daily_proactive_limit == 2
     assert s.enable_mailbox_feature is False
+    assert s.enable_compeer_feature is False
+    assert s.enable_compeer_telemetry is False
     assert s.enable_compeer_auto_proactive is False
     assert s.enable_mailbox_sending is False
 
@@ -72,6 +74,8 @@ def test_settings_can_be_overridden_by_env():
         'COMPEER_COOLDOWN_OVERRIDE_SECONDS': '30',
         'COMPEER_PROACTIVE_MAIL_MIN_INTERVAL_SECONDS': '3600',
         'ENABLE_MAILBOX_FEATURE': 'true',
+        'ENABLE_COMPEER_FEATURE': 'true',
+        'ENABLE_COMPEER_TELEMETRY': 'true',
         'ENABLE_COMPEER_AUTO_PROACTIVE': 'true',
         'ENABLE_MAILBOX_SENDING': 'true',
     }):
@@ -100,5 +104,7 @@ def test_settings_can_be_overridden_by_env():
         assert s.compeer_cooldown_override_seconds == 30
         assert s.compeer_proactive_mail_min_interval_seconds == 3600
         assert s.enable_mailbox_feature is True
+        assert s.enable_compeer_feature is True
+        assert s.enable_compeer_telemetry is True
         assert s.enable_compeer_auto_proactive is True
         assert s.enable_mailbox_sending is True

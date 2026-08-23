@@ -4,6 +4,7 @@ import { ProactiveManager } from '@/components/ProactiveManager';
 import { App } from 'antd';
 import { sendMessage } from '@/services/chat';
 import { useConversationStore } from '@/store/conversation';
+import { useFeatureStore } from '@/store/features';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as hooks from '@/hooks/useProactiveWebSocket';
 
@@ -56,9 +57,14 @@ describe('ProactiveManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
-    delete process.env.NEXT_PUBLIC_ENABLE_MAILBOX;
-    delete process.env.NEXT_PUBLIC_ENABLE_COMPEER;
-    delete process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY;
+    useFeatureStore.setState({
+      mailbox: false,
+      compeer: false,
+      compeerTelemetry: false,
+      initialized: true,
+      loading: false,
+      error: null,
+    });
 
     global.fetch = vi.fn();
     (App.useApp as any).mockReturnValue({
@@ -131,8 +137,10 @@ describe('ProactiveManager', () => {
   });
 
   it('should log scroll action with throttling', async () => {
-    process.env.NEXT_PUBLIC_ENABLE_COMPEER = 'true';
-    process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY = 'true';
+    useFeatureStore.setState({
+      compeer: true,
+      compeerTelemetry: true,
+    });
     (global.fetch as any).mockResolvedValue({
       json: async () => ({ status: 'ok' }),
     });
@@ -181,13 +189,13 @@ describe('ProactiveManager', () => {
   });
 
   it('should register a mailbox refresh callback for new-mail events', async () => {
-    process.env.NEXT_PUBLIC_ENABLE_MAILBOX = 'true';
+    useFeatureStore.setState({ mailbox: true });
     render(<ProactiveManager />);
     expect(registeredNewMailCallback).toBeTypeOf('function');
   });
 
   it('refreshes mailbox only when websocket reports new mail', async () => {
-    process.env.NEXT_PUBLIC_ENABLE_MAILBOX = 'true';
+    useFeatureStore.setState({ mailbox: true });
     const intervalSpy = vi.spyOn(window, 'setInterval');
     await act(async () => {
       render(<ProactiveManager />);

@@ -2,6 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
+import { disabledRuntimeFeatureFlags, RuntimeFeatureFlags } from '@/config/features';
+import { useFeatureStore } from '@/store/features';
 import { useMailboxStore } from '@/store/mailbox';
 
 const authState = { user: null, isInitialized: true, validateSession: vi.fn() };
@@ -71,11 +73,21 @@ const mockMails = [
   }
 ];
 
+let runtimeFeatures: RuntimeFeatureFlags = disabledRuntimeFeatureFlags;
+
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.NEXT_PUBLIC_ENABLE_MAILBOX = 'true';
-  delete process.env.NEXT_PUBLIC_ENABLE_COMPEER;
-  delete process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY;
+  runtimeFeatures = {
+    mailbox: true,
+    compeer: false,
+    compeerTelemetry: false,
+  };
+  useFeatureStore.setState({
+    ...disabledRuntimeFeatureFlags,
+    initialized: false,
+    loading: false,
+    error: null,
+  });
   useMailboxStore.setState({
     mails: [],
     unreadCount: 0,
@@ -85,6 +97,9 @@ beforeEach(() => {
   });
 
   global.fetch = vi.fn().mockImplementation(async (url: string, options?: any) => {
+    if (url.includes('/api/v1/features')) {
+      return { ok: true, json: async () => runtimeFeatures };
+    }
     if (url.includes('/api/v1/mailbox/send')) {
       return { ok: true, json: async () => ({ status: 'ok' }) };
     }
@@ -103,9 +118,13 @@ beforeEach(() => {
 
 describe('Mailbox Flow Integration', () => {
   it('should hide mailbox entry and skip mailbox fetch when mailbox is archived', async () => {
-    delete process.env.NEXT_PUBLIC_ENABLE_MAILBOX;
+    runtimeFeatures = disabledRuntimeFeatureFlags;
 
     render(<ChatContainer />);
+    await act(async () => {
+      await vi.dynamicImportSettled();
+      await Promise.resolve();
+    });
 
     expect(screen.queryByText('信箱')).not.toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalledWith(
@@ -126,7 +145,7 @@ describe('Mailbox Flow Integration', () => {
     });
 
     // The badge should show 1
-    const mailboxButton = screen.getByText('信箱');
+    const mailboxButton = await screen.findByText('信箱');
     expect(mailboxButton).toBeInTheDocument();
 
     // Now let's trigger a new mail via websocket

@@ -40,3 +40,6 @@ export type {
 // Authentication store
 export { useAuthStore, initializeAuth } from './auth';
 export type { AuthStore } from './auth';
+
+// Runtime feature flags
+export { useFeatureStore } from './features';

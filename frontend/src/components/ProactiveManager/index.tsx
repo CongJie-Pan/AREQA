@@ -2,11 +2,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { useProactiveWebSocket } from '@/hooks/useProactiveWebSocket';
 import { getAuthToken } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import {
-  isCompeerEnabled,
-  isCompeerTelemetryEnabled,
-  isMailboxEnabled,
-} from '@/config/features';
+import { useFeatureStore } from '@/store/features';
 
 const refreshMailbox = async () => {
   const { useMailboxStore } = await import('@/store/mailbox');
@@ -16,13 +12,14 @@ const refreshMailbox = async () => {
 export const ProactiveManager: React.FC = () => {
   const lastScrollTime = useRef(0);
   const lastScrollY = useRef(-1);
-  const mailboxEnabled = isMailboxEnabled();
-  const compeerEnabled = isCompeerEnabled();
+  const mailboxEnabled = useFeatureStore((state) => state.mailbox);
+  const compeerEnabled = useFeatureStore((state) => state.compeer);
+  const compeerTelemetryEnabled = useFeatureStore((state) => state.compeerTelemetry);
 
   const handleAlert = useCallback(() => {
     // ComPeer care now arrives asynchronously through mailbox letters.
     // Legacy alert payloads are intentionally ignored to avoid interrupting the chat.
-  }, [compeerEnabled]);
+  }, []);
 
   const handleNewMail = useCallback(() => {
     void refreshMailbox();
@@ -36,7 +33,7 @@ export const ProactiveManager: React.FC = () => {
 
   // 2. Action Telemetry (Scroll, MouseMove)
   useEffect(() => {
-    if (!compeerEnabled || !isCompeerTelemetryEnabled()) {
+    if (!compeerEnabled || !compeerTelemetryEnabled) {
       return;
     }
 
@@ -88,7 +85,7 @@ export const ProactiveManager: React.FC = () => {
     return () => {
       window.removeEventListener('scroll', handleScroll, { capture: true });
     };
-  }, []);
+  }, [compeerEnabled, compeerTelemetryEnabled]);
 
   return null;
 }

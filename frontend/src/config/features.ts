@@ -1,20 +1,33 @@
 /**
- * Centralized runtime feature flags for browser-visible AREQA features.
+ * Shared runtime feature flag types for browser-visible AREQA features.
  *
- * The flags intentionally fail closed: a feature is visible or active only when
- * its public environment variable is exactly "true". This keeps archived
- * product surfaces in the codebase while preventing accidental exposure in
- * deployments that do not opt in.
+ * These flags are sourced from the backend `/api/v1/features` endpoint at
+ * runtime so reopening archived product surfaces requires changing backend
+ * settings only. The frontend still fails closed until a valid backend response
+ * arrives.
  */
 
-const isPublicFlagEnabled = (value: string | undefined): boolean => value === 'true';
+export interface RuntimeFeatureFlags {
+  mailbox: boolean;
+  compeer: boolean;
+  compeerTelemetry: boolean;
+}
 
-export const isMailboxEnabled = (): boolean =>
-  isPublicFlagEnabled(process.env.NEXT_PUBLIC_ENABLE_MAILBOX);
+export const disabledRuntimeFeatureFlags: RuntimeFeatureFlags = {
+  mailbox: false,
+  compeer: false,
+  compeerTelemetry: false,
+};
 
-export const isCompeerEnabled = (): boolean =>
-  isPublicFlagEnabled(process.env.NEXT_PUBLIC_ENABLE_COMPEER);
+export function normalizeRuntimeFeatureFlags(payload: unknown): RuntimeFeatureFlags {
+  const source = payload && typeof payload === 'object'
+    ? payload as Record<string, unknown>
+    : {};
+  const compeer = source.compeer === true;
 
-export const isCompeerTelemetryEnabled = (): boolean =>
-  isCompeerEnabled() &&
-  isPublicFlagEnabled(process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY);
+  return {
+    mailbox: source.mailbox === true,
+    compeer,
+    compeerTelemetry: compeer && source.compeerTelemetry === true,
+  };
+}

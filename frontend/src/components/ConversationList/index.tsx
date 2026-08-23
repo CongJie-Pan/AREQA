@@ -12,7 +12,7 @@ import type { MenuProps } from 'antd';
 import { MoreHorizontal, Pencil, Pin, PinOff, Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
 import { useConversationStore } from '@/store/conversation';
 import { useMailboxStore } from '@/store/mailbox';
-import { isMailboxEnabled } from '@/config/features';
+import { useFeatureStore } from '@/store/features';
 import { useStyles } from './styles';
 import { SidePanelType } from '@/types/panel';
 import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
@@ -66,7 +66,7 @@ export function ConversationList({
 
 
   const { unreadCount, fetchMails } = useMailboxStore();
-  const mailboxEnabled = isMailboxEnabled();
+  const mailboxEnabled = useFeatureStore((state) => state.mailbox);
 
   useEffect(() => {
     if (!mailboxEnabled) {

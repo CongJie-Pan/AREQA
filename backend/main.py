@@ -107,6 +107,27 @@ _converter = opencc.OpenCC('s2twp')
 # Cache to store the dynamically resolved model name so we don't spam models.list() APIs
 _resolved_model_name = None
 
+
+class RuntimeFeatureResponse(BaseModel):
+    """Browser-safe product feature flags exposed at runtime.
+
+    Attributes:
+        mailbox: Whether the mailbox product surface should be visible and its
+            read APIs should be callable.
+        compeer: Whether ComPeer browser behavior should be mounted.
+        compeerTelemetry: Whether the browser may send ComPeer behavior
+            telemetry. This is constrained by `compeer` so telemetry cannot run
+            while the broader ComPeer surface is archived.
+
+    Compatibility:
+        Field names intentionally use the existing frontend camelCase shape so
+        older clients do not need response transformation logic.
+    """
+
+    mailbox: bool
+    compeer: bool
+    compeerTelemetry: bool
+
 # --- System Prompts (動態人設切換架構) ---
 BASE_PERSONA = (
     "你叫「AREQA」，是一位引導型學習助手。你的核心特質是認知感知力：先判斷使用者當下任務，再用剛好足夠的深度協助他前進。請一律使用繁體中文。\n\n"
@@ -264,6 +285,39 @@ def init_rag_service():
         return None
 
 app = FastAPI(title="XiaoHong Ancient Chinese QA - RAG Backend API")
+
+@app.get("/api/v1/features", response_model=RuntimeFeatureResponse)
+async def get_runtime_features() -> RuntimeFeatureResponse:
+    """Return browser-safe runtime feature flags from backend settings.
+
+    Returns:
+        RuntimeFeatureResponse: Public feature state for browser-visible
+            mailbox and ComPeer surfaces.
+
+    Side Effects:
+        Emits `features.runtime_served` with safe boolean metadata only. The log
+        contains no user identifiers, mailbox content, prompts, credentials, or
+        tokens because this endpoint is public and not user-scoped.
+    """
+
+    from config import settings
+
+    mailbox_enabled = bool(settings.enable_mailbox_feature)
+    compeer_enabled = bool(settings.enable_compeer_feature)
+    compeer_telemetry_enabled = (
+        compeer_enabled and bool(settings.enable_compeer_telemetry)
+    )
+    logger.info(
+        "features.runtime_served mailbox=%s compeer=%s compeer_telemetry=%s",
+        mailbox_enabled,
+        compeer_enabled,
+        compeer_telemetry_enabled,
+    )
+    return RuntimeFeatureResponse(
+        mailbox=mailbox_enabled,
+        compeer=compeer_enabled,
+        compeerTelemetry=compeer_telemetry_enabled,
+    )
 
 MAX_CHAT_MULTIPART_BYTES = 30 * 1024 * 1024
 
