@@ -36,8 +36,15 @@ import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/u
 const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
+const STREAMDOWN_MATH_PLUGIN = createMathPlugin({ singleDollarTextMath: true });
 const STREAMDOWN_PLUGINS = {
-  math: createMathPlugin({ singleDollarTextMath: true }),
+  math: {
+    ...STREAMDOWN_MATH_PLUGIN,
+    // KaTeX must run first so the source plugin can read its MathML annotation.
+    rehypePlugin: {
+      plugins: [STREAMDOWN_MATH_PLUGIN.rehypePlugin, rehypeMathSource],
+    },
+  },
 };
 const STREAMDOWN_LINK_SAFETY = { enabled: false };
 
