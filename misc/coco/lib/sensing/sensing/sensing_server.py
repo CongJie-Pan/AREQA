@@ -900,7 +900,10 @@ async def main_async(
     if workflow_induction:
         processors.append(WorkflowInductionProcessor())
     if ai_tutoring:
-        memory_engine = _build_memory_engine(observer_model)
+        # 暫時關閉 GUM memory
+        # memory_engine = _build_memory_engine(observer_model)
+        memory_engine = None
+        
         ai_processor = AiTutoringProcessor.from_config(
             tutor_url=tutor_url,
             ai_tutor_output_log=ai_tutor_output_log,
