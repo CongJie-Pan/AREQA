@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from backend.services.output_image_service import OutputImageService
@@ -192,6 +194,46 @@ async def test_output_image_service_omits_block_when_all_understanding_attempts_
     assert "selected_image_count=1" in caplog.text
     assert "understood_image_count=0" in caplog.text
     assert "omitted_image_count=1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_output_image_service_bounds_all_understanding_attempts_to_shared_budget(
+    monkeypatch,
+    caplog,
+):
+    """Original and thumbnail attempts must share one foreground latency budget."""
+
+    class _SlowVisualInputService:
+        async def prepare_image_part(self, **kwargs):
+            await asyncio.sleep(0.05)
+            raise AssertionError("shared budget should cancel the slow input")
+
+    caplog.set_level("INFO")
+    service = OutputImageService(
+        understanding_agent=_FakeUnderstandingAgent(),
+        visual_input_service=_SlowVisualInputService(),
+    )
+    monkeypatch.setattr(service, "_understanding_budget_seconds", lambda: 0.01)
+
+    blocks = await service.prepare_preflight_image_blocks(
+        visual_answer_service=_FakeVisualAnswerService(
+            image_url="https://slow.example/original.png",
+            thumbnail_url="https://slow.example/thumbnail.png",
+        ),
+        user_msg="Compare frequentist and Bayesian statistics",
+        response_policy=None,
+        existing_web_results=[],
+        tool_registry=None,
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=None,
+        turn_plan=None,
+    )
+
+    assert blocks == {}
+    assert "visual.output_understanding_budget_exhausted" in caplog.text
+    assert "budget_seconds=0.0" in caplog.text
 
 
 def test_output_image_service_preserves_only_explicit_explanatory_caption():

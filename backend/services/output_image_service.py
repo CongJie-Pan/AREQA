@@ -9,6 +9,7 @@ vision-capable model.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -104,32 +105,42 @@ class OutputImageService:
         for slot_id, block in blocks.items():
             result: VisualUnderstandingResult | None = None
             attempted_urls = self._understanding_image_urls(block)
-            for image_url in attempted_urls:
-                try:
-                    image_input = await self.visual_input_service.prepare_image_part(
-                        image_url=image_url,
-                        conversation_id=conversation_id,
-                    )
-                    candidate_result = await self.understanding_agent.analyze(
-                        client=model_client,
-                        model=settings.model_visual_understanding,
-                        image_url=image_url,
-                        image_part=image_input.content_part,
-                        user_msg=user_msg,
-                        visual_brief=None,
-                        conversation_id=conversation_id,
-                    )
-                except Exception as exc:
-                    logger.info(
-                        "visual.output_understanding_attempt_failed conversation_id=%s slot_id=%s reason=%s",
-                        conversation_id,
-                        slot_id,
-                        type(exc).__name__,
-                    )
-                    continue
-                if self._has_usable_understanding(candidate_result):
-                    result = candidate_result
-                    break
+            budget_seconds = self._understanding_budget_seconds()
+            try:
+                async with asyncio.timeout(budget_seconds):
+                    for image_url in attempted_urls:
+                        try:
+                            image_input = await self.visual_input_service.prepare_image_part(
+                                image_url=image_url,
+                                conversation_id=conversation_id,
+                            )
+                            candidate_result = await self.understanding_agent.analyze(
+                                client=model_client,
+                                model=settings.model_visual_understanding,
+                                image_url=image_url,
+                                image_part=image_input.content_part,
+                                user_msg=user_msg,
+                                visual_brief=None,
+                                conversation_id=conversation_id,
+                            )
+                        except Exception as exc:
+                            logger.info(
+                                "visual.output_understanding_attempt_failed conversation_id=%s slot_id=%s reason=%s",
+                                conversation_id,
+                                slot_id,
+                                type(exc).__name__,
+                            )
+                            continue
+                        if self._has_usable_understanding(candidate_result):
+                            result = candidate_result
+                            break
+            except TimeoutError:
+                logger.info(
+                    "visual.output_understanding_budget_exhausted conversation_id=%s slot_id=%s budget_seconds=%.1f",
+                    conversation_id,
+                    slot_id,
+                    budget_seconds,
+                )
 
             if result is None:
                 logger.info(
@@ -150,6 +161,28 @@ class OutputImageService:
             settings.enable_visual_understanding,
         )
         return enriched
+
+    def _understanding_budget_seconds(self) -> float:
+        """Return one latency budget shared by all URLs for a selected image.
+
+        The budget preserves the previous worst-case foreground latency: one
+        image download timeout plus one vision-model timeout. Thumbnail retry
+        consumes only time left by the original attempt instead of doubling
+        time-to-first-answer.
+
+        Returns:
+            Positive timeout in seconds for all understanding attempts.
+        """
+
+        input_timeout = float(getattr(self.visual_input_service, "timeout_seconds", 3.0))
+        model_timeout = float(
+            getattr(
+                self.understanding_agent,
+                "timeout_seconds",
+                settings.visual_understanding_timeout_seconds,
+            )
+        )
+        return max(0.1, input_timeout + model_timeout)
 
     @staticmethod
     def _understanding_image_urls(block: ImageBlock) -> list[str]:
