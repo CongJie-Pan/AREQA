@@ -222,7 +222,7 @@ function MarkdownTable({
 
   const actionButtons = enableActions ? (
     <div className="areqa-markdown-table-actions" aria-label="表格操作">
-      <Tooltip title="Copy table">
+      <Tooltip title="複製表格">
         <button
           aria-label="複製表格"
           className="areqa-markdown-table-action"
@@ -232,9 +232,9 @@ function MarkdownTable({
           <Copy size={16} aria-hidden="true" />
         </button>
       </Tooltip>
-      <Tooltip title="Download CSV">
+      <Tooltip title="下載表格為CSV">
         <button
-          aria-label="下載表格 CSV"
+          aria-label="下載表格為CSV"
           className="areqa-markdown-table-action"
           type="button"
           onClick={downloadTable}
@@ -242,9 +242,9 @@ function MarkdownTable({
           <Download size={16} aria-hidden="true" />
         </button>
       </Tooltip>
-      <Tooltip title="Open table">
+      <Tooltip title="擴大顯示表格">
         <button
-          aria-label="放大檢視表格"
+          aria-label="擴大顯示表格"
           className="areqa-markdown-table-action"
           type="button"
           onClick={() => setIsExpanded(true)}

@@ -339,8 +339,8 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     const frame = container.querySelector('.areqa-markdown-table-frame');
     const scrollRegion = screen.getByLabelText('可水平捲動的資料表');
     const copyButton = screen.getByRole('button', { name: '複製表格' });
-    const downloadButton = screen.getByRole('button', { name: '下載表格 CSV' });
-    const expandButton = screen.getByRole('button', { name: '放大檢視表格' });
+    const downloadButton = screen.getByRole('button', { name: '下載表格為CSV' });
+    const expandButton = screen.getByRole('button', { name: '擴大顯示表格' });
     expect(frame).toBeInTheDocument();
     expect(scrollRegion).toHaveClass('areqa-markdown-table-scroll');
     expect(scrollRegion).toHaveAttribute('tabindex', '0');
