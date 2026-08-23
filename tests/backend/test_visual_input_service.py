@@ -19,9 +19,10 @@ class _FakeAsyncClient:
     """httpx.AsyncClient replacement with deterministic responses."""
 
     response: httpx.Response | Exception = httpx.Response(200, content=make_png())
+    last_kwargs = {}
 
     def __init__(self, *args, **kwargs):
-        pass
+        self.__class__.last_kwargs = kwargs
 
     async def __aenter__(self):
         return self
@@ -56,6 +57,7 @@ async def test_visual_input_service_converts_remote_image_to_data_uri(monkeypatc
 
     assert image_input.source == "data_uri"
     assert image_input.media_type == "image/png"
+    assert _FakeAsyncClient.last_kwargs["headers"]["User-Agent"]
     assert image_input.content_part["type"] == "image_url"
     assert image_input.content_part["image_url"]["url"].startswith("data:image/png;base64,")
     assert "visual.input_data_uri_ready" in caplog.text
@@ -83,3 +85,28 @@ async def test_visual_input_service_falls_back_to_remote_url_on_download_failure
     }
     assert "visual.input_data_uri_unavailable" in caplog.text
     assert "reason=ConnectError" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_visual_input_service_logs_http_status_on_download_failure(monkeypatch, caplog):
+    """HTTP failures should expose safe status codes without logging full URLs."""
+
+    caplog.set_level("INFO")
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    request = httpx.Request("GET", "https://example.edu/blocked.png")
+    _FakeAsyncClient.response = httpx.Response(
+        403,
+        content=b"blocked",
+        request=request,
+    )
+    service = VisualInputService(timeout_seconds=1.0)
+
+    image_input = await service.prepare_image_part(
+        image_url="https://example.edu/blocked.png",
+        conversation_id="conversation-1",
+    )
+
+    assert image_input.source == "remote_url"
+    assert "visual.input_data_uri_unavailable" in caplog.text
+    assert "reason=HTTPStatusError:403" in caplog.text
+    assert "https://example.edu/blocked.png" not in caplog.text

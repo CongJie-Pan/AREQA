@@ -1,11 +1,12 @@
 """Build OpenRouter-ready image input parts for output-image understanding.
 
 This module mirrors the successful chat attachment image path for images that
-AREQA retrieves itself. It downloads a selected public image, validates the
+AREQA retrieves itself. It downloads a selected public image with the same
+declared crawler identity used by the visual retrieval pipeline, validates the
 bytes as an image, and converts them to the same ``image_url`` data URI content
 part used by user-uploaded attachments. The fallback remains a remote URL
-content part so visual understanding stays fail-soft when a source blocks
-download or returns an unsupported response.
+content part for downstream diagnostics and compatibility, but callers that
+require pixel-grounded understanding should treat it as unavailable input.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from urllib.parse import urlparse
 import httpx
 from PIL import Image, UnidentifiedImageError
 
+from config import settings
 from services.attachment_service import IMAGE_TYPES, MAX_ATTACHMENT_BYTES, MAX_IMAGE_PIXELS
 
 
@@ -72,7 +74,9 @@ class VisualInputService:
 
         Returns:
             ``VisualImageInput`` with a data URI content part when download and
-            validation succeed; otherwise a remote URL content part.
+            validation succeed; otherwise a remote URL content part marked with
+            ``source="remote_url"`` so callers can avoid provider-side URL
+            fetching when they require deterministic vision input.
         """
 
         fallback = self.remote_url_part(image_url)
@@ -82,10 +86,21 @@ class VisualInputService:
             return fallback
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=self.timeout_seconds,
+                follow_redirects=True,
+                headers={"User-Agent": settings.areqa_visual_user_agent},
+            ) as client:
                 response = await client.get(image_url)
                 response.raise_for_status()
                 data = response.content
+        except httpx.HTTPStatusError as exc:
+            self._log_unavailable(
+                conversation_id,
+                source_domain,
+                f"HTTPStatusError:{exc.response.status_code}",
+            )
+            return fallback
         except Exception as exc:
             self._log_unavailable(conversation_id, source_domain, type(exc).__name__)
             return fallback

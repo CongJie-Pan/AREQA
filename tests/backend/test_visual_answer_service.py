@@ -90,6 +90,42 @@ def _policy(task_intent=TaskIntent.GENERAL_QA):
     )
 
 
+def test_candidate_to_block_preserves_original_and_display_thumbnail():
+    """Image blocks should keep distinct original and displayable thumbnail URLs."""
+
+    service = VisualAnswerService()
+    candidate = ImageCandidate(
+        provider="serpapi_images",
+        image_url="https://researchgate.net/profile/example/figure/download",
+        thumbnail_url="https://cdn.example.org/diagram-thumb.jpg",
+        source_url="https://researchgate.net/publication/example",
+        title="Learning diagram",
+        caption="Learning diagram",
+        license="unknown",
+    )
+
+    block = service._candidate_to_block(candidate, score=0.8, index=1)
+
+    assert block.image_url == "https://researchgate.net/profile/example/figure/download"
+    assert block.thumbnail_url == "https://cdn.example.org/diagram-thumb.jpg"
+
+
+def test_is_safe_candidate_rejects_domains_that_block_server_side_image_input():
+    """Known blocking domains should not be selected for vision-gated answers."""
+
+    candidate = ImageCandidate(
+        provider="serpapi_images",
+        image_url="https://researchgate.net/profile/example/figure/download.png",
+        thumbnail_url="https://cdn.example.org/diagram-thumb.jpg",
+        source_url="https://researchgate.net/publication/example",
+        title="Learning diagram",
+        caption="Learning diagram",
+        license="unknown",
+    )
+
+    assert not VisualAnswerService._is_safe_candidate(candidate)
+
+
 def test_should_enrich_for_explain_text_policy():
     """Explain-text turns should allow visual enrichment in v1."""
 
@@ -735,8 +771,13 @@ async def test_preflight_skips_open_provider_and_og_fallback_when_perplexity_fai
     async def fail_og_scan(*args, **kwargs):
         raise AssertionError("preflight should not scan og:image fallback")
 
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
     monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
     monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_open_provider_fallback", False)
+    monkeypatch.setattr(runtime_config.settings, "enable_tavily_visual_search", False)
+    monkeypatch.setattr(runtime_config.settings, "enable_serpapi_visual_search", False)
     monkeypatch.setattr(service, "_query_perplexity_images", no_perplexity_candidates)
     monkeypatch.setattr(service, "_query_wikimedia", fail_open_provider)
     monkeypatch.setattr(service, "_query_openverse", fail_open_provider)
@@ -806,9 +847,14 @@ async def test_preflight_parallel_provider_fallback_uses_open_candidate(monkeypa
     async def no_openverse_candidates(*args, **kwargs):
         return []
 
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
     monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_parallel_providers", True)
     monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight_open_provider_fallback", True)
     monkeypatch.setattr(runtime_config.settings, "enable_perplexity_visual_search", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_tavily_visual_search", False)
+    monkeypatch.setattr(runtime_config.settings, "enable_serpapi_visual_search", False)
     monkeypatch.setattr(service, "_query_perplexity_images", no_perplexity_candidates)
     monkeypatch.setattr(service, "_query_wikimedia", wikimedia_candidate)
     monkeypatch.setattr(service, "_query_openverse", no_openverse_candidates)
@@ -1332,7 +1378,8 @@ async def test_select_image_block_uses_grounding_agent_to_reject_visual_mismatch
     )
 
     assert block is not None
-    assert block.image_url == "https://upload.wikimedia.org/map-thumb.png"
+    assert block.image_url == "https://upload.wikimedia.org/map.png"
+    assert block.thumbnail_url == "https://upload.wikimedia.org/map-thumb.png"
     assert block.source_domain == "commons.wikimedia.org"
     assert "visual.candidate_rejected" in caplog.text
     assert "candidate_type=aircraft_photo" in caplog.text
@@ -1501,10 +1548,11 @@ async def test_tavily_image_request_uses_search_images(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tavily_image_request_returns_empty_without_api_key(caplog):
+async def test_tavily_image_request_returns_empty_without_api_key(monkeypatch, caplog):
     """Missing Tavily credentials should skip the provider without failing."""
 
     caplog.set_level("INFO")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     service = VisualAnswerService()
     client = _RecordingPostClient({"images": []})
 
@@ -1556,10 +1604,11 @@ async def test_serpapi_image_request_uses_google_images(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_serpapi_image_request_returns_empty_without_api_key(caplog):
+async def test_serpapi_image_request_returns_empty_without_api_key(monkeypatch, caplog):
     """Missing SerpAPI credentials should skip the provider without failing."""
 
     caplog.set_level("INFO")
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
     service = VisualAnswerService()
     client = _RecordingHttpClient({"image_results": []})
 

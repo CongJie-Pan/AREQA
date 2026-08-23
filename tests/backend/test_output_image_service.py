@@ -67,7 +67,8 @@ class _FakeVisualInputService:
                 "content_part": {
                     "type": "image_url",
                     "image_url": {"url": "data:image/png;base64,AA=="},
-                }
+                },
+                "source": "data_uri",
             },
         )()
 
@@ -182,6 +183,69 @@ async def test_output_image_service_retries_distinct_thumbnail_after_unavailable
         "https://cdn.example/thumbnail.png",
     ]
     assert understanding_agent.image_urls == input_service.image_urls
+
+
+@pytest.mark.asyncio
+async def test_output_image_service_skips_remote_url_input_and_retries_thumbnail(caplog):
+    """Remote URL fallbacks should not be sent to vision providers."""
+
+    class _FallbackThenDataUriInputService:
+        def __init__(self):
+            self.image_urls = []
+
+        async def prepare_image_part(self, **kwargs):
+            self.image_urls.append(kwargs["image_url"])
+            source = "remote_url" if len(self.image_urls) == 1 else "data_uri"
+            url = kwargs["image_url"] if source == "remote_url" else "data:image/png;base64,AA=="
+            return type(
+                "FakeVisualImageInput",
+                (),
+                {
+                    "content_part": {"type": "image_url", "image_url": {"url": url}},
+                    "source": source,
+                },
+            )()
+
+    class _RecordingUnderstandingAgent(_FakeUnderstandingAgent):
+        def __init__(self):
+            super().__init__()
+            self.image_urls = []
+
+        async def analyze(self, **kwargs):
+            self.image_urls.append(kwargs["image_url"])
+            return await super().analyze(**kwargs)
+
+    caplog.set_level("INFO")
+    input_service = _FallbackThenDataUriInputService()
+    understanding_agent = _RecordingUnderstandingAgent()
+    service = OutputImageService(
+        understanding_agent=understanding_agent,
+        visual_input_service=input_service,
+    )
+
+    blocks = await service.prepare_preflight_image_blocks(
+        visual_answer_service=_FakeVisualAnswerService(
+            image_url="https://blocked.example/original.png",
+            thumbnail_url="https://cdn.example/thumbnail.png",
+        ),
+        user_msg="Compare frequentist and Bayesian statistics",
+        response_policy=None,
+        existing_web_results=[],
+        tool_registry=None,
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=None,
+        turn_plan=None,
+    )
+
+    assert blocks["img_1"].vision_summary.startswith("A forest plot")
+    assert input_service.image_urls == [
+        "https://blocked.example/original.png",
+        "https://cdn.example/thumbnail.png",
+    ]
+    assert understanding_agent.image_urls == ["https://cdn.example/thumbnail.png"]
+    assert "visual.output_understanding_input_unavailable" in caplog.text
 
 
 @pytest.mark.asyncio

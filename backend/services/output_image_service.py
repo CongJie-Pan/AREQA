@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from config import settings
 from services.visual_answer_service import ImageBlock, VisualAnswerService
@@ -82,9 +83,11 @@ class OutputImageService:
             turn_plan: Optional deterministic turn plan metadata.
 
         Returns:
-            A mapping from visual slot id to verified ``ImageBlock``. When
-            visual understanding is disabled or unavailable, returns the
-            original verified blocks so answer generation can continue.
+            A mapping from visual slot id to verified ``ImageBlock`` values
+            enriched with usable vision evidence. When visual understanding is
+            enabled but the selected image cannot be converted to a data URI or
+            read by the model, the affected image is omitted so answer
+            generation cannot place an ungrounded image.
         """
 
         blocks = await visual_answer_service.prepare_preflight_image_blocks(
@@ -121,6 +124,15 @@ class OutputImageService:
                             ),
                             timeout=remaining_seconds,
                         )
+                        if image_input.source != "data_uri":
+                            logger.info(
+                                "visual.output_understanding_input_unavailable conversation_id=%s slot_id=%s source_domain=%s input_source=%s",
+                                conversation_id,
+                                slot_id,
+                                self._safe_domain(image_url) or "unknown",
+                                image_input.source,
+                            )
+                            continue
                         remaining_seconds = deadline - loop.time()
                         if remaining_seconds <= 0:
                             raise TimeoutError
@@ -221,6 +233,23 @@ class OutputImageService:
             if image_url and image_url not in urls:
                 urls.append(image_url)
         return urls
+
+    @staticmethod
+    def _safe_domain(image_url: str) -> str:
+        """Extract a safe domain label for output-image coordination logs.
+
+        Args:
+            image_url: Candidate image URL considered for understanding.
+
+        Returns:
+            Lowercase host without a leading ``www.`` prefix.
+
+        Side Effects:
+            None. This helper intentionally avoids returning paths or query
+            strings because image URLs can contain provider identifiers.
+        """
+
+        return urlparse(str(image_url or "")).netloc.lower().removeprefix("www.")
 
     @staticmethod
     def _has_usable_understanding(result: VisualUnderstandingResult) -> bool:

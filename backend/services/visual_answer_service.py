@@ -107,6 +107,9 @@ _LOW_QUALITY_SOURCE_DOMAINS = (
     "teacherspayteachers.com",
     "studocu.com",
 )
+_UNSTABLE_IMAGE_INPUT_DOMAINS = {
+    "researchgate.net",
+}
 _NEGATIVE_TERMS = {
     "logo",
     "icon",
@@ -2047,7 +2050,7 @@ class VisualAnswerService:
             slot_id=f"visual-{index}",
             topic=(candidate.title or caption)[:80],
             purpose="diagram",
-            image_url=display_image_url,
+            image_url=candidate.image_url,
             thumbnail_url=display_image_url,
             source_url=candidate.source_url,
             source_domain=domain,
@@ -2162,6 +2165,9 @@ class VisualAnswerService:
         for url in (candidate.image_url, candidate.source_url):
             parsed = urlparse(url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                return False
+            domain = parsed.netloc.lower().removeprefix("www.")
+            if domain in _UNSTABLE_IMAGE_INPUT_DOMAINS:
                 return False
         if not VisualAnswerService._display_image_url(candidate):
             return False
