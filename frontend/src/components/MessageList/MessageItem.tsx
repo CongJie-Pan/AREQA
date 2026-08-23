@@ -8,7 +8,7 @@
 import React, { memo, useCallback, useState } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import { Streamdown, type Components as StreamdownComponents } from 'streamdown';
-import { math } from '@streamdown/math';
+import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -36,7 +36,9 @@ import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/u
 const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
-const STREAMDOWN_PLUGINS = { math };
+const STREAMDOWN_PLUGINS = {
+  math: createMathPlugin({ singleDollarTextMath: true }),
+};
 const STREAMDOWN_LINK_SAFETY = { enabled: false };
 
 /**

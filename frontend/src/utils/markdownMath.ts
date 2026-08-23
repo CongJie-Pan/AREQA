@@ -6,13 +6,95 @@ interface HtmlNode {
   children?: HtmlNode[];
 }
 
-/** Normalize a standalone single-line `$$...$$` block for remark-math. */
+/**
+ * Normalize supported TeX delimiters without rewriting Markdown code spans.
+ *
+ * Args:
+ *   content: Markdown source that may contain TeX math delimiters.
+ *
+ * Returns:
+ *   Markdown with `\\(...\\)` converted to inline dollar delimiters,
+ *   `\\[...\\]` converted to display dollar delimiters, and standalone
+ *   single-line display math expanded for consistent streaming parsing.
+ *
+ * Compatibility:
+ *   Fenced and inline code are preserved verbatim so documentation containing
+ *   literal TeX examples is not interpreted as executable math markup.
+ */
 export function normalizeDisplayMathBlocks(content: string): string {
-  return content.replace(
+  const normalizedDelimiters = transformOutsideMarkdownCode(content, (segment) =>
+    segment.replace(/\\([()[\]])/g, (match, delimiter: string, offset: number, source: string) => {
+      let precedingSlashes = 0;
+      for (let index = offset - 1; index >= 0 && source[index] === '\\'; index -= 1) {
+        precedingSlashes += 1;
+      }
+      if (precedingSlashes % 2 === 1) return match;
+      return delimiter === '(' || delimiter === ')' ? '$' : '$$';
+    }),
+  );
+
+  return normalizedDelimiters.replace(
     /(^|\n)([ \t]*)\$\$([^\n]+?)\$\$([ \t]*)(?=\n|$)/g,
     (_match, prefix: string, indent: string, latex: string, trailing: string) =>
       `${prefix}${indent}$$\n${latex.trim()}\n${indent}$$${trailing}`,
   );
+}
+
+/** Transform plain Markdown segments while preserving inline and fenced code. */
+function transformOutsideMarkdownCode(
+  content: string,
+  transform: (segment: string) => string,
+): string {
+  let fence: { marker: '`' | '~'; length: number } | null = null;
+
+  return content
+    .split(/(\n)/)
+    .map((line) => {
+      if (line === '\n') return line;
+
+      const fenceMatch = line.match(/^[ \t]{0,3}(`{3,}|~{3,})/);
+      if (fenceMatch) {
+        const markerRun = fenceMatch[1];
+        const marker = markerRun[0] as '`' | '~';
+        if (!fence) {
+          fence = { marker, length: markerRun.length };
+        } else if (fence.marker === marker && markerRun.length >= fence.length) {
+          fence = null;
+        }
+        return line;
+      }
+
+      if (fence) return line;
+      return transformOutsideInlineCode(line, transform);
+    })
+    .join('');
+}
+
+/** Transform one Markdown line while preserving complete or partial code spans. */
+function transformOutsideInlineCode(
+  line: string,
+  transform: (segment: string) => string,
+): string {
+  let result = '';
+  let cursor = 0;
+
+  while (cursor < line.length) {
+    const openingIndex = line.indexOf('`', cursor);
+    if (openingIndex === -1) return result + transform(line.slice(cursor));
+
+    result += transform(line.slice(cursor, openingIndex));
+    let openingEnd = openingIndex;
+    while (line[openingEnd] === '`') openingEnd += 1;
+    const delimiter = line.slice(openingIndex, openingEnd);
+    const closingIndex = line.indexOf(delimiter, openingEnd);
+    if (closingIndex === -1) return result + line.slice(openingIndex);
+
+    const closingEnd = closingIndex + delimiter.length;
+    result += line.slice(openingIndex, closingEnd);
+    cursor = closingEnd;
+  }
+
+  return result;
 }
 
 /** Copy the original TeX annotation onto KaTeX display nodes for the UI. */

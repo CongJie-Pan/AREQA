@@ -293,6 +293,20 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
   });
 
+  it('renders single-dollar inline math in assistant messages', () => {
+    const { container } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '角度是 $\\theta$',
+        }}
+      />
+    );
+
+    expect(container.querySelector('.katex')).toBeInTheDocument();
+    expect(container.querySelector('annotation')).toHaveTextContent('\\theta');
+  });
+
   it('keeps Streamdown animated spans after live streaming ends', () => {
     const { container, rerender } = render(
       <MessageItem
