@@ -28,7 +28,7 @@ def test_settings_loads_defaults():
     assert s.enable_parts_prompt_context is True
     assert s.enable_parts_llm_rewrite is True
     assert s.parts_rewrite_timeout_ms == 2500
-    assert s.enable_parts_prompt_debug_logs is True
+    assert s.enable_parts_prompt_debug_logs is False
     assert s.enable_production_turn_trace_summary is True
     assert s.turn_trace_slow_total_threshold_ms == 8000
     assert s.turn_trace_slow_first_token_threshold_ms == 5000
@@ -42,6 +42,7 @@ def test_settings_loads_defaults():
     assert s.compeer_cooldown_override_seconds == 120
     assert s.compeer_proactive_mail_min_interval_seconds == 21600
     assert s.compeer_daily_proactive_limit == 2
+    assert s.enable_mailbox_feature is False
     assert s.enable_compeer_auto_proactive is False
     assert s.enable_mailbox_sending is False
 
@@ -70,6 +71,7 @@ def test_settings_can_be_overridden_by_env():
         'SUGGESTION_GENERATION_TIMEOUT_MS': '750',
         'COMPEER_COOLDOWN_OVERRIDE_SECONDS': '30',
         'COMPEER_PROACTIVE_MAIL_MIN_INTERVAL_SECONDS': '3600',
+        'ENABLE_MAILBOX_FEATURE': 'true',
         'ENABLE_COMPEER_AUTO_PROACTIVE': 'true',
         'ENABLE_MAILBOX_SENDING': 'true',
     }):
@@ -97,5 +99,6 @@ def test_settings_can_be_overridden_by_env():
         assert s.suggestion_generation_timeout_ms == 750
         assert s.compeer_cooldown_override_seconds == 30
         assert s.compeer_proactive_mail_min_interval_seconds == 3600
+        assert s.enable_mailbox_feature is True
         assert s.enable_compeer_auto_proactive is True
         assert s.enable_mailbox_sending is True

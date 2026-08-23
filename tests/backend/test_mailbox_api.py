@@ -28,26 +28,37 @@ def mock_store():
 def test_get_mailbox_empty(mock_store):
     mock_store.get_all_mails.return_value = []
     mock_store.get_unread_count.return_value = 0
-    
-    response = client.get("/api/v1/mailbox")
+
+    with patch("config.settings.enable_mailbox_feature", True):
+        response = client.get("/api/v1/mailbox")
     assert response.status_code == 200
     assert response.json() == {"mails": [], "unread_count": 0}
 
 def test_get_mailbox_with_mails(mock_store):
     mock_store.get_all_mails.return_value = [{"mail_id": "1", "sender": "AREQA"}]
     mock_store.get_unread_count.return_value = 1
-    
-    response = client.get("/api/v1/mailbox")
+
+    with patch("config.settings.enable_mailbox_feature", True):
+        response = client.get("/api/v1/mailbox")
     assert response.status_code == 200
     assert response.json() == {"mails": [{"mail_id": "1", "sender": "AREQA"}], "unread_count": 1}
+
+def test_get_mailbox_is_disabled_by_default(mock_store):
+    response = client.get("/api/v1/mailbox")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Mailbox feature is disabled"
+    mock_store.get_all_mails.assert_not_called()
+    mock_store.get_unread_count.assert_not_called()
     
 def test_post_send_reply_creates_user_mail(mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
     mock_store.schedule_delayed_mail.return_value = "task-123"
     
-    with patch("backend.main.time.time", return_value=1783650000), patch(
-        "config.settings.enable_mailbox_sending",
-        True,
+    with (
+        patch("backend.main.time.time", return_value=1783650000),
+        patch("config.settings.enable_mailbox_feature", True),
+        patch("config.settings.enable_mailbox_sending", True),
     ):
         response = client.post("/api/v1/mailbox/send", json={"content": "這是我的回信", "recipient": "柏拉圖", "conversation_id": "thread-1"})
     assert response.status_code == 200
@@ -79,15 +90,24 @@ def test_post_send_reply_schedules_durable_delayed_task(mock_store):
     mock_store.add_mail.return_value = "mock-uuid-123"
     mock_store.schedule_delayed_mail.return_value = "task-123"
     
-    with patch("config.settings.enable_mailbox_sending", True):
+    with patch("config.settings.enable_mailbox_feature", True), patch("config.settings.enable_mailbox_sending", True):
         response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
     assert response.status_code == 200
     
     mock_store.schedule_delayed_mail.assert_called_once()
 
 
-def test_post_send_reply_is_disabled_by_default(mock_store):
+def test_post_send_reply_feature_is_disabled_by_default(mock_store):
     response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Mailbox feature is disabled"
+    mock_store.add_mail.assert_not_called()
+    mock_store.schedule_delayed_mail.assert_not_called()
+
+def test_post_send_reply_sending_can_be_disabled_while_feature_is_enabled(mock_store):
+    with patch("config.settings.enable_mailbox_feature", True):
+        response = client.post("/api/v1/mailbox/send", json={"content": "測試信件", "recipient": "房龍"})
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Mailbox sending is disabled"
@@ -101,8 +121,9 @@ def test_post_send_reply_validation():
 
 def test_post_read_marks_correct_mail(mock_store):
     mock_store.mark_as_read.return_value = True
-    
-    response = client.post("/api/v1/mailbox/read/mock-uuid-123")
+
+    with patch("config.settings.enable_mailbox_feature", True):
+        response = client.post("/api/v1/mailbox/read/mock-uuid-123")
     assert response.status_code == 200
     assert response.json() == {"status": "success"}
     
@@ -110,10 +131,18 @@ def test_post_read_marks_correct_mail(mock_store):
 
 def test_post_read_not_found(mock_store):
     mock_store.mark_as_read.return_value = False
-    
-    response = client.post("/api/v1/mailbox/read/invalid-uuid")
+
+    with patch("config.settings.enable_mailbox_feature", True):
+        response = client.post("/api/v1/mailbox/read/invalid-uuid")
     assert response.status_code == 404
     assert response.json()["detail"] == "Mail not found"
+
+def test_post_read_feature_is_disabled_by_default(mock_store):
+    response = client.post("/api/v1/mailbox/read/mock-uuid-123")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Mailbox feature is disabled"
+    mock_store.mark_as_read.assert_not_called()
 
 def test_get_suggestions_returns_404():
     response = client.get("/api/v1/suggestions")

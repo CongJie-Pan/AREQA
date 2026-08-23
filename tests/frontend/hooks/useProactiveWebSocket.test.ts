@@ -62,6 +62,19 @@ describe('useProactiveWebSocket', () => {
     );
   });
 
+  it('does not fetch a ticket or connect when disabled', async () => {
+    const onAlert = vi.fn();
+    const { result } = renderHook(() =>
+      useProactiveWebSocket(onAlert, undefined, { enabled: false }),
+    );
+
+    await flushPromises();
+
+    expect(result.current).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockWebSocket).not.toHaveBeenCalled();
+  });
+
   it('returns false until websocket opens', async () => {
     const onAlert = vi.fn();
     const { result } = renderHook(() => useProactiveWebSocket(onAlert));

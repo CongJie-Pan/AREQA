@@ -73,6 +73,9 @@ const mockMails = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.NEXT_PUBLIC_ENABLE_MAILBOX = 'true';
+  delete process.env.NEXT_PUBLIC_ENABLE_COMPEER;
+  delete process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY;
   useMailboxStore.setState({
     mails: [],
     unreadCount: 0,
@@ -99,6 +102,18 @@ beforeEach(() => {
 });
 
 describe('Mailbox Flow Integration', () => {
+  it('should hide mailbox entry and skip mailbox fetch when mailbox is archived', async () => {
+    delete process.env.NEXT_PUBLIC_ENABLE_MAILBOX;
+
+    render(<ChatContainer />);
+
+    expect(screen.queryByText('信箱')).not.toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/mailbox'),
+      expect.any(Object),
+    );
+  });
+
   it('should receive websocket alert, update badge, open mailbox, read, and reply', async () => {
     render(<ChatContainer />);
 

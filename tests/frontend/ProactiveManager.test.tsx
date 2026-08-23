@@ -56,6 +56,8 @@ describe('ProactiveManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    delete process.env.NEXT_PUBLIC_ENABLE_MAILBOX;
+    delete process.env.NEXT_PUBLIC_ENABLE_COMPEER;
     delete process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY;
 
     global.fetch = vi.fn();
@@ -89,6 +91,17 @@ describe('ProactiveManager', () => {
     expect(mockNotificationInfo).not.toHaveBeenCalled();
   });
 
+  it('should keep websocket notifications disabled when mailbox is archived', async () => {
+    render(<ProactiveManager />);
+
+    expect(hooks.useProactiveWebSocket).toHaveBeenCalledWith(
+      expect.any(Function),
+      undefined,
+      { enabled: false },
+    );
+    expect(registeredNewMailCallback).toBeUndefined();
+  });
+
   it('should ignore legacy websocket alerts because care now arrives by mailbox', async () => {
     render(<ProactiveManager />);
 
@@ -118,6 +131,7 @@ describe('ProactiveManager', () => {
   });
 
   it('should log scroll action with throttling', async () => {
+    process.env.NEXT_PUBLIC_ENABLE_COMPEER = 'true';
     process.env.NEXT_PUBLIC_ENABLE_COMPEER_TELEMETRY = 'true';
     (global.fetch as any).mockResolvedValue({
       json: async () => ({ status: 'ok' }),
@@ -167,11 +181,13 @@ describe('ProactiveManager', () => {
   });
 
   it('should register a mailbox refresh callback for new-mail events', async () => {
+    process.env.NEXT_PUBLIC_ENABLE_MAILBOX = 'true';
     render(<ProactiveManager />);
     expect(registeredNewMailCallback).toBeTypeOf('function');
   });
 
   it('refreshes mailbox only when websocket reports new mail', async () => {
+    process.env.NEXT_PUBLIC_ENABLE_MAILBOX = 'true';
     const intervalSpy = vi.spyOn(window, 'setInterval');
     await act(async () => {
       render(<ProactiveManager />);
