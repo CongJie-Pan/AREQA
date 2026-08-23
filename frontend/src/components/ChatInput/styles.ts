@@ -17,7 +17,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     gap: 0;
     padding: 12px 20px 10px;
     background: var(--card);
-    border: 1px solid var(--border);
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--border);
     border-radius: 24px;
     max-width: 800px;
     width: 90%;
@@ -29,7 +31,9 @@ export const useStyles = createStyles(({ css, token }) => ({
       width: calc(100% - 24px);
       margin: 0 auto 12px;
       border-radius: 20px;
-      border: 1px solid var(--border);
+      border-width: 1px;
+      border-style: solid;
+      border-color: var(--border);
       padding: 10px 14px 8px;
     }
 
@@ -178,7 +182,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     max-width: min(360px, 72vw);
     min-height: 44px;
     padding: 7px 10px;
-    border: 1px solid var(--border);
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--border);
     border-radius: 10px;
     background: var(--muted);
     color: var(--foreground);
@@ -231,7 +237,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--border);
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--border);
     border-radius: 50%;
     background: transparent;
     color: var(--foreground);

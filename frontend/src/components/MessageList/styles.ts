@@ -128,7 +128,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   emptySubtitle: css`
     font-family: "Times New Roman", Times, serif;
     margin-top: -18px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--areqa-message-muted-text);
     text-align: center;
     font-size: 1.1rem;
     letter-spacing: 0.5px;
@@ -136,7 +136,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     span {
       font-weight: bold;
       font-size: 1.2em;
-      color: rgba(255, 255, 255, 0.85);
+      color: var(--foreground);
     }
 
     @media (max-width: 768px) {
@@ -231,8 +231,8 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   userBubble: css`
-    background: #1f1b2b;
-    color: #ffffff;
+    background: var(--areqa-user-bubble-background);
+    color: var(--areqa-user-bubble-color);
     align-self: flex-end;
     padding: 12px 18px;
     border-radius: 18px;
@@ -407,7 +407,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   assistantBubble: css`
     background: transparent;
-    color: #f0f0f0;
+    color: var(--areqa-message-text);
     align-self: flex-start;
   `,
 
@@ -422,7 +422,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 content: css`
   font-size: 16px;
   line-height: 1.8;
-  color: #e0e0e0;
+  color: var(--areqa-message-text);
   overflow-wrap: anywhere;
   word-break: break-word;
 
@@ -438,7 +438,7 @@ content: css`
     margin: 12px 0;
     padding: 2px 0 2px 16px;
     border-left: 3px solid rgba(255, 255, 255, 0.25);
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--areqa-message-muted-text);
     
     p {
       margin-bottom: 0;
@@ -965,6 +965,16 @@ quoteBlockContent: css`
     font-size: 12px;
   `,
 
+  answerImageLicense: css`
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--areqa-message-action-hover-background);
+    color: var(--areqa-message-muted-text);
+  `,
+
   answerImageSource: css`
     display: inline-flex;
     align-items: center;
@@ -1089,13 +1099,13 @@ quoteBlockContent: css`
     border: none;
     border-radius: 8px;
     background: transparent;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--areqa-message-action-color);
     cursor: pointer;
     transition: all 0.2s;
 
     &:hover {
-      color: #ffffff;
-      background: rgba(255, 255, 255, 0.1);
+      color: var(--areqa-message-action-hover-color);
+      background: var(--areqa-message-action-hover-background);
       transform: scale(1.1);
     }
 
@@ -1461,13 +1471,13 @@ quoteBlockContent: css`
     border: none;
     border-radius: 8px;
     background: transparent;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--areqa-message-action-color);
     cursor: pointer;
     transition: all 0.2s;
 
     &:hover {
-      color: #ffffff;
-      background: rgba(255, 255, 255, 0.1);
+      color: var(--areqa-message-action-hover-color);
+      background: var(--areqa-message-action-hover-background);
     }
   `,
 

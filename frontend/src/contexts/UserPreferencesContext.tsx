@@ -44,6 +44,8 @@ export type TranslationKey =
   | 'staySignedOut'
   | 'back'
   | 'askPlaceholder'
+  | 'thinkingPlaceholder'
+  | 'suggestedQuestionsTitle'
   | 'messageTooLong'
   | 'maxAttachments'
   | 'unsupportedAttachment'
@@ -94,7 +96,22 @@ export type TranslationKey =
   | 'feedbackSlow'
   | 'feedbackStyle'
   | 'feedbackSafety'
-  | 'feedbackOther';
+  | 'feedbackOther'
+  | 'copyMessage'
+  | 'editMessage'
+  | 'helpfulReply'
+  | 'notHelpfulReply'
+  | 'regenerate'
+  | 'regenerateMessage'
+  | 'feedbackTitleShort'
+  | 'feedbackIssue'
+  | 'selectIssue'
+  | 'feedbackDetailsPlaceholder'
+  | 'feedbackPrivacy'
+  | 'feedbackSubmit'
+  | 'copyMessageSuccess'
+  | 'copyMessageFailed'
+  | 'saveFeedbackFailed';
 
 interface UserPreferencesContextValue {
   theme: InterfaceTheme;
@@ -156,7 +173,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     signup: '註冊',
     staySignedOut: '維持登出狀態',
     back: '返回',
-    askPlaceholder: '問我任何問題...',
+    askPlaceholder: '提問AREQA',
+    thinkingPlaceholder: '正在努力思考...',
+    suggestedQuestionsTitle: '您可能還想了解：',
     messageTooLong: '訊息過長。上限為 {maxLength} 個字元。',
     maxAttachments: '每次最多可附加 {count} 個檔案。',
     unsupportedAttachment: '僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。',
@@ -208,6 +227,21 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackStyle: '風格或語調',
     feedbackSafety: '安全性或法律疑慮',
     feedbackOther: '其他',
+    copyMessage: '複製訊息',
+    editMessage: '編輯訊息',
+    helpfulReply: '這則回覆有幫助',
+    notHelpfulReply: '這則回覆沒有幫助',
+    regenerate: '重新生成',
+    regenerateMessage: '重新生成訊息',
+    feedbackTitleShort: '分享回饋',
+    feedbackIssue: '問題',
+    selectIssue: '選取問題',
+    feedbackDetailsPlaceholder: '分享詳細資料（選填）',
+    feedbackPrivacy: '你的回饋將包含你的對話，以協助我們改善 AREQA。',
+    feedbackSubmit: '提交',
+    copyMessageSuccess: '已複製到剪貼簿',
+    copyMessageFailed: '複製失敗',
+    saveFeedbackFailed: '儲存評價失敗',
   },
   'zh-CN': {
     appearance: '界面外观',
@@ -239,7 +273,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     signup: '注册',
     staySignedOut: '维持登出状态',
     back: '返回',
-    askPlaceholder: '问我任何问题...',
+    askPlaceholder: '提问AREQA',
+    thinkingPlaceholder: '正在努力思考...',
+    suggestedQuestionsTitle: '您可能还想了解：',
     messageTooLong: '讯息过长。上限为 {maxLength} 个字符。',
     maxAttachments: '每次最多可附加 {count} 个文件。',
     unsupportedAttachment: '仅支持 PNG、JPEG、WEBP、GIF、PDF、TXT 与 Markdown 文件。',
@@ -291,6 +327,21 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackStyle: '风格或语调',
     feedbackSafety: '安全性或法律疑虑',
     feedbackOther: '其他',
+    copyMessage: '复制讯息',
+    editMessage: '编辑讯息',
+    helpfulReply: '这则回复有帮助',
+    notHelpfulReply: '这则回复没有帮助',
+    regenerate: '重新生成',
+    regenerateMessage: '重新生成讯息',
+    feedbackTitleShort: '分享反馈',
+    feedbackIssue: '问题',
+    selectIssue: '选取问题',
+    feedbackDetailsPlaceholder: '分享详细资料（选填）',
+    feedbackPrivacy: '你的反馈将包含你的对话，以协助我们改善 AREQA。',
+    feedbackSubmit: '提交',
+    copyMessageSuccess: '已复制到剪贴簿',
+    copyMessageFailed: '复制失败',
+    saveFeedbackFailed: '储存评价失败',
   },
   en: {
     appearance: 'Appearance',
@@ -322,7 +373,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     signup: 'Sign up',
     staySignedOut: 'Stay signed out',
     back: 'Back',
-    askPlaceholder: 'Ask me anything...',
+    askPlaceholder: 'Ask AREQA',
+    thinkingPlaceholder: 'Thinking...',
+    suggestedQuestionsTitle: 'You may also want to know:',
     messageTooLong: 'Message is too long. Limit: {maxLength} characters.',
     maxAttachments: 'You can attach up to {count} files at a time.',
     unsupportedAttachment: 'Only PNG, JPEG, WEBP, GIF, PDF, TXT, and Markdown files are supported.',
@@ -374,6 +427,21 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackStyle: 'Style or tone',
     feedbackSafety: 'Safety or legal concern',
     feedbackOther: 'Other',
+    copyMessage: 'Copy message',
+    editMessage: 'Edit message',
+    helpfulReply: 'This reply was helpful',
+    notHelpfulReply: 'This reply was not helpful',
+    regenerate: 'Regenerate',
+    regenerateMessage: 'Regenerate message',
+    feedbackTitleShort: 'Share feedback',
+    feedbackIssue: 'Issue',
+    selectIssue: 'Select an issue',
+    feedbackDetailsPlaceholder: 'Share details (optional)',
+    feedbackPrivacy: 'Your feedback will include your conversation to help us improve AREQA.',
+    feedbackSubmit: 'Submit',
+    copyMessageSuccess: 'Copied to clipboard',
+    copyMessageFailed: 'Copy failed',
+    saveFeedbackFailed: 'Failed to save feedback',
   },
 };
 

@@ -39,6 +39,13 @@
   --areqa-table-modal-close-border: rgba(255, 255, 255, 0.12);
   --areqa-table-modal-close-color: rgba(255, 255, 255, 0.78);
   --areqa-table-modal-close-hover: rgba(255, 255, 255, 0.06);
+  --areqa-user-bubble-background: #1f1b2b;
+  --areqa-user-bubble-color: #ffffff;
+  --areqa-message-text: #e0e0e0;
+  --areqa-message-muted-text: rgba(255, 255, 255, 0.6);
+  --areqa-message-action-color: rgba(255, 255, 255, 0.4);
+  --areqa-message-action-hover-color: #ffffff;
+  --areqa-message-action-hover-background: rgba(255, 255, 255, 0.1);
 }
 
 html[data-interface-theme='light'] {
@@ -76,6 +83,13 @@ html[data-interface-theme='light'] {
   --areqa-table-modal-close-border: rgba(17, 24, 39, 0.14);
   --areqa-table-modal-close-color: rgba(17, 24, 39, 0.72);
   --areqa-table-modal-close-hover: rgba(17, 24, 39, 0.06);
+  --areqa-user-bubble-background: #e5e7eb;
+  --areqa-user-bubble-color: #111827;
+  --areqa-message-text: #111827;
+  --areqa-message-muted-text: rgba(17, 24, 39, 0.62);
+  --areqa-message-action-color: rgba(17, 24, 39, 0.54);
+  --areqa-message-action-hover-color: #111827;
+  --areqa-message-action-hover-background: rgba(17, 24, 39, 0.08);
 }
 
 html {
@@ -208,12 +222,33 @@ body {
 .areqa-account-dropdown .ant-dropdown-menu {
   border-radius: 0 0 12px 12px;
   box-shadow: none;
+  padding: 6px;
+}
+
+.areqa-account-dropdown .ant-dropdown-menu-item {
+  min-height: 46px;
+  margin: 2px 0;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  color: var(--foreground) !important;
+}
+
+.areqa-account-dropdown .ant-dropdown-menu-item:hover {
+  background: var(--areqa-account-hover) !important;
+}
+
+.areqa-account-dropdown .ant-dropdown-menu-item-danger {
+  color: #ff4d4f !important;
+}
+
+.areqa-account-dropdown .ant-dropdown-menu-item-danger:hover {
+  background: var(--areqa-danger-hover) !important;
 }
 
 .areqa-account-dropdown-panel {
   min-width: 360px;
   max-width: min(440px, calc(100vw - 24px));
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: color-mix(in srgb, var(--card) 94%, transparent);
@@ -223,18 +258,19 @@ body {
 
 .areqa-account-preferences {
   display: grid;
+  position: relative;
   gap: 4px;
-  padding: 8px;
+  padding: 6px;
 }
 
 .areqa-account-preference-row {
   display: flex;
   width: 100%;
-  min-height: 62px;
+  min-height: 52px;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -273,14 +309,14 @@ body {
 
 .areqa-account-preference-label {
   color: var(--foreground);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 650;
   line-height: 22px;
 }
 
 .areqa-account-preference-summary {
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 18px;
 }
@@ -292,26 +328,40 @@ body {
 }
 
 .areqa-account-preference-row[aria-expanded='true'] .areqa-account-preference-chevron {
-  transform: rotate(90deg);
+  transform: translateX(2px);
 }
 
 .areqa-account-toggle-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
+  position: absolute;
+  left: calc(100% + 2px);
+  z-index: 1;
+  min-width: 190px;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  padding: 6px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--muted);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+}
+
+.areqa-account-toggle-list[data-placement='theme'] {
+  top: 0;
+}
+
+.areqa-account-toggle-list[data-placement='language'] {
+  top: 56px;
 }
 
 .areqa-account-toggle-option {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 42px;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
-  padding: 6px 8px;
+  padding: 7px 10px;
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
@@ -326,6 +376,11 @@ body {
     color 160ms ease,
     transform 160ms ease;
   white-space: nowrap;
+}
+
+.areqa-account-toggle-option .lucide-check {
+  margin-left: auto;
+  color: #67b7c8;
 }
 
 .areqa-account-toggle-option:hover {
@@ -359,6 +414,19 @@ body {
     gap: 4px;
     padding: 6px;
     font-size: 11px;
+  }
+}
+
+@media (max-width: 640px) {
+  .areqa-account-dropdown-panel {
+    overflow: hidden;
+  }
+
+  .areqa-account-toggle-list {
+    position: static;
+    min-width: 0;
+    margin: 2px 0 4px;
+    box-shadow: none;
   }
 }
 

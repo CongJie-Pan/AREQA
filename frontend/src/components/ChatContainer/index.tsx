@@ -26,6 +26,7 @@ import { useFeatureStore } from '@/store/features';
 import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
 import { useStyles } from './styles';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 /**
  * Error type classification for user-friendly messages
@@ -81,6 +82,7 @@ import { SidePanelType } from '@/types/panel';
 export function ChatContainer({ className }: ChatContainerProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
+  const { t } = useUserPreferences();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
@@ -512,25 +514,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   disabled={isStreaming}
                   placeholder={
                     isStreaming
-                      ? '正在努力思考...'
-                      : '歡迎問我問題...'
+                      ? t('thinkingPlaceholder')
+                      : t('askPlaceholder')
                   }
                   isStreaming={isStreaming}
                   onStop={handleStop}
                 />
-                {isEmpty && (
-                  <div style={{
-                    fontFamily: 'ChenYuluoyan, sans-serif',
-                    fontWeight: 'normal',
-                    fontSize: '22px',
-                    textAlign: 'center',
-                    color: '#fff',
-                    marginTop: '20px',
-                    letterSpacing: '3px'
-                  }}>
-                    懂你所學，伴你所讀
-                  </div>
-                )}
               </div>
             </>
           )}

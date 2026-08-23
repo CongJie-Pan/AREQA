@@ -32,10 +32,9 @@ import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMa
 import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
-import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
 
 const { TextArea } = Input;
-const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
 const STREAMDOWN_MATH_PLUGIN = createMathPlugin({ singleDollarTextMath: true });
 const STREAMDOWN_PLUGINS = {
@@ -80,13 +79,13 @@ type WindowWithFind = Window & {
   ) => boolean;
 };
 
-const FEEDBACK_OPTIONS: Array<{ value: MessageFeedbackReason; label: string }> = [
-  { value: 'incorrect_or_incomplete', label: '不正確或不完整' },
-  { value: 'not_what_i_wanted', label: '這不是我想要的' },
-  { value: 'slow_or_broken', label: '緩慢或故障' },
-  { value: 'style_or_tone', label: '風格或語調' },
-  { value: 'safety_or_legal', label: '安全性或法律疑慮' },
-  { value: 'other', label: '其他' },
+const FEEDBACK_OPTIONS: Array<{ value: MessageFeedbackReason; labelKey: TranslationKey }> = [
+  { value: 'incorrect_or_incomplete', labelKey: 'feedbackIncorrect' },
+  { value: 'not_what_i_wanted', labelKey: 'feedbackNotWanted' },
+  { value: 'slow_or_broken', labelKey: 'feedbackSlow' },
+  { value: 'style_or_tone', labelKey: 'feedbackStyle' },
+  { value: 'safety_or_legal', labelKey: 'feedbackSafety' },
+  { value: 'other', labelKey: 'feedbackOther' },
 ];
 
 function isMobileFeedbackViewport(): boolean {
@@ -564,8 +563,10 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const safeImageUrl = isSafeUrl(imageUrl) ? imageUrl : '';
   const safeFullImageUrl = safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
+  const safeLicenseUrl = isSafeUrl(block.licenseUrl) ? block.licenseUrl : '';
   const displayCaption = block.attributionCaption || block.caption || block.topic;
   const sourceLabel = block.sourceDomain || 'source';
+  const licenseLabel = block.license || (block.provider === 'og_image' ? 'License unknown' : '');
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
 
@@ -624,6 +625,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           <span className={styles.answerImageCaptionText}>{displayCaption}</span>
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
+            {licenseLabel && <span className={styles.answerImageLicense}>{licenseLabel}</span>}
             <a
               href={safeSourceUrl}
               target="_blank"
@@ -659,6 +661,18 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
             {(block.attributionString || block.creator) && (
               <p>
                 <strong>Attribution:</strong> {block.attributionString || block.creator}
+              </p>
+            )}
+            {licenseLabel && (
+              <p>
+                <strong>License:</strong>{' '}
+                {safeLicenseUrl ? (
+                  <a href={safeLicenseUrl} target="_blank" rel="noopener noreferrer">
+                    {licenseLabel}
+                  </a>
+                ) : (
+                  licenseLabel
+                )}
               </p>
             )}
             <a
@@ -1011,11 +1025,11 @@ export const MessageItem = memo(function MessageItem({
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(displayContent);
-      antMessageApi.success('已複製到剪貼簿');
+      antMessageApi.success(t('copyMessageSuccess'));
     } catch {
-      antMessageApi.error('複製失敗');
+      antMessageApi.error(t('copyMessageFailed'));
     }
-  }, [displayContent, antMessageApi]);
+  }, [displayContent, antMessageApi, t]);
 
   // Handle regenerate
   const handleRegenerate = useCallback(() => {
@@ -1034,16 +1048,16 @@ export const MessageItem = memo(function MessageItem({
     try {
       await onFeedback(message.id, feedback, details);
     } catch {
-      antMessageApi.error('儲存評價失敗');
+      antMessageApi.error(t('saveFeedbackFailed'));
     }
-  }, [antMessageApi, message.feedback, message.id, onFeedback]);
+  }, [antMessageApi, message.feedback, message.id, onFeedback, t]);
 
   const handleLikeFeedback = useCallback(async () => {
     if (!onFeedback || isLiked) return;
 
     await handleFeedback('liked');
-    antMessageApi.success(FEEDBACK_SUCCESS_MESSAGE);
-  }, [antMessageApi, handleFeedback, isLiked, onFeedback]);
+    antMessageApi.success(t('feedbackThanks'));
+  }, [antMessageApi, handleFeedback, isLiked, onFeedback, t]);
 
   const openDislikeFeedback = useCallback(() => {
     if (!onFeedback || isLiked || isDisliked) return;
@@ -1071,14 +1085,14 @@ export const MessageItem = memo(function MessageItem({
       });
       setIsFeedbackModalOpen(false);
       window.setTimeout(() => {
-        antMessageApi.success(FEEDBACK_SUCCESS_MESSAGE);
+        antMessageApi.success(t('feedbackThanks'));
       }, 0);
     } catch {
-      antMessageApi.error('儲存評價失敗');
+      antMessageApi.error(t('saveFeedbackFailed'));
     } finally {
       setIsFeedbackSubmitting(false);
     }
-  }, [antMessageApi, feedbackComment, feedbackReason, message.id, onFeedback]);
+  }, [antMessageApi, feedbackComment, feedbackReason, message.id, onFeedback, t]);
 
   // Handle entering edit mode
   const handleEditClick = useCallback(() => {
@@ -1134,14 +1148,14 @@ export const MessageItem = memo(function MessageItem({
                   className={cx(styles.editButton, styles.editCancelButton)}
                   onClick={handleCancelEdit}
                 >
-                  取消
+                  {t('cancel')}
                 </button>
                 <button
                   className={cx(styles.editButton, styles.editSaveButton)}
                   onClick={handleSaveEdit}
                   disabled={!editContent.trim() || editContent.trim() === displayContent}
                 >
-                  送出
+                  {t('submit')}
                 </button>
               </div>
             </div>
@@ -1229,21 +1243,21 @@ export const MessageItem = memo(function MessageItem({
               )}
               
               <div className={styles.userActionButtons}>
-                <Tooltip title="複製訊息" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                <Tooltip title={t('copyMessage')}>
                   <button
                     className={styles.actionButton}
                     onClick={handleCopy}
-                    aria-label="複製訊息"
+                    aria-label={t('copyMessage')}
                   >
                     <Copy size={16} />
                   </button>
                 </Tooltip>
                 {onEdit && (
-                  <Tooltip title="編輯訊息" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                  <Tooltip title={t('editMessage')}>
                     <button
                       className={styles.actionButton}
                       onClick={handleEditClick}
-                      aria-label="編輯訊息"
+                      aria-label={t('editMessage')}
                     >
                       <Edit size={16} />
                     </button>
@@ -1339,11 +1353,11 @@ export const MessageItem = memo(function MessageItem({
 
             {/* Action Buttons */}
             <div className={styles.actionButtons}>
-              <Tooltip title="複製訊息" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+              <Tooltip title={t('copyMessage')}>
                 <button
                   className={styles.actionButton}
                   onClick={handleCopy}
-                  aria-label="複製訊息"
+                  aria-label={t('copyMessage')}
                 >
                   <Copy size={16} />
                 </button>
@@ -1357,7 +1371,7 @@ export const MessageItem = memo(function MessageItem({
                       isDisliked && styles.feedbackActionSlotCollapsed,
                     )}
                   >
-                    <Tooltip title="這則回覆有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                    <Tooltip title={t('helpfulReply')}>
                       <button
                         className={cx(
                           styles.actionButton,
@@ -1365,7 +1379,7 @@ export const MessageItem = memo(function MessageItem({
                         )}
                         disabled={isDisliked}
                         onClick={handleLikeFeedback}
-                        aria-label="這則回覆有幫助"
+                        aria-label={t('helpfulReply')}
                         aria-pressed={isLiked}
                         tabIndex={isDisliked ? -1 : undefined}
                       >
@@ -1380,7 +1394,7 @@ export const MessageItem = memo(function MessageItem({
                       isLiked && styles.feedbackActionSlotCollapsed,
                     )}
                   >
-                    <Tooltip title="這則回覆沒有幫助" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                    <Tooltip title={t('notHelpfulReply')}>
                       <button
                         className={cx(
                           styles.actionButton,
@@ -1388,7 +1402,7 @@ export const MessageItem = memo(function MessageItem({
                         )}
                         disabled={isLiked}
                         onClick={openDislikeFeedback}
-                        aria-label="這則回覆沒有幫助"
+                        aria-label={t('notHelpfulReply')}
                         aria-pressed={isDisliked}
                         tabIndex={isLiked ? -1 : undefined}
                       >
@@ -1399,11 +1413,11 @@ export const MessageItem = memo(function MessageItem({
                 </>
               )}
               {onRegenerate && !isStreaming && (
-                <Tooltip title="重新生成" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+                <Tooltip title={t('regenerate')}>
                   <button
                     className={styles.actionButton}
                     onClick={handleRegenerate}
-                    aria-label="重新生成訊息"
+                    aria-label={t('regenerateMessage')}
                   >
                     <RefreshCw size={16} />
                   </button>
@@ -1427,20 +1441,20 @@ export const MessageItem = memo(function MessageItem({
               >
                 <div className={styles.feedbackForm}>
                   {isMobileFeedbackModal && <div className={styles.feedbackSheetHandle} />}
-                  <div className={styles.feedbackTitle}>分享回饋</div>
+                  <div className={styles.feedbackTitle}>{t('feedbackTitleShort')}</div>
 
                   <div className={styles.mobileFeedbackReason}>
-                    <div className={styles.feedbackLabel}>問題</div>
+                    <div className={styles.feedbackLabel}>{t('feedbackIssue')}</div>
                     <select
-                      aria-label="選取問題"
+                      aria-label={t('selectIssue')}
                       className={styles.mobileFeedbackNativeSelect}
                       onChange={(event) => setFeedbackReason(event.target.value as MessageFeedbackReason)}
                       value={feedbackReason ?? ''}
                     >
-                      <option disabled value="">選取問題</option>
+                      <option disabled value="">{t('selectIssue')}</option>
                       {FEEDBACK_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {t(option.labelKey)}
                         </option>
                       ))}
                     </select>
@@ -1457,7 +1471,7 @@ export const MessageItem = memo(function MessageItem({
                         onClick={() => setFeedbackReason(option.value)}
                         type="button"
                       >
-                        {option.label}
+                        {t(option.labelKey)}
                       </button>
                     ))}
                   </div>
@@ -1466,13 +1480,13 @@ export const MessageItem = memo(function MessageItem({
                     className={styles.feedbackTextArea}
                     maxLength={2000}
                     onChange={(event) => setFeedbackComment(event.target.value)}
-                    placeholder="分享詳細資料（選填）"
+                    placeholder={t('feedbackDetailsPlaceholder')}
                     rows={isMobileFeedbackModal ? 8 : 4}
                     value={feedbackComment}
                   />
 
                   <div className={styles.feedbackPrivacyText}>
-                    你的回饋將包含你的對話，以協助我們改善 AREQA。
+                    {t('feedbackPrivacy')}
                   </div>
 
                   <div className={styles.feedbackSubmitRow}>
@@ -1483,7 +1497,7 @@ export const MessageItem = memo(function MessageItem({
                       onClick={submitDislikeFeedback}
                       type="primary"
                     >
-                      提交
+                      {t('feedbackSubmit')}
                     </Button>
                   </div>
                 </div>

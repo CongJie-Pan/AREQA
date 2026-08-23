@@ -55,7 +55,7 @@ export interface ChatInputProps {
 export function ChatInput({
   onSend,
   disabled = false,
-  placeholder = '問我任何問題...',
+  placeholder,
   className,
   maxLength = MAX_MESSAGE_LENGTH,
   isStreaming = false,
@@ -256,7 +256,7 @@ export function ChatInput({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder === '問我任何問題...' ? t('askPlaceholder') : placeholder}
+          placeholder={placeholder ?? t('askPlaceholder')}
           disabled={disabled}
           rows={1}
           maxLength={maxLength + 100}

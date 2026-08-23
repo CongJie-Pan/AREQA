@@ -32,11 +32,11 @@ describe('ChatInput', () => {
 
   it('should render correctly', () => {
     render(<ChatInput onSend={mockOnSend} />);
-    expect(screen.getByPlaceholderText(/問我任何問題/i)).toBeDefined();
-    expect(screen.getByLabelText('加入附件')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/提問AREQA/i)).toBeDefined();
+    expect(screen.getByLabelText('加入圖片或文件')).toBeInTheDocument();
     expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
     const input = screen.getByLabelText('訊息輸入框');
-    const attachmentButton = screen.getByLabelText('加入附件');
+    const attachmentButton = screen.getByLabelText('加入圖片或文件');
     const inputRow = screen.getByRole('group', { name: '訊息輸入列' });
     const sendButton = screen.getByLabelText('發送訊息');
     expect(inputRow).toContainElement(attachmentButton);
@@ -56,7 +56,7 @@ describe('ChatInput', () => {
 
   it('should render a LaTeX preview without changing the submitted source', async () => {
     render(<ChatInput onSend={mockOnSend} />);
-    const input = screen.getByPlaceholderText(/問我任何問題/i);
+    const input = screen.getByPlaceholderText(/提問AREQA/i);
 
     fireEvent.change(input, { target: { value: '$$x^2 + y^2 = z^2$$' } });
 
@@ -106,7 +106,7 @@ describe('ChatInput', () => {
     });
 
     render(<ChatInput onSend={mockOnSend} />);
-    const input = screen.getByPlaceholderText(/問我任何問題/i);
+    const input = screen.getByPlaceholderText(/提問AREQA/i);
     
     fireEvent.change(input, { target: { value: 'my question' } });
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
@@ -133,7 +133,7 @@ describe('ChatInput', () => {
     render(<ChatInput onSend={mockOnSend} />);
 
     fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
-    fireEvent.click(screen.getByLabelText('移除附件 notes.txt'));
+    fireEvent.click(screen.getByLabelText('刪除 notes.txt'));
 
     expect(screen.queryByLabelText('待送附件')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/發送訊息/i)).toBeDisabled();

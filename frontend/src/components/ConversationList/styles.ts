@@ -89,8 +89,8 @@ export const useStyles = createStyles(({ css }) => ({
     gap: 10px;
     width: 100%;
     padding: 10px 16px;
-    background: var(--muted);
-    border: 1px solid var(--border);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 8px;
     color: var(--foreground);
     font-size: 14px;
@@ -100,7 +100,7 @@ export const useStyles = createStyles(({ css }) => ({
 
     &:hover {
       background: var(--areqa-account-hover);
-      border-color: var(--border);
+      border-color: transparent;
     }
 
     svg {
@@ -290,7 +290,9 @@ export const useStyles = createStyles(({ css }) => ({
     gap: 10px;
     padding: 10px 12px;
     background: transparent;
-    border: 1px solid var(--border);
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--border);
     border-radius: 8px;
     color: var(--muted-foreground);
     font-size: 13px;

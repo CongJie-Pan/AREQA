@@ -410,25 +410,6 @@ function AccountPreferenceControls({
         onClick={() => setActivePanel(activePanel === 'theme' ? null : 'theme')}
         expanded={activePanel === 'theme'}
       />
-      {activePanel === 'theme' && (
-        <PreferenceToggleGroup ariaLabel={t('appearance')}>
-          {THEME_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className="areqa-account-toggle-option"
-              data-selected={selectedTheme === option.value}
-              aria-pressed={selectedTheme === option.value}
-              onClick={() => onThemeChange(option.value)}
-            >
-              <span aria-hidden="true">{option.icon}</span>
-              <span>{themeLabelByValue[option.value]}</span>
-              {selectedTheme === option.value && <Check size={14} aria-hidden="true" />}
-            </button>
-          ))}
-        </PreferenceToggleGroup>
-      )}
-
       <PreferenceSubmenuRow
         icon={<Languages size={18} />}
         label={t('language')}
@@ -436,21 +417,39 @@ function AccountPreferenceControls({
         onClick={() => setActivePanel(activePanel === 'language' ? null : 'language')}
         expanded={activePanel === 'language'}
       />
-      {activePanel === 'language' && (
-        <PreferenceToggleGroup ariaLabel={t('language')}>
-          {LANGUAGE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className="areqa-account-toggle-option"
-              data-selected={selectedLanguage === option.value}
-              aria-pressed={selectedLanguage === option.value}
-              onClick={() => onLanguageChange(option.value)}
-            >
-              <span>{languageLabelByValue[option.value]}</span>
-              {selectedLanguage === option.value && <Check size={14} aria-hidden="true" />}
-            </button>
-          ))}
+      {activePanel && (
+        <PreferenceToggleGroup
+          ariaLabel={activePanel === 'theme' ? t('appearance') : t('language')}
+          placement={activePanel}
+        >
+          {activePanel === 'theme'
+            ? THEME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="areqa-account-toggle-option"
+                  data-selected={selectedTheme === option.value}
+                  aria-pressed={selectedTheme === option.value}
+                  onClick={() => onThemeChange(option.value)}
+                >
+                  <span aria-hidden="true">{option.icon}</span>
+                  <span>{themeLabelByValue[option.value]}</span>
+                  {selectedTheme === option.value && <Check size={14} aria-hidden="true" />}
+                </button>
+              ))
+            : LANGUAGE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="areqa-account-toggle-option"
+                  data-selected={selectedLanguage === option.value}
+                  aria-pressed={selectedLanguage === option.value}
+                  onClick={() => onLanguageChange(option.value)}
+                >
+                  <span>{languageLabelByValue[option.value]}</span>
+                  {selectedLanguage === option.value && <Check size={14} aria-hidden="true" />}
+                </button>
+              ))}
         </PreferenceToggleGroup>
       )}
     </div>
@@ -495,16 +494,19 @@ function PreferenceSubmenuRow({
 
 interface PreferenceToggleGroupProps {
   ariaLabel: string;
+  placement: 'theme' | 'language';
   children: React.ReactNode;
 }
 
 function PreferenceToggleGroup({
   ariaLabel,
+  placement,
   children,
 }: PreferenceToggleGroupProps) {
   return (
     <div
       className="areqa-account-toggle-list"
+      data-placement={placement}
       role="group"
       aria-label={ariaLabel}
     >

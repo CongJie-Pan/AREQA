@@ -3,6 +3,7 @@ import { createStyles } from 'antd-style';
 import { Button, Space, Typography } from 'antd';
 import { MessageSquarePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 const { Text } = Typography;
 
@@ -54,6 +55,7 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
   disabled = false,
 }) => {
   const { styles } = useStyles();
+  const { t } = useUserPreferences();
 
   if (!suggestions || suggestions.length === 0) return null;
 
@@ -66,7 +68,7 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
     >
       <div className={styles.title}>
         <MessageSquarePlus size={14} />
-        <Text type="secondary">您可能還想了解：</Text>
+        <Text type="secondary">{t('suggestedQuestionsTitle')}</Text>
       </div>
       <Space orientation="vertical" style={{ width: '100%' }} size="small">
         {suggestions.map((question, index) => (
