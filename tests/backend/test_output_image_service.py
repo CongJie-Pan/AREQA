@@ -107,6 +107,32 @@ async def test_output_image_service_enriches_preflight_blocks():
 
 
 @pytest.mark.asyncio
+async def test_output_image_service_uses_python_310_compatible_timeout(monkeypatch):
+    """Render deploys Python 3.10, where asyncio.timeout is unavailable."""
+
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+    service = OutputImageService(
+        understanding_agent=_FakeUnderstandingAgent(),
+        visual_input_service=_FakeVisualInputService(),
+    )
+
+    blocks = await service.prepare_preflight_image_blocks(
+        visual_answer_service=_FakeVisualAnswerService(),
+        user_msg="Compare frequentist and Bayesian statistics",
+        response_policy=None,
+        existing_web_results=[],
+        tool_registry=None,
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=None,
+        turn_plan=None,
+    )
+
+    assert blocks["img_1"].vision_summary.startswith("A forest plot")
+
+
+@pytest.mark.asyncio
 async def test_output_image_service_retries_distinct_thumbnail_after_unavailable_original():
     """A readable thumbnail should recover vision understanding for the same image."""
 

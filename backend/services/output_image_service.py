@@ -106,15 +106,26 @@ class OutputImageService:
             result: VisualUnderstandingResult | None = None
             attempted_urls = self._understanding_image_urls(block)
             budget_seconds = self._understanding_budget_seconds()
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + budget_seconds
             try:
-                async with asyncio.timeout(budget_seconds):
-                    for image_url in attempted_urls:
-                        try:
-                            image_input = await self.visual_input_service.prepare_image_part(
+                for image_url in attempted_urls:
+                    try:
+                        remaining_seconds = deadline - loop.time()
+                        if remaining_seconds <= 0:
+                            raise TimeoutError
+                        image_input = await asyncio.wait_for(
+                            self.visual_input_service.prepare_image_part(
                                 image_url=image_url,
                                 conversation_id=conversation_id,
-                            )
-                            candidate_result = await self.understanding_agent.analyze(
+                            ),
+                            timeout=remaining_seconds,
+                        )
+                        remaining_seconds = deadline - loop.time()
+                        if remaining_seconds <= 0:
+                            raise TimeoutError
+                        candidate_result = await asyncio.wait_for(
+                            self.understanding_agent.analyze(
                                 client=model_client,
                                 model=settings.model_visual_understanding,
                                 image_url=image_url,
@@ -122,18 +133,22 @@ class OutputImageService:
                                 user_msg=user_msg,
                                 visual_brief=None,
                                 conversation_id=conversation_id,
-                            )
-                        except Exception as exc:
-                            logger.info(
-                                "visual.output_understanding_attempt_failed conversation_id=%s slot_id=%s reason=%s",
-                                conversation_id,
-                                slot_id,
-                                type(exc).__name__,
-                            )
-                            continue
-                        if self._has_usable_understanding(candidate_result):
-                            result = candidate_result
-                            break
+                            ),
+                            timeout=remaining_seconds,
+                        )
+                    except TimeoutError:
+                        raise
+                    except Exception as exc:
+                        logger.info(
+                            "visual.output_understanding_attempt_failed conversation_id=%s slot_id=%s reason=%s",
+                            conversation_id,
+                            slot_id,
+                            type(exc).__name__,
+                        )
+                        continue
+                    if self._has_usable_understanding(candidate_result):
+                        result = candidate_result
+                        break
             except TimeoutError:
                 logger.info(
                     "visual.output_understanding_budget_exhausted conversation_id=%s slot_id=%s budget_seconds=%.1f",

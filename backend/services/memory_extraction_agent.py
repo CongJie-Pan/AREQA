@@ -153,8 +153,8 @@ class OpenRouterMemoryExtractionAgent:
             + json.dumps(prompt_payload, ensure_ascii=False)
         )
         try:
-            async with asyncio.timeout(self.timeout_seconds):
-                response = await self.client.chat.completions.create(
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
                     response_format={
@@ -174,7 +174,9 @@ class OpenRouterMemoryExtractionAgent:
                             "allow_fallbacks": False,
                         }
                     },
-                )
+                ),
+                timeout=self.timeout_seconds,
+            )
             result = MemoryExtractionResult.model_validate_json(
                 response.choices[0].message.content
             )

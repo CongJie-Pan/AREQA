@@ -48,6 +48,26 @@ async def test_strict_schema_match_is_validated():
 
 
 @pytest.mark.asyncio
+async def test_semantic_analyzer_uses_python_310_compatible_timeout(monkeypatch):
+    """Render deploys Python 3.10, where asyncio.timeout is unavailable."""
+
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+    client = MagicMock()
+    response = MagicMock()
+    response.choices = [MagicMock(message=MagicMock(content=(
+        '{"canonical_key":"concrete_examples","relation":"match_existing",'
+        '"matched_candidate_id":"candidate-a","confidence":0.98,'
+        '"reason_code":"same_preference"}'
+    )))]
+    client.chat.completions.create = AsyncMock(return_value=response)
+    analyzer = OpenRouterMemorySemanticAnalyzer(client, "google/gemini-2.5-flash-lite")
+
+    result = await analyzer.analyze(request())
+
+    assert result.relation == "match_existing"
+
+
+@pytest.mark.asyncio
 async def test_cross_candidate_reference_fails_closed():
     client = MagicMock()
     response = MagicMock()

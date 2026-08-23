@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -114,6 +115,38 @@ async def test_memory_extraction_agent_returns_learning_preference_candidate(cap
     assert "memory.extraction_completed" in caplog.text
     assert "candidate_type_counts=learning_preference:1,question:1,sensitive_context:1" in caplog.text
     assert "我偏好" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_memory_extraction_agent_uses_python_310_compatible_timeout(monkeypatch):
+    """Render deploys Python 3.10, where asyncio.timeout is unavailable."""
+
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+    payload = MemoryExtractionResult(
+        candidates=[
+            {
+                "candidate_type": "learning_preference",
+                "text": "我偏好先看例子。",
+                "durability": "profile_memory",
+                "confidence": 0.96,
+                "reason_code": "explicit_learning_preference",
+            }
+        ]
+    )
+    agent = OpenRouterMemoryExtractionAgent(
+        FakeClient(payload.model_dump_json()),
+        "test-model",
+    )
+
+    result = await agent.extract_candidates(
+        user_id="user-a",
+        message_id="msg-a",
+        conversation_id="conv-a",
+        user_text="我偏好先看例子。",
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0].candidate_type == "learning_preference"
 
 
 @pytest.mark.asyncio
