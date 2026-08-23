@@ -8,14 +8,23 @@ from backend.services.visual_understanding_agent import VisualUnderstandingResul
 class _FakeVisualAnswerService:
     """Small double for existing preflight image retrieval."""
 
+    def __init__(
+        self,
+        *,
+        image_url="https://example.edu/forest.png",
+        thumbnail_url="https://example.edu/forest.png",
+    ):
+        self.image_url = image_url
+        self.thumbnail_url = thumbnail_url
+
     async def prepare_preflight_image_blocks(self, **kwargs):
         return {
             "img_1": ImageBlock(
                 slot_id="img_1",
                 topic="Forest plot",
                 purpose="diagram",
-                image_url="https://example.edu/forest.png",
-                thumbnail_url="https://example.edu/forest.png",
+                image_url=self.image_url,
+                thumbnail_url=self.thumbnail_url,
                 source_url="https://example.edu/source",
                 source_domain="example.edu",
                 caption="Forest plot example",
@@ -44,7 +53,11 @@ class _FakeUnderstandingAgent:
 class _FakeVisualInputService:
     """Image input double that returns an attachment-style data URI part."""
 
+    def __init__(self):
+        self.image_urls = []
+
     async def prepare_image_part(self, **kwargs):
+        self.image_urls.append(kwargs["image_url"])
         return type(
             "FakeVisualImageInput",
             (),
@@ -89,6 +102,96 @@ async def test_output_image_service_enriches_preflight_blocks():
         "type": "image_url",
         "image_url": {"url": "data:image/png;base64,AA=="},
     }
+
+
+@pytest.mark.asyncio
+async def test_output_image_service_retries_distinct_thumbnail_after_unavailable_original():
+    """A readable thumbnail should recover vision understanding for the same image."""
+
+    class _RetryingUnderstandingAgent:
+        def __init__(self):
+            self.image_urls = []
+
+        async def analyze(self, **kwargs):
+            self.image_urls.append(kwargs["image_url"])
+            if len(self.image_urls) == 1:
+                return VisualUnderstandingResult(source="provider_unavailable")
+            return VisualUnderstandingResult(
+                image_type="comparison_chart",
+                summary="The chart compares fixed and random parameter assumptions.",
+                visible_elements=("Frequentism panel", "Bayesian statistics panel"),
+                how_to_read=("Compare the parameter row from left to right.",),
+                confidence="high",
+                source="vision_model",
+            )
+
+    input_service = _FakeVisualInputService()
+    understanding_agent = _RetryingUnderstandingAgent()
+    service = OutputImageService(
+        understanding_agent=understanding_agent,
+        visual_input_service=input_service,
+    )
+
+    blocks = await service.prepare_preflight_image_blocks(
+        visual_answer_service=_FakeVisualAnswerService(
+            image_url="https://blocked.example/original.png",
+            thumbnail_url="https://cdn.example/thumbnail.png",
+        ),
+        user_msg="Compare frequentist and Bayesian statistics",
+        response_policy=None,
+        existing_web_results=[],
+        tool_registry=None,
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=None,
+        turn_plan=None,
+    )
+
+    assert blocks["img_1"].vision_summary.startswith("The chart compares")
+    assert input_service.image_urls == [
+        "https://blocked.example/original.png",
+        "https://cdn.example/thumbnail.png",
+    ]
+    assert understanding_agent.image_urls == input_service.image_urls
+
+
+@pytest.mark.asyncio
+async def test_output_image_service_omits_block_when_all_understanding_attempts_fail(caplog):
+    """Selected images must not reach the answer model without usable vision evidence."""
+
+    class _UnavailableUnderstandingAgent:
+        async def analyze(self, **kwargs):
+            return VisualUnderstandingResult(source="provider_unavailable")
+
+    caplog.set_level("INFO")
+    service = OutputImageService(
+        understanding_agent=_UnavailableUnderstandingAgent(),
+        visual_input_service=_FakeVisualInputService(),
+    )
+
+    blocks = await service.prepare_preflight_image_blocks(
+        visual_answer_service=_FakeVisualAnswerService(
+            image_url="https://blocked.example/original.png",
+            thumbnail_url="https://blocked.example/thumbnail.png",
+        ),
+        user_msg="Compare frequentist and Bayesian statistics",
+        response_policy=None,
+        existing_web_results=[],
+        tool_registry=None,
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=None,
+        turn_plan=None,
+    )
+
+    assert blocks == {}
+    assert "visual.output_image_omitted" in caplog.text
+    assert "reason=understanding_unavailable" in caplog.text
+    assert "selected_image_count=1" in caplog.text
+    assert "understood_image_count=0" in caplog.text
+    assert "omitted_image_count=1" in caplog.text
 
 
 def test_output_image_service_preserves_only_explicit_explanatory_caption():
