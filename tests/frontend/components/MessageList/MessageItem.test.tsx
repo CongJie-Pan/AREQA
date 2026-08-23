@@ -307,10 +307,23 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container.querySelector('annotation')).toHaveTextContent('\\theta');
   });
 
-  it('renders Markdown tables with a visible frame and copy action', () => {
+  it('renders Markdown tables with floating copy, CSV download, and expand actions', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
+    const createObjectURL = vi.fn(() => 'blob:table-csv');
+    const revokeObjectURL = vi.fn();
+    const anchorClick = vi
+      .spyOn(window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectURL,
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
       configurable: true,
     });
 
@@ -326,18 +339,33 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     const frame = container.querySelector('.areqa-markdown-table-frame');
     const scrollRegion = screen.getByLabelText('可水平捲動的資料表');
     const copyButton = screen.getByRole('button', { name: '複製表格' });
+    const downloadButton = screen.getByRole('button', { name: '下載表格 CSV' });
+    const expandButton = screen.getByRole('button', { name: '放大檢視表格' });
     expect(frame).toBeInTheDocument();
     expect(scrollRegion).toHaveClass('areqa-markdown-table-scroll');
     expect(scrollRegion).toHaveAttribute('tabindex', '0');
     expect(scrollRegion.querySelector('table')).toHaveClass('areqa-markdown-table');
-    expect(copyButton).toHaveClass('areqa-markdown-table-copy');
+    expect(copyButton).toHaveClass('areqa-markdown-table-action');
+    expect(downloadButton).toHaveClass('areqa-markdown-table-action');
+    expect(expandButton).toHaveClass('areqa-markdown-table-action');
     expect(screen.getByRole('columnheader', { name: '名稱' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: '42' })).toBeInTheDocument();
     expect(container.querySelector('[data-streamdown="table-wrapper"]')).not.toBeInTheDocument();
 
     fireEvent.click(copyButton);
-
     expect(writeText).toHaveBeenCalledWith('名稱\t數值\ntheta\t42');
+
+    fireEvent.click(downloadButton);
+    expect(anchorClick).toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:table-csv');
+
+    fireEvent.click(expandButton);
+    expect(screen.getByRole('dialog', { name: 'Table' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Table' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '關閉放大表格' }));
+    expect(screen.queryByRole('dialog', { name: 'Table' })).not.toBeInTheDocument();
   });
 
   it('keeps Streamdown animated spans after live streaming ends', () => {

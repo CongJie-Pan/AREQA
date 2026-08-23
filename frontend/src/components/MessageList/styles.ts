@@ -472,47 +472,56 @@ content: css`
   }
 
   .areqa-markdown-table-frame {
+    position: relative;
     width: 100%;
     margin: 16px 0;
-    border: 2px solid rgba(148, 163, 184, 0.62);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 10px;
+    background: rgba(24, 23, 22, 0.96);
     overflow: hidden;
   }
 
-  .areqa-markdown-table-toolbar {
+  .areqa-markdown-table-actions {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
     display: flex;
-    justify-content: flex-end;
-    padding: 6px 8px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.46);
-    background: rgba(255, 255, 255, 0.035);
+    align-items: center;
+    height: 38px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(18, 17, 16, 0.94);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+    opacity: 1;
   }
 
-  .areqa-markdown-table-copy {
+  .areqa-markdown-table-action {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid rgba(148, 163, 184, 0.58);
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.84);
-    font-size: 12px;
-    font-weight: 600;
+    justify-content: center;
+    width: 42px;
+    height: 38px;
+    border: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.62);
     line-height: 1;
     cursor: pointer;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+    transition: background-color 120ms ease, color 120ms ease;
 
     &:hover {
-      border-color: rgba(203, 213, 225, 0.78);
-      background: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.07);
       color: #ffffff;
     }
 
     &:focus-visible {
-      outline: 2px solid rgba(216, 162, 92, 0.55);
-      outline-offset: 2px;
+      outline: 2px solid rgba(255, 255, 255, 0.42);
+      outline-offset: -2px;
+    }
+
+    &:last-child {
+      border-right: 0;
     }
   }
 
@@ -533,28 +542,31 @@ content: css`
     width: max-content;
     min-width: 100%;
     margin: 0;
-    font-size: 14px;
+    font-size: 15px;
     background: transparent;
   }
 
   .areqa-markdown-table th,
   .areqa-markdown-table td {
     min-width: 120px;
-    padding: 10px 14px;
+    padding: 12px 14px;
     border: 0;
-    border-right: 1px solid rgba(148, 163, 184, 0.42);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.42);
+    border-right: 1px solid rgba(255, 255, 255, 0.09);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
     text-align: left;
     vertical-align: top;
   }
 
   .areqa-markdown-table th {
-    border-bottom-width: 2px;
-    border-bottom-color: rgba(148, 163, 184, 0.58);
-    background: rgba(255, 255, 255, 0.045);
-    color: rgba(255, 255, 255, 0.92);
-    font-weight: 600;
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.035);
+    color: rgba(255, 255, 255, 0.94);
+    font-weight: 700;
     white-space: nowrap;
+  }
+
+  .areqa-markdown-table td:first-child {
+    font-weight: 700;
   }
 
   .areqa-markdown-table tbody tr {
@@ -572,6 +584,85 @@ content: css`
   .areqa-markdown-table th:last-child,
   .areqa-markdown-table td:last-child {
     border-right: 0;
+  }
+
+  .areqa-markdown-table-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 30px 50px;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(8px);
+  }
+
+  .areqa-markdown-table-modal-panel {
+    width: min(94vw, 1640px);
+    min-height: min(74vh, 760px);
+    max-height: calc(100vh - 60px);
+    padding: 26px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    background: #141312;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.58);
+  }
+
+  .areqa-markdown-table-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 26px;
+
+    h2 {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+  }
+
+  .areqa-markdown-table-modal-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 34px;
+    font-weight: 300;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #ffffff;
+    }
+  }
+
+  .areqa-markdown-table-modal-body {
+    max-height: calc(100vh - 190px);
+    overflow: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(24, 23, 22, 0.98);
+
+    table.areqa-markdown-table {
+      font-size: 20px;
+    }
+
+    .areqa-markdown-table th,
+    .areqa-markdown-table td {
+      min-width: 280px;
+      padding: 14px 12px;
+    }
   }
 
   @media (max-width: 768px) {

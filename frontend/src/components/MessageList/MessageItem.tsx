@@ -12,7 +12,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Copy, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink } from 'lucide-react';
+import { Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -92,14 +92,41 @@ function isMobileFeedbackViewport(): boolean {
   return window.matchMedia('(max-width: 768px)').matches;
 }
 
-function tableElementToClipboardText(table: HTMLTableElement): string {
+function tableElementToRows(table: HTMLTableElement): string[][] {
   return Array.from(table.rows)
     .map((row) =>
       Array.from(row.cells)
         .map((cell) => (cell.innerText ?? cell.textContent ?? '').replace(/\s+/g, ' ').trim())
-        .join('\t')
-    )
-    .join('\n');
+    );
+}
+
+function tableElementToClipboardText(table: HTMLTableElement): string {
+  return tableElementToRows(table).map((row) => row.join('\t')).join('\n');
+}
+
+function escapeCsvCell(cell: string): string {
+  const spreadsheetSafeCell = /^[=+\-@\t\r]/.test(cell) ? `'${cell}` : cell;
+  return /[",\r\n]/.test(spreadsheetSafeCell)
+    ? `"${spreadsheetSafeCell.replace(/"/g, '""')}"`
+    : spreadsheetSafeCell;
+}
+
+function tableElementToCsv(table: HTMLTableElement): string {
+  return tableElementToRows(table)
+    .map((row) => row.map(escapeCsvCell).join(','))
+    .join('\r\n');
+}
+
+function downloadCsvFile(csvText: string, filename: string): void {
+  const blob = new Blob([`\uFEFF${csvText}`], { type: 'text/csv;charset=utf-8' });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 /**
@@ -165,45 +192,134 @@ function useHasLiveStreamed(isStreaming?: boolean): boolean {
   return hasLiveStreamed;
 }
 
-const createMarkdownComponents = (
-  messageId: string,
-  enableMathCopy: boolean,
-  onCopyMath: (latex: string) => void,
-  onCopyTable: (tableText: string) => void,
-): Components => ({
-  table: ({ children, className, node, ...props }) => {
-    void node;
-    const tableClassName = ['areqa-markdown-table', className].filter(Boolean).join(' ');
+type MarkdownTableProps = React.TableHTMLAttributes<HTMLTableElement> & {
+  enableActions: boolean;
+  onCopyTable: (tableText: string) => void;
+  onDownloadTable: (csvText: string) => void;
+};
 
-    return (
+function MarkdownTable({
+  children,
+  className,
+  enableActions,
+  onCopyTable,
+  onDownloadTable,
+  ...props
+}: MarkdownTableProps) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const tableRef = React.useRef<HTMLTableElement>(null);
+  const tableClassName = ['areqa-markdown-table', className].filter(Boolean).join(' ');
+
+  const copyTable = React.useCallback(() => {
+    const table = tableRef.current;
+    onCopyTable(table ? tableElementToClipboardText(table) : '');
+  }, [onCopyTable]);
+
+  const downloadTable = React.useCallback(() => {
+    const table = tableRef.current;
+    onDownloadTable(table ? tableElementToCsv(table) : '');
+  }, [onDownloadTable]);
+
+  const actionButtons = enableActions ? (
+    <div className="areqa-markdown-table-actions" aria-label="表格操作">
+      <Tooltip title="Copy table">
+        <button
+          aria-label="複製表格"
+          className="areqa-markdown-table-action"
+          type="button"
+          onClick={copyTable}
+        >
+          <Copy size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
+      <Tooltip title="Download CSV">
+        <button
+          aria-label="下載表格 CSV"
+          className="areqa-markdown-table-action"
+          type="button"
+          onClick={downloadTable}
+        >
+          <Download size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
+      <Tooltip title="Open table">
+        <button
+          aria-label="放大檢視表格"
+          className="areqa-markdown-table-action"
+          type="button"
+          onClick={() => setIsExpanded(true)}
+        >
+          <Maximize2 size={16} aria-hidden="true" />
+        </button>
+      </Tooltip>
+    </div>
+  ) : null;
+
+  return (
+    <>
       <div className="areqa-markdown-table-frame">
-        {enableMathCopy && (
-          <div className="areqa-markdown-table-toolbar">
-            <button
-              aria-label="複製表格"
-              className="areqa-markdown-table-copy"
-              type="button"
-              onClick={(event) => {
-                const frame = event.currentTarget.closest('.areqa-markdown-table-frame');
-                const table = frame?.querySelector('table');
-                onCopyTable(table && 'rows' in table ? tableElementToClipboardText(table as HTMLTableElement) : '');
-              }}
-            >
-              <Copy size={14} aria-hidden="true" />
-              <span>Copy</span>
-            </button>
-          </div>
-        )}
         <div
           aria-label="可水平捲動的資料表"
           className="areqa-markdown-table-scroll"
           tabIndex={0}
         >
-          <table className={tableClassName} {...props}>
+          <table ref={tableRef} className={tableClassName} {...props}>
             {children}
           </table>
         </div>
+        {actionButtons}
       </div>
+      {isExpanded && (
+        <div
+          aria-label="Table"
+          aria-modal="true"
+          className="areqa-markdown-table-modal-backdrop"
+          role="dialog"
+        >
+          <div className="areqa-markdown-table-modal-panel">
+            <div className="areqa-markdown-table-modal-header">
+              <h2>Table</h2>
+              <button
+                aria-label="關閉放大表格"
+                className="areqa-markdown-table-modal-close"
+                type="button"
+                onClick={() => setIsExpanded(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="areqa-markdown-table-modal-body">
+              <table className={tableClassName} {...props}>
+                {children}
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const createMarkdownComponents = (
+  messageId: string,
+  enableMathCopy: boolean,
+  onCopyMath: (latex: string) => void,
+  onCopyTable: (tableText: string) => void,
+  onDownloadTable: (csvText: string) => void,
+): Components => ({
+  table: ({ children, className, node, ...props }) => {
+    void node;
+
+    return (
+      <MarkdownTable
+        className={className}
+        enableActions={enableMathCopy}
+        onCopyTable={onCopyTable}
+        onDownloadTable={onDownloadTable}
+        {...props}
+      >
+        {children}
+      </MarkdownTable>
     );
   },
   // Sanitize links - only allow safe protocols
@@ -854,9 +970,29 @@ export const MessageItem = memo(function MessageItem({
     }
   }, [antMessageApi]);
 
+  const handleDownloadTable = useCallback((csvText: string) => {
+    if (!csvText.trim()) {
+      antMessageApi.error?.('下載表格失敗');
+      return;
+    }
+
+    try {
+      downloadCsvFile(csvText, 'areqa-table.csv');
+      antMessageApi.success?.('已下載 CSV');
+    } catch {
+      antMessageApi.error?.('下載表格失敗');
+    }
+  }, [antMessageApi]);
+
   const markdownComponents = React.useMemo(
-    () => createMarkdownComponents(message.id, !isUser, handleCopyMath, handleCopyTable),
-    [handleCopyMath, handleCopyTable, isUser, message.id]
+    () => createMarkdownComponents(
+      message.id,
+      !isUser,
+      handleCopyMath,
+      handleCopyTable,
+      handleDownloadTable,
+    ),
+    [handleCopyMath, handleCopyTable, handleDownloadTable, isUser, message.id]
   );
 
   // Edit mode state
