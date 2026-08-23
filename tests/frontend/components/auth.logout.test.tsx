@@ -4,12 +4,15 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom';
 import { UserAuthUI } from '@/components/Auth';
 import { supabase } from '@/lib/supabase';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 
 const supabaseMocks = vi.hoisted(() => ({
   insertFeedback: vi.fn(),
 }));
 
-// Mock matchMedia for Ant Design Modal
+const matchMediaListeners = new Map<string, (event: MediaQueryListEvent) => void>();
+
+// Mock matchMedia for Ant Design Modal and the user preference provider.
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation(query => ({
@@ -18,8 +21,12 @@ Object.defineProperty(window, 'matchMedia', {
     onchange: null,
     addListener: vi.fn(), // Deprecated
     removeListener: vi.fn(), // Deprecated
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
+    addEventListener: vi.fn((eventName: string, listener: (event: MediaQueryListEvent) => void) => {
+      if (eventName === 'change') matchMediaListeners.set(query, listener);
+    }),
+    removeEventListener: vi.fn((eventName: string) => {
+      if (eventName === 'change') matchMediaListeners.delete(query);
+    }),
     dispatchEvent: vi.fn(),
   })),
 });
@@ -77,14 +84,26 @@ Object.defineProperty(window, 'location', {
   writable: true
 });
 
+function renderUserAuthUI(props?: React.ComponentProps<typeof UserAuthUI>) {
+  return render(
+    <UserPreferencesProvider>
+      <UserAuthUI {...props} />
+    </UserPreferencesProvider>,
+  );
+}
+
 describe('UserAuthUI Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     supabaseMocks.insertFeedback.mockResolvedValue({ error: null });
+    window.localStorage.clear();
+    document.documentElement.removeAttribute('data-interface-theme');
+    document.documentElement.removeAttribute('data-interface-theme-choice');
+    document.documentElement.lang = 'en';
   });
 
   it('shows login button when not authenticated', async () => {
-    render(<UserAuthUI />);
+    renderUserAuthUI();
     expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
   });
 
@@ -93,7 +112,7 @@ describe('UserAuthUI Component', () => {
       data: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any,
       error: null,
     });
-    render(<UserAuthUI />);
+    renderUserAuthUI();
     
     // Simulate Supabase SIGNED_IN event
     const mockSession = { user: { id: 'user_123', user_metadata: { username: 'testuser' } } };
@@ -120,7 +139,7 @@ describe('UserAuthUI Component', () => {
       error: null,
     });
 
-    render(<UserAuthUI />);
+    renderUserAuthUI();
 
     // Wait for user to be loaded
     await waitFor(() => {
@@ -150,7 +169,7 @@ describe('UserAuthUI Component', () => {
       error: null,
     });
 
-    render(<UserAuthUI />);
+    renderUserAuthUI();
 
     await waitFor(() => {
       expect(screen.getByText('testuser')).toBeInTheDocument();
@@ -173,6 +192,35 @@ describe('UserAuthUI Component', () => {
           content: '希望可以加入問題回報分類。',
         }),
       );
+    });
+  });
+
+  it('updates and persists interface theme and language from the account dropdown', async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any }
+    });
+    vi.mocked(supabase.auth.getUser).mockResolvedValueOnce({
+      data: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any,
+      error: null,
+    });
+
+    renderUserAuthUI();
+
+    await waitFor(() => {
+      expect(screen.getByText('testuser')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('testuser'));
+
+    fireEvent.click(await screen.findByRole('button', { name: '明亮 Light' }));
+    fireEvent.click(screen.getByRole('button', { name: '英文' }));
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem('areqa:interface-theme')).toBe('light');
+      expect(window.localStorage.getItem('areqa:interface-language')).toBe('en');
+      expect(document.documentElement.dataset.interfaceTheme).toBe('light');
+      expect(document.documentElement.dataset.interfaceThemeChoice).toBe('light');
+      expect(document.documentElement.lang).toBe('en');
     });
   });
 });

@@ -17,15 +17,15 @@ export const useStyles = createStyles(({ css, token }) => ({
     width: 100vw;
     min-height: 0;
     overflow: hidden;
-    background: #130f18;
+    background: var(--background);
   `,
 
   sidebar: css`
     width: 280px;
     flex-shrink: 0;
     transition: all 0.2s ${token.motionEaseOut};
-    background: #1b1622;
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    background: var(--areqa-sidebar-background);
+    border-right: 1px solid var(--areqa-subtle-border);
     overflow: hidden;
 
     @media (max-width: 768px) {
@@ -68,7 +68,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     min-width: 0;
     overflow: hidden;
     overscroll-behavior: contain;
-    background: #130f18;
+    background: var(--background);
   `,
 
   header: css`
@@ -76,8 +76,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    background: #130f18;
+    border-bottom: 1px solid var(--areqa-subtle-border);
+    background: var(--background);
   `,
 
   headerLeft: css`

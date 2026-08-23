@@ -3,19 +3,60 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Modal, Input, Dropdown, MenuProps, message, Button } from 'antd';
-import { User, LogOut, Edit3, MessageSquareText, BrainCircuit } from 'lucide-react';
+import {
+  BrainCircuit,
+  Edit3,
+  Languages,
+  LogOut,
+  MessageSquareText,
+  Monitor,
+  Moon,
+  Sun,
+  User,
+} from 'lucide-react';
 import { Auth as SupabaseAuth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/lib/supabase';
 import { initializeAuth, useAuthStore } from '@/store/auth';
+import {
+  useUserPreferences,
+  type InterfaceLanguage,
+  type InterfaceTheme,
+} from '@/contexts/UserPreferencesContext';
 
 export interface UserAuthUIProps {
   /** Opens the learner memory panel from the authenticated avatar menu. */
   onOpenMemory?: () => void;
 }
 
+const THEME_OPTIONS: Array<{
+  value: InterfaceTheme;
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  { value: 'light', label: '明亮 Light', icon: <Sun size={14} /> },
+  { value: 'dark', label: '黑夜 Dark', icon: <Moon size={14} /> },
+  { value: 'system', label: '系統預設 Default', icon: <Monitor size={14} /> },
+];
+
+const LANGUAGE_OPTIONS: Array<{
+  value: InterfaceLanguage;
+  label: string;
+}> = [
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'zh-CN', label: '簡體中文' },
+  { value: 'en', label: '英文' },
+];
+
 export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
   const user = useAuthStore((state) => state.user);
+  const {
+    theme: interfaceTheme,
+    resolvedTheme,
+    language,
+    setTheme,
+    setLanguage,
+  } = useUserPreferences();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
@@ -79,6 +120,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
 
   const displayName = user?.user_metadata?.username || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || '訪客';
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
+  const authTheme = resolvedTheme === 'dark' ? 'dark' : 'default';
 
   const menuItems: MenuProps['items'] = [
     ...(onOpenMemory
@@ -142,7 +184,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
           open={isModalOpen}
           onCancel={() => setIsModalOpen(false)}
           footer={null}
-          destroyOnClose
+          destroyOnHidden
           width={400}
         >
           <div style={{ padding: '16px' }}>
@@ -161,7 +203,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
             <SupabaseAuth 
               supabaseClient={supabase}
               appearance={{ theme: ThemeSupa }}
-              theme="dark"
+              theme={authTheme}
               providers={['google']}
               redirectTo={authRedirectTo}
               localization={{
@@ -206,14 +248,31 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
 
   return (
     <>
-      <Dropdown menu={{ items: menuItems }} placement="topLeft" trigger={['click']}>
+      <Dropdown
+        menu={{ items: menuItems }}
+        classNames={{ root: 'areqa-account-dropdown' }}
+        placement="topLeft"
+        popupRender={(menus) => (
+          <div className="areqa-account-dropdown-panel">
+            <AccountPreferenceControls
+              selectedTheme={interfaceTheme}
+              selectedLanguage={language}
+              onThemeChange={setTheme}
+              onLanguageChange={setLanguage}
+            />
+            <div className="areqa-account-dropdown-divider" />
+            {menus}
+          </div>
+        )}
+        trigger={['click']}
+      >
         <div 
           style={{
             display: 'flex', alignItems: 'center', gap: '8px', padding: '12px',
             marginTop: 'auto', cursor: 'pointer', borderRadius: '8px',
-            transition: 'background 0.2s', color: 'rgba(255, 255, 255, 0.7)'
+            transition: 'background 0.2s', color: 'var(--areqa-account-muted-text)'
           }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--areqa-account-hover)'}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
           {avatarUrl ? (
@@ -290,6 +349,129 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
   );
 }
 
+interface AccountPreferenceControlsProps {
+  selectedTheme: InterfaceTheme;
+  selectedLanguage: InterfaceLanguage;
+  onThemeChange: (theme: InterfaceTheme) => void;
+  onLanguageChange: (language: InterfaceLanguage) => void;
+}
+
+/**
+ * Account menu preference controls rendered above the standard account actions.
+ *
+ * Args:
+ *   selectedTheme: Currently selected persisted theme choice.
+ *   selectedLanguage: Currently selected persisted language choice.
+ *   onThemeChange: Callback that persists a sanitized theme choice.
+ *   onLanguageChange: Callback that persists a sanitized language choice.
+ *
+ * Side effects:
+ *   Stops pointer and click propagation so preference changes do not close the
+ *   surrounding Ant Design dropdown before the user finishes selection.
+ */
+function AccountPreferenceControls({
+  selectedTheme,
+  selectedLanguage,
+  onThemeChange,
+  onLanguageChange,
+}: AccountPreferenceControlsProps) {
+  const stopDropdownDismissal = (event: React.SyntheticEvent) => {
+    event.stopPropagation();
+  };
+
+  return (
+    <div
+      className="areqa-account-preferences"
+      onClick={stopDropdownDismissal}
+      onMouseDown={stopDropdownDismissal}
+      onPointerDown={stopDropdownDismissal}
+    >
+      <PreferenceToggleGroup
+        icon={<Moon size={17} />}
+        label="介面顏色主題"
+        ariaLabel="介面顏色主題"
+      >
+        {THEME_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="areqa-account-toggle-option"
+            data-selected={selectedTheme === option.value}
+            aria-pressed={selectedTheme === option.value}
+            onClick={() => onThemeChange(option.value)}
+          >
+            <span aria-hidden="true">{option.icon}</span>
+            <span>{option.label}</span>
+          </button>
+        ))}
+      </PreferenceToggleGroup>
+
+      <PreferenceToggleGroup
+        icon={<Languages size={17} />}
+        label="語言設定"
+        ariaLabel="語言設定"
+      >
+        {LANGUAGE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="areqa-account-toggle-option"
+            data-selected={selectedLanguage === option.value}
+            aria-pressed={selectedLanguage === option.value}
+            onClick={() => onLanguageChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </PreferenceToggleGroup>
+    </div>
+  );
+}
+
+interface PreferenceToggleGroupProps {
+  icon: React.ReactNode;
+  label: string;
+  ariaLabel: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Presents a labeled horizontal preference selector.
+ *
+ * Args:
+ *   icon: Decorative icon for the preference category.
+ *   label: Visible category label.
+ *   ariaLabel: Accessible label for the radio-style group.
+ *   children: Toggle option buttons.
+ *
+ * Returns:
+ *   A compact account-menu control group.
+ */
+function PreferenceToggleGroup({
+  icon,
+  label,
+  ariaLabel,
+  children,
+}: PreferenceToggleGroupProps) {
+  return (
+    <section className="areqa-account-preference-section">
+      <div className="areqa-account-preference-title">
+        <span className="areqa-account-preference-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span>{label}</span>
+      </div>
+      <div
+        className="areqa-account-toggle-list"
+        role="group"
+        aria-label={ariaLabel}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
 export interface AuthPromptProps {
   /** Whether the post-answer authentication prompt is visible. */
   open: boolean;
@@ -303,8 +485,10 @@ export interface AuthPromptProps {
  */
 export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
   const user = useAuthStore((state) => state.user);
+  const { resolvedTheme } = useUserPreferences();
   const [authView, setAuthView] = useState<'sign_in' | 'sign_up' | null>(null);
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+  const authTheme = resolvedTheme === 'dark' ? 'dark' : 'default';
   const handleDismiss = useCallback(() => {
     setAuthView(null);
     onDismiss();
@@ -341,7 +525,7 @@ export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
             supabaseClient={supabase}
             view={authView}
             appearance={{ theme: ThemeSupa }}
-            theme="dark"
+            theme={authTheme}
             providers={['google']}
             redirectTo={authRedirectTo}
             localization={{

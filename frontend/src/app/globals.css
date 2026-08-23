@@ -15,6 +15,31 @@
   --primary: #f0f0f0;
   --primary-foreground: #130f18;
   --radius: 0.625rem;
+  --areqa-sidebar-background: #1b1622;
+  --areqa-subtle-border: rgba(255, 255, 255, 0.08);
+  --areqa-scrollbar-track: #130f18;
+  --areqa-account-hover: rgba(255, 255, 255, 0.05);
+  --areqa-account-muted-text: rgba(255, 255, 255, 0.62);
+  --areqa-account-icon-background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-interface-theme='light'] {
+  --background: #f7f4ef;
+  --foreground: #1d1b20;
+  --card: #ffffff;
+  --card-foreground: #1d1b20;
+  --muted: #eee7dd;
+  --muted-foreground: rgba(29, 27, 32, 0.62);
+  --border: rgba(29, 27, 32, 0.14);
+  --input: rgba(29, 27, 32, 0.14);
+  --primary: #1d1b20;
+  --primary-foreground: #ffffff;
+  --areqa-sidebar-background: #fffaf3;
+  --areqa-subtle-border: rgba(29, 27, 32, 0.12);
+  --areqa-scrollbar-track: #efe8dd;
+  --areqa-account-hover: rgba(29, 27, 32, 0.06);
+  --areqa-account-muted-text: rgba(29, 27, 32, 0.66);
+  --areqa-account-icon-background: rgba(29, 27, 32, 0.08);
 }
 
 html {
@@ -73,8 +98,8 @@ body {
   flex: 0 0 280px;
   min-width: 0;
   overflow: hidden;
-  background: #1b1622;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--areqa-sidebar-background);
+  border-right: 1px solid var(--areqa-subtle-border);
 }
 
 .areqa-chat-main {
@@ -94,7 +119,7 @@ body {
   justify-content: space-between;
   min-height: 61px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--areqa-subtle-border);
   background: var(--background);
 }
 
@@ -144,6 +169,115 @@ body {
   flex: 0 0 auto;
 }
 
+.areqa-account-dropdown .ant-dropdown-menu {
+  border-radius: 0 0 12px 12px;
+  box-shadow: none;
+}
+
+.areqa-account-dropdown-panel {
+  min-width: 360px;
+  max-width: min(440px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+}
+
+.areqa-account-preferences {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.areqa-account-preference-section {
+  display: grid;
+  gap: 8px;
+}
+
+.areqa-account-preference-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+}
+
+.areqa-account-preference-icon {
+  display: inline-flex;
+  color: var(--areqa-account-muted-text);
+}
+
+.areqa-account-toggle-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--muted);
+}
+
+.areqa-account-toggle-option {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+  white-space: nowrap;
+}
+
+.areqa-account-toggle-option:hover {
+  color: var(--foreground);
+  background: var(--areqa-account-hover);
+}
+
+.areqa-account-toggle-option[data-selected='true'] {
+  border-color: rgba(216, 162, 92, 0.58);
+  background: rgba(216, 162, 92, 0.18);
+  color: var(--foreground);
+  box-shadow: 0 4px 16px rgba(216, 162, 92, 0.12);
+}
+
+.areqa-account-toggle-option:focus-visible {
+  outline: 2px solid rgba(216, 162, 92, 0.72);
+  outline-offset: 2px;
+}
+
+.areqa-account-dropdown-divider {
+  height: 1px;
+  background: var(--border);
+}
+
+@media (max-width: 420px) {
+  .areqa-account-dropdown-panel {
+    min-width: calc(100vw - 24px);
+  }
+
+  .areqa-account-toggle-option {
+    gap: 4px;
+    padding: 6px;
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 768px) {
   .areqa-chat-shell {
     width: 100%;
@@ -170,7 +304,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #130f18;
+  background: var(--areqa-scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
