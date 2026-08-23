@@ -159,5 +159,28 @@ describe('Conversation Store', () => {
         title: '家庭衝突與焦慮',
       });
     });
+
+    it('should persist complete technical noun phrase titles up to the backend hard limit', async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(
+            'data: {"content": "mRNA疫苗運作原理"}\n\n'
+          ));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      });
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true, body: stream } as any);
+
+      await useConversationStore.getState().generateTitle(
+        'conv-technical-title',
+        [{ role: 'user', content: 'mRNA疫苗如何抵抗病毒，其過程為何' }]
+      );
+
+      expect(databaseService.conversation.update).toHaveBeenCalledWith('conv-technical-title', {
+        title: 'mRNA疫苗運作原理',
+      });
+    });
   });
 });

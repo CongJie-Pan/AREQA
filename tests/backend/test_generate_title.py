@@ -14,11 +14,16 @@ from backend.main import app, build_title_messages, normalize_generated_title
         ("--- **請根據上述對話內容，為這個對話、**標題：** 家庭衝突與成長焦慮", "家庭衝突與成長焦慮"),
         ("**標題：** 家庭衝突\n這是補充說明", "家庭衝突"),
         ("請根據上述對話內容產生標題", ""),
-        ("《人工智慧發展趨勢分析》", "人工智慧發展趨勢分"),
+        ("《人工智慧發展趨勢分析》", "人工智慧發展趨勢分析"),
+        ("mRNA疫苗運作原理", "mRNA疫苗運作原理"),
     ],
 )
 def test_normalize_generated_title_rejects_model_formatting(raw_title, expected):
     assert normalize_generated_title(raw_title) == expected
+
+
+def test_normalize_generated_title_clips_runaway_output_without_dangling_suffix():
+    assert normalize_generated_title("人工智慧教育應用發展趨勢分析報告摘要內容") == "人工智慧教育應用發展趨勢分析報告摘要"
 
 
 def test_build_title_messages_treats_transcript_as_untrusted_data():

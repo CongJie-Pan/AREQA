@@ -9,11 +9,13 @@ import { getCurrentUserId } from '@/database/db';
 import type { Conversation } from '@/database/schema';
 import type { ConversationStore } from './types';
 
+const GENERATED_TITLE_MAX_LENGTH = 18;
+
 const isValidGeneratedTitle = (title: string): boolean => {
   const normalized = title.trim();
   return (
     normalized.length > 0 &&
-    Array.from(normalized).length <= 10 &&
+    Array.from(normalized).length <= GENERATED_TITLE_MAX_LENGTH &&
     !/[\n\r#*`]|(?:對話)?標題\s*[:：]|請根據|上述對話|對話內容/.test(normalized)
   );
 };

@@ -1057,7 +1057,8 @@ class TitleRequest(BaseModel):
     messages: List[Dict[str, str]]
 
 
-TITLE_MAX_LENGTH = 9
+TITLE_RECOMMENDED_MAX_LENGTH = 14
+TITLE_HARD_MAX_LENGTH = 18
 TITLE_FALLBACK = "新對話"
 _TITLE_INSTRUCTION_PHRASES = (
     "請根據",
@@ -1066,10 +1067,18 @@ _TITLE_INSTRUCTION_PHRASES = (
     "這個對話",
     "標題生成",
 )
+_TITLE_DANGLING_SUFFIX_CHARS = frozenset("原運作機方過流發趨分與及和的之")
 
 
 def normalize_generated_title(raw_title: str) -> str:
-    """Convert untrusted model output into a short plain-text title."""
+    """Convert untrusted model output into a concise plain-text title.
+
+    The normalizer sanitizes model formatting and prompt echoes but avoids
+    blindly truncating valid short noun phrases. Hard clipping is reserved for
+    runaway output and then trims obvious dangling Chinese suffix fragments so
+    titles do not end as half-words such as "運作原".
+    """
+
     content = re.sub(r"<think>.*?</think>", "", raw_title or "", flags=re.DOTALL | re.IGNORECASE)
     content = content.replace("```", "").strip()
 
@@ -1082,7 +1091,14 @@ def normalize_generated_title(raw_title: str) -> str:
     if not candidate or any(phrase in candidate for phrase in _TITLE_INSTRUCTION_PHRASES):
         return ""
 
-    return "".join(list(candidate)[:TITLE_MAX_LENGTH])
+    characters = list(candidate)
+    if len(characters) <= TITLE_HARD_MAX_LENGTH:
+        return candidate
+
+    clipped = "".join(characters[:TITLE_HARD_MAX_LENGTH])
+    while len(clipped) > TITLE_RECOMMENDED_MAX_LENGTH and clipped[-1] in _TITLE_DANGLING_SUFFIX_CHARS:
+        clipped = clipped[:-1]
+    return clipped
 
 
 def build_title_messages(messages: List[Dict[str, str]], system_prompt: str) -> List[Dict[str, str]]:
@@ -1124,10 +1140,10 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
         system_prompt = (
             "你是一個標題生成器。請根據對話內容，為這個對話命名一個極簡的繁體中文標題。\n"
             "規則：\n"
-            "1. 必須小於 10 個字。\n"
+            f"1. 建議 {TITLE_RECOMMENDED_MAX_LENGTH} 個字以內；必要時最多 {TITLE_HARD_MAX_LENGTH} 個字。\n"
             "2. 絕不包含引號、句號或其他標點符號。\n"
             "3. 直接輸出標題文字，不加任何解釋說明（例如不可以說「標題是：...」）。\n"
-            "4. 直接萃取對話中最核心的關鍵字即可。"
+            "4. 直接萃取對話中最核心的完整名詞短語，不要輸出半截詞。"
         )
 
         full_messages = build_title_messages(title_req.messages, system_prompt)
