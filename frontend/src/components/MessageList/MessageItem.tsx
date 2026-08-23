@@ -32,6 +32,7 @@ import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMa
 import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 const { TextArea } = Input;
 const FEEDBACK_SUCCESS_MESSAGE = '感謝你的回饋';
@@ -196,6 +197,15 @@ type MarkdownTableProps = React.TableHTMLAttributes<HTMLTableElement> & {
   enableActions: boolean;
   onCopyTable: (tableText: string) => void;
   onDownloadTable: (csvText: string) => void;
+  labels: {
+    actions: string;
+    copy: string;
+    downloadCsv: string;
+    expand: string;
+    scrollable: string;
+    title: string;
+    close: string;
+  };
 };
 
 function MarkdownTable({
@@ -204,6 +214,7 @@ function MarkdownTable({
   enableActions,
   onCopyTable,
   onDownloadTable,
+  labels,
   ...props
 }: MarkdownTableProps) {
   const [isExpanded, setIsExpanded] = React.useState(false);
@@ -221,10 +232,10 @@ function MarkdownTable({
   }, [onDownloadTable]);
 
   const actionButtons = enableActions ? (
-    <div className="areqa-markdown-table-actions" aria-label="表格操作">
-      <Tooltip title="複製表格">
+    <div className="areqa-markdown-table-actions" aria-label={labels.actions}>
+      <Tooltip title={labels.copy}>
         <button
-          aria-label="複製表格"
+          aria-label={labels.copy}
           className="areqa-markdown-table-action"
           type="button"
           onClick={copyTable}
@@ -232,9 +243,9 @@ function MarkdownTable({
           <Copy size={16} aria-hidden="true" />
         </button>
       </Tooltip>
-      <Tooltip title="下載表格為CSV">
+      <Tooltip title={labels.downloadCsv}>
         <button
-          aria-label="下載表格為CSV"
+          aria-label={labels.downloadCsv}
           className="areqa-markdown-table-action"
           type="button"
           onClick={downloadTable}
@@ -242,9 +253,9 @@ function MarkdownTable({
           <Download size={16} aria-hidden="true" />
         </button>
       </Tooltip>
-      <Tooltip title="擴大顯示表格">
+      <Tooltip title={labels.expand}>
         <button
-          aria-label="擴大顯示表格"
+          aria-label={labels.expand}
           className="areqa-markdown-table-action"
           type="button"
           onClick={() => setIsExpanded(true)}
@@ -259,7 +270,7 @@ function MarkdownTable({
     <>
       <div className="areqa-markdown-table-frame">
         <div
-          aria-label="可水平捲動的資料表"
+          aria-label={labels.scrollable}
           className="areqa-markdown-table-scroll"
           tabIndex={0}
         >
@@ -271,16 +282,16 @@ function MarkdownTable({
       </div>
       {isExpanded && (
         <div
-          aria-label="表格"
+          aria-label={labels.title}
           aria-modal="true"
           className="areqa-markdown-table-modal-backdrop"
           role="dialog"
         >
           <div className="areqa-markdown-table-modal-panel">
             <div className="areqa-markdown-table-modal-header">
-              <h2>表格</h2>
+              <h2>{labels.title}</h2>
               <button
-                aria-label="關閉放大表格"
+                aria-label={labels.close}
                 className="areqa-markdown-table-modal-close"
                 type="button"
                 onClick={() => setIsExpanded(false)}
@@ -306,6 +317,7 @@ const createMarkdownComponents = (
   onCopyMath: (latex: string) => void,
   onCopyTable: (tableText: string) => void,
   onDownloadTable: (csvText: string) => void,
+  tableLabels: MarkdownTableProps['labels'],
 ): Components => ({
   table: ({ children, className, node, ...props }) => {
     void node;
@@ -316,6 +328,7 @@ const createMarkdownComponents = (
         enableActions={enableMathCopy}
         onCopyTable={onCopyTable}
         onDownloadTable={onDownloadTable}
+        labels={tableLabels}
         {...props}
       >
         {children}
@@ -856,6 +869,7 @@ export const MessageItem = memo(function MessageItem({
 }: MessageItemProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
+  const { t } = useUserPreferences();
   const isUser = message.role === 'user';
   const hasLiveStreamed = useHasLiveStreamed(isStreaming && !thinking?.isThinking);
   const legacyMessage = React.useMemo(
@@ -989,11 +1003,20 @@ export const MessageItem = memo(function MessageItem({
       message.id,
       !isUser,
       handleCopyMath,
-      handleCopyTable,
-      handleDownloadTable,
-    ),
-    [handleCopyMath, handleCopyTable, handleDownloadTable, isUser, message.id]
-  );
+	      handleCopyTable,
+	      handleDownloadTable,
+	      {
+	        actions: t('tableActions'),
+	        copy: t('copyTable'),
+	        downloadCsv: t('downloadTableCsv'),
+	        expand: t('expandTable'),
+	        scrollable: t('scrollableTable'),
+	        title: t('table'),
+	        close: t('closeExpandedTable'),
+	      },
+	    ),
+	    [handleCopyMath, handleCopyTable, handleDownloadTable, isUser, message.id, t]
+	  );
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);

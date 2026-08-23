@@ -5,6 +5,8 @@ import Image from 'next/image';
 import { Modal, Input, Dropdown, MenuProps, message, Button } from 'antd';
 import {
   BrainCircuit,
+  Check,
+  ChevronRight,
   Edit3,
   Languages,
   LogOut,
@@ -56,6 +58,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
     language,
     setTheme,
     setLanguage,
+    t,
   } = useUserPreferences();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -85,10 +88,10 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
         }
       });
       if (error) throw error;
-      message.success('使用者名稱更新成功！');
+      message.success(t('nicknameUpdated'));
       setIsEditModalOpen(false);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : '更新失敗');
+      message.error(e instanceof Error ? e.message : t('updateFailed'));
     }
   };
 
@@ -108,11 +111,11 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
       });
 
       if (error) throw error;
-      message.success('意見已送出，謝謝你的回饋。');
+      message.success(t('feedbackSent'));
       setFeedbackText('');
       setIsFeedbackModalOpen(false);
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : '意見送出失敗');
+      message.error(e instanceof Error ? e.message : t('feedbackFailed'));
     } finally {
       setIsSubmittingFeedback(false);
     }
@@ -128,7 +131,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
           {
             key: 'memory',
             icon: <BrainCircuit size={16} />,
-            label: '瀏覽記憶',
+            label: t('browseMemory'),
             onClick: onOpenMemory,
           },
         ]
@@ -136,7 +139,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
     {
       key: 'edit',
       icon: <Edit3 size={16} />,
-      label: '修改暱稱',
+      label: t('editNickname'),
       onClick: () => {
         setNewUsername(displayName);
         setIsEditModalOpen(true);
@@ -145,13 +148,13 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
     {
       key: 'feedback',
       icon: <MessageSquareText size={16} />,
-      label: '聯繫我們/意見回饋',
+      label: t('feedback'),
       onClick: () => setIsFeedbackModalOpen(true)
     },
     {
       key: 'logout',
       icon: <LogOut size={16} />,
-      label: '登出',
+      label: t('logout'),
       danger: true,
       onClick: handleLogout
     }
@@ -177,7 +180,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
           }}>
             <User size={16} color="white" />
           </div>
-          <span style={{ fontSize: '14px', fontWeight: 500 }}>登入 / 註冊</span>
+          <span style={{ fontSize: '14px', fontWeight: 500 }}>{t('loginSignup')}</span>
         </div>
 
         <Modal
@@ -190,7 +193,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
           <div style={{ padding: '16px' }}>
             <div style={{ textAlign: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '12px', color: 'white' }}>
-                登入 / 註冊 AREQA
+                {t('loginSignupAreqa')}
               </h2>
               <Image 
                 src="/icon/areqa_icon_v3.png" 
@@ -304,7 +307,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
       </Dropdown>
 
       <Modal
-        title="修改暱稱"
+        title={t('editNicknameTitle')}
         open={isEditModalOpen}
         onOk={handleUpdateUsername}
         onCancel={() => setIsEditModalOpen(false)}
@@ -319,12 +322,12 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
       </Modal>
 
       <Modal
-        title="聯繫我們/意見回饋"
+        title={t('feedbackTitle')}
         open={isFeedbackModalOpen}
         onOk={handleSubmitFeedback}
         onCancel={() => setIsFeedbackModalOpen(false)}
-        okText="送出"
-        cancelText="取消"
+        okText={t('submit')}
+        cancelText={t('cancel')}
         centered
         confirmLoading={isSubmittingFeedback}
         okButtonProps={{
@@ -336,7 +339,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
           <Input.TextArea
             value={feedbackText}
             onChange={e => setFeedbackText(e.target.value)}
-            placeholder="請輸入你的問題、建議或遇到的狀況..."
+            placeholder={t('feedbackPlaceholder')}
             autoSize={{ minRows: 4, maxRows: 8 }}
             maxLength={2000}
           />
@@ -375,9 +378,23 @@ function AccountPreferenceControls({
   onThemeChange,
   onLanguageChange,
 }: AccountPreferenceControlsProps) {
+  const { t } = useUserPreferences();
   const stopDropdownDismissal = (event: React.SyntheticEvent) => {
     event.stopPropagation();
   };
+  const [activePanel, setActivePanel] = useState<'theme' | 'language' | null>(null);
+  const themeLabelByValue: Record<InterfaceTheme, string> = {
+    light: t('theme.light'),
+    dark: t('theme.dark'),
+    system: t('theme.system'),
+  };
+  const languageLabelByValue: Record<InterfaceLanguage, string> = {
+    'zh-TW': t('language.zhTW'),
+    'zh-CN': t('language.zhCN'),
+    en: t('language.en'),
+  };
+  const selectedThemeLabel = themeLabelByValue[selectedTheme];
+  const selectedLanguageLabel = languageLabelByValue[selectedLanguage];
 
   return (
     <div
@@ -386,89 +403,113 @@ function AccountPreferenceControls({
       onMouseDown={stopDropdownDismissal}
       onPointerDown={stopDropdownDismissal}
     >
-      <PreferenceToggleGroup
-        icon={<Moon size={17} />}
-        label="介面顏色主題"
-        ariaLabel="介面顏色主題"
-      >
-        {THEME_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            className="areqa-account-toggle-option"
-            data-selected={selectedTheme === option.value}
-            aria-pressed={selectedTheme === option.value}
-            onClick={() => onThemeChange(option.value)}
-          >
-            <span aria-hidden="true">{option.icon}</span>
-            <span>{option.label}</span>
-          </button>
-        ))}
-      </PreferenceToggleGroup>
+      <PreferenceSubmenuRow
+        icon={<Moon size={18} />}
+        label={t('appearance')}
+        summary={selectedTheme === 'system' ? `${t('theme.system')} (${selectedThemeLabel})` : selectedThemeLabel}
+        onClick={() => setActivePanel(activePanel === 'theme' ? null : 'theme')}
+        expanded={activePanel === 'theme'}
+      />
+      {activePanel === 'theme' && (
+        <PreferenceToggleGroup ariaLabel={t('appearance')}>
+          {THEME_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="areqa-account-toggle-option"
+              data-selected={selectedTheme === option.value}
+              aria-pressed={selectedTheme === option.value}
+              onClick={() => onThemeChange(option.value)}
+            >
+              <span aria-hidden="true">{option.icon}</span>
+              <span>{themeLabelByValue[option.value]}</span>
+              {selectedTheme === option.value && <Check size={14} aria-hidden="true" />}
+            </button>
+          ))}
+        </PreferenceToggleGroup>
+      )}
 
-      <PreferenceToggleGroup
-        icon={<Languages size={17} />}
-        label="語言設定"
-        ariaLabel="語言設定"
-      >
-        {LANGUAGE_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            className="areqa-account-toggle-option"
-            data-selected={selectedLanguage === option.value}
-            aria-pressed={selectedLanguage === option.value}
-            onClick={() => onLanguageChange(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </PreferenceToggleGroup>
+      <PreferenceSubmenuRow
+        icon={<Languages size={18} />}
+        label={t('language')}
+        summary={selectedLanguageLabel}
+        onClick={() => setActivePanel(activePanel === 'language' ? null : 'language')}
+        expanded={activePanel === 'language'}
+      />
+      {activePanel === 'language' && (
+        <PreferenceToggleGroup ariaLabel={t('language')}>
+          {LANGUAGE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className="areqa-account-toggle-option"
+              data-selected={selectedLanguage === option.value}
+              aria-pressed={selectedLanguage === option.value}
+              onClick={() => onLanguageChange(option.value)}
+            >
+              <span>{languageLabelByValue[option.value]}</span>
+              {selectedLanguage === option.value && <Check size={14} aria-hidden="true" />}
+            </button>
+          ))}
+        </PreferenceToggleGroup>
+      )}
     </div>
   );
 }
 
-interface PreferenceToggleGroupProps {
+interface PreferenceSubmenuRowProps {
   icon: React.ReactNode;
   label: string;
+  summary: string;
+  expanded: boolean;
+  onClick: () => void;
+}
+
+function PreferenceSubmenuRow({
+  icon,
+  label,
+  summary,
+  expanded,
+  onClick,
+}: PreferenceSubmenuRowProps) {
+  return (
+    <button
+      aria-expanded={expanded}
+      className="areqa-account-preference-row"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="areqa-account-preference-row-main">
+        <span className="areqa-account-preference-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span>
+          <span className="areqa-account-preference-label">{label}</span>
+          <span className="areqa-account-preference-summary">{summary}</span>
+        </span>
+      </span>
+      <ChevronRight className="areqa-account-preference-chevron" size={18} aria-hidden="true" />
+    </button>
+  );
+}
+
+interface PreferenceToggleGroupProps {
   ariaLabel: string;
   children: React.ReactNode;
 }
 
-/**
- * Presents a labeled horizontal preference selector.
- *
- * Args:
- *   icon: Decorative icon for the preference category.
- *   label: Visible category label.
- *   ariaLabel: Accessible label for the radio-style group.
- *   children: Toggle option buttons.
- *
- * Returns:
- *   A compact account-menu control group.
- */
 function PreferenceToggleGroup({
-  icon,
-  label,
   ariaLabel,
   children,
 }: PreferenceToggleGroupProps) {
   return (
-    <section className="areqa-account-preference-section">
-      <div className="areqa-account-preference-title">
-        <span className="areqa-account-preference-icon" aria-hidden="true">
-          {icon}
-        </span>
-        <span>{label}</span>
-      </div>
-      <div
-        className="areqa-account-toggle-list"
-        role="group"
-        aria-label={ariaLabel}
-      >
-        {children}
-      </div>
-    </section>
+    <div
+      className="areqa-account-toggle-list"
+      role="group"
+      aria-label={ariaLabel}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -485,7 +526,7 @@ export interface AuthPromptProps {
  */
 export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
   const user = useAuthStore((state) => state.user);
-  const { resolvedTheme } = useUserPreferences();
+  const { resolvedTheme, t } = useUserPreferences();
   const [authView, setAuthView] = useState<'sign_in' | 'sign_up' | null>(null);
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
   const authTheme = resolvedTheme === 'dark' ? 'dark' : 'default';
@@ -514,12 +555,12 @@ export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
       destroyOnHidden
       width={400}
       centered
-      title="歡迎來到 AREQA"
+      title={t('welcomeAreqa')}
     >
       {authView ? (
         <div style={{ paddingTop: '8px' }}>
           <Button type="link" onClick={() => setAuthView(null)}>
-            返回
+            {t('back')}
           </Button>
           <SupabaseAuth
             supabaseClient={supabase}
@@ -558,16 +599,16 @@ export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
       ) : (
         <div style={{ padding: '16px 8px 8px', display: 'grid', gap: '12px' }}>
           <p style={{ margin: 0, textAlign: 'center' }}>
-            登入後即可同步您的對話與學習記憶。
+            {t('authPromptCopy')}
           </p>
-          <Button type="primary" aria-label="登入" onClick={() => setAuthView('sign_in')}>
-            登入
+          <Button type="primary" aria-label={t('login')} onClick={() => setAuthView('sign_in')}>
+            {t('login')}
           </Button>
-          <Button aria-label="註冊" onClick={() => setAuthView('sign_up')}>
-            註冊
+          <Button aria-label={t('signup')} onClick={() => setAuthView('sign_up')}>
+            {t('signup')}
           </Button>
           <Button type="text" onClick={handleDismiss}>
-            維持登出狀態
+            {t('staySignedOut')}
           </Button>
         </div>
       )}

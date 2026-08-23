@@ -15,6 +15,7 @@ import rehypeKatex from 'rehype-katex';
 import { useChatStore } from '@/store/chat';
 import { useStyles } from './styles';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 /** Maximum allowed message length */
 const MAX_MESSAGE_LENGTH = 4000;
@@ -61,6 +62,7 @@ export function ChatInput({
   onStop,
 }: ChatInputProps) {
   const { styles, cx } = useStyles();
+  const { t } = useUserPreferences();
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -108,7 +110,7 @@ export function ChatInput({
 
     // Check message length
     if (trimmedValue.length > maxLength) {
-      message.error(`訊息過長。上限為 ${maxLength} 個字元。`);
+      message.error(t('messageTooLong', { maxLength }));
       return;
     }
 
@@ -141,7 +143,7 @@ export function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [value, attachments, disabled, onSend, maxLength, quotedText, setQuotedText]);
+  }, [value, attachments, disabled, onSend, maxLength, quotedText, setQuotedText, t]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -171,33 +173,33 @@ export function ChatInput({
 
     const candidates = [...attachments, ...selected];
     if (candidates.length > MAX_ATTACHMENT_COUNT) {
-      message.error(`每次最多可附加 ${MAX_ATTACHMENT_COUNT} 個檔案。`);
+      message.error(t('maxAttachments', { count: MAX_ATTACHMENT_COUNT }));
       return;
     }
 
     let totalSize = 0;
     for (const attachment of candidates) {
       if (!SUPPORTED_ATTACHMENT_TYPES.has(attachment.type)) {
-        message.error('僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。');
+        message.error(t('unsupportedAttachment'));
         return;
       }
       if (attachment.size === 0) {
-        message.error('不接受空白附件。');
+        message.error(t('emptyAttachment'));
         return;
       }
       if (attachment.size > MAX_ATTACHMENT_BYTES) {
-        message.error('單一附件不得超過 5 MB。');
+        message.error(t('attachmentTooLarge'));
         return;
       }
       totalSize += attachment.size;
     }
     if (totalSize > MAX_TOTAL_ATTACHMENT_BYTES) {
-      message.error('附件總大小不得超過 20 MB。');
+      message.error(t('attachmentsTooLarge'));
       return;
     }
 
     setAttachments(candidates);
-  }, [attachments]);
+  }, [attachments, t]);
 
   const removeAttachment = useCallback((target: File) => {
     setAttachments((current) => current.filter((attachment) => attachment !== target));
@@ -215,7 +217,7 @@ export function ChatInput({
           <button
             className={styles.quoteClose}
             onClick={() => setQuotedText(null)}
-            aria-label="取消引用"
+            aria-label={t('cancelQuote')}
           >
             <X size={14} />
           </button>
@@ -223,12 +225,12 @@ export function ChatInput({
       )}
 
       {attachments.length > 0 && (
-        <div className={styles.attachmentList} aria-label="待送附件">
+        <div className={styles.attachmentList} aria-label={t('pendingAttachments')}>
           {attachments.map((attachment) => (
             <div className={styles.attachmentChip} key={`${attachment.name}-${attachment.lastModified}`}>
               {attachment.type.startsWith('image/') ? <ImageIcon size={14} /> : <FileText size={14} />}
               <span title={attachment.name}>{attachment.name}</span>
-              <button type="button" onClick={() => removeAttachment(attachment)} aria-label={`移除附件 ${attachment.name}`}>
+              <button type="button" onClick={() => removeAttachment(attachment)} aria-label={`${t('delete')} ${attachment.name}`}>
                 <X size={13} />
               </button>
             </div>
@@ -236,14 +238,14 @@ export function ChatInput({
         </div>
       )}
 
-      <div className={styles.inputRow} role="group" aria-label="訊息輸入列">
-        <Tooltip title="加入圖片或文件" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+      <div className={styles.inputRow} role="group" aria-label={t('messageInputRow')}>
+        <Tooltip title={t('addAttachment')} color="#262626" styles={{ container: { color: '#ffffff' } }}>
           <button
             type="button"
             className={styles.attachmentButton}
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled}
-            aria-label="加入附件"
+            aria-label={t('addAttachment')}
           >
             <Plus size={18} />
           </button>
@@ -254,18 +256,18 @@ export function ChatInput({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={placeholder === '問我任何問題...' ? t('askPlaceholder') : placeholder}
           disabled={disabled}
           rows={1}
           maxLength={maxLength + 100}
-          aria-label="訊息輸入框"
+          aria-label={t('messageTextarea')}
         />
         {isStreaming && onStop ? (
           <button
             type="button"
             className={cx(styles.sendButton, styles.stopButton)}
             onClick={onStop}
-            aria-label="停止生成"
+            aria-label={t('stopGenerating')}
           >
             <Square size={16} fill="currentColor" />
           </button>
@@ -275,7 +277,7 @@ export function ChatInput({
             className={styles.sendButton}
             onClick={handleSend}
             disabled={!canSend}
-            aria-label="發送訊息"
+            aria-label={t('sendMessage')}
           >
             <Send size={18} />
           </button>
@@ -289,12 +291,12 @@ export function ChatInput({
         multiple
         hidden
         onChange={handleAttachmentChange}
-        aria-label="選擇附件"
+        aria-label={t('chooseAttachment')}
       />
 
       {hasMath && (
-        <div className={styles.mathPreview} aria-label="LaTeX 預覽">
-          <div className={styles.mathPreviewLabel}>公式預覽</div>
+        <div className={styles.mathPreview} aria-label={t('latexPreview')}>
+          <div className={styles.mathPreviewLabel}>{t('formulaPreview')}</div>
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}

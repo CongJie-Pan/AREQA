@@ -212,8 +212,10 @@ describe('UserAuthUI Component', () => {
 
     fireEvent.click(screen.getByText('testuser'));
 
-    fireEvent.click(await screen.findByRole('button', { name: '明亮 Light' }));
-    fireEvent.click(screen.getByRole('button', { name: '英文' }));
+    fireEvent.click(await screen.findByRole('button', { name: /介面外觀/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '明亮' }));
+    fireEvent.click(screen.getByRole('button', { name: /語言/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'English' }));
 
     await waitFor(() => {
       expect(window.localStorage.getItem('areqa:interface-theme')).toBe('light');

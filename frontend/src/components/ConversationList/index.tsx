@@ -18,6 +18,7 @@ import { SidePanelType } from '@/types/panel';
 import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
 import { databaseService } from '@/services/database';
 import { UserAuthUI } from '../Auth';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 const PINNED_CONVERSATION_IDS_KEY = 'areqa:pinned-conversation-ids';
 const LONG_PRESS_MENU_MS = 520;
@@ -50,6 +51,7 @@ export function ConversationList({
 }: ConversationListProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
+  const { t } = useUserPreferences();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -134,7 +136,7 @@ export function ConversationList({
     if (!renameTargetId) return;
     const nextTitle = renameValue.trim();
     if (!nextTitle) {
-      antMessageApi.warning('請輸入對話名稱');
+      antMessageApi.warning(t('enterConversationName'));
       return;
     }
 
@@ -145,15 +147,15 @@ export function ConversationList({
         title: nextTitle,
         updatedAt: new Date(),
       });
-      antMessageApi.success('已重新命名對話');
+      antMessageApi.success(t('renameSuccess'));
       setRenameTargetId(null);
       setRenameValue('');
     } catch {
-      antMessageApi.error('重新命名失敗，請稍後再試');
+      antMessageApi.error(t('renameFailed'));
     } finally {
       setIsRenaming(false);
     }
-  }, [antMessageApi, renameTargetId, renameValue]);
+  }, [antMessageApi, renameTargetId, renameValue, t]);
 
   const togglePinned = useCallback((id: string) => {
     setPinnedIds((current) => (
@@ -206,10 +208,10 @@ export function ConversationList({
     const pinnedConversations = conversations.filter((conv) => pinnedIdSet.has(conv.id));
     const unpinnedConversations = conversations.filter((conv) => !pinnedIdSet.has(conv.id));
     const groups: { [key: string]: typeof conversations } = {
-      今天: [],
-      昨天: [],
-      過去七天: [],
-      更早以前: [],
+      [t('today')]: [],
+      [t('yesterday')]: [],
+      [t('previousSevenDays')]: [],
+      [t('older')]: [],
     };
 
     const now = new Date();
@@ -220,17 +222,17 @@ export function ConversationList({
       date.setHours(0, 0, 0, 0);
       const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
 
-      if (diffDays === 0) groups['今天'].push(conv);
-      else if (diffDays === 1) groups['昨天'].push(conv);
-      else if (diffDays < 7) groups['過去七天'].push(conv);
-      else groups['更早以前'].push(conv);
+      if (diffDays === 0) groups[t('today')].push(conv);
+      else if (diffDays === 1) groups[t('yesterday')].push(conv);
+      else if (diffDays < 7) groups[t('previousSevenDays')].push(conv);
+      else groups[t('older')].push(conv);
     });
 
     return [
-      ...(pinnedConversations.length > 0 ? [['釘選', pinnedConversations] as const] : []),
+      ...(pinnedConversations.length > 0 ? [[t('pinned'), pinnedConversations] as const] : []),
       ...Object.entries(groups).filter(([, items]) => items.length > 0),
     ];
-  }, [conversations, pinnedIds]);
+  }, [conversations, pinnedIds, t]);
 
   return (
     <div className={cx(styles.container, className)}>
@@ -249,7 +251,7 @@ export function ConversationList({
         <button 
           className={styles.toggleButton} 
           onClick={onToggleSidebar}
-          title="關閉側邊欄"
+          title={t('closeSidebar')}
         >
           <PanelLeftClose size={20} />
         </button>
@@ -259,7 +261,7 @@ export function ConversationList({
       <div className={styles.header}>
         <button className={styles.newButton} onClick={handleNew}>
           <Plus size={18} />
-          <span>新對話</span>
+          <span>{t('newChat')}</span>
         </button>
         <div className={styles.divider} />
         {mailboxEnabled && (
@@ -278,7 +280,7 @@ export function ConversationList({
                 </span>
               )}
             </div>
-            <span>信箱</span>
+            <span>{t('mailbox')}</span>
           </button>
         )}
       </div>
@@ -292,7 +294,7 @@ export function ConversationList({
         ) : conversations.length === 0 ? (
           <div className={styles.empty}>
             <MessagesSquare size={32} className={styles.emptyIcon} />
-            <p className={styles.emptyText}>尚無對話紀錄</p>
+            <p className={styles.emptyText}>{t('noConversations')}</p>
           </div>
         ) : (
           groupedConversations.map(([group, items]) => (
@@ -302,23 +304,23 @@ export function ConversationList({
                 const isPinned = pinnedIds.includes(conv.id);
                 const displayTitle = streamingTitles[conv.id] !== undefined
                   ? streamingTitles[conv.id]
-                  : conv.title || '新對話';
+                  : conv.title || t('newChat');
                 const menuItems: MenuProps['items'] = [
                   {
                     key: 'rename',
                     icon: <Pencil size={14} />,
-                    label: '重新命名',
+                    label: t('rename'),
                   },
                   {
                     key: 'pin',
                     icon: isPinned ? <PinOff size={14} /> : <Pin size={14} />,
-                    label: isPinned ? '取消釘選' : '釘選聊天',
+                    label: isPinned ? t('unpin') : t('pin'),
                   },
                   {
                     key: 'delete',
                     danger: true,
                     icon: <Trash2 size={14} />,
-                    label: '刪除',
+                    label: t('delete'),
                   },
                 ];
 
@@ -375,7 +377,7 @@ export function ConversationList({
                           event.stopPropagation();
                           setOpenMenuId(conv.id);
                         }}
-                        title="對話選單"
+                        title={t('conversationMenu')}
                         type="button"
                       >
                         <MoreHorizontal size={16} />
@@ -394,18 +396,18 @@ export function ConversationList({
       <Modal
         confirmLoading={isRenaming}
         okButtonProps={{ disabled: !renameValue.trim() }}
-        okText="儲存"
+        okText={t('save')}
         onCancel={closeRenameDialog}
         onOk={submitRename}
         open={renameTargetId !== null}
-        title="重新命名對話"
+        title={t('renameTitle')}
       >
         <Input
           autoFocus
           maxLength={80}
           onChange={(event) => setRenameValue(event.target.value)}
           onPressEnter={submitRename}
-          placeholder="輸入新的對話名稱"
+          placeholder={t('renamePlaceholder')}
           value={renameValue}
         />
       </Modal>

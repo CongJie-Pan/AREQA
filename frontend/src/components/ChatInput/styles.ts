@@ -16,8 +16,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     gap: 0;
     padding: 12px 20px 10px;
-    background: #1e1826;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--card);
+    border: 1px solid var(--border);
     border-radius: 24px;
     max-width: 800px;
     width: 90%;
@@ -29,7 +29,7 @@ export const useStyles = createStyles(({ css, token }) => ({
       width: calc(100% - 24px);
       margin: 0 auto 12px;
       border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      border: 1px solid var(--border);
       padding: 10px 14px 8px;
     }
 
@@ -45,9 +45,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     gap: 10px;
     padding: 8px 16px;
     margin-bottom: 10px;
-    background: #333333;
+    background: var(--muted);
     border-radius: 20px;
-    color: #f0f0f0;
+    color: var(--foreground);
     font-size: 15px;
     position: relative;
     max-width: 100%;
@@ -72,7 +72,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 0.9;
-    color: #ffffff;
+    color: var(--foreground);
     font-weight: 500;
   `,
 
@@ -86,14 +86,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     justify-content: center;
     border: none;
     background: transparent;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--muted-foreground);
     cursor: pointer;
     border-radius: 50%;
     transition: all 0.2s;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #ffffff;
+      background: var(--areqa-account-hover);
+      color: var(--foreground);
     }
   `,
 
@@ -116,14 +116,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     padding: 0;
     border: none;
     background: transparent;
-    color: #ffffff;
+    color: var(--foreground);
     font-size: 16px;
     line-height: 24px;
     resize: none;
     outline: none;
 
     &::placeholder {
-      color: rgba(255, 255, 255, 0.5);
+      color: var(--muted-foreground);
     }
 
     &:disabled {
@@ -137,8 +137,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     padding: 8px 12px;
     border: 1px solid rgba(216, 162, 92, 0.2);
     border-radius: 8px;
-    background: rgba(0, 0, 0, 0.16);
-    color: rgba(255, 255, 255, 0.85);
+    background: var(--muted);
+    color: var(--foreground);
     overflow-x: auto;
 
     .katex-display {
@@ -178,10 +178,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     max-width: min(360px, 72vw);
     min-height: 44px;
     padding: 7px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.07);
-    color: rgba(255, 255, 255, 0.85);
+    background: var(--muted);
+    color: var(--foreground);
     font-size: 13px;
 
     span {
@@ -231,17 +231,17 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    border: 1px solid var(--border);
     border-radius: 50%;
     background: transparent;
-    color: rgba(255, 255, 255, 0.82);
+    color: var(--foreground);
     cursor: pointer;
     transition: all 0.2s;
 
     &:hover:not(:disabled) {
       border-color: #d8a25c;
       background: rgba(216, 162, 92, 0.15);
-      color: #ffffff;
+      color: var(--foreground);
     }
 
     &:disabled {
@@ -275,9 +275,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     &:disabled {
-      background: rgba(255, 255, 255, 0.14);
-      border-color: rgba(255, 255, 255, 0.28);
-      color: rgba(255, 255, 255, 0.48);
+      background: var(--muted);
+      border-color: var(--border);
+      color: var(--muted-foreground);
       cursor: not-allowed;
     }
   `,

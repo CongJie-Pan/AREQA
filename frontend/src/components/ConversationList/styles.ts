@@ -20,8 +20,8 @@ export const useStyles = createStyles(({ css }) => ({
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: #1b1622;
-    color: #f0f0f0;
+    background: var(--areqa-sidebar-background);
+    color: var(--foreground);
   `,
 
   header: css`
@@ -61,22 +61,22 @@ export const useStyles = createStyles(({ css }) => ({
     padding: 8px;
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--muted-foreground);
     cursor: pointer;
     border-radius: 6px;
     transition: all 0.2s;
     flex-shrink: 0;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.05);
-      color: #ffffff;
+      background: var(--areqa-account-hover);
+      color: var(--foreground);
     }
   `,
 
   title: css`
     font-size: 14px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.45);
+    color: var(--muted-foreground);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 4px;
@@ -89,18 +89,18 @@ export const useStyles = createStyles(({ css }) => ({
     gap: 10px;
     width: 100%;
     padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--muted);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #ffffff;
+    color: var(--foreground);
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.2);
+      background: var(--areqa-account-hover);
+      border-color: var(--border);
     }
 
     svg {
@@ -127,7 +127,7 @@ export const useStyles = createStyles(({ css }) => ({
   groupTitle: css`
     font-size: 14px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--muted-foreground);
     padding: 20px 12px 10px;
     letter-spacing: 0.3px;
   `,
@@ -145,7 +145,7 @@ export const useStyles = createStyles(({ css }) => ({
     margin-bottom: 2px;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--areqa-account-hover);
       
       .conversation-menu-btn {
         opacity: 1;
@@ -154,7 +154,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   itemActive: css`
-    background: rgba(111, 47, 69, 0.35) !important;
+    background: color-mix(in srgb, #6f2f45 26%, transparent) !important;
     
     &::before {
       content: '';
@@ -168,13 +168,13 @@ export const useStyles = createStyles(({ css }) => ({
     }
 
     .conv-title {
-      color: #ffffff;
+      color: var(--foreground);
       font-weight: 500;
     }
   `,
 
   itemIcon: css`
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--muted-foreground);
     flex-shrink: 0;
   `,
 
@@ -187,7 +187,7 @@ export const useStyles = createStyles(({ css }) => ({
 
   itemTitle: css`
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -208,13 +208,13 @@ export const useStyles = createStyles(({ css }) => ({
     opacity: 0;
     padding: 4px;
     border-radius: 4px;
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--muted-foreground);
     transition: all 0.2s;
     flex-shrink: 0;
 
     &:hover {
       color: #ff4d4f;
-      background: rgba(255, 77, 79, 0.1);
+      background: var(--areqa-danger-hover);
     }
   `,
 
@@ -228,14 +228,14 @@ export const useStyles = createStyles(({ css }) => ({
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: rgba(255, 255, 255, 0.46);
+    color: var(--muted-foreground);
     cursor: pointer;
     opacity: 0;
     transition: all 0.2s;
 
     &:hover {
-      color: #ffffff;
-      background: rgba(255, 255, 255, 0.1);
+      color: var(--foreground);
+      background: var(--areqa-account-hover);
     }
 
     @media (max-width: 768px) {
@@ -269,18 +269,18 @@ export const useStyles = createStyles(({ css }) => ({
 
   emptyIcon: css`
     margin-bottom: 12px;
-    color: rgba(255, 255, 255, 0.2);
+    color: var(--muted-foreground);
   `,
 
   emptyText: css`
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--muted-foreground);
     line-height: 1.6;
   `,
 
   divider: css`
     height: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--border);
     margin: 4px 0;
   `,
 
@@ -290,9 +290,9 @@ export const useStyles = createStyles(({ css }) => ({
     gap: 10px;
     padding: 10px 12px;
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--muted-foreground);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
