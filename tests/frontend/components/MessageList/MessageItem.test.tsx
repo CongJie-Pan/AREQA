@@ -361,11 +361,11 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:table-csv');
 
     fireEvent.click(expandButton);
-    expect(screen.getByRole('dialog', { name: 'Table' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Table' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '表格' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '表格' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '關閉放大表格' }));
-    expect(screen.queryByRole('dialog', { name: 'Table' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '表格' })).not.toBeInTheDocument();
   });
 
   it('keeps Streamdown animated spans after live streaming ends', () => {

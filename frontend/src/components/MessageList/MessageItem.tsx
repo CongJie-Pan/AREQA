@@ -271,14 +271,14 @@ function MarkdownTable({
       </div>
       {isExpanded && (
         <div
-          aria-label="Table"
+          aria-label="表格"
           aria-modal="true"
           className="areqa-markdown-table-modal-backdrop"
           role="dialog"
         >
           <div className="areqa-markdown-table-modal-panel">
             <div className="areqa-markdown-table-modal-header">
-              <h2>Table</h2>
+              <h2>表格</h2>
               <button
                 aria-label="關閉放大表格"
                 className="areqa-markdown-table-modal-close"

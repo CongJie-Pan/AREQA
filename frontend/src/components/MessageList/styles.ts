@@ -58,6 +58,26 @@ const imageSkeletonShimmer = keyframes`
   }
 `;
 
+const tableModalBackdropIn = keyframes`
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+`;
+
+const tableModalPanelIn = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+`;
+
 export const useStyles = createStyles(({ css, token }) => ({
   // MessageList styles
   container: css`
@@ -588,26 +608,34 @@ content: css`
 
   .areqa-markdown-table-modal-backdrop {
     position: fixed;
-    inset: 0;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 100vw;
     z-index: 1200;
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 20px 24px;
-    background: rgba(0, 0, 0, 0.62);
-    backdrop-filter: blur(8px);
+    padding: 30px 50px;
+    background: rgba(0, 0, 0, 0.56);
+    -webkit-backdrop-filter: blur(12px) saturate(115%);
+    backdrop-filter: blur(12px) saturate(115%);
+    transform: translateX(-50%);
+    animation: ${tableModalBackdropIn} 160ms ease-out;
   }
 
   .areqa-markdown-table-modal-panel {
-    width: min(98vw, 1880px);
+    width: calc(100vw - 100px);
+    min-width: min(1180px, calc(100vw - 100px));
     min-height: min(84vh, 900px);
-    max-height: calc(100vh - 40px);
+    max-height: calc(100vh - 60px);
     padding: 26px;
     overflow: hidden;
     border: 2px solid rgba(156, 163, 175, 0.42);
     border-radius: 18px;
     background: #141312;
     box-shadow: 0 28px 80px rgba(0, 0, 0, 0.58);
+    animation: ${tableModalPanelIn} 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .areqa-markdown-table-modal-header {
@@ -648,7 +676,7 @@ content: css`
   }
 
   .areqa-markdown-table-modal-body {
-    max-height: calc(100vh - 160px);
+    max-height: calc(100vh - 190px);
     overflow: auto;
     border: 2px solid rgba(156, 163, 175, 0.68);
     border-radius: 10px;
@@ -675,6 +703,23 @@ content: css`
   }
 
   @media (max-width: 768px) {
+    .areqa-markdown-table-modal-backdrop {
+      padding: 14px;
+    }
+
+    .areqa-markdown-table-modal-panel {
+      width: calc(100vw - 28px);
+      min-width: 0;
+      min-height: calc(100vh - 28px);
+      max-height: calc(100vh - 28px);
+      padding: 18px;
+      border-radius: 14px;
+    }
+
+    .areqa-markdown-table-modal-body {
+      max-height: calc(100vh - 138px);
+    }
+
     table.areqa-markdown-table {
       font-size: 13px;
     }
@@ -683,6 +728,13 @@ content: css`
     .areqa-markdown-table td {
       min-width: 104px;
       padding: 9px 10px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .areqa-markdown-table-modal-backdrop,
+    .areqa-markdown-table-modal-panel {
+      animation: none;
     }
   }
 `,
