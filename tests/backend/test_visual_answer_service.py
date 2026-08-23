@@ -546,8 +546,8 @@ async def test_build_answer_blocks_interleaves_preverified_image_without_query()
 
 
 @pytest.mark.asyncio
-async def test_build_answer_blocks_auto_inserts_unused_preverified_image(caplog):
-    """Verified preflight images should render even if the model omits markers."""
+async def test_build_answer_blocks_omits_unused_preverified_image(caplog):
+    """Verified preflight images must not render when the model omits markers."""
 
     caplog.set_level("INFO")
     service = VisualAnswerService()
@@ -578,9 +578,9 @@ async def test_build_answer_blocks_auto_inserts_unused_preverified_image(caplog)
         preverified_image_blocks={"img_1": image},
     )
 
-    assert [block["type"] for block in blocks] == ["paragraph", "image_block", "paragraph"]
-    assert blocks[1]["slotId"] == "img_1"
-    assert "visual.preverified_auto_inserted" in caplog.text
+    assert blocks == []
+    assert "visual.preverified_unused" in caplog.text
+    assert "reason=no_model_marker" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -426,11 +426,11 @@ class VisualAnswerService:
                     return []
                 if not planned_slots:
                     logger.info(
-                        "visual.preverified_auto_inserted conversation_id=%s available_image_count=%s",
+                        "visual.preverified_unused conversation_id=%s reason=no_model_marker available_image_count=%s",
                         conversation_id,
                         len(preverified_image_blocks),
                     )
-                    return self._interleave_blocks(paragraphs, [next(iter(preverified_image_blocks.values()))])
+                    return []
                 rendered = self._interleave_blocks_at_planned_slots(
                     paragraphs,
                     planned_slots,

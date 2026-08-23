@@ -821,9 +821,13 @@ class OrchestrationService:
             instruction = (
                 "【已驗證圖片清單】以下圖片已由系統搜尋與驗證，可在回答中自然引用。"
                 "你只能使用清單中的 id，不能自行編造圖片、URL 或來源。"
-                "若圖片能幫助理解，請在最自然的位置輸出標記："
+                "若圖片能幫助理解，必須先寫 1 至 2 句完整的圖片導讀段落，"
+                "明確使用「下圖」、「圖中」或對應語言的圖片引用，"
+                "並至少引用 vision_summary、visible_elements 或 how_to_read 中一項可見特徵。"
+                "在該導讀段落後緊接著輸出標記："
                 '[[AREQA_VERIFIED_IMAGE id="img_1"]]。'
-                "標記前後要用自然文字銜接，並優先依據 vision_summary、visible_elements、how_to_read 解釋這張圖；"
+                "不得把標記直接放在開場摘要、標題、清單或表格後。"
+                "若無法寫出具體導讀，請完全省略標記與圖片；"
                 "若 vision_summary 為空，才退回依據圖片 caption/source 做有限解釋；"
                 "不得輸出 <AREQA_IMAGE_SLOT .../> 或 [[AREQA_IMAGE_REQUEST ...]]。"
                 f"\n<verified_images>{json.dumps(inventory, ensure_ascii=False)}</verified_images>"

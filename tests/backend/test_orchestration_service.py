@@ -86,6 +86,9 @@ def test_verified_visual_instruction_injects_inventory():
     assert "vision_summary" in system_prompt
     assert "movement arrows" in system_prompt
     assert "how_to_read" in system_prompt
+    assert "1 至 2 句" in system_prompt
+    assert "緊接著輸出標記" in system_prompt
+    assert "無法寫出具體導讀" in system_prompt
     assert "不得輸出 <AREQA_IMAGE_SLOT .../>" in system_prompt
     assert "https://upload.wikimedia.org" not in system_prompt
 
@@ -214,7 +217,7 @@ def test_image_marker_filter_positions_marker_inside_one_chunk_with_utf16_offset
     """One provider packet may contain paragraphs, emoji, and an image marker."""
 
     marker_filter = ImageRequestMarkerFilter(max_slots=2)
-    prefix = "😀第一段\n\n第二段"
+    prefix = "😀第一段\n\n下圖的左右箭頭展示了戰線如何隨年份移動。"
     public = marker_filter.feed(
         f'{prefix}[[AREQA_VERIFIED_IMAGE id="img_1"]]\n\n第三段'
     )
@@ -224,6 +227,27 @@ def test_image_marker_filter_positions_marker_inside_one_chunk_with_utf16_offset
     assert slot.anchor_after_paragraph == 1
     assert slot.content_offset == len(prefix.encode("utf-16-le")) // 2
     assert marker_filter.drain_new_slots() == []
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "貝氏統計與頻率統計的根本差異在於機率定義。",
+        "### 下圖說明",
+    ],
+)
+def test_image_marker_filter_rejects_verified_marker_without_visual_lead_in(prefix):
+    """A verified marker must not create a slot without explanatory prose."""
+
+    marker_filter = ImageRequestMarkerFilter(max_slots=2)
+
+    public = marker_filter.feed(
+        f'{prefix}\n\n[[AREQA_VERIFIED_IMAGE id="img_1"]]\n\n後續說明'
+    )
+
+    assert "AREQA_VERIFIED_IMAGE" not in public
+    assert marker_filter.slots == []
+    assert marker_filter.rejected_verified_marker_count == 1
 
 
 @pytest.mark.asyncio
@@ -327,7 +351,8 @@ async def test_llm_stream_strips_verified_image_markers(mock_client):
         chunk = MagicMock()
         chunk.choices = [MagicMock()]
         chunk.choices[0].delta.content = (
-            '第一段\n\n[[AREQA_VERIFIED_IMAGE id="img_1"]]\n\n第二段'
+            '下圖的左側是日本擴張路線，右側則是隨年份後退的戰線。'
+            '\n\n[[AREQA_VERIFIED_IMAGE id="img_1"]]\n\n第二段'
         )
         chunk.choices[0].delta.tool_calls = None
         yield chunk

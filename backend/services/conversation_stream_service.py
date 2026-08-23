@@ -28,6 +28,11 @@ _IMAGE_REQUEST_ATTR_PATTERN = re.compile(
     r"""(?P<key>id|query|caption_hint|caption|alt)\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
     re.DOTALL,
 )
+_VISUAL_LEAD_IN_PATTERN = re.compile(
+    r"(?:下圖|上圖|圖中|這張圖|此圖|圖表|示意圖|流程圖|地圖|圖片|影像|照片|"
+    r"\b(?:figure|image|diagram|chart|graph|map|photo)\b)",
+    re.IGNORECASE,
+)
 _MAX_IMAGE_REQUEST_BUFFER_CHARS = 2000
 
 
@@ -109,12 +114,19 @@ class ImageRequestMarkerFilter:
         self._public_accumulator = ""
         self._slots: list[ImageRequestSlot] = []
         self._drained_slot_count = 0
+        self._rejected_verified_marker_count = 0
 
     @property
     def slots(self) -> list[ImageRequestSlot]:
         """Return accepted slots in stream order."""
 
         return list(self._slots)
+
+    @property
+    def rejected_verified_marker_count(self) -> int:
+        """Return verified markers rejected for missing visual lead-in prose."""
+
+        return self._rejected_verified_marker_count
 
     def drain_new_slots(self) -> list[ImageRequestSlot]:
         """Return slots recorded since the previous drain call.
@@ -219,6 +231,9 @@ class ImageRequestMarkerFilter:
             return
         caption_hint = (attrs.get("caption_hint") or attrs.get("caption") or attrs.get("alt") or "")[:180].strip()
         public_text_before_marker = self._public_accumulator + public_prefix
+        if marker_kind == "verified" and not self._has_visual_lead_in(public_text_before_marker):
+            self._rejected_verified_marker_count += 1
+            return
         self._slots.append(
             ImageRequestSlot(
                 slot_id=slot_id,
@@ -228,6 +243,33 @@ class ImageRequestMarkerFilter:
                 content_offset=self._utf16_length(public_text_before_marker),
             )
         )
+
+    @staticmethod
+    def _has_visual_lead_in(public_text: str) -> bool:
+        """Return whether the preceding paragraph explicitly introduces a visual.
+
+        Verified preflight images are already known to the answer model, so a
+        marker without nearby explanatory prose signals that the model did not
+        integrate the image into its answer. Requiring a non-heading paragraph
+        and an explicit visual reference prevents both live and persisted image
+        blocks from appearing after unrelated opening text.
+
+        Args:
+            public_text: Public answer text emitted before the marker.
+
+        Returns:
+            ``True`` when the final paragraph is explanatory prose with a
+            visual-reference cue; otherwise ``False``.
+        """
+
+        paragraphs = [part.strip() for part in re.split(r"\n{2,}", public_text) if part.strip()]
+        if not paragraphs:
+            return False
+        paragraph = paragraphs[-1]
+        if re.match(r"^\s{0,3}#{1,6}(?:\s|$)", paragraph):
+            return False
+        plain_text = re.sub(r"[*_`>#]", "", paragraph).strip()
+        return len(plain_text) >= 12 and bool(_VISUAL_LEAD_IN_PATTERN.search(plain_text))
 
     @staticmethod
     def _next_marker_start(text: str) -> int:
@@ -512,6 +554,12 @@ class ConversationStreamService:
                 "visual.slot_marker_detected conversation_id=%s slot_count=%s",
                 conversation_id,
                 len(image_marker_filter.slots),
+            )
+        if image_marker_filter.rejected_verified_marker_count:
+            logger.info(
+                "visual.verified_marker_rejected conversation_id=%s reason=missing_visual_lead_in marker_count=%s",
+                conversation_id,
+                image_marker_filter.rejected_verified_marker_count,
             )
         logger.info(
             "orchestration.stream_completed conversation_id=%s elapsed_ms=%s",
