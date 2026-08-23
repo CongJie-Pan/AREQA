@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -12,19 +13,33 @@ from backend.services.query_policy_service import (
     ResponseTone,
     TaskIntent,
 )
-from backend.services.visual_answer_service import ImageBlock, ImageCandidate, PlannedImageSlot, VisualAnswerService
+from backend.services.visual_answer_service import (
+    _NEGATIVE_CACHE_TTL_SECONDS,
+    ImageBlock,
+    ImageCandidate,
+    PlannedImageSlot,
+    VisualAnswerService,
+)
 from backend.services.visual_grounding_agent import VisualBrief, VisualGroundingDecision, VisualTeachingContext
 
 
 class _FakeRedis:
-    """Minimal async Redis double for visual cache read tests."""
+    """Minimal async Redis double for visual cache tests."""
 
     def __init__(self, value):
         self.value = value
         self.closed = False
+        self.set_key = ""
+        self.set_value = ""
+        self.set_ttl = None
 
     async def get(self, key):
         return self.value
+
+    async def set(self, key, value, ex=None):
+        self.set_key = key
+        self.set_value = value
+        self.set_ttl = ex
 
     async def aclose(self):
         self.closed = True
@@ -174,7 +189,23 @@ def test_should_attempt_preflight_for_known_visual_affordance_without_visual_key
 def test_cache_key_uses_visual_schema_version():
     """Visual cache keys should invalidate pre-provider placeholder entries."""
 
-    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v5:diagram:")
+    assert VisualAnswerService._cache_key("meta analysis", "diagram").startswith("visual_image:v6:diagram:")
+
+
+def test_cache_key_changes_when_visual_capability_changes(monkeypatch):
+    """Visual cache keys should auto-invalidate when model capability changes."""
+
+    original_key = VisualAnswerService._cache_key("meta analysis", "diagram")
+    monkeypatch.setattr(
+        "backend.services.visual_answer_service.settings.model_visual_understanding",
+        "new-vision-model",
+    )
+
+    changed_key = VisualAnswerService._cache_key("meta analysis", "diagram")
+
+    assert original_key.startswith("visual_image:v6:diagram:")
+    assert changed_key.startswith("visual_image:v6:diagram:")
+    assert changed_key != original_key
 
 
 def test_visual_brief_cache_key_uses_preflight_scope():
@@ -217,7 +248,7 @@ def test_visual_brief_cache_key_uses_preflight_scope():
         )
     )
 
-    assert key.startswith("visual_image:v5:preflight_map:")
+    assert key.startswith("visual_image:v6:preflight_map:")
     assert key != VisualAnswerService._cache_key(brief.search_query, "diagram")
     assert key != alternate_context_key
 
@@ -390,6 +421,60 @@ async def test_read_cache_rejects_stale_placeholder_image_block(monkeypatch, cap
     assert block is None
     assert redis.closed is True
     assert "visual.cache_rejected" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_read_cache_rejects_negative_entry_with_stale_capability(monkeypatch, caplog):
+    """Old negative cache payloads should not suppress refreshed visual retrieval."""
+
+    caplog.set_level("INFO")
+    redis = _FakeRedis(
+        json.dumps(
+            {
+                "status": "negative",
+                "image_block": None,
+                "capability_fingerprint": "stale-capability",
+                "retrieved_at": 1,
+            }
+        )
+    )
+    service = VisualAnswerService(redis_factory=lambda *args, **kwargs: redis)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
+
+    block = await service._read_cache("visual_image:v6:diagram:old", "conversation-1")
+
+    assert block is None
+    assert redis.closed is True
+    assert "reason=stale_negative_capability" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_write_negative_cache_records_reason_capability_and_short_ttl(monkeypatch):
+    """Negative visual cache writes should be bounded and deployment-aware."""
+
+    redis = _FakeRedis(None)
+    service = VisualAnswerService(redis_factory=lambda *args, **kwargs: redis)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
+
+    await service._write_cache(
+        "visual_image:v6:diagram:key",
+        {"status": "negative"},
+        _NEGATIVE_CACHE_TTL_SECONDS,
+        "conversation-1",
+        negative_reason="No Verified Image!",
+    )
+
+    payload = json.loads(redis.set_value)
+    assert redis.set_key == "visual_image:v6:diagram:key"
+    assert redis.set_ttl == _NEGATIVE_CACHE_TTL_SECONDS
+    assert redis.closed is True
+    assert payload["status"] == "negative"
+    assert payload["image_block"] is None
+    assert payload["negative_reason"] == "no_verified_image"
+    assert (
+        payload["capability_fingerprint"]
+        == VisualAnswerService._visual_cache_capability_fingerprint()
+    )
 
 
 @pytest.mark.asyncio

@@ -48,7 +48,10 @@ _IMAGE_META_PATTERN = re.compile(
 )
 _TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _NEGATIVE_CACHE_SENTINEL = {"status": "negative"}
-_VISUAL_CACHE_VERSION = "v5"
+_VISUAL_CACHE_VERSION = "v6"
+_VISUAL_CACHE_CAPABILITY_SCHEMA = "capability_v1"
+_NEGATIVE_CACHE_TTL_SECONDS = 21600
+_POSITIVE_CACHE_TTL_SECONDS = 2592000
 _PROVIDER_PRIORITY = {
     "perplexity_images": 0.3,
     "serpapi_images": 0.28,
@@ -505,10 +508,21 @@ class VisualAnswerService:
                 "visual.image_omitted conversation_id=%s reason=no_verified_image",
                 conversation_id,
             )
-            await self._write_cache(cache_key, _NEGATIVE_CACHE_SENTINEL, 604800, conversation_id)
+            await self._write_cache(
+                cache_key,
+                _NEGATIVE_CACHE_SENTINEL,
+                _NEGATIVE_CACHE_TTL_SECONDS,
+                conversation_id,
+                negative_reason="no_verified_image",
+            )
             return []
 
-        await self._write_cache(cache_key, image_blocks[0].to_frontend(), 2592000, conversation_id)
+        await self._write_cache(
+            cache_key,
+            image_blocks[0].to_frontend(),
+            _POSITIVE_CACHE_TTL_SECONDS,
+            conversation_id,
+        )
         return self._interleave_blocks(paragraphs, image_blocks)
 
     async def prepare_preflight_image_blocks(
@@ -677,7 +691,13 @@ class VisualAnswerService:
                 ),
             )
             if not image_blocks:
-                await self._write_cache(cache_key, _NEGATIVE_CACHE_SENTINEL, 604800, conversation_id)
+                await self._write_cache(
+                    cache_key,
+                    _NEGATIVE_CACHE_SENTINEL,
+                    _NEGATIVE_CACHE_TTL_SECONDS,
+                    conversation_id,
+                    negative_reason="no_verified_image",
+                )
                 logger.info(
                     "visual.slot_resolution_failed conversation_id=%s slot_id=%s reason=no_verified_image",
                     conversation_id,
@@ -685,7 +705,12 @@ class VisualAnswerService:
                 )
                 continue
             block = self._apply_slot_metadata(image_blocks[0], slot)
-            await self._write_cache(cache_key, block.to_frontend(), 2592000, conversation_id)
+            await self._write_cache(
+                cache_key,
+                block.to_frontend(),
+                _POSITIVE_CACHE_TTL_SECONDS,
+                conversation_id,
+            )
             resolved[slot.slot_id] = block
             logger.info(
                 "visual.slot_resolution_completed conversation_id=%s slot_id=%s source=provider",
@@ -2234,6 +2259,13 @@ class VisualAnswerService:
                 payload.get("status", "hit"),
             )
             if payload.get("status") == "negative":
+                cached_capability = str(payload.get("capability_fingerprint") or "")
+                if cached_capability != self._visual_cache_capability_fingerprint():
+                    logger.info(
+                        "visual.cache_rejected conversation_id=%s reason=stale_negative_capability",
+                        conversation_id,
+                    )
+                    return None
                 return _NEGATIVE_CACHE_SENTINEL
             image_block = payload.get("image_block")
             if not isinstance(image_block, dict):
@@ -2258,8 +2290,17 @@ class VisualAnswerService:
         image_block: dict[str, Any],
         ttl_seconds: int,
         conversation_id: str,
+        *,
+        negative_reason: str = "",
     ) -> None:
-        """Write a selected image block or negative sentinel to Redis."""
+        """Write a selected image block or negative sentinel to Redis.
+
+        Negative entries include a capability fingerprint so transient misses
+        from an older vision/provider configuration do not suppress image
+        retrieval after deployment changes. Logs only expose cache state and
+        safe correlation ids; user text, prompts, image URLs, and credentials
+        remain outside the logging boundary.
+        """
 
         redis_url = os.environ.get("REDIS_URL", "")
         if not redis_url:
@@ -2268,16 +2309,18 @@ class VisualAnswerService:
         try:
             redis_client = self._redis_factory(redis_url, decode_responses=True)
             status = "negative" if image_block == _NEGATIVE_CACHE_SENTINEL else "hit"
+            payload: dict[str, Any] = {
+                "status": status,
+                "image_block": None if status == "negative" else image_block,
+                "retrieved_at": int(time.time()),
+                "cache_version": _VISUAL_CACHE_VERSION,
+                "capability_fingerprint": self._visual_cache_capability_fingerprint(),
+            }
+            if status == "negative":
+                payload["negative_reason"] = self._safe_cache_reason(negative_reason)
             await redis_client.set(
                 cache_key,
-                json.dumps(
-                    {
-                        "status": status,
-                        "image_block": None if status == "negative" else image_block,
-                        "retrieved_at": int(time.time()),
-                    },
-                    ensure_ascii=False,
-                ),
+                json.dumps(payload, ensure_ascii=False),
                 ex=ttl_seconds,
             )
         except Exception:
@@ -2291,8 +2334,41 @@ class VisualAnswerService:
         """Return a privacy-preserving cache key for a visual slot."""
 
         normalized = " ".join(sorted(cls._tokens(query)))
-        digest = hashlib.sha256(f"{_VISUAL_CACHE_VERSION}:{purpose}:{normalized}".encode("utf-8")).hexdigest()
+        capability = cls._visual_cache_capability_fingerprint()
+        digest = hashlib.sha256(
+            f"{_VISUAL_CACHE_VERSION}:{purpose}:{normalized}:{capability}".encode("utf-8")
+        ).hexdigest()
         return f"visual_image:{_VISUAL_CACHE_VERSION}:{purpose}:{digest}"
+
+    @classmethod
+    def _visual_cache_capability_fingerprint(cls) -> str:
+        """Return a non-secret fingerprint for visual retrieval capabilities.
+
+        The fingerprint intentionally excludes raw queries, prompts, image URLs,
+        API keys, and provider credentials. It includes only coarse capability
+        switches and safety policy inputs that affect whether a previously empty
+        visual result should still be trusted.
+        """
+
+        payload = {
+            "schema": _VISUAL_CACHE_CAPABILITY_SCHEMA,
+            "cache_version": _VISUAL_CACHE_VERSION,
+            "enable_perplexity_visual_search": bool(settings.enable_perplexity_visual_search),
+            "enable_serpapi_visual_search": bool(settings.enable_serpapi_visual_search),
+            "enable_tavily_visual_search": bool(settings.enable_tavily_visual_search),
+            "enable_visual_preflight_open_provider_fallback": bool(
+                settings.enable_visual_preflight_open_provider_fallback
+            ),
+            "enable_visual_understanding": bool(settings.enable_visual_understanding),
+            "model_visual_understanding": str(settings.model_visual_understanding or ""),
+            "unstable_image_input_domains": sorted(_UNSTABLE_IMAGE_INPUT_DOMAINS),
+            "visual_grounding_max_candidates": int(settings.visual_grounding_max_candidates),
+            "visual_preflight_grounding_max_candidates": int(
+                settings.visual_preflight_grounding_max_candidates
+            ),
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
     @classmethod
     def _visual_brief_cache_key(cls, brief: VisualBrief) -> str:
@@ -2329,6 +2405,13 @@ class VisualAnswerService:
 
         normalized = re.sub(r"[^a-z0-9_]+", "_", str(value or "").lower()).strip("_")
         return normalized or "visual"
+
+    @staticmethod
+    def _safe_cache_reason(value: str) -> str:
+        """Normalize negative cache reasons to bounded operational labels."""
+
+        normalized = re.sub(r"[^a-z0-9_]+", "_", str(value or "").lower()).strip("_")
+        return (normalized or "unknown")[:64]
 
     @staticmethod
     def _is_safe_cached_image_block(payload: dict[str, Any]) -> bool:
