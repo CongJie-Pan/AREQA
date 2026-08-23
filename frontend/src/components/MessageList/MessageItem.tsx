@@ -153,6 +153,22 @@ const createMarkdownComponents = (
   enableMathCopy: boolean,
   onCopyMath: (latex: string) => void,
 ): Components => ({
+  table: ({ children, className, node, ...props }) => {
+    void node;
+    const tableClassName = ['areqa-markdown-table', className].filter(Boolean).join(' ');
+
+    return (
+      <div
+        aria-label="可水平捲動的資料表"
+        className="areqa-markdown-table-scroll"
+        tabIndex={0}
+      >
+        <table className={tableClassName} {...props}>
+          {children}
+        </table>
+      </div>
+    );
+  },
   // Sanitize links - only allow safe protocols
   a: ({ href, children, ...props }) => {
     if (href?.startsWith('#cite-')) {

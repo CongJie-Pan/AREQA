@@ -307,6 +307,25 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container.querySelector('annotation')).toHaveTextContent('\\theta');
   });
 
+  it('renders Markdown tables without the Streamdown card frame', () => {
+    const { container } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '| 名稱 | 數值 |\n| --- | --- |\n| theta | 42 |',
+        }}
+      />
+    );
+
+    const scrollRegion = screen.getByLabelText('可水平捲動的資料表');
+    expect(scrollRegion).toHaveClass('areqa-markdown-table-scroll');
+    expect(scrollRegion).toHaveAttribute('tabindex', '0');
+    expect(scrollRegion.querySelector('table')).toHaveClass('areqa-markdown-table');
+    expect(screen.getByRole('columnheader', { name: '名稱' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '42' })).toBeInTheDocument();
+    expect(container.querySelector('[data-streamdown="table-wrapper"]')).not.toBeInTheDocument();
+  });
+
   it('keeps Streamdown animated spans after live streaming ends', () => {
     const { container, rerender } = render(
       <MessageItem

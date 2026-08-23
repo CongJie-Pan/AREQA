@@ -471,29 +471,71 @@ content: css`
     }
   }
 
-  table {
-    border-collapse: collapse;
+  .areqa-markdown-table-scroll {
     width: 100%;
     margin: 16px 0;
+    overflow-x: auto;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    outline: none;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    scrollbar-width: thin;
+
+    &:focus-visible {
+      border-color: rgba(216, 162, 92, 0.55);
+      box-shadow: 0 0 0 2px rgba(216, 162, 92, 0.16);
+    }
+  }
+
+  table.areqa-markdown-table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    margin: 0;
     font-size: 14px;
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
-    overflow: hidden;
+    background: transparent;
   }
 
-  th, td {
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 10px 12px;
+  .areqa-markdown-table th,
+  .areqa-markdown-table td {
+    min-width: 120px;
+    padding: 10px 14px;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     text-align: left;
+    vertical-align: top;
   }
 
-  th {
-    background: rgba(255, 255, 255, 0.08);
+  .areqa-markdown-table th {
+    border-bottom-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.045);
+    color: rgba(255, 255, 255, 0.92);
     font-weight: 600;
+    white-space: nowrap;
   }
 
-  tr:nth-child(even) {
-    background: rgba(255, 255, 255, 0.03);
+  .areqa-markdown-table tbody tr {
+    transition: background-color 120ms ease;
+  }
+
+  .areqa-markdown-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .areqa-markdown-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  @media (max-width: 768px) {
+    table.areqa-markdown-table {
+      font-size: 13px;
+    }
+
+    .areqa-markdown-table th,
+    .areqa-markdown-table td {
+      min-width: 104px;
+      padding: 9px 10px;
+    }
   }
 `,
 
