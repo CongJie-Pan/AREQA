@@ -827,7 +827,7 @@ quoteBlockContent: css`
     width: min(100%, 520px);
     margin: 18px auto;
     overflow: hidden;
-    border-radius: 18px;
+    border-radius: 0;
     background: transparent;
     animation: ${verticalReveal} 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 
@@ -963,16 +963,6 @@ quoteBlockContent: css`
     align-items: center;
     color: rgba(255, 255, 255, 0.58);
     font-size: 12px;
-  `,
-
-  answerImageLicense: css`
-    display: inline-flex;
-    align-items: center;
-    min-height: 18px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.74);
   `,
 
   answerImageSource: css`

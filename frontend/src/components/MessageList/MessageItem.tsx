@@ -564,10 +564,8 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const safeImageUrl = isSafeUrl(imageUrl) ? imageUrl : '';
   const safeFullImageUrl = safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
-  const safeLicenseUrl = isSafeUrl(block.licenseUrl) ? block.licenseUrl : '';
   const displayCaption = block.attributionCaption || block.caption || block.topic;
   const sourceLabel = block.sourceDomain || 'source';
-  const licenseLabel = block.license || (block.provider === 'og_image' ? 'License unknown' : '');
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
 
@@ -626,7 +624,6 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           <span className={styles.answerImageCaptionText}>{displayCaption}</span>
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
-            {licenseLabel && <span className={styles.answerImageLicense}>{licenseLabel}</span>}
             <a
               href={safeSourceUrl}
               target="_blank"
@@ -662,18 +659,6 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
             {(block.attributionString || block.creator) && (
               <p>
                 <strong>Attribution:</strong> {block.attributionString || block.creator}
-              </p>
-            )}
-            {licenseLabel && (
-              <p>
-                <strong>License:</strong>{' '}
-                {safeLicenseUrl ? (
-                  <a href={safeLicenseUrl} target="_blank" rel="noopener noreferrer">
-                    {licenseLabel}
-                  </a>
-                ) : (
-                  licenseLabel
-                )}
               </p>
             )}
             <a
