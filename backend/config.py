@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     compeer_cooldown_override_seconds: int | None = 120
     compeer_proactive_mail_min_interval_seconds: int = 21600
     compeer_daily_proactive_limit: int = 2
+    enable_mailbox_feature: bool = False
     enable_compeer_auto_proactive: bool = False
     enable_mailbox_sending: bool = False
     enable_compeer_dev_controls: bool = False

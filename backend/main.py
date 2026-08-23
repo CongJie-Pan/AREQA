@@ -613,8 +613,35 @@ async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)
 
 from mailbox_store import get_mailbox_store
 
+def _ensure_mailbox_feature_enabled(current_user_id: str) -> None:
+    """Fail closed when the archived mailbox product surface is disabled.
+
+    Args:
+        current_user_id: Authenticated user identifier used only as safe
+            operational metadata for the structured log.
+
+    Raises:
+        HTTPException: 404 when the mailbox feature is archived for this
+            deployment. The 404 preserves the public API boundary by making the
+            disabled product surface behave as unavailable rather than merely
+            empty.
+
+    Side Effects:
+        Emits the stable `mailbox.feature_disabled` info log with user_id as the
+        only metadata. The log deliberately excludes mail content, prompts,
+        tokens, and mailbox identifiers.
+    """
+
+    from config import settings
+
+    if settings.enable_mailbox_feature:
+        return
+    logger.info("mailbox.feature_disabled user_id=%s", current_user_id)
+    raise HTTPException(status_code=404, detail="Mailbox feature is disabled")
+
 @app.get("/api/v1/mailbox")
 async def fetch_mailbox(current_user_id: str = Depends(get_current_user)):
+    _ensure_mailbox_feature_enabled(current_user_id)
     store = get_mailbox_store()
     return {
         "mails": await store.get_all_mails(current_user_id),
@@ -635,6 +662,8 @@ def _mailbox_reply_task_id(user_id: str, recipient: str, content: str, conversat
 @app.post("/api/v1/mailbox/send")
 async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depends(get_current_user)):
     from config import settings
+
+    _ensure_mailbox_feature_enabled(current_user_id)
 
     if not settings.enable_mailbox_sending:
         logger.info("mailbox.send_disabled user_id=%s", current_user_id)
@@ -660,6 +689,7 @@ async def send_mail_endpoint(req: SendMailRequest, current_user_id: str = Depend
 
 @app.post("/api/v1/mailbox/read/{mail_id}")
 async def read_mail_endpoint(mail_id: str, current_user_id: str = Depends(get_current_user)):
+    _ensure_mailbox_feature_enabled(current_user_id)
     store = get_mailbox_store()
     success = await store.mark_as_read(user_id=current_user_id, mail_id=mail_id)
     if not success:
