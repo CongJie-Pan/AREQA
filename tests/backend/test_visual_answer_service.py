@@ -141,6 +141,38 @@ def test_is_safe_candidate_rejects_domains_that_block_server_side_image_input():
     assert not VisualAnswerService._is_safe_candidate(candidate)
 
 
+def test_serpapi_candidate_requires_actual_image_url():
+    """SerpAPI source-page links should not be promoted into image URLs."""
+
+    candidate = VisualAnswerService._serpapi_image_candidate({
+        "link": "https://example.edu/mrna-vaccine-process",
+        "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:abc",
+        "title": "mRNA vaccine process diagram",
+        "source": "example.edu",
+    })
+
+    assert candidate is None
+
+
+def test_google_image_cdn_thumbnail_is_displayable_without_extension():
+    """Google Images thumbnails are browser-renderable even without file suffixes."""
+
+    candidate = ImageCandidate(
+        provider="serpapi_images",
+        image_url="https://cdn.example.org/mrna-vaccine-process-diagram.png",
+        thumbnail_url="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ",
+        source_url="https://example.edu/mrna-vaccine-process",
+        title="mRNA vaccine process diagram",
+        caption="mRNA vaccine process diagram",
+        license="unknown",
+        width=1200,
+        height=800,
+    )
+
+    assert VisualAnswerService._display_image_url(candidate) == candidate.thumbnail_url
+    assert VisualAnswerService._is_safe_candidate(candidate)
+
+
 def test_should_enrich_for_explain_text_policy():
     """Explain-text turns should allow visual enrichment in v1."""
 

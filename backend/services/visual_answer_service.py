@@ -65,6 +65,11 @@ _PLACEHOLDER_DOMAINS = {
     "example.org",
     "example.net",
 }
+_IMAGE_CDN_DOMAIN_SUFFIXES = (
+    "gstatic.com",
+    "googleusercontent.com",
+    "ggpht.com",
+)
 _PURPOSE_TERMS = {
     "diagram",
     "chart",
@@ -1744,7 +1749,7 @@ class VisualAnswerService:
 
         if not isinstance(item, dict):
             return None
-        image_url = str(item.get("original") or item.get("image") or item.get("link") or "").strip()
+        image_url = str(item.get("original") or item.get("image") or "").strip()
         thumbnail_url = str(item.get("thumbnail") or image_url).strip()
         source_url = str(item.get("link") or item.get("source_url") or image_url).strip()
         title = cls._clean_text(str(item.get("title") or item.get("source") or ""))
@@ -2221,6 +2226,7 @@ class VisualAnswerService:
         parsed = urlparse(str(url or ""))
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return False
+        domain = parsed.netloc.lower().removeprefix("www.")
         path = parsed.path.lower()
         unsupported_extensions = (".tif", ".tiff", ".pdf", ".djvu", ".jp2")
         supported_extensions = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg")
@@ -2228,7 +2234,9 @@ class VisualAnswerService:
             return False
         if path.endswith(supported_extensions):
             return True
-        return any(f"{extension}/" in path for extension in supported_extensions)
+        if any(f"{extension}/" in path for extension in supported_extensions):
+            return True
+        return any(domain == suffix or domain.endswith(f".{suffix}") for suffix in _IMAGE_CDN_DOMAIN_SUFFIXES)
 
     @staticmethod
     def _has_useful_dimensions(candidate: ImageCandidate) -> bool:
