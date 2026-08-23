@@ -86,14 +86,17 @@ def test_verified_visual_instruction_injects_inventory():
     assert "vision_summary" in system_prompt
     assert "movement arrows" in system_prompt
     assert "how_to_read" in system_prompt
+    assert "主回答素材的一部分" in system_prompt
+    assert "不是回答後的附件" in system_prompt
+    assert "必須把最相關的已驗證圖片整合進教學流程" in system_prompt
     assert "1 至 2 句" in system_prompt
     assert "下圖是一張" in system_prompt
     assert "你可以先看圖中的" in system_prompt
     assert "再依照" in system_prompt
     assert "理解 {這張圖如何幫助回答使用者問題}" in system_prompt
     assert "不要照抄英文欄位" in system_prompt
-    assert "緊接著輸出標記" in system_prompt
-    assert "無法寫出具體導讀" in system_prompt
+    assert "導圖段落後必須緊接著輸出標記" in system_prompt
+    assert "圖片後的文字必須接續引用或延伸圖片內容" in system_prompt
     assert "不得輸出 <AREQA_IMAGE_SLOT .../>" in system_prompt
     assert "https://upload.wikimedia.org" not in system_prompt
 

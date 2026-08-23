@@ -791,7 +791,15 @@ class OrchestrationService:
         messages: List[Dict[str, Any]],
         image_blocks: dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        """Add verified image inventory and marker rules to the answer prompt."""
+        """Add verified image inventory and integrated-answer marker rules.
+
+        The main answer model owns the semantic placement of verified images.
+        This instruction therefore treats image evidence as part of the answer
+        material instead of a post-response attachment. The stable internal
+        marker is stripped before public streaming and later converted into
+        structured answer blocks; the prompt must not expose raw image URLs or
+        ask the model to invent image metadata.
+        """
 
         instruction: str
         if not image_blocks:
@@ -818,22 +826,26 @@ class OrchestrationService:
                 }
                 for slot_id, block in image_blocks.items()
             ]
+            primary_slot_id = next(iter(image_blocks.keys()))
+            verified_marker = f'[[AREQA_VERIFIED_IMAGE id="{primary_slot_id}"]]'
             instruction = (
-                "【已驗證圖片清單】以下圖片已由系統搜尋與驗證，可在回答中自然引用。"
+                "【已驗證圖片清單】以下圖片已由系統搜尋、驗證並讀圖；"
+                "它是本回合主回答素材的一部分，不是回答後的附件。"
                 "你只能使用清單中的 id，不能自行編造圖片、URL 或來源。"
-                "若圖片能幫助理解，必須先寫 1 至 2 句完整的圖片導讀段落，"
-                "明確使用「下圖」、「圖中」或對應語言的圖片引用，"
-                "並至少引用 vision_summary、visible_elements 或 how_to_read 中一項可見特徵。"
-                "圖片導讀段落請優先使用這個自然教學結構："
+                "你必須把最相關的已驗證圖片整合進教學流程，"
+                "在最適合的位置先寫 1 至 2 句完整導圖文字，"
+                "明確使用「下圖」、「圖中」或對應語言的圖片引用。"
+                "導圖文字必須至少引用 vision_summary、visible_elements 或 how_to_read 中一項可見特徵，"
+                "並且導圖段落後必須緊接著輸出標記："
+                f"{verified_marker}。"
+                "圖片後的文字必須接續引用或延伸圖片內容，不能像圖片不存在一樣繼續純文字回答。"
+                "請優先使用這個自然教學結構："
                 "「下圖是一張 {topic 或 vision_summary 所描述的圖}，呈現 {與使用者問題最相關的核心過程或關係}。"
                 "你可以先看圖中的 {visible_elements 中 2 至 3 個具體元素}，"
                 "再依照 {how_to_read 中前 2 至 3 個讀圖步驟} 讀圖，"
                 "理解 {這張圖如何幫助回答使用者問題}。」"
                 "請用使用者回答語言重寫這段導讀，不要照抄英文欄位；"
-                "在該導讀段落後緊接著輸出標記："
-                '[[AREQA_VERIFIED_IMAGE id="img_1"]]。'
                 "不得把標記直接放在開場摘要、標題、清單或表格後。"
-                "若無法寫出具體導讀，請完全省略標記與圖片；"
                 "若 vision_summary 為空，才退回依據圖片 caption/source 做有限解釋；"
                 "不得輸出 <AREQA_IMAGE_SLOT .../> 或 [[AREQA_IMAGE_REQUEST ...]]。"
                 f"\n<verified_images>{json.dumps(inventory, ensure_ascii=False)}</verified_images>"
