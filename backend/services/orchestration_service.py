@@ -57,6 +57,16 @@ from services.visual_answer_service import VisualAnswerService
 
 logger = logging.getLogger(__name__)
 
+InterfaceLanguage = str
+
+
+def _localized_greeting_reply(interface_language: InterfaceLanguage) -> str:
+    if interface_language == "en":
+        return "Hello, I am here. You can tell me what you want to work on now."
+    if interface_language == "zh-CN":
+        return "你好，我在。你可以直接告诉我现在想处理什么。"
+    return "你好，我在。你可以直接告訴我現在想處理什麼。"
+
 
 def reorder_for_attention(results):
     """
@@ -200,6 +210,7 @@ class OrchestrationService:
                       max_tokens: int, temperature: float, top_p: float,
                       repetition_penalty: float, request: Request, user_id: str,
                       search_mode: Optional[str] = None,
+                      interface_language: InterfaceLanguage = "zh-TW",
                       attachments: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         """
         Execute the main conversational flow, yielding server-sent events (SSE) back to the client.
@@ -442,7 +453,7 @@ class OrchestrationService:
                 )
 
         if last_user_msg and not classify_user_message(last_user_msg).should_prompt:
-            greeting_reply = "你好，我在。你可以直接告訴我現在想處理什麼。"
+            greeting_reply = _localized_greeting_reply(interface_language)
             yield sse_adapter.encode_legacy(
                 f"data: {json.dumps({'choices': [{'delta': {'content': greeting_reply}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n",
                 run_context.run_id,
@@ -588,6 +599,7 @@ class OrchestrationService:
             trace=trace,
             turn_plan=turn_plan if turn_plan_enabled else None,
             response_policy=response_policy,
+            interface_language=interface_language,
         )
         trace.mark("prompt_assembly_finished")
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
@@ -1082,7 +1094,7 @@ class OrchestrationService:
             trace.mark("web_search_finished")
         yield "event: results_obj\n\n"
 
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW") -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -1159,6 +1171,7 @@ class OrchestrationService:
             explicit_recall_memory_cache_ttl_seconds=settings.explicit_recall_memory_cache_ttl_seconds,
             response_policy=response_policy,
             parts_context=parts_context,
+            interface_language=interface_language,
         )
         logger.info(
             "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s",

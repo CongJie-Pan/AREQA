@@ -838,7 +838,7 @@ quoteBlockContent: css`
 
   answerImageExplanation: css`
     margin: 12px 0 10px;
-    color: rgba(255, 255, 255, 0.86);
+    color: var(--areqa-message-text);
     font-size: 15px;
     line-height: 1.8;
     animation: ${verticalReveal} 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -886,7 +886,7 @@ quoteBlockContent: css`
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgba(255, 255, 255, 0.78);
+    color: var(--areqa-message-muted-text);
     font-size: 13px;
     line-height: 1.45;
     text-align: center;
@@ -937,7 +937,7 @@ quoteBlockContent: css`
     flex-direction: column;
     gap: 4px;
     padding: 8px 2px 0;
-    color: rgba(255, 255, 255, 0.72);
+    color: var(--areqa-message-muted-text);
     font-size: 12px;
     line-height: 1.5;
     opacity: 0;
@@ -951,7 +951,7 @@ quoteBlockContent: css`
   `,
 
   answerImageCaptionText: css`
-    color: rgba(255, 255, 255, 0.78);
+    color: var(--areqa-message-text);
     font-size: 13px;
     font-style: italic;
   `,
@@ -961,18 +961,8 @@ quoteBlockContent: css`
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
-    color: rgba(255, 255, 255, 0.58);
-    font-size: 12px;
-  `,
-
-  answerImageLicense: css`
-    display: inline-flex;
-    align-items: center;
-    min-height: 18px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background: var(--areqa-message-action-hover-background);
     color: var(--areqa-message-muted-text);
+    font-size: 12px;
   `,
 
   answerImageSource: css`
@@ -992,18 +982,18 @@ quoteBlockContent: css`
 
   answerImageLightbox: css`
     .ant-modal-content {
-      background: #111111;
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: var(--card);
+      border: 1px solid var(--border);
     }
 
     .ant-modal-header {
       background: transparent;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid var(--border);
     }
 
     .ant-modal-title,
     .ant-modal-close {
-      color: rgba(255, 255, 255, 0.88);
+      color: var(--card-foreground);
     }
   `,
 
@@ -1024,7 +1014,7 @@ quoteBlockContent: css`
   answerImageLightboxMeta: css`
     display: grid;
     gap: 8px;
-    color: rgba(255, 255, 255, 0.74);
+    color: var(--areqa-message-muted-text);
     font-size: 13px;
     line-height: 1.6;
 

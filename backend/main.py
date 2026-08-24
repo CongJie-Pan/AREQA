@@ -1053,6 +1053,7 @@ class ChatRequest(BaseModel):
     use_rag: bool = False
     use_web_search: bool = False
     search_mode: Literal["auto", "always", "never"] | None = None
+    interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
     force_think: bool = False
     temperature: float = 0.7
     top_p: float = 0.8
@@ -1094,6 +1095,7 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
             "use_rag": payload.get("use_rag", _parse_bool(form.get("use_rag"))),
             "use_web_search": payload.get("use_web_search", _parse_bool(form.get("use_web_search"))),
             "search_mode": payload.get("search_mode", form.get("search_mode") or None),
+            "interface_language": payload.get("interface_language", form.get("interface_language", "zh-TW")),
             "force_think": payload.get("force_think", _parse_bool(form.get("force_think"))),
             "temperature": payload.get("temperature", form.get("temperature", 0.7)),
             "top_p": payload.get("top_p", form.get("top_p", 0.8)),
@@ -1570,6 +1572,7 @@ async def stream_endpoint(
             request=request,
             user_id=effective_user_id,
             search_mode=chat_req.search_mode,
+            interface_language=chat_req.interface_language,
             attachments=[attachment.content_part for attachment in processed_attachments],
         )
 

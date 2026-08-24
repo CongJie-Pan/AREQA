@@ -32,6 +32,21 @@ from services.parts_context_service import PartsContext, format_parts_context
 logger = logging.getLogger(__name__)
 SnapshotLoader = Callable[..., Awaitable[str]]
 
+ANSWER_LANGUAGE_RULES = {
+    "zh-TW": "繁體中文",
+    "zh-CN": "簡體中文",
+    "en": "English",
+}
+
+
+def _answer_language_instruction(interface_language: str) -> str:
+    answer_language = ANSWER_LANGUAGE_RULES.get(interface_language, "繁體中文")
+    return (
+        f"\n\n【回答語言規則】除非使用者在最新訊息中明確要求使用其他語言，"
+        f"本回合正式回答必須使用{answer_language}。"
+        "圖片導讀、表格說明、清單標題與結尾建議都必須使用同一種回答語言。"
+    )
+
 
 @dataclass(frozen=True)
 class ConversationContext:
@@ -73,6 +88,7 @@ class ConversationContextService:
         explicit_recall_memory_cache_ttl_seconds: int | None = None,
         response_policy: ResponsePolicy | None = None,
         parts_context: PartsContext | None = None,
+        interface_language: str = "zh-TW",
     ) -> ConversationContext:
         """Build the final prompt from independently policy-checked sources.
 
@@ -141,7 +157,8 @@ class ConversationContextService:
             system_prompt = SYSTEM_PROMPT_FORCE_THINK if force_think else SYSTEM_PROMPT_NORMAL
             system_prompt += "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
 
-        system_prompt += "\n\n【工具使用規則】你必須先用繁體中文完整回答使用者的問題，再選擇性提出已授權的工具請求。嚴禁只呼叫工具而不輸出任何文字回應。"
+        system_prompt += _answer_language_instruction(interface_language)
+        system_prompt += "\n【工具使用規則】你必須先完整回答使用者的問題，再選擇性提出已授權的工具請求。嚴禁只呼叫工具而不輸出任何文字回應。"
         system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
         system_prompt += (
             "\n【使用者狀態規則】除非有獨立且已驗證的學習證據，否則將使用者的理解程度視為 unknown；"

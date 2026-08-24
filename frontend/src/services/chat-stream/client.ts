@@ -18,6 +18,16 @@ import type { SearchMode } from '@/store/chat/types';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+const LANGUAGE_STORAGE_KEY = 'areqa:interface-language';
+const SUPPORTED_INTERFACE_LANGUAGES = new Set(['zh-TW', 'zh-CN', 'en']);
+
+function readInterfaceLanguage(): 'zh-TW' | 'zh-CN' | 'en' {
+  if (typeof window === 'undefined') return 'zh-TW';
+  const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  return SUPPORTED_INTERFACE_LANGUAGES.has(storedLanguage ?? '')
+    ? (storedLanguage as 'zh-TW' | 'zh-CN' | 'en')
+    : 'zh-TW';
+}
 
 /**
  * Creates a streaming chat request to the local AI backend
@@ -101,6 +111,7 @@ export async function createChatStream(
       force_think: forceThink,
       use_web_search: searchMode === 'always',
       search_mode: searchMode,
+      interface_language: readInterfaceLanguage(),
     };
 
     const body = attachments.length > 0

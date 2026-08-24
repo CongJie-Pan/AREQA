@@ -229,17 +229,15 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
     expect(screen.getByRole('button', { name: /放大檢視圖片/ })).toBeInTheDocument();
     expect(screen.getByText('來源')).toHaveAttribute('href', 'https://example.com/article');
-    expect(screen.getByText('CC BY-SA 4.0')).toBeInTheDocument();
+    expect(screen.queryByText('CC BY-SA 4.0')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /放大檢視圖片/ }));
 
     expect(screen.getByText('View original source')).toHaveAttribute('href', 'https://example.com/article');
     expect(screen.getByText('Attribution:')).toBeInTheDocument();
     expect(screen.getByText(/Example Creator \/ CC BY-SA 4.0/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
-      'href',
-      'https://creativecommons.org/licenses/by-sa/4.0/',
-    );
+    expect(screen.queryByText('License:')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'CC BY-SA 4.0' })).not.toBeInTheDocument();
     expect(screen.getByText('第二段')).toBeInTheDocument();
     expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });
