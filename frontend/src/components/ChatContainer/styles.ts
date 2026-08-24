@@ -22,7 +22,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   sidebar: css`
     width: 280px;
-    flex-shrink: 0;
+    flex: 0 0 280px;
     transition: all 0.2s ${token.motionEaseOut};
     background: var(--areqa-sidebar-background);
     border-right: 1px solid var(--areqa-subtle-border);
@@ -45,6 +45,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
     @media (min-width: 769px) {
       width: 0;
+      flex-basis: 0;
       border-right: none;
     }
   `,
