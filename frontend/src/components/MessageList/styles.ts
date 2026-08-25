@@ -518,7 +518,25 @@ content: css`
     border-radius: 10px;
     background: var(--areqa-table-action-background, rgba(18, 17, 16, 0.94));
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity 140ms ease, transform 140ms ease;
+  }
+
+  .areqa-markdown-table-frame:hover .areqa-markdown-table-actions,
+  .areqa-markdown-table-frame:focus-within .areqa-markdown-table-actions {
     opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  @media (hover: none) {
+    .areqa-markdown-table-actions {
+      opacity: 1;
+      pointer-events: auto;
+      transform: none;
+    }
   }
 
   .areqa-markdown-table-action {
@@ -628,10 +646,9 @@ content: css`
   .areqa-markdown-table-modal-panel {
     width: min(1180px, calc(100vw - 100px));
     min-width: 0;
-    min-height: min(84vh, 900px);
     max-height: calc(100vh - 60px);
     padding: 26px;
-    overflow: hidden;
+    overflow: auto;
     border: 2px solid rgba(156, 163, 175, 0.42);
     border-radius: 18px;
     background: var(--areqa-table-modal-background, #141312);
@@ -711,7 +728,6 @@ content: css`
     .areqa-markdown-table-modal-panel {
       width: calc(100vw - 28px);
       min-width: 0;
-      min-height: calc(100vh - 28px);
       max-height: calc(100vh - 28px);
       padding: 18px;
       border-radius: 14px;
