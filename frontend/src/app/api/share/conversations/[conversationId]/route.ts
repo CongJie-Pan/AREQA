@@ -35,6 +35,8 @@ interface ShareConversationPayload {
   }>;
 }
 
+type ShareMessagePayload = NonNullable<ShareConversationPayload['messages']>[number];
+
 interface RouteContext {
   params: Promise<{ conversationId: string }>;
 }
@@ -64,6 +66,37 @@ function safeIsoDate(value: unknown): string {
 
 function normalizeJsonArray(value: unknown): unknown[] | null {
   return Array.isArray(value) ? value : null;
+}
+
+function buildFullMessageRow(message: ShareMessagePayload, conversationId: string, userId: string) {
+  return {
+    id: message.id,
+    user_id: userId,
+    conversation_id: conversationId,
+    role: message.role,
+    content: message.content,
+    attachments: normalizeJsonArray(message.attachments),
+    citations: normalizeJsonArray(message.citations),
+    search_results: normalizeJsonArray(message.searchResults),
+    sources: normalizeJsonArray(message.sources),
+    answer_blocks: normalizeJsonArray(message.answerBlocks),
+    suggestions: normalizeJsonArray(message.suggestions),
+    reasoning: message.reasoning && typeof message.reasoning === 'object' && !Array.isArray(message.reasoning)
+      ? message.reasoning
+      : null,
+    created_at: safeIsoDate(message.createdAt),
+  };
+}
+
+function buildMinimalMessageRow(message: ShareMessagePayload, conversationId: string, userId: string) {
+  return {
+    id: message.id,
+    user_id: userId,
+    conversation_id: conversationId,
+    role: message.role,
+    content: message.content,
+    created_at: safeIsoDate(message.createdAt),
+  };
 }
 
 /**
@@ -235,32 +268,34 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
     const { error: upsertMessagesError } = await supabase
       .from('messages')
-      .upsert(validMessages.map((message) => ({
-        id: message.id,
-        user_id: user.id,
-        conversation_id: conversationId,
-        role: message.role,
-        content: message.content,
-        attachments: normalizeJsonArray(message.attachments),
-        citations: normalizeJsonArray(message.citations),
-        search_results: normalizeJsonArray(message.searchResults),
-        sources: normalizeJsonArray(message.sources),
-        answer_blocks: normalizeJsonArray(message.answerBlocks),
-        suggestions: normalizeJsonArray(message.suggestions),
-        reasoning: message.reasoning && typeof message.reasoning === 'object' && !Array.isArray(message.reasoning)
-          ? message.reasoning
-          : null,
-        created_at: safeIsoDate(message.createdAt),
-      })));
+      .upsert(validMessages.map((message) => buildFullMessageRow(message, conversationId, user.id)));
 
     if (upsertMessagesError) {
-      logger.error('share.create_messages_upsert_failed', undefined, {
+      logger.warn('share.create_messages_upsert_full_failed', {
         shareDebugId,
         conversationId,
         messageCount: validMessages.length,
         supabaseError: summarizeSupabaseError(upsertMessagesError),
       });
-      return NextResponse.json({ error: 'Unable to sync messages before sharing.' }, { status: 500 });
+      logShareDebug('share.create.messages_minimal_upsert_started', {
+        shareDebugId,
+        conversationId,
+        validMessageCount: validMessages.length,
+      });
+
+      const { error: minimalUpsertMessagesError } = await supabase
+        .from('messages')
+        .upsert(validMessages.map((message) => buildMinimalMessageRow(message, conversationId, user.id)));
+
+      if (minimalUpsertMessagesError) {
+        logger.error('share.create_messages_upsert_failed', undefined, {
+          shareDebugId,
+          conversationId,
+          messageCount: validMessages.length,
+          supabaseError: summarizeSupabaseError(minimalUpsertMessagesError),
+        });
+        return NextResponse.json({ error: 'Unable to sync messages before sharing.' }, { status: 500 });
+      }
     }
     logShareDebug('share.create.messages_upsert_succeeded', {
       shareDebugId,

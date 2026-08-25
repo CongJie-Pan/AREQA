@@ -44,6 +44,15 @@ LANGUAGE_REQUEST_PATTERNS = (
     ("en", re.compile(r"(english|英文|英語|英语|in english)", re.IGNORECASE)),
 )
 
+SIMPLIFIED_CHINESE_HINTS = set(
+    "请释贝叶这为个学习体汉语数据问题后应对话时会么说认门见过与现"
+    "简体话级无论实线图历广义狭义"
+)
+TRADITIONAL_CHINESE_HINTS = set(
+    "請釋貝葉這為個學習體漢語數據問題後應對話時會麼說認門見過與現"
+    "繁體話級無論實線圖歷廣義狹義"
+)
+
 
 def _looks_predominantly_english(text: str) -> bool:
     """Return whether user-authored text is primarily English.
@@ -61,7 +70,27 @@ def _looks_predominantly_english(text: str) -> bool:
     """
     latin_count = len(re.findall(r"[A-Za-z]", text))
     cjk_count = len(re.findall(r"[\u3400-\u9fff]", text))
-    return latin_count >= 12 and latin_count >= max(cjk_count * 2, 1)
+    if cjk_count > 0:
+        return latin_count >= 12 and latin_count >= cjk_count * 2
+    return latin_count >= 3
+
+
+def _detect_query_language(text: str) -> str | None:
+    """Detect the latest query's primary supported answer language.
+
+    The UI language is a fallback only. Any user-authored Chinese or English
+    signal in the current query should choose the answer language for this turn.
+    """
+    if _looks_predominantly_english(text):
+        return "en"
+
+    han_chars = re.findall(r"[\u3400-\u9fff]", text)
+    if not han_chars:
+        return None
+
+    simplified_score = sum(1 for char in han_chars if char in SIMPLIFIED_CHINESE_HINTS)
+    traditional_score = sum(1 for char in han_chars if char in TRADITIONAL_CHINESE_HINTS)
+    return "zh-CN" if simplified_score > traditional_score else "zh-TW"
 
 
 def _explicit_language_request(text: str) -> str | None:
@@ -99,8 +128,9 @@ def resolve_answer_language(interface_language: str, latest_user_message: str) -
     explicit_language = _explicit_language_request(latest_user_message)
     if explicit_language:
         return ANSWER_LANGUAGE_RULES[explicit_language]
-    if _looks_predominantly_english(latest_user_message):
-        return ANSWER_LANGUAGE_RULES["en"]
+    query_language = _detect_query_language(latest_user_message)
+    if query_language:
+        return ANSWER_LANGUAGE_RULES[query_language]
     return ANSWER_LANGUAGE_RULES.get(interface_language, ANSWER_LANGUAGE_RULES["zh-TW"])
 
 

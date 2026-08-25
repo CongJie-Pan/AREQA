@@ -436,7 +436,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
       }
     } catch (error) {
       console.error('Failed to share conversation:', error);
-      antMessageApi.error(t('shareLinkFailed'));
+      const reason = error instanceof Error ? error.message : '';
+      antMessageApi.error(reason ? `${t('shareLinkFailed')} ${reason}` : t('shareLinkFailed'));
     } finally {
       setIsSharing(false);
     }

@@ -77,10 +77,12 @@ async def test_context_prompt_forbids_unsupported_learner_state_claims():
 @pytest.mark.parametrize(
     ("interface_language", "user_message", "expected_language"),
     [
-        ("en", "請解釋貝氏定理", "English"),
-        ("zh-CN", "請解釋貝氏定理", "簡體中文"),
+        ("en", "請解釋貝氏定理", "繁體中文"),
+        ("zh-CN", "請解釋貝氏定理", "繁體中文"),
         ("zh-TW", "請解釋貝氏定理", "繁體中文"),
         ("zh-TW", "Explain Bayes theorem with a simple example", "English"),
+        ("zh-TW", "What is AI?", "English"),
+        ("en", "请解释贝叶斯定理", "簡體中文"),
         ("en", "請用繁體中文解釋 Bayes theorem", "繁體中文"),
     ],
 )
