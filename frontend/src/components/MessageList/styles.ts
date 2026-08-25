@@ -97,7 +97,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     height: 100%;
     text-align: center;
     padding: 40px;
-    gap: 14px;
+    gap: 12px;
   `,
 
   emptyTitle: css`
@@ -116,28 +116,28 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   emptyLogo: css`
-    width: 160px;
+    width: 112px;
     height: auto;
     object-fit: contain;
 
     @media (max-width: 768px) {
-      width: 128px;
+      width: 96px;
     }
   `,
 
   emptySubtitle: css`
-    font-family: var(--font-geist-mono), "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-    max-width: min(720px, 92vw);
+    font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+    max-width: min(620px, 92vw);
     margin: 0;
     color: var(--areqa-message-muted-text);
-    font-size: 1.25rem;
+    font-size: 1rem;
     font-weight: 500;
-    letter-spacing: 0.02em;
+    letter-spacing: 0;
     line-height: 1.5;
     text-align: center;
 
     @media (max-width: 768px) {
-      font-size: 1rem;
+      font-size: 0.9rem;
     }
   `,
 

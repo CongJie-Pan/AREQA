@@ -262,8 +262,8 @@ export function ConversationList({
           <Image 
             src={sidebarLogoSrc} 
             alt="AREQA Logo" 
-            width={164} 
-            height={40}
+            width={150}
+            height={36}
             className={cx('areqa-conversation-logo', styles.logo)}
             draggable={false}
             priority

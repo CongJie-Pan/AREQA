@@ -167,8 +167,8 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
         <Image 
           src="/logo/areqa_icon_v4_A_text.png" 
           alt="AREQA Logo" 
-          width={160} 
-          height={160} 
+          width={112}
+          height={122}
           className={cx('areqa-message-empty-logo', styles.emptyLogo)}
           draggable={false}
           priority

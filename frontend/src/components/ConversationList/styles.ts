@@ -57,9 +57,10 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   logo: css`
-    width: min(164px, 100%);
+    width: 150px;
     height: auto;
-    max-height: 40px;
+    max-width: 100%;
+    max-height: 36px;
     object-fit: contain;
     flex-shrink: 0;
   `,
