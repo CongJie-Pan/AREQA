@@ -77,6 +77,11 @@ export type TranslationKey =
   | 'signup'
   | 'staySignedOut'
   | 'emptyStateTagline'
+  | 'textSelectionCopy'
+  | 'textSelectionAskQuote'
+  | 'textSelectionExplain'
+  | 'textSelectionExplainPrompt'
+  | 'quotedTextDefaultPrompt'
   | 'back'
   | 'askPlaceholder'
   | 'thinkingPlaceholder'
@@ -245,6 +250,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     signup: '註冊',
     staySignedOut: '維持登出狀態',
     emptyStateTagline: '嗨 ! 我是AREQA，你最好的學習夥伴',
+    textSelectionCopy: '複製',
+    textSelectionAskQuote: '問AREQA(引用)',
+    textSelectionExplain: '幫我解釋',
+    textSelectionExplainPrompt: '請幫我解釋這段文字：\n\n{text}',
+    quotedTextDefaultPrompt: '請回答這段引用內容。',
     back: '返回',
     askPlaceholder: '提問AREQA',
     thinkingPlaceholder: '正在努力思考...',
@@ -383,6 +393,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     signup: '注册',
     staySignedOut: '维持登出状态',
     emptyStateTagline: '嗨 ! 我是AREQA，你最好的学习伙伴',
+    textSelectionCopy: '复制',
+    textSelectionAskQuote: '问AREQA(引用)',
+    textSelectionExplain: '帮我解释',
+    textSelectionExplainPrompt: '请帮我解释这段文字：\n\n{text}',
+    quotedTextDefaultPrompt: '请回答这段引用内容。',
     back: '返回',
     askPlaceholder: '提问AREQA',
     thinkingPlaceholder: '正在努力思考...',
@@ -521,6 +536,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     signup: 'Sign up',
     staySignedOut: 'Stay signed out',
     emptyStateTagline: "Hi ! I'm AREQA. Your Best Learning Partner. What do you want to learn today ?",
+    textSelectionCopy: 'Copy',
+    textSelectionAskQuote: 'Ask AREQA (quote)',
+    textSelectionExplain: 'Explain',
+    textSelectionExplainPrompt: 'Please explain this passage:\n\n{text}',
+    quotedTextDefaultPrompt: 'Please answer this quoted passage.',
     back: 'Back',
     askPlaceholder: 'Ask AREQA',
     thinkingPlaceholder: 'Thinking...',

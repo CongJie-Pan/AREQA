@@ -348,7 +348,8 @@ export function ChatInput({
         .split('\n')
         .map(line => (line.startsWith('>') ? line : `> ${line}`))
         .join('\n');
-      finalMessage = `${formattedQuote}\n\n${trimmedValue}`;
+      const quotePrompt = trimmedValue || t('quotedTextDefaultPrompt');
+      finalMessage = `${formattedQuote}\n\n${quotePrompt}`;
     }
 
     try {

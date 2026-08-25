@@ -4,9 +4,17 @@ import React, { useMemo } from 'react';
 import { Copy, Quote, Sparkles } from 'lucide-react';
 import { App } from 'antd';
 import { useChatStore } from '@/store/chat';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { sendMessage } from '@/services/chat';
 import { useTextSelection } from '@/hooks/useTextSelection';
 import { useStyles } from './styles';
+
+function formatSelectedTextAsQuote(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
 
 /**
  * TextSelectionToolbar Component
@@ -15,18 +23,15 @@ import { useStyles } from './styles';
 export function TextSelectionToolbar() {
   const { styles, cx } = useStyles();
   const { message } = App.useApp();
+  const { t } = useUserPreferences();
   const { text, rect, clearSelection } = useTextSelection();
   const setQuotedText = useChatStore((state) => state.setQuotedText);
 
   const position = useMemo(() => {
     if (!rect) return null;
     
-    // Position above the selection
     const top = rect.top - 52;
-    // With labels, the toolbar is wider. Centering logic:
-    // rect.left + rect.width / 2 is the center of selection.
-    // We adjust based on estimated toolbar width (now around 280px)
-    const left = rect.left + rect.width / 2 - 140; 
+    const left = rect.left + rect.width / 2;
     
     return {
       top: Math.max(8, top),
@@ -37,10 +42,10 @@ export function TextSelectionToolbar() {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      message.success('已複製到剪貼簿');
+      message.success(t('copyMessageSuccess'));
       clearSelection();
     } catch {
-      message.error('複製失敗');
+      message.error(t('copyMessageFailed'));
     }
   };
 
@@ -51,7 +56,9 @@ export function TextSelectionToolbar() {
   };
 
   const handleExplain = async () => {
-    const prompt = `請幫我解釋這段文字：\n\n> ${text}`;
+    const prompt = t('textSelectionExplainPrompt', {
+      text: formatSelectedTextAsQuote(text),
+    });
     clearSelection();
     await sendMessage(prompt);
   };
@@ -67,23 +74,23 @@ export function TextSelectionToolbar() {
       }}
       onMouseDown={(e) => e.preventDefault()} // Prevent losing selection
     >
-      <button className={styles.button} onClick={handleCopy} aria-label="複製">
+      <button className={styles.button} onClick={handleCopy} aria-label={t('textSelectionCopy')}>
         <Copy size={14} />
-        <span className={styles.label}>複製</span>
+        <span className={styles.label}>{t('textSelectionCopy')}</span>
       </button>
       
       <div className={styles.divider} />
       
-      <button className={styles.button} onClick={handleQuote} aria-label="問AREQA(引用)">
+      <button className={styles.button} onClick={handleQuote} aria-label={t('textSelectionAskQuote')}>
         <Quote size={14} />
-        <span className={styles.label}>問AREQA(引用)</span>
+        <span className={styles.label}>{t('textSelectionAskQuote')}</span>
       </button>
 
       <div className={styles.divider} />
 
-      <button className={styles.button} onClick={handleExplain} aria-label="幫我解釋">
+      <button className={styles.button} onClick={handleExplain} aria-label={t('textSelectionExplain')}>
         <Sparkles size={14} />
-        <span className={styles.label}>幫我解釋</span>
+        <span className={styles.label}>{t('textSelectionExplain')}</span>
       </button>
     </div>
   );

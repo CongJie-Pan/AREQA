@@ -6,6 +6,7 @@ export const useStyles = createStyles(({ css }) => ({
     z-index: 1000;
     display: flex;
     align-items: center;
+    transform: translateX(-50%);
     background: #434343;
     border-radius: 8px;
     padding: 2px 6px;
@@ -16,8 +17,8 @@ export const useStyles = createStyles(({ css }) => ({
     animation: fadeIn 0.15s ease-out;
 
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
   `,
   button: css`
