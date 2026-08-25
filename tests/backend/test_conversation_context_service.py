@@ -75,10 +75,16 @@ async def test_context_prompt_forbids_unsupported_learner_state_claims():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("interface_language", "expected_language"),
-    [("en", "English"), ("zh-CN", "簡體中文"), ("zh-TW", "繁體中文")],
+    ("interface_language", "user_message", "expected_language"),
+    [
+        ("en", "請解釋貝氏定理", "English"),
+        ("zh-CN", "請解釋貝氏定理", "簡體中文"),
+        ("zh-TW", "請解釋貝氏定理", "繁體中文"),
+        ("zh-TW", "Explain Bayes theorem with a simple example", "English"),
+        ("en", "請用繁體中文解釋 Bayes theorem", "繁體中文"),
+    ],
 )
-async def test_context_prompt_uses_selected_interface_language(interface_language, expected_language):
+async def test_context_prompt_resolves_answer_language(interface_language, user_message, expected_language):
     memory_policy = AsyncMock()
     memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
     service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
@@ -86,12 +92,12 @@ async def test_context_prompt_uses_selected_interface_language(interface_languag
     result = await service.build_conversation_context(
         user_id="user-1",
         conversation_id="conversation-1",
-        messages=[{"role": "user", "content": "Explain Bayes theorem"}],
+        messages=[{"role": "user", "content": user_message}],
         use_rag=False,
         use_web_search=False,
         force_think=False,
         context_results_obj=None,
-        last_user_msg="Explain Bayes theorem",
+        last_user_msg=user_message,
         context_prompt="",
         client=None,
         snapshot_loader=AsyncMock(return_value=""),
@@ -102,7 +108,7 @@ async def test_context_prompt_uses_selected_interface_language(interface_languag
 
     system_prompt = result.messages[0]["content"]
     assert f"本回合正式回答必須使用{expected_language}" in system_prompt
-    assert "你必須先用繁體中文完整回答" not in system_prompt
+    assert "請一律使用繁體中文" not in system_prompt
 
 
 @pytest.mark.asyncio

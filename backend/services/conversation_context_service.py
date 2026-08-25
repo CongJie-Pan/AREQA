@@ -38,12 +38,77 @@ ANSWER_LANGUAGE_RULES = {
     "en": "English",
 }
 
+LANGUAGE_REQUEST_PATTERNS = (
+    ("zh-TW", re.compile(r"(繁體中文|繁中|traditional chinese|zh-tw)", re.IGNORECASE)),
+    ("zh-CN", re.compile(r"(簡體中文|简体中文|簡中|简中|simplified chinese|zh-cn)", re.IGNORECASE)),
+    ("en", re.compile(r"(english|英文|英語|英语|in english)", re.IGNORECASE)),
+)
 
-def _answer_language_instruction(interface_language: str) -> str:
-    answer_language = ANSWER_LANGUAGE_RULES.get(interface_language, "繁體中文")
+
+def _looks_predominantly_english(text: str) -> bool:
+    """Return whether user-authored text is primarily English.
+
+    Args:
+        text: Latest user message after application-level normalization.
+
+    Returns:
+        True when Latin letters dominate over CJK characters and there are
+        enough alphabetic characters to avoid classifying short symbols or URLs
+        as English.
+
+    Side effects:
+        None.
+    """
+    latin_count = len(re.findall(r"[A-Za-z]", text))
+    cjk_count = len(re.findall(r"[\u3400-\u9fff]", text))
+    return latin_count >= 12 and latin_count >= max(cjk_count * 2, 1)
+
+
+def _explicit_language_request(text: str) -> str | None:
+    """Detect explicit answer-language requests in the latest user message.
+
+    Args:
+        text: Latest user-authored message.
+
+    Returns:
+        A supported interface-language key when the user explicitly requests
+        one; otherwise None.
+
+    Side effects:
+        None.
+    """
+    for language, pattern in LANGUAGE_REQUEST_PATTERNS:
+        if pattern.search(text):
+            return language
+    return None
+
+
+def _resolve_answer_language(interface_language: str, latest_user_message: str) -> str:
+    """Resolve final answer language from explicit request, query language, and UI.
+
+    Args:
+        interface_language: Persisted UI language sent by the frontend.
+        latest_user_message: Current user-authored message.
+
+    Returns:
+        Human-readable language label for prompt instructions.
+
+    Side effects:
+        None.
+    """
+    explicit_language = _explicit_language_request(latest_user_message)
+    if explicit_language:
+        return ANSWER_LANGUAGE_RULES[explicit_language]
+    if _looks_predominantly_english(latest_user_message):
+        return ANSWER_LANGUAGE_RULES["en"]
+    return ANSWER_LANGUAGE_RULES.get(interface_language, ANSWER_LANGUAGE_RULES["zh-TW"])
+
+
+def _answer_language_instruction(interface_language: str, latest_user_message: str = "") -> str:
+    answer_language = _resolve_answer_language(interface_language, latest_user_message)
     return (
-        f"\n\n【回答語言規則】除非使用者在最新訊息中明確要求使用其他語言，"
-        f"本回合正式回答必須使用{answer_language}。"
+        f"\n\n【回答語言規則】本回合正式回答必須使用{answer_language}。"
+        "語言判斷優先序為：使用者最新訊息的明確語言要求 > 最新訊息主要語言 > 介面語言。"
         "圖片導讀、表格說明、清單標題與結尾建議都必須使用同一種回答語言。"
     )
 
@@ -157,7 +222,7 @@ class ConversationContextService:
             system_prompt = SYSTEM_PROMPT_FORCE_THINK if force_think else SYSTEM_PROMPT_NORMAL
             system_prompt += "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
 
-        system_prompt += _answer_language_instruction(interface_language)
+        system_prompt += _answer_language_instruction(interface_language, last_user_msg)
         system_prompt += "\n【工具使用規則】你必須先完整回答使用者的問題，再選擇性提出已授權的工具請求。嚴禁只呼叫工具而不輸出任何文字回應。"
         system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
         system_prompt += (
