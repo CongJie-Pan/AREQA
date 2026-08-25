@@ -6,7 +6,6 @@
  */
 
 import React, { memo, useCallback, useState } from 'react';
-import { createPortal } from 'react-dom';
 import ReactMarkdown, { Components } from 'react-markdown';
 import { Streamdown, type Components as StreamdownComponents } from 'streamdown';
 import { createMathPlugin } from '@streamdown/math';
@@ -286,40 +285,37 @@ function MarkdownTable({
     </div>
   ) : null;
 
-  const expandedTableModal = isExpanded && typeof document !== 'undefined'
-    ? createPortal(
-        <div
-          aria-label={labels.title}
-          aria-modal="true"
-          className="areqa-markdown-table-modal-backdrop"
-          role="dialog"
-          onMouseDown={() => setIsExpanded(false)}
-        >
-          <div
-            className="areqa-markdown-table-modal-panel"
-            onMouseDown={(event) => event.stopPropagation()}
+  const expandedTableModal = isExpanded ? (
+    <div
+      aria-label={labels.title}
+      aria-modal="true"
+      className="areqa-markdown-table-modal-backdrop"
+      role="dialog"
+      onMouseDown={() => setIsExpanded(false)}
+    >
+      <div
+        className="areqa-markdown-table-modal-panel"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="areqa-markdown-table-modal-header">
+          <h2>{labels.title}</h2>
+          <button
+            aria-label={labels.close}
+            className="areqa-markdown-table-modal-close"
+            type="button"
+            onClick={() => setIsExpanded(false)}
           >
-            <div className="areqa-markdown-table-modal-header">
-              <h2>{labels.title}</h2>
-              <button
-                aria-label={labels.close}
-                className="areqa-markdown-table-modal-close"
-                type="button"
-                onClick={() => setIsExpanded(false)}
-              >
-                <X size={24} aria-hidden="true" strokeWidth={1.8} />
-              </button>
-            </div>
-            <div className="areqa-markdown-table-modal-body" tabIndex={0}>
-              <table className={tableClassName} {...props}>
-                {children}
-              </table>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )
-    : null;
+            <X size={24} aria-hidden="true" strokeWidth={1.8} />
+          </button>
+        </div>
+        <div className="areqa-markdown-table-modal-body" tabIndex={0}>
+          <table className={tableClassName} {...props}>
+            {children}
+          </table>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <>

@@ -362,7 +362,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     fireEvent.click(expandButton);
     const dialog = screen.getByRole('dialog', { name: '表格' });
     expect(dialog).toBeInTheDocument();
-    expect(dialog.parentElement).toBe(document.body);
+    expect(container.querySelector('.areqa-markdown-table-modal-backdrop')).toBe(dialog);
     expect(document.body.style.overflow).toBe('hidden');
     expect(screen.getByRole('heading', { name: '表格' })).toBeInTheDocument();
 
