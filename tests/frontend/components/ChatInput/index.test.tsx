@@ -12,9 +12,19 @@ vi.mock('@/store/chat', () => ({
 describe('ChatInput', () => {
   const mockOnSend = vi.fn();
   const mockSetQuotedText = vi.fn();
+  const createObjectUrlMock = vi.fn((file: File) => `blob:${file.name}`);
+  const revokeObjectUrlMock = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrlMock,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrlMock,
+    });
     
     // Default store mock
     (useChatStore as any).mockImplementation((selector: any) => {
@@ -128,6 +138,64 @@ describe('ChatInput', () => {
     expect(mockOnSend).toHaveBeenCalledWith('', [attachment]);
   });
 
+  it('should attach pasted images and send them with preview metadata', async () => {
+    const pastedImage = new File(['image-data'], 'clipboard.png', { type: 'image/png' });
+    render(<ChatInput onSend={mockOnSend} />);
+    const input = screen.getByLabelText('訊息輸入框');
+
+    const pasteEvent = createEvent.paste(input);
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: {
+        items: [
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => pastedImage,
+          },
+        ],
+      },
+    });
+    fireEvent(input, pasteEvent);
+
+    expect(await screen.findByAltText('圖片附件預覽')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/發送訊息/i));
+
+    await waitFor(() => {
+      expect(mockOnSend).toHaveBeenCalledWith(
+        '',
+        [expect.objectContaining({
+          name: expect.stringMatching(/^pasted-image-.*\.png$/),
+          type: 'image/png',
+        })],
+      );
+    });
+  });
+
+  it('should attach files dropped anywhere in the window', async () => {
+    const droppedFile = new File(['notes'], 'dropped-notes.txt', { type: 'text/plain' });
+    render(<ChatInput onSend={mockOnSend} />);
+
+    const dragEnterEvent = new Event('dragenter', { bubbles: true, cancelable: true });
+    Object.defineProperty(dragEnterEvent, 'dataTransfer', {
+      value: { types: ['Files'], files: [droppedFile], dropEffect: 'copy' },
+    });
+    fireEvent(window, dragEnterEvent);
+    expect(screen.getByText('放開即可附加檔案')).toBeInTheDocument();
+
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: { types: ['Files'], files: [droppedFile], dropEffect: 'copy' },
+    });
+    fireEvent(window, dropEvent);
+
+    await waitFor(() => {
+      expect(screen.queryByText('放開即可附加檔案')).not.toBeInTheDocument();
+      expect(screen.getByTitle('dropped-notes.txt')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByLabelText(/發送訊息/i));
+    expect(mockOnSend).toHaveBeenCalledWith('', [droppedFile]);
+  });
+
   it('should remove a pending attachment before sending', () => {
     const attachment = new File(['notes'], 'notes.txt', { type: 'text/plain' });
     render(<ChatInput onSend={mockOnSend} />);
@@ -137,6 +205,19 @@ describe('ChatInput', () => {
 
     expect(screen.queryByLabelText('待送附件')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/發送訊息/i)).toBeDisabled();
+  });
+
+  it('should revoke image preview URLs when image attachments are removed', async () => {
+    const attachment = new File(['image'], 'photo.png', { type: 'image/png' });
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
+    expect(await screen.findByAltText('圖片附件預覽')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('刪除 photo.png'));
+
+    await waitFor(() => {
+      expect(revokeObjectUrlMock).toHaveBeenCalledWith('blob:photo.png');
+    });
   });
 
   it('should preserve attachments when sending fails', async () => {

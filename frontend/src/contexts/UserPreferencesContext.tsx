@@ -86,6 +86,9 @@ export type TranslationKey =
   | 'emptyAttachment'
   | 'attachmentTooLarge'
   | 'attachmentsTooLarge'
+  | 'dropFilesTitle'
+  | 'dropFilesSubtitle'
+  | 'attachmentImagePreview'
   | 'cancelQuote'
   | 'pendingAttachments'
   | 'messageInputRow'
@@ -250,6 +253,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     emptyAttachment: '不接受空白附件。',
     attachmentTooLarge: '單一附件不得超過 5 MB。',
     attachmentsTooLarge: '附件總大小不得超過 20 MB。',
+    dropFilesTitle: '放開即可附加檔案',
+    dropFilesSubtitle: '支援圖片、PDF、TXT 與 Markdown',
+    attachmentImagePreview: '圖片附件預覽',
     cancelQuote: '取消引用',
     pendingAttachments: '待送附件',
     messageInputRow: '訊息輸入列',
@@ -384,6 +390,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     emptyAttachment: '不接受空白附件。',
     attachmentTooLarge: '单一附件不得超过 5 MB。',
     attachmentsTooLarge: '附件总大小不得超过 20 MB。',
+    dropFilesTitle: '放开即可附加文件',
+    dropFilesSubtitle: '支持图片、PDF、TXT 与 Markdown',
+    attachmentImagePreview: '图片附件预览',
     cancelQuote: '取消引用',
     pendingAttachments: '待送附件',
     messageInputRow: '讯息输入列',
@@ -518,6 +527,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     emptyAttachment: 'Empty attachments are not accepted.',
     attachmentTooLarge: 'Each attachment must be 5 MB or smaller.',
     attachmentsTooLarge: 'Total attachment size must be 20 MB or smaller.',
+    dropFilesTitle: 'Drop to attach files',
+    dropFilesSubtitle: 'Images, PDF, TXT, and Markdown are supported',
+    attachmentImagePreview: 'Image attachment preview',
     cancelQuote: 'Cancel quote',
     pendingAttachments: 'Pending attachments',
     messageInputRow: 'Message input row',

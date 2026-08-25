@@ -190,11 +190,24 @@ export const useStyles = createStyles(({ css, token }) => ({
     color: var(--foreground);
     font-size: 13px;
 
-    span {
+    > span {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      gap: 1px;
+    }
+
+    > span > span {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       max-width: 180px;
+    }
+
+    small {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      line-height: 1.2;
     }
 
     button {
@@ -207,6 +220,60 @@ export const useStyles = createStyles(({ css, token }) => ({
       color: inherit;
       cursor: pointer;
     }
+  `,
+
+  attachmentThumbnail: css`
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.08);
+  `,
+
+  attachmentFileIcon: css`
+    flex: 0 0 auto;
+    color: #d8a25c;
+  `,
+
+  dropOverlay: css`
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(19, 15, 24, 0.72);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+  `,
+
+  dropOverlayPanel: css`
+    display: flex;
+    width: min(420px, 100%);
+    min-height: 160px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px dashed rgba(216, 162, 92, 0.75);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    color: var(--foreground);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+    text-align: center;
+  `,
+
+  dropOverlayTitle: css`
+    color: var(--foreground);
+    font-size: 18px;
+    font-weight: 700;
+  `,
+
+  dropOverlaySubtitle: css`
+    color: var(--muted-foreground);
+    font-size: 13px;
   `,
 
   // Bottom row: left-side mode pills + right-side send button

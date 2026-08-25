@@ -576,11 +576,33 @@ body {
   font-size: 13px;
 }
 
-.areqa-chat-input-attachment-chip span {
+.areqa-chat-input-attachment-chip > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.areqa-chat-input-attachment-chip > span > span {
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.areqa-chat-input-attachment-chip small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.areqa-chat-input-attachment-chip img {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  object-fit: cover;
 }
 
 .areqa-chat-input-math-preview {
