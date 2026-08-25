@@ -182,5 +182,28 @@ describe('Conversation Store', () => {
         title: 'mRNA疫苗運作原理',
       });
     });
+
+    it('should persist concise English titles up to the backend English limit', async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(
+            'data: {"content": "Bayes Theorem Basics"}\n\n'
+          ));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      });
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true, body: stream } as any);
+
+      await useConversationStore.getState().generateTitle(
+        'conv-english-title',
+        [{ role: 'user', content: 'Explain Bayes theorem' }]
+      );
+
+      expect(databaseService.conversation.update).toHaveBeenCalledWith('conv-english-title', {
+        title: 'Bayes Theorem Basics',
+      });
+    });
   });
 });

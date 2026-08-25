@@ -22,6 +22,7 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 const PINNED_CONVERSATION_IDS_KEY = 'areqa:pinned-conversation-ids';
 const LONG_PRESS_MENU_MS = 520;
+const DEFAULT_CONVERSATION_TITLES = new Set(['新對話', '新对话']);
 
 export interface ConversationListProps {
   /** Callback when conversation is selected */
@@ -310,9 +311,10 @@ export function ConversationList({
               <div className={cx('areqa-conversation-group-title', styles.groupTitle)}>{group}</div>
               {items.map((conv) => {
                 const isPinned = pinnedIds.includes(conv.id);
-                const displayTitle = streamingTitles[conv.id] !== undefined
+                const isGeneratingTitle = streamingTitles[conv.id] !== undefined;
+                const displayTitle = isGeneratingTitle
                   ? streamingTitles[conv.id]
-                  : conv.title || t('newChat');
+                  : (DEFAULT_CONVERSATION_TITLES.has(conv.title) ? t('newChat') : conv.title || t('newChat'));
                 const menuItems: MenuProps['items'] = [
                   {
                     key: 'rename',
@@ -369,11 +371,12 @@ export function ConversationList({
                       <MessageSquare size={16} className={cx('areqa-conversation-item-icon', styles.itemIcon)} />
                       <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
                         <span className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}>
-                          {streamingTitles[conv.id] !== undefined ? (
-                            <>
-                              {displayTitle}
-                              <span className={styles.cursor} />
-                            </>
+                          {isGeneratingTitle ? (
+                            <span
+                              className={styles.titleSkeleton}
+                              aria-label={t('newChat')}
+                              role="status"
+                            />
                           ) : (
                             displayTitle
                           )}

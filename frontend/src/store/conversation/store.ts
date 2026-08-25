@@ -10,13 +10,23 @@ import type { Conversation } from '@/database/schema';
 import type { ConversationStore } from './types';
 
 const GENERATED_TITLE_MAX_LENGTH = 18;
+const GENERATED_ENGLISH_TITLE_MAX_LENGTH = 48;
+
+function isEnglishLikeTitle(title: string): boolean {
+  const latinCount = (title.match(/[A-Za-z]/g) || []).length;
+  const cjkCount = (title.match(/[\u3400-\u9fff]/g) || []).length;
+  return latinCount >= 4 && latinCount >= Math.max(cjkCount * 2, 1);
+}
 
 const isValidGeneratedTitle = (title: string): boolean => {
   const normalized = title.trim();
+  const maxLength = isEnglishLikeTitle(normalized)
+    ? GENERATED_ENGLISH_TITLE_MAX_LENGTH
+    : GENERATED_TITLE_MAX_LENGTH;
   return (
     normalized.length > 0 &&
-    Array.from(normalized).length <= GENERATED_TITLE_MAX_LENGTH &&
-    !/[\n\r#*`]|(?:對話)?標題\s*[:：]|請根據|上述對話|對話內容/.test(normalized)
+    Array.from(normalized).length <= maxLength &&
+    !/[\n\r#*`]|(?:對話)?標題\s*[:：]|title\s*[:：]|請根據|上述對話|對話內容|conversation content|generate a title/i.test(normalized)
   );
 };
 

@@ -15,6 +15,15 @@ const cursorBlink = keyframes`
   }
 `;
 
+const titleSkeletonShimmer = keyframes`
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+`;
+
 export const useStyles = createStyles(({ css }) => ({
   container: css`
     display: flex;
@@ -219,6 +228,43 @@ export const useStyles = createStyles(({ css }) => ({
     margin-left: 2px;
     vertical-align: middle;
     animation: ${cursorBlink} 1s step-end infinite;
+  `,
+
+  titleSkeleton: css`
+    display: block;
+    width: min(72%, 132px);
+    height: 16px;
+    border-radius: 4px;
+    background:
+      linear-gradient(
+        100deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.18) 42%,
+        rgba(255, 255, 255, 0.42) 50%,
+        rgba(255, 255, 255, 0.18) 58%,
+        transparent 100%
+      ),
+      var(--areqa-account-hover);
+    background-size: 220% 100%, 100% 100%;
+    animation: ${titleSkeletonShimmer} 1.2s ease-in-out infinite;
+
+    html[data-interface-theme='light'] & {
+      background:
+        linear-gradient(
+          100deg,
+          transparent 0%,
+          rgba(17, 24, 39, 0.06) 42%,
+          rgba(17, 24, 39, 0.16) 50%,
+          rgba(17, 24, 39, 0.06) 58%,
+          transparent 100%
+        ),
+        var(--areqa-account-hover);
+      background-size: 220% 100%, 100% 100%;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
   `,
 
   deleteBtn: css`
