@@ -116,33 +116,27 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   emptyLogo: css`
-    width: 260px;
+    width: 160px;
     height: auto;
     object-fit: contain;
 
     @media (max-width: 768px) {
-      width: 180px;
+      width: 128px;
     }
   `,
 
   emptySubtitle: css`
-    font-family: "Times New Roman", Times, serif;
-    margin-top: -18px;
+    max-width: min(720px, 92vw);
+    margin: 0;
     color: var(--areqa-message-muted-text);
     text-align: center;
-    font-size: 1.1rem;
-    letter-spacing: 0.5px;
-
-    span {
-      font-weight: bold;
-      font-size: 1.2em;
-      color: var(--foreground);
-    }
+    font-size: 1.25rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.5;
 
     @media (max-width: 768px) {
-      font-size: 0.9rem;
-      margin-top: -12px;
-      padding: 0 16px;
+      font-size: 1rem;
     }
   `,
 

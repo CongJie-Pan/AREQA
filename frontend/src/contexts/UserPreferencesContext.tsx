@@ -76,6 +76,7 @@ export type TranslationKey =
   | 'login'
   | 'signup'
   | 'staySignedOut'
+  | 'emptyStateTagline'
   | 'back'
   | 'askPlaceholder'
   | 'thinkingPlaceholder'
@@ -243,6 +244,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     login: '登入',
     signup: '註冊',
     staySignedOut: '維持登出狀態',
+    emptyStateTagline: '嗨 ! 我是AREQA，你最好的學習夥伴',
     back: '返回',
     askPlaceholder: '提問AREQA',
     thinkingPlaceholder: '正在努力思考...',
@@ -380,6 +382,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     login: '登入',
     signup: '注册',
     staySignedOut: '维持登出状态',
+    emptyStateTagline: '嗨 ! 我是AREQA，你最好的学习伙伴',
     back: '返回',
     askPlaceholder: '提问AREQA',
     thinkingPlaceholder: '正在努力思考...',
@@ -517,6 +520,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     login: 'Log in',
     signup: 'Sign up',
     staySignedOut: 'Stay signed out',
+    emptyStateTagline: "Hi ! I'm AREQA. Your Best Learning Partner. What do you want to learn today ?",
     back: 'Back',
     askPlaceholder: 'Ask AREQA',
     thinkingPlaceholder: 'Thinking...',

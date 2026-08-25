@@ -10,6 +10,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { ArrowDown } from 'lucide-react';
 import { useChatStore, chatSelectors } from '@/store/chat';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { MessageItem } from './MessageItem';
 import { useStyles } from './styles';
 import { databaseService } from '@/services/database';
@@ -34,6 +35,7 @@ export interface MessageListProps {
  */
 export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestion }: MessageListProps) {
   const { styles, cx } = useStyles();
+  const { t } = useUserPreferences();
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const [showScrollButton, setShowScrollButton] = React.useState(false);
@@ -163,18 +165,15 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
     return (
       <div className={cx('areqa-message-list', 'areqa-message-list-empty', styles.container, styles.empty, className)}>
         <Image 
-          src="/logo/areqa_text_logo_v2.png" 
+          src="/icon/areqa_icon_v4.svg" 
           alt="AREQA Logo" 
-          width={260} 
-          height={87} 
+          width={160} 
+          height={160} 
           className={cx('areqa-message-empty-logo', styles.emptyLogo)}
           priority
         />
         <div className={cx('areqa-message-empty-subtitle', styles.emptySubtitle)}>
-          <span>A</span>daptive{' '}
-          <span>R</span>AG-based{' '}
-          <span>E</span>ducational{' '}
-          <span>QA</span> System
+          {t('emptyStateTagline')}
         </div>
       </div>
     );

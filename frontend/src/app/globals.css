@@ -425,24 +425,20 @@ html[data-interface-theme='light'] .areqa-conversation-logo-light {
 }
 
 .areqa-message-empty-logo {
-  width: 260px;
+  width: 160px;
   height: auto;
   object-fit: contain;
 }
 
 .areqa-message-empty-subtitle {
-  margin-top: -18px;
+  max-width: min(720px, 92vw);
+  margin: 0;
   color: var(--areqa-message-muted-text);
-  font-family: "Times New Roman", Times, serif;
-  font-size: 1.1rem;
-  letter-spacing: 0.5px;
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.5;
   text-align: center;
-}
-
-.areqa-message-empty-subtitle span {
-  color: var(--foreground);
-  font-size: 1.2em;
-  font-weight: 700;
 }
 
 .areqa-chat-input-shell {
