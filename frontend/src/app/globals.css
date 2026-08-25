@@ -244,8 +244,9 @@ body {
 }
 
 .areqa-conversation-logo {
-  width: auto;
+  width: min(164px, 100%);
   height: auto;
+  max-height: 40px;
   flex-shrink: 0;
   object-fit: contain;
 }

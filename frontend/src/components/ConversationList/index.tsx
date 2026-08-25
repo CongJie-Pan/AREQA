@@ -240,9 +240,9 @@ export function ConversationList({
       <div className={cx('areqa-conversation-logo-row', styles.logoContainer)}>
         <div className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}>
           <Image 
-            src="/logo/areqa_icon_v3.png" 
+            src="/logo/AREQA_logo_v4_text.png" 
             alt="AREQA Logo" 
-            width={40} 
+            width={164} 
             height={40}
             className={cx('areqa-conversation-logo', styles.logo)}
             priority
