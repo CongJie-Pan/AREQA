@@ -64,22 +64,6 @@ export const useStyles = createStyles(({ css }) => ({
     flex-shrink: 0;
   `,
 
-  logoDark: css`
-    display: block;
-
-    html[data-interface-theme='light'] & {
-      display: none;
-    }
-  `,
-
-  logoLight: css`
-    display: none;
-
-    html[data-interface-theme='light'] & {
-      display: block;
-    }
-  `,
-
   toggleButton: css`
     display: flex;
     align-items: center;

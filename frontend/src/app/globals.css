@@ -251,18 +251,6 @@ body {
   object-fit: contain;
 }
 
-.areqa-conversation-logo-light {
-  display: none;
-}
-
-html[data-interface-theme='light'] .areqa-conversation-logo-dark {
-  display: none;
-}
-
-html[data-interface-theme='light'] .areqa-conversation-logo-light {
-  display: block;
-}
-
 .areqa-conversation-toggle-button,
 .areqa-conversation-new-button,
 .areqa-conversation-panel-button,
@@ -431,12 +419,13 @@ html[data-interface-theme='light'] .areqa-conversation-logo-light {
 }
 
 .areqa-message-empty-subtitle {
+  font-family: var(--font-geist-mono), "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   max-width: min(720px, 92vw);
   margin: 0;
   color: var(--areqa-message-muted-text);
   font-size: 1.25rem;
   font-weight: 500;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
   line-height: 1.5;
   text-align: center;
 }

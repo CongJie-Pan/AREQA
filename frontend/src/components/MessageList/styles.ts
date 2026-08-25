@@ -126,14 +126,15 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   emptySubtitle: css`
+    font-family: var(--font-geist-mono), "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     max-width: min(720px, 92vw);
     margin: 0;
     color: var(--areqa-message-muted-text);
-    text-align: center;
     font-size: 1.25rem;
     font-weight: 500;
-    letter-spacing: 0;
+    letter-spacing: 0.02em;
     line-height: 1.5;
+    text-align: center;
 
     @media (max-width: 768px) {
       font-size: 1rem;

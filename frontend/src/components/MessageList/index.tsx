@@ -165,7 +165,7 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
     return (
       <div className={cx('areqa-message-list', 'areqa-message-list-empty', styles.container, styles.empty, className)}>
         <Image 
-          src="/icon/areqa_icon_v4.svg" 
+          src="/logo/areqa_icon_v4_A_text.png" 
           alt="AREQA Logo" 
           width={160} 
           height={160} 

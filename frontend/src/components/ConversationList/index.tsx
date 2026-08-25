@@ -52,7 +52,7 @@ export function ConversationList({
 }: ConversationListProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
-  const { t } = useUserPreferences();
+  const { resolvedTheme, t } = useUserPreferences();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -67,6 +67,10 @@ export function ConversationList({
   const streamingTitles = useConversationStore((state) => state.streamingTitles);
   
 
+
+  const sidebarLogoSrc = resolvedTheme === 'light'
+    ? '/logo/AREQA_logo_v4_black_word.png'
+    : '/logo/AREQA_logo_v4_text.png';
 
   const { unreadCount, fetchMails } = useMailboxStore();
   const mailboxEnabled = useFeatureStore((state) => state.mailbox);
@@ -241,19 +245,11 @@ export function ConversationList({
       <div className={cx('areqa-conversation-logo-row', styles.logoContainer)}>
         <div className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}>
           <Image 
-            src="/logo/AREQA_logo_v4_text.png" 
+            src={sidebarLogoSrc} 
             alt="AREQA Logo" 
             width={164} 
             height={40}
-            className={cx('areqa-conversation-logo', 'areqa-conversation-logo-dark', styles.logo, styles.logoDark)}
-            priority
-          />
-          <Image
-            src="/logo/AREQA_logo_v4_black_word.png"
-            alt="AREQA Logo"
-            width={164}
-            height={40}
-            className={cx('areqa-conversation-logo', 'areqa-conversation-logo-light', styles.logo, styles.logoLight)}
+            className={cx('areqa-conversation-logo', styles.logo)}
             priority
           />
         </div>
