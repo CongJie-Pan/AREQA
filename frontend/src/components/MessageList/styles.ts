@@ -632,27 +632,30 @@ content: css`
   .areqa-markdown-table-modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 1200;
+    z-index: 2200;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    padding: 30px 50px;
-    background: rgba(0, 0, 0, 0.56);
-    -webkit-backdrop-filter: blur(12px) saturate(115%);
-    backdrop-filter: blur(12px) saturate(115%);
+    padding: clamp(18px, 6.8vh, 64px) clamp(18px, 7.4vw, 144px);
+    background: rgba(0, 0, 0, 0.66);
+    -webkit-backdrop-filter: blur(14px) saturate(108%);
+    backdrop-filter: blur(14px) saturate(108%);
     animation: ${tableModalBackdropIn} 160ms ease-out;
   }
 
   .areqa-markdown-table-modal-panel {
-    width: min(1180px, calc(100vw - 100px));
+    display: flex;
+    flex-direction: column;
+    width: min(1634px, 100%);
+    height: min(742px, 100%);
     min-width: 0;
-    max-height: calc(100vh - 60px);
+    min-height: min(420px, 100%);
     padding: 26px;
-    overflow: auto;
-    border: 2px solid rgba(156, 163, 175, 0.42);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 18px;
-    background: var(--areqa-table-modal-background, #141312);
-    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.58);
+    background: var(--areqa-table-modal-background, #141413);
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.64);
     animation: ${tableModalPanelIn} 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
@@ -661,12 +664,13 @@ content: css`
     align-items: center;
     justify-content: space-between;
     gap: 20px;
-    margin-bottom: 26px;
+    flex: 0 0 auto;
+    margin-bottom: 30px;
 
     h2 {
       margin: 0;
-      color: var(--areqa-table-modal-heading, rgba(255, 255, 255, 0.82));
-      font-size: 28px;
+      color: var(--areqa-table-modal-heading, rgba(255, 255, 255, 0.86));
+      font-size: 30px;
       font-weight: 700;
       line-height: 1.2;
     }
@@ -682,41 +686,56 @@ content: css`
     border-radius: 999px;
     background: transparent;
     color: var(--areqa-table-modal-close-color, rgba(255, 255, 255, 0.78));
-    font-size: 34px;
-    font-weight: 300;
     line-height: 1;
     cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 
     &:hover {
       background: var(--areqa-table-modal-close-hover, rgba(255, 255, 255, 0.06));
+      border-color: var(--areqa-table-modal-close-hover-border, rgba(255, 255, 255, 0.18));
       color: var(--areqa-table-action-hover-color, #ffffff);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgba(255, 255, 255, 0.42);
+      outline-offset: 3px;
     }
   }
 
   .areqa-markdown-table-modal-body {
-    max-height: calc(100vh - 190px);
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: auto;
-    border: 2px solid var(--areqa-table-border, rgba(156, 163, 175, 0.68));
+    border: 1px solid var(--areqa-table-border, rgba(255, 255, 255, 0.1));
     border-radius: 10px;
-    background: var(--areqa-table-background, rgba(24, 23, 22, 0.98));
+    background: var(--areqa-table-background, rgba(30, 29, 28, 0.98));
+    outline: none;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+    scrollbar-width: thin;
+
+    &:focus-visible {
+      box-shadow: 0 0 0 2px rgba(209, 213, 219, 0.36);
+    }
 
     table.areqa-markdown-table {
       width: max-content;
       min-width: 100%;
-      font-size: 21px;
+      font-size: 23px;
     }
 
     .areqa-markdown-table th,
     .areqa-markdown-table td {
-      min-width: 340px;
-      padding: 16px 18px;
-      border-right-color: var(--areqa-table-cell-border, rgba(156, 163, 175, 0.62));
-      border-bottom-color: var(--areqa-table-cell-border, rgba(156, 163, 175, 0.62));
+      min-width: 300px;
+      padding: 14px 16px;
+      border-right-width: 1px;
+      border-bottom-width: 1px;
+      border-right-color: var(--areqa-table-cell-border, rgba(255, 255, 255, 0.09));
+      border-bottom-color: var(--areqa-table-cell-border, rgba(255, 255, 255, 0.08));
     }
 
     .areqa-markdown-table th {
-      background: var(--areqa-table-head-background, rgba(107, 114, 128, 0.55));
-      border-bottom-color: var(--areqa-table-head-border, rgba(209, 213, 219, 0.78));
+      background: var(--areqa-table-head-background, rgba(255, 255, 255, 0.045));
+      border-bottom-color: var(--areqa-table-head-border, rgba(255, 255, 255, 0.09));
     }
   }
 
@@ -727,14 +746,26 @@ content: css`
 
     .areqa-markdown-table-modal-panel {
       width: calc(100vw - 28px);
-      min-width: 0;
-      max-height: calc(100vh - 28px);
+      height: calc(100vh - 28px);
       padding: 18px;
       border-radius: 14px;
     }
 
+    .areqa-markdown-table-modal-header {
+      margin-bottom: 18px;
+
+      h2 {
+        font-size: 24px;
+      }
+    }
+
+    .areqa-markdown-table-modal-close {
+      width: 44px;
+      height: 44px;
+    }
+
     .areqa-markdown-table-modal-body {
-      max-height: calc(100vh - 138px);
+      min-height: 0;
     }
 
     table.areqa-markdown-table {
@@ -745,6 +776,16 @@ content: css`
     .areqa-markdown-table td {
       min-width: 104px;
       padding: 9px 10px;
+    }
+
+    .areqa-markdown-table-modal-body table.areqa-markdown-table {
+      font-size: 16px;
+    }
+
+    .areqa-markdown-table-modal-body .areqa-markdown-table th,
+    .areqa-markdown-table-modal-body .areqa-markdown-table td {
+      min-width: 180px;
+      padding: 11px 12px;
     }
   }
 

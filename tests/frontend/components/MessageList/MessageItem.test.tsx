@@ -360,10 +360,20 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:table-csv');
 
     fireEvent.click(expandButton);
-    expect(screen.getByRole('dialog', { name: '表格' })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: '表格' });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog.parentElement).toBe(document.body);
+    expect(document.body.style.overflow).toBe('hidden');
     expect(screen.getByRole('heading', { name: '表格' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '關閉放大表格' }));
+    expect(screen.queryByRole('dialog', { name: '表格' })).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
+
+    fireEvent.click(expandButton);
+    expect(screen.getByRole('dialog', { name: '表格' })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '表格' })).not.toBeInTheDocument();
   });
 

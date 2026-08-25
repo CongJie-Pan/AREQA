@@ -6,13 +6,14 @@
  */
 
 import React, { memo, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown, { Components } from 'react-markdown';
 import { Streamdown, type Components as StreamdownComponents } from 'streamdown';
 import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink } from 'lucide-react';
+import { Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, X } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -230,6 +231,26 @@ function MarkdownTable({
     onDownloadTable(table ? tableElementToCsv(table) : '');
   }, [onDownloadTable]);
 
+  React.useEffect(() => {
+    if (!isExpanded || typeof document === 'undefined') return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsExpanded(false);
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isExpanded]);
+
   const actionButtons = enableActions ? (
     <div className="areqa-markdown-table-actions" aria-label={labels.actions}>
       <Tooltip title={labels.copy}>
@@ -265,6 +286,41 @@ function MarkdownTable({
     </div>
   ) : null;
 
+  const expandedTableModal = isExpanded && typeof document !== 'undefined'
+    ? createPortal(
+        <div
+          aria-label={labels.title}
+          aria-modal="true"
+          className="areqa-markdown-table-modal-backdrop"
+          role="dialog"
+          onMouseDown={() => setIsExpanded(false)}
+        >
+          <div
+            className="areqa-markdown-table-modal-panel"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="areqa-markdown-table-modal-header">
+              <h2>{labels.title}</h2>
+              <button
+                aria-label={labels.close}
+                className="areqa-markdown-table-modal-close"
+                type="button"
+                onClick={() => setIsExpanded(false)}
+              >
+                <X size={24} aria-hidden="true" strokeWidth={1.8} />
+              </button>
+            </div>
+            <div className="areqa-markdown-table-modal-body" tabIndex={0}>
+              <table className={tableClassName} {...props}>
+                {children}
+              </table>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
     <>
       <div className="areqa-markdown-table-frame">
@@ -279,33 +335,7 @@ function MarkdownTable({
         </div>
         {actionButtons}
       </div>
-      {isExpanded && (
-        <div
-          aria-label={labels.title}
-          aria-modal="true"
-          className="areqa-markdown-table-modal-backdrop"
-          role="dialog"
-        >
-          <div className="areqa-markdown-table-modal-panel">
-            <div className="areqa-markdown-table-modal-header">
-              <h2>{labels.title}</h2>
-              <button
-                aria-label={labels.close}
-                className="areqa-markdown-table-modal-close"
-                type="button"
-                onClick={() => setIsExpanded(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="areqa-markdown-table-modal-body">
-              <table className={tableClassName} {...props}>
-                {children}
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+      {expandedTableModal}
     </>
   );
 }
