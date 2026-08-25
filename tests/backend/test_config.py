@@ -47,6 +47,7 @@ def test_settings_loads_defaults():
     assert s.enable_compeer_telemetry is False
     assert s.enable_compeer_auto_proactive is False
     assert s.enable_mailbox_sending is False
+    assert s.enable_share_link_debug_logs is True
 
 def test_settings_can_be_overridden_by_env():
     """Settings 應能透過環境變數覆寫，確保不 Hardcoding。"""
@@ -78,6 +79,7 @@ def test_settings_can_be_overridden_by_env():
         'ENABLE_COMPEER_TELEMETRY': 'true',
         'ENABLE_COMPEER_AUTO_PROACTIVE': 'true',
         'ENABLE_MAILBOX_SENDING': 'true',
+        'ENABLE_SHARE_LINK_DEBUG_LOGS': 'false',
     }):
         from backend.config import Settings
         s = Settings()
@@ -108,3 +110,4 @@ def test_settings_can_be_overridden_by_env():
         assert s.enable_compeer_telemetry is True
         assert s.enable_compeer_auto_proactive is True
         assert s.enable_mailbox_sending is True
+        assert s.enable_share_link_debug_logs is False

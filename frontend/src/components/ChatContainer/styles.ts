@@ -76,7 +76,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   floatingActions: css`
     position: absolute;
     top: 14px;
-    left: 16px;
+    right: 16px;
     z-index: 20;
     display: flex;
     align-items: center;
@@ -159,10 +159,6 @@ export const useStyles = createStyles(({ css, token }) => ({
     overflow: hidden;
     min-height: 0;
     overscroll-behavior: contain;
-  `,
-
-  contentWithFloatingActions: css`
-    padding-top: 58px;
   `,
 
   /* When chat is empty, center the greeting + input together vertically */

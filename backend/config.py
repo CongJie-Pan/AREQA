@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     enable_mailbox_sending: bool = False
     enable_compeer_dev_controls: bool = False
 
+    # Share-link creation runs in the Next.js API route. Keep the matching
+    # backend setting enabled by default so deployments can use one environment
+    # flag name while debugging share failures.
+    enable_share_link_debug_logs: bool = True
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
 settings = Settings()

@@ -537,7 +537,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
             isEmpty && !gumPanelType && 'areqa-chat-content-empty',
             styles.content,
             isEmpty && !gumPanelType && styles.contentEmpty,
-            !isEmpty && !gumPanelType && styles.contentWithFloatingActions,
           )}
         >
           {mailboxEnabled && gumPanelType === 'mailbox' ? (
