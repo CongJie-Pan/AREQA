@@ -4,6 +4,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
 
+const authenticatedFetchMock = vi.hoisted(() => vi.fn());
+
 const chatState = {
   isStreaming: false,
   error: null,
@@ -53,6 +55,10 @@ vi.mock('@/services/syncService', () => ({
   },
 }));
 
+vi.mock('@/services/authenticatedFetch', () => ({
+  authenticatedFetch: authenticatedFetchMock,
+}));
+
 vi.mock('@/store/chat', () => ({
   useChatStore: Object.assign(
     (selector: (state: typeof chatState) => unknown) => selector(chatState),
@@ -66,7 +72,10 @@ vi.mock('@/store/conversation', () => ({
     (selector: (state: typeof conversationState) => unknown) => selector(conversationState),
     { getState: () => conversationState },
   ),
-  conversationSelectors: { activeConversation: () => null },
+  conversationSelectors: {
+    activeConversation: (state: typeof conversationState) =>
+      state.conversations.find((conversation) => conversation.id === state.activeConversationId),
+  },
 }));
 
 vi.mock('@/components/ChatContainer/styles', () => ({
@@ -105,6 +114,9 @@ describe('Guest chat authentication prompt flow', () => {
     currentSession = null;
     authStateCallback = null;
     chatState.messages = [];
+    conversationState.activeConversationId = 'conversation-1';
+    conversationState.conversations = [];
+    authenticatedFetchMock.mockReset();
     vi.clearAllMocks();
   });
 
@@ -159,5 +171,48 @@ describe('Guest chat authentication prompt flow', () => {
       expect(chatState.clearMessages).toHaveBeenCalled();
       expect(chatState.resetStreamingState).toHaveBeenCalled();
     });
+  });
+
+  it('shows the created share URL when clipboard copy fails', async () => {
+    const conversationId = 'c35e6795-7de7-4cc6-9854-62c985823523';
+    const shareToken = 'share-token-123';
+    currentSession = { user: { id: 'user-1' } };
+    conversationState.activeConversationId = conversationId;
+    conversationState.conversations = [{
+      id: conversationId,
+      userId: 'user-1',
+      title: 'Chain rule',
+      createdAt: new Date('2026-08-25T00:00:00Z'),
+      updatedAt: new Date('2026-08-25T00:00:00Z'),
+      messageCount: 2,
+    } as never];
+    chatState.messages = [{
+      id: '4ef75291-b268-42ca-90d1-7115fcacb845',
+      userId: 'user-1',
+      conversationId,
+      role: 'user',
+      content: 'hello',
+      createdAt: new Date('2026-08-25T00:00:00Z'),
+    } as never];
+    authenticatedFetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ token: shareToken }),
+    });
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockRejectedValue(new Error('Clipboard denied')) },
+      configurable: true,
+    });
+
+    renderChat();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /分享/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /分享/ }));
+
+    expect(await screen.findByText('分享連結已建立：')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: `${window.location.origin}/share/${shareToken}` }))
+      .toHaveAttribute('href', `${window.location.origin}/share/${shareToken}`);
+    consoleWarn.mockRestore();
   });
 });

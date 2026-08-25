@@ -25,7 +25,7 @@ import { initializeAuth, useAuthStore } from '@/store/auth';
 import { useFeatureStore } from '@/store/features';
 import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
-import { getAuthToken } from '@/database/db';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
@@ -398,20 +398,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
       return;
     }
 
-    const token = getAuthToken();
-    if (!token) {
-      antMessageApi.warning(t('shareLoginRequired'));
-      setShowAuthPrompt(true);
-      return;
-    }
-
     setIsSharing(true);
     try {
-      const response = await fetch(`/api/share/conversations/${activeConversation.id}`, {
+      const response = await authenticatedFetch(`/api/share/conversations/${activeConversation.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           conversation: activeConversation,
@@ -419,14 +411,29 @@ export function ChatContainer({ className }: ChatContainerProps) {
         }),
       });
 
-      const payload = await response.json().catch(() => null) as { token?: string } | null;
+      const payload = await response.json().catch(() => null) as { token?: string; error?: string } | null;
       if (!response.ok || !payload?.token) {
-        throw new Error('Share API did not return a token');
+        throw new Error(payload?.error || `Share API did not return a token (${response.status})`);
       }
 
       const shareUrl = `${window.location.origin}/share/${payload.token}`;
-      await navigator.clipboard.writeText(shareUrl);
-      antMessageApi.success(t('shareLinkCopied'));
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        antMessageApi.success(t('shareLinkCopied'));
+      } catch (clipboardError) {
+        console.warn('Created share link but could not copy it to clipboard:', clipboardError);
+        antMessageApi.info({
+          content: (
+            <span>
+              {t('shareLinkCreated')}
+              <a href={shareUrl} target="_blank" rel="noopener noreferrer">
+                {shareUrl}
+              </a>
+            </span>
+          ),
+          duration: 12,
+        });
+      }
     } catch (error) {
       console.error('Failed to share conversation:', error);
       antMessageApi.error(t('shareLinkFailed'));

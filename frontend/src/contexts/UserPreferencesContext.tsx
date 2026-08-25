@@ -161,6 +161,7 @@ export type TranslationKey =
   | 'shareLoginRequired'
   | 'shareNoConversation'
   | 'shareLinkCopied'
+  | 'shareLinkCreated'
   | 'shareLinkFailed'
   | 'exportMarkdown'
   | 'exportPdf'
@@ -350,6 +351,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '請先登入後再分享對話。',
     shareNoConversation: '目前沒有可分享的對話。',
     shareLinkCopied: '已公開並複製分享連結',
+    shareLinkCreated: '分享連結已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     exportMarkdown: '下載為 Markdown (.md)',
     exportPdf: '下載為 PDF (.pdf)',
@@ -509,6 +511,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '请先登入后再分享对话。',
     shareNoConversation: '目前没有可分享的对话。',
     shareLinkCopied: '已公开并复制分享链接',
+    shareLinkCreated: '分享链接已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     exportMarkdown: '下载为 Markdown (.md)',
     exportPdf: '下载为 PDF (.pdf)',
@@ -668,6 +671,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: 'Log in before sharing a conversation.',
     shareNoConversation: 'There is no conversation to share yet.',
     shareLinkCopied: 'Public share link copied',
+    shareLinkCreated: 'Share link created: ',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     exportMarkdown: 'Download as Markdown (.md)',
     exportPdf: 'Download as PDF (.pdf)',
