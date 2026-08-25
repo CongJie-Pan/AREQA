@@ -154,7 +154,23 @@ export type TranslationKey =
   | 'feedbackSubmit'
   | 'copyMessageSuccess'
   | 'copyMessageFailed'
-  | 'saveFeedbackFailed';
+  | 'saveFeedbackFailed'
+  | 'openSidebar'
+  | 'shareConversation'
+  | 'shareConversationMenu'
+  | 'shareLoginRequired'
+  | 'shareNoConversation'
+  | 'shareLinkCopied'
+  | 'shareLinkFailed'
+  | 'exportMarkdown'
+  | 'exportPdf'
+  | 'exportDocx'
+  | 'exportConversation'
+  | 'exportPdfLoading'
+  | 'exportDocxLoading'
+  | 'exportSuccess'
+  | 'exportFailed'
+  | 'retry';
 
 interface UserPreferencesContextValue {
   theme: InterfaceTheme;
@@ -328,6 +344,22 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     copyMessageSuccess: '已複製到剪貼簿',
     copyMessageFailed: '複製失敗',
     saveFeedbackFailed: '儲存評價失敗',
+    openSidebar: '打開選單',
+    shareConversation: '分享',
+    shareConversationMenu: '對話操作選單',
+    shareLoginRequired: '請先登入後再分享對話。',
+    shareNoConversation: '目前沒有可分享的對話。',
+    shareLinkCopied: '已公開並複製分享連結',
+    shareLinkFailed: '分享連結建立失敗，請稍後再試',
+    exportMarkdown: '下載為 Markdown (.md)',
+    exportPdf: '下載為 PDF (.pdf)',
+    exportDocx: '下載為 Word (.docx)',
+    exportConversation: '匯出對話',
+    exportPdfLoading: '正在產生 PDF，請稍候...',
+    exportDocxLoading: '正在產生 Word 文件，請稍候...',
+    exportSuccess: '下載成功！',
+    exportFailed: '下載失敗，請稍後再試',
+    retry: '重試',
   },
   'zh-CN': {
     appearance: '界面外观',
@@ -471,6 +503,22 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     copyMessageSuccess: '已复制到剪贴簿',
     copyMessageFailed: '复制失败',
     saveFeedbackFailed: '储存评价失败',
+    openSidebar: '打开菜单',
+    shareConversation: '分享',
+    shareConversationMenu: '对话操作菜单',
+    shareLoginRequired: '请先登入后再分享对话。',
+    shareNoConversation: '目前没有可分享的对话。',
+    shareLinkCopied: '已公开并复制分享链接',
+    shareLinkFailed: '分享链接建立失败，请稍后再试',
+    exportMarkdown: '下载为 Markdown (.md)',
+    exportPdf: '下载为 PDF (.pdf)',
+    exportDocx: '下载为 Word (.docx)',
+    exportConversation: '汇出对话',
+    exportPdfLoading: '正在生成 PDF，请稍候...',
+    exportDocxLoading: '正在生成 Word 文件，请稍候...',
+    exportSuccess: '下载成功！',
+    exportFailed: '下载失败，请稍后再试',
+    retry: '重试',
   },
   en: {
     appearance: 'Appearance',
@@ -614,6 +662,22 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     copyMessageSuccess: 'Copied to clipboard',
     copyMessageFailed: 'Copy failed',
     saveFeedbackFailed: 'Failed to save feedback',
+    openSidebar: 'Open menu',
+    shareConversation: 'Share',
+    shareConversationMenu: 'Conversation actions',
+    shareLoginRequired: 'Log in before sharing a conversation.',
+    shareNoConversation: 'There is no conversation to share yet.',
+    shareLinkCopied: 'Public share link copied',
+    shareLinkFailed: 'Failed to create share link. Please try again later.',
+    exportMarkdown: 'Download as Markdown (.md)',
+    exportPdf: 'Download as PDF (.pdf)',
+    exportDocx: 'Download as Word (.docx)',
+    exportConversation: 'Export conversation',
+    exportPdfLoading: 'Creating PDF...',
+    exportDocxLoading: 'Creating Word document...',
+    exportSuccess: 'Download complete.',
+    exportFailed: 'Download failed. Please try again later.',
+    retry: 'Retry',
   },
 };
 

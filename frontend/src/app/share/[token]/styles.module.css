@@ -1,0 +1,147 @@
+.page {
+  min-height: 100dvh;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.shell {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 40px 20px 72px;
+}
+
+.header {
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--areqa-subtle-border);
+  padding-bottom: 20px;
+}
+
+.brand {
+  margin-bottom: 10px;
+  color: #d8a25c;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.header h1 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message[data-role='user'] {
+  align-items: flex-end;
+}
+
+.message[data-role='assistant'] {
+  align-items: flex-start;
+}
+
+.role {
+  color: var(--areqa-message-muted-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bubble {
+  width: fit-content;
+  max-width: min(760px, 100%);
+  border-radius: 8px;
+  color: var(--areqa-message-text);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.message[data-role='user'] .bubble {
+  background: var(--areqa-user-bubble-background);
+  color: var(--areqa-user-bubble-color);
+  padding: 14px 16px;
+}
+
+.message[data-role='assistant'] .bubble {
+  padding: 2px 0;
+}
+
+.bubble p {
+  margin: 0 0 12px;
+}
+
+.bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.bubble ul,
+.bubble ol {
+  margin: 8px 0 12px;
+  padding-left: 24px;
+}
+
+.bubble code {
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.16);
+  padding: 2px 4px;
+}
+
+.bubble pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 14px;
+}
+
+.imageBlock {
+  margin: 16px 0;
+}
+
+.imageBlock img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.imageBlock figcaption {
+  margin-top: 8px;
+  color: var(--areqa-message-muted-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.citations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.citations a,
+.imageBlock a {
+  color: #d8a25c;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .shell {
+    padding: 28px 16px 56px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+}

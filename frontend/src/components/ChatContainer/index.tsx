@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Menu, X, AlertCircle, MoreVertical, FileText, FileImage, FileCode } from 'lucide-react';
+import { Menu, X, AlertCircle, MoreHorizontal, FileText, FileImage, FileCode, Share2 } from 'lucide-react';
 import { App, Dropdown } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
@@ -25,6 +25,7 @@ import { initializeAuth, useAuthStore } from '@/store/auth';
 import { useFeatureStore } from '@/store/features';
 import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
+import { getAuthToken } from '@/database/db';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
@@ -86,6 +87,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [isChatReady, setIsChatReady] = useState(false);
   const mailboxEnabled = useFeatureStore((state) => state.mailbox);
   const compeerEnabled = useFeatureStore((state) => state.compeer);
@@ -287,7 +289,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     fontSize: '12px',
                   }}
                 >
-                  重試
+                  {t('retry')}
                 </button>
               </span>
             ),
@@ -305,7 +307,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
         throw err;
       }
     },
-    [activeConversationId, antMessageApi]
+    [activeConversationId, antMessageApi, t]
   );
 
   // A prompt supplied by the landing page starts a new chat automatically.
@@ -384,6 +386,55 @@ export function ChatContainer({ className }: ChatContainerProps) {
     }
   }, [antMessageApi]);
 
+  const handleShareConversation = useCallback(async () => {
+    if (!user) {
+      antMessageApi.warning(t('shareLoginRequired'));
+      setShowAuthPrompt(true);
+      return;
+    }
+
+    if (!activeConversation || messages.length === 0) {
+      antMessageApi.warning(t('shareNoConversation'));
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      antMessageApi.warning(t('shareLoginRequired'));
+      setShowAuthPrompt(true);
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      const response = await fetch(`/api/share/conversations/${activeConversation.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          conversation: activeConversation,
+          messages,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null) as { token?: string } | null;
+      if (!response.ok || !payload?.token) {
+        throw new Error('Share API did not return a token');
+      }
+
+      const shareUrl = `${window.location.origin}/share/${payload.token}`;
+      await navigator.clipboard.writeText(shareUrl);
+      antMessageApi.success(t('shareLinkCopied'));
+    } catch (error) {
+      console.error('Failed to share conversation:', error);
+      antMessageApi.error(t('shareLinkFailed'));
+    } finally {
+      setIsSharing(false);
+    }
+  }, [activeConversation, antMessageApi, messages, t, user]);
+
   return (
     <div className={cx('areqa-chat-shell', styles.container, className)}>
       {/* Sidebar Overlay (mobile) */}
@@ -406,63 +457,65 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       {/* Main Content */}
       <div className={cx('areqa-chat-main', styles.main)}>
-        {/* Header */}
-        <div className={cx('areqa-chat-header', styles.header)}>
-          <div className={cx('areqa-chat-header-left', styles.headerLeft)}>
+        {!gumPanelType && !isEmpty && (
+          <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
             <button
-              className={cx(styles.menuButton, sidebarOpen && styles.menuButtonVisible)}
+              className={cx(styles.iconActionButton, styles.sidebarActionButton, sidebarOpen && styles.sidebarActionButtonVisible)}
               onClick={toggleSidebar}
-              aria-label="打開選單"
+              aria-label={t('openSidebar')}
+              type="button"
             >
               <Menu size={20} />
             </button>
-            <h1 className={styles.headerTitle}>
-              {gumPanelType ? '' : (activeConversation?.title || '')}
-            </h1>
-          </div>
-          
-          <div className={cx('areqa-chat-header-right', styles.headerRight)}>
-            {!gumPanelType && !isEmpty && (
-              <Dropdown
-                menu={{
-                  items: [
-                    { key: 'md', label: '下載為 Markdown (.md)', icon: <FileCode size={16} /> },
-                    { key: 'pdf', label: '下載為 PDF (.pdf)', icon: <FileImage size={16} /> },
-                    { key: 'docx', label: '下載為 Word (.docx)', icon: <FileText size={16} /> },
-                  ],
-                  onClick: async (info) => {
-                    try {
-                      if (info.key === 'md') {
-                        exportToMarkdown(messages);
-                      } else if (info.key === 'pdf') {
-                        const hide = antMessageApi.loading('正在產生 PDF，請稍候...', 0);
-                        await exportToPdf();
-                        hide();
-                      } else if (info.key === 'docx') {
-                        const hide = antMessageApi.loading('正在產生 Word 文件，請稍候...', 0);
-                        await exportToDocx(messages);
-                        hide();
-                      }
-                      antMessageApi.success('下載成功！');
-                    } catch (err) {
-                      antMessageApi.error('下載失敗，請稍後再試');
-                      console.error('Export failed:', err);
+            <button
+              className={cx(styles.shareButton)}
+              disabled={isSharing}
+              onClick={handleShareConversation}
+              type="button"
+            >
+              <Share2 size={16} aria-hidden="true" />
+              <span>{t('shareConversation')}</span>
+            </button>
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'md', label: t('exportMarkdown'), icon: <FileCode size={16} /> },
+                  { key: 'pdf', label: t('exportPdf'), icon: <FileImage size={16} /> },
+                  { key: 'docx', label: t('exportDocx'), icon: <FileText size={16} /> },
+                ],
+                onClick: async (info) => {
+                  try {
+                    if (info.key === 'md') {
+                      exportToMarkdown(messages);
+                    } else if (info.key === 'pdf') {
+                      const hide = antMessageApi.loading(t('exportPdfLoading'), 0);
+                      await exportToPdf();
+                      hide();
+                    } else if (info.key === 'docx') {
+                      const hide = antMessageApi.loading(t('exportDocxLoading'), 0);
+                      await exportToDocx(messages);
+                      hide();
                     }
+                    antMessageApi.success(t('exportSuccess'));
+                  } catch (err) {
+                    antMessageApi.error(t('exportFailed'));
+                    console.error('Export failed:', err);
                   }
-                }}
-                trigger={['click']}
-                placement="bottomRight"
+                }
+              }}
+              trigger={['click']}
+              placement="bottomLeft"
+            >
+              <button
+                className={cx(styles.iconActionButton)}
+                aria-label={t('shareConversationMenu')}
+                type="button"
               >
-                <button
-                  className={cx(styles.menuButton, styles.exportButton)}
-                  aria-label="匯出對話"
-                >
-                  <MoreVertical size={20} />
-                </button>
-              </Dropdown>
-            )}
+                <MoreHorizontal size={20} />
+              </button>
+            </Dropdown>
           </div>
-        </div>
+        )}
 
         {/* Error Banner */}
         {error && (
@@ -484,6 +537,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
             isEmpty && !gumPanelType && 'areqa-chat-content-empty',
             styles.content,
             isEmpty && !gumPanelType && styles.contentEmpty,
+            !isEmpty && !gumPanelType && styles.contentWithFloatingActions,
           )}
         >
           {mailboxEnabled && gumPanelType === 'mailbox' ? (

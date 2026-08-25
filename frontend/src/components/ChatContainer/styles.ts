@@ -63,6 +63,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   main: css`
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -72,68 +73,83 @@ export const useStyles = createStyles(({ css, token }) => ({
     background: var(--background);
   `,
 
-  header: css`
+  floatingActions: css`
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    z-index: 20;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--areqa-subtle-border);
-    background: var(--background);
+    gap: 8px;
+    pointer-events: none;
   `,
 
-  headerLeft: css`
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  `,
-
-  headerRight: css`
-    display: flex;
-    align-items: center;
-  `,
-
-  menuButton: css`
-    display: none;
+  iconActionButton: css`
+    pointer-events: auto;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 36px;
     height: 36px;
-    border: none;
+    border: 1px solid var(--areqa-subtle-border);
     border-radius: ${token.borderRadius}px;
-    background: transparent;
+    background: color-mix(in srgb, var(--background) 86%, transparent);
     color: ${token.colorTextSecondary};
     cursor: pointer;
     transition: all 0.2s;
+    backdrop-filter: blur(10px);
 
     &:hover {
       background: ${token.colorFillTertiary};
+      color: ${token.colorText};
     }
+  `,
+
+  sidebarActionButton: css`
+    display: none;
 
     @media (max-width: 768px) {
       display: flex;
     }
   `,
 
-  menuButtonVisible: css`
+  sidebarActionButtonVisible: css`
     @media (min-width: 769px) {
       display: flex;
     }
   `,
 
-  exportButton: css`
-    display: flex;
-    opacity: 1;
-    visibility: visible;
+  shareButton: css`
     pointer-events: auto;
-  `,
-
-  headerTitle: css`
-    font-size: 16px;
-    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--areqa-subtle-border);
+    border-radius: ${token.borderRadius}px;
+    background: color-mix(in srgb, var(--background) 86%, transparent);
     color: ${token.colorText};
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+    backdrop-filter: blur(10px);
+
+    &:hover:not(:disabled) {
+      background: ${token.colorFillTertiary};
+    }
+
+    &:disabled {
+      cursor: progress;
+      opacity: 0.62;
+    }
+
+    svg {
+      color: #d8a25c;
+      flex-shrink: 0;
+    }
   `,
 
   content: css`
@@ -143,6 +159,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     overflow: hidden;
     min-height: 0;
     overscroll-behavior: contain;
+  `,
+
+  contentWithFloatingActions: css`
+    padding-top: 58px;
   `,
 
   /* When chat is empty, center the greeting + input together vertically */
