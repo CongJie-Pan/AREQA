@@ -276,7 +276,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });
 
-  it('uses Streamdown animated spans for streaming assistant markdown', () => {
+  it('uses a container-level reveal for streaming assistant markdown', () => {
     const { container } = render(
       <MessageItem
         message={{
@@ -288,7 +288,8 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
 
     expect(screen.getByText('串流動畫測試')).toBeInTheDocument();
-    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+    expect(container.querySelector('[data-streaming-content="true"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
   });
 
   it('renders single-dollar inline math in assistant messages', () => {
@@ -366,7 +367,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByRole('dialog', { name: '表格' })).not.toBeInTheDocument();
   });
 
-  it('keeps Streamdown animated spans after live streaming ends', () => {
+  it('removes the streaming reveal marker after live streaming ends', () => {
     const { container, rerender } = render(
       <MessageItem
         message={{
@@ -377,7 +378,8 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+    expect(container.querySelector('[data-streaming-content="true"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
 
     rerender(
       <MessageItem
@@ -389,7 +391,8 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+    expect(container.querySelector('[data-streaming-content="true"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
   });
 
   it('uses final structured blocks immediately when no live image slot event exists', () => {

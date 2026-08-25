@@ -506,28 +506,21 @@ export function normalizeCitationMarkers(content: string): string {
 function StreamingMarkdown({
   content,
   markdownComponents,
-  isStreaming,
-  hasLiveStreamed,
 }: {
   content: string;
   markdownComponents: Components;
-  isStreaming?: boolean;
-  hasLiveStreamed?: boolean;
 }) {
   const throttledContent = useThrottledValue(content, STREAMING_MARKDOWN_FLUSH_MS);
   const deferredContent = React.useDeferredValue(throttledContent);
-  const shouldKeepAnimatedDom = useHasLiveStreamed(isStreaming || hasLiveStreamed);
   const processedContent = React.useMemo(() => {
     return normalizeDisplayMathBlocks(normalizeCitationMarkers(deferredContent));
   }, [deferredContent]);
 
   return (
     <Streamdown
-      animated
       components={markdownComponents as StreamdownComponents}
       controls={false}
       disallowedElements={['script', 'iframe', 'object', 'embed']}
-      isAnimating={shouldKeepAnimatedDom}
       linkSafety={STREAMDOWN_LINK_SAFETY}
       mode="streaming"
       plugins={STREAMDOWN_PLUGINS}
@@ -710,7 +703,6 @@ function AnswerBlocksRenderer({
             <StreamingMarkdown
               content={block.text}
               markdownComponents={markdownComponents}
-              isStreaming={false}
             />
           </div>
         );
@@ -783,7 +775,6 @@ function LiveOrderedAnswerRenderer({
   markdownComponents,
   styles,
   isStreaming,
-  hasLiveStreamed,
 }: {
   content: string;
   slots: StreamingImageSlot[];
@@ -791,7 +782,6 @@ function LiveOrderedAnswerRenderer({
   markdownComponents: Components;
   styles: ReturnType<typeof useStyles>['styles'];
   isStreaming: boolean;
-  hasLiveStreamed: boolean;
 }) {
   const parts = React.useMemo(() => buildLiveAnswerParts(content, slots), [content, slots]);
   const imageBlocks = React.useMemo(
@@ -802,8 +792,6 @@ function LiveOrderedAnswerRenderer({
     ),
     [blocks],
   );
-  const lastTextKey = [...parts].reverse().find((part) => part.type === 'text')?.key;
-
   return (
     <>
       {parts.map((part) => {
@@ -814,8 +802,6 @@ function LiveOrderedAnswerRenderer({
               <StreamingMarkdown
                 content={part.text}
                 markdownComponents={markdownComponents}
-                isStreaming={isStreaming && part.key === lastTextKey}
-                hasLiveStreamed={hasLiveStreamed}
               />
             </div>
           );
@@ -1281,7 +1267,10 @@ export const MessageItem = memo(function MessageItem({
               data-role="assistant-bubble"
             >
               {/* Message Content */}
-              <div className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}>
+              <div
+                className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}
+                data-streaming-content={isStreaming && !thinking?.isThinking ? 'true' : undefined}
+              >
                 {shouldUseLiveOrderedAnswer ? (
                   <LiveOrderedAnswerRenderer
                     content={message.content}
@@ -1290,7 +1279,6 @@ export const MessageItem = memo(function MessageItem({
                     markdownComponents={markdownComponents}
                     styles={styles}
                     isStreaming={isStreaming && !thinking?.isThinking}
-                    hasLiveStreamed={hasLiveStreamed}
                   />
                 ) : shouldUseStructuredAnswerBlocks ? (
                   <AnswerBlocksRenderer
@@ -1302,8 +1290,6 @@ export const MessageItem = memo(function MessageItem({
                   <StreamingMarkdown
                     content={message.content}
                     markdownComponents={markdownComponents}
-                    isStreaming={isStreaming && !thinking?.isThinking}
-                    hasLiveStreamed={hasLiveStreamed}
                   />
                 )}
                 {/* Streaming cursor */}

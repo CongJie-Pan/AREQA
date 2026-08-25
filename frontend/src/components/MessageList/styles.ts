@@ -747,8 +747,10 @@ content: css`
 
 streamingContentReveal: css`
   position: relative;
+  animation: ${verticalReveal} 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 
   @media (prefers-reduced-motion: reduce) {
+    animation: none;
     transform: none;
   }
 `,
