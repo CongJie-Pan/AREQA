@@ -170,6 +170,7 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
           width={160} 
           height={160} 
           className={cx('areqa-message-empty-logo', styles.emptyLogo)}
+          draggable={false}
           priority
         />
         <div className={cx('areqa-message-empty-subtitle', styles.emptySubtitle)}>

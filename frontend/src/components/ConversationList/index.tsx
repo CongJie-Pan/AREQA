@@ -265,6 +265,7 @@ export function ConversationList({
             width={164} 
             height={40}
             className={cx('areqa-conversation-logo', styles.logo)}
+            draggable={false}
             priority
           />
         </div>

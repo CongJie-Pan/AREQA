@@ -196,6 +196,34 @@ describe('ChatInput', () => {
     expect(mockOnSend).toHaveBeenCalledWith('', [droppedFile]);
   });
 
+  it('should ignore drags that start from components inside the website', () => {
+    const draggedFile = new File(['logo'], 'areqa-logo.png', { type: 'image/png' });
+    render(
+      <>
+        <img src="/logo.png" alt="AREQA logo" draggable />
+        <ChatInput onSend={mockOnSend} />
+      </>,
+    );
+
+    fireEvent.dragStart(screen.getByAltText('AREQA logo'));
+
+    const dragEnterEvent = new Event('dragenter', { bubbles: true, cancelable: true });
+    Object.defineProperty(dragEnterEvent, 'dataTransfer', {
+      value: { types: ['Files'], files: [draggedFile], dropEffect: 'copy' },
+    });
+    fireEvent(window, dragEnterEvent);
+
+    expect(screen.queryByText('放開即可附加檔案')).not.toBeInTheDocument();
+
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: { types: ['Files'], files: [draggedFile], dropEffect: 'copy' },
+    });
+    fireEvent(window, dropEvent);
+
+    expect(screen.queryByTitle('areqa-logo.png')).not.toBeInTheDocument();
+  });
+
   it('should remove a pending attachment before sending', () => {
     const attachment = new File(['notes'], 'notes.txt', { type: 'text/plain' });
     render(<ChatInput onSend={mockOnSend} />);

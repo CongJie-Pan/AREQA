@@ -214,6 +214,7 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
+  const internalDragRef = useRef(false);
   const attachmentPreviewsRef = useRef<AttachmentPreview[]>([]);
   
   // Connect to global state for mode togglers
@@ -284,7 +285,20 @@ export function ChatInput({
   }, [attachmentPreviews, disabled, reportAttachmentError]);
 
   useEffect(() => {
+    const resetDragState = () => {
+      internalDragRef.current = false;
+      dragDepthRef.current = 0;
+      setIsDraggingFiles(false);
+    };
+
+    const handleDocumentDragStart = () => {
+      internalDragRef.current = true;
+      dragDepthRef.current = 0;
+      setIsDraggingFiles(false);
+    };
+
     const handleWindowDragEnter = (event: DragEvent) => {
+      if (internalDragRef.current) return;
       if (!isFileDrag(event)) return;
       event.preventDefault();
       dragDepthRef.current += 1;
@@ -292,12 +306,14 @@ export function ChatInput({
     };
 
     const handleWindowDragOver = (event: DragEvent) => {
+      if (internalDragRef.current) return;
       if (!isFileDrag(event)) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = disabled ? 'none' : 'copy';
     };
 
     const handleWindowDragLeave = (event: DragEvent) => {
+      if (internalDragRef.current) return;
       if (!isFileDrag(event)) return;
       event.preventDefault();
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
@@ -305,6 +321,10 @@ export function ChatInput({
     };
 
     const handleWindowDrop = (event: DragEvent) => {
+      if (internalDragRef.current) {
+        resetDragState();
+        return;
+      }
       if (!isFileDrag(event)) return;
       event.preventDefault();
       dragDepthRef.current = 0;
@@ -312,12 +332,16 @@ export function ChatInput({
       addAttachments(fileListToArray(event.dataTransfer?.files));
     };
 
+    document.addEventListener('dragstart', handleDocumentDragStart, true);
+    document.addEventListener('dragend', resetDragState, true);
     window.addEventListener('dragenter', handleWindowDragEnter);
     window.addEventListener('dragover', handleWindowDragOver);
     window.addEventListener('dragleave', handleWindowDragLeave);
     window.addEventListener('drop', handleWindowDrop);
 
     return () => {
+      document.removeEventListener('dragstart', handleDocumentDragStart, true);
+      document.removeEventListener('dragend', resetDragState, true);
       window.removeEventListener('dragenter', handleWindowDragEnter);
       window.removeEventListener('dragover', handleWindowDragOver);
       window.removeEventListener('dragleave', handleWindowDragLeave);
