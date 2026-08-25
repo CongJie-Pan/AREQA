@@ -1042,6 +1042,10 @@ class ActionLogRequest(BaseModel):
     timestamp: int
     context: Dict[str, Any] = {}
 
+class ShareDebugLogRequest(BaseModel):
+    event: str
+    context: Dict[str, Any] = {}
+
 class MemoryQueryRequest(BaseModel):
     query: str
     top_k: int = 5
@@ -1426,6 +1430,50 @@ async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: st
     from services.query_policy_service import classify_dialogue_policy_impl
 
     return await classify_dialogue_policy_impl(client, model, user_msg, chat_history)
+
+def _safe_share_debug_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep share diagnostics operational and free of user content/secrets."""
+    allowed_keys = {
+        "component",
+        "conversationId",
+        "hasConversationPayload",
+        "hasError",
+        "hasInsertedShare",
+        "messageCount",
+        "shareDebugId",
+        "status",
+        "titleLength",
+        "validMessageCount",
+    }
+    safe: Dict[str, Any] = {}
+    for key, value in context.items():
+        if key not in allowed_keys:
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            safe[key] = value
+    supabase_error = context.get("supabaseError")
+    if isinstance(supabase_error, dict):
+        safe["supabaseError"] = {
+            key: value
+            for key, value in supabase_error.items()
+            if key in {"code", "message", "details", "hint", "status"}
+            and (isinstance(value, (str, int, float, bool)) or value is None)
+        }
+    return safe
+
+
+@app.post("/api/v1/share/debug-log")
+async def log_share_debug(req: ShareDebugLogRequest, current_user_id: str = Depends(get_current_user)):
+    if not re.fullmatch(r"share\.[a-z0-9_.-]{1,96}", req.event):
+        raise HTTPException(status_code=400, detail="Invalid share debug event")
+    safe_context = _safe_share_debug_context(req.context)
+    logger.info(
+        "share.backend_debug user_id=%s event=%s context=%s",
+        current_user_id,
+        req.event,
+        json.dumps(safe_context, ensure_ascii=False, sort_keys=True),
+    )
+    return {"status": "ok"}
 
 @app.post("/api/v1/log_action")
 async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_current_user)):

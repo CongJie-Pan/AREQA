@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHARE_DEBUG_COMPONENT = 'share-conversation-route';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
 interface ConversationShareRow {
   share_token: string;
@@ -138,36 +139,71 @@ function summarizeSupabaseError(error: unknown): Record<string, unknown> {
  * The context must stay limited to safe operational metadata: request-scoped
  * debug IDs, conversation IDs, stage counters, and sanitized provider errors.
  */
-function logShareDebug(event: string, context: Record<string, unknown>): void {
+async function logShareDebug(
+  event: string,
+  context: Record<string, unknown>,
+  authHeader?: string | null,
+): Promise<void> {
   if (!shareLinkDebugLogsEnabled()) return;
-  logger.info(event, {
+  const debugContext = {
     component: SHARE_DEBUG_COMPONENT,
     ...context,
-  });
+  };
+  logger.info(event, debugContext);
+
+  if (!authHeader) return;
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/v1/share/debug-log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authHeader,
+      },
+      body: JSON.stringify({ event, context: debugContext }),
+    });
+    if (!response.ok) {
+      logger.warn('share.backend_debug_forward_failed', {
+        event,
+        status: response.status,
+        shareDebugId: context.shareDebugId,
+      });
+    }
+  } catch (error) {
+    logger.warn('share.backend_debug_forward_failed', {
+      event,
+      reason: error instanceof Error ? error.message : String(error),
+      shareDebugId: context.shareDebugId,
+    });
+  }
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const shareDebugId = randomBytes(6).toString('hex');
   const { conversationId } = await context.params;
-  logShareDebug('share.create.request_received', {
+  const authHeader = request.headers.get('authorization');
+  await logShareDebug('share.create.request_received', {
     shareDebugId,
     conversationId,
-  });
+  }, authHeader);
 
   if (!UUID_PATTERN.test(conversationId)) {
     logger.warn('share.create_invalid_conversation_id', { shareDebugId });
+    await logShareDebug('share.create.invalid_conversation_id', {
+      shareDebugId,
+      conversationId,
+    }, authHeader);
     return NextResponse.json({ error: 'Invalid conversation id.' }, { status: 400 });
   }
 
-  const authHeader = request.headers.get('authorization');
   if (!authHeader) {
     logger.warn('share.create_missing_auth', { shareDebugId, conversationId });
     return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
   }
-  logShareDebug('share.create.auth_header_present', {
+  await logShareDebug('share.create.auth_header_present', {
     shareDebugId,
     conversationId,
-  });
+  }, authHeader);
 
   const config = getSupabaseConfig();
   if (config instanceof NextResponse) return config;
@@ -195,30 +231,36 @@ export async function POST(request: NextRequest, context: RouteContext) {
       hasError: Boolean(userError),
       supabaseError: summarizeSupabaseError(userError),
     });
+    await logShareDebug('share.create.invalid_auth', {
+      shareDebugId,
+      conversationId,
+      hasError: Boolean(userError),
+      supabaseError: summarizeSupabaseError(userError),
+    }, authHeader);
     return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
   }
-  logShareDebug('share.create.authenticated', {
+  await logShareDebug('share.create.authenticated', {
     shareDebugId,
     conversationId,
-  });
+  }, authHeader);
 
   const payload = await request.json().catch(() => null) as ShareConversationPayload | null;
-  logShareDebug('share.create.payload_received', {
+  await logShareDebug('share.create.payload_received', {
     shareDebugId,
     conversationId,
     hasConversationPayload: Boolean(payload?.conversation),
     messageCount: Array.isArray(payload?.messages) ? payload.messages.length : 0,
-  });
+  }, authHeader);
 
   if (payload?.conversation?.id === conversationId) {
     const now = new Date().toISOString();
-    logShareDebug('share.create.conversation_upsert_started', {
+    await logShareDebug('share.create.conversation_upsert_started', {
       shareDebugId,
       conversationId,
       titleLength: typeof payload.conversation.title === 'string'
         ? payload.conversation.title.length
         : 0,
-    });
+    }, authHeader);
     const { error: upsertConversationError } = await supabase
       .from('conversations')
       .upsert({
@@ -237,12 +279,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
         conversationId,
         supabaseError: summarizeSupabaseError(upsertConversationError),
       });
+      await logShareDebug('share.create.conversation_upsert_failed', {
+        shareDebugId,
+        conversationId,
+        supabaseError: summarizeSupabaseError(upsertConversationError),
+      }, authHeader);
       return NextResponse.json({ error: 'Unable to sync conversation before sharing.' }, { status: 500 });
     }
-    logShareDebug('share.create.conversation_upsert_succeeded', {
+    await logShareDebug('share.create.conversation_upsert_succeeded', {
       shareDebugId,
       conversationId,
-    });
+    }, authHeader);
   }
 
   const validMessages = Array.isArray(payload?.messages)
@@ -253,19 +300,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       typeof message.content === 'string'
     ))
     : [];
-  logShareDebug('share.create.messages_validated', {
+  await logShareDebug('share.create.messages_validated', {
     shareDebugId,
     conversationId,
     messageCount: Array.isArray(payload?.messages) ? payload.messages.length : 0,
     validMessageCount: validMessages.length,
-  });
+  }, authHeader);
 
   if (validMessages.length > 0) {
-    logShareDebug('share.create.messages_upsert_started', {
+    await logShareDebug('share.create.messages_upsert_started', {
       shareDebugId,
       conversationId,
       validMessageCount: validMessages.length,
-    });
+    }, authHeader);
     const { error: upsertMessagesError } = await supabase
       .from('messages')
       .upsert(validMessages.map((message) => buildFullMessageRow(message, conversationId, user.id)));
@@ -277,11 +324,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         messageCount: validMessages.length,
         supabaseError: summarizeSupabaseError(upsertMessagesError),
       });
-      logShareDebug('share.create.messages_minimal_upsert_started', {
+      await logShareDebug('share.create.messages_minimal_upsert_started', {
         shareDebugId,
         conversationId,
         validMessageCount: validMessages.length,
-      });
+      }, authHeader);
 
       const { error: minimalUpsertMessagesError } = await supabase
         .from('messages')
@@ -294,20 +341,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
           messageCount: validMessages.length,
           supabaseError: summarizeSupabaseError(minimalUpsertMessagesError),
         });
+        await logShareDebug('share.create.messages_upsert_failed', {
+          shareDebugId,
+          conversationId,
+          messageCount: validMessages.length,
+          supabaseError: summarizeSupabaseError(minimalUpsertMessagesError),
+        }, authHeader);
         return NextResponse.json({ error: 'Unable to sync messages before sharing.' }, { status: 500 });
       }
     }
-    logShareDebug('share.create.messages_upsert_succeeded', {
+    await logShareDebug('share.create.messages_upsert_succeeded', {
       shareDebugId,
       conversationId,
       validMessageCount: validMessages.length,
-    });
+    }, authHeader);
   }
 
-  logShareDebug('share.create.conversation_lookup_started', {
+  await logShareDebug('share.create.conversation_lookup_started', {
     shareDebugId,
     conversationId,
-  });
+  }, authHeader);
   const { data: conversation, error: conversationError } = await supabase
     .from('conversations')
     .select('id,title')
@@ -321,22 +374,31 @@ export async function POST(request: NextRequest, context: RouteContext) {
       conversationId,
       supabaseError: summarizeSupabaseError(conversationError),
     });
+    await logShareDebug('share.create.conversation_lookup_failed', {
+      shareDebugId,
+      conversationId,
+      supabaseError: summarizeSupabaseError(conversationError),
+    }, authHeader);
     return NextResponse.json({ error: 'Unable to verify conversation ownership.' }, { status: 500 });
   }
 
   if (!conversation) {
     logger.warn('share.create_conversation_not_found', { shareDebugId, conversationId });
+    await logShareDebug('share.create.conversation_not_found', {
+      shareDebugId,
+      conversationId,
+    }, authHeader);
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 });
   }
-  logShareDebug('share.create.conversation_lookup_succeeded', {
+  await logShareDebug('share.create.conversation_lookup_succeeded', {
     shareDebugId,
     conversationId,
-  });
+  }, authHeader);
 
-  logShareDebug('share.create.existing_lookup_started', {
+  await logShareDebug('share.create.existing_lookup_started', {
     shareDebugId,
     conversationId,
-  });
+  }, authHeader);
   const { data: existingShare, error: existingError } = await supabase
     .from('conversation_shares')
     .select('share_token')
@@ -350,14 +412,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       conversationId,
       supabaseError: summarizeSupabaseError(existingError),
     });
+    await logShareDebug('share.create.existing_lookup_failed', {
+      shareDebugId,
+      conversationId,
+      supabaseError: summarizeSupabaseError(existingError),
+    }, authHeader);
     return NextResponse.json({ error: 'Unable to create share link.' }, { status: 500 });
   }
 
   if (existingShare?.share_token) {
-    logShareDebug('share.create.existing_share_found', {
+    await logShareDebug('share.create.existing_share_found', {
       shareDebugId,
       conversationId,
-    });
+    }, authHeader);
     const { error: updateError } = await supabase
       .from('conversation_shares')
       .update({
@@ -374,17 +441,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
         conversationId,
         supabaseError: summarizeSupabaseError(updateError),
       });
+      await logShareDebug('share.create.existing_update_failed', {
+        shareDebugId,
+        conversationId,
+        supabaseError: summarizeSupabaseError(updateError),
+      }, authHeader);
       return NextResponse.json({ error: 'Unable to create share link.' }, { status: 500 });
     }
 
     logger.info('share.create_reused', { shareDebugId, conversationId });
+    await logShareDebug('share.create.reused', {
+      shareDebugId,
+      conversationId,
+    }, authHeader);
     return NextResponse.json({ token: existingShare.share_token });
   }
 
-  logShareDebug('share.create.insert_started', {
+  await logShareDebug('share.create.insert_started', {
     shareDebugId,
     conversationId,
-  });
+  }, authHeader);
   const token = createShareToken();
   const { data: insertedShare, error: insertError } = await supabase
     .from('conversation_shares')
@@ -404,9 +480,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       hasInsertedShare: Boolean(insertedShare),
       supabaseError: summarizeSupabaseError(insertError),
     });
+    await logShareDebug('share.create.insert_failed', {
+      shareDebugId,
+      conversationId,
+      hasInsertedShare: Boolean(insertedShare),
+      supabaseError: summarizeSupabaseError(insertError),
+    }, authHeader);
     return NextResponse.json({ error: 'Unable to create share link.' }, { status: 500 });
   }
 
   logger.info('share.create_created', { shareDebugId, conversationId });
+  await logShareDebug('share.create.created', {
+    shareDebugId,
+    conversationId,
+  }, authHeader);
   return NextResponse.json({ token: insertedShare.share_token });
 }
