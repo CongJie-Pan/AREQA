@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ConversationList } from '@/components/ConversationList';
 import { useConversationStore } from '@/store/conversation';
+import { useChatStore } from '@/store/chat';
 import type { Conversation } from '@/database/schema';
 
 vi.mock('next/image', () => ({
@@ -99,6 +100,27 @@ describe('ConversationList title states', () => {
       error: null,
       streamingTitles: {},
     });
+    useChatStore.setState({
+      messages: [],
+      isStreaming: false,
+      currentStreamingId: null,
+      thinkingContent: '',
+      thinkingStartTime: null,
+      isThinking: false,
+      currentContent: '',
+      currentCitations: [],
+      currentAnswerBlocks: [],
+      quotedText: null,
+      error: null,
+      tokenUsage: null,
+      useRag: false,
+      useWebSearch: false,
+      searchMode: 'auto',
+      forceThink: true,
+      ragStatus: 'idle',
+      ragMessage: '',
+      ragSources: [],
+    });
   });
 
   it('localizes legacy default conversation titles instead of showing persisted Chinese text', () => {
@@ -118,6 +140,42 @@ describe('ConversationList title states', () => {
       conversations: [conversation({ id: 'conversation-1', title: '新對話' })],
       activeConversationId: 'conversation-1',
       streamingTitles: { 'conversation-1': '' },
+    });
+
+    renderConversationList();
+
+    expect(screen.getByRole('status', { name: 'New chat' })).toBeInTheDocument();
+    expect(screen.queryByText('新對話')).not.toBeInTheDocument();
+  });
+
+  it('shows a shimmer loading title during the first assistant stream before title generation starts', () => {
+    useConversationStore.setState({
+      conversations: [conversation({ id: 'conversation-1', title: '新對話' })],
+      activeConversationId: 'conversation-1',
+      streamingTitles: {},
+    });
+    useChatStore.setState({
+      messages: [
+        {
+          id: 'user-message-1',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          role: 'user',
+          content: 'Explain photosynthesis',
+          createdAt: new Date('2026-08-25T08:00:00.000Z'),
+        },
+        {
+          id: 'assistant-message-1',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          role: 'assistant',
+          content: '',
+          createdAt: new Date('2026-08-25T08:00:01.000Z'),
+          isStreaming: true,
+        },
+      ],
+      isStreaming: true,
+      currentStreamingId: 'assistant-message-1',
     });
 
     renderConversationList();

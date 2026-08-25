@@ -11,6 +11,7 @@ import { App, Dropdown, Input, Modal, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import { MoreHorizontal, Pencil, Pin, PinOff, Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
 import { useConversationStore } from '@/store/conversation';
+import { useChatStore } from '@/store/chat';
 import { useMailboxStore } from '@/store/mailbox';
 import { useFeatureStore } from '@/store/features';
 import { useStyles } from './styles';
@@ -65,7 +66,21 @@ export function ConversationList({
   const activeId = useConversationStore((state) => state.activeConversationId);
   const isLoading = useConversationStore((state) => state.isLoading);
   const streamingTitles = useConversationStore((state) => state.streamingTitles);
-  
+  const isActiveConversationAwaitingFirstReply = useChatStore((state) => {
+    if (!activeId || !state.isStreaming || !state.currentStreamingId) return false;
+
+    const activeMessages = state.messages.filter((message) => message.conversationId === activeId);
+    if (activeMessages.length !== 2) return false;
+
+    const hasUserMessage = activeMessages.some((message) => message.role === 'user');
+    const hasStreamingAssistantMessage = activeMessages.some((message) => (
+      message.id === state.currentStreamingId &&
+      message.role === 'assistant' &&
+      message.isStreaming === true
+    ));
+
+    return hasUserMessage && hasStreamingAssistantMessage;
+  });
 
 
   const sidebarLogoSrc = resolvedTheme === 'light'
@@ -307,10 +322,17 @@ export function ConversationList({
               <div className={cx('areqa-conversation-group-title', styles.groupTitle)}>{group}</div>
               {items.map((conv) => {
                 const isPinned = pinnedIds.includes(conv.id);
+                const hasDefaultTitle = DEFAULT_CONVERSATION_TITLES.has(conv.title);
                 const isGeneratingTitle = streamingTitles[conv.id] !== undefined;
+                const isAwaitingInitialTitle = (
+                  conv.id === activeId &&
+                  hasDefaultTitle &&
+                  isActiveConversationAwaitingFirstReply
+                );
+                const isTitlePending = isGeneratingTitle || isAwaitingInitialTitle;
                 const displayTitle = isGeneratingTitle
                   ? streamingTitles[conv.id]
-                  : (DEFAULT_CONVERSATION_TITLES.has(conv.title) ? t('newChat') : conv.title || t('newChat'));
+                  : (hasDefaultTitle ? t('newChat') : conv.title || t('newChat'));
                 const menuItems: MenuProps['items'] = [
                   {
                     key: 'rename',
@@ -367,7 +389,7 @@ export function ConversationList({
                       <MessageSquare size={16} className={cx('areqa-conversation-item-icon', styles.itemIcon)} />
                       <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
                         <span className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}>
-                          {isGeneratingTitle ? (
+                          {isTitlePending ? (
                             <span
                               className={styles.titleSkeleton}
                               aria-label={t('newChat')}
