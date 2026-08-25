@@ -6,6 +6,7 @@ import opencc
 from openai import AsyncOpenAI
 
 from config import settings
+from services.conversation_context_service import resolve_answer_language
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +28,16 @@ FEW_SHOT_EXAMPLES = """
 建議問題：["《哈姆雷特》中經典台詞「To be, or not to be」有何深意？", "哈姆雷特的性格缺陷如何導致了悲劇？", "這部戲劇對後世的心理學有哪些影響？"]
 """
 
-SUGGESTION_SYSTEM_PROMPT = f"""你是一位博學廣識的引導型學習助手（AREQA）的「延伸問題生成器」。
+SUGGESTION_SYSTEM_PROMPT_TEMPLATE = """你是一位博學廣識的引導型學習助手（AREQA）的「延伸問題生成器」。
 
 你的任務是根據用戶的問題、模型的回答摘要，以及相關的對話或檢索片段，
-生成 3 個繁體中文的延伸問題，引導用戶從不同角度繼續深入探索與學習。
+生成 3 個{answer_language}的延伸問題，引導用戶從不同角度繼續深入探索與學習。
 
 【重要規則】
 - 每個問題必須在 25 字以內
 - 問題必須自然、具有啟發性，並能從給定的回答與上下文中延伸
 - 問題要有多樣性，角度各不相同（例如：概念澄清、實際應用、歷史脈絡、哲學反思等）
-- 絕對禁止使用簡體中文，必須全程使用繁體中文（zh-TW）
+- 必須全程使用{answer_language}，與本回合正式回答語言一致
 - 輸出純 JSON：{{"suggestions": ["問題1", "問題2", "問題3"]}}
 
 【示範（動態 Few-Shot）】
@@ -74,7 +75,8 @@ class SuggestionService:
         self,
         user_query: str,
         answer_text: str,
-        reranked_results: List[Any]
+        reranked_results: List[Any],
+        interface_language: str = "zh-TW",
     ) -> List[str]:
         """
         Generate 3 follow-up questions based on the Dynamic Contexts approach.
@@ -82,6 +84,12 @@ class SuggestionService:
         """
         if not self.client:
             return []
+
+        answer_language = resolve_answer_language(interface_language, user_query)
+        system_prompt = SUGGESTION_SYSTEM_PROMPT_TEMPLATE.format(
+            answer_language=answer_language,
+            FEW_SHOT_EXAMPLES=FEW_SHOT_EXAMPLES,
+        )
 
         # Assemble dynamic retrieved contexts (Top-4 as per paper)
         context_parts = []
@@ -100,13 +108,13 @@ class SuggestionService:
 相關古籍文本片段（請確保生成的問題可以從以下片段中找到答案）：
 {context_text}
 
-請務必以繁體中文輸出。"""
+請務必以{answer_language}輸出。"""
 
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": SUGGESTION_SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ],
                 response_format={"type": "json_object"},
@@ -122,8 +130,9 @@ class SuggestionService:
             valid_suggestions = []
             for s in suggestions:
                 s = s.strip()
-                # Apply OpenCC conversion as a failsafe
-                s = self.converter.convert(s)
+                if answer_language == "繁體中文":
+                    # Apply OpenCC conversion as a Traditional Chinese failsafe only.
+                    s = self.converter.convert(s)
                 if 5 <= len(s) <= 35: # Slightly more relaxed than 25 for safety
                     valid_suggestions.append(s)
             

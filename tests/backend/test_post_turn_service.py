@@ -59,6 +59,24 @@ async def test_suggestion_events_record_trace_markers():
 
 
 @pytest.mark.asyncio
+async def test_suggestion_events_passes_interface_language_to_generator():
+    suggestion_service = AsyncMock()
+    suggestion_service.generate_suggestions.return_value = ["Follow-up?"]
+    service = PostTurnService(suggestion_service)
+
+    await service.suggestion_events(
+        last_user_msg="Explain dependency injection",
+        answer_text="answer",
+        context_results_obj=None,
+        use_rag=False,
+        use_web_search=False,
+        interface_language="en",
+    )
+
+    assert suggestion_service.generate_suggestions.await_args.kwargs["interface_language"] == "en"
+
+
+@pytest.mark.asyncio
 async def test_suggestion_events_timeout_returns_compatible_done(caplog):
     """Slow suggestions must fall back without blocking terminal completion."""
 

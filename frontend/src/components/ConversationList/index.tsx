@@ -244,7 +244,15 @@ export function ConversationList({
             alt="AREQA Logo" 
             width={164} 
             height={40}
-            className={cx('areqa-conversation-logo', styles.logo)}
+            className={cx('areqa-conversation-logo', 'areqa-conversation-logo-dark', styles.logo, styles.logoDark)}
+            priority
+          />
+          <Image
+            src="/logo/AREQA_logo_v4_black_word.png"
+            alt="AREQA Logo"
+            width={164}
+            height={40}
+            className={cx('areqa-conversation-logo', 'areqa-conversation-logo-light', styles.logo, styles.logoLight)}
             priority
           />
         </div>

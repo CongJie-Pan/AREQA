@@ -699,7 +699,15 @@ class OrchestrationService:
                 run_context.run_id,
             )
 
-        async for event in self._node_post_generation(last_user_msg, answer_content_accumulator, context_results_obj, use_rag, use_web_search, trace=trace):
+        async for event in self._node_post_generation(
+            last_user_msg,
+            answer_content_accumulator,
+            context_results_obj,
+            use_rag,
+            use_web_search,
+            trace=trace,
+            interface_language=interface_language,
+        ):
             yield sse_adapter.encode_legacy(event, run_context.run_id)
 
         if last_user_msg and self.client:
@@ -1255,7 +1263,16 @@ class OrchestrationService:
         ):
             yield event
 
-    async def _node_post_generation(self, last_user_msg: str, answer_content_accumulator: str, context_results_obj: Any, use_rag: bool, use_web_search: bool, trace: Optional[TurnLatencyTrace] = None) -> AsyncGenerator[str, None]:
+    async def _node_post_generation(
+        self,
+        last_user_msg: str,
+        answer_content_accumulator: str,
+        context_results_obj: Any,
+        use_rag: bool,
+        use_web_search: bool,
+        trace: Optional[TurnLatencyTrace] = None,
+        interface_language: InterfaceLanguage = "zh-TW",
+    ) -> AsyncGenerator[str, None]:
         """
         Perform post-generation tasks such as generating follow-up suggestions.
 
@@ -1277,6 +1294,7 @@ class OrchestrationService:
             context_results_obj=context_results_obj,
             use_rag=use_rag,
             use_web_search=use_web_search,
+            interface_language=interface_language,
             timeout_ms=settings.suggestion_generation_timeout_ms,
             trace=trace,
         )

@@ -167,6 +167,7 @@ class PostTurnService:
         context_results_obj: Any,
         use_rag: bool,
         use_web_search: bool,
+        interface_language: str = "zh-TW",
         timeout_ms: int | None = None,
         trace: Any = None,
     ) -> List[str]:
@@ -200,6 +201,7 @@ class PostTurnService:
                     user_query=last_user_msg,
                     answer_text=answer_text,
                     reranked_results=reranked_results,
+                    interface_language=interface_language,
                 ),
                 timeout=timeout_seconds,
             )

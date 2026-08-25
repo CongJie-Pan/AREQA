@@ -251,6 +251,18 @@ body {
   object-fit: contain;
 }
 
+.areqa-conversation-logo-light {
+  display: none;
+}
+
+html[data-interface-theme='light'] .areqa-conversation-logo-dark {
+  display: none;
+}
+
+html[data-interface-theme='light'] .areqa-conversation-logo-light {
+  display: block;
+}
+
 .areqa-conversation-toggle-button,
 .areqa-conversation-new-button,
 .areqa-conversation-panel-button,
@@ -489,7 +501,7 @@ body {
 .areqa-chat-input-attachment-button {
   width: 30px;
   height: 30px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 50%;
   background: transparent;
   color: var(--foreground);

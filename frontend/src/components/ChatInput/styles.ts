@@ -304,9 +304,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-width: 1px;
-    border-style: solid;
-    border-color: var(--border);
+    border: none;
     border-radius: 50%;
     background: transparent;
     color: var(--foreground);
@@ -314,8 +312,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     transition: all 0.2s;
 
     &:hover:not(:disabled) {
-      border-color: #d8a25c;
-      background: rgba(216, 162, 92, 0.15);
+      background: var(--areqa-account-hover);
       color: var(--foreground);
     }
 

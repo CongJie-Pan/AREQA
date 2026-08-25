@@ -83,7 +83,7 @@ def _explicit_language_request(text: str) -> str | None:
     return None
 
 
-def _resolve_answer_language(interface_language: str, latest_user_message: str) -> str:
+def resolve_answer_language(interface_language: str, latest_user_message: str) -> str:
     """Resolve final answer language from explicit request, query language, and UI.
 
     Args:
@@ -105,7 +105,7 @@ def _resolve_answer_language(interface_language: str, latest_user_message: str) 
 
 
 def _answer_language_instruction(interface_language: str, latest_user_message: str = "") -> str:
-    answer_language = _resolve_answer_language(interface_language, latest_user_message)
+    answer_language = resolve_answer_language(interface_language, latest_user_message)
     return (
         f"\n\n【回答語言規則】本回合正式回答必須使用{answer_language}。"
         "語言判斷優先序為：使用者最新訊息的明確語言要求 > 最新訊息主要語言 > 介面語言。"
