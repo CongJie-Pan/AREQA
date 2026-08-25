@@ -36,7 +36,7 @@ export function normalizeDisplayMathBlocks(content: string): string {
   return normalizedDelimiters.replace(
     /(^|\n)([ \t]*)\$\$([^\n]+?)\$\$([ \t]*)(?=\n|$)/g,
     (_match, prefix: string, indent: string, latex: string, trailing: string) =>
-      `${prefix}${indent}$$\n${latex.trim()}\n${indent}$$${trailing}`,
+      `${prefix}${indent}$$\n${indent}${latex.trim()}\n${indent}$$${trailing}`,
   );
 }
 

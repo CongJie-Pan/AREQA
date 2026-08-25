@@ -15,6 +15,22 @@ describe('normalizeDisplayMathBlocks', () => {
     );
   });
 
+  it('preserves indentation when expanding display math inside Markdown lists', () => {
+    const markdown = [
+      '* 先把裡面的 $(2x + 1)$ 當成一個整體，只看最外面的 3 次方：',
+      '  $$(\\text{整體})^3 \\xrightarrow{\\text{微分}} 3 \\times (\\text{整體})^2$$',
+      '* 得到：**$3(2x + 1)^2$**',
+    ].join('\n');
+
+    expect(normalizeDisplayMathBlocks(markdown)).toBe([
+      '* 先把裡面的 $(2x + 1)$ 當成一個整體，只看最外面的 3 次方：',
+      '  $$',
+      '  (\\text{整體})^3 \\xrightarrow{\\text{微分}} 3 \\times (\\text{整體})^2',
+      '  $$',
+      '* 得到：**$3(2x + 1)^2$**',
+    ].join('\n'));
+  });
+
   it('preserves TeX delimiters inside inline and fenced code', () => {
     const markdown = [
       'Use `\\(x\\)` as an example.',
