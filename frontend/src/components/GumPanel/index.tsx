@@ -6,6 +6,7 @@ import { useStyles } from './styles';
 import { Spin, Checkbox, Input, message, Button, Space, Popconfirm, Modal, List, Tag } from 'antd';
 import { SidePanelType } from '@/types/panel';
 import { formatUserDate, parseServerDate } from '@/utils/dateTime';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 const cleanMemoryText = (text: string) => {
   if (text.startsWith('【使用者畫像】')) {
@@ -29,6 +30,7 @@ interface GumPanelProps {
 
 export function GumPanel({ open, type, onClose }: GumPanelProps) {
   const { styles } = useStyles();
+  const { t } = useUserPreferences();
   const { propositions, suggestions, summary, loading, loadingSummary, fetchMemory, fetchSuggestions, fetchSummary, deleteMemory, deleteMemories, editMemory } = useGumStore();
 
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
@@ -126,30 +128,30 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
     try {
       const ids = Array.from(selectedIds);
       await deleteMemories(ids);
-      message.success(`成功刪除 ${ids.length} 筆記憶`);
+      message.success(t('memoryDeleteSelectedSuccess', { count: ids.length }));
       setSelectedIds(new Set());
     } catch {
-      message.error('刪除記憶失敗');
+      message.error(t('memoryDeleteFailed'));
     }
   };
 
   const handleSaveEdit = async (id: string | number) => {
     if (!editText.trim()) {
-      message.warning('記憶內容不能為空');
+      message.warning(t('memoryContentRequired'));
       return;
     }
     try {
       await editMemory(id, editText);
-      message.success('記憶更新成功');
+      message.success(t('memoryUpdateSuccess'));
       setEditingId(null);
     } catch {
-      message.error('記憶更新失敗');
+      message.error(t('memoryUpdateFailed'));
     }
   };
 
   return (
     <div className={styles.panel}>
-      <button className={styles.closeBtnFixed} onClick={onClose} title="關閉面板">
+      <button className={styles.closeBtnFixed} onClick={onClose} title={t('closePanel')}>
         <X size={20} />
       </button>
 
@@ -160,12 +162,12 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
             <div className={styles.heroSection}>
               <div className={styles.heroTitleRow}>
                 <BrainCircuit size={28} style={{ color: '#d4af37' }} />
-                <h2>AREQA 眼中的你</h2>
+                <h2>{t('memoryProfileTitle')}</h2>
               </div>
               <div className={styles.heroSummaryBox}>
                 {loadingSummary ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#aaa' }}>
-                    <Spin size="small" /> 正在為您生成專屬記憶綜整...
+                    <Spin size="small" /> {t('memorySummaryLoading')}
                   </div>
                 ) : summary ? (
                   <>
@@ -180,7 +182,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                     )}
                   </>
                 ) : (
-                  <div>目前還沒有足夠的記憶能為您生成總結。</div>
+                  <div>{t('memorySummaryEmpty')}</div>
                 )}
               </div>
             </div>
@@ -189,20 +191,20 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
             <div>
               <div className={styles.sectionHeader}>
                 <FolderHeart size={18} style={{ color: '#d4af37' }} />
-                <h3>記憶資產 <span>({longTermProps.length}條)</span></h3>
+                <h3>{t('memoryAssets')} <span>{t('memoryAssetCount', { count: longTermProps.length })}</span></h3>
               </div>
               <div className={styles.assetsGrid}>
                 <div className={styles.assetCard} onClick={() => { setAssetModalType('tags'); setAssetModalVisible(true); }} style={{ cursor: 'pointer' }}>
-                  <div className={styles.assetLabel}>活躍標籤</div>
-                  <div className={styles.assetValue}>{uniqueTags.length} <span>個</span></div>
+                  <div className={styles.assetLabel}>{t('memoryActiveTags')}</div>
+                  <div className={styles.assetValue}>{uniqueTags.length} <span>{t('memoryUnitItems')}</span></div>
                 </div>
                 <div className={styles.assetCard} onClick={() => { setAssetModalType('scopes'); setAssetModalVisible(true); }} style={{ cursor: 'pointer' }}>
-                  <div className={styles.assetLabel}>涉及領域</div>
-                  <div className={styles.assetValue}>{uniqueScopes.length} <span>個</span></div>
+                  <div className={styles.assetLabel}>{t('memoryScopes')}</div>
+                  <div className={styles.assetValue}>{uniqueScopes.length} <span>{t('memoryUnitItems')}</span></div>
                 </div>
                 <div className={styles.assetCard} onClick={() => { setAssetModalType('nodes'); setAssetModalVisible(true); }} style={{ cursor: 'pointer' }}>
-                  <div className={styles.assetLabel}>記憶節點</div>
-                  <div className={styles.assetValue}>{longTermProps.length} <span>條</span></div>
+                  <div className={styles.assetLabel}>{t('memoryNodes')}</div>
+                  <div className={styles.assetValue}>{longTermProps.length} <span>{t('memoryUnitEntries')}</span></div>
                 </div>
               </div>
             </div>
@@ -212,7 +214,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
               <div className={styles.timelineHeaderRow}>
                 <div className={styles.sectionHeader} style={{ marginBottom: 0 }}>
                   <Clock size={18} style={{ color: '#d4af37' }} />
-                  <h3>時間線</h3>
+                  <h3>{t('memoryTimeline')}</h3>
                 </div>
                 
                 <div className={styles.timelineActions}>
@@ -221,18 +223,18 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                     checked={longTermProps.length > 0 && selectedIds.size === longTermProps.length}
                     indeterminate={selectedIds.size > 0 && selectedIds.size < longTermProps.length}
                   >
-                    全選
+                    {t('selectAll')}
                   </Checkbox>
                   {selectedIds.size > 0 && (
-                    <Popconfirm title={`確定要刪除選取的 ${selectedIds.size} 筆記憶嗎？`} onConfirm={handleDeleteSelected}>
+                    <Popconfirm title={t('memoryDeleteSelectedConfirm', { count: selectedIds.size })} onConfirm={handleDeleteSelected}>
                       <Button danger size="small" icon={<Trash2 size={14} />}>
-                        刪除
+                        {t('delete')}
                       </Button>
                     </Popconfirm>
                   )}
                   <button className={styles.refreshBtn} onClick={() => fetchMemory()} disabled={loading}>
                     <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                    重新整理
+                    {t('refresh')}
                   </button>
                 </div>
               </div>
@@ -243,7 +245,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                 </div>
               ) : longTermProps.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
-                  目前還沒有任何記憶紀錄喔！開始與AREQA聊天吧。
+                  {t('memoryEmpty')}
                 </div>
               ) : (
                 <div className={styles.timelineItems}>
@@ -254,7 +256,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                       {items.map(p => {
                         const timeStr = p.updated_at
                           ? formatUserDate(p.updated_at, { hour: '2-digit', minute: '2-digit', hour12: false })
-                          : '剛剛';
+                          : t('memoryJustNow');
                         return (
                           <div key={p.id} className={styles.timelineItem} style={{ backgroundColor: selectedIds.has(p.id) ? 'rgba(216, 162, 92, 0.05)' : undefined }}>
                             <div style={{ marginTop: 4 }}>
@@ -266,7 +268,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                             <div className={styles.timelineTimeBox}>
                               <div className={styles.timelineTime}>{timeStr}</div>
                               <div className={styles.timelineTag}>
-                                {p.memory_type === 'profile' ? '已記住' : '長期記憶'}
+                                {p.memory_type === 'profile' ? t('memoryProfileRemembered') : t('memoryLongTerm')}
                               </div>
                             </div>
                             
@@ -279,8 +281,8 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                                     autoSize={{ minRows: 2, maxRows: 6 }}
                                   />
                                   <Space style={{ alignSelf: 'flex-end' }}>
-                                    <Button size="small" onClick={() => setEditingId(null)}>取消</Button>
-                                    <Button size="small" type="primary" onClick={() => handleSaveEdit(p.id)}>儲存</Button>
+                                    <Button size="small" onClick={() => setEditingId(null)}>{t('cancel')}</Button>
+                                    <Button size="small" type="primary" onClick={() => handleSaveEdit(p.id)}>{t('save')}</Button>
                                   </Space>
                                 </div>
                               ) : (
@@ -294,11 +296,11 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                               <div className={`timelineTools ${styles.timelineTools}`}>
                                 {p.confidence != null && !isNaN(p.confidence) && (
                                   <span className={styles.confidenceBadge}>
-                                    信心: {Number(p.confidence).toFixed(2)}
+                                    {t('memoryConfidence')}: {Number(p.confidence).toFixed(2)}
                                   </span>
                                 )}
                                 <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} style={{ color: '#aaa' }} />
-                                <Popconfirm title="確定要刪除此記憶嗎？" onConfirm={() => deleteMemory(p.id)}>
+                                <Popconfirm title={t('memoryDeleteConfirm')} onConfirm={() => deleteMemory(p.id)}>
                                   <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
                                 </Popconfirm>
                               </div>
@@ -314,8 +316,8 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
 
             <Modal
               title={
-                assetModalType === 'tags' ? '活躍標籤列表' :
-                assetModalType === 'scopes' ? '涉及領域列表' : '記憶節點列表'
+                assetModalType === 'tags' ? t('memoryActiveTagsList') :
+                assetModalType === 'scopes' ? t('memoryScopesList') : t('memoryNodesList')
               }
               open={assetModalVisible}
               onCancel={() => setAssetModalVisible(false)}
@@ -350,21 +352,21 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
             <div className={styles.heroSection} style={{ marginBottom: 24 }}>
               <div className={styles.heroTitleRow}>
                 <Sparkles size={28} style={{ color: '#d4af37' }} />
-                <h2>您可能想知道？ (Suggestions)</h2>
+                <h2>{t('suggestionsPanelTitle')}</h2>
               </div>
               <div className={styles.heroSummaryBox}>
-                AREQA 會根據您的記憶與歷史對話內容，主動推薦您可能感興趣的議題，幫助您探索更深度的知識。
+                {t('suggestionsPanelDescription')}
               </div>
             </div>
 
             <div className={styles.timelineHeaderRow}>
               <div className={styles.sectionHeader} style={{ marginBottom: 0 }}>
                 <Sparkles size={18} style={{ color: '#d4af37' }} />
-                <h3>推薦話題列表</h3>
+                <h3>{t('suggestionsListTitle')}</h3>
               </div>
               <button className={styles.refreshBtn} onClick={() => fetchSuggestions()} disabled={loading}>
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                重新整理
+                {t('refresh')}
               </button>
             </div>
 
@@ -374,13 +376,13 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
               </div>
             ) : suggestions.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
-                目前沒有任何建議。您可以先累積一些對話記憶，再試試看！
+                {t('suggestionsEmpty')}
               </div>
             ) : (
               <div className={styles.timelineItems}>
                 {suggestions.map((s, idx) => (
                   <div key={idx} className={styles.suggestionCard}>
-                    <div className={styles.suggestionTitle}>推薦話題 #{idx + 1}</div>
+                    <div className={styles.suggestionTitle}>{t('suggestionItemTitle', { index: idx + 1 })}</div>
                     <div className={styles.timelineText}>{s}</div>
                   </div>
                 ))}

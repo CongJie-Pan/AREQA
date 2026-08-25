@@ -23,6 +23,40 @@ export type TranslationKey =
   | 'language.zhCN'
   | 'language.en'
   | 'browseMemory'
+  | 'closePanel'
+  | 'memoryDeleteSelectedSuccess'
+  | 'memoryDeleteFailed'
+  | 'memoryContentRequired'
+  | 'memoryUpdateSuccess'
+  | 'memoryUpdateFailed'
+  | 'memoryProfileTitle'
+  | 'memorySummaryLoading'
+  | 'memorySummaryEmpty'
+  | 'memoryAssets'
+  | 'memoryAssetCount'
+  | 'memoryActiveTags'
+  | 'memoryScopes'
+  | 'memoryNodes'
+  | 'memoryUnitItems'
+  | 'memoryUnitEntries'
+  | 'memoryTimeline'
+  | 'selectAll'
+  | 'memoryDeleteSelectedConfirm'
+  | 'refresh'
+  | 'memoryEmpty'
+  | 'memoryJustNow'
+  | 'memoryProfileRemembered'
+  | 'memoryLongTerm'
+  | 'memoryConfidence'
+  | 'memoryDeleteConfirm'
+  | 'memoryActiveTagsList'
+  | 'memoryScopesList'
+  | 'memoryNodesList'
+  | 'suggestionsPanelTitle'
+  | 'suggestionsPanelDescription'
+  | 'suggestionsListTitle'
+  | 'suggestionsEmpty'
+  | 'suggestionItemTitle'
   | 'editNickname'
   | 'feedback'
   | 'logout'
@@ -153,6 +187,40 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'language.zhCN': '簡體中文',
     'language.en': 'English',
     browseMemory: '瀏覽記憶',
+    closePanel: '關閉面板',
+    memoryDeleteSelectedSuccess: '成功刪除 {count} 筆記憶',
+    memoryDeleteFailed: '刪除記憶失敗',
+    memoryContentRequired: '記憶內容不能為空',
+    memoryUpdateSuccess: '記憶更新成功',
+    memoryUpdateFailed: '記憶更新失敗',
+    memoryProfileTitle: 'AREQA 眼中的你',
+    memorySummaryLoading: '正在為您生成專屬記憶綜整...',
+    memorySummaryEmpty: '目前還沒有足夠的記憶能為您生成總結。',
+    memoryAssets: '記憶資產',
+    memoryAssetCount: '({count}條)',
+    memoryActiveTags: '活躍標籤',
+    memoryScopes: '涉及領域',
+    memoryNodes: '記憶節點',
+    memoryUnitItems: '個',
+    memoryUnitEntries: '條',
+    memoryTimeline: '時間線',
+    selectAll: '全選',
+    memoryDeleteSelectedConfirm: '確定要刪除選取的 {count} 筆記憶嗎？',
+    refresh: '重新整理',
+    memoryEmpty: '目前還沒有任何記憶紀錄喔！開始與AREQA聊天吧。',
+    memoryJustNow: '剛剛',
+    memoryProfileRemembered: '已記住',
+    memoryLongTerm: '長期記憶',
+    memoryConfidence: '信心',
+    memoryDeleteConfirm: '確定要刪除此記憶嗎？',
+    memoryActiveTagsList: '活躍標籤列表',
+    memoryScopesList: '涉及領域列表',
+    memoryNodesList: '記憶節點列表',
+    suggestionsPanelTitle: '您可能想知道？',
+    suggestionsPanelDescription: 'AREQA 會根據您的記憶與歷史對話內容，主動推薦您可能感興趣的議題，幫助您探索更深度的知識。',
+    suggestionsListTitle: '推薦話題列表',
+    suggestionsEmpty: '目前沒有任何建議。您可以先累積一些對話記憶，再試試看！',
+    suggestionItemTitle: '推薦話題 #{index}',
     editNickname: '修改暱稱',
     feedback: '聯繫我們/意見回饋',
     logout: '登出',
@@ -253,6 +321,40 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'language.zhCN': '简体中文',
     'language.en': 'English',
     browseMemory: '浏览记忆',
+    closePanel: '关闭面板',
+    memoryDeleteSelectedSuccess: '成功删除 {count} 笔记忆',
+    memoryDeleteFailed: '删除记忆失败',
+    memoryContentRequired: '记忆内容不能为空',
+    memoryUpdateSuccess: '记忆更新成功',
+    memoryUpdateFailed: '记忆更新失败',
+    memoryProfileTitle: 'AREQA 眼中的你',
+    memorySummaryLoading: '正在为您生成专属记忆综整...',
+    memorySummaryEmpty: '目前还没有足够的记忆能为您生成总结。',
+    memoryAssets: '记忆资产',
+    memoryAssetCount: '({count}条)',
+    memoryActiveTags: '活跃标签',
+    memoryScopes: '涉及领域',
+    memoryNodes: '记忆节点',
+    memoryUnitItems: '个',
+    memoryUnitEntries: '条',
+    memoryTimeline: '时间线',
+    selectAll: '全选',
+    memoryDeleteSelectedConfirm: '确定要删除选取的 {count} 笔记忆吗？',
+    refresh: '重新整理',
+    memoryEmpty: '目前还没有任何记忆纪录喔！开始与AREQA聊天吧。',
+    memoryJustNow: '刚刚',
+    memoryProfileRemembered: '已记住',
+    memoryLongTerm: '长期记忆',
+    memoryConfidence: '信心',
+    memoryDeleteConfirm: '确定要删除此记忆吗？',
+    memoryActiveTagsList: '活跃标签列表',
+    memoryScopesList: '涉及领域列表',
+    memoryNodesList: '记忆节点列表',
+    suggestionsPanelTitle: '您可能想知道？',
+    suggestionsPanelDescription: 'AREQA 会根据您的记忆与历史对话内容，主动推荐您可能感兴趣的议题，帮助您探索更深度的知识。',
+    suggestionsListTitle: '推荐话题列表',
+    suggestionsEmpty: '目前没有任何建议。您可以先累积一些对话记忆，再试试看！',
+    suggestionItemTitle: '推荐话题 #{index}',
     editNickname: '修改昵称',
     feedback: '联系我们/意见反馈',
     logout: '登出',
@@ -353,6 +455,40 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'language.zhCN': 'Simplified Chinese',
     'language.en': 'English',
     browseMemory: 'Memory',
+    closePanel: 'Close panel',
+    memoryDeleteSelectedSuccess: 'Deleted {count} memories',
+    memoryDeleteFailed: 'Failed to delete memory',
+    memoryContentRequired: 'Memory content cannot be empty',
+    memoryUpdateSuccess: 'Memory updated',
+    memoryUpdateFailed: 'Failed to update memory',
+    memoryProfileTitle: 'How AREQA sees you',
+    memorySummaryLoading: 'Generating your memory summary...',
+    memorySummaryEmpty: 'There is not enough memory yet to generate a summary.',
+    memoryAssets: 'Memory assets',
+    memoryAssetCount: '({count})',
+    memoryActiveTags: 'Active tags',
+    memoryScopes: 'Related domains',
+    memoryNodes: 'Memory nodes',
+    memoryUnitItems: 'items',
+    memoryUnitEntries: 'entries',
+    memoryTimeline: 'Timeline',
+    selectAll: 'Select all',
+    memoryDeleteSelectedConfirm: 'Delete the selected {count} memories?',
+    refresh: 'Refresh',
+    memoryEmpty: 'No memory records yet. Start chatting with AREQA.',
+    memoryJustNow: 'Just now',
+    memoryProfileRemembered: 'Remembered',
+    memoryLongTerm: 'Long-term',
+    memoryConfidence: 'Confidence',
+    memoryDeleteConfirm: 'Delete this memory?',
+    memoryActiveTagsList: 'Active tags',
+    memoryScopesList: 'Related domains',
+    memoryNodesList: 'Memory nodes',
+    suggestionsPanelTitle: 'Suggestions',
+    suggestionsPanelDescription: 'AREQA uses your memory and past conversations to recommend topics you may want to explore next.',
+    suggestionsListTitle: 'Suggested topics',
+    suggestionsEmpty: 'No suggestions yet. Build up more conversation memory and try again.',
+    suggestionItemTitle: 'Suggested topic #{index}',
     editNickname: 'Edit nickname',
     feedback: 'Contact / feedback',
     logout: 'Log out',

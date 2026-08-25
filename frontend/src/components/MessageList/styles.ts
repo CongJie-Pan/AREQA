@@ -482,6 +482,16 @@ content: css`
     margin: 4px 0;
   }
 
+  [data-answer-block-index] + [data-answer-block-index],
+  [data-live-answer-part] + [data-live-answer-part] {
+    margin-top: 8px;
+  }
+
+  [data-answer-block-index] > :first-child,
+  [data-live-answer-part] > :first-child {
+    line-height: inherit;
+  }
+
   a {
     color: ${token.colorLink};
     text-decoration: none;
