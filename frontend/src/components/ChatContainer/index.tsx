@@ -426,9 +426,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
               <Dropdown
                 menu={{
                   items: [
-                    { key: 'md', label: '下載為 Markdown (.md)', icon: <FileCode size={16} color="white" /> },
-                    { key: 'pdf', label: '下載為 PDF (.pdf)', icon: <FileImage size={16} color="white" /> },
-                    { key: 'docx', label: '下載為 Word (.docx)', icon: <FileText size={16} color="white" /> },
+                    { key: 'md', label: '下載為 Markdown (.md)', icon: <FileCode size={16} /> },
+                    { key: 'pdf', label: '下載為 PDF (.pdf)', icon: <FileImage size={16} /> },
+                    { key: 'docx', label: '下載為 Word (.docx)', icon: <FileText size={16} /> },
                   ],
                   onClick: async (info) => {
                     try {
@@ -454,8 +454,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                 placement="bottomRight"
               >
                 <button
-                  className={styles.menuButton}
-                  style={{ display: 'flex', opacity: 1, pointerEvents: 'auto', visibility: 'visible', color: 'rgba(255, 255, 255, 0.65)' }}
+                  className={cx(styles.menuButton, styles.exportButton)}
                   aria-label="匯出對話"
                 >
                   <MoreVertical size={20} />

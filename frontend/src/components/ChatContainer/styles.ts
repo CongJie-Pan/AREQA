@@ -120,6 +120,13 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  exportButton: css`
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  `,
+
   headerTitle: css`
     font-size: 16px;
     font-weight: 500;
