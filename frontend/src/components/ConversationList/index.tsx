@@ -235,21 +235,21 @@ export function ConversationList({
   }, [conversations, pinnedIds, t]);
 
   return (
-    <div className={cx(styles.container, className)}>
+    <div className={cx('areqa-conversation-list', styles.container, className)}>
       {/* Logo & Toggle Area */}
-      <div className={styles.logoContainer}>
-        <div className={styles.logoWrapper}>
+      <div className={cx('areqa-conversation-logo-row', styles.logoContainer)}>
+        <div className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}>
           <Image 
             src="/logo/areqa_icon_v3.png" 
             alt="AREQA Logo" 
             width={40} 
             height={40}
-            className={styles.logo}
+            className={cx('areqa-conversation-logo', styles.logo)}
             priority
           />
         </div>
         <button 
-          className={styles.toggleButton} 
+          className={cx('areqa-conversation-toggle-button', styles.toggleButton)} 
           onClick={onToggleSidebar}
           title={t('closeSidebar')}
         >
@@ -258,14 +258,14 @@ export function ConversationList({
       </div>
 
       {/* Action Area */}
-      <div className={styles.header}>
-        <button className={styles.newButton} onClick={handleNew}>
+      <div className={cx('areqa-conversation-actions', styles.header)}>
+        <button className={cx('areqa-conversation-new-button', styles.newButton)} onClick={handleNew}>
           <Plus size={18} />
           <span>{t('newChat')}</span>
         </button>
-        <div className={styles.divider} />
+        <div className={cx('areqa-conversation-divider', styles.divider)} />
         {mailboxEnabled && (
-          <button className={styles.gumButton} onClick={() => onSelectGumPanel?.('mailbox')}>
+          <button className={cx('areqa-conversation-panel-button', styles.gumButton)} onClick={() => onSelectGumPanel?.('mailbox')}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <MailIcon size={18} />
               {unreadCount > 0 && (
@@ -286,20 +286,20 @@ export function ConversationList({
       </div>
 
       {/* List Area */}
-      <div className={styles.list}>
+      <div className={cx('areqa-conversation-scroll-list', styles.list)}>
         {isLoading ? (
-          <div className={styles.loading}>
+          <div className={cx('areqa-conversation-loading', styles.loading)}>
             <Spin size="small" />
           </div>
         ) : conversations.length === 0 ? (
-          <div className={styles.empty}>
-            <MessagesSquare size={32} className={styles.emptyIcon} />
-            <p className={styles.emptyText}>{t('noConversations')}</p>
+          <div className={cx('areqa-conversation-empty', styles.empty)}>
+            <MessagesSquare size={32} className={cx('areqa-conversation-empty-icon', styles.emptyIcon)} />
+            <p className={cx('areqa-conversation-empty-text', styles.emptyText)}>{t('noConversations')}</p>
           </div>
         ) : (
           groupedConversations.map(([group, items]) => (
             <React.Fragment key={group}>
-              <div className={styles.groupTitle}>{group}</div>
+              <div className={cx('areqa-conversation-group-title', styles.groupTitle)}>{group}</div>
               {items.map((conv) => {
                 const isPinned = pinnedIds.includes(conv.id);
                 const displayTitle = streamingTitles[conv.id] !== undefined
@@ -348,6 +348,7 @@ export function ConversationList({
                   >
                     <div
                       className={cx(
+                        'areqa-conversation-item',
                         styles.item,
                         conv.id === activeId && styles.itemActive
                       )}
@@ -357,9 +358,9 @@ export function ConversationList({
                       onPointerLeave={handleItemPointerEnd}
                       onPointerUp={handleItemPointerEnd}
                     >
-                      <MessageSquare size={16} className={styles.itemIcon} />
-                      <div className={styles.itemContent}>
-                        <span className={cx(styles.itemTitle, 'conv-title')}>
+                      <MessageSquare size={16} className={cx('areqa-conversation-item-icon', styles.itemIcon)} />
+                      <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
+                        <span className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}>
                           {streamingTitles[conv.id] !== undefined ? (
                             <>
                               {displayTitle}

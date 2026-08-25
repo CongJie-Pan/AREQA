@@ -219,6 +219,386 @@ body {
   flex: 0 0 auto;
 }
 
+.areqa-conversation-list {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  background: var(--areqa-sidebar-background);
+  color: var(--foreground);
+}
+
+.areqa-conversation-logo-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 24px;
+}
+
+.areqa-conversation-logo-wrapper {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.areqa-conversation-logo {
+  width: auto;
+  height: auto;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.areqa-conversation-toggle-button,
+.areqa-conversation-new-button,
+.areqa-conversation-panel-button,
+.areqa-chat-input-attachment-button,
+.areqa-chat-input-send-button,
+.areqa-chat-input-quote-close {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.areqa-conversation-toggle-button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.areqa-conversation-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 16px 16px;
+}
+
+.areqa-conversation-new-button,
+.areqa-conversation-panel-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.areqa-conversation-panel-button {
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.areqa-conversation-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+.areqa-conversation-scroll-list {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 8px;
+  scrollbar-width: none;
+}
+
+.areqa-conversation-scroll-list::-webkit-scrollbar {
+  display: none;
+}
+
+.areqa-conversation-group-title {
+  padding: 20px 12px 10px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.areqa-conversation-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.areqa-conversation-item-icon {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.areqa-conversation-item-content {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.areqa-conversation-item-title {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.areqa-conversation-empty,
+.areqa-conversation-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.areqa-conversation-empty {
+  opacity: 0.5;
+}
+
+.areqa-conversation-empty-icon,
+.areqa-conversation-empty-text {
+  color: var(--muted-foreground);
+}
+
+.areqa-conversation-empty-icon {
+  margin-bottom: 12px;
+}
+
+.areqa-conversation-empty-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.areqa-message-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.areqa-message-list-empty {
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px;
+  text-align: center;
+}
+
+.areqa-message-empty-logo {
+  width: 260px;
+  height: auto;
+  object-fit: contain;
+}
+
+.areqa-message-empty-subtitle {
+  margin-top: -18px;
+  color: var(--areqa-message-muted-text);
+  font-family: "Times New Roman", Times, serif;
+  font-size: 1.1rem;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.areqa-message-empty-subtitle span {
+  color: var(--foreground);
+  font-size: 1.2em;
+  font-weight: 700;
+}
+
+.areqa-chat-input-shell {
+  display: flex;
+  width: 90%;
+  max-width: 800px;
+  flex-direction: column;
+  gap: 0;
+  margin: 0 auto 16px;
+  padding: 12px 20px 10px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.areqa-chat-input-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  align-items: center;
+  gap: 12px;
+}
+
+.areqa-chat-input-textarea {
+  width: 0;
+  min-width: 0;
+  min-height: 24px;
+  max-height: 200px;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  resize: none;
+}
+
+.areqa-chat-input-textarea::placeholder {
+  color: var(--muted-foreground);
+}
+
+.areqa-chat-input-attachment-button,
+.areqa-chat-input-send-button,
+.areqa-chat-input-quote-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.areqa-chat-input-attachment-button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--foreground);
+}
+
+.areqa-chat-input-send-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #d8a25c;
+  color: #ffffff;
+}
+
+.areqa-chat-input-send-button:disabled {
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+
+.areqa-chat-input-quote-preview,
+.areqa-chat-input-attachment-list {
+  display: flex;
+  max-width: 100%;
+}
+
+.areqa-chat-input-quote-preview {
+  position: relative;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.areqa-chat-input-quote-arrow {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #d8a25c;
+}
+
+.areqa-chat-input-quote-content {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--foreground);
+  font-weight: 500;
+  opacity: 0.9;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.areqa-chat-input-quote-close {
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.areqa-chat-input-attachment-list {
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.areqa-chat-input-attachment-chip {
+  display: inline-flex;
+  max-width: min(360px, 72vw);
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.areqa-chat-input-attachment-chip span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.areqa-chat-input-math-preview {
+  margin: 4px 0 8px;
+  overflow-x: auto;
+  padding: 8px 12px;
+  border: 1px solid rgba(216, 162, 92, 0.2);
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.areqa-chat-input-math-preview-label {
+  margin-bottom: 4px;
+  color: rgba(216, 162, 92, 0.8);
+  font-size: 11px;
+}
+
 .areqa-account-dropdown .ant-dropdown-menu {
   border-radius: 0 0 12px 12px;
   box-shadow: none;
@@ -446,6 +826,27 @@ body {
 
   .areqa-chat-input-area {
     padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+
+  .areqa-message-empty-logo {
+    width: 180px;
+  }
+
+  .areqa-message-empty-subtitle {
+    margin-top: -12px;
+    padding: 0 16px;
+    font-size: 0.9rem;
+  }
+
+  .areqa-chat-input-shell {
+    width: calc(100% - 24px);
+    margin: 0 auto 12px;
+    padding: 10px 14px 8px;
+    border-radius: 20px;
+  }
+
+  .areqa-chat-input-attachment-list {
+    margin-bottom: 10px;
   }
 }
 

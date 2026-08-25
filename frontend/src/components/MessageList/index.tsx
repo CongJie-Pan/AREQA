@@ -161,16 +161,16 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
   // Show empty state
   if (messages.length === 0) {
     return (
-      <div className={cx(styles.container, styles.empty, className)}>
+      <div className={cx('areqa-message-list', 'areqa-message-list-empty', styles.container, styles.empty, className)}>
         <Image 
           src="/logo/areqa_text_logo_v2.png" 
           alt="AREQA Logo" 
           width={260} 
           height={87} 
-          className={styles.emptyLogo}
+          className={cx('areqa-message-empty-logo', styles.emptyLogo)}
           priority
         />
-        <div className={styles.emptySubtitle}>
+        <div className={cx('areqa-message-empty-subtitle', styles.emptySubtitle)}>
           <span>A</span>daptive{' '}
           <span>R</span>AG-based{' '}
           <span>E</span>ducational{' '}
@@ -181,7 +181,7 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
   }
 
   return (
-    <div ref={containerRef} className={cx(styles.container, className)}>
+    <div ref={containerRef} className={cx('areqa-message-list', styles.container, className)}>
       {messages.map((message, index) => {
         const isCurrentStreaming = message.id === currentStreamingId;
         const isLast = index === messages.length - 1;

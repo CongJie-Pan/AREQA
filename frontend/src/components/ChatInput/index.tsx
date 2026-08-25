@@ -208,14 +208,14 @@ export function ChatInput({
   const canSend = (value.trim().length > 0 || attachments.length > 0) && !disabled && !isOverLimit;
 
   return (
-    <div className={cx(styles.container, className)}>
+    <div className={cx('areqa-chat-input-shell', styles.container, className)}>
       {/* Quote Preview */}
       {quotedText && (
-        <div className={styles.quotePreview}>
-          <CornerDownRight size={14} className={styles.quoteArrow} />
-          <div className={styles.quoteContent}>{quotedText}</div>
+        <div className={cx('areqa-chat-input-quote-preview', styles.quotePreview)}>
+          <CornerDownRight size={14} className={cx('areqa-chat-input-quote-arrow', styles.quoteArrow)} />
+          <div className={cx('areqa-chat-input-quote-content', styles.quoteContent)}>{quotedText}</div>
           <button
-            className={styles.quoteClose}
+            className={cx('areqa-chat-input-quote-close', styles.quoteClose)}
             onClick={() => setQuotedText(null)}
             aria-label={t('cancelQuote')}
           >
@@ -225,9 +225,9 @@ export function ChatInput({
       )}
 
       {attachments.length > 0 && (
-        <div className={styles.attachmentList} aria-label={t('pendingAttachments')}>
+        <div className={cx('areqa-chat-input-attachment-list', styles.attachmentList)} aria-label={t('pendingAttachments')}>
           {attachments.map((attachment) => (
-            <div className={styles.attachmentChip} key={`${attachment.name}-${attachment.lastModified}`}>
+            <div className={cx('areqa-chat-input-attachment-chip', styles.attachmentChip)} key={`${attachment.name}-${attachment.lastModified}`}>
               {attachment.type.startsWith('image/') ? <ImageIcon size={14} /> : <FileText size={14} />}
               <span title={attachment.name}>{attachment.name}</span>
               <button type="button" onClick={() => removeAttachment(attachment)} aria-label={`${t('delete')} ${attachment.name}`}>
@@ -238,11 +238,11 @@ export function ChatInput({
         </div>
       )}
 
-      <div className={styles.inputRow} role="group" aria-label={t('messageInputRow')}>
+      <div className={cx('areqa-chat-input-row', styles.inputRow)} role="group" aria-label={t('messageInputRow')}>
         <Tooltip title={t('addAttachment')} color="#262626" styles={{ container: { color: '#ffffff' } }}>
           <button
             type="button"
-            className={styles.attachmentButton}
+            className={cx('areqa-chat-input-attachment-button', styles.attachmentButton)}
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled}
             aria-label={t('addAttachment')}
@@ -252,7 +252,7 @@ export function ChatInput({
         </Tooltip>
         <textarea
           ref={textareaRef}
-          className={styles.textarea}
+          className={cx('areqa-chat-input-textarea', styles.textarea)}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -265,7 +265,7 @@ export function ChatInput({
         {isStreaming && onStop ? (
           <button
             type="button"
-            className={cx(styles.sendButton, styles.stopButton)}
+            className={cx('areqa-chat-input-send-button', styles.sendButton, styles.stopButton)}
             onClick={onStop}
             aria-label={t('stopGenerating')}
           >
@@ -274,7 +274,7 @@ export function ChatInput({
         ) : (
           <button
             type="button"
-            className={styles.sendButton}
+            className={cx('areqa-chat-input-send-button', styles.sendButton)}
             onClick={handleSend}
             disabled={!canSend}
             aria-label={t('sendMessage')}
@@ -295,8 +295,8 @@ export function ChatInput({
       />
 
       {hasMath && (
-        <div className={styles.mathPreview} aria-label={t('latexPreview')}>
-          <div className={styles.mathPreviewLabel}>{t('formulaPreview')}</div>
+        <div className={cx('areqa-chat-input-math-preview', styles.mathPreview)} aria-label={t('latexPreview')}>
+          <div className={cx('areqa-chat-input-math-preview-label', styles.mathPreviewLabel)}>{t('formulaPreview')}</div>
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
