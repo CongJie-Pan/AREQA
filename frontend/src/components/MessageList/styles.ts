@@ -49,14 +49,72 @@ const cursorBlink = keyframes`
   }
 `;
 
-const streamingDotPulse = keyframes`
-  0%, 80%, 100% {
+const streamingDotCycleStart = keyframes`
+  0%, 6%, 18%, 30%, 42%, 54%, 66%, 74%, 100% {
     opacity: 0.35;
-    transform: translateY(0);
+    transform: translate(0, 0) scale(1);
   }
-  40% {
+  10%, 34%, 58% {
     opacity: 1;
-    transform: translateY(-2px);
+    transform: translate(0, -2px) scale(1);
+  }
+  78%, 84% {
+    opacity: 0.9;
+    transform: translate(6px, 4px) scale(0.92);
+  }
+  90%, 94% {
+    opacity: 1;
+    transform: translate(10px, 0) scale(0.72);
+  }
+  98% {
+    opacity: 0.85;
+    transform: translate(-2px, 0) scale(1.08);
+  }
+`;
+
+const streamingDotCycleMiddle = keyframes`
+  0%, 10%, 22%, 34%, 46%, 58%, 70%, 74%, 100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(1);
+  }
+  14%, 38%, 62% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1);
+  }
+  78%, 84% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.16);
+  }
+  90%, 94% {
+    opacity: 1;
+    transform: translateY(0) scale(0.72);
+  }
+  98% {
+    opacity: 0.85;
+    transform: translateY(0) scale(1.08);
+  }
+`;
+
+const streamingDotCycleEnd = keyframes`
+  0%, 14%, 26%, 38%, 50%, 62%, 74%, 100% {
+    opacity: 0.35;
+    transform: translate(0, 0) scale(1);
+  }
+  18%, 42%, 66% {
+    opacity: 1;
+    transform: translate(0, -2px) scale(1);
+  }
+  78%, 84% {
+    opacity: 0.9;
+    transform: translate(-6px, 4px) scale(0.92);
+  }
+  90%, 94% {
+    opacity: 1;
+    transform: translate(-10px, 0) scale(0.72);
+  }
+  98% {
+    opacity: 0.85;
+    transform: translate(2px, 0) scale(1.08);
   }
 `;
 
@@ -975,14 +1033,14 @@ quoteBlockContent: css`
     border-radius: 999px;
     background: currentColor;
     opacity: 0.35;
-    animation: ${streamingDotPulse} 1.2s ease-in-out infinite;
+    animation: ${streamingDotCycleStart} 5s ease-in-out infinite;
 
     &:nth-child(2) {
-      animation-delay: 0.16s;
+      animation-name: ${streamingDotCycleMiddle};
     }
 
     &:nth-child(3) {
-      animation-delay: 0.32s;
+      animation-name: ${streamingDotCycleEnd};
     }
 
     @media (prefers-reduced-motion: reduce) {
