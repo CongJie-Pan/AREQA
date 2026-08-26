@@ -9,6 +9,7 @@ import React, { memo } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { CitationSource } from '@/components/Citations';
+import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
 import { useStyles } from './styles';
 
 export interface RAGInfo {
@@ -21,11 +22,42 @@ interface RAGStatusPanelProps {
   ragInfo: RAGInfo;
 }
 
+const STATUS_TRANSLATION_KEYS: Record<RAGInfo['status'], TranslationKey> = {
+  idle: 'pipeline.defaultActive',
+  routing: 'pipeline.routing',
+  retrieving: 'pipeline.retrieving',
+  searching_dense: 'pipeline.searchingDense',
+  searching_sparse: 'pipeline.searchingSparse',
+  reranking: 'pipeline.reranking',
+  sources_ready: 'pipeline.sourcesReady',
+  generating: 'pipeline.generating',
+  done: 'pipeline.done',
+};
+
+/**
+ * Resolves the frontend-owned translation key for a backend pipeline code.
+ *
+ * Args:
+ *   status: Stable pipeline status code received from the backend stream.
+ *
+ * Returns:
+ *   Translation key owned by the frontend language preference system.
+ *
+ * Compatibility:
+ *   Backend status messages are intentionally ignored for primary UI copy so
+ *   language switching remains deterministic and frontend-owned.
+ */
+function getStatusTranslationKey(status: RAGInfo['status']): TranslationKey {
+  return STATUS_TRANSLATION_KEYS[status] ?? 'pipeline.defaultActive';
+}
+
 const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
   const { styles } = useStyles();
+  const { t } = useUserPreferences();
 
   const isComplete = ['sources_ready', 'generating', 'done'].includes(ragInfo.status);
   const isRouting = ragInfo.status === 'routing';
+  const statusText = t(getStatusTranslationKey(ragInfo.status));
 
   // Don't show if idle
   if (ragInfo.status === 'idle') return null;
@@ -69,7 +101,7 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
           <div style={{ overflow: 'hidden', height: '24px', position: 'relative' }}>
             <AnimatePresence mode="wait">
               <motion.span
-                key={ragInfo.message || ragInfo.status}
+                key={`${ragInfo.status}:${statusText}`}
                 className={styles.statusText}
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -77,7 +109,7 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
                 transition={{ duration: 0.2 }}
                 style={{ display: 'block', whiteSpace: 'nowrap' }}
               >
-                {ragInfo.message || (isRouting ? '正在分析問題' : isComplete ? '已完成文獻檢索' : '正在檢索相關文獻...')}
+                {statusText}
               </motion.span>
             </AnimatePresence>
           </div>
@@ -91,7 +123,7 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
             >
-              找到 {ragInfo.sources.length} 筆文獻
+              {t('pipeline.sourceCount', { count: ragInfo.sources.length })}
             </motion.div>
           )}
         </AnimatePresence>

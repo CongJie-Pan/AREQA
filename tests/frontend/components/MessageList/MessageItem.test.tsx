@@ -50,7 +50,8 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       answerImageLightboxMeta: 'answerImageLightboxMeta',
       answerImageLightboxSource: 'answerImageLightboxSource',
       content: 'content',
-      streamingCursor: 'streamingCursor'
+      streamingDots: 'streamingDots',
+      streamingDot: 'streamingDot',
     },
     cx: (...args: any[]) => args.filter(Boolean).join(' '),
   }),
@@ -290,6 +291,9 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('串流動畫測試')).toBeInTheDocument();
     expect(container.querySelector('[data-streaming-content="true"]')).toBeInTheDocument();
     expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
+    expect(container.querySelector('.streamingDots')).toBeInTheDocument();
+    expect(container.querySelectorAll('.streamingDot')).toHaveLength(3);
+    expect(container.querySelector('.streamingCursor')).not.toBeInTheDocument();
   });
 
   it('renders single-dollar inline math in assistant messages', () => {
@@ -407,6 +411,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     expect(container.querySelector('[data-streaming-content="true"]')).not.toBeInTheDocument();
     expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
+    expect(container.querySelector('.streamingDots')).not.toBeInTheDocument();
   });
 
   it('uses final structured blocks immediately when no live image slot event exists', () => {

@@ -49,6 +49,17 @@ const cursorBlink = keyframes`
   }
 `;
 
+const streamingDotPulse = keyframes`
+  0%, 80%, 100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+`;
+
 const emptyLogoFloat = keyframes`
   0%, 100% {
     transform: translateY(0);
@@ -943,14 +954,37 @@ quoteBlockContent: css`
 
 
 
-  streamingCursor: css`
-    display: inline-block;
-    width: 2px;
-    height: 16px;
-    background: ${token.colorText};
-    margin-left: 2px;
-    vertical-align: text-bottom;
-    animation: ${cursorBlink} 1s step-end infinite;
+  streamingDots: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: 28px;
+    height: 1em;
+    margin-left: 4px;
+    vertical-align: -0.08em;
+  `,
+
+  streamingDot: css`
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: 0.35;
+    animation: ${streamingDotPulse} 1.2s ease-in-out infinite;
+
+    &:nth-child(2) {
+      animation-delay: 0.16s;
+    }
+
+    &:nth-child(3) {
+      animation-delay: 0.32s;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      opacity: 0.75;
+      transform: none;
+    }
   `,
 
   thinkingPanelWrapper: css`

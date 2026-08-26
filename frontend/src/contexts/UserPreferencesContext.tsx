@@ -173,6 +173,16 @@ export type TranslationKey =
   | 'exportDocxLoading'
   | 'exportSuccess'
   | 'exportFailed'
+  | 'pipeline.routing'
+  | 'pipeline.retrieving'
+  | 'pipeline.searchingDense'
+  | 'pipeline.searchingSparse'
+  | 'pipeline.reranking'
+  | 'pipeline.sourcesReady'
+  | 'pipeline.generating'
+  | 'pipeline.done'
+  | 'pipeline.defaultActive'
+  | 'pipeline.sourceCount'
   | 'retry';
 
 interface UserPreferencesContextValue {
@@ -365,6 +375,16 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     exportDocxLoading: '正在產生 Word 文件，請稍候...',
     exportSuccess: '下載成功！',
     exportFailed: '下載失敗，請稍後再試',
+    'pipeline.routing': '正在分析問題',
+    'pipeline.retrieving': '正在整理檢索策略',
+    'pipeline.searchingDense': '正在搜尋相關文獻',
+    'pipeline.searchingSparse': '正在比對關鍵字線索',
+    'pipeline.reranking': '正在排序最相關的資料',
+    'pipeline.sourcesReady': '已完成文獻檢索',
+    'pipeline.generating': '正在生成回答',
+    'pipeline.done': '已完成',
+    'pipeline.defaultActive': '正在處理對話狀態',
+    'pipeline.sourceCount': '找到 {count} 筆文獻',
     retry: '重試',
   },
   'zh-CN': {
@@ -527,6 +547,16 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     exportDocxLoading: '正在生成 Word 文件，请稍候...',
     exportSuccess: '下载成功！',
     exportFailed: '下载失败，请稍后再试',
+    'pipeline.routing': '正在分析问题',
+    'pipeline.retrieving': '正在整理检索策略',
+    'pipeline.searchingDense': '正在搜索相关文献',
+    'pipeline.searchingSparse': '正在比对关键词线索',
+    'pipeline.reranking': '正在排序最相关的资料',
+    'pipeline.sourcesReady': '已完成文献检索',
+    'pipeline.generating': '正在生成回答',
+    'pipeline.done': '已完成',
+    'pipeline.defaultActive': '正在处理对话状态',
+    'pipeline.sourceCount': '找到 {count} 篇文献',
     retry: '重试',
   },
   en: {
@@ -689,6 +719,16 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     exportDocxLoading: 'Creating Word document...',
     exportSuccess: 'Download complete.',
     exportFailed: 'Download failed. Please try again later.',
+    'pipeline.routing': 'Analyzing the question',
+    'pipeline.retrieving': 'Preparing the retrieval strategy',
+    'pipeline.searchingDense': 'Searching related sources',
+    'pipeline.searchingSparse': 'Matching keyword signals',
+    'pipeline.reranking': 'Ranking the most relevant material',
+    'pipeline.sourcesReady': 'Source retrieval complete',
+    'pipeline.generating': 'Generating the answer',
+    'pipeline.done': 'Complete',
+    'pipeline.defaultActive': 'Processing the conversation state',
+    'pipeline.sourceCount': 'Found {count} sources',
     retry: 'Retry',
   },
 };

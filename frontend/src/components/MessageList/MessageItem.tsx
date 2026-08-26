@@ -1331,9 +1331,12 @@ export const MessageItem = memo(function MessageItem({
                     markdownComponents={markdownComponents}
                   />
                 )}
-                {/* Streaming cursor */}
                 {isStreaming && !thinking?.isThinking && (
-                  <span className={styles.streamingCursor} />
+                  <span className={styles.streamingDots} aria-hidden="true">
+                    <span className={styles.streamingDot} />
+                    <span className={styles.streamingDot} />
+                    <span className={styles.streamingDot} />
+                  </span>
                 )}
               </div>
 
