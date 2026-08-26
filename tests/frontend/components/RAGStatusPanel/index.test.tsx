@@ -24,76 +24,75 @@ vi.mock('../../../../frontend/src/components/RAGStatusPanel/styles', () => ({
   }),
 }));
 
+const mockSources = Array(5).fill({
+  title: 'Mock Source',
+  snippet: 'text',
+  score: 1,
+  chunk_id: '1',
+});
+
 describe('RAGStatusPanel', () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
 
-  it('shows frontend-owned routing progress text in an accessible live region', () => {
-    render(
-      <RAGStatusPanel
-        ragInfo={{ status: 'routing', message: 'Backend should not own UI copy', sources: [] }}
-      />,
-    );
-
-    const status = screen.getByRole('status');
-    expect(status).toHaveAttribute('aria-live', 'polite');
-    expect(screen.getByText('正在分析問題')).toBeInTheDocument();
-    expect(screen.queryByText('Backend should not own UI copy')).not.toBeInTheDocument();
-  });
-
-  it('uses the selected interface language for visible pipeline text', () => {
-    window.localStorage.setItem('areqa:interface-language', 'en');
-
-    render(
-      <UserPreferencesProvider>
-        <RAGStatusPanel
-          ragInfo={{ status: 'searching_dense', message: 'Backend dense-search text', sources: [] }}
-        />
-      </UserPreferencesProvider>,
-    );
-
-    expect(screen.getByText('Searching related sources')).toBeInTheDocument();
-    expect(screen.queryByText('Backend dense-search text')).not.toBeInTheDocument();
-  });
-
-  it('returns null for idle state', () => {
-    const ragInfo: RAGInfo = { status: 'idle', message: '', sources: [] };
-    const { container } = render(<RAGStatusPanel ragInfo={ragInfo} />);
-
-    expect(container.firstChild).toBeNull();
-  });
-
-  it('shows radar animation for visible retrieval search state', () => {
-    const ragInfo: RAGInfo = {
-      status: 'searching_dense',
-      message: 'Backend dense-search text',
-      sources: [],
-    };
-    const { container } = render(<RAGStatusPanel ragInfo={ragInfo} />);
-
-    expect(screen.getByText('正在搜尋相關文獻')).toBeInTheDocument();
-    expect(screen.queryByText('Backend dense-search text')).not.toBeInTheDocument();
-    expect(container.querySelector('.radarWrapper')).toBeInTheDocument();
-    expect(container.querySelector('.radarCore')).toBeInTheDocument();
-    expect(container.querySelector('.radarRing')).toBeInTheDocument();
-  });
-
   it.each([
+    'idle',
+    'routing',
     'retrieving',
+    'searching_dense',
     'searching_sparse',
     'reranking',
     'sources_ready',
     'generating',
-  ] as const)('does not render frontend panel for backend-only status %s', (status) => {
+    'done',
+  ] as const)('does not render generic pipeline status %s without RAG sources', (status) => {
     const ragInfo: RAGInfo = {
       status,
       message: `Backend-only ${status}`,
-      sources: Array(5).fill({ title: 'Mock Source', snippet: 'text', score: 1, chunk_id: '1' }),
+      sources: [],
     };
     const { container } = render(<RAGStatusPanel ragInfo={ragInfo} />);
 
     expect(container.firstChild).toBeNull();
     expect(screen.queryByText(`Backend-only ${status}`)).not.toBeInTheDocument();
+  });
+
+  it('renders only when RAG source evidence is available', () => {
+    render(
+      <RAGStatusPanel
+        ragInfo={{
+          status: 'sources_ready',
+          message: 'Backend should not own UI copy',
+          sources: mockSources,
+        }}
+      />,
+    );
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText('已完成文獻檢索')).toBeInTheDocument();
+    expect(screen.getByText('找到 5 筆文獻')).toBeInTheDocument();
+    expect(screen.queryByText('Backend should not own UI copy')).not.toBeInTheDocument();
+  });
+
+  it('uses the selected interface language for RAG source evidence', () => {
+    window.localStorage.setItem('areqa:interface-language', 'en');
+
+    render(
+      <UserPreferencesProvider>
+        <RAGStatusPanel
+          ragInfo={{
+            status: 'sources_ready',
+            message: 'Backend should not own UI copy',
+            sources: mockSources,
+          }}
+        />
+      </UserPreferencesProvider>,
+    );
+
+    expect(screen.getByText('Source retrieval complete')).toBeInTheDocument();
+    expect(screen.getByText('Found 5 sources')).toBeInTheDocument();
+    expect(screen.queryByText('Backend should not own UI copy')).not.toBeInTheDocument();
   });
 });

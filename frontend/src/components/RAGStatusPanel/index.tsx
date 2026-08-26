@@ -6,7 +6,7 @@
  */
 
 import React, { memo } from 'react';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { CitationSource } from '@/components/Citations';
 import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
@@ -35,18 +35,6 @@ const STATUS_TRANSLATION_KEYS: Record<RAGInfo['status'], TranslationKey> = {
 };
 
 /**
- * Pipeline statuses that are allowed to render in the chat transcript.
- *
- * Backend-only statuses are still accepted in RAGInfo so the stream contract
- * stays compatible, but this panel should disappear once retrieval moves into
- * lower-level bookkeeping, source handoff, or generation.
- */
-const VISIBLE_PIPELINE_STATUSES: ReadonlySet<RAGInfo['status']> = new Set([
-  'routing',
-  'searching_dense',
-]);
-
-/**
  * Resolves the frontend-owned translation key for a backend pipeline code.
  *
  * Args:
@@ -67,12 +55,12 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
   const { styles } = useStyles();
   const { t } = useUserPreferences();
 
-  const isRouting = ragInfo.status === 'routing';
+  const hasSources = ragInfo.sources.length > 0;
   const statusText = t(getStatusTranslationKey(ragInfo.status));
 
-  // Backend keeps all pipeline status codes, but the chat UI only exposes
-  // learner-relevant waiting states. Hidden statuses remove the panel.
-  if (!VISIBLE_PIPELINE_STATUSES.has(ragInfo.status)) return null;
+  // The transcript should stay quiet for generic model waiting states. Render
+  // this panel only when the backend has actual RAG source evidence to show.
+  if (!hasSources) return null;
 
   return (
     <motion.div
@@ -87,20 +75,13 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
     >
       <div className={styles.header}>
         <div className={styles.statusInfo}>
-          {isRouting ? (
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-              className={styles.spinnerWrapper}
-            >
-              <Loader2 size={18} className={styles.routingIcon} />
-            </motion.div>
-          ) : (
-            <div className={styles.radarWrapper}>
-              <div className={styles.radarCore} />
-              <div className={styles.radarRing} />
-            </div>
-          )}
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+          >
+            <CheckCircle2 size={18} className={styles.checkIcon} />
+          </motion.div>
           
           <div style={{ overflow: 'hidden', height: '24px', position: 'relative' }}>
             <AnimatePresence mode="wait">
@@ -120,16 +101,14 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
         </div>
 
         <AnimatePresence>
-          {ragInfo.sources.length > 0 && (
-            <motion.div 
-              className={styles.sourceCount}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-            >
-              {t('pipeline.sourceCount', { count: ragInfo.sources.length })}
-            </motion.div>
-          )}
+          <motion.div
+            className={styles.sourceCount}
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+          >
+            {t('pipeline.sourceCount', { count: ragInfo.sources.length })}
+          </motion.div>
         </AnimatePresence>
       </div>
     </motion.div>
