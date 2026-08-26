@@ -65,18 +65,18 @@ const emptyLogoFloat = keyframes`
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-12px);
+    transform: translateY(-20px);
   }
 `;
 
 const emptyLogoShadowPulse = keyframes`
   0%, 100% {
-    opacity: 0.82;
-    transform: translateX(-50%) scale(1);
+    opacity: 0.88;
+    transform: translateX(-50%) scale(1.08);
   }
   50% {
-    opacity: 0.5;
-    transform: translateX(-50%) scale(0.74);
+    opacity: 0.44;
+    transform: translateX(-50%) scale(0.58);
   }
 `;
 
@@ -143,7 +143,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     justify-content: center;
     padding-bottom: 12px;
-    animation: ${emptyLogoFloat} 4.8s ease-in-out infinite;
+    animation: ${emptyLogoFloat} 3.6s ease-in-out infinite;
 
     &::after {
       content: '';
@@ -155,8 +155,13 @@ export const useStyles = createStyles(({ css, token }) => ({
       border-radius: 999px;
       background: var(--areqa-empty-logo-shadow);
       filter: blur(12px);
-      animation: ${emptyLogoShadowPulse} 4.8s ease-in-out infinite;
+      animation: ${emptyLogoShadowPulse} 3.6s ease-in-out infinite;
       pointer-events: none;
+    }
+
+    html[data-interface-theme='light'] &::after {
+      height: 20px;
+      filter: blur(16px);
     }
 
     @media (prefers-reduced-motion: reduce) {

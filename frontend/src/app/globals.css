@@ -91,7 +91,7 @@ html[data-interface-theme='light'] {
   --areqa-message-action-color: rgba(17, 24, 39, 0.54);
   --areqa-message-action-hover-color: #111827;
   --areqa-message-action-hover-background: rgba(17, 24, 39, 0.08);
-  --areqa-empty-logo-shadow: rgba(17, 24, 39, 0.42);
+  --areqa-empty-logo-shadow: rgba(17, 24, 39, 0.56);
 }
 
 @keyframes areqa-empty-logo-float {
@@ -99,18 +99,18 @@ html[data-interface-theme='light'] {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-12px);
+    transform: translateY(-20px);
   }
 }
 
 @keyframes areqa-empty-logo-shadow-pulse {
   0%, 100% {
-    opacity: 0.82;
-    transform: translateX(-50%) scale(1);
+    opacity: 0.88;
+    transform: translateX(-50%) scale(1.08);
   }
   50% {
-    opacity: 0.5;
-    transform: translateX(-50%) scale(0.74);
+    opacity: 0.44;
+    transform: translateX(-50%) scale(0.58);
   }
 }
 
@@ -441,7 +441,7 @@ body {
   align-items: center;
   justify-content: center;
   padding-bottom: 12px;
-  animation: areqa-empty-logo-float 4.8s ease-in-out infinite;
+  animation: areqa-empty-logo-float 3.6s ease-in-out infinite;
 }
 
 .areqa-message-empty-logo-stage::after {
@@ -454,8 +454,13 @@ body {
   border-radius: 999px;
   background: var(--areqa-empty-logo-shadow);
   filter: blur(12px);
-  animation: areqa-empty-logo-shadow-pulse 4.8s ease-in-out infinite;
+  animation: areqa-empty-logo-shadow-pulse 3.6s ease-in-out infinite;
   pointer-events: none;
+}
+
+html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
+  height: 20px;
+  filter: blur(16px);
 }
 
 @media (prefers-reduced-motion: reduce) {
