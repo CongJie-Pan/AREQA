@@ -17,6 +17,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
   useStyles: () => ({
     styles: { 
       container: 'container',
+      nonEmpty: 'nonEmpty',
       empty: 'empty',
       emptyLogo: 'emptyLogo',
       emptyCopy: 'emptyCopy',
@@ -102,6 +103,13 @@ describe('MessageList Scroll Behavior Regression', () => {
       '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',
     );
     expect(screen.queryByLabelText('今天想學什麼呢？🤔')).not.toBeInTheDocument();
+  });
+
+  it('reserves mobile top space for fixed chat action controls when messages exist', () => {
+    const { container } = render(<MessageList />);
+
+    expect(container.querySelector('.container')).toHaveClass('nonEmpty');
+    expect(container.querySelector('.areqa-message-list-non-empty')).toBeInTheDocument();
   });
 
   it('types, pauses, deletes, and rotates empty-state copy', async () => {

@@ -12,19 +12,19 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#d8a25c',
     icons: [
       {
-        src: '/icon/areqa_icon_v3_full_Fill_192.png',
+        src: '/icon/areqa_icon_v4_192.png',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icon/areqa_icon_v3_full_Fill_512.png',
+        src: '/icon/areqa_icon_v4_512.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icon/areqa_icon_v3_full_Fill_512.png',
+        src: '/icon/areqa_icon_v4_maskable_512.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',

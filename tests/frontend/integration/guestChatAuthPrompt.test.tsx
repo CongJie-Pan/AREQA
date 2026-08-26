@@ -128,6 +128,25 @@ describe('Guest chat authentication prompt flow', () => {
     );
   }
 
+  it('opens and closes the mobile sidebar from the floating menu controls', async () => {
+    const { container } = renderChat();
+
+    const sidebar = container.querySelector('.areqa-chat-sidebar');
+    expect(sidebar).not.toHaveClass('sidebarOpen');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '打開選單' }));
+    });
+    expect(sidebar).toHaveClass('sidebarOpen');
+    expect(container.querySelector('.sidebarOverlay')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('.sidebarOverlay') as HTMLElement);
+    });
+    expect(sidebar).not.toHaveClass('sidebarOpen');
+    expect(container.querySelector('.sidebarOverlay')).not.toBeInTheDocument();
+  });
+
   it('shows the prompt after each completed guest answer until dismissed', async () => {
     renderChat();
 

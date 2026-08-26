@@ -89,6 +89,12 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex: 1;
   `,
 
+  nonEmpty: css`
+    @media (max-width: 768px) {
+      padding-top: calc(64px + env(safe-area-inset-top));
+    }
+  `,
+
   empty: css`
     display: flex;
     flex-direction: column;

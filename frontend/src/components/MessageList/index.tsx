@@ -329,7 +329,10 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
   }
 
   return (
-    <div ref={containerRef} className={cx('areqa-message-list', styles.container, className)}>
+    <div
+      ref={containerRef}
+      className={cx('areqa-message-list', 'areqa-message-list-non-empty', styles.container, styles.nonEmpty, className)}
+    >
       {messages.map((message, index) => {
         const isCurrentStreaming = message.id === currentStreamingId;
         const isLast = index === messages.length - 1;

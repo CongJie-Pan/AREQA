@@ -858,6 +858,10 @@ body {
     font-size: 0.9rem;
   }
 
+  .areqa-message-list-non-empty {
+    padding-top: calc(64px + env(safe-area-inset-top));
+  }
+
   .areqa-chat-input-shell {
     width: calc(100% - 24px);
     margin: 0 auto 12px;
