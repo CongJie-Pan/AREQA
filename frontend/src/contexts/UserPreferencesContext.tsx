@@ -99,6 +99,9 @@ export type TranslationKey =
   | 'attachmentImagePreview'
   | 'cancelQuote'
   | 'pendingAttachments'
+  | 'messageAttachments'
+  | 'attachmentListLabel'
+  | 'attachmentItemLabel'
   | 'messageInputRow'
   | 'addAttachment'
   | 'messageTextarea'
@@ -301,6 +304,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentImagePreview: '圖片附件預覽',
     cancelQuote: '取消引用',
     pendingAttachments: '待送附件',
+    messageAttachments: '{count} 個附件',
+    attachmentListLabel: '附件清單',
+    attachmentItemLabel: '附件 {name}',
     messageInputRow: '訊息輸入列',
     addAttachment: '加入圖片或文件',
     messageTextarea: '訊息輸入框',
@@ -473,6 +479,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentImagePreview: '图片附件预览',
     cancelQuote: '取消引用',
     pendingAttachments: '待送附件',
+    messageAttachments: '{count} 个附件',
+    attachmentListLabel: '附件清单',
+    attachmentItemLabel: '附件 {name}',
     messageInputRow: '讯息输入列',
     addAttachment: '加入图片或文件',
     messageTextarea: '讯息输入框',
@@ -645,6 +654,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentImagePreview: 'Image attachment preview',
     cancelQuote: 'Cancel quote',
     pendingAttachments: 'Pending attachments',
+    messageAttachments: '{count} attachments',
+    attachmentListLabel: 'Attachment list',
+    attachmentItemLabel: 'Attachment {name}',
     messageInputRow: 'Message input row',
     addAttachment: 'Add image or document',
     messageTextarea: 'Message input',

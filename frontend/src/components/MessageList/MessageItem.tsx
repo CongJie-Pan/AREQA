@@ -1238,7 +1238,10 @@ export const MessageItem = memo(function MessageItem({
               })()}
 
               {displayAttachments.length > 0 && (
-                <div className={styles.messageAttachmentList} aria-label="訊息附件">
+                <div
+                  className={styles.messageAttachmentList}
+                  aria-label={t('messageAttachments', { count: displayAttachments.length })}
+                >
                   {displayAttachments.length === 1 ? (
                     <AttachmentCard attachment={displayAttachments[0]} />
                   ) : (

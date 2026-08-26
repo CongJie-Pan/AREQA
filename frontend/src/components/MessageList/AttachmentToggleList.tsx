@@ -1,6 +1,7 @@
 import { ChevronDown, FileText, Image as ImageIcon, Paperclip } from 'lucide-react';
 import { Popover } from 'antd';
 import type { AttachmentMetadata } from '@/database/schema';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { useStyles } from './styles';
 
 export function AttachmentToggleList({
@@ -15,12 +16,13 @@ export function AttachmentToggleList({
   onExpandedChange: (expanded: boolean) => void;
 }) {
   const { styles, cx } = useStyles();
+  const { t } = useUserPreferences();
 
   const attachmentList = (
     <div
       id={listId}
       className={styles.messageAttachmentDropdown}
-      aria-label="附件檔名列表"
+      aria-label={t('attachmentListLabel')}
     >
       {attachments.map((attachment, index) => {
         const isImage = attachment.mediaType.startsWith('image/');
@@ -62,7 +64,7 @@ export function AttachmentToggleList({
           <span className={styles.messageAttachmentToggleIcon} aria-hidden="true">
             <Paperclip size={17} />
           </span>
-          <span>{attachments.length} 個附件</span>
+          <span>{t('messageAttachments', { count: attachments.length })}</span>
           <ChevronDown
             size={17}
             className={cx(styles.messageAttachmentToggleChevron, expanded && styles.messageAttachmentToggleChevronOpen)}

@@ -1,5 +1,6 @@
 import { FileText, Image as ImageIcon } from 'lucide-react';
 import type { AttachmentMetadata } from '@/database/schema';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { useStyles } from './styles';
 
 function formatFileSize(sizeBytes: number): string | null {
@@ -11,11 +12,16 @@ function formatFileSize(sizeBytes: number): string | null {
 
 export function AttachmentCard({ attachment }: { attachment: AttachmentMetadata }) {
   const { styles } = useStyles();
+  const { t } = useUserPreferences();
   const isImage = attachment.mediaType.startsWith('image/');
   const sizeLabel = formatFileSize(attachment.sizeBytes);
 
   return (
-    <div className={styles.messageAttachmentCard} title={attachment.name} aria-label={`附件 ${attachment.name}`}>
+    <div
+      className={styles.messageAttachmentCard}
+      title={attachment.name}
+      aria-label={t('attachmentItemLabel', { name: attachment.name })}
+    >
       <span className={styles.messageAttachmentIcon} aria-hidden="true">
         {isImage ? <ImageIcon size={17} /> : <FileText size={17} />}
       </span>

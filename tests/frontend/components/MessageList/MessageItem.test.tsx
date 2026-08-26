@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
+import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
 
 // Mock child components to isolate tests
 vi.mock('../../../../frontend/src/components/RAGStatusPanel', () => ({
@@ -124,7 +125,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('請解釋這份 PDF')).toBeInTheDocument();
     expect(screen.getByLabelText('附件 lesson.pdf')).toBeInTheDocument();
     expect(screen.getByText('2.0 KB')).toBeInTheDocument();
-    expect(screen.getByLabelText('訊息附件').closest('.userBubble')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('1 個附件').closest('.userBubble')).not.toBeInTheDocument();
   });
 
   it('hides the legacy attachment marker and renders a compatibility card', () => {
@@ -154,7 +155,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(screen.getByLabelText('訊息附件').closest('.userBubble')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('1 個附件').closest('.userBubble')).not.toBeInTheDocument();
     expect(screen.getByText('原始問題')).toBeInTheDocument();
     expect(screen.getByText('請解釋這份 PDF')).toBeInTheDocument();
   });
@@ -176,17 +177,40 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     const toggle = screen.getByRole('button', { name: /2 個附件/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByLabelText('附件檔名列表')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('附件清單')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('附件 first.pdf')).not.toBeInTheDocument();
 
     fireEvent.click(toggle);
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const attachmentList = screen.getByLabelText('附件檔名列表');
+    const attachmentList = screen.getByLabelText('附件清單');
     expect(attachmentList).toBeInTheDocument();
     expect(attachmentList.closest('.messageAttachmentList')).toBeNull();
     expect(screen.getByText('first.pdf')).toBeInTheDocument();
     expect(screen.getByText('second.pdf')).toBeInTheDocument();
+  });
+
+  it('localizes the collapsed attachment count', () => {
+    window.localStorage.setItem('areqa:interface-language', 'en');
+
+    render(
+      <UserPreferencesProvider>
+        <MessageItem
+          message={{
+            ...baseMessage,
+            role: 'user',
+            content: 'Please compare these files',
+            attachments: [
+              { name: 'first.pdf', mediaType: 'application/pdf', sizeBytes: 2048 },
+              { name: 'second.pdf', mediaType: 'application/pdf', sizeBytes: 4096 },
+            ],
+          }}
+        />
+      </UserPreferencesProvider>
+    );
+
+    expect(screen.getByRole('button', { name: /2 attachments/ })).toBeInTheDocument();
+    expect(screen.getByLabelText('2 attachments')).toBeInTheDocument();
   });
 
   it('renders illustrated answer blocks inline and opens a lightbox', () => {
