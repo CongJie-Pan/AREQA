@@ -44,6 +44,18 @@ interface ChatRequestBody {
   repetition_penalty?: number;
 }
 
+type AttachmentValidationCode =
+  | 'ATTACHMENT_COUNT_EXCEEDED'
+  | 'ATTACHMENT_UNSUPPORTED_TYPE'
+  | 'ATTACHMENT_INVALID_CONTENT'
+  | 'ATTACHMENT_TOO_LARGE'
+  | 'ATTACHMENT_TOTAL_SIZE_EXCEEDED';
+
+interface AttachmentValidationError {
+  code: AttachmentValidationCode;
+  message: string;
+}
+
 /** Error response structure */
 interface ErrorResponse {
   error: {
@@ -52,6 +64,49 @@ interface ErrorResponse {
     status: number;
     retryAfter?: number;
   };
+}
+
+const ATTACHMENT_ERROR_MESSAGES: Record<
+  NonNullable<ChatRequestBody['interface_language']>,
+  Record<AttachmentValidationCode, string>
+> = {
+  'zh-TW': {
+    ATTACHMENT_COUNT_EXCEEDED: `每次最多可附加 ${MAX_ATTACHMENT_COUNT} 個檔案。`,
+    ATTACHMENT_UNSUPPORTED_TYPE: '僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。',
+    ATTACHMENT_INVALID_CONTENT: '不接受空白附件。',
+    ATTACHMENT_TOO_LARGE: '單一附件不得超過 5 MB。',
+    ATTACHMENT_TOTAL_SIZE_EXCEEDED: '附件總大小不得超過 20 MB。',
+  },
+  'zh-CN': {
+    ATTACHMENT_COUNT_EXCEEDED: `每次最多可附加 ${MAX_ATTACHMENT_COUNT} 个文件。`,
+    ATTACHMENT_UNSUPPORTED_TYPE: '仅支持 PNG、JPEG、WEBP、GIF、PDF、TXT 与 Markdown 文件。',
+    ATTACHMENT_INVALID_CONTENT: '不接受空白附件。',
+    ATTACHMENT_TOO_LARGE: '单一附件不得超过 5 MB。',
+    ATTACHMENT_TOTAL_SIZE_EXCEEDED: '附件总大小不得超过 20 MB。',
+  },
+  en: {
+    ATTACHMENT_COUNT_EXCEEDED: `You can attach up to ${MAX_ATTACHMENT_COUNT} files at a time.`,
+    ATTACHMENT_UNSUPPORTED_TYPE: 'Only PNG, JPEG, WEBP, GIF, PDF, TXT, and Markdown files are supported.',
+    ATTACHMENT_INVALID_CONTENT: 'Empty attachments are not accepted.',
+    ATTACHMENT_TOO_LARGE: 'Each attachment must be 5 MB or smaller.',
+    ATTACHMENT_TOTAL_SIZE_EXCEEDED: 'Total attachment size must be 20 MB or smaller.',
+  },
+};
+
+function interfaceLanguage(language: ChatRequestBody['interface_language']): NonNullable<ChatRequestBody['interface_language']> {
+  return language === 'zh-CN' || language === 'en' ? language : 'zh-TW';
+}
+
+function localizeAttachmentError(
+  code: string | undefined,
+  fallbackMessage: string,
+  language: ChatRequestBody['interface_language'],
+  translateAll = false,
+): string {
+  const messages = ATTACHMENT_ERROR_MESSAGES[interfaceLanguage(language)];
+  return code && code in messages && (translateAll || code === 'ATTACHMENT_UNSUPPORTED_TYPE')
+    ? messages[code as AttachmentValidationCode]
+    : fallbackMessage;
 }
 
 async function readUpstreamError(response: Response): Promise<{ message: string; code: string } | null> {
@@ -116,22 +171,43 @@ function createRateLimitHeaders(
   };
 }
 
-function validateAttachments(files: File[]): string | null {
+function validateAttachments(files: File[]): AttachmentValidationError | null {
   if (files.length > MAX_ATTACHMENT_COUNT) {
-    return `每次最多可附加 ${MAX_ATTACHMENT_COUNT} 個檔案。`;
+    return {
+      code: 'ATTACHMENT_COUNT_EXCEEDED',
+      message: ATTACHMENT_ERROR_MESSAGES['zh-TW'].ATTACHMENT_COUNT_EXCEEDED,
+    };
   }
 
   let totalSize = 0;
   for (const file of files) {
     if (!isSupportedAttachment(file)) {
-      return '僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。';
+      return {
+        code: 'ATTACHMENT_UNSUPPORTED_TYPE',
+        message: ATTACHMENT_ERROR_MESSAGES['zh-TW'].ATTACHMENT_UNSUPPORTED_TYPE,
+      };
     }
-    if (file.size === 0) return '不接受空白附件。';
-    if (file.size > MAX_ATTACHMENT_BYTES) return '單一附件不得超過 5 MB。';
+    if (file.size === 0) {
+      return {
+        code: 'ATTACHMENT_INVALID_CONTENT',
+        message: ATTACHMENT_ERROR_MESSAGES['zh-TW'].ATTACHMENT_INVALID_CONTENT,
+      };
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return {
+        code: 'ATTACHMENT_TOO_LARGE',
+        message: ATTACHMENT_ERROR_MESSAGES['zh-TW'].ATTACHMENT_TOO_LARGE,
+      };
+    }
     totalSize += file.size;
   }
 
-  return totalSize > MAX_TOTAL_ATTACHMENT_BYTES ? '附件總大小不得超過 20 MB。' : null;
+  return totalSize > MAX_TOTAL_ATTACHMENT_BYTES
+    ? {
+        code: 'ATTACHMENT_TOTAL_SIZE_EXCEEDED',
+        message: ATTACHMENT_ERROR_MESSAGES['zh-TW'].ATTACHMENT_TOTAL_SIZE_EXCEEDED,
+      }
+    : null;
 }
 
 function isSupportedAttachment(file: File): boolean {
@@ -177,7 +253,11 @@ export async function POST(request: NextRequest) {
         const files = formData.getAll('attachments').filter((entry): entry is File => entry instanceof File);
         const attachmentError = validateAttachments(files);
         if (attachmentError) {
-          return createErrorResponse(attachmentError, 'INVALID_ATTACHMENT', 413);
+          return createErrorResponse(
+            localizeAttachmentError(attachmentError.code, attachmentError.message, body.interface_language, true),
+            attachmentError.code,
+            413,
+          );
         }
         isAttachmentRequest = true;
         outgoingBody = formData;
@@ -256,7 +336,11 @@ export async function POST(request: NextRequest) {
 
       if (status === 400 || status === 413 || status === 422) {
         return createErrorResponse(
-          upstreamError?.message || 'An error occurred while processing',
+          localizeAttachmentError(
+            upstreamError?.code,
+            upstreamError?.message || 'An error occurred while processing',
+            body.interface_language,
+          ),
           upstreamError?.code || 'SERVICE_ERROR',
           status,
         );

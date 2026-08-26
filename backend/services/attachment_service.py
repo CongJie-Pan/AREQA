@@ -154,6 +154,9 @@ def _validate_type(filename: str, declared_type: str | None, data: bytes) -> str
             raise _attachment_error("ATTACHMENT_UNSUPPORTED_TYPE", "檔案副檔名或 MIME type 不符合 PDF 內容。")
         return detected_type
 
+    if not extension and declared_type in TEXT_TYPES:
+        return declared_type
+
     if extension in {".txt", ".md"} and (declared_type or "") in GENERIC_TEXT_UPLOAD_TYPES:
         if declared_type in TEXT_TYPES and extension != TEXT_TYPES[declared_type]:
             raise _attachment_error("ATTACHMENT_UNSUPPORTED_TYPE", "文字檔副檔名與 MIME type 不一致。")

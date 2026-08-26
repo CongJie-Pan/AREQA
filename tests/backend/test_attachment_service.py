@@ -91,6 +91,21 @@ async def test_processes_txt_with_generic_browser_mime_type(caplog):
 
 
 @pytest.mark.asyncio
+async def test_processes_text_plain_attachment_without_extension(caplog):
+    caplog.set_level(logging.INFO, logger="backend.services.attachment_service")
+    upload = make_upload("youtube-transcript", "text/plain", "講稿重點".encode("utf-8"))
+
+    attachments = await process_attachments([upload])
+
+    assert attachments[0].media_type == "text/plain"
+    assert attachments[0].content_part["type"] == "text"
+    assert "講稿重點" in attachments[0].content_part["text"]
+    assert "attachment.processed filename=youtube-transcript" in caplog.text
+    assert "declared_type=text/plain" in caplog.text
+    assert "media_type=text/plain" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_logs_attachment_validation_failures(caplog):
     caplog.set_level(logging.WARNING, logger="backend.services.attachment_service")
     upload = make_upload("program.exe", "application/octet-stream", b"binary")

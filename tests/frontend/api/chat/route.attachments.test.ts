@@ -107,4 +107,38 @@ describe('chat attachment BFF route', () => {
       status: 422,
     });
   });
+
+  it('localizes backend attachment validation errors to the request language', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: {
+              code: 'ATTACHMENT_UNSUPPORTED_TYPE',
+              message: '僅支援圖片、PDF、TXT 與 Markdown 檔案。',
+            },
+          }),
+          { status: 422, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+    const formData = new FormData();
+    formData.append('messages', JSON.stringify({
+      messages: [{ role: 'user', content: 'Explain this file' }],
+      interface_language: 'en',
+    }));
+    formData.append('attachments', new File(['text'], 'transcript', { type: 'text/plain' }));
+    const request = multipartRequest(formData);
+
+    const response = await POST(request as any);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error).toMatchObject({
+      code: 'ATTACHMENT_UNSUPPORTED_TYPE',
+      message: 'Only PNG, JPEG, WEBP, GIF, PDF, TXT, and Markdown files are supported.',
+      status: 422,
+    });
+  });
 });
