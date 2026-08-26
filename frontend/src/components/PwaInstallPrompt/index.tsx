@@ -35,7 +35,7 @@ const useStyles = createStyles(({ token, css }) => ({
     border: 1px solid rgba(216, 162, 92, 0.42);
     border-radius: ${token.borderRadiusLG}px;
     background: rgba(30, 24, 38, 0.96);
-    color: ${token.colorTextBase};
+    color: #f8fafc;
     box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
     backdrop-filter: blur(14px);
 
@@ -50,10 +50,10 @@ const useStyles = createStyles(({ token, css }) => ({
     width: 32px;
     height: 32px;
     min-width: 32px;
-    color: ${token.colorTextSecondary};
+    color: rgba(248, 250, 252, 0.78);
 
     &.ant-btn:hover {
-      color: ${token.colorTextBase} !important;
+      color: #ffffff !important;
       background: rgba(255, 255, 255, 0.08) !important;
     }
   `,
@@ -71,12 +71,12 @@ const useStyles = createStyles(({ token, css }) => ({
     justify-content: center;
     border-radius: 10px;
     background: rgba(216, 162, 92, 0.14);
-    color: ${token.colorPrimary};
+    color: #d8a25c;
   `,
   title: css`
     &.ant-typography {
       margin: 0 0 ${token.marginXXS}px;
-      color: ${token.colorTextBase};
+      color: #ffffff;
       font-size: ${token.fontSizeLG}px;
       line-height: 1.25;
     }
@@ -84,7 +84,7 @@ const useStyles = createStyles(({ token, css }) => ({
   description: css`
     &.ant-typography {
       display: block;
-      color: ${token.colorTextSecondary};
+      color: rgba(248, 250, 252, 0.82);
       font-size: ${token.fontSizeSM}px;
       line-height: 1.45;
     }
@@ -98,7 +98,7 @@ const useStyles = createStyles(({ token, css }) => ({
     flex: 1;
     height: 42px;
     border: 0;
-    background: ${token.colorPrimary};
+    background: #d8a25c;
     color: #130f18;
     font-weight: 700;
 
@@ -110,12 +110,12 @@ const useStyles = createStyles(({ token, css }) => ({
   `,
   laterButton: css`
     height: 42px;
-    color: ${token.colorTextSecondary};
+    color: rgba(248, 250, 252, 0.78);
     border-color: rgba(255, 255, 255, 0.14);
     background: rgba(255, 255, 255, 0.04);
 
     &.ant-btn:hover {
-      color: ${token.colorTextBase} !important;
+      color: #ffffff !important;
       border-color: rgba(255, 255, 255, 0.24) !important;
       background: rgba(255, 255, 255, 0.08) !important;
     }

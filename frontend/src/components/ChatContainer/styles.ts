@@ -75,8 +75,8 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   floatingActions: css`
     position: absolute;
-    top: 14px;
-    right: 16px;
+    top: max(14px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
     z-index: 20;
     display: flex;
     align-items: center;
@@ -114,6 +114,10 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   sidebarActionButtonVisible: css`
+    @media (max-width: 768px) {
+      display: none;
+    }
+
     @media (min-width: 769px) {
       display: flex;
     }

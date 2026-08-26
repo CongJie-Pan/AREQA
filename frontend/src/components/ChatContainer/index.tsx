@@ -465,65 +465,71 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       {/* Main Content */}
       <div className={cx('areqa-chat-main', styles.main)}>
-        {!gumPanelType && !isEmpty && (
-          <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
-            <button
-              className={cx(styles.iconActionButton, styles.sidebarActionButton, sidebarOpen && styles.sidebarActionButtonVisible)}
-              onClick={toggleSidebar}
-              aria-label={t('openSidebar')}
-              type="button"
-            >
-              <Menu size={20} />
-            </button>
-            <button
-              className={cx(styles.shareButton)}
-              disabled={isSharing}
-              onClick={handleShareConversation}
-              type="button"
-            >
-              <Share2 size={16} aria-hidden="true" />
-              <span>{t('shareConversation')}</span>
-            </button>
-            <Dropdown
-              menu={{
-                items: [
-                  { key: 'md', label: t('exportMarkdown'), icon: <FileCode size={16} /> },
-                  { key: 'pdf', label: t('exportPdf'), icon: <FileImage size={16} /> },
-                  { key: 'docx', label: t('exportDocx'), icon: <FileText size={16} /> },
-                ],
-                onClick: async (info) => {
-                  try {
-                    if (info.key === 'md') {
-                      exportToMarkdown(messages);
-                    } else if (info.key === 'pdf') {
-                      const hide = antMessageApi.loading(t('exportPdfLoading'), 0);
-                      await exportToPdf();
-                      hide();
-                    } else if (info.key === 'docx') {
-                      const hide = antMessageApi.loading(t('exportDocxLoading'), 0);
-                      await exportToDocx(messages);
-                      hide();
-                    }
-                    antMessageApi.success(t('exportSuccess'));
-                  } catch (err) {
-                    antMessageApi.error(t('exportFailed'));
-                    console.error('Export failed:', err);
-                  }
-                }
-              }}
-              trigger={['click']}
-              placement="bottomLeft"
-            >
+        <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
+          <button
+            className={cx(
+              styles.iconActionButton,
+              styles.sidebarActionButton,
+              sidebarOpen && styles.sidebarActionButtonVisible,
+            )}
+            onClick={toggleSidebar}
+            aria-label={t('openSidebar')}
+            type="button"
+          >
+            <Menu size={20} />
+          </button>
+          {!gumPanelType && !isEmpty && (
+            <>
               <button
-                className={cx(styles.iconActionButton)}
-                aria-label={t('shareConversationMenu')}
+                className={cx(styles.shareButton)}
+                disabled={isSharing}
+                onClick={handleShareConversation}
                 type="button"
               >
-                <MoreHorizontal size={20} />
+                <Share2 size={16} aria-hidden="true" />
+                <span>{t('shareConversation')}</span>
               </button>
-            </Dropdown>
-          </div>
-        )}
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'md', label: t('exportMarkdown'), icon: <FileCode size={16} /> },
+                    { key: 'pdf', label: t('exportPdf'), icon: <FileImage size={16} /> },
+                    { key: 'docx', label: t('exportDocx'), icon: <FileText size={16} /> },
+                  ],
+                  onClick: async (info) => {
+                    try {
+                      if (info.key === 'md') {
+                        exportToMarkdown(messages);
+                      } else if (info.key === 'pdf') {
+                        const hide = antMessageApi.loading(t('exportPdfLoading'), 0);
+                        await exportToPdf();
+                        hide();
+                      } else if (info.key === 'docx') {
+                        const hide = antMessageApi.loading(t('exportDocxLoading'), 0);
+                        await exportToDocx(messages);
+                        hide();
+                      }
+                      antMessageApi.success(t('exportSuccess'));
+                    } catch (err) {
+                      antMessageApi.error(t('exportFailed'));
+                      console.error('Export failed:', err);
+                    }
+                  }
+                }}
+                trigger={['click']}
+                placement="bottomLeft"
+              >
+                <button
+                  className={cx(styles.iconActionButton)}
+                  aria-label={t('shareConversationMenu')}
+                  type="button"
+                >
+                  <MoreHorizontal size={20} />
+                </button>
+              </Dropdown>
+            </>
+          )}
+        </div>
 
         {/* Error Banner */}
         {error && (
