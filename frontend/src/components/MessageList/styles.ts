@@ -654,7 +654,7 @@ content: css`
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 18px;
-    background: var(--areqa-table-modal-background, #141413);
+    background: #141312;
     box-shadow: 0 30px 90px rgba(0, 0, 0, 0.64);
     animation: ${tableModalPanelIn} 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
@@ -669,7 +669,7 @@ content: css`
 
     h2 {
       margin: 0;
-      color: var(--areqa-table-modal-heading, rgba(255, 255, 255, 0.86));
+      color: rgba(255, 255, 255, 0.88);
       font-size: 30px;
       font-weight: 700;
       line-height: 1.2;
@@ -682,18 +682,18 @@ content: css`
     justify-content: center;
     width: 50px;
     height: 50px;
-    border: 1px solid var(--areqa-table-modal-close-border, rgba(255, 255, 255, 0.12));
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 999px;
     background: transparent;
-    color: var(--areqa-table-modal-close-color, rgba(255, 255, 255, 0.78));
+    color: rgba(255, 255, 255, 0.78);
     line-height: 1;
     cursor: pointer;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 
     &:hover {
-      background: var(--areqa-table-modal-close-hover, rgba(255, 255, 255, 0.06));
-      border-color: var(--areqa-table-modal-close-hover-border, rgba(255, 255, 255, 0.18));
-      color: var(--areqa-table-action-hover-color, #ffffff);
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.18);
+      color: #ffffff;
     }
 
     &:focus-visible {
@@ -706,9 +706,9 @@ content: css`
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    border: 1px solid var(--areqa-table-border, rgba(255, 255, 255, 0.1));
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    background: var(--areqa-table-background, rgba(30, 29, 28, 0.98));
+    background: rgba(30, 29, 28, 0.98);
     outline: none;
     scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
     scrollbar-width: thin;
@@ -721,6 +721,7 @@ content: css`
       width: max-content;
       min-width: 100%;
       font-size: 23px;
+      color: rgba(255, 255, 255, 0.9);
     }
 
     .areqa-markdown-table th,
@@ -729,13 +730,14 @@ content: css`
       padding: 14px 16px;
       border-right-width: 1px;
       border-bottom-width: 1px;
-      border-right-color: var(--areqa-table-cell-border, rgba(255, 255, 255, 0.09));
-      border-bottom-color: var(--areqa-table-cell-border, rgba(255, 255, 255, 0.08));
+      border-right-color: rgba(255, 255, 255, 0.09);
+      border-bottom-color: rgba(255, 255, 255, 0.08);
     }
 
     .areqa-markdown-table th {
-      background: var(--areqa-table-head-background, rgba(255, 255, 255, 0.045));
-      border-bottom-color: var(--areqa-table-head-border, rgba(255, 255, 255, 0.09));
+      background: rgba(255, 255, 255, 0.045);
+      border-bottom-color: rgba(255, 255, 255, 0.09);
+      color: rgba(255, 255, 255, 0.98);
     }
   }
 

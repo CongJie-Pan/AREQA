@@ -6,6 +6,7 @@
  */
 
 import React, { memo, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown, { Components } from 'react-markdown';
 import { Streamdown, type Components as StreamdownComponents } from 'streamdown';
 import { createMathPlugin } from '@streamdown/math';
@@ -196,6 +197,7 @@ type MarkdownTableProps = React.TableHTMLAttributes<HTMLTableElement> & {
   enableActions: boolean;
   onCopyTable: (tableText: string) => void;
   onDownloadTable: (csvText: string) => void;
+  modalRootClassName: string;
   labels: {
     actions: string;
     copy: string;
@@ -213,6 +215,7 @@ function MarkdownTable({
   enableActions,
   onCopyTable,
   onDownloadTable,
+  modalRootClassName,
   labels,
   ...props
 }: MarkdownTableProps) {
@@ -285,37 +288,44 @@ function MarkdownTable({
     </div>
   ) : null;
 
-  const expandedTableModal = isExpanded ? (
-    <div
-      aria-label={labels.title}
-      aria-modal="true"
-      className="areqa-markdown-table-modal-backdrop"
-      role="dialog"
-      onMouseDown={() => setIsExpanded(false)}
-    >
-      <div
-        className="areqa-markdown-table-modal-panel"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="areqa-markdown-table-modal-header">
-          <h2>{labels.title}</h2>
-          <button
-            aria-label={labels.close}
-            className="areqa-markdown-table-modal-close"
-            type="button"
-            onClick={() => setIsExpanded(false)}
+  const expandedTableModal = isExpanded && typeof document !== 'undefined'
+    ? createPortal(
+        // The modal is portaled to the document root so transformed message bubbles
+        // cannot redefine its fixed-position containing block.
+        <div className={modalRootClassName}>
+          <div
+            aria-label={labels.title}
+            aria-modal="true"
+            className="areqa-markdown-table-modal-backdrop"
+            role="dialog"
+            onMouseDown={() => setIsExpanded(false)}
           >
-            <X size={24} aria-hidden="true" strokeWidth={1.8} />
-          </button>
-        </div>
-        <div className="areqa-markdown-table-modal-body" tabIndex={0}>
-          <table className={tableClassName} {...props}>
-            {children}
-          </table>
-        </div>
-      </div>
-    </div>
-  ) : null;
+            <div
+              className="areqa-markdown-table-modal-panel"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="areqa-markdown-table-modal-header">
+                <h2>{labels.title}</h2>
+                <button
+                  aria-label={labels.close}
+                  className="areqa-markdown-table-modal-close"
+                  type="button"
+                  onClick={() => setIsExpanded(false)}
+                >
+                  <X size={24} aria-hidden="true" strokeWidth={1.8} />
+                </button>
+              </div>
+              <div className="areqa-markdown-table-modal-body" tabIndex={0}>
+                <table className={tableClassName} {...props}>
+                  {children}
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
 
   return (
     <>
@@ -343,6 +353,7 @@ const createMarkdownComponents = (
   onCopyTable: (tableText: string) => void,
   onDownloadTable: (csvText: string) => void,
   tableLabels: MarkdownTableProps['labels'],
+  tableModalRootClassName: string,
 ): Components => ({
   table: ({ children, className, node, ...props }) => {
     void node;
@@ -353,6 +364,7 @@ const createMarkdownComponents = (
         enableActions={enableMathCopy}
         onCopyTable={onCopyTable}
         onDownloadTable={onDownloadTable}
+        modalRootClassName={tableModalRootClassName}
         labels={tableLabels}
         {...props}
       >
@@ -999,20 +1011,21 @@ export const MessageItem = memo(function MessageItem({
       message.id,
       !isUser,
       handleCopyMath,
-	      handleCopyTable,
-	      handleDownloadTable,
-	      {
-	        actions: t('tableActions'),
-	        copy: t('copyTable'),
-	        downloadCsv: t('downloadTableCsv'),
-	        expand: t('expandTable'),
-	        scrollable: t('scrollableTable'),
-	        title: t('table'),
-	        close: t('closeExpandedTable'),
-	      },
-	    ),
-	    [handleCopyMath, handleCopyTable, handleDownloadTable, isUser, message.id, t]
-	  );
+      handleCopyTable,
+      handleDownloadTable,
+      {
+        actions: t('tableActions'),
+        copy: t('copyTable'),
+        downloadCsv: t('downloadTableCsv'),
+        expand: t('expandTable'),
+        scrollable: t('scrollableTable'),
+        title: t('table'),
+        close: t('closeExpandedTable'),
+      },
+      styles.content,
+    ),
+    [handleCopyMath, handleCopyTable, handleDownloadTable, isUser, message.id, styles.content, t]
+  );
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
