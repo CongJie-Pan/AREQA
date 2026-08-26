@@ -50,7 +50,7 @@ const cursorBlink = keyframes`
 `;
 
 const streamingDotCycleStart = keyframes`
-  0%, 6%, 18%, 30%, 42%, 54%, 66%, 74%, 100% {
+  0%, 6%, 18%, 30%, 42%, 54%, 66%, 72%, 100% {
     opacity: 0.35;
     transform: translate(0, 0) scale(1);
   }
@@ -59,21 +59,21 @@ const streamingDotCycleStart = keyframes`
     transform: translate(0, -2px) scale(1);
   }
   78%, 84% {
-    opacity: 0.9;
-    transform: translate(6px, 4px) scale(0.92);
+    opacity: 0.92;
+    transform: translate(4px, 7px) scale(0.95);
   }
-  90%, 94% {
+  90%, 93% {
     opacity: 1;
-    transform: translate(10px, 0) scale(0.72);
+    transform: translate(12px, 0) scale(0.68);
   }
-  98% {
-    opacity: 0.85;
-    transform: translate(-2px, 0) scale(1.08);
+  97% {
+    opacity: 0.9;
+    transform: translate(-3px, 0) scale(1.12);
   }
 `;
 
 const streamingDotCycleMiddle = keyframes`
-  0%, 10%, 22%, 34%, 46%, 58%, 70%, 74%, 100% {
+  0%, 10%, 22%, 34%, 46%, 58%, 70%, 72%, 100% {
     opacity: 0.35;
     transform: translateY(0) scale(1);
   }
@@ -83,20 +83,20 @@ const streamingDotCycleMiddle = keyframes`
   }
   78%, 84% {
     opacity: 1;
-    transform: translateY(-6px) scale(1.16);
+    transform: translateY(-8px) scale(1.16);
   }
-  90%, 94% {
+  90%, 93% {
     opacity: 1;
     transform: translateY(0) scale(0.72);
   }
-  98% {
-    opacity: 0.85;
-    transform: translateY(0) scale(1.08);
+  97% {
+    opacity: 0.9;
+    transform: translateY(0) scale(1.12);
   }
 `;
 
 const streamingDotCycleEnd = keyframes`
-  0%, 14%, 26%, 38%, 50%, 62%, 74%, 100% {
+  0%, 14%, 26%, 38%, 50%, 62%, 72%, 100% {
     opacity: 0.35;
     transform: translate(0, 0) scale(1);
   }
@@ -105,16 +105,16 @@ const streamingDotCycleEnd = keyframes`
     transform: translate(0, -2px) scale(1);
   }
   78%, 84% {
-    opacity: 0.9;
-    transform: translate(-6px, 4px) scale(0.92);
+    opacity: 0.92;
+    transform: translate(-4px, 7px) scale(0.95);
   }
-  90%, 94% {
+  90%, 93% {
     opacity: 1;
-    transform: translate(-10px, 0) scale(0.72);
+    transform: translate(-12px, 0) scale(0.68);
   }
-  98% {
-    opacity: 0.85;
-    transform: translate(2px, 0) scale(1.08);
+  97% {
+    opacity: 0.9;
+    transform: translate(3px, 0) scale(1.12);
   }
 `;
 
@@ -1020,10 +1020,10 @@ quoteBlockContent: css`
   streamingDots: css`
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    width: 28px;
+    gap: 7px;
+    width: 38px;
     height: 1em;
-    margin-left: 4px;
+    margin-left: 6px;
     vertical-align: -0.08em;
   `,
 
