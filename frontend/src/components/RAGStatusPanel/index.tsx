@@ -34,6 +34,13 @@ const STATUS_TRANSLATION_KEYS: Record<RAGInfo['status'], TranslationKey> = {
   done: 'pipeline.done',
 };
 
+/**
+ * Pipeline statuses that are allowed to render in the chat transcript.
+ *
+ * Backend-only statuses are still accepted in RAGInfo so the stream contract
+ * stays compatible, but this panel should disappear once retrieval moves into
+ * lower-level bookkeeping, source handoff, or generation.
+ */
 const VISIBLE_PIPELINE_STATUSES: ReadonlySet<RAGInfo['status']> = new Set([
   'routing',
   'searching_dense',

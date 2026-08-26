@@ -228,6 +228,10 @@ export async function sendMessage(
   try {
     const callbacks = {
       onThinkingStart: () => {
+        // Hide the RAG panel at the first generation boundary. The first
+        // thinking/content token may arrive after this callback, and backend
+        // streams are not guaranteed to emit a separate `generating` status.
+        chatStore.setRagStatus('generating');
         if (!latestState.forceThink) return;
         thinkingStartTime = Date.now();
         // Store handles isThinking state
@@ -685,6 +689,10 @@ export async function regenerateMessage(messageId: string): Promise<void> {
       apiMessages,
       {
         onThinkingStart: () => {
+          // Hide the RAG panel at the first generation boundary. The first
+          // thinking/content token may arrive after this callback, and backend
+          // streams are not guaranteed to emit a separate `generating` status.
+          chatStore.setRagStatus('generating');
           if (!latestState.forceThink) return;
           thinkingStartTime = Date.now();
         },
@@ -934,6 +942,10 @@ export async function editUserMessage(
       apiMessages,
       {
         onThinkingStart: () => {
+          // Hide the RAG panel at the first generation boundary. The first
+          // thinking/content token may arrive after this callback, and backend
+          // streams are not guaranteed to emit a separate `generating` status.
+          chatStore.setRagStatus('generating');
           if (!latestState.forceThink) return;
           thinkingStartTime = Date.now();
         },

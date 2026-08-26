@@ -4,6 +4,7 @@ import { useChatStore } from '@/store/chat';
 describe('Chat Store', () => {
   beforeEach(() => {
     useChatStore.getState().clearMessages();
+    useChatStore.getState().resetStreamingState();
     useChatStore.getState().setQuotedText(null);
   });
 
@@ -112,5 +113,32 @@ describe('Chat Store', () => {
     expect(message?.streamImageSlots).toEqual([
       { slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 5 },
     ]);
+  });
+
+  it('hides the visible RAG panel state when answer content starts streaming', () => {
+    const state = useChatStore.getState();
+    const messageId = state.addAssistantMessage('conversation-1');
+
+    state.startStreaming(messageId);
+    state.setRagStatus('routing', 'Backend routing text');
+    expect(useChatStore.getState().ragStatus).toBe('routing');
+
+    state.appendContent('answer starts');
+    expect(useChatStore.getState().ragStatus).toBe('generating');
+  });
+
+  it('does not resurrect visible RAG panel states after generation has started', () => {
+    const state = useChatStore.getState();
+    const messageId = state.addAssistantMessage('conversation-1');
+
+    state.startStreaming(messageId);
+    state.appendThinkingContent('thinking starts');
+    expect(useChatStore.getState().ragStatus).toBe('generating');
+
+    state.setRagStatus('routing', 'Late backend routing text');
+    expect(useChatStore.getState().ragStatus).toBe('generating');
+
+    state.setRagStatus('searching_dense', 'Late backend search text');
+    expect(useChatStore.getState().ragStatus).toBe('generating');
   });
 });

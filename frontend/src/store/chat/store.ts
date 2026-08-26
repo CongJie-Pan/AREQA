@@ -16,6 +16,19 @@ import type { AnswerBlock, AttachmentMetadata, MessageFeedback, MessageFeedbackD
 const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 
 /**
+ * RAG statuses that are allowed to keep the frontend waiting panel visible.
+ *
+ * Backend status codes remain richer than the chat UI because they are useful
+ * for tracing and server-side orchestration. The UI intentionally exposes only
+ * the learner-facing waiting states; once thinking or answer generation starts,
+ * these visible statuses must not reappear from late SSE telemetry.
+ */
+const FRONTEND_VISIBLE_RAG_STATUSES: ReadonlySet<ChatStore['ragStatus']> = new Set([
+  'routing',
+  'searching_dense',
+]);
+
+/**
  * Initial state for the chat store
  */
 const initialState = {
@@ -201,6 +214,9 @@ export const useChatStore = create<ChatStore>((set) => ({
         thinkingContent: state.thinkingContent + content,
         thinkingStartTime,
         isThinking: true,
+        // Hide the pre-generation RAG panel as soon as private reasoning starts.
+        // Some streams never emit a dedicated `generating` status before tokens.
+        ragStatus: 'generating',
       };
     });
   },
@@ -248,6 +264,9 @@ export const useChatStore = create<ChatStore>((set) => ({
       // Update both the local tracking and the message in a single atomic operation
       return {
         currentContent: newContent,
+        // Public answer tokens are the strongest frontend signal that the
+        // status panel should be gone, regardless of late backend telemetry.
+        ragStatus: 'generating',
         messages: state.currentStreamingId
           ? state.messages.map((msg) =>
               msg.id === state.currentStreamingId
@@ -441,9 +460,21 @@ export const useChatStore = create<ChatStore>((set) => ({
   toggleThink: () => set((state) => ({ forceThink: !state.forceThink })),
 
   // RAG Visualization
-  setRagStatus: (status, message) => set({ 
-    ragStatus: status, 
-    ...(message !== undefined ? { ragMessage: message } : {}) 
+  setRagStatus: (status, message) => set((state) => {
+    // SSE action/status events can arrive after generation has started. Keep
+    // backend-only state for persistence, but prevent visible waiting states
+    // such as `routing` from resurrecting the panel over active output.
+    const hasGenerationStarted = state.isThinking
+      || state.thinkingContent.length > 0
+      || state.currentContent.length > 0;
+    const nextStatus = hasGenerationStarted && FRONTEND_VISIBLE_RAG_STATUSES.has(status)
+      ? 'generating'
+      : status;
+
+    return {
+      ragStatus: nextStatus,
+      ...(message !== undefined ? { ragMessage: message } : {}),
+    };
   }),
   setRagSources: (sources) => set({ ragSources: sources }),
 }));
