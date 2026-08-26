@@ -179,7 +179,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   /* When chat is empty, center the greeting + input together vertically */
   contentEmpty: css`
     justify-content: center;
-    padding-bottom: 15vh; /* Move the centered group upwards slightly */
+    padding-bottom: 18vh;
 
     /* Remove flex-grow from messageArea so it wraps content naturally */
     & > div:first-child {

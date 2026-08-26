@@ -49,6 +49,26 @@ const cursorBlink = keyframes`
   }
 `;
 
+const emptyLogoFloat = keyframes`
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+`;
+
+const emptyLogoShadowPulse = keyframes`
+  0%, 100% {
+    opacity: 0.68;
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    opacity: 0.46;
+    transform: translateX(-50%) scale(0.88);
+  }
+`;
+
 const imageSkeletonShimmer = keyframes`
   from {
     background-position: 200% 0;
@@ -102,8 +122,39 @@ export const useStyles = createStyles(({ css, token }) => ({
     justify-content: center;
     height: 100%;
     text-align: center;
-    padding: 40px 24px;
-    gap: 22px;
+    padding: 30px 24px 18px;
+    gap: 14px;
+  `,
+
+  emptyLogoStage: css`
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 12px;
+    animation: ${emptyLogoFloat} 4.8s ease-in-out infinite;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      bottom: 1px;
+      width: 58%;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--areqa-empty-logo-shadow);
+      filter: blur(8px);
+      animation: ${emptyLogoShadowPulse} 4.8s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+
+      &::after {
+        animation: none;
+      }
+    }
   `,
 
   emptyTitle: css`

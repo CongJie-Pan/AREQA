@@ -19,6 +19,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       container: 'container',
       nonEmpty: 'nonEmpty',
       empty: 'empty',
+      emptyLogoStage: 'emptyLogoStage',
       emptyLogo: 'emptyLogo',
       emptyCopy: 'emptyCopy',
       emptySubtitle: 'emptySubtitle',
@@ -98,6 +99,7 @@ describe('MessageList Scroll Behavior Regression', () => {
     const logo = screen.getByAltText('AREQA Logo');
 
     expect(logo).toHaveAttribute('src', expect.stringContaining('areqa_icon_v4_circle.png'));
+    expect(container.querySelector('.areqa-message-empty-logo-stage')).toBeInTheDocument();
     expect(container.querySelector('.emptyCopy')).toBeInTheDocument();
     expect(screen.getByLabelText('嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸')).toHaveTextContent(
       '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',

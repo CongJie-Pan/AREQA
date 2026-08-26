@@ -308,15 +308,17 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
 
     return (
       <div className={cx('areqa-message-list', 'areqa-message-list-empty', styles.container, styles.empty, className)}>
-        <Image 
-          src="/icon/areqa_icon_v4_circle.png"
-          alt="AREQA Logo" 
-          width={128}
-          height={128}
-          className={cx('areqa-message-empty-logo', styles.emptyLogo)}
-          draggable={false}
-          priority
-        />
+        <div className={cx('areqa-message-empty-logo-stage', styles.emptyLogoStage)}>
+          <Image
+            src="/icon/areqa_icon_v4_circle.png"
+            alt="AREQA Logo"
+            width={128}
+            height={128}
+            className={cx('areqa-message-empty-logo', styles.emptyLogo)}
+            draggable={false}
+            priority
+          />
+        </div>
         <div className={cx('areqa-message-empty-copy', styles.emptyCopy)}>
           <RotatingTypewriterLine
             key={emptyStateLines.join('\u0000')}
