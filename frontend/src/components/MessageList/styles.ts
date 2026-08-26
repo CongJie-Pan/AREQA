@@ -54,18 +54,18 @@ const emptyLogoFloat = keyframes`
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-5px);
+    transform: translateY(-12px);
   }
 `;
 
 const emptyLogoShadowPulse = keyframes`
   0%, 100% {
-    opacity: 0.68;
+    opacity: 0.82;
     transform: translateX(-50%) scale(1);
   }
   50% {
-    opacity: 0.46;
-    transform: translateX(-50%) scale(0.88);
+    opacity: 0.5;
+    transform: translateX(-50%) scale(0.74);
   }
 `;
 
@@ -138,12 +138,12 @@ export const useStyles = createStyles(({ css, token }) => ({
       content: '';
       position: absolute;
       left: 50%;
-      bottom: 1px;
-      width: 58%;
-      height: 10px;
+      bottom: -2px;
+      width: 74%;
+      height: 16px;
       border-radius: 999px;
       background: var(--areqa-empty-logo-shadow);
-      filter: blur(8px);
+      filter: blur(12px);
       animation: ${emptyLogoShadowPulse} 4.8s ease-in-out infinite;
       pointer-events: none;
     }
