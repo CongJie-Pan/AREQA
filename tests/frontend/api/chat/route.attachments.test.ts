@@ -51,6 +51,20 @@ describe('chat attachment BFF route', () => {
     expect(new Headers(upstreamRequest.headers).get('Authorization')).toBe('Bearer test-token');
   });
 
+  it('forwards txt attachments even when the browser reports a generic MIME type', async () => {
+    const formData = new FormData();
+    formData.append('messages', JSON.stringify({ messages: [{ role: 'user', content: '請解釋講稿' }] }));
+    formData.append('attachments', new File(['script'], 'script.txt', { type: 'application/octet-stream' }));
+    const request = multipartRequest(formData);
+
+    const response = await POST(request as any);
+    const upstreamRequest = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+
+    expect(response.status).toBe(200);
+    expect(upstreamRequest.body).toBeInstanceOf(FormData);
+    expect((upstreamRequest.body as FormData).getAll('attachments')).toHaveLength(1);
+  });
+
   it('rejects an unsupported attachment before forwarding the request', async () => {
     const formData = new FormData();
     formData.append('messages', JSON.stringify({ messages: [{ role: 'user', content: '請閱讀附件' }] }));

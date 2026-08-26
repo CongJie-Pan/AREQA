@@ -138,6 +138,17 @@ describe('ChatInput', () => {
     expect(mockOnSend).toHaveBeenCalledWith('', [attachment]);
   });
 
+  it('should accept txt attachments with a generic browser MIME type', () => {
+    const attachment = new File(['script'], 'script.txt', { type: 'application/octet-stream' });
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
+    expect(screen.getByTitle('script.txt')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/發送訊息/i));
+
+    expect(mockOnSend).toHaveBeenCalledWith('', [attachment]);
+  });
+
   it('should attach pasted images and send them with preview metadata', async () => {
     const pastedImage = new File(['image-data'], 'clipboard.png', { type: 'image/png' });
     render(<ChatInput onSend={mockOnSend} />);

@@ -27,6 +27,7 @@ const SUPPORTED_ATTACHMENT_TYPES = new Set([
   'image/png', 'image/jpeg', 'image/webp', 'image/gif',
   'application/pdf', 'text/plain', 'text/markdown',
 ]);
+const GENERIC_TEXT_UPLOAD_TYPES = new Set(['', 'application/octet-stream', 'text/plain', 'text/markdown']);
 const PASTED_IMAGE_EXTENSION_BY_TYPE: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -67,7 +68,7 @@ function validateAttachmentCandidates(currentAttachments: File[], incomingAttach
 
   let totalSize = 0;
   for (const attachment of candidates) {
-    if (!SUPPORTED_ATTACHMENT_TYPES.has(attachment.type)) {
+    if (!isSupportedAttachment(attachment)) {
       return 'unsupportedAttachment';
     }
     if (attachment.size === 0) {
@@ -80,6 +81,12 @@ function validateAttachmentCandidates(currentAttachments: File[], incomingAttach
   }
 
   return totalSize > MAX_TOTAL_ATTACHMENT_BYTES ? 'attachmentsTooLarge' : null;
+}
+
+function isSupportedAttachment(attachment: File): boolean {
+  if (SUPPORTED_ATTACHMENT_TYPES.has(attachment.type)) return true;
+  const extension = attachment.name.split('.').pop()?.toLowerCase() ?? '';
+  return ['txt', 'md'].includes(extension) && GENERIC_TEXT_UPLOAD_TYPES.has(attachment.type);
 }
 
 /**

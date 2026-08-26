@@ -9,12 +9,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
+
+logger = logging.getLogger(__name__)
 
 MAX_ATTACHMENT_COUNT = 5
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
@@ -35,6 +38,7 @@ TEXT_TYPES = {
     "text/markdown": ".md",
 }
 PDF_TYPE = "application/pdf"
+GENERIC_TEXT_UPLOAD_TYPES = {"", "application/octet-stream", "text/plain", "text/markdown"}
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,18 @@ def sanitize_filename(filename: str | None) -> str:
 def _extension(filename: str) -> str:
     dot_index = filename.rfind(".")
     return filename[dot_index:].lower() if dot_index >= 0 else ""
+
+
+def _size_bucket(size_bytes: int) -> str:
+    if size_bytes <= 0:
+        return "empty"
+    if size_bytes < 1024:
+        return "lt_1kb"
+    if size_bytes < 100 * 1024:
+        return "lt_100kb"
+    if size_bytes < 1024 * 1024:
+        return "lt_1mb"
+    return "gte_1mb"
 
 
 def _detect_media_type(data: bytes) -> str | None:
@@ -138,11 +154,10 @@ def _validate_type(filename: str, declared_type: str | None, data: bytes) -> str
             raise _attachment_error("ATTACHMENT_UNSUPPORTED_TYPE", "檔案副檔名或 MIME type 不符合 PDF 內容。")
         return detected_type
 
-    if extension in {".txt", ".md"} and declared_type in TEXT_TYPES:
-        expected_extension = TEXT_TYPES[declared_type]
-        if extension != expected_extension:
+    if extension in {".txt", ".md"} and (declared_type or "") in GENERIC_TEXT_UPLOAD_TYPES:
+        if declared_type in TEXT_TYPES and extension != TEXT_TYPES[declared_type]:
             raise _attachment_error("ATTACHMENT_UNSUPPORTED_TYPE", "文字檔副檔名與 MIME type 不一致。")
-        return declared_type
+        return "text/markdown" if extension == ".md" else "text/plain"
 
     raise _attachment_error("ATTACHMENT_UNSUPPORTED_TYPE", "僅支援圖片、PDF、TXT 與 Markdown 檔案。")
 
@@ -154,13 +169,21 @@ async def process_attachments(uploads: Iterable[UploadFile]) -> list[ProcessedAt
     """
     upload_list = list(uploads)
     if len(upload_list) > MAX_ATTACHMENT_COUNT:
+        logger.warning(
+            "attachment.validation_failed code=ATTACHMENT_COUNT_EXCEEDED count=%s max_count=%s",
+            len(upload_list),
+            MAX_ATTACHMENT_COUNT,
+        )
         raise _attachment_error("ATTACHMENT_COUNT_EXCEEDED", f"每次最多可附加 {MAX_ATTACHMENT_COUNT} 個檔案。")
 
     processed: list[ProcessedAttachment] = []
     total_size = 0
+    logger.info("attachment.processing_started count=%s", len(upload_list))
     for upload in upload_list:
+        filename = sanitize_filename(upload.filename)
+        declared_type = upload.content_type or ""
+        data = b""
         try:
-            filename = sanitize_filename(upload.filename)
             data = await upload.read(MAX_ATTACHMENT_BYTES + 1)
             if not data:
                 raise _attachment_error("ATTACHMENT_INVALID_CONTENT", "不接受空白附件。")
@@ -171,7 +194,7 @@ async def process_attachments(uploads: Iterable[UploadFile]) -> list[ProcessedAt
             if total_size > MAX_TOTAL_ATTACHMENT_BYTES:
                 raise _attachment_error("ATTACHMENT_TOTAL_SIZE_EXCEEDED", "附件總大小不得超過 20 MB。", 413)
 
-            media_type = _validate_type(filename, upload.content_type, data)
+            media_type = _validate_type(filename, declared_type, data)
             if media_type in IMAGE_TYPES:
                 _verify_image(data, media_type)
                 encoded = base64.b64encode(data).decode("ascii")
@@ -200,6 +223,26 @@ async def process_attachments(uploads: Iterable[UploadFile]) -> list[ProcessedAt
                     content_part=content_part,
                 )
             )
+            logger.info(
+                "attachment.processed filename=%s declared_type=%s media_type=%s size_bucket=%s sha256_prefix=%s",
+                filename,
+                declared_type or "unknown",
+                media_type,
+                _size_bucket(len(data)),
+                hashlib.sha256(data).hexdigest()[:12],
+            )
+        except HTTPException as error:
+            detail = error.detail if isinstance(error.detail, dict) else {}
+            logger.warning(
+                "attachment.validation_failed code=%s filename=%s declared_type=%s extension=%s size_bucket=%s status_code=%s",
+                detail.get("code", "UNKNOWN"),
+                filename,
+                declared_type or "unknown",
+                _extension(filename) or "none",
+                _size_bucket(len(data)),
+                error.status_code,
+            )
+            raise
         finally:
             await upload.close()
 

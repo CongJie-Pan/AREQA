@@ -1,4 +1,5 @@
 from io import BytesIO
+import logging
 
 import pytest
 from fastapi import HTTPException
@@ -71,6 +72,35 @@ async def test_processes_pasted_image_and_text_attachment_together():
     assert attachments[0].content_part["type"] == "image_url"
     assert attachments[1].content_part["type"] == "text"
     assert "講稿重點" in attachments[1].content_part["text"]
+
+
+@pytest.mark.asyncio
+async def test_processes_txt_with_generic_browser_mime_type(caplog):
+    caplog.set_level(logging.INFO, logger="backend.services.attachment_service")
+    upload = make_upload("script.txt", "application/octet-stream", "講稿重點".encode("utf-8"))
+
+    attachments = await process_attachments([upload])
+
+    assert attachments[0].media_type == "text/plain"
+    assert attachments[0].content_part["type"] == "text"
+    assert "講稿重點" in attachments[0].content_part["text"]
+    assert "attachment.processing_started count=1" in caplog.text
+    assert "attachment.processed filename=script.txt" in caplog.text
+    assert "declared_type=application/octet-stream" in caplog.text
+    assert "media_type=text/plain" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_logs_attachment_validation_failures(caplog):
+    caplog.set_level(logging.WARNING, logger="backend.services.attachment_service")
+    upload = make_upload("program.exe", "application/octet-stream", b"binary")
+
+    with pytest.raises(HTTPException):
+        await process_attachments([upload])
+
+    assert "attachment.validation_failed code=ATTACHMENT_UNSUPPORTED_TYPE" in caplog.text
+    assert "filename=program.exe" in caplog.text
+    assert "declared_type=application/octet-stream" in caplog.text
 
 
 @pytest.mark.asyncio

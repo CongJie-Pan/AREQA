@@ -28,6 +28,7 @@ const SUPPORTED_ATTACHMENT_TYPES = new Set([
   'text/plain',
   'text/markdown',
 ]);
+const GENERIC_TEXT_UPLOAD_TYPES = new Set(['', 'application/octet-stream', 'text/plain', 'text/markdown']);
 
 interface ChatRequestBody {
   messages: Array<{ role: string; content: string }>;
@@ -122,7 +123,7 @@ function validateAttachments(files: File[]): string | null {
 
   let totalSize = 0;
   for (const file of files) {
-    if (!SUPPORTED_ATTACHMENT_TYPES.has(file.type)) {
+    if (!isSupportedAttachment(file)) {
       return '僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。';
     }
     if (file.size === 0) return '不接受空白附件。';
@@ -131,6 +132,12 @@ function validateAttachments(files: File[]): string | null {
   }
 
   return totalSize > MAX_TOTAL_ATTACHMENT_BYTES ? '附件總大小不得超過 20 MB。' : null;
+}
+
+function isSupportedAttachment(file: File): boolean {
+  if (SUPPORTED_ATTACHMENT_TYPES.has(file.type)) return true;
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+  return ['txt', 'md'].includes(extension) && GENERIC_TEXT_UPLOAD_TYPES.has(file.type);
 }
 
 export async function POST(request: NextRequest) {
