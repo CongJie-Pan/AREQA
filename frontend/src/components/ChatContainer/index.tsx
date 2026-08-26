@@ -109,6 +109,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const activeConversationId = useConversationStore(
     (state) => state.activeConversationId
   );
+  const isConversationLoading = useConversationStore((state) => state.isLoading);
+  const shouldShowEmptyChat = isEmpty && !isConversationLoading;
   const landingPromptSent = useRef(false);
 
   useEffect(() => {
@@ -551,9 +553,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
         <div
           className={cx(
             'areqa-chat-content',
-            isEmpty && !gumPanelType && 'areqa-chat-content-empty',
+            shouldShowEmptyChat && !gumPanelType && 'areqa-chat-content-empty',
             styles.content,
-            isEmpty && !gumPanelType && styles.contentEmpty,
+            shouldShowEmptyChat && !gumPanelType && styles.contentEmpty,
           )}
         >
           {mailboxEnabled && gumPanelType === 'mailbox' ? (

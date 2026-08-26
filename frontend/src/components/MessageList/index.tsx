@@ -10,6 +10,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { ArrowDown } from 'lucide-react';
 import { useChatStore, chatSelectors } from '@/store/chat';
+import { useConversationStore } from '@/store/conversation';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { MessageItem } from './MessageItem';
 import { useStyles } from './styles';
@@ -190,6 +191,7 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
   const ragMessage = useChatStore((state) => state.ragMessage);
   const ragSources = useChatStore((state) => state.ragSources);
   const setMessageFeedback = useChatStore((state) => state.setMessageFeedback);
+  const isConversationLoading = useConversationStore((state) => state.isLoading);
 
   const handleFeedback = useCallback(async (
     messageId: string,
@@ -297,6 +299,17 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
       });
     }
   }, []);
+
+  if (messages.length === 0 && isConversationLoading) {
+    // Keep the transcript quiet while a saved conversation is loading. Rendering
+    // the empty-state hero here causes a visible new-chat flash during switches.
+    return (
+      <div
+        aria-busy="true"
+        className={cx('areqa-message-list', 'areqa-message-list-non-empty', styles.container, styles.nonEmpty, className)}
+      />
+    );
+  }
 
   // Show empty state
   if (messages.length === 0) {

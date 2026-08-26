@@ -39,6 +39,8 @@ export interface ConversationActions {
   clearActiveConversation: () => void;
   /** Clear all conversation state without deleting persisted data */
   clearState: () => void;
+  /** Set loading state for conversation list or message handoff work */
+  setLoading: (isLoading: boolean) => void;
   /** Set error state */
   setError: (error: Error | null) => void;
   /** Generate a conversation title using streaming */

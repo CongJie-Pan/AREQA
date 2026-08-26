@@ -118,6 +118,10 @@ export const useConversationStore = create<ConversationStore>((set) => ({
     });
   },
 
+  setLoading: (isLoading: boolean) => {
+    set({ isLoading });
+  },
+
   setError: (error: Error | null) => {
     set({ error });
   },

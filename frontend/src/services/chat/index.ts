@@ -568,8 +568,13 @@ export async function switchConversation(conversationId: string): Promise<void> 
   // Keep the currently rendered messages until the target conversation is
   // ready. Clearing first makes MessageList briefly render the new-chat empty
   // state during IndexedDB reads.
-  await loadMessages(conversationId, { clearBeforeLoad: false });
-  conversationStore.selectConversation(conversationId);
+  conversationStore.setLoading(true);
+  try {
+    await loadMessages(conversationId, { clearBeforeLoad: false });
+    conversationStore.selectConversation(conversationId);
+  } finally {
+    useConversationStore.getState().setLoading(false);
+  }
 }
 
 /**
