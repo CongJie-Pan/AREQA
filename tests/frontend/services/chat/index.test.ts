@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendMessage, regenerateMessage, editUserMessage } from '@/services/chat';
+import { sendMessage, regenerateMessage, editUserMessage, switchConversation } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -71,6 +71,12 @@ describe('Chat Service', () => {
           message.id === id ? { ...message, content } : message
         );
       }),
+      setMessages: vi.fn((messages) => {
+        mockChatStore.messages = messages;
+      }),
+      clearMessages: vi.fn(() => {
+        mockChatStore.messages = [];
+      }),
       startStreaming: vi.fn(),
       stopStreaming: vi.fn(),
       setError: vi.fn(),
@@ -102,6 +108,30 @@ describe('Chat Service', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe('switchConversation', () => {
+    it('keeps the current messages visible until the target conversation messages are loaded', async () => {
+      const targetMessages = [
+        { id: 'target-user', role: 'user', content: 'target question', conversationId: 'target-conv' },
+        { id: 'target-assistant', role: 'assistant', content: 'target answer', conversationId: 'target-conv' },
+      ];
+      mockChatStore.messages = [
+        { id: 'current-user', role: 'user', content: 'current question', conversationId: 'current-conv' },
+      ];
+      vi.mocked(databaseService.message.getByConversationId).mockResolvedValue(targetMessages as any);
+
+      await switchConversation('target-conv');
+
+      expect(mockChatStore.clearMessages).not.toHaveBeenCalled();
+      expect(databaseService.message.getByConversationId).toHaveBeenCalledWith(
+        'target-conv',
+        'test-user-id',
+      );
+      expect(mockChatStore.resetStreamingState).toHaveBeenCalled();
+      expect(mockChatStore.setMessages).toHaveBeenCalledWith(targetMessages);
+      expect(mockConversationStore.selectConversation).toHaveBeenCalledWith('target-conv');
+    });
   });
 
   describe('sendMessage', () => {

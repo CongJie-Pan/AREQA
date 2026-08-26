@@ -496,23 +496,29 @@ export function isStreamActive(): boolean {
 /**
  * Load messages for a conversation
  * @param conversationId - Conversation ID
+ * @param options - Loading behavior flags.
  */
-export async function loadMessages(conversationId: string): Promise<void> {
+export async function loadMessages(
+  conversationId: string,
+  options: { clearBeforeLoad?: boolean } = {},
+): Promise<void> {
   const chatStore = useChatStore.getState();
+  const shouldClearBeforeLoad = options.clearBeforeLoad ?? true;
 
-  // 1. IMMEDIATELY clear everything to provide instant feedback and prevent persistence
-  // This clears the messages, citations, ragSources, and thinking content
-  chatStore.clearMessages();
-  chatStore.resetStreamingState();
+  if (shouldClearBeforeLoad) {
+    chatStore.clearMessages();
+    chatStore.resetStreamingState();
+  }
 
   const userId = getCurrentUserId();
   if (!userId) return;
 
   try {
-    // 2. Load fresh records from database
     const messages = await databaseService.message.getByConversationId(conversationId, userId);
-    
-    // 3. Set the new messages only after they are successfully retrieved
+
+    if (!shouldClearBeforeLoad) {
+      chatStore.resetStreamingState();
+    }
     chatStore.setMessages(messages);
   } catch (error) {
     const err = normalizeError(error);
@@ -555,21 +561,15 @@ export async function switchConversation(conversationId: string): Promise<void> 
   // Cancel any ongoing stream
   await cancelCurrentStream();
 
-  const chatStore = useChatStore.getState();
   const conversationStore = useConversationStore.getState();
-
-  // Aggressively clear messages and reset state before switching
-  // This ensures the UI is blank while the new messages are loading
-  chatStore.clearMessages();
-  chatStore.resetStreamingState();
 
   if (!canPersistHistory()) return;
 
-  // Select conversation
+  // Keep the currently rendered messages until the target conversation is
+  // ready. Clearing first makes MessageList briefly render the new-chat empty
+  // state during IndexedDB reads.
+  await loadMessages(conversationId, { clearBeforeLoad: false });
   conversationStore.selectConversation(conversationId);
-
-  // Load messages
-  await loadMessages(conversationId);
 }
 
 /**
