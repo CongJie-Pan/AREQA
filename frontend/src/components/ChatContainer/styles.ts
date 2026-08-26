@@ -85,10 +85,10 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   sidebarFloatingAction: css`
-    position: absolute;
+    position: fixed;
     top: max(14px, env(safe-area-inset-top));
     left: max(16px, env(safe-area-inset-left));
-    z-index: 30;
+    z-index: 120;
     display: flex;
     align-items: center;
     pointer-events: none;
@@ -106,6 +106,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     background: color-mix(in srgb, var(--background) 86%, transparent);
     color: ${token.colorTextSecondary};
     cursor: pointer;
+    touch-action: manipulation;
     transition: all 0.2s;
     backdrop-filter: blur(10px);
 

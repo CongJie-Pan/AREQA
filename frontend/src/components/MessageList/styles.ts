@@ -116,12 +116,12 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   emptyLogo: css`
-    width: 160px;
+    width: 128px;
     height: auto;
     object-fit: contain;
 
     @media (max-width: 768px) {
-      width: 124px;
+      width: 96px;
     }
   `,
 
@@ -129,8 +129,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
     max-width: min(760px, 92vw);
+    min-height: 4.2em;
   `,
 
   emptySubtitle: css`

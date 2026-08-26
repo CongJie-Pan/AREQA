@@ -19,7 +19,8 @@ import type { MessageFeedback, MessageFeedbackDetails } from '@/database/schema'
 /** Scroll threshold in pixels from bottom to trigger auto-scroll */
 const SCROLL_THRESHOLD = 30;
 const EMPTY_STATE_TYPEWRITER_SPEED_MS = 34;
-const EMPTY_STATE_LINE_DELAY_MS = 520;
+const EMPTY_STATE_BACKSPACE_SPEED_MS = 22;
+const EMPTY_STATE_HOLD_MS = 5000;
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 export interface MessageListProps {
@@ -80,70 +81,89 @@ function getServerReducedMotionSnapshot() {
 }
 
 /**
- * Renders one translated empty-state line with a typewriter reveal.
+ * Renders one rotating translated empty-state line with a typewriter reveal.
  *
  * Args:
- *   text: Localized text to reveal.
- *   delayMs: Delay before the reveal starts, used to sequence the three lines.
+ *   lines: Localized lines to rotate through.
  *   className: Optional CSS class for visual styling.
  *
  * Returns:
- *   A paragraph that progressively reveals its text unless the user requests
- *   reduced motion.
+ *   A paragraph that types one line, pauses, backspaces it, and advances to the
+ *   next line unless the user requests reduced motion.
  *
  * Side effects:
- *   Starts and clears browser timers while the line is revealing.
+ *   Starts and clears browser timers while rotating the empty-state copy.
  */
-function TypewriterLine({
-  text,
-  delayMs,
+function RotatingTypewriterLine({
+  lines,
   className,
 }: {
-  text: string;
-  delayMs: number;
+  lines: string[];
   className?: string;
 }) {
-  const [visibleLength, setVisibleLength] = React.useState(0);
+  const [{ lineIndex, visibleLength, isDeleting }, setTypewriterState] = React.useState({
+    lineIndex: 0,
+    visibleLength: 0,
+    isDeleting: false,
+  });
   const shouldReduceMotion = React.useSyncExternalStore(
     subscribeToReducedMotion,
     getReducedMotionSnapshot,
     getServerReducedMotionSnapshot,
   );
+  const currentText = lines[lineIndex] ?? '';
+  const currentCharacters = React.useMemo(() => Array.from(currentText), [currentText]);
 
   useEffect(() => {
-    if (shouldReduceMotion) {
+    if (shouldReduceMotion || currentText.length === 0) {
       return undefined;
     }
 
-    let revealTimer: number | undefined;
+    const isFullyTyped = visibleLength >= currentCharacters.length;
+    const delay = isDeleting
+      ? EMPTY_STATE_BACKSPACE_SPEED_MS
+      : isFullyTyped
+        ? EMPTY_STATE_HOLD_MS
+        : EMPTY_STATE_TYPEWRITER_SPEED_MS;
 
-    const startTimer = window.setTimeout(() => {
-      let nextLength = 0;
-      revealTimer = window.setInterval(() => {
-        nextLength += 1;
-        setVisibleLength(nextLength);
+    const timer = window.setTimeout(() => {
+      setTypewriterState((previous) => {
+        const activeText = lines[previous.lineIndex] ?? '';
+        const activeCharactersLength = Array.from(activeText).length;
 
-        if (nextLength >= text.length) {
-          window.clearInterval(revealTimer);
+        if (!previous.isDeleting && previous.visibleLength >= activeCharactersLength) {
+          return { ...previous, isDeleting: true };
         }
-      }, EMPTY_STATE_TYPEWRITER_SPEED_MS);
-    }, delayMs);
+
+        if (previous.isDeleting && previous.visibleLength <= 0) {
+          return {
+            lineIndex: (previous.lineIndex + 1) % lines.length,
+            visibleLength: 0,
+            isDeleting: false,
+          };
+        }
+
+        return {
+          ...previous,
+          visibleLength: previous.visibleLength + (previous.isDeleting ? -1 : 1),
+        };
+      });
+    }, delay);
 
     return () => {
-      window.clearTimeout(startTimer);
-      if (revealTimer !== undefined) {
-        window.clearInterval(revealTimer);
-      }
+      window.clearTimeout(timer);
     };
-  }, [delayMs, shouldReduceMotion, text]);
+  }, [currentCharacters.length, currentText.length, isDeleting, lines, shouldReduceMotion, visibleLength]);
 
-  const renderedLength = shouldReduceMotion ? text.length : visibleLength;
-  const isComplete = renderedLength >= text.length;
+  const renderedText = shouldReduceMotion
+    ? lines[0] ?? ''
+    : currentCharacters.slice(0, visibleLength).join('');
+  const ariaLabel = shouldReduceMotion ? lines[0] ?? '' : currentText;
 
   return (
-    <p className={className} aria-label={text}>
-      <span aria-hidden="true">{text.slice(0, renderedLength)}</span>
-      {!isComplete && <span className="areqa-empty-typewriter-cursor" aria-hidden="true" />}
+    <p className={className} aria-label={ariaLabel} aria-live="polite">
+      <span aria-hidden="true">{renderedText}</span>
+      {!shouldReduceMotion && <span className="areqa-empty-typewriter-cursor" aria-hidden="true" />}
     </p>
   );
 }
@@ -291,21 +311,18 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
         <Image 
           src="/icon/areqa_icon_v4_circle.png"
           alt="AREQA Logo" 
-          width={160}
-          height={160}
+          width={128}
+          height={128}
           className={cx('areqa-message-empty-logo', styles.emptyLogo)}
           draggable={false}
           priority
         />
         <div className={cx('areqa-message-empty-copy', styles.emptyCopy)}>
-          {emptyStateLines.map((line, index) => (
-            <TypewriterLine
-              key={line}
-              text={line}
-              delayMs={index * EMPTY_STATE_LINE_DELAY_MS}
-              className={cx('areqa-message-empty-subtitle', styles.emptySubtitle)}
-            />
-          ))}
+          <RotatingTypewriterLine
+            key={emptyStateLines.join('\u0000')}
+            lines={emptyStateLines}
+            className={cx('areqa-message-empty-subtitle', styles.emptySubtitle)}
+          />
         </div>
       </div>
     );

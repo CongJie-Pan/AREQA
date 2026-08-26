@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, fireEvent, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MessageList } from '../../../../frontend/src/components/MessageList';
 import { useChatStore } from '../../../../frontend/src/store/chat';
 
@@ -63,7 +63,11 @@ describe('MessageList Scroll Behavior Regression', () => {
     });
   });
 
-  it('renders the localized typewriter empty state with the circular AREQA icon', async () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders the reduced-motion empty state with the circular AREQA icon', () => {
     (window.matchMedia as any).mockImplementation((query: string) => ({
       matches: query === '(prefers-reduced-motion: reduce)',
       media: query,
@@ -94,15 +98,58 @@ describe('MessageList Scroll Behavior Regression', () => {
 
     expect(logo).toHaveAttribute('src', expect.stringContaining('areqa_icon_v4_circle.png'));
     expect(container.querySelector('.emptyCopy')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByLabelText('嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸')).toHaveTextContent(
-        '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',
-      );
-      expect(screen.getByLabelText('今天想學什麼呢？🤔')).toHaveTextContent('今天想學什麼呢？🤔');
-      expect(screen.getByLabelText('我也是一位 AI Tutor喔，可以與你一步步拆解難題！😎')).toHaveTextContent(
-        '我也是一位 AI Tutor喔，可以與你一步步拆解難題！😎',
-      );
+    expect(screen.getByLabelText('嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸')).toHaveTextContent(
+      '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',
+    );
+    expect(screen.queryByLabelText('今天想學什麼呢？🤔')).not.toBeInTheDocument();
+  });
+
+  it('types, pauses, deletes, and rotates empty-state copy', async () => {
+    vi.useFakeTimers();
+    (window.matchMedia as any).mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        messages: [],
+        isStreaming: false,
+        currentStreamingId: null,
+        thinkingContent: '',
+        isThinking: false,
+        ragStatus: 'idle',
+        ragMessage: '',
+        ragSources: [],
+      };
+      return typeof selector === 'function' ? selector(state) : state;
     });
+
+    render(<MessageList />);
+
+    const firstLine = '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸';
+    const secondLine = '今天想學什麼呢？🤔';
+
+    expect(screen.getByLabelText(firstLine)).toHaveTextContent('');
+
+    for (let step = 0; step < 140; step += 1) {
+      await act(async () => {
+        vi.advanceTimersToNextTimer();
+      });
+
+      const secondLineElement = screen.queryByLabelText(secondLine);
+      if (secondLineElement?.textContent === secondLine) {
+        break;
+      }
+    }
+
+    expect(screen.getByLabelText(secondLine)).toHaveTextContent(secondLine);
   });
 
   it('should scroll to bottom when new messages arrive and user is at bottom', async () => {
