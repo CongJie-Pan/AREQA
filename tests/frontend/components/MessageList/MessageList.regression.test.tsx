@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageList } from '../../../../frontend/src/components/MessageList';
 import { useChatStore } from '../../../../frontend/src/store/chat';
@@ -17,6 +17,10 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
   useStyles: () => ({
     styles: { 
       container: 'container',
+      empty: 'empty',
+      emptyLogo: 'emptyLogo',
+      emptyCopy: 'emptyCopy',
+      emptySubtitle: 'emptySubtitle',
       scrollButton: 'scrollButton'
     },
     cx: (...args: any[]) => args.filter(Boolean).join(' '),
@@ -56,6 +60,48 @@ describe('MessageList Scroll Behavior Regression', () => {
         ragSources: [],
       };
       return typeof selector === 'function' ? selector(state) : state;
+    });
+  });
+
+  it('renders the localized typewriter empty state with the circular AREQA icon', async () => {
+    (window.matchMedia as any).mockImplementation((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        messages: [],
+        isStreaming: false,
+        currentStreamingId: null,
+        thinkingContent: '',
+        isThinking: false,
+        ragStatus: 'idle',
+        ragMessage: '',
+        ragSources: [],
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    const { container } = render(<MessageList />);
+    const logo = screen.getByAltText('AREQA Logo');
+
+    expect(logo).toHaveAttribute('src', expect.stringContaining('areqa_icon_v4_circle.png'));
+    expect(container.querySelector('.emptyCopy')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText('嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸')).toHaveTextContent(
+        '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',
+      );
+      expect(screen.getByLabelText('今天想學什麼呢？🤔')).toHaveTextContent('今天想學什麼呢？🤔');
+      expect(screen.getByLabelText('我也是一位 AI Tutor喔，可以與你一步步拆解難題！😎')).toHaveTextContent(
+        '我也是一位 AI Tutor喔，可以與你一步步拆解難題！😎',
+      );
     });
   });
 

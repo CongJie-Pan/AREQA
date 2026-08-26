@@ -76,7 +76,9 @@ export type TranslationKey =
   | 'login'
   | 'signup'
   | 'staySignedOut'
-  | 'emptyStateTagline'
+  | 'emptyStateGreeting'
+  | 'emptyStateLearningPrompt'
+  | 'emptyStateTutorPrompt'
   | 'textSelectionCopy'
   | 'textSelectionAskQuote'
   | 'textSelectionExplain'
@@ -266,7 +268,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     login: '登入',
     signup: '註冊',
     staySignedOut: '維持登出狀態',
-    emptyStateTagline: '嗨 ! 我是AREQA，你最好的學習夥伴',
+    emptyStateGreeting: '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',
+    emptyStateLearningPrompt: '今天想學什麼呢？🤔',
+    emptyStateTutorPrompt: '我也是一位 AI Tutor喔，可以與你一步步拆解難題！😎',
     textSelectionCopy: '複製',
     textSelectionAskQuote: '問AREQA(引用)',
     textSelectionExplain: '幫我解釋',
@@ -426,7 +430,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     login: '登入',
     signup: '注册',
     staySignedOut: '维持登出状态',
-    emptyStateTagline: '嗨 ! 我是AREQA，你最好的学习伙伴',
+    emptyStateGreeting: '嗨！我是 AREQA，你最好的学习伙伴。',
+    emptyStateLearningPrompt: '今天你想学什么？',
+    emptyStateTutorPrompt: '我也是 AI Tutor，可以一步一步教你！',
     textSelectionCopy: '复制',
     textSelectionAskQuote: '问AREQA(引用)',
     textSelectionExplain: '帮我解释',
@@ -586,7 +592,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     login: 'Log in',
     signup: 'Sign up',
     staySignedOut: 'Stay signed out',
-    emptyStateTagline: "Hi ! I'm AREQA. Your Best Learning Partner. What do you want to learn today ?",
+    emptyStateGreeting: "Hi ! I'm AREQA. Your Best Learning Partner.",
+    emptyStateLearningPrompt: 'What do you want to learn today ?',
+    emptyStateTutorPrompt: "I'm also an AI Tutor, can teach you step-by-step !",
     textSelectionCopy: 'Copy',
     textSelectionAskQuote: 'Ask AREQA (quote)',
     textSelectionExplain: 'Explain',

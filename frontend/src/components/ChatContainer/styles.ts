@@ -84,6 +84,16 @@ export const useStyles = createStyles(({ css, token }) => ({
     pointer-events: none;
   `,
 
+  sidebarFloatingAction: css`
+    position: absolute;
+    top: max(14px, env(safe-area-inset-top));
+    left: max(16px, env(safe-area-inset-left));
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+  `,
+
   iconActionButton: css`
     pointer-events: auto;
     display: inline-flex;

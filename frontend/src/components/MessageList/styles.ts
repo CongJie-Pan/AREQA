@@ -96,8 +96,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     justify-content: center;
     height: 100%;
     text-align: center;
-    padding: 40px;
-    gap: 12px;
+    padding: 40px 24px;
+    gap: 22px;
   `,
 
   emptyTitle: css`
@@ -116,28 +116,48 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   emptyLogo: css`
-    width: 112px;
+    width: 160px;
     height: auto;
     object-fit: contain;
 
     @media (max-width: 768px) {
-      width: 96px;
+      width: 124px;
     }
+  `,
+
+  emptyCopy: css`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: min(760px, 92vw);
   `,
 
   emptySubtitle: css`
     font-family: Georgia, Cambria, "Times New Roman", Times, serif;
-    max-width: min(620px, 92vw);
+    max-width: 100%;
     margin: 0;
     color: var(--areqa-message-muted-text);
-    font-size: 1rem;
-    font-weight: 500;
+    font-size: 1.35rem;
+    font-weight: 600;
     letter-spacing: 0;
-    line-height: 1.5;
+    line-height: 1.42;
     text-align: center;
+    overflow-wrap: anywhere;
+
+    .areqa-empty-typewriter-cursor {
+      display: inline-block;
+      width: 0.08em;
+      height: 1em;
+      margin-left: 0.08em;
+      transform: translateY(0.12em);
+      background: currentColor;
+      animation: ${cursorBlink} 1s steps(1, end) infinite;
+    }
 
     @media (max-width: 768px) {
-      font-size: 0.9rem;
+      font-size: 1.08rem;
+      line-height: 1.45;
     }
   `,
 

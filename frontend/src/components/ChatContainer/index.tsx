@@ -465,7 +465,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       {/* Main Content */}
       <div className={cx('areqa-chat-main', styles.main)}>
-        <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
+        <div className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}>
           <button
             className={cx(
               styles.iconActionButton,
@@ -478,6 +478,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
           >
             <Menu size={20} />
           </button>
+        </div>
+
+        <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
           {!gumPanelType && !isEmpty && (
             <>
               <button

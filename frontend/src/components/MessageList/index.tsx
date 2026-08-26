@@ -18,6 +18,9 @@ import type { MessageFeedback, MessageFeedbackDetails } from '@/database/schema'
 
 /** Scroll threshold in pixels from bottom to trigger auto-scroll */
 const SCROLL_THRESHOLD = 30;
+const EMPTY_STATE_TYPEWRITER_SPEED_MS = 34;
+const EMPTY_STATE_LINE_DELAY_MS = 520;
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 export interface MessageListProps {
   /** Class name for styling */
@@ -28,6 +31,121 @@ export interface MessageListProps {
   onEdit?: (messageId: string, newContent: string) => void;
   /** Callback when a suggested question is selected */
   onSelectSuggestion?: (question: string) => void;
+}
+
+/**
+ * Subscribes to the browser reduced-motion media query.
+ *
+ * Args:
+ *   onStoreChange: Callback React invokes when the media query result changes.
+ *
+ * Returns:
+ *   Cleanup function that removes the media query listener.
+ *
+ * Side effects:
+ *   Registers a browser media query listener when matchMedia is available.
+ */
+function subscribeToReducedMotion(onStoreChange: () => void) {
+  if (typeof window === 'undefined' || !window.matchMedia) {
+    return () => undefined;
+  }
+
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+  mediaQuery.addEventListener('change', onStoreChange);
+
+  return () => {
+    mediaQuery.removeEventListener('change', onStoreChange);
+  };
+}
+
+/**
+ * Reads whether the current browser asks interfaces to minimize motion.
+ *
+ * Returns:
+ *   True when the reduced-motion media query currently matches.
+ */
+function getReducedMotionSnapshot() {
+  return typeof window !== 'undefined'
+    && Boolean(window.matchMedia?.(REDUCED_MOTION_QUERY).matches);
+}
+
+/**
+ * Provides a stable server-side reduced-motion fallback.
+ *
+ * Returns:
+ *   False so server-rendered empty states match the default client animation.
+ */
+function getServerReducedMotionSnapshot() {
+  return false;
+}
+
+/**
+ * Renders one translated empty-state line with a typewriter reveal.
+ *
+ * Args:
+ *   text: Localized text to reveal.
+ *   delayMs: Delay before the reveal starts, used to sequence the three lines.
+ *   className: Optional CSS class for visual styling.
+ *
+ * Returns:
+ *   A paragraph that progressively reveals its text unless the user requests
+ *   reduced motion.
+ *
+ * Side effects:
+ *   Starts and clears browser timers while the line is revealing.
+ */
+function TypewriterLine({
+  text,
+  delayMs,
+  className,
+}: {
+  text: string;
+  delayMs: number;
+  className?: string;
+}) {
+  const [visibleLength, setVisibleLength] = React.useState(0);
+  const shouldReduceMotion = React.useSyncExternalStore(
+    subscribeToReducedMotion,
+    getReducedMotionSnapshot,
+    getServerReducedMotionSnapshot,
+  );
+
+  useEffect(() => {
+    if (shouldReduceMotion) {
+      return undefined;
+    }
+
+    let revealTimer: number | undefined;
+
+    const startTimer = window.setTimeout(() => {
+      let nextLength = 0;
+      revealTimer = window.setInterval(() => {
+        nextLength += 1;
+        setVisibleLength(nextLength);
+
+        if (nextLength >= text.length) {
+          window.clearInterval(revealTimer);
+        }
+      }, EMPTY_STATE_TYPEWRITER_SPEED_MS);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      if (revealTimer !== undefined) {
+        window.clearInterval(revealTimer);
+      }
+    };
+  }, [delayMs, shouldReduceMotion, text]);
+
+  const renderedLength = shouldReduceMotion ? text.length : visibleLength;
+  const isComplete = renderedLength >= text.length;
+
+  return (
+    <p className={className} aria-label={text}>
+      <span aria-hidden="true">{text.slice(0, renderedLength)}</span>
+      {!isComplete && <span className="areqa-empty-typewriter-cursor" aria-hidden="true" />}
+    </p>
+  );
 }
 
 /**
@@ -162,19 +280,32 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
 
   // Show empty state
   if (messages.length === 0) {
+    const emptyStateLines = [
+      t('emptyStateGreeting'),
+      t('emptyStateLearningPrompt'),
+      t('emptyStateTutorPrompt'),
+    ];
+
     return (
       <div className={cx('areqa-message-list', 'areqa-message-list-empty', styles.container, styles.empty, className)}>
         <Image 
-          src="/logo/areqa_icon_v4_A_text.png" 
+          src="/icon/areqa_icon_v4_circle.png"
           alt="AREQA Logo" 
-          width={112}
-          height={122}
+          width={160}
+          height={160}
           className={cx('areqa-message-empty-logo', styles.emptyLogo)}
           draggable={false}
           priority
         />
-        <div className={cx('areqa-message-empty-subtitle', styles.emptySubtitle)}>
-          {t('emptyStateTagline')}
+        <div className={cx('areqa-message-empty-copy', styles.emptyCopy)}>
+          {emptyStateLines.map((line, index) => (
+            <TypewriterLine
+              key={line}
+              text={line}
+              delayMs={index * EMPTY_STATE_LINE_DELAY_MS}
+              className={cx('areqa-message-empty-subtitle', styles.emptySubtitle)}
+            />
+          ))}
         </div>
       </div>
     );
