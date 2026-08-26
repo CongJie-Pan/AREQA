@@ -366,6 +366,9 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(document.body.querySelector('.areqa-markdown-table-modal-backdrop')).toBe(dialog);
     expect(document.body.style.overflow).toBe('hidden');
     expect(screen.getByRole('heading', { name: '表格' })).toBeInTheDocument();
+    const modalBody = document.body.querySelector('.areqa-markdown-table-modal-body');
+    expect(modalBody).toBeInTheDocument();
+    expect(modalBody?.querySelector('table')).toHaveClass('areqa-markdown-table');
 
     fireEvent.click(screen.getByRole('button', { name: '關閉放大表格' }));
     expect(screen.queryByRole('dialog', { name: '表格' })).not.toBeInTheDocument();

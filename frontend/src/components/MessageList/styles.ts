@@ -703,8 +703,9 @@ content: css`
   }
 
   .areqa-markdown-table-modal-body {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-height: 0;
+    max-height: 100%;
     overflow: auto;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
@@ -739,6 +740,10 @@ content: css`
       border-bottom-color: rgba(255, 255, 255, 0.09);
       color: rgba(255, 255, 255, 0.98);
     }
+
+    .areqa-markdown-table tbody tr:last-child td {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
   }
 
   @media (max-width: 768px) {
@@ -768,6 +773,7 @@ content: css`
 
     .areqa-markdown-table-modal-body {
       min-height: 0;
+      max-height: 100%;
     }
 
     table.areqa-markdown-table {
