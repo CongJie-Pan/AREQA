@@ -6,7 +6,7 @@
  */
 
 import React, { memo } from 'react';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { CitationSource } from '@/components/Citations';
 import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
@@ -34,6 +34,11 @@ const STATUS_TRANSLATION_KEYS: Record<RAGInfo['status'], TranslationKey> = {
   done: 'pipeline.done',
 };
 
+const VISIBLE_PIPELINE_STATUSES: ReadonlySet<RAGInfo['status']> = new Set([
+  'routing',
+  'searching_dense',
+]);
+
 /**
  * Resolves the frontend-owned translation key for a backend pipeline code.
  *
@@ -55,12 +60,12 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
   const { styles } = useStyles();
   const { t } = useUserPreferences();
 
-  const isComplete = ['sources_ready', 'generating', 'done'].includes(ragInfo.status);
   const isRouting = ragInfo.status === 'routing';
   const statusText = t(getStatusTranslationKey(ragInfo.status));
 
-  // Don't show if idle
-  if (ragInfo.status === 'idle') return null;
+  // Backend keeps all pipeline status codes, but the chat UI only exposes
+  // learner-relevant waiting states. Hidden statuses remove the panel.
+  if (!VISIBLE_PIPELINE_STATUSES.has(ragInfo.status)) return null;
 
   return (
     <motion.div
@@ -75,15 +80,7 @@ const RAGStatusPanelComponent = ({ ragInfo }: RAGStatusPanelProps) => {
     >
       <div className={styles.header}>
         <div className={styles.statusInfo}>
-          {isComplete ? (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-            >
-              <CheckCircle2 size={18} className={styles.checkIcon} />
-            </motion.div>
-          ) : isRouting ? (
+          {isRouting ? (
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}

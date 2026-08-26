@@ -42,19 +42,19 @@ describe('RAGStatusPanel', () => {
     expect(screen.queryByText('Backend should not own UI copy')).not.toBeInTheDocument();
   });
 
-  it('uses the selected interface language for pipeline text', () => {
+  it('uses the selected interface language for visible pipeline text', () => {
     window.localStorage.setItem('areqa:interface-language', 'en');
 
     render(
       <UserPreferencesProvider>
         <RAGStatusPanel
-          ragInfo={{ status: 'reranking', message: 'Backend reranking text', sources: [] }}
+          ragInfo={{ status: 'searching_dense', message: 'Backend dense-search text', sources: [] }}
         />
       </UserPreferencesProvider>,
     );
 
-    expect(screen.getByText('Ranking the most relevant material')).toBeInTheDocument();
-    expect(screen.queryByText('Backend reranking text')).not.toBeInTheDocument();
+    expect(screen.getByText('Searching related sources')).toBeInTheDocument();
+    expect(screen.queryByText('Backend dense-search text')).not.toBeInTheDocument();
   });
 
   it('returns null for idle state', () => {
@@ -64,7 +64,7 @@ describe('RAGStatusPanel', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('shows radar animation for active retrieval', () => {
+  it('shows radar animation for visible retrieval search state', () => {
     const ragInfo: RAGInfo = {
       status: 'searching_dense',
       message: 'Backend dense-search text',
@@ -79,17 +79,21 @@ describe('RAGStatusPanel', () => {
     expect(container.querySelector('.radarRing')).toBeInTheDocument();
   });
 
-  it('shows completion icon and localized source count', () => {
+  it.each([
+    'retrieving',
+    'searching_sparse',
+    'reranking',
+    'sources_ready',
+    'generating',
+  ] as const)('does not render frontend panel for backend-only status %s', (status) => {
     const ragInfo: RAGInfo = {
-      status: 'sources_ready',
-      message: 'Backend sources-ready text',
+      status,
+      message: `Backend-only ${status}`,
       sources: Array(5).fill({ title: 'Mock Source', snippet: 'text', score: 1, chunk_id: '1' }),
     };
     const { container } = render(<RAGStatusPanel ragInfo={ragInfo} />);
 
-    expect(screen.getByText('已完成文獻檢索')).toBeInTheDocument();
-    expect(screen.getByText('找到 5 筆文獻')).toBeInTheDocument();
-    expect(screen.queryByText('Backend sources-ready text')).not.toBeInTheDocument();
-    expect(container.querySelector('.radarWrapper')).not.toBeInTheDocument();
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText(`Backend-only ${status}`)).not.toBeInTheDocument();
   });
 });
