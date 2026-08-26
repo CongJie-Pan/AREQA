@@ -53,6 +53,34 @@ interface ErrorResponse {
   };
 }
 
+async function readUpstreamError(response: Response): Promise<{ message: string; code: string } | null> {
+  try {
+    const payload = await response.json() as {
+      detail?: string | { message?: string; code?: string };
+      error?: { message?: string; code?: string };
+    };
+    if (payload.error?.message) {
+      return {
+        message: payload.error.message,
+        code: payload.error.code || 'SERVICE_ERROR',
+      };
+    }
+    if (typeof payload.detail === 'string') {
+      return { message: payload.detail, code: 'UPSTREAM_VALIDATION_ERROR' };
+    }
+    if (payload.detail?.message) {
+      return {
+        message: payload.detail.message,
+        code: payload.detail.code || 'UPSTREAM_VALIDATION_ERROR',
+      };
+    }
+  } catch {
+    // Fall through to the generic upstream message below.
+  }
+
+  return null;
+}
+
 function createErrorResponse(
   message: string,
   code: string,
@@ -197,12 +225,13 @@ export async function POST(request: NextRequest) {
     if (!fastApiResponse.ok) {
       const status = fastApiResponse.status;
       logger.error('FastAPI backend error', undefined, { status, clientId });
+      const upstreamError = await readUpstreamError(fastApiResponse);
 
       // Translate specific upstream error codes into well-typed client responses
       if (status === 401) {
         return createErrorResponse(
-          'Authentication failed with the AI service.',
-          'AUTHENTICATION_ERROR',
+          upstreamError?.message || 'Authentication failed with the AI service.',
+          upstreamError?.code || 'AUTHENTICATION_ERROR',
           401
         );
       }
@@ -210,22 +239,34 @@ export async function POST(request: NextRequest) {
       if (status === 429) {
         const retryAfter = parseInt(fastApiResponse.headers.get('Retry-After') || '60', 10);
         return createErrorResponse(
-          'AI service is busy. Please try again later.',
-          'SERVICE_BUSY',
+          upstreamError?.message || 'AI service is busy. Please try again later.',
+          upstreamError?.code || 'SERVICE_BUSY',
           429,
           retryAfter,
           { 'Retry-After': String(retryAfter) }
         );
       }
 
+      if (status === 400 || status === 413 || status === 422) {
+        return createErrorResponse(
+          upstreamError?.message || 'An error occurred while processing',
+          upstreamError?.code || 'SERVICE_ERROR',
+          status,
+        );
+      }
+
       if (status === 503 || status === 500) {
         return createErrorResponse(
-          'AI service is temporarily unavailable. Please try again later.',
-          'SERVICE_UNAVAILABLE',
+          upstreamError?.message || 'AI service is temporarily unavailable. Please try again later.',
+          upstreamError?.code || 'SERVICE_UNAVAILABLE',
           503
         );
       }
-      return createErrorResponse('An error occurred while processing', 'SERVICE_ERROR', 502);
+      return createErrorResponse(
+        upstreamError?.message || 'An error occurred while processing',
+        upstreamError?.code || 'SERVICE_ERROR',
+        502,
+      );
     }
 
     if (!fastApiResponse.body) {

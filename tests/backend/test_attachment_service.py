@@ -59,6 +59,21 @@ async def test_wraps_markdown_as_untrusted_text_context():
 
 
 @pytest.mark.asyncio
+async def test_processes_pasted_image_and_text_attachment_together():
+    uploads = [
+        make_upload("pasted-image.png", "image/png", make_png()),
+        make_upload("script.txt", "text/plain", "講稿重點".encode("utf-8")),
+    ]
+
+    attachments = await process_attachments(uploads)
+
+    assert [attachment.media_type for attachment in attachments] == ["image/png", "text/plain"]
+    assert attachments[0].content_part["type"] == "image_url"
+    assert attachments[1].content_part["type"] == "text"
+    assert "講稿重點" in attachments[1].content_part["text"]
+
+
+@pytest.mark.asyncio
 async def test_rejects_mime_spoofed_file():
     upload = make_upload("not-an-image.png", "image/png", b"%PDF-1.4\nnot actually an image")
 

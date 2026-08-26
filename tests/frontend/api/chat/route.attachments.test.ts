@@ -62,4 +62,35 @@ describe('chat attachment BFF route', () => {
     expect(response.status).toBe(413);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it('preserves backend attachment validation errors instead of masking them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: {
+              code: 'ATTACHMENT_INVALID_CONTENT',
+              message: 'Uploaded image could not be decoded.',
+            },
+          }),
+          { status: 422, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+    const formData = new FormData();
+    formData.append('messages', JSON.stringify({ messages: [{ role: 'user', content: '請幫我解釋這張圖' }] }));
+    formData.append('attachments', new File(['not-a-real-png'], 'pasted-image.png', { type: 'image/png' }));
+    const request = multipartRequest(formData);
+
+    const response = await POST(request as any);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.error).toMatchObject({
+      code: 'ATTACHMENT_INVALID_CONTENT',
+      message: 'Uploaded image could not be decoded.',
+      status: 422,
+    });
+  });
 });
