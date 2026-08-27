@@ -9,7 +9,7 @@
 
 ## 當前系統架構圖
 
-> **最後更新**：2026-08-06（依目前 GitHub Codespace、frontend / backend 實際代碼與腳本校正）
+> **最後更新**：2026-08-27（依目前 GitHub Codespace、frontend / backend 實際代碼與腳本校正）
 
 > 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 與 `backend/main.py` 的實際 route 為準。
 
@@ -17,10 +17,10 @@
 
 ## Codespace 快速開始
 
-目前 Codespace 由 `.devcontainer/devcontainer.json` 建立，基底是 `mcr.microsoft.com/devcontainers/base:ubuntu`，並透過 devcontainer features 安裝：
+目前 Codespace 由 `.devcontainer/devcontainer.json` 建立（容器名稱 `AREQR Dev`），基底是 `mcr.microsoft.com/devcontainers/base:ubuntu`，並透過 devcontainer features 安裝：
 
-- Node.js 20（目前工作區驗證為 `v20.20.2`，npm `10.8.2`）
-- Python 3.11（目前 `backend/.venv/bin/python` 為 `3.11.15`）
+- Node.js 20（目前工作區驗證為 `v20.20.2`，npm `10.8.2`；Render 前端設定為 Node `20.11.0`）
+- Python 3.11（目前 `backend/.venv/bin/python` 為 `3.11.15`；Render 後端設定為 Python `3.10.12`）
 - Git LFS
 - VS Code Python / Pylance / Codex extension
 
@@ -33,6 +33,12 @@
 - 建立 `backend/.venv` 並安裝 `backend/requirements.txt`
 - 安裝 `frontend/node_modules`
 - 在 shell 啟動時自動啟用 `backend/.venv`
+
+若 Codespace 重建後需要重新安裝依賴，直接重新執行：
+
+```bash
+bash .devcontainer/setup.sh
+```
 
 `postAttachCommand` 會執行 `.devcontainer/on-attach.sh`，負責檢查 `agy` / `drift` / `codex`，必要時初始化 `.drift`，並嘗試啟動 Redis。注意：目前這個 Codespace 映像沒有可用的 `redis-server` service，因此 `on-attach.sh` 會顯示 Redis 啟動失敗；若功能需要 Redis，請設定外部 `REDIS_URL`，或在 Codespace 中自行安裝並啟動 Redis。
 
@@ -96,8 +102,21 @@ npm run lint:report
 npm run typecheck:report
 npm run check:report:strict
 
+# 直接執行前端 lint / typecheck
+npm run lint --prefix frontend
+npm run typecheck --prefix frontend
+
 # Drift 重新掃描
 drift scan backend frontend --force
+```
+
+前端也提供以下測試指令：
+
+```bash
+npm test --prefix frontend
+npm run test:watch --prefix frontend
+npm run test:coverage --prefix frontend
+npm run test:smoke --prefix frontend
 ```
 
 ### Codespace 環境變數
@@ -114,6 +133,7 @@ drift scan backend frontend --force
 - `PERPLEXITY_API_KEY`: Web search 與 visual image search；未設定時 web search / image preflight 會 fail-soft，不阻斷主回答。
 - `TAVILY_API_KEY`: 選配 visual image provider；未設定時 Tavily 圖片查詢會 fail-soft 並交給下一個 provider。
 - `SERPAPI_API_KEY`: 選配 SerpAPI Google Images provider；未設定時 SerpAPI 圖片查詢會 fail-soft，不阻斷主回答。
+- `HF_TOKEN`: Hugging Face 相關整合使用的 token（目前可選）。
 
 選配：
 
@@ -125,6 +145,17 @@ drift scan backend frontend --force
 - `ENABLE_VISUAL_PREFLIGHT_PARALLEL_PROVIDERS=true`: preflight 圖片搜尋併發查詢 Perplexity / Wikimedia / Openverse，預設開啟。
 - `PERPLEXITY_VISUAL_SEARCH_TIMEOUT_SECONDS`: Perplexity image search 單次 timeout，預設 `4.5` 秒。
 - `VISUAL_PREFLIGHT_TIMEOUT_SECONDS`: 整體圖片 preflight timeout，預設 `6.0` 秒。
+- `VISUAL_GROUNDING_TIMEOUT_SECONDS` / `VISUAL_UNDERSTANDING_TIMEOUT_SECONDS`: 圖片 grounding 與理解模型 timeout，預設分別為 `1.5` / `4.0` 秒。
+- `ENABLE_VISUAL_UNDERSTANDING`: 啟用輸出圖片的理解驗證，預設開啟。
+- `ENABLE_TAVILY_VISUAL_SEARCH` / `ENABLE_SERPAPI_VISUAL_SEARCH`: 控制備援圖片 provider，預設開啟。
+- `ENABLE_MAILBOX_FEATURE` / `ENABLE_COMPEER_FEATURE` / `ENABLE_COMPEER_TELEMETRY`: 控制瀏覽器可見的 Mailbox、ComPeer 與遙測功能；目前預設皆為關閉，後端 `/api/v1/features` 會以安全的布林值提供前端。
+- `ENABLE_MAILBOX_SENDING` / `ENABLE_COMPEER_AUTO_PROACTIVE`: 分別控制寄信與自動主動關懷；目前預設關閉。
+- `ENABLE_SHARE_LINK_DEBUG_LOGS`: 控制分享連結診斷 log，預設開啟；log 僅接受白名單欄位。
+- `NEXT_PUBLIC_CHAT_API_ENDPOINT`: 前端聊天代理端點，預設 `/api/chat`。
+- `NEXT_PUBLIC_API_TIMEOUT` / `NEXT_PUBLIC_MAX_MESSAGE_LENGTH` / `NEXT_PUBLIC_PARSER_MAX_BUFFER`: 前端請求 timeout、訊息長度與串流 parser buffer 上限，預設分別為 `30000`、`10000`、`102400`。
+- `WEB_SEARCH_MAX_RESULTS` / `WEB_SEARCH_CONTEXT_SIZE` / `ENABLE_WEB_QUERY_REWRITE`: 網路搜尋結果數、上下文大小與 query rewrite 控制；預設為 `15`、`high`、開啟。
+- `FOREGROUND_MODEL_CALL_BUDGET_GENERAL` / `FOREGROUND_MODEL_CALL_BUDGET_LEARNING`: 一般聊天與學習路徑的前景模型呼叫預算，預設為 `2` / `3`。
+- `COMPEER_DELIVERY_DELAY_SECONDS` / `COMPEER_COOLDOWN_OVERRIDE_SECONDS` / `COMPEER_PROACTIVE_MAIL_MIN_INTERVAL_SECONDS` / `COMPEER_DAILY_PROACTIVE_LIMIT`: ComPeer 投遞延遲、開發冷卻覆寫、主動信最短間隔與每日上限。
 - `ENABLE_VISUAL_ANSWER_DEBUG_LOGS=true`: 輸出隱私安全的 visual answer 診斷 log；不記錄 raw prompt、圖片 URL、使用者原文或金鑰。
 
 ---
@@ -178,7 +209,10 @@ backend/
 │   ├── attachment_service.py       # multipart 附件驗證、文字/圖片內容抽取
 │   ├── visual_answer_service.py    # 圖文回答 preflight、provider 查詢、候選評分與 image blocks
 │   ├── visual_grounding_agent.py   # 圖片意圖規劃與候選圖 grounding 檢查
+│   ├── visual_understanding_agent.py# 輸出圖片內容理解與驗證
+│   ├── output_image_service.py     # 輸出圖片的處理與理解流程
 │   ├── memory_ingestion_service.py # user evidence → candidate/profile/cold memory 政策
+│   ├── memory_extraction_agent.py  # 結構化記憶候選抽取
 │   ├── hot_memory_service.py       # typed hot memory entries 與 provenance helper
 │   ├── memory_semantic_analyzer.py # 選配 OpenRouter 語意候選分析
 │   ├── explicit_memory_cache.py    # explicit recall memory 的 in-process TTL cache
@@ -226,7 +260,8 @@ frontend/src/
 │   ├── globals.css                 # 全局樣式 (ChenYuluoyan 字體 / 暗色主題)
 │   └── api/                        # Next.js API Routes (代理層)
 │       ├── chat/                   # 代理 POST /api/v1/stream
-│       └── title/                  # 代理 POST /api/v1/generate-title
+│       ├── title/                  # 代理 POST /api/v1/generate-title
+│       └── share/                  # 分享連結建立與公開內容讀取
 │
 ├── components/                     # UI 元件 (每個元件含 index.tsx + styles.ts)
 │   ├── ChatContainer/              # 主對話容器 (整合所有子元件)
@@ -241,6 +276,7 @@ frontend/src/
 │   ├── GumPanel/                   # 記憶資產面板 (查看 / 刪除 / 編輯)
 │   ├── MailboxPanel/               # 信箱系統 (收信 / 發信 / 已讀)
 │   ├── ProactiveManager/           # 行為遙測 + 信箱通知同步
+│   ├── PwaInstallPrompt/           # PWA 安裝提示
 │   ├── TextSelectionToolbar/       # 文字選取快捷工具列
 │   ├── ErrorBoundary/              # 錯誤邊界元件
 │   └── index.ts                    # Barrel export
@@ -258,6 +294,8 @@ frontend/src/
 │   │   └── index.ts                # useGumStore (記憶列表 / 總結 / CRUD)
 │   ├── mailbox/
 │   │   └── index.ts                # useMailboxStore (信件列表 / 未讀數)
+│   ├── features/
+│   │   └── index.ts                # 後端 runtime feature flags
 │   └── index.ts                    # 統一 Barrel export
 │
 ├── services/                       # API 呼叫層
@@ -279,7 +317,10 @@ frontend/src/
 │   └── useTextSelection.ts         # 文字選取偵測
 │
 ├── config/
-│   └── api.ts                      # API Base URL 設定
+│   ├── api.ts                      # API endpoint、timeout 與輸入限制
+│   └── features.ts                 # runtime feature flag 型別
+├── contexts/
+│   └── UserPreferencesContext.tsx  # 主題、語言與使用者偏好
 ├── lib/
 │   └── supabase.ts                 # Supabase client 初始化
 │
@@ -396,7 +437,7 @@ flowchart TD
 
 ---
 
-### 路徑 B：主動關懷路徑 (ComPeer · startup 會啟動背景排程)
+### 路徑 B：主動關懷路徑 (ComPeer · startup 建立背景排程，功能旗標控制是否啟用)
 
 ```mermaid
 flowchart TD
@@ -569,6 +610,7 @@ flowchart TD
 - **行為遙測**: `POST /api/v1/log_action` 接收前端 scroll、互動等行為，scroll 純寫熱記憶，其他有意義互動推送至 GUM。
 - **ComPeer Scheduler**: `compeer_scheduler.py` 包含 proactive + daily 兩個排程迴圈；觸發時不再彈出角色扮演視窗，而是排一封延遲送達的 AREQA 關懷信，預設延遲為 120 秒，可由 `COMPEER_DELIVERY_DELAY_SECONDS` 設定。
 - **信箱系統 (Mailbox)**: `mailbox_store.py` 目前以 Redis 管理 mailbox 與 delayed mail queue，支援 Avatar 延遲回信與 AREQA 主動關懷信，並透過 WebSocket 推播新信通知。
+- **Runtime feature flags**: `ENABLE_MAILBOX_FEATURE`、`ENABLE_COMPEER_FEATURE` 與 `ENABLE_COMPEER_TELEMETRY` 預設關閉；前端會先讀取 `GET /api/v1/features`，在功能未啟用時 fail closed。
 - **ComPeer 投遞狀態**: 排程時只建立 delayed task；mailbox worker claim 並成功寫入信箱後，才更新 `last_compeer_message`。worker 會記錄 start、claim、delivery success 與 failure/retry；目前 worker 由 FastAPI startup 建立，仍屬應用程式內背景 task。
 - **WebSocket 推播**: `ConnectionManager` (`services/connection_manager.py`) 管理持久連線，目前主動關懷 UX 只依賴 `broadcast_mail_alert` 更新信箱。
 - **冷卻機制**: `compeer_rejected` 動作觸發 30 分鐘動態冷卻，防止過度打擾。
@@ -581,7 +623,7 @@ flowchart TD
 
 ### 7. 模型與服務配置
 
-- **集中式預設模型**: `backend/config.py` 定義 `model_policy_classifier`、`model_hyde_decomposer`、`model_main_instruct`、`model_main_thinking`、`model_gum`、`model_zpd_query`，目前預設為 `google/gemini-3.1-flash-lite`。
+- **集中式預設模型**: `backend/config.py` 定義 policy / HyDE / GUM / ZPD、主回答、suggestion、embedding、記憶語意分析與 visual understanding 模型；目前 policy / HyDE / GUM / ZPD 使用 `google/gemini-3.1-flash-lite`，主回答 instruct / thinking 使用 `google/gemini-3.7-flash`。
 - **專用模型例外**: 部分服務有專用模型設定，例如 suggestion 使用 `google/gemini-2.5-flash-lite`，`router_service.py` 使用 `qwen/qwen3-vl-8b-instruct`，`cold_memory.py` 的 embedding 預設使用 `openai/text-embedding-3-small`。
 - **OpenRouter 統一出口**: 主 LLM、標題生成、GUM、推薦問題、embedding 與部分檢索相關流程共用 `OPENROUTER_API_KEY`。
 - **Visual Search 例外**: Perplexity image search 使用 `PERPLEXITY_API_KEY` 與 `perplexity_visual_search_model`，目前預設模型為 `sonar`；Tavily 與 SerpAPI 分別使用 `TAVILY_API_KEY`、`SERPAPI_API_KEY` 作為選配圖片 provider。
@@ -600,6 +642,8 @@ flowchart TD
 | `GumPanel` | `src/components/GumPanel/` | 記憶面板 |
 | `MailboxPanel` | `src/components/MailboxPanel/` | 信箱系統 |
 | `ProactiveManager` | `src/components/ProactiveManager/` | 行為遙測與信箱通知同步 |
+| `PwaInstallPrompt` | `src/components/PwaInstallPrompt/` | PWA 安裝提示 |
+| `UserPreferencesContext` | `src/contexts/UserPreferencesContext.tsx` | 語言、主題與使用者偏好 |
 | `ConversationList` | `src/components/ConversationList/` | 對話列表側欄 |
 | `TextSelectionToolbar` | `src/components/TextSelectionToolbar/` | 文字選取快捷工具列 |
 | `ErrorBoundary` | `src/components/ErrorBoundary/` | 錯誤邊界 |
@@ -612,17 +656,21 @@ flowchart TD
 |------|------|------|
 | `POST` | `/api/v1/stream` | 主串流對話 (SSE)，支援 JSON 與 multipart attachments |
 | `POST` | `/api/v1/generate-title` | 對話標題生成 (SSE) |
+| `GET` | `/api/v1/features` | 回傳前端可見的 Mailbox / ComPeer runtime flags |
 | `GET` | `/api/v1/retrieve` | RAG 純查詢 (Debug/Citation) |
 | `GET` | `/api/v1/memory` | 讀取長期記憶列表 |
 | `GET` | `/api/v1/memory/summary` | 記憶總結 (LLM 人物畫像) |
 | `GET` | `/api/v1/memory/debug` | 記憶分層與 pending observation 診斷 |
 | `POST` | `/api/v1/memory/flush` | 處理未滿批次的 observations 並執行 reflection |
+| `POST` | `/api/v1/memory/candidates/{memory_id}/confirm` | 核准記憶候選 |
+| `POST` | `/api/v1/memory/candidates/{memory_id}/reject` | 拒絕記憶候選 |
 | `DELETE` | `/api/v1/memory` | 清除所有記憶 |
 | `DELETE` | `/api/v1/memory/working` | 只清除 working memory |
 | `DELETE` | `/api/v1/memory/{id}` | 刪除單筆記憶 |
 | `PUT` | `/api/v1/memory/{id}` | 編輯單筆記憶 |
 | `POST` | `/api/v1/memory/batch-delete` | 批次刪除記憶 |
 | `POST` | `/api/v1/log_action` | 行為遙測日誌 |
+| `POST` | `/api/v1/share/debug-log` | 分享連結診斷 log（白名單欄位） |
 | `GET` | `/api/v1/proactive-check` | 主動關懷輪詢備用端點 |
 | `GET` | `/api/v1/mailbox` | 讀取信箱 |
 | `POST` | `/api/v1/mailbox/send` | 發送信件 |
@@ -636,7 +684,7 @@ flowchart TD
 
 > `/api/v1/stream` 的 multipart 請求可附帶 `attachments`；後端限制單次請求總大小為 30MB，並由 `attachment_service.py` 做類型與內容驗證。
 
-> 補充：前端 `useGumStore.fetchSuggestions()` 目前仍會請求 `/api/v1/suggestions`，但後端 `main.py` 尚未提供這個 route；現有建議問題主要透過 `/api/v1/stream` 的 `event: suggestions` 與 `event: done` SSE 事件傳回。
+> 已知相容性問題：前端 `useGumStore.fetchSuggestions()` 目前仍會請求 `/api/v1/suggestions`，但後端 `main.py` 尚未提供這個 route；現有建議問題主要透過 `/api/v1/stream` 的 `event: suggestions` 與 `event: done` SSE 事件傳回。若要移除這個 legacy request，需同步調整 `frontend/src/store/gum/index.ts`。
 
 ---
 
@@ -690,6 +738,15 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
 
 從專案根目錄執行 `npm run dev` 會同時啟動後端 Uvicorn 與前端 Next.js；這是目前最接近完整 Codespace 工作流的啟動方式。
 
+### 4. Render 部署
+
+`render.yaml` 定義兩個 web service：
+
+- `areqa-backend`: root directory `backend`，使用 `requirements-render.txt`，以 `uvicorn main:app --host 0.0.0.0 --port $PORT` 啟動。
+- `areqa-frontend`: root directory `frontend`，執行 `npm install && npm run build`，再以 `npm run start` 啟動。
+
+Render 後端需要在 Dashboard 設定 `HF_TOKEN`、`OPENROUTER_API_KEY`、`JWT_SECRET`、`REDIS_URL`、`DATABASE_URL`、Supabase 與 Perplexity 相關 secrets；前端使用 `NEXT_PUBLIC_BACKEND_URL` 指向後端服務。`render.yaml` 的 `MODEL_ZPD_QUERY`、ComPeer dev controls 與 Node/Python 版本是部署設定，不會覆蓋 Codespace 的本地開發版本。
+
 ---
 
 ## 🧪 測試
@@ -719,11 +776,11 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
   - 前端 `Supabase Auth UI`、`fake-indexeddb` 與部分 WebSocket 行為在測試環境中使用本地 mocks，以避免 jsdom 與外部登入流量造成不穩定。
   - `syncService` 在有資料變更時會延遲觸發 reload，測試需等待該延遲行為。
   - `tests/backend/test_rag_pipeline.py` 使用 synthetic fixture 驗證 RAG pipeline 的融合與過濾邏輯，不依賴大型離線 FAISS / BM25 產物；若要在實際服務啟用本地 RAG，仍需準備對應索引檔。
-- **目前 Codespace 輕量驗證 (2026-08-06)**:
+- **目前 Codespace 輕量驗證 (2026-08-27)**:
   - Node.js `v20.20.2`、npm `10.8.2`、`backend/.venv/bin/python` `3.11.15`。
   - 根目錄與前端 npm scripts 已確認存在。
   - 目前 Codespace 沒有可用的本機 Redis service；`service redis-server status` 會回報 `redis-server: unrecognized service`，需要 Redis 功能時請設定外部 `REDIS_URL` 或自行安裝 Redis。
-  - 本次 README 更新只做文件校正，未重跑完整 `npm run test:all`、前端 build 或後端 pytest；上述指令仍是目前建議的完整驗證入口。
+  - 本次 README 更新為文件與程式碼同步校正，未重跑完整 `npm run test:all`、前端 build 或後端 pytest；上述指令仍是目前建議的完整驗證入口。
 - **人工回歸驗證建議**:
   1. `DELETE /api/v1/memory/working`
   2. 新 conversation 只送 `你好`，確認回覆是固定寒暄，且不會帶出 README / React / 文言文脈絡
