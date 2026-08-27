@@ -82,6 +82,9 @@ def make_candidate() -> PdfVisualCandidate:
         caption_hint="Figure 2. Result chart",
         visual_score=8,
         sha256="abc123",
+        answer_section="實驗結果與關鍵數據",
+        visual_type="results_table",
+        teaching_caption="這張表呈現 BLEU 結果，是理解論文實驗主張的關鍵。",
     )
 
 
@@ -109,6 +112,9 @@ async def test_prepare_attachment_image_blocks_uses_pdf_candidate_and_vision():
     assert payload["sourceDomain"] == "uploaded PDF"
     assert payload["visionSource"] == "vision_model"
     assert payload["visionSummary"] == "A line chart is visible on the PDF page."
+    assert payload["purpose"] == "results_table"
+    assert "實驗結果" in payload["explanatoryCaption"]
+    assert "BLEU" in payload["explanatoryCaption"]
     assert payload["storageBucket"] == "bucket"
     assert payload["storagePath"] == "path"
     assert payload["storageExpiresAt"] == 1234567890

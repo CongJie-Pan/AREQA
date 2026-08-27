@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from backend.services.conversation_context_service import ConversationContext
 from backend.services.conversation_stream_service import ConversationStreamService, ImageRequestMarkerFilter
 from backend.services.orchestration_service import OrchestrationService
+from backend.services.paper_visual_planner_service import PaperVisualPlanItem
 from backend.services.parts_context_service import PartsContext
 from backend.services.visual_answer_service import ImageBlock
 from backend.services.query_policy_service import (
@@ -74,6 +75,54 @@ def test_paper_auto_explain_instruction_adds_default_paper_structure():
     assert "研究結論" in system_prompt
     assert "局限與可延伸方向" in system_prompt
     assert "不得根據檔名" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_attachment_visual_extraction_uses_paper_visual_planner_for_auto_explain():
+    """Paper auto-explain visual extraction should honor planner-selected pages."""
+
+    fitz = pytest.importorskip("fitz")
+    document = fitz.open()
+    document.new_page(width=320, height=220).insert_text(
+        (32, 40),
+        "Figure 1. Architecture overview",
+        fontsize=12,
+    )
+    page_2 = document.new_page(width=320, height=220)
+    page_2.insert_text((32, 40), "Results BLEU evaluation", fontsize=10)
+    page_2.draw_rect(fitz.Rect(40, 70, 280, 150), color=(0, 0, 0), width=1)
+    page_2.insert_text((42, 180), "Table 2. BLEU results", fontsize=12)
+    pdf_bytes = document.tobytes()
+    document.close()
+
+    planned = (
+        PaperVisualPlanItem(
+            page_number=2,
+            answer_section="實驗結果與關鍵數據",
+            visual_type="results_table",
+            teaching_caption="這張表呈現 BLEU 結果，是理解論文實驗主張的關鍵。",
+            rationale="results_table_carries_main_evidence",
+        ),
+    )
+
+    with patch(
+        "services.paper_visual_planner_service.PaperVisualPlannerService.plan_visuals",
+        new_callable=AsyncMock,
+        return_value=planned,
+    ) as mock_plan:
+        candidates = await OrchestrationService._extract_attachment_visual_candidates(
+            [{"filename": "paper.pdf", "pdf_bytes": pdf_bytes}],
+            "planner-integration",
+            model_client=object(),
+            use_paper_visual_planner=True,
+        )
+
+    mock_plan.assert_awaited_once()
+    assert len(candidates) == 1
+    assert candidates[0].page_number == 2
+    assert candidates[0].selection_source == "planner"
+    assert candidates[0].to_image_block().purpose == "results_table"
+    assert "BLEU" in candidates[0].to_image_block().explanatory_caption
 
 
 def test_verified_visual_instruction_injects_inventory():

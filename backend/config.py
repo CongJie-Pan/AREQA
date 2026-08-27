@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     pdf_attachment_image_storage_bucket: str = "areqa-pdf-visuals"
     pdf_attachment_image_signed_url_ttl_seconds: int = 2592000
     enable_pdf_paper_auto_explain: bool = True
+    enable_pdf_paper_visual_planner: bool = True
+    pdf_paper_visual_planner_timeout_seconds: float = 2.5
+    pdf_paper_visual_planner_max_pages_scanned: int = 20
+    pdf_paper_visual_planner_context_chars: int = 16000
 
     # Backend-only Supabase Storage credentials for persisted PDF visuals.
     # The service role key must never be exposed to browser code.

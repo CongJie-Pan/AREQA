@@ -64,6 +64,13 @@ class PdfVisualCandidate:
         crop_applied: Whether the image is a clipped figure region instead of
             a full-page thumbnail.
         crop_reason: Safe reason code explaining the crop decision.
+        answer_section: Paper-explanation section where the main answer should
+            introduce this visual.
+        visual_type: Planner-selected visual purpose.
+        teaching_caption: Planner-authored explanation that may be shown to the
+            user and passed to the main answer model.
+        planner_rationale: Safe bounded reason for selection.
+        selection_source: ``planner``/``fallback``/``heuristic`` source label.
 
     Returns:
         Immutable request-scoped candidate metadata.
@@ -83,6 +90,11 @@ class PdfVisualCandidate:
     sha256: str
     crop_applied: bool = False
     crop_reason: str = "full_page_fallback"
+    answer_section: str = ""
+    visual_type: str = "chart"
+    teaching_caption: str = ""
+    planner_rationale: str = ""
+    selection_source: str = "heuristic"
 
     def to_image_block(self) -> ImageBlock:
         """Convert the candidate into the existing frontend image block shape.
@@ -96,10 +108,13 @@ class PdfVisualCandidate:
 
         topic = f"{self.filename} 第 {self.page_number} 頁"
         caption = self.caption_hint or f"上傳 PDF 第 {self.page_number} 頁的圖像內容"
+        explanatory_caption = self.teaching_caption or ""
+        if self.answer_section and self.teaching_caption:
+            explanatory_caption = f"建議放在「{self.answer_section}」：{self.teaching_caption}"
         return ImageBlock(
             slot_id=self.slot_id,
             topic=topic,
-            purpose="chart",
+            purpose=self.visual_type or "chart",
             image_url=self.image_data_uri,
             thumbnail_url=self.image_data_uri,
             source_url=f"#pdf-attachment-page-{self.page_number}",
@@ -108,7 +123,7 @@ class PdfVisualCandidate:
             provider=PDF_ATTACHMENT_IMAGE_PROVIDER,
             license="user_provided_attachment",
             attribution_caption=f"{self.filename}，第 {self.page_number} 頁",
-            explanatory_caption="",
+            explanatory_caption=explanatory_caption,
             width=self.width,
             height=self.height,
             safety_status="pass",
@@ -167,6 +182,7 @@ class PdfVisualExtractionService:
         pdf_bytes: bytes,
         filename: str,
         conversation_id: str = "unknown",
+        visual_plan: Iterable[Any] | None = None,
     ) -> tuple[PdfVisualCandidate, ...]:
         """Return rendered PDF page candidates for inline answer images.
 
@@ -174,6 +190,9 @@ class PdfVisualExtractionService:
             pdf_bytes: Validated PDF bytes from the current upload.
             filename: Sanitized filename for display metadata.
             conversation_id: Correlation id for privacy-safe structured logs.
+            visual_plan: Optional sanitized planner items. When present, page
+                selection follows the planner order while crop geometry remains
+                deterministic inside this renderer.
 
         Returns:
             A tuple of selected rendered PDF visual candidates. Empty means
@@ -209,14 +228,24 @@ class PdfVisualExtractionService:
 
         try:
             page_count = int(getattr(document, "page_count", 0) or len(document))
-            scored_pages = self._score_pages(document, page_count)
-            selected_pages = [
-                item
-                for item in sorted(scored_pages, key=lambda value: value[1], reverse=True)
-                if item[1] >= PDF_VISUAL_MIN_PAGE_SCORE
-            ][: self.max_candidates]
+            planned_pages = self._planned_pages(visual_plan, page_count)
+            if planned_pages:
+                selected_pages = planned_pages[: self.max_candidates]
+                selection_mode = "planner"
+            else:
+                scored_pages = self._score_pages(document, page_count)
+                selected_pages = [
+                    (page_index, score, caption_hint, None)
+                    for page_index, score, caption_hint in sorted(
+                        scored_pages,
+                        key=lambda value: value[1],
+                        reverse=True,
+                    )
+                    if score >= PDF_VISUAL_MIN_PAGE_SCORE
+                ][: self.max_candidates]
+                selection_mode = "heuristic"
             candidates: list[PdfVisualCandidate] = []
-            for page_index, score, caption_hint in selected_pages:
+            for page_index, score, caption_hint, plan_item in selected_pages:
                 candidate = self._render_candidate(
                     document=document,
                     page_index=page_index,
@@ -225,6 +254,8 @@ class PdfVisualExtractionService:
                     filename=filename,
                     candidate_index=len(candidates) + 1,
                     conversation_id=conversation_id,
+                    plan_item=plan_item,
+                    selection_source=selection_mode,
                 )
                 if candidate:
                     candidates.append(candidate)
@@ -240,6 +271,31 @@ class PdfVisualExtractionService:
             return ()
         finally:
             document.close()
+
+    @staticmethod
+    def _planned_pages(
+        visual_plan: Iterable[Any] | None,
+        page_count: int,
+    ) -> list[tuple[int, int, str, Any]]:
+        """Return validated planner-selected pages in planner priority order."""
+
+        if not visual_plan:
+            return []
+        selected: list[tuple[int, int, str, Any]] = []
+        seen_pages: set[int] = set()
+        for index, item in enumerate(visual_plan):
+            try:
+                page_number = int(getattr(item, "page_number"))
+            except (TypeError, ValueError):
+                continue
+            if page_number < 1 or page_number > page_count or page_number in seen_pages:
+                continue
+            seen_pages.add(page_number)
+            teaching_caption = str(getattr(item, "teaching_caption", "") or "").strip()
+            answer_section = str(getattr(item, "answer_section", "") or "").strip()
+            caption_hint = teaching_caption or answer_section or f"上傳 PDF 第 {page_number} 頁"
+            selected.append((page_number - 1, max(1, 100 - index), caption_hint[:220], item))
+        return selected
 
     def _score_pages(self, document: Any, page_count: int) -> list[tuple[int, int, str]]:
         """Score early PDF pages for visible charts, figures, or diagrams."""
@@ -292,6 +348,8 @@ class PdfVisualExtractionService:
         filename: str,
         candidate_index: int,
         conversation_id: str,
+        plan_item: Any = None,
+        selection_source: str = "heuristic",
     ) -> PdfVisualCandidate | None:
         """Render one selected PDF page or figure crop to a bounded PNG data URI.
 
@@ -304,6 +362,9 @@ class PdfVisualExtractionService:
             filename: Sanitized upload filename for display metadata.
             candidate_index: Stable one-based visual candidate index.
             conversation_id: Correlation id for privacy-safe structured logs.
+            plan_item: Optional sanitized planner item. Its text metadata is
+                bounded before it reaches the candidate.
+            selection_source: Safe source label for candidate provenance.
 
         Returns:
             A request-scoped visual candidate. When caption-adjacent visual
@@ -347,6 +408,10 @@ class PdfVisualExtractionService:
         encoded = base64.b64encode(png_bytes).decode("ascii")
         digest = hashlib.sha256(png_bytes).hexdigest()
         page_number = page_index + 1
+        teaching_caption = self._bounded_plan_text(getattr(plan_item, "teaching_caption", ""), 220)
+        answer_section = self._bounded_plan_text(getattr(plan_item, "answer_section", ""), 100)
+        planner_rationale = self._bounded_plan_text(getattr(plan_item, "rationale", ""), 180)
+        visual_type = self._bounded_visual_type(getattr(plan_item, "visual_type", "chart"))
         return PdfVisualCandidate(
             slot_id=f"pdf_img_{candidate_index}",
             filename=filename,
@@ -359,7 +424,25 @@ class PdfVisualExtractionService:
             sha256=digest,
             crop_applied=crop_rect is not None,
             crop_reason=crop_reason,
+            answer_section=answer_section,
+            visual_type=visual_type,
+            teaching_caption=teaching_caption,
+            planner_rationale=planner_rationale,
+            selection_source=selection_source,
         )
+
+    @staticmethod
+    def _bounded_plan_text(value: Any, max_length: int) -> str:
+        """Return bounded planner text safe for captions and prompt inventory."""
+
+        return re.sub(r"\s+", " ", str(value or "")).strip()[:max_length]
+
+    @staticmethod
+    def _bounded_visual_type(value: Any) -> str:
+        """Return a display-safe visual type from planner metadata."""
+
+        visual_type = re.sub(r"[^a-zA-Z0-9_-]", "", str(value or "").strip().lower())[:40]
+        return visual_type or "chart"
 
     def _find_figure_crop_rect(self, page: Any) -> tuple[Any | None, str]:
         """Find a caption-adjacent figure crop rectangle for one PDF page.

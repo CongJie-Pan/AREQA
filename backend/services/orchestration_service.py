@@ -691,6 +691,8 @@ class OrchestrationService:
                 attachment_visual_candidates = await self._extract_attachment_visual_candidates(
                     attachment_visual_sources,
                     conversation_id,
+                    model_client=self.client,
+                    use_paper_visual_planner=should_auto_explain_paper,
                 )
                 preverified_image_blocks = await self.output_image_service.prepare_attachment_image_blocks(
                     candidates=attachment_visual_candidates,
@@ -947,6 +949,8 @@ class OrchestrationService:
     async def _extract_attachment_visual_candidates(
         attachment_visual_sources: List[Dict[str, Any]],
         conversation_id: str,
+        model_client: Any = None,
+        use_paper_visual_planner: bool = False,
     ) -> List[Any]:
         """Render PDF visual candidates after the visual policy gate passes.
 
@@ -954,6 +958,12 @@ class OrchestrationService:
             attachment_visual_sources: Request-scoped dictionaries containing a
                 sanitized filename and PDF bytes from attachment validation.
             conversation_id: Correlation id for safe structured logs.
+            model_client: Optional chat-completions compatible client used by
+                the paper visual planner for automatic paper explanations.
+            use_paper_visual_planner: Whether to read the PDF page map and let
+                the planner select semantically important visuals before local
+                rendering. Targeted attachment tasks keep deterministic
+                extraction only.
 
         Returns:
             A flat list of PDF visual candidates accepted by
@@ -973,6 +983,7 @@ class OrchestrationService:
             )
             return []
 
+        from services.paper_visual_planner_service import PaperVisualPlannerService
         from services.pdf_visual_extraction_service import PdfVisualExtractionService
 
         async def extract_one(source: Dict[str, Any]) -> List[Any]:
@@ -981,12 +992,23 @@ class OrchestrationService:
             if not isinstance(pdf_bytes, bytes) or not pdf_bytes:
                 return []
             service = PdfVisualExtractionService()
+            visual_plan = ()
+            if use_paper_visual_planner:
+                planner = PaperVisualPlannerService()
+                visual_plan = await planner.plan_visuals(
+                    pdf_bytes=pdf_bytes,
+                    filename=filename,
+                    conversation_id=conversation_id,
+                    client=model_client,
+                    max_visuals=service.max_candidates,
+                )
             try:
                 candidates = await asyncio.to_thread(
                     service.extract_candidates,
                     pdf_bytes=pdf_bytes,
                     filename=filename,
                     conversation_id=conversation_id,
+                    visual_plan=visual_plan,
                 )
             except Exception as exc:
                 logger.info(
@@ -1003,10 +1025,11 @@ class OrchestrationService:
         )
         candidates = [candidate for group in nested_candidates for candidate in group]
         logger.info(
-            "visual.attachment_pdf_candidates_ready conversation_id=%s source_count=%s candidate_count=%s",
+            "visual.attachment_pdf_candidates_ready conversation_id=%s source_count=%s candidate_count=%s planner_enabled=%s",
             conversation_id,
             len(attachment_visual_sources),
             len(candidates),
+            use_paper_visual_planner,
         )
         return candidates
 
@@ -1069,6 +1092,7 @@ class OrchestrationService:
                     "id": slot_id,
                     "topic": block.topic,
                     "caption": block.caption,
+                    "explanatory_caption": block.explanatory_caption,
                     "vision_summary": block.vision_summary,
                     "visible_elements": list(block.visible_elements),
                     "how_to_read": list(block.how_to_read),
@@ -1090,7 +1114,8 @@ class OrchestrationService:
                 "你必須把最相關的已驗證圖片整合進教學流程，"
                 "在最適合的位置先寫 1 至 2 句完整導圖文字，"
                 "明確使用「下圖」、「圖中」或對應語言的圖片引用。"
-                "導圖文字必須至少引用 vision_summary、visible_elements 或 how_to_read 中一項可見特徵，"
+                "若清單提供 explanatory_caption，必須優先用它判斷圖片應銜接的論文段落與教學重點；"
+                "導圖文字必須至少引用 explanatory_caption、vision_summary、visible_elements 或 how_to_read 中一項可見特徵，"
                 "並且導圖段落後必須緊接著輸出標記："
                 f"{verified_marker}。"
                 "圖片後的文字必須接續引用或延伸圖片內容，不能像圖片不存在一樣繼續純文字回答。"
