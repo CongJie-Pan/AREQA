@@ -51,6 +51,7 @@ from services.turn_intake_service import (
     normalize_avatar_name as _normalize_avatar_name,
 )
 from services.output_image_service import OutputImageService
+from services.paper_attachment_policy_service import PaperAttachmentPolicyService
 from services.parts_context_service import PartsContextService
 from services.visual_answer_service import VisualAnswerService
 
@@ -205,6 +206,7 @@ class OrchestrationService:
             handler=self.delayed_mail_tool.execute,
         ))
         self.stream_service = ConversationStreamService(client, self.tool_registry)
+        self.paper_attachment_policy_service = PaperAttachmentPolicyService()
 
     async def execute(self, messages: List[Dict[str, str]], conversation_id: str, use_rag: bool, use_web_search: bool, force_think: bool,
                       max_tokens: int, temperature: float, top_p: float,
@@ -610,6 +612,24 @@ class OrchestrationService:
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
         if has_attachments:
             final_messages = self._add_attachment_grounding_instruction(final_messages)
+        paper_attachment_decision = (
+            self.paper_attachment_policy_service.evaluate(
+                user_msg=last_user_msg,
+                attachments=attachments,
+            )
+            if settings.enable_pdf_paper_auto_explain
+            else self.paper_attachment_policy_service.disabled_decision(attachments)
+        )
+        logger.info(
+            "paper.auto_explain_policy_selected conversation_id=%s task=%s reason=%s pdf_count=%s generic_request=%s",
+            conversation_id,
+            paper_attachment_decision.task.value,
+            paper_attachment_decision.reason,
+            paper_attachment_decision.pdf_count,
+            paper_attachment_decision.generic_request,
+        )
+        if paper_attachment_decision.auto_explain:
+            final_messages = self._add_paper_auto_explain_instruction(final_messages)
 
         preverified_image_blocks = None
         if settings.enable_visual_preflight:
@@ -841,6 +861,32 @@ class OrchestrationService:
             "若附件內容為空、解析失敗或只有 metadata，必須明確告知目前無法讀取文件內容，"
             "並請使用者改傳可讀版本。"
         )
+        for message in messages:
+            if message.get("role") == "system" and isinstance(message.get("content"), str):
+                message["content"] = f'{message["content"]}\n\n{instruction}'
+                return messages
+        messages.insert(0, {"role": "system", "content": instruction})
+        return messages
+
+    @staticmethod
+    def _add_paper_auto_explain_instruction(
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Append the automatic PDF paper overview task to the system prompt.
+
+        Args:
+            messages: Prompt messages after the attachment grounding boundary
+                has been applied.
+
+        Returns:
+            Messages with a system-level paper overview instruction.
+
+        Side Effects:
+            None. The caller logs ``paper.auto_explain_policy_selected`` with
+            safe decision metadata before this instruction is applied.
+        """
+
+        instruction = PaperAttachmentPolicyService.instruction_text()
         for message in messages:
             if message.get("role") == "system" and isinstance(message.get("content"), str):
                 message["content"] = f'{message["content"]}\n\n{instruction}'

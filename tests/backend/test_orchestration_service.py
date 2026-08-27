@@ -51,6 +51,27 @@ def test_attachment_grounding_instruction_forbids_metadata_guessing():
     assert "解析失敗" in result[0]["content"]
 
 
+def test_paper_auto_explain_instruction_adds_default_paper_structure():
+    """Automatic PDF paper overview should be appended as a system constraint."""
+
+    messages = [
+        {"role": "system", "content": "base prompt"},
+        {"role": "user", "content": "這篇論文在講什麼"},
+    ]
+
+    result = OrchestrationService._add_paper_auto_explain_instruction(messages)
+
+    system_prompt = result[0]["content"]
+    assert "PDF 論文自動解說任務" in system_prompt
+    assert "研究動機與目標" in system_prompt
+    assert "研究方法" in system_prompt
+    assert "實驗過程與設定" in system_prompt
+    assert "實驗結果" in system_prompt
+    assert "研究結論" in system_prompt
+    assert "局限與可延伸方向" in system_prompt
+    assert "不得根據檔名" in system_prompt
+
+
 def test_verified_visual_instruction_injects_inventory():
     """Verified image inventory should be available before main generation."""
 
@@ -1246,11 +1267,12 @@ async def test_explicit_never_search_mode_overrides_legacy_search_boolean(
 
 @pytest.mark.asyncio
 async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
-    mock_router, mock_rag, mock_suggestion, mock_client
+    mock_router, mock_rag, mock_suggestion, mock_client, caplog
 ):
     service = OrchestrationService(mock_router, mock_rag, None, mock_client)
     request = MagicMock()
     captured_messages = []
+    caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
 
     async def fail_if_searched(*args, **kwargs):
         raise AssertionError("attachment-first AUTO mode must not use generic retrieval")
@@ -1299,6 +1321,11 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
         for message in captured_messages
     )
     assert "不得根據檔名" in captured_messages[0]["content"]
+    assert "PDF 論文自動解說任務" in captured_messages[0]["content"]
+    assert "研究動機與目標" in captured_messages[0]["content"]
+    assert "paper.auto_explain_policy_selected" in caplog.text
+    assert "task=AUTO_EXPLAIN" in caplog.text
+    assert "pdf_count=1" in caplog.text
 
 
 @pytest.mark.asyncio

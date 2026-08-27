@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     enable_pdf_attachment_visuals: bool = True
     pdf_attachment_visual_max_candidates: int = 2
     pdf_attachment_visual_max_pages_scanned: int = 8
+    enable_pdf_paper_auto_explain: bool = True
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.
