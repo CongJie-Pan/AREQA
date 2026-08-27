@@ -205,10 +205,24 @@ class PostTurnService:
                 ),
                 timeout=timeout_seconds,
             )
+            suggestion_count = len(suggestions) if isinstance(suggestions, list) else 0
+            logger.info(
+                "orchestration.suggestions_generated run_id=%s conversation_id=%s language=%s count=%s",
+                getattr(trace, "run_id", ""),
+                getattr(trace, "conversation_id", ""),
+                interface_language,
+                suggestion_count,
+            )
             events = []
             if suggestions:
                 events.append(
                     f"event: suggestions\ndata: {json.dumps(suggestions, ensure_ascii=False)}\n\n"
+                )
+                logger.info(
+                    "orchestration.suggestions_emitted run_id=%s conversation_id=%s count=%s",
+                    getattr(trace, "run_id", ""),
+                    getattr(trace, "conversation_id", ""),
+                    suggestion_count,
                 )
             events.append(
                 f"event: done\ndata: {json.dumps({'suggestions': suggestions or []}, ensure_ascii=False)}\n\n"
@@ -231,7 +245,13 @@ class PostTurnService:
         except Exception as exc:
             if trace:
                 trace.mark_once("suggestions_failed")
-            logger.warning("orchestration.suggestions_failed reason=%s", type(exc).__name__)
+            logger.warning(
+                "orchestration.suggestions_failed run_id=%s conversation_id=%s language=%s reason=%s",
+                getattr(trace, "run_id", ""),
+                getattr(trace, "conversation_id", ""),
+                interface_language,
+                type(exc).__name__,
+            )
             return [
                 f"event: done\ndata: {json.dumps({'suggestions': []}, ensure_ascii=False)}\n\n"
             ]

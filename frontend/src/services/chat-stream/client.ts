@@ -16,6 +16,7 @@ import { useChatStore } from '@/store/chat/store';
 import type { ChatMessage, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { logger } from '@/utils/logger';
 
 const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 const LANGUAGE_STORAGE_KEY = 'areqa:interface-language';
@@ -269,14 +270,19 @@ export async function createChatStream(
           }
 
           if (eventType === 'suggestions') {
-            callbacks.onSuggestions?.(chunk); // chunk is an array of strings
+            const suggestions = Array.isArray(chunk) ? chunk.filter((item): item is string => typeof item === 'string') : [];
+            logger.info('chat.suggestions_received', { count: suggestions.length });
+            callbacks.onSuggestions?.(suggestions);
             continue;
           }
 
           if (eventType === 'done') {
             if (chunk.suggestions) {
-              suggestionsFromDone = chunk.suggestions;
+              suggestionsFromDone = Array.isArray(chunk.suggestions)
+                ? chunk.suggestions.filter((item: unknown): item is string => typeof item === 'string')
+                : [];
             }
+            logger.info('chat.suggestions_done', { count: suggestionsFromDone.length });
             continue;
           }
 

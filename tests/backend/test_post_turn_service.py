@@ -33,7 +33,8 @@ async def test_queue_post_turn_work_is_non_blocking_and_bounded(caplog):
 
 
 @pytest.mark.asyncio
-async def test_suggestion_events_record_trace_markers():
+async def test_suggestion_events_record_trace_markers(caplog):
+    caplog.set_level(logging.INFO)
     suggestion_service = AsyncMock()
     suggestion_service.generate_suggestions.return_value = ["問題一？"]
     service = PostTurnService(suggestion_service)
@@ -56,6 +57,8 @@ async def test_suggestion_events_record_trace_markers():
     assert "suggestions_started" in phase_names
     assert "suggestions_finished" in phase_names
     assert snapshot["model_calls"] == {"suggestions": 1}
+    assert "orchestration.suggestions_generated" in caplog.text
+    assert "count=1" in caplog.text
 
 
 @pytest.mark.asyncio
