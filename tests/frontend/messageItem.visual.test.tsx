@@ -4,6 +4,7 @@ import React from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { MessageItem } from '@/components/MessageList/MessageItem';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import type { DisplayMessage } from '@/store/chat';
 
 function assistantMessage(answerBlocks: DisplayMessage['answerBlocks']): DisplayMessage {
@@ -23,6 +24,17 @@ function renderMessage(message: DisplayMessage) {
     <App>
       <MessageItem message={message} />
     </App>,
+  );
+}
+
+function renderMessageWithLanguage(message: DisplayMessage, language: 'zh-TW' | 'zh-CN' | 'en') {
+  window.localStorage.setItem('areqa:interface-language', language);
+  return render(
+    <UserPreferencesProvider>
+      <App>
+        <MessageItem message={message} />
+      </App>
+    </UserPreferencesProvider>,
   );
 }
 
@@ -137,9 +149,43 @@ describe('MessageItem visual answer rendering', () => {
     );
 
     expect(screen.getByAltText('paper.pdf，第 3 頁')).toBeInTheDocument();
-    expect(screen.getByText('uploaded PDF')).toBeInTheDocument();
+    expect(screen.getByText('上傳 PDF')).toBeInTheDocument();
     expect(screen.getByText('上傳附件')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /來源/i })).not.toBeInTheDocument();
+  });
+
+  it('localizes PDF attachment image metadata for the selected interface language', () => {
+    renderMessageWithLanguage(
+      assistantMessage([
+        {
+          type: 'image_block',
+          slotId: 'pdf-img-en',
+          topic: 'Attention Is all you need.pdf 第 4 頁',
+          purpose: 'chart',
+          imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
+          thumbnailUrl: 'data:image/png;base64,iVBORw0KGgo=',
+          sourceUrl: '#pdf-attachment-page-4',
+          sourceDomain: 'uploaded PDF',
+          caption: '上傳 PDF 第 4 頁的圖像內容',
+          attributionCaption: 'Attention Is all you need.pdf，第 4 頁',
+          provider: 'pdf_attachment',
+          transient: true,
+          status: 'resolved',
+          safetyStatus: 'pass',
+          matchConfidence: 0.92,
+          width: 640,
+          height: 480,
+        },
+      ]),
+      'en',
+    );
+
+    expect(screen.getByAltText('Attention Is all you need.pdf, page 4')).toBeInTheDocument();
+    expect(screen.getByText('Uploaded PDF')).toBeInTheDocument();
+    expect(screen.getByText('Uploaded attachment')).toBeInTheDocument();
+    expect(screen.getByLabelText('Open image preview: Attention Is all you need.pdf, page 4')).toBeInTheDocument();
+    expect(screen.queryByText('uploaded PDF')).not.toBeInTheDocument();
+    expect(screen.queryByText('上傳附件')).not.toBeInTheDocument();
   });
 
   it('normalizes legacy Supabase Storage signed image URLs for PDF attachment blocks', () => {

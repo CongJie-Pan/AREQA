@@ -33,7 +33,7 @@ import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMa
 import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
-import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
+import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
 
 const { TextArea } = Input;
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
@@ -110,6 +110,32 @@ function normalizeSupabaseStorageImageUrl(url: string | undefined): string {
   }
 
   return url;
+}
+
+const PDF_PAGE_ATTRIBUTION_PATTERN = /^(.+?)(?:，|,)?\s*(?:第\s*)?(\d+)\s*(?:頁|页|page|Page)$/u;
+
+/**
+ * Localize backend-owned PDF visual attribution without mutating stored data.
+ *
+ * PDF image blocks can be saved in chat history with legacy mixed-language
+ * metadata such as "uploaded PDF" or "paper.pdf，第 4 頁". The frontend keeps
+ * those provider identifiers stable at rest and translates only the rendered
+ * label for the active interface language.
+ */
+function localizePdfAttachmentCaption(
+  caption: string,
+  language: InterfaceLanguage,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
+  const match = caption.trim().match(PDF_PAGE_ATTRIBUTION_PATTERN);
+  const filename = match?.[1]?.trim();
+  const page = match?.[2];
+
+  if (!filename || !page) {
+    return caption;
+  }
+
+  return t('pdfPageAttribution', { filename, page });
 }
 
 type WindowWithFind = Window & {
@@ -633,16 +659,20 @@ function getImageAspectRatio(block: ImageBlock): React.CSSProperties {
  * source attribution visible and rejects unsafe URLs before they reach the DOM.
  */
 function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnType<typeof useStyles>['styles'] }) {
+  const { language, t } = useUserPreferences();
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
+  const isPdfAttachmentImage = block.provider === 'pdf_attachment';
   const imageUrl = normalizeSupabaseStorageImageUrl(block.thumbnailUrl || block.imageUrl);
   const fullImageUrl = normalizeSupabaseStorageImageUrl(block.imageUrl || block.thumbnailUrl);
   const safeImageUrl = isSafeImageUrl(imageUrl) ? imageUrl : '';
   const safeFullImageUrl = isSafeImageUrl(fullImageUrl) ? fullImageUrl : safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
-  const displayCaption = block.attributionCaption || block.caption || block.topic;
-  const sourceLabel = block.sourceDomain || 'source';
-  const isPdfAttachmentImage = block.provider === 'pdf_attachment';
+  const rawDisplayCaption = block.attributionCaption || block.caption || block.topic;
+  const displayCaption = isPdfAttachmentImage
+    ? localizePdfAttachmentCaption(rawDisplayCaption, language, t)
+    : rawDisplayCaption;
+  const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : block.sourceDomain || 'source';
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
 
@@ -681,7 +711,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           className={styles.answerImageButton}
           style={imageFrameStyle}
           onClick={() => setIsLightboxOpen(true)}
-          aria-label={`放大檢視圖片：${displayCaption}`}
+          aria-label={t('expandImage', { caption: displayCaption })}
         >
           {!isImageLoaded && (
             <span className={styles.answerImageSkeletonLayer} aria-hidden="true" data-testid="answer-image-skeleton">
@@ -702,7 +732,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
             {isPdfAttachmentImage ? (
-              <span>上傳附件</span>
+              <span>{t('uploadedAttachmentBadge')}</span>
             ) : (
               <a
                 href={safeSourceUrl}

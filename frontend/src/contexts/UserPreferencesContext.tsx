@@ -102,6 +102,9 @@ export type TranslationKey =
   | 'messageAttachments'
   | 'attachmentListLabel'
   | 'attachmentItemLabel'
+  | 'pdfAttachmentSource'
+  | 'uploadedAttachmentBadge'
+  | 'pdfPageAttribution'
   | 'messageInputRow'
   | 'addAttachment'
   | 'messageTextarea'
@@ -148,6 +151,7 @@ export type TranslationKey =
   | 'feedbackSafety'
   | 'feedbackOther'
   | 'copyMessage'
+  | 'expandImage'
   | 'editMessage'
   | 'helpfulReply'
   | 'notHelpfulReply'
@@ -309,6 +313,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     messageAttachments: '{count} 個附件',
     attachmentListLabel: '附件清單',
     attachmentItemLabel: '附件 {name}',
+    pdfAttachmentSource: '上傳 PDF',
+    uploadedAttachmentBadge: '上傳附件',
+    pdfPageAttribution: '{filename}，第 {page} 頁',
     messageInputRow: '訊息輸入列',
     addAttachment: '加入圖片或文件',
     messageTextarea: '訊息輸入框',
@@ -355,6 +362,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: '安全性或法律疑慮',
     feedbackOther: '其他',
     copyMessage: '複製訊息',
+    expandImage: '放大檢視圖片：{caption}',
     editMessage: '編輯訊息',
     helpfulReply: '這則回覆有幫助',
     notHelpfulReply: '這則回覆沒有幫助',
@@ -486,6 +494,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     messageAttachments: '{count} 个附件',
     attachmentListLabel: '附件清单',
     attachmentItemLabel: '附件 {name}',
+    pdfAttachmentSource: '上传 PDF',
+    uploadedAttachmentBadge: '上传附件',
+    pdfPageAttribution: '{filename}，第 {page} 页',
     messageInputRow: '讯息输入列',
     addAttachment: '加入图片或文件',
     messageTextarea: '讯息输入框',
@@ -532,6 +543,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: '安全性或法律疑虑',
     feedbackOther: '其他',
     copyMessage: '复制讯息',
+    expandImage: '放大查看图片：{caption}',
     editMessage: '编辑讯息',
     helpfulReply: '这则回复有帮助',
     notHelpfulReply: '这则回复没有帮助',
@@ -663,6 +675,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     messageAttachments: '{count} attachments',
     attachmentListLabel: 'Attachment list',
     attachmentItemLabel: 'Attachment {name}',
+    pdfAttachmentSource: 'Uploaded PDF',
+    uploadedAttachmentBadge: 'Uploaded attachment',
+    pdfPageAttribution: '{filename}, page {page}',
     messageInputRow: 'Message input row',
     addAttachment: 'Add image or document',
     messageTextarea: 'Message input',
@@ -709,6 +724,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: 'Safety or legal concern',
     feedbackOther: 'Other',
     copyMessage: 'Copy message',
+    expandImage: 'Open image preview: {caption}',
     editMessage: 'Edit message',
     helpfulReply: 'This reply was helpful',
     notHelpfulReply: 'This reply was not helpful',
