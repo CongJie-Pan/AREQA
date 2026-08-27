@@ -130,6 +130,7 @@ npm run test:smoke --prefix frontend
 
 - `OPENROUTER_API_KEY`: 主 LLM、標題生成、GUM、記憶總結、建議問題與 embedding / retrieval 相關流程。
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 與後端 JWKS 驗證來源。
+- `SUPABASE_SERVICE_ROLE_KEY`: 後端專用，用於把 PDF 附件渲染出的圖上傳到 private Supabase Storage bucket 並產生 signed URL；不可暴露到前端。
 - `JWT_SECRET`: Supabase HS 系列 JWT 驗證；若 JWT 演算法不是 HS 系列，後端會改走 Supabase JWKS。
 - `REDIS_URL`: hot memory、user profile、working memory、mailbox cache、RAG cache、visual answer cache 與 WS ticket。預設為 `redis://localhost:6379`，但目前 Codespace 沒有可用的本機 Redis service。
 - `DATABASE_URL`: PostgreSQL / pgvector，供 GUM、cold memory、agent jobs 使用。
@@ -151,6 +152,9 @@ npm run test:smoke --prefix frontend
 - `VISUAL_GROUNDING_TIMEOUT_SECONDS` / `VISUAL_UNDERSTANDING_TIMEOUT_SECONDS`: 圖片 grounding 與理解模型 timeout，預設分別為 `1.5` / `4.0` 秒。
 - `ENABLE_VISUAL_UNDERSTANDING`: 啟用輸出圖片的理解驗證，預設開啟。
 - `ENABLE_PDF_PAPER_AUTO_EXPLAIN`: PDF attachment 搭配泛用「幫我看/解釋這篇」請求時，自動套用論文導讀結構，預設開啟。
+- `ENABLE_PDF_ATTACHMENT_IMAGE_STORAGE`: 啟用 PDF 圖片持久化，預設開啟；需搭配 `SUPABASE_SERVICE_ROLE_KEY` 與已建立的 Storage bucket。
+- `PDF_ATTACHMENT_IMAGE_STORAGE_BUCKET`: PDF 圖片持久化 bucket，預設 `areqa-pdf-visuals`。建議設為 private bucket，後端會回傳 signed URL。
+- `PDF_ATTACHMENT_IMAGE_SIGNED_URL_TTL_SECONDS`: PDF 圖片 signed URL 有效秒數，預設 `2592000`（30 天）。
 - `ENABLE_TAVILY_VISUAL_SEARCH` / `ENABLE_SERPAPI_VISUAL_SEARCH`: 控制備援圖片 provider，預設開啟。
 - `ENABLE_MAILBOX_FEATURE` / `ENABLE_COMPEER_FEATURE` / `ENABLE_COMPEER_TELEMETRY`: 控制瀏覽器可見的 Mailbox、ComPeer 與遙測功能；目前預設皆為關閉，後端 `/api/v1/features` 會以安全的布林值提供前端。
 - `ENABLE_MAILBOX_SENDING` / `ENABLE_COMPEER_AUTO_PROACTIVE`: 分別控制寄信與自動主動關懷；目前預設關閉。
@@ -574,7 +578,7 @@ flowchart TD
 - **Search Mode 與 Agent Routing**: `/api/v1/stream` 支援 `search_mode: auto | always | never`。`SearchPolicy` 與 `TutorAgent` 會在 rollout 設定允許時決定是否進行外部搜尋；`TurnPlanService` 再把 search decision 轉成前景執行計畫與模型呼叫預算。
 - **Tool Registry**: `ConversationStreamService` 透過 `ToolRegistry` 管理前景工具，目前包含 `web_search` 與 `schedule_letter`。外部工具呼叫會受到 `ToolBudgetTracker` 約束。
 - **附件 Grounding**: `/api/v1/stream` 可接收 JSON 或 `multipart/form-data`。附件由 `attachment_service.py` 驗證總大小、類型與內容，文字/圖片/PDF 內容會作為 request-scoped grounding 注入當輪上下文，不寫入長期記憶。
-- **PDF 論文自動導讀**: `paper_attachment_policy_service.py` 會在 PDF attachment 搭配空白或泛用請求時，自動注入論文解說結構（研究動機與目標、研究方法、實驗過程與結果、研究結論、局限與延伸），但不覆蓋翻譯、指定頁面、只看某段等明確使用者任務。此功能由 `ENABLE_PDF_PAPER_AUTO_EXPLAIN` 控制。
+- **PDF 論文自動導讀**: `query_policy_service.py` 的 EDF policy classifier 會在 PDF attachment 搭配空白或泛用請求時，判斷是否自動注入論文解說結構（研究動機與目標、研究方法、實驗過程與結果、研究結論、局限與延伸）；翻譯、指定頁面、只看某段等明確任務會走 targeted attachment QA，不覆蓋使用者意圖。此功能由 `ENABLE_PDF_PAPER_AUTO_EXPLAIN` 控制。
 - **文獻渲染與防閃爍**: 前端以卡片網格展示引用文獻，支援 favicon、一鍵跳轉。使用 `remend` 自癒 Markdown 解析與 `useDeferredValue`，確保串流過程畫面不閃爍。行內引用為金色圓角標籤（Golden Citation Chips），點擊彈出對應 Modal。
 
 ### 2. 圖文回答與視覺 Grounding (Visual Answers)
@@ -584,6 +588,7 @@ flowchart TD
 - **併發圖片 Provider**: preflight 預設併發查詢 Perplexity image search、Wikimedia 與 Openverse；若仍找不到 verified image，會依序嘗試 Tavily 與 SerpAPI。設定由 `ENABLE_VISUAL_PREFLIGHT_PARALLEL_PROVIDERS`、`ENABLE_PERPLEXITY_VISUAL_SEARCH`、`ENABLE_TAVILY_VISUAL_SEARCH`、`ENABLE_SERPAPI_VISUAL_SEARCH` 與各 provider timeout 控制。
 - **候選圖驗證**: 圖片候選會先經尺寸、授權、placeholder、domain 與 metadata 評分，再由 visual grounding agent 檢查候選是否符合要求的 visual type，避免「文字說是地圖，實際顯示文件掃描或照片」。
 - **Visual Cache**: visual cache 使用 Redis，cache key 會包含 visual brief 與版本號，避免不同 teaching context 共用錯誤圖片；negative cache 用來降低重複查詢成本。
+- **PDF Attachment Visuals**: `pdf_visual_extraction_service.py` 會把 PDF 中可能含圖表的頁面渲染成當輪可用的 PNG，`output_image_service.py` 先交給 vision understanding 確認可解讀，再由 `attachment_image_storage_service.py` 上傳至 Supabase Storage 並回傳 signed URL。若 Storage 未設定或上傳失敗，系統仍可在當輪顯示暫存圖，但前端不會把 data URI 寫入 durable store。
 - **隱私安全 Log**: visual debug log 只記錄 provider、candidate_count、reason code、visual_type、timeout 與 source domain；不記錄 raw query、raw prompt、使用者原文、圖片 URL 或 API key。
 
 ### 3. 教育認知與 EDF 教學策略模組
@@ -747,7 +752,7 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
 
 `render.yaml` 定義兩個 web service：
 
-- `areqa-backend`: root directory `backend`，build 時先安裝 `uv`，再用 `uv pip install -r requirements-render.txt` 安裝到 Render 啟動用的 Python environment；以 `uvicorn main:app --host 0.0.0.0 --port $PORT` 啟動。
+- `areqa-backend`: root directory `backend`，build 時先安裝 `uv`，再用 `uv pip install --python "${VIRTUAL_ENV:-/opt/render/project/src/.venv}/bin/python" -r requirements-render.txt` 明確安裝到 Render 啟動用的 `.venv`；start command 也使用同一個 `.venv/bin/python -m uvicorn` 啟動。
 - `areqa-frontend`: root directory `frontend`，執行 `npm install && npm run build`，再以 `npm run start` 啟動。
 
 Render 後端需要在 Dashboard 設定 `HF_TOKEN`、`OPENROUTER_API_KEY`、`JWT_SECRET`、`REDIS_URL`、`DATABASE_URL`、Supabase 與 Perplexity 相關 secrets；前端使用 `NEXT_PUBLIC_BACKEND_URL` 指向後端服務。`render.yaml` 的 `MODEL_ZPD_QUERY`、ComPeer dev controls 與 Node/Python 版本是部署設定，不會覆蓋 Codespace 的本地開發版本。

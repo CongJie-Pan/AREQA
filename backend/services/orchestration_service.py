@@ -35,9 +35,11 @@ from services.conversation_context_service import ConversationContextService
 from services.conversation_stream_service import ConversationStreamService
 from services.post_turn_service import PostTurnService
 from services.query_policy_service import (
-    classify_dialogue_policy_impl,
+    AttachmentTask,
     classify_response_policy_impl,
+    count_pdf_attachments,
     default_response_policy,
+    paper_auto_explain_instruction,
     parse_and_decompose_query_impl,
     response_policy_from_legacy,
 )
@@ -51,7 +53,6 @@ from services.turn_intake_service import (
     normalize_avatar_name as _normalize_avatar_name,
 )
 from services.output_image_service import OutputImageService
-from services.paper_attachment_policy_service import PaperAttachmentPolicyService
 from services.parts_context_service import PartsContextService
 from services.visual_answer_service import VisualAnswerService
 
@@ -135,7 +136,15 @@ async def parse_and_decompose_query(query: str, client: AsyncOpenAI) -> List[Dic
     """
     return await parse_and_decompose_query_impl(query, client)
 
-async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: str, chat_history: list):
+async def classify_dialogue_policy(
+    client: AsyncOpenAI,
+    model: str,
+    user_msg: str,
+    chat_history: list,
+    *,
+    has_pdf_attachment: bool = False,
+    pdf_attachment_count: int = 0,
+):
     """Return the structured EDF response policy for orchestration.
 
     Args:
@@ -144,6 +153,8 @@ async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: st
         user_msg: Latest user-authored message. It is sent to the classifier but
             never logged here.
         chat_history: Recent conversation messages for policy context.
+        has_pdf_attachment: Whether the current turn contains a PDF attachment.
+        pdf_attachment_count: Number of PDF attachments in the current turn.
 
     Returns:
         A ``ResponsePolicy`` from ``query_policy_service``. The function name is
@@ -151,7 +162,14 @@ async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: st
         points that used the previous string-only dialogue policy.
     """
 
-    return await classify_response_policy_impl(client, model, user_msg, chat_history)
+    return await classify_response_policy_impl(
+        client,
+        model,
+        user_msg,
+        chat_history,
+        has_pdf_attachment=has_pdf_attachment,
+        pdf_attachment_count=pdf_attachment_count,
+    )
 
 
 class OrchestrationService:
@@ -206,7 +224,6 @@ class OrchestrationService:
             handler=self.delayed_mail_tool.execute,
         ))
         self.stream_service = ConversationStreamService(client, self.tool_registry)
-        self.paper_attachment_policy_service = PaperAttachmentPolicyService()
 
     async def execute(self, messages: List[Dict[str, str]], conversation_id: str, use_rag: bool, use_web_search: bool, force_think: bool,
                       max_tokens: int, temperature: float, top_p: float,
@@ -250,6 +267,8 @@ class OrchestrationService:
             else (SearchMode.ALWAYS if use_web_search else SearchMode.NEVER)
         )
         has_attachments = bool(attachments)
+        pdf_attachment_count = count_pdf_attachments(attachments)
+        has_pdf_attachment = pdf_attachment_count > 0
         from config import settings
         auto_routing_enabled = CapabilityPolicy.rollout_enabled(
             feature_enabled=settings.enable_agent_search_routing,
@@ -481,14 +500,25 @@ class OrchestrationService:
         should_run_policy_classifier = (
             last_user_msg
             and self.client
-            and (not turn_plan_enabled or turn_plan.requires_policy_classifier)
+            and (
+                has_pdf_attachment
+                or not turn_plan_enabled
+                or turn_plan.requires_policy_classifier
+            )
         )
         if should_run_policy_classifier:
             from config import settings
             trace.mark("policy_classifier_started")
             trace.increment_model_call("policy_classifier")
             policy_task = asyncio.create_task(
-                classify_dialogue_policy(self.client, settings.model_policy_classifier, last_user_msg, messages)
+                classify_dialogue_policy(
+                    self.client,
+                    settings.model_policy_classifier,
+                    last_user_msg,
+                    messages,
+                    has_pdf_attachment=has_pdf_attachment,
+                    pdf_attachment_count=pdf_attachment_count,
+                )
             )
         elif last_user_msg and self.client and turn_plan_enabled:
             trace.mark("policy_classifier_skipped")
@@ -612,23 +642,20 @@ class OrchestrationService:
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
         if has_attachments:
             final_messages = self._add_attachment_grounding_instruction(final_messages)
-        paper_attachment_decision = (
-            self.paper_attachment_policy_service.evaluate(
-                user_msg=last_user_msg,
-                attachments=attachments,
-            )
-            if settings.enable_pdf_paper_auto_explain
-            else self.paper_attachment_policy_service.disabled_decision(attachments)
+        should_auto_explain_paper = (
+            settings.enable_pdf_paper_auto_explain
+            and getattr(response_policy.attachment_task, "value", response_policy.attachment_task)
+            == AttachmentTask.PAPER_AUTO_EXPLAIN.value
         )
         logger.info(
-            "paper.auto_explain_policy_selected conversation_id=%s task=%s reason=%s pdf_count=%s generic_request=%s",
+            "paper.auto_explain_policy_selected conversation_id=%s enabled=%s task=%s reason=%s pdf_count=%s",
             conversation_id,
-            paper_attachment_decision.task.value,
-            paper_attachment_decision.reason,
-            paper_attachment_decision.pdf_count,
-            paper_attachment_decision.generic_request,
+            settings.enable_pdf_paper_auto_explain,
+            response_policy.attachment_task.value,
+            response_policy.attachment_reason.value,
+            pdf_attachment_count,
         )
-        if paper_attachment_decision.auto_explain:
+        if should_auto_explain_paper:
             final_messages = self._add_paper_auto_explain_instruction(final_messages)
 
         preverified_image_blocks = None
@@ -886,7 +913,7 @@ class OrchestrationService:
             safe decision metadata before this instruction is applied.
         """
 
-        instruction = PaperAttachmentPolicyService.instruction_text()
+        instruction = paper_auto_explain_instruction()
         for message in messages:
             if message.get("role") == "system" and isinstance(message.get("content"), str):
                 message["content"] = f'{message["content"]}\n\n{instruction}'

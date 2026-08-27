@@ -76,6 +76,23 @@ class VisualReason(str, Enum):
     NOT_NEEDED = "NOT_NEEDED"
 
 
+class AttachmentTask(str, Enum):
+    """Optional attachment-scoped task selected by the policy classifier."""
+
+    NONE = "NONE"
+    PAPER_AUTO_EXPLAIN = "PAPER_AUTO_EXPLAIN"
+    PAPER_TARGETED_QA = "PAPER_TARGETED_QA"
+
+
+class AttachmentReason(str, Enum):
+    """Allowlisted reason for attachment task decisions."""
+
+    NO_ATTACHMENT = "NO_ATTACHMENT"
+    GENERIC_PAPER_EXPLANATION = "GENERIC_PAPER_EXPLANATION"
+    TARGETED_ATTACHMENT_TASK = "TARGETED_ATTACHMENT_TASK"
+    NOT_PAPER_TASK = "NOT_PAPER_TASK"
+
+
 ALLOWED_LEGACY_POLICIES = {
     "PROBE_UNDERSTANDING",
     "SUGGEST_ACTION",
@@ -98,6 +115,9 @@ class ResponsePolicy:
         visual_support: Whether this turn should spend image retrieval or PDF
             rendering cost.
         visual_reason: Sanitized reason for the visual support decision.
+        attachment_task: Optional PDF-attachment task overlay selected by the
+            same model policy call.
+        attachment_reason: Sanitized reason for the attachment task decision.
         legacy_policy: Compatibility policy used by older orchestration code for
             token budgeting and tests.
 
@@ -114,6 +134,8 @@ class ResponsePolicy:
     followup_mode: FollowupMode
     visual_support: VisualSupport = VisualSupport.NONE
     visual_reason: VisualReason = VisualReason.NOT_NEEDED
+    attachment_task: AttachmentTask = AttachmentTask.NONE
+    attachment_reason: AttachmentReason = AttachmentReason.NO_ATTACHMENT
     legacy_policy: str = "NORMAL"
 
     def safe_log_metadata(self) -> dict[str, str]:
@@ -127,6 +149,8 @@ class ResponsePolicy:
             "followup_mode": self.followup_mode.value,
             "visual_support": self.visual_support.value,
             "visual_reason": self.visual_reason.value,
+            "attachment_task": self.attachment_task.value,
+            "attachment_reason": self.attachment_reason.value,
             "legacy_policy": self.legacy_policy,
         }
 
@@ -146,6 +170,8 @@ def default_response_policy() -> ResponsePolicy:
         followup_mode=FollowupMode.OPTIONAL,
         visual_support=VisualSupport.NONE,
         visual_reason=VisualReason.NOT_NEEDED,
+        attachment_task=AttachmentTask.NONE,
+        attachment_reason=AttachmentReason.NO_ATTACHMENT,
         legacy_policy="NORMAL",
     )
 
@@ -200,6 +226,16 @@ def response_policy_from_dict(payload: Any) -> ResponsePolicy:
             payload.get("visual_reason"),
             fallback.visual_reason,
         ),
+        attachment_task=_coerce_enum(
+            AttachmentTask,
+            payload.get("attachment_task"),
+            fallback.attachment_task,
+        ),
+        attachment_reason=_coerce_enum(
+            AttachmentReason,
+            payload.get("attachment_reason"),
+            fallback.attachment_reason,
+        ),
         legacy_policy=legacy_policy,
     )
 
@@ -229,6 +265,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             followup_mode=FollowupMode.OPTIONAL,
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
+            attachment_task=AttachmentTask.NONE,
+            attachment_reason=AttachmentReason.NO_ATTACHMENT,
             legacy_policy=legacy_policy,
         )
     if legacy_policy == "SUGGEST_ACTION":
@@ -240,6 +278,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             followup_mode=FollowupMode.OPTIONAL,
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
+            attachment_task=AttachmentTask.NONE,
+            attachment_reason=AttachmentReason.NO_ATTACHMENT,
             legacy_policy=legacy_policy,
         )
     if legacy_policy == "PROBE_UNDERSTANDING":
@@ -251,9 +291,111 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             followup_mode=FollowupMode.REQUIRED,
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
+            attachment_task=AttachmentTask.NONE,
+            attachment_reason=AttachmentReason.NO_ATTACHMENT,
             legacy_policy=legacy_policy,
         )
     return default_response_policy()
+
+
+def count_pdf_attachments(attachments: list[dict[str, Any]] | None) -> int:
+    """Count OpenRouter-style PDF file parts without inspecting PDF content.
+
+    Args:
+        attachments: Request-scoped attachment parts already validated by the
+            upload boundary.
+
+    Returns:
+        Number of file parts that look like PDFs by filename or data URI MIME
+        type.
+
+    Side Effects:
+        None. This helper performs structural detection only; semantic
+        attachment-task classification remains owned by the LLM policy call.
+    """
+
+    count = 0
+    for attachment in attachments or []:
+        if not isinstance(attachment, dict) or attachment.get("type") != "file":
+            continue
+        file_part = attachment.get("file")
+        if not isinstance(file_part, dict):
+            continue
+        filename = str(file_part.get("filename") or "").lower()
+        file_data = str(file_part.get("file_data") or "").lower()
+        if filename.endswith(".pdf") or file_data.startswith("data:application/pdf;"):
+            count += 1
+    return count
+
+
+def paper_auto_explain_instruction() -> str:
+    """Return the prompt overlay for generic PDF paper explanation.
+
+    Returns:
+        Traditional Chinese task structure. The existing language policy can
+        still ask the answer model to respond in the user's preferred language.
+
+    Side Effects:
+        None. The caller owns structured logging before this prompt is applied.
+    """
+
+    return (
+        "【PDF 論文自動解說任務】本回合使用者上傳 PDF，且 policy classifier 判定使用者"
+        "是在要求一般性的論文導讀，沒有指定更細的任務。請把它視為一篇需要導讀的論文或技術文件，"
+        "根據實際可讀取的 PDF 內容，自動用以下結構回答："
+        "\n1. 研究動機與目標：說明作者想解決什麼問題、為什麼重要。"
+        "\n2. 研究方法：說明核心方法、模型、資料、流程或理論設計。"
+        "\n3. 實驗過程與設定：說明資料集、比較基準、實驗設計、評估指標或分析流程。"
+        "\n4. 實驗結果：整理主要發現、圖表或數據代表的意思。"
+        "\n5. 研究結論：說明作者最後主張什麼、貢獻是什麼。"
+        "\n6. 局限與可延伸方向：若 PDF 有提到 limitation/future work，請整理；"
+        "若沒有足夠資訊，明確說「PDF 中沒有足夠資訊」。"
+        "\n不得根據檔名、metadata 或常識補齊 PDF 沒有支持的內容；資訊不足時要說明不確定，而不是猜測。"
+    )
+
+
+def _apply_attachment_guardrails(
+    policy: ResponsePolicy,
+    *,
+    has_pdf_attachment: bool,
+) -> ResponsePolicy:
+    """Keep attachment-task output within scope and internally consistent."""
+
+    if has_pdf_attachment:
+        if (
+            policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
+            and policy.visual_support is VisualSupport.NONE
+        ):
+            return ResponsePolicy(
+                task_intent=policy.task_intent,
+                answer_depth=policy.answer_depth,
+                tone=policy.tone,
+                structure=policy.structure,
+                followup_mode=policy.followup_mode,
+                visual_support=VisualSupport.OPTIONAL,
+                visual_reason=VisualReason.ATTACHMENT_FIGURE_EXPLANATION,
+                attachment_task=policy.attachment_task,
+                attachment_reason=policy.attachment_reason,
+                legacy_policy=policy.legacy_policy,
+            )
+        return policy
+    if (
+        policy.attachment_task is AttachmentTask.NONE
+        and policy.attachment_reason is AttachmentReason.NO_ATTACHMENT
+    ):
+        return policy
+    return ResponsePolicy(
+        task_intent=policy.task_intent,
+        answer_depth=policy.answer_depth,
+        tone=policy.tone,
+        structure=policy.structure,
+        followup_mode=policy.followup_mode,
+        visual_support=policy.visual_support,
+        visual_reason=policy.visual_reason,
+        attachment_task=AttachmentTask.NONE,
+        attachment_reason=AttachmentReason.NO_ATTACHMENT,
+        legacy_policy=policy.legacy_policy,
+    )
 
 
 async def parse_and_decompose_query_impl(
@@ -301,6 +443,9 @@ async def classify_dialogue_policy_impl(
     model: str,
     user_msg: str,
     chat_history: list,
+    *,
+    has_pdf_attachment: bool = False,
+    pdf_attachment_count: int = 0,
 ) -> str:
     """Return one allowlisted legacy pedagogical policy.
 
@@ -311,12 +456,22 @@ async def classify_dialogue_policy_impl(
             logged by this function.
         chat_history: Recent conversation history for compatibility with older
             callers.
+        has_pdf_attachment: Whether the current turn contains at least one PDF
+            file attachment.
+        pdf_attachment_count: Number of PDF attachments in the current turn.
 
     Returns:
         A legacy policy string used by existing orchestration token budgeting.
     """
 
-    policy = await classify_response_policy_impl(client, model, user_msg, chat_history)
+    policy = await classify_response_policy_impl(
+        client,
+        model,
+        user_msg,
+        chat_history,
+        has_pdf_attachment=has_pdf_attachment,
+        pdf_attachment_count=pdf_attachment_count,
+    )
     return policy.legacy_policy
 
 
@@ -325,6 +480,9 @@ async def classify_response_policy_impl(
     model: str,
     user_msg: str,
     chat_history: list,
+    *,
+    has_pdf_attachment: bool = False,
+    pdf_attachment_count: int = 0,
 ) -> ResponsePolicy:
     """Select a structured EDF response policy for the current user turn.
 
@@ -336,6 +494,9 @@ async def classify_response_policy_impl(
         chat_history: Recent conversation messages. Only the last few role names
             and contents are sent to the classifier to preserve conversational
             continuity.
+        has_pdf_attachment: Whether request attachment metadata confirms a PDF
+            exists in the current turn.
+        pdf_attachment_count: Bounded PDF attachment count for policy context.
 
     Returns:
         A sanitized ``ResponsePolicy``. Unexpected provider failures, malformed
@@ -358,6 +519,12 @@ async def classify_response_policy_impl(
         history_lines.append(f"{role}: {content[:500]}")
     history_text = "\n".join(history_lines) if history_lines else "(no recent history)"
 
+    bounded_pdf_count = max(0, min(int(pdf_attachment_count or 0), 10))
+    attachment_context = {
+        "has_pdf_attachment": bool(has_pdf_attachment),
+        "pdf_attachment_count": bounded_pdf_count,
+    }
+
     prompt = f"""You are AREQA's EDF Decision module. Select the response policy for the next Feedback message.
 
 Return strict JSON only with these fields:
@@ -369,6 +536,8 @@ Return strict JSON only with these fields:
   "followup_mode": "NONE" | "OPTIONAL" | "REQUIRED",
   "visual_support": "NONE" | "OPTIONAL" | "REQUIRED",
   "visual_reason": "EXPLICIT_VISUAL_REQUEST" | "KNOWLEDGE_EXPLANATION" | "ANSWER_SEEKING" | "ATTACHMENT_FIGURE_EXPLANATION" | "NOT_NEEDED",
+  "attachment_task": "NONE" | "PAPER_AUTO_EXPLAIN" | "PAPER_TARGETED_QA",
+  "attachment_reason": "NO_ATTACHMENT" | "GENERIC_PAPER_EXPLANATION" | "TARGETED_ATTACHMENT_TASK" | "NOT_PAPER_TASK",
   "legacy_policy": "PROBE_UNDERSTANDING" | "SUGGEST_ACTION" | "PUSH_LIMIT" | "NORMAL"
 }}
 
@@ -381,8 +550,16 @@ Decision rules:
 - Set visual_support OPTIONAL when the user is asking for knowledge explanation, problem solving, answer seeking, paper/attachment figure interpretation, process/mechanism explanation, chart interpretation, or graph-heavy concepts where an image would materially improve the answer.
 - Set visual_support NONE for casual chat, note writing/polishing, reflective discussion, administrative requests, short factual answers, and any case where an image would be decorative.
 - Set visual_reason to the closest reason for the visual_support decision. Use NOT_NEEDED when visual_support is NONE.
+- Attachment task policy:
+  - If attachment_context.has_pdf_attachment is false, set attachment_task NONE and attachment_reason NO_ATTACHMENT.
+  - If a PDF is attached and the user gives a broad paper/PDF reading request such as "explain this paper", "please help me explain this paper", "summarize this PDF", "read this paper", "what is this paper about", "幫我解釋這篇論文", "讀這篇論文", or the message is empty/generic, set attachment_task PAPER_AUTO_EXPLAIN and attachment_reason GENERIC_PAPER_EXPLANATION.
+  - If a PDF is attached but the user asks for a specific operation or focused section, such as translation, page-specific help, citation extraction, rewriting, proofreading, "only methods", "only limitations", "compare with X", or a direct question about one concept, set attachment_task PAPER_TARGETED_QA and attachment_reason TARGETED_ATTACHMENT_TASK.
+  - If a PDF is attached but the user is not asking about the attachment, set attachment_task NONE and attachment_reason NOT_PAPER_TASK.
 - Prefer SCAFFOLDED over DEEP_DIVE unless the user explicitly requests deeper reflection.
 - The legacy policy is for compatibility: PROBE_UNDERSTANDING for eliciting reasoning, SUGGEST_ACTION for concrete next steps, PUSH_LIMIT for reflective/deep extension, otherwise NORMAL.
+
+Attachment context:
+{json.dumps(attachment_context, ensure_ascii=False, sort_keys=True)}
 
 Recent history:
 {history_text}
@@ -401,7 +578,10 @@ Current user message:
         )
         content = response.choices[0].message.content.strip()
         if content in ALLOWED_LEGACY_POLICIES:
-            policy = response_policy_from_legacy(content)
+            policy = _apply_attachment_guardrails(
+                response_policy_from_legacy(content),
+                has_pdf_attachment=has_pdf_attachment,
+            )
             logger.info(
                 "orchestration.response_policy_selected metadata=%s",
                 json.dumps(policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
@@ -410,7 +590,10 @@ Current user message:
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content).strip()
         match = re.search(r"\{.*\}", content, re.DOTALL)
         parsed = json.loads(match.group(0) if match else content)
-        policy = response_policy_from_dict(parsed)
+        policy = _apply_attachment_guardrails(
+            response_policy_from_dict(parsed),
+            has_pdf_attachment=has_pdf_attachment,
+        )
         logger.info(
             "orchestration.response_policy_selected metadata=%s",
             json.dumps(policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True),

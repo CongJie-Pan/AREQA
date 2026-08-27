@@ -197,6 +197,11 @@ class ImageBlock:
         vision_confidence: Optional confidence label from the vision model.
         vision_limitations: Optional bounded uncertainty notes.
         vision_source: Stable source label for image-understanding metadata.
+        storage_bucket: Optional Supabase Storage bucket for persisted
+            attachment-derived images.
+        storage_path: Optional Supabase Storage object path for persisted
+            attachment-derived images.
+        storage_expires_at: Unix timestamp when a signed image URL expires.
         transient: Whether the block contains request-scoped attachment pixels
             that clients must not write to durable stores.
     """
@@ -228,6 +233,9 @@ class ImageBlock:
     vision_confidence: str = "unknown"
     vision_limitations: tuple[str, ...] = ()
     vision_source: str = "unavailable"
+    storage_bucket: str = ""
+    storage_path: str = ""
+    storage_expires_at: int | None = None
     transient: bool = False
 
     def to_frontend(self) -> dict[str, Any]:
@@ -274,6 +282,12 @@ class ImageBlock:
             payload["visionLimitations"] = list(self.vision_limitations)
         if self.vision_source and self.vision_source != "unavailable":
             payload["visionSource"] = self.vision_source
+        if self.storage_bucket:
+            payload["storageBucket"] = self.storage_bucket
+        if self.storage_path:
+            payload["storagePath"] = self.storage_path
+        if self.storage_expires_at is not None:
+            payload["storageExpiresAt"] = self.storage_expires_at
         if self.transient:
             payload["transient"] = True
         if self.width is not None:
@@ -2570,6 +2584,9 @@ class VisualAnswerService:
             vision_confidence=str(payload.get("visionConfidence") or "unknown"),
             vision_limitations=VisualAnswerService._string_tuple(payload.get("visionLimitations"), 6, 160),
             vision_source=str(payload.get("visionSource") or "unavailable"),
+            storage_bucket=str(payload.get("storageBucket") or ""),
+            storage_path=str(payload.get("storagePath") or ""),
+            storage_expires_at=VisualAnswerService._optional_int(payload.get("storageExpiresAt")),
             transient=bool(payload.get("transient")),
         )
 

@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from config import settings
+from services.attachment_image_storage_service import AttachmentImageStorageService
 from services.visual_answer_service import ImageBlock, VisualAnswerService
 from services.visual_input_service import VisualInputService
 from services.visual_understanding_agent import (
@@ -40,6 +41,7 @@ class OutputImageService:
         *,
         understanding_agent: VisualUnderstandingAgent | None = None,
         visual_input_service: VisualInputService | None = None,
+        attachment_image_storage_service: AttachmentImageStorageService | None = None,
     ) -> None:
         """Initialize the output-image coordinator.
 
@@ -47,10 +49,15 @@ class OutputImageService:
             understanding_agent: Optional test double or custom vision agent.
             visual_input_service: Optional test double or custom image input
                 preparation service.
+            attachment_image_storage_service: Optional test double or custom
+                persistence adapter for PDF attachment images.
         """
 
         self.understanding_agent = understanding_agent or VisualUnderstandingAgent()
         self.visual_input_service = visual_input_service or VisualInputService()
+        self.attachment_image_storage_service = (
+            attachment_image_storage_service or AttachmentImageStorageService()
+        )
 
     async def prepare_preflight_image_blocks(
         self,
@@ -242,6 +249,10 @@ class OutputImageService:
                     )
                     continue
                 block = self._apply_understanding(block, result)
+            block = await self.attachment_image_storage_service.persist_pdf_image_block(
+                block=block,
+                conversation_id=conversation_id,
+            )
             blocks[block.slot_id] = block
 
         logger.info(
@@ -370,5 +381,8 @@ class OutputImageService:
             vision_confidence=result.confidence,
             vision_limitations=result.limitations,
             vision_source=result.source,
+            storage_bucket=block.storage_bucket,
+            storage_path=block.storage_path,
+            storage_expires_at=block.storage_expires_at,
             transient=block.transient,
         )

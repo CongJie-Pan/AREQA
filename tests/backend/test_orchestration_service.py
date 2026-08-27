@@ -12,6 +12,8 @@ from backend.services.parts_context_service import PartsContext
 from backend.services.visual_answer_service import ImageBlock
 from backend.services.query_policy_service import (
     AnswerDepth,
+    AttachmentReason,
+    AttachmentTask,
     FollowupMode,
     ResponsePolicy,
     ResponseStructure,
@@ -1290,10 +1292,20 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
         "file": {"filename": "lesson.pdf", "file_data": "data:application/pdf;base64,AA=="},
     }
 
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        attachment_task=AttachmentTask.PAPER_AUTO_EXPLAIN,
+        attachment_reason=AttachmentReason.GENERIC_PAPER_EXPLANATION,
+    )
+
     with patch("memory_store.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
-         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
              {"role": "system", "content": "base prompt"},
              {"role": "user", "content": "請解釋該 PDF"},
@@ -1324,7 +1336,7 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
     assert "PDF 論文自動解說任務" in captured_messages[0]["content"]
     assert "研究動機與目標" in captured_messages[0]["content"]
     assert "paper.auto_explain_policy_selected" in caplog.text
-    assert "task=AUTO_EXPLAIN" in caplog.text
+    assert "task=PAPER_AUTO_EXPLAIN" in caplog.text
     assert "pdf_count=1" in caplog.text
 
 

@@ -1408,7 +1408,15 @@ async def retrieve_endpoint(query: str, top_k: int = 20, offset: int = 0, limit:
         print(f"Retrieve endpoint error: {e}")
         return {"results": [], "error": str(e)}
 
-async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: str, chat_history: list) -> str:
+async def classify_dialogue_policy(
+    client: AsyncOpenAI,
+    model: str,
+    user_msg: str,
+    chat_history: list,
+    *,
+    has_pdf_attachment: bool = False,
+    pdf_attachment_count: int = 0,
+) -> str:
     """Return a legacy dialogue policy via the structured EDF policy service.
 
     Args:
@@ -1416,6 +1424,8 @@ async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: st
         model: Policy classifier model identifier.
         user_msg: Current user-authored message.
         chat_history: Recent conversation history.
+        has_pdf_attachment: Whether the current request contains a PDF.
+        pdf_attachment_count: Number of PDF attachments in the current request.
 
     Returns:
         One of the legacy policy labels expected by older tests and callers.
@@ -1429,7 +1439,14 @@ async def classify_dialogue_policy(client: AsyncOpenAI, model: str, user_msg: st
 
     from services.query_policy_service import classify_dialogue_policy_impl
 
-    return await classify_dialogue_policy_impl(client, model, user_msg, chat_history)
+    return await classify_dialogue_policy_impl(
+        client,
+        model,
+        user_msg,
+        chat_history,
+        has_pdf_attachment=has_pdf_attachment,
+        pdf_attachment_count=pdf_attachment_count,
+    )
 
 def _safe_share_debug_context(context: Dict[str, Any]) -> Dict[str, Any]:
     """Keep share diagnostics operational and free of user content/secrets."""

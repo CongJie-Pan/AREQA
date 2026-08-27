@@ -74,7 +74,16 @@ class Settings(BaseSettings):
     enable_pdf_attachment_visuals: bool = True
     pdf_attachment_visual_max_candidates: int = 2
     pdf_attachment_visual_max_pages_scanned: int = 8
+    enable_pdf_attachment_image_storage: bool = True
+    pdf_attachment_image_storage_bucket: str = "areqa-pdf-visuals"
+    pdf_attachment_image_signed_url_ttl_seconds: int = 2592000
     enable_pdf_paper_auto_explain: bool = True
+
+    # Backend-only Supabase Storage credentials for persisted PDF visuals.
+    # The service role key must never be exposed to browser code.
+    supabase_url: str = ""
+    next_public_supabase_url: str = ""
+    supabase_service_role_key: str = ""
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.

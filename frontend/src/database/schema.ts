@@ -89,6 +89,12 @@ export interface ImageBlock {
   visionConfidence?: 'high' | 'medium' | 'low' | 'unknown' | string;
   visionLimitations?: string[];
   visionSource?: 'vision_model' | 'missing_model_client' | 'invalid_image_url' | 'provider_unavailable' | string;
+  /** Backend-owned bucket for persisted PDF visual images. */
+  storageBucket?: string;
+  /** Backend-owned object path for persisted PDF visual images. */
+  storagePath?: string;
+  /** Unix timestamp when the signed display URL expires. */
+  storageExpiresAt?: number;
   transient?: boolean;
   status?: 'pending' | 'resolved' | 'error';
   width?: number;
