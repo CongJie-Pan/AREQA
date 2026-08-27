@@ -138,6 +138,8 @@ export type TranslationKey =
   | 'table'
   | 'closeExpandedTable'
   | 'copyFormula'
+  | 'copyFormulaSuccess'
+  | 'copyFormulaFailed'
   | 'feedbackThanks'
   | 'feedbackIncorrect'
   | 'feedbackNotWanted'
@@ -343,6 +345,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     table: '表格',
     closeExpandedTable: '關閉放大表格',
     copyFormula: '複製公式',
+    copyFormulaSuccess: '已複製公式到剪貼簿',
+    copyFormulaFailed: '複製公式失敗',
     feedbackThanks: '感謝你的回饋',
     feedbackIncorrect: '不正確或不完整',
     feedbackNotWanted: '這不是我想要的',
@@ -518,6 +522,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     table: '表格',
     closeExpandedTable: '关闭放大表格',
     copyFormula: '复制公式',
+    copyFormulaSuccess: '已复制公式到剪贴簿',
+    copyFormulaFailed: '复制公式失败',
     feedbackThanks: '感谢你的反馈',
     feedbackIncorrect: '不正确或不完整',
     feedbackNotWanted: '这不是我想要的',
@@ -693,6 +699,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     table: 'Table',
     closeExpandedTable: 'Close expanded table',
     copyFormula: 'Copy formula',
+    copyFormulaSuccess: 'Formula copied to clipboard',
+    copyFormulaFailed: 'Failed to copy formula',
     feedbackThanks: 'Thanks for your feedback',
     feedbackIncorrect: 'Incorrect or incomplete',
     feedbackNotWanted: 'Not what I wanted',

@@ -397,6 +397,7 @@ const createMarkdownComponents = (
   onCopyTable: (tableText: string) => void,
   onDownloadTable: (csvText: string) => void,
   tableLabels: MarkdownTableProps['labels'],
+  formulaCopyLabel: string,
   tableModalRootClassName: string,
 ): Components => ({
   table: ({ children, className, node, ...props }) => {
@@ -502,7 +503,7 @@ const createMarkdownComponents = (
           {children}
           <button
             type="button"
-            aria-label="複製 LaTeX 公式"
+            aria-label={formulaCopyLabel}
             onClick={() => onCopyMath(latex)}
             style={{
               display: 'block',
@@ -516,7 +517,7 @@ const createMarkdownComponents = (
               fontSize: '11px',
             }}
           >
-            複製公式
+            {formulaCopyLabel}
           </button>
         </span>
       );
@@ -1024,11 +1025,11 @@ export const MessageItem = memo(function MessageItem({
   const handleCopyMath = useCallback(async (latex: string) => {
     try {
       await navigator.clipboard.writeText(latex);
-      antMessageApi.success('已複製 LaTeX 公式');
+      antMessageApi.success(t('copyFormulaSuccess'));
     } catch {
-      antMessageApi.error('複製公式失敗');
+      antMessageApi.error(t('copyFormulaFailed'));
     }
-  }, [antMessageApi]);
+  }, [antMessageApi, t]);
 
   const handleCopyTable = useCallback(async (tableText: string) => {
     if (!tableText.trim()) {
@@ -1074,6 +1075,7 @@ export const MessageItem = memo(function MessageItem({
         title: t('table'),
         close: t('closeExpandedTable'),
       },
+      t('copyFormula'),
       styles.content,
     ),
     [handleCopyMath, handleCopyTable, handleDownloadTable, isUser, message.id, styles.content, t]

@@ -3,6 +3,7 @@ import { App } from 'antd';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
+import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
 
 // We do NOT mock styles.ts to ensure we test actual CSS-in-JS behavior
 vi.mock('../../../../frontend/src/components/RAGStatusPanel', () => ({
@@ -34,10 +35,39 @@ describe('MessageItem Quote Alignment Regression', () => {
       </App>,
     );
 
-    const copyButton = await screen.findByRole('button', { name: '複製 LaTeX 公式' });
+    const copyButton = await screen.findByRole('button', { name: '複製公式' });
     fireEvent.click(copyButton);
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('x^2 + y^2 = z^2'));
+  });
+
+  it('translates the formula copy action for the selected interface language', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    window.localStorage.setItem('areqa:interface-language', 'en');
+
+    try {
+      render(
+        <UserPreferencesProvider>
+          <App>
+            <MessageItem
+              message={{
+                id: 'msg-math-en',
+                role: 'assistant',
+                content: '$$x^2$$',
+                createdAt: Date.now(),
+              }}
+            />
+          </App>
+        </UserPreferencesProvider>,
+      );
+
+      expect(await screen.findByRole('button', { name: 'Copy formula' })).toHaveTextContent('Copy formula');
+    } finally {
+      window.localStorage.removeItem('areqa:interface-language');
+    }
   });
 
   it('Scenario 1: User message with quote block should not be left-aligned', () => {
