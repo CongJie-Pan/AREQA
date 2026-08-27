@@ -14,6 +14,7 @@ from backend.services.query_policy_service import (
     ResponseStructure,
     ResponseTone,
     TaskIntent,
+    VisualSupport,
 )
 from services.explicit_memory_cache import explicit_memory_cache
 
@@ -31,6 +32,7 @@ def test_visual_slot_instruction_uses_areqa_image_slot(monkeypatch):
             tone=ResponseTone.TUTORING,
             structure=ResponseStructure.STEP_BY_STEP,
             followup_mode=FollowupMode.OPTIONAL,
+            visual_support=VisualSupport.OPTIONAL,
             legacy_policy="NORMAL",
         ),
         "請給我圖解",
@@ -42,6 +44,27 @@ def test_visual_slot_instruction_uses_areqa_image_slot(monkeypatch):
     assert 'query="short concrete image search query"' in instruction
     assert "靜默省略" in instruction
     assert "[[AREQA_IMAGE_REQUEST" not in instruction
+
+
+def test_visual_slot_instruction_requires_policy_or_explicit_visual(monkeypatch):
+    """Explanation intent alone must not bypass the agent visual-support gate."""
+
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight", False)
+    instruction = ConversationContextService._visual_slot_instruction(
+        ResponsePolicy(
+            task_intent=TaskIntent.EXPLAIN_TEXT,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.OPTIONAL,
+            legacy_policy="NORMAL",
+        ),
+        "請解釋這段文字",
+    )
+
+    assert instruction == ""
 
 
 @pytest.mark.asyncio

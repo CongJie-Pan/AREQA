@@ -12,6 +12,7 @@ from backend.services.query_policy_service import (
     ResponseStructure,
     ResponseTone,
     TaskIntent,
+    VisualSupport,
 )
 from backend.services.visual_answer_service import (
     _NEGATIVE_CACHE_TTL_SECONDS,
@@ -92,7 +93,7 @@ class _SequentialPageClient:
         return response
 
 
-def _policy(task_intent=TaskIntent.GENERAL_QA):
+def _policy(task_intent=TaskIntent.GENERAL_QA, visual_support=VisualSupport.NONE):
     """Build a minimal response policy for visual service tests."""
 
     return ResponsePolicy(
@@ -101,6 +102,7 @@ def _policy(task_intent=TaskIntent.GENERAL_QA):
         tone=ResponseTone.PLAIN,
         structure=ResponseStructure.STEP_BY_STEP,
         followup_mode=FollowupMode.OPTIONAL,
+        visual_support=visual_support,
         legacy_policy="NORMAL",
     )
 
@@ -173,12 +175,20 @@ def test_google_image_cdn_thumbnail_is_displayable_without_extension():
     assert VisualAnswerService._is_safe_candidate(candidate)
 
 
-def test_should_enrich_for_explain_text_policy():
-    """Explain-text turns should allow visual enrichment in v1."""
+def test_should_enrich_when_policy_agent_allows_visual_support():
+    """The EDF visual decision should allow visual enrichment."""
 
     service = VisualAnswerService()
 
-    assert service.should_enrich(_policy(TaskIntent.EXPLAIN_TEXT), "請說明森林圖")
+    assert service.should_enrich(_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL), "請說明森林圖")
+
+
+def test_should_not_enrich_explain_text_without_visual_context():
+    """Plain explanation policy alone should not spend visual retrieval cost."""
+
+    service = VisualAnswerService()
+
+    assert service.should_enrich(_policy(TaskIntent.EXPLAIN_TEXT), "請解釋一下這句話") is False
 
 
 def test_should_enrich_for_explicit_visual_request():
@@ -197,13 +207,26 @@ def test_should_not_enrich_general_non_visual_prompt():
     assert service.should_enrich(_policy(), "我在想產品定位") is False
 
 
-def test_should_attempt_preflight_for_learning_route_policy_fallback():
-    """Learning route should still allow visuals when policy classification times out."""
+def test_should_attempt_preflight_when_policy_agent_allows_visual_support():
+    """Visual preflight should follow the EDF visual decision."""
 
     service = VisualAnswerService()
     turn_plan = SimpleNamespace(route="LEARNING_HELP")
 
-    assert service._should_attempt_preflight(_policy(TaskIntent.GENERAL_QA), "第二次世界大戰歐洲戰場", turn_plan)
+    assert service._should_attempt_preflight(
+        _policy(TaskIntent.GENERAL_QA, visual_support=VisualSupport.OPTIONAL),
+        "第二次世界大戰歐洲戰場",
+        turn_plan,
+    )
+
+
+def test_should_not_attempt_preflight_for_learning_route_without_visual_context():
+    """Learning route alone should not trigger visual provider calls."""
+
+    service = VisualAnswerService()
+    turn_plan = SimpleNamespace(route="LEARNING_HELP")
+
+    assert service._should_attempt_preflight(_policy(TaskIntent.GENERAL_QA), "幫我整理重點", turn_plan) is False
 
 
 def test_should_attempt_preflight_for_known_visual_affordance_without_visual_keyword():
@@ -542,7 +565,7 @@ async def test_build_answer_blocks_interleaves_verified_images(monkeypatch, capl
     blocks = await service.build_answer_blocks(
         answer_text="第一段\n\n第二段",
         user_msg="請用圖解說明森林圖",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         tool_registry=SimpleNamespace(),
         tool_budget=None,
         existing_web_results=None,
@@ -680,7 +703,7 @@ async def test_build_answer_blocks_interleaves_preverified_image_without_query()
     blocks = await service.build_answer_blocks(
         answer_text="第一段\n\n第二段",
         user_msg="二戰日本戰況",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         planned_image_slots=[{
             "slot_id": "img_1",
             "anchor_after_paragraph": 0,
@@ -721,7 +744,7 @@ async def test_build_answer_blocks_omits_unused_preverified_image(caplog):
     blocks = await service.build_answer_blocks(
         answer_text="第一段\n\n第二段",
         user_msg="二戰日本戰況",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         planned_image_slots=[],
         tool_registry=SimpleNamespace(),
         tool_budget=None,
@@ -777,7 +800,7 @@ async def test_prepare_preflight_image_blocks_uses_visual_brief_without_caption_
 
     blocks = await service.prepare_preflight_image_blocks(
         user_msg="第二次世界大戰日本戰況",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         existing_web_results=None,
         tool_registry=SimpleNamespace(),
         tool_budget=None,
@@ -902,7 +925,7 @@ async def test_preflight_skips_open_provider_and_og_fallback_when_perplexity_fai
 
     blocks = await service.prepare_preflight_image_blocks(
         user_msg="第二次世界大戰日本戰況",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         existing_web_results=[{"url": "https://example.org/article"}],
         tool_registry=SimpleNamespace(),
         tool_budget=None,
@@ -978,7 +1001,7 @@ async def test_preflight_parallel_provider_fallback_uses_open_candidate(monkeypa
 
     blocks = await service.prepare_preflight_image_blocks(
         user_msg="請解釋二戰歐洲戰場",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         existing_web_results=None,
         tool_registry=SimpleNamespace(),
         tool_budget=None,
@@ -1199,7 +1222,7 @@ async def test_prepare_preflight_image_blocks_returns_empty_on_timeout(monkeypat
 
     blocks = await service.prepare_preflight_image_blocks(
         user_msg="請圖解二戰歐洲戰場",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         existing_web_results=None,
         tool_registry=SimpleNamespace(),
         tool_budget=None,
@@ -1239,7 +1262,7 @@ async def test_build_answer_blocks_uses_rewritten_visual_query(monkeypatch, capl
     blocks = await service.build_answer_blocks(
         answer_text="第一段",
         user_msg="什麼是 : meta analysis 統合分析",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         tool_registry=SimpleNamespace(),
         tool_budget=None,
         existing_web_results=None,
@@ -1290,7 +1313,7 @@ async def test_build_answer_blocks_reuses_existing_web_results(monkeypatch, capl
     blocks = await service.build_answer_blocks(
         answer_text="第一段",
         user_msg="什麼是 meta analysis 統合分析",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         tool_registry=SimpleNamespace(),
         tool_budget=None,
         existing_web_results=[{"url": "https://example.com/article"}],
@@ -2075,7 +2098,7 @@ async def test_build_answer_blocks_uses_positive_cache(monkeypatch, caplog):
     blocks = await service.build_answer_blocks(
         answer_text="第一段",
         user_msg="請解釋 meta analysis",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         tool_registry=SimpleNamespace(),
         tool_budget=None,
         existing_web_results=None,
@@ -2105,7 +2128,7 @@ async def test_build_answer_blocks_uses_negative_cache(monkeypatch):
     blocks = await service.build_answer_blocks(
         answer_text="第一段",
         user_msg="請解釋 meta analysis",
-        response_policy=_policy(TaskIntent.EXPLAIN_TEXT),
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
         tool_registry=SimpleNamespace(),
         tool_budget=None,
         existing_web_results=None,

@@ -24,6 +24,7 @@ from services.query_policy_service import (
     ResponseStructure,
     ResponseTone,
     TaskIntent,
+    VisualSupport,
     default_response_policy,
 )
 from services.parts_context_service import PartsContext, format_parts_context
@@ -620,7 +621,11 @@ class ConversationContextService:
                 "plot",
             )
         )
-        if response_policy.task_intent != TaskIntent.EXPLAIN_TEXT and not explicit_visual:
+        agent_allows_visuals = response_policy.visual_support in {
+            VisualSupport.OPTIONAL,
+            VisualSupport.REQUIRED,
+        }
+        if not agent_allows_visuals and not explicit_visual:
             return ""
         return (
             "\n\n【圖文交錯規則】如果某個概念高度依賴視覺理解，可以在最適合的位置插入最多 2 個圖片請求標記。"

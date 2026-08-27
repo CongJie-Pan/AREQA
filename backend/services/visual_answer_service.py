@@ -23,7 +23,7 @@ import httpx
 import redis.asyncio as aioredis
 
 from config import settings
-from services.query_policy_service import ResponsePolicy, TaskIntent
+from services.query_policy_service import ResponsePolicy, VisualSupport
 from services.visual_affordance_registry import match_visual_affordance
 from services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
 
@@ -353,26 +353,28 @@ class VisualAnswerService:
     ) -> bool:
         """Return whether the current turn should attempt visual retrieval.
 
-        Response policy classification is a bounded foreground model call and
-        can time out. The deterministic turn plan remains available in that
-        case, so learning-help routes are allowed to attempt preflight visuals
-        even when the response policy had to fall back to ``GENERAL_QA``.
+        Response policy classification is the primary agent-level gate. Visual
+        retrieval runs only when the EDF decision allows visual support, when
+        the user explicitly asks for an image, or when a narrow deterministic
+        affordance identifies a known graph-heavy educational concept. This
+        keeps broad semantic classification out of this service and avoids paid
+        provider/PDF-rendering cost for ordinary responses.
         """
 
         normalized = user_msg.lower()
         explicit_visual_request = any(keyword in normalized for keyword in _VISUAL_KEYWORDS)
         affordance = match_visual_affordance(user_msg)
         known_visual_affordance = bool(affordance and affordance.preflight_trigger)
-        route = getattr(turn_plan, "route", None)
-        route_value = getattr(route, "value", route)
-        is_learning_route = route_value == "LEARNING_HELP"
+        agent_allows_visuals = response_policy.visual_support in {
+            VisualSupport.OPTIONAL,
+            VisualSupport.REQUIRED,
+        }
         return bool(
             self.max_images > 0
             and (
                 explicit_visual_request
                 or known_visual_affordance
-                or response_policy.task_intent == TaskIntent.EXPLAIN_TEXT
-                or is_learning_route
+                or agent_allows_visuals
             )
         )
 

@@ -212,7 +212,7 @@ class OrchestrationService:
                       search_mode: Optional[str] = None,
                       interface_language: InterfaceLanguage = "zh-TW",
                       attachments: Optional[List[Dict[str, Any]]] = None,
-                      attachment_visual_candidates: Optional[List[Any]] = None) -> AsyncGenerator[str, None]:
+                      attachment_visual_sources: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         """
         Execute the main conversational flow, yielding server-sent events (SSE) back to the client.
 
@@ -230,8 +230,9 @@ class OrchestrationService:
             user_id (str): The unique identifier for the user.
             search_mode (Optional[str]): Explicit search mode override. Defaults to None.
             attachments (Optional[List[Dict[str, Any]]]): Files or attachments provided by the user. Defaults to None.
-            attachment_visual_candidates (Optional[List[Any]]): Request-scoped
-                PDF visual candidates prepared from attachments. Defaults to
+            attachment_visual_sources (Optional[List[Dict[str, Any]]]):
+                Request-scoped PDF bytes prepared from attachments. They are
+                rendered only after the visual policy gate passes. Defaults to
                 None.
 
         Yields:
@@ -613,13 +614,29 @@ class OrchestrationService:
         preverified_image_blocks = None
         if settings.enable_visual_preflight:
             trace.mark("visual_preflight_started")
-            if attachment_visual_candidates:
+            visual_preflight_allowed = self.visual_answer_service._should_attempt_preflight(
+                response_policy,
+                last_user_msg,
+                turn_plan if turn_plan_enabled else None,
+            )
+            if attachment_visual_sources and visual_preflight_allowed:
+                attachment_visual_candidates = await self._extract_attachment_visual_candidates(
+                    attachment_visual_sources,
+                    conversation_id,
+                )
                 preverified_image_blocks = await self.output_image_service.prepare_attachment_image_blocks(
                     candidates=attachment_visual_candidates,
                     user_msg=last_user_msg,
                     conversation_id=conversation_id,
                     model_client=self.client,
                 )
+            elif attachment_visual_sources:
+                logger.info(
+                    "visual.attachment_preflight_skipped conversation_id=%s reason=policy_gate source_count=%s",
+                    conversation_id,
+                    len(attachment_visual_sources),
+                )
+                preverified_image_blocks = {}
             if preverified_image_blocks is None:
                 preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
                     visual_answer_service=self.visual_answer_service,
@@ -817,6 +834,73 @@ class OrchestrationService:
                 return messages
         messages.insert(0, {"role": "system", "content": instruction})
         return messages
+
+    @staticmethod
+    async def _extract_attachment_visual_candidates(
+        attachment_visual_sources: List[Dict[str, Any]],
+        conversation_id: str,
+    ) -> List[Any]:
+        """Render PDF visual candidates after the visual policy gate passes.
+
+        Args:
+            attachment_visual_sources: Request-scoped dictionaries containing a
+                sanitized filename and PDF bytes from attachment validation.
+            conversation_id: Correlation id for safe structured logs.
+
+        Returns:
+            A flat list of PDF visual candidates accepted by
+            ``OutputImageService``.
+
+        Side Effects:
+            Runs local PDF rendering in worker threads. Logs only counts,
+            filenames, correlation ids, and reason codes; never logs raw PDF
+            text, prompts, rendered data URIs, or credentials.
+        """
+
+        if not getattr(settings, "enable_pdf_attachment_visuals", True):
+            logger.info(
+                "visual.attachment_pdf_extraction_skipped conversation_id=%s reason=disabled source_count=%s",
+                conversation_id,
+                len(attachment_visual_sources),
+            )
+            return []
+
+        from services.pdf_visual_extraction_service import PdfVisualExtractionService
+
+        async def extract_one(source: Dict[str, Any]) -> List[Any]:
+            filename = str(source.get("filename") or "attachment.pdf")
+            pdf_bytes = source.get("pdf_bytes")
+            if not isinstance(pdf_bytes, bytes) or not pdf_bytes:
+                return []
+            service = PdfVisualExtractionService()
+            try:
+                candidates = await asyncio.to_thread(
+                    service.extract_candidates,
+                    pdf_bytes=pdf_bytes,
+                    filename=filename,
+                    conversation_id=conversation_id,
+                )
+            except Exception as exc:
+                logger.info(
+                    "visual.attachment_pdf_extraction_failed conversation_id=%s filename=%s reason=%s",
+                    conversation_id,
+                    filename,
+                    type(exc).__name__,
+                )
+                return []
+            return list(candidates)
+
+        nested_candidates = await asyncio.gather(
+            *(extract_one(source) for source in attachment_visual_sources[:3])
+        )
+        candidates = [candidate for group in nested_candidates for candidate in group]
+        logger.info(
+            "visual.attachment_pdf_candidates_ready conversation_id=%s source_count=%s candidate_count=%s",
+            conversation_id,
+            len(attachment_visual_sources),
+            len(candidates),
+        )
+        return candidates
 
     @staticmethod
     def _add_verified_visual_instruction(

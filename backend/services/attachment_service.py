@@ -17,8 +17,6 @@ from typing import Any, Iterable
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
-from config import settings
-
 logger = logging.getLogger(__name__)
 
 MAX_ATTACHMENT_COUNT = 5
@@ -53,6 +51,9 @@ class ProcessedAttachment:
     sha256: str
     content_part: dict[str, Any]
     visual_candidates: tuple[Any, ...] = ()
+    # PDF bytes are retained only until orchestration decides whether visual
+    # enrichment is worth the cost. They are never persisted by this service.
+    pdf_bytes: bytes = b""
 
 
 def _attachment_error(code: str, detail: str, status_code: int = 422) -> HTTPException:
@@ -205,7 +206,7 @@ async def process_attachments(
                 raise _attachment_error("ATTACHMENT_TOTAL_SIZE_EXCEEDED", "附件總大小不得超過 20 MB。", 413)
 
             media_type = _validate_type(filename, declared_type, data)
-            visual_candidates: tuple[Any, ...] = ()
+            pdf_bytes = b""
             if media_type in IMAGE_TYPES:
                 _verify_image(data, media_type)
                 encoded = base64.b64encode(data).decode("ascii")
@@ -222,11 +223,7 @@ async def process_attachments(
                         "file_data": f"data:{PDF_TYPE};base64,{encoded}",
                     },
                 }
-                visual_candidates = _extract_pdf_visual_candidates(
-                    data,
-                    filename=filename,
-                    conversation_id=conversation_id,
-                )
+                pdf_bytes = data
             else:
                 content_part = {"type": "text", "text": _decode_text(data, filename)}
 
@@ -237,7 +234,7 @@ async def process_attachments(
                     size_bytes=len(data),
                     sha256=hashlib.sha256(data).hexdigest(),
                     content_part=content_part,
-                    visual_candidates=visual_candidates,
+                    pdf_bytes=pdf_bytes,
                 )
             )
             logger.info(
@@ -264,45 +261,3 @@ async def process_attachments(
             await upload.close()
 
     return processed
-
-
-def _extract_pdf_visual_candidates(
-    data: bytes,
-    *,
-    filename: str,
-    conversation_id: str,
-) -> tuple[Any, ...]:
-    """Extract request-scoped rendered PDF visual candidates.
-
-    Args:
-        data: Validated PDF bytes.
-        filename: Sanitized display filename.
-        conversation_id: Correlation id for privacy-safe structured logs.
-
-    Returns:
-        Tuple of candidate objects accepted by the output-image service.
-
-    Side Effects:
-        Lazily imports the PDF extraction service and emits safe structured
-        logs from that service. Failures are intentionally swallowed so normal
-        PDF file attachment behavior remains available.
-    """
-
-    if not getattr(settings, "enable_pdf_attachment_visuals", True):
-        return ()
-    try:
-        from services.pdf_visual_extraction_service import PdfVisualExtractionService
-
-        return PdfVisualExtractionService().extract_candidates(
-            pdf_bytes=data,
-            filename=filename,
-            conversation_id=conversation_id,
-        )
-    except Exception as exc:
-        logger.info(
-            "attachment.pdf_visual_candidates_unavailable conversation_id=%s filename=%s reason=%s",
-            conversation_id,
-            filename,
-            type(exc).__name__,
-        )
-        return ()

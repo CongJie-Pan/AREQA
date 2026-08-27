@@ -9,6 +9,8 @@ from backend.services.query_policy_service import (
     ResponseStructure,
     ResponseTone,
     TaskIntent,
+    VisualReason,
+    VisualSupport,
     classify_dialogue_policy_impl,
     classify_response_policy_impl,
     default_response_policy,
@@ -44,6 +46,8 @@ async def test_classify_response_policy_parses_valid_json(caplog):
               "tone": "PLAIN",
               "structure": "STEP_BY_STEP",
               "followup_mode": "OPTIONAL",
+              "visual_support": "OPTIONAL",
+              "visual_reason": "KNOWLEDGE_EXPLANATION",
               "legacy_policy": "NORMAL"
             }
             """
@@ -62,6 +66,8 @@ async def test_classify_response_policy_parses_valid_json(caplog):
     assert policy.tone is ResponseTone.PLAIN
     assert policy.structure is ResponseStructure.STEP_BY_STEP
     assert policy.followup_mode is FollowupMode.OPTIONAL
+    assert policy.visual_support is VisualSupport.OPTIONAL
+    assert policy.visual_reason is VisualReason.KNOWLEDGE_EXPLANATION
     assert "orchestration.response_policy_selected" in caplog.text
     assert "我聽不懂" not in caplog.text
 
@@ -98,6 +104,8 @@ def test_response_policy_from_dict_sanitizes_unknown_values():
             "tone": "DRAMATIC",
             "structure": "ESSAY",
             "followup_mode": "ALWAYS",
+            "visual_support": "ALWAYS",
+            "visual_reason": "DECORATIVE",
             "legacy_policy": "BAD",
         }
     )
@@ -113,6 +121,7 @@ def test_response_policy_from_legacy_push_limit_allows_reflection():
     assert policy.task_intent is TaskIntent.DISCUSS_IDEA
     assert policy.answer_depth is AnswerDepth.REFLECTIVE
     assert policy.tone is ResponseTone.ANALYTICAL
+    assert policy.visual_support is VisualSupport.NONE
     assert policy.legacy_policy == "PUSH_LIMIT"
 
 

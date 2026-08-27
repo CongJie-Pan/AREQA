@@ -58,6 +58,24 @@ class FollowupMode(str, Enum):
     REQUIRED = "REQUIRED"
 
 
+class VisualSupport(str, Enum):
+    """Whether the current turn should spend visual enrichment cost."""
+
+    NONE = "NONE"
+    OPTIONAL = "OPTIONAL"
+    REQUIRED = "REQUIRED"
+
+
+class VisualReason(str, Enum):
+    """Allowlisted reason for the visual enrichment decision."""
+
+    EXPLICIT_VISUAL_REQUEST = "EXPLICIT_VISUAL_REQUEST"
+    KNOWLEDGE_EXPLANATION = "KNOWLEDGE_EXPLANATION"
+    ANSWER_SEEKING = "ANSWER_SEEKING"
+    ATTACHMENT_FIGURE_EXPLANATION = "ATTACHMENT_FIGURE_EXPLANATION"
+    NOT_NEEDED = "NOT_NEEDED"
+
+
 ALLOWED_LEGACY_POLICIES = {
     "PROBE_UNDERSTANDING",
     "SUGGEST_ACTION",
@@ -77,6 +95,9 @@ class ResponsePolicy:
         structure: The expected answer shape.
         followup_mode: Whether a follow-up question should be omitted, optional,
             or required.
+        visual_support: Whether this turn should spend image retrieval or PDF
+            rendering cost.
+        visual_reason: Sanitized reason for the visual support decision.
         legacy_policy: Compatibility policy used by older orchestration code for
             token budgeting and tests.
 
@@ -91,6 +112,8 @@ class ResponsePolicy:
     tone: ResponseTone
     structure: ResponseStructure
     followup_mode: FollowupMode
+    visual_support: VisualSupport = VisualSupport.NONE
+    visual_reason: VisualReason = VisualReason.NOT_NEEDED
     legacy_policy: str = "NORMAL"
 
     def safe_log_metadata(self) -> dict[str, str]:
@@ -102,6 +125,8 @@ class ResponsePolicy:
             "tone": self.tone.value,
             "structure": self.structure.value,
             "followup_mode": self.followup_mode.value,
+            "visual_support": self.visual_support.value,
+            "visual_reason": self.visual_reason.value,
             "legacy_policy": self.legacy_policy,
         }
 
@@ -119,6 +144,8 @@ def default_response_policy() -> ResponsePolicy:
         tone=ResponseTone.TUTORING,
         structure=ResponseStructure.STEP_BY_STEP,
         followup_mode=FollowupMode.OPTIONAL,
+        visual_support=VisualSupport.NONE,
+        visual_reason=VisualReason.NOT_NEEDED,
         legacy_policy="NORMAL",
     )
 
@@ -163,6 +190,16 @@ def response_policy_from_dict(payload: Any) -> ResponsePolicy:
             payload.get("followup_mode"),
             fallback.followup_mode,
         ),
+        visual_support=_coerce_enum(
+            VisualSupport,
+            payload.get("visual_support"),
+            fallback.visual_support,
+        ),
+        visual_reason=_coerce_enum(
+            VisualReason,
+            payload.get("visual_reason"),
+            fallback.visual_reason,
+        ),
         legacy_policy=legacy_policy,
     )
 
@@ -190,6 +227,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             tone=ResponseTone.ANALYTICAL,
             structure=ResponseStructure.ARGUMENT,
             followup_mode=FollowupMode.OPTIONAL,
+            visual_support=VisualSupport.NONE,
+            visual_reason=VisualReason.NOT_NEEDED,
             legacy_policy=legacy_policy,
         )
     if legacy_policy == "SUGGEST_ACTION":
@@ -199,6 +238,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             tone=ResponseTone.TUTORING,
             structure=ResponseStructure.STEP_BY_STEP,
             followup_mode=FollowupMode.OPTIONAL,
+            visual_support=VisualSupport.NONE,
+            visual_reason=VisualReason.NOT_NEEDED,
             legacy_policy=legacy_policy,
         )
     if legacy_policy == "PROBE_UNDERSTANDING":
@@ -208,6 +249,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             tone=ResponseTone.TUTORING,
             structure=ResponseStructure.STEP_BY_STEP,
             followup_mode=FollowupMode.REQUIRED,
+            visual_support=VisualSupport.NONE,
+            visual_reason=VisualReason.NOT_NEEDED,
             legacy_policy=legacy_policy,
         )
     return default_response_policy()
@@ -324,6 +367,8 @@ Return strict JSON only with these fields:
   "tone": "PLAIN" | "TUTORING" | "ANALYTICAL" | "LITERARY",
   "structure": "SHORT" | "STEP_BY_STEP" | "NOTE_DRAFT" | "ARGUMENT",
   "followup_mode": "NONE" | "OPTIONAL" | "REQUIRED",
+  "visual_support": "NONE" | "OPTIONAL" | "REQUIRED",
+  "visual_reason": "EXPLICIT_VISUAL_REQUEST" | "KNOWLEDGE_EXPLANATION" | "ANSWER_SEEKING" | "ATTACHMENT_FIGURE_EXPLANATION" | "NOT_NEEDED",
   "legacy_policy": "PROBE_UNDERSTANDING" | "SUGGEST_ACTION" | "PUSH_LIMIT" | "NORMAL"
 }}
 
@@ -332,6 +377,10 @@ Decision rules:
 - If the user asks for a forced-choice answer, exam answer, or "only choose one", choose ANSWER_EXAM, DIRECT, PLAIN, SHORT, followup NONE.
 - If the user asks to complete, revise, or polish notes, choose WRITE_NOTE, SCAFFOLDED, TUTORING, NOTE_DRAFT.
 - If the user asks for the core, essence, viewpoint, reflection, historical meaning, literary feeling, or "what do you think", choose DISCUSS_IDEA with REFLECTIVE or DEEP_DIVE.
+- Set visual_support REQUIRED only when the user explicitly asks for a diagram, image, chart, graph, figure, map, or visual explanation.
+- Set visual_support OPTIONAL when the user is asking for knowledge explanation, problem solving, answer seeking, paper/attachment figure interpretation, process/mechanism explanation, chart interpretation, or graph-heavy concepts where an image would materially improve the answer.
+- Set visual_support NONE for casual chat, note writing/polishing, reflective discussion, administrative requests, short factual answers, and any case where an image would be decorative.
+- Set visual_reason to the closest reason for the visual_support decision. Use NOT_NEEDED when visual_support is NONE.
 - Prefer SCAFFOLDED over DEEP_DIVE unless the user explicitly requests deeper reflection.
 - The legacy policy is for compatibility: PROBE_UNDERSTANDING for eliciting reasoning, SUGGEST_ACTION for concrete next steps, PUSH_LIMIT for reflective/deep extension, otherwise NORMAL.
 
@@ -347,7 +396,7 @@ Current user message:
                 {"role": "system", "content": "Return only valid JSON. Do not explain."},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=220,
+            max_tokens=280,
             temperature=0.1,
         )
         content = response.choices[0].message.content.strip()

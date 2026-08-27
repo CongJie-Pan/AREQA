@@ -1654,10 +1654,10 @@ async def stream_endpoint(
             if not done_sent:
                 yield "data: [DONE]\n\n"
 
-    attachment_visual_candidates = [
-        candidate
+    attachment_visual_sources = [
+        {"filename": attachment.filename, "pdf_bytes": attachment.pdf_bytes}
         for attachment in processed_attachments
-        for candidate in attachment.visual_candidates
+        if attachment.media_type == "application/pdf" and attachment.pdf_bytes
     ]
 
     event_stream = orchestrator.execute(
@@ -1675,7 +1675,7 @@ async def stream_endpoint(
             search_mode=chat_req.search_mode,
             interface_language=chat_req.interface_language,
             attachments=[attachment.content_part for attachment in processed_attachments],
-            attachment_visual_candidates=attachment_visual_candidates,
+            attachment_visual_sources=attachment_visual_sources,
         )
 
     return StreamingResponse(
