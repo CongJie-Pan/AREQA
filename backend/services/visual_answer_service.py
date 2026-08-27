@@ -15,7 +15,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -52,6 +52,8 @@ _VISUAL_CACHE_VERSION = "v6"
 _VISUAL_CACHE_CAPABILITY_SCHEMA = "capability_v1"
 _NEGATIVE_CACHE_TTL_SECONDS = 21600
 _POSITIVE_CACHE_TTL_SECONDS = 2592000
+_INACCESSIBLE_IMAGE_DOMAIN_TTL_SECONDS = 21600
+_INACCESSIBLE_IMAGE_DOMAIN_CACHE: dict[str, int] = {}
 _PROVIDER_PRIORITY = {
     "perplexity_images": 0.3,
     "serpapi_images": 0.28,
@@ -197,6 +199,13 @@ class ImageBlock:
         vision_confidence: Optional confidence label from the vision model.
         vision_limitations: Optional bounded uncertainty notes.
         vision_source: Stable source label for image-understanding metadata.
+        cache_key: Internal cache key that may be committed only after output
+            understanding succeeds. This field is intentionally not serialized
+            to the frontend.
+        cache_ttl_seconds: Internal positive-cache TTL paired with cache_key.
+        alternative_blocks: Internal fallback image blocks for the same planned
+            slot. These are attempted when the initially selected image cannot
+            be downloaded or understood.
         storage_bucket: Optional Supabase Storage bucket for persisted
             attachment-derived images.
         storage_path: Optional Supabase Storage object path for persisted
@@ -233,6 +242,9 @@ class ImageBlock:
     vision_confidence: str = "unknown"
     vision_limitations: tuple[str, ...] = ()
     vision_source: str = "unavailable"
+    cache_key: str = ""
+    cache_ttl_seconds: int = 0
+    alternative_blocks: tuple["ImageBlock", ...] = ()
     storage_bucket: str = ""
     storage_path: str = ""
     storage_expires_at: int | None = None
@@ -618,12 +630,6 @@ class VisualAnswerService:
             )
             return []
 
-        await self._write_cache(
-            cache_key,
-            image_blocks[0].to_frontend(),
-            _POSITIVE_CACHE_TTL_SECONDS,
-            conversation_id,
-        )
         return self._interleave_blocks(paragraphs, image_blocks)
 
     async def prepare_preflight_image_blocks(
@@ -806,11 +812,20 @@ class VisualAnswerService:
                 )
                 continue
             block = self._apply_slot_metadata(image_blocks[0], slot)
-            await self._write_cache(
-                cache_key,
-                block.to_frontend(),
-                _POSITIVE_CACHE_TTL_SECONDS,
-                conversation_id,
+            alternative_blocks = tuple(
+                replace(
+                    self._apply_slot_metadata(alternative, slot),
+                    cache_key=cache_key,
+                    cache_ttl_seconds=_POSITIVE_CACHE_TTL_SECONDS,
+                    alternative_blocks=(),
+                )
+                for alternative in image_blocks[1 : max(1, self.max_images)]
+            )
+            block = replace(
+                block,
+                cache_key=cache_key,
+                cache_ttl_seconds=_POSITIVE_CACHE_TTL_SECONDS,
+                alternative_blocks=alternative_blocks,
             )
             resolved[slot.slot_id] = block
             logger.info(
@@ -852,6 +867,12 @@ class VisualAnswerService:
             vision_confidence=block.vision_confidence,
             vision_limitations=block.vision_limitations,
             vision_source=block.vision_source,
+            cache_key=block.cache_key,
+            cache_ttl_seconds=block.cache_ttl_seconds,
+            alternative_blocks=block.alternative_blocks,
+            storage_bucket=block.storage_bucket,
+            storage_path=block.storage_path,
+            storage_expires_at=block.storage_expires_at,
             transient=block.transient,
         )
 
@@ -1229,7 +1250,7 @@ class VisualAnswerService:
                     )
                     if not provider_candidates:
                         continue
-                    block = await self._select_image_block(
+                    blocks = await self._select_image_blocks(
                         provider_candidates,
                         resolved_query,
                         provider,
@@ -1237,12 +1258,14 @@ class VisualAnswerService:
                         visual_context,
                         model_client,
                         visual_brief,
+                        limit=self.max_images,
                     )
-                    if block:
+                    if blocks:
                         for pending_task in pending:
                             pending_task.cancel()
+                        block = blocks[0]
                         self._log_image_block_selected(conversation_id, block, provider)
-                        return [block]
+                        return blocks
         finally:
             for task in pending:
                 task.cancel()
@@ -1976,6 +1999,51 @@ class VisualAnswerService:
     ) -> ImageBlock | None:
         """Select the strongest grounded candidate using metadata and an agent."""
 
+        blocks = await self._select_image_blocks(
+            candidates,
+            query,
+            provider,
+            conversation_id,
+            visual_intent_text,
+            model_client,
+            visual_brief,
+            limit=1,
+        )
+        return blocks[0] if blocks else None
+
+    async def _select_image_blocks(
+        self,
+        candidates: list[ImageCandidate],
+        query: str,
+        provider: str,
+        conversation_id: str,
+        visual_intent_text: str = "",
+        model_client: Any = None,
+        visual_brief: VisualBrief | None = None,
+        *,
+        limit: int = 1,
+    ) -> list[ImageBlock]:
+        """Select grounded candidates for downstream understanding retries.
+
+        Args:
+            candidates: Provider-normalized image metadata.
+            query: Search query used for metadata scoring.
+            provider: Stable provider identifier for logs.
+            conversation_id: Correlation id for safe structured logs.
+            visual_intent_text: Bounded visual intent used by the grounding
+                agent. This is not logged.
+            model_client: Optional OpenAI-compatible model client.
+            visual_brief: Optional preflight brief for stricter grounding.
+            limit: Maximum accepted image blocks to return.
+
+        Returns:
+            Ordered image blocks accepted by cheap scoring and visual grounding.
+
+        Side Effects:
+            May call the visual grounding agent. Logs only safe provider,
+            count, score, and reason metadata.
+        """
+
         scored = [
             (self._heuristic_score(candidate, query), candidate)
             for candidate in candidates
@@ -1988,7 +2056,7 @@ class VisualAnswerService:
                 provider,
                 len(candidates),
             )
-            return None
+            return []
         scored.sort(key=lambda item: item[0], reverse=True)
         score, candidate = scored[0]
         self._log_candidate_decision(
@@ -2007,10 +2075,9 @@ class VisualAnswerService:
                 provider,
                 score,
             )
-            return None
+            return []
 
-        grounded_candidate: ImageCandidate | None = None
-        grounded_score = 0.0
+        selected_blocks: list[ImageBlock] = []
         max_grounding_candidates = (
             max(1, int(getattr(settings, "visual_preflight_grounding_max_candidates", 1)))
             if visual_brief is not None
@@ -2028,9 +2095,12 @@ class VisualAnswerService:
                 visual_brief=visual_brief,
             )
             if decision.accepted and not (visual_brief is not None and decision.reason == "model_unavailable"):
-                grounded_candidate = candidate
-                grounded_score = candidate_score
-                break
+                selected_blocks.append(
+                    self._candidate_to_block(candidate, candidate_score, len(selected_blocks) + 1)
+                )
+                if len(selected_blocks) >= max(1, limit):
+                    break
+                continue
             logger.info(
                 "visual.candidate_rejected conversation_id=%s provider=%s reason=grounding_%s expected_type=%s candidate_type=%s",
                 conversation_id,
@@ -2040,24 +2110,24 @@ class VisualAnswerService:
                 decision.candidate_visual_type,
             )
 
-        if grounded_candidate is None:
+        if not selected_blocks:
             logger.info(
                 "visual.image_omitted conversation_id=%s reason=grounding_rejected provider=%s checked_candidate_count=%s threshold=0.40",
                 conversation_id,
                 provider,
                 min(max_grounding_candidates, len(scored)),
             )
-            return None
+            return []
 
-        block = self._candidate_to_block(grounded_candidate, grounded_score, 1)
+        block = selected_blocks[0]
         logger.info(
             "visual.image_selected conversation_id=%s source_domain=%s provider=%s confidence_bucket=%s",
             conversation_id,
             block.source_domain,
             block.provider,
-            "high" if grounded_score >= 0.65 else "medium",
+            "high" if block.match_confidence >= 0.65 else "medium",
         )
-        return block
+        return selected_blocks
 
     @staticmethod
     def _log_candidate_decision(
@@ -2285,8 +2355,32 @@ class VisualAnswerService:
             score += 0.1
         return min(score, 1.0)
 
-    @staticmethod
-    def _is_safe_candidate(candidate: ImageCandidate) -> bool:
+    @classmethod
+    def mark_inaccessible_image_domain(cls, image_url: str, *, reason: str) -> None:
+        """Temporarily penalize domains that block backend image input.
+
+        Args:
+            image_url: Selected image URL that failed backend-side download.
+            reason: Stable reason code such as ``HTTPStatusError:403``.
+
+        Side Effects:
+            Writes an in-process TTL entry used by candidate safety checks.
+            Logs only the domain and reason code, never the full image URL.
+        """
+
+        domain = cls._safe_image_domain(image_url)
+        if not domain:
+            return
+        _INACCESSIBLE_IMAGE_DOMAIN_CACHE[domain] = int(time.time()) + _INACCESSIBLE_IMAGE_DOMAIN_TTL_SECONDS
+        logger.info(
+            "visual.input_domain_penalized source_domain=%s reason=%s ttl_seconds=%s",
+            domain,
+            cls._safe_cache_reason(reason),
+            _INACCESSIBLE_IMAGE_DOMAIN_TTL_SECONDS,
+        )
+
+    @classmethod
+    def _is_safe_candidate(cls, candidate: ImageCandidate) -> bool:
         """Reject candidates that cannot be safely rendered or attributed."""
 
         for url in (candidate.image_url, candidate.source_url):
@@ -2296,7 +2390,9 @@ class VisualAnswerService:
             domain = parsed.netloc.lower().removeprefix("www.")
             if domain in _UNSTABLE_IMAGE_INPUT_DOMAINS:
                 return False
-        if not VisualAnswerService._display_image_url(candidate):
+            if cls._is_inaccessible_image_domain(domain):
+                return False
+        if not cls._display_image_url(candidate):
             return False
         lowered = f"{candidate.image_url} {candidate.title} {candidate.caption}".lower()
         if any(term in lowered for term in _NEGATIVE_TERMS):
@@ -2304,6 +2400,30 @@ class VisualAnswerService:
         if candidate.width is not None and candidate.width < 240:
             return False
         if candidate.height is not None and candidate.height < 160:
+            return False
+        return True
+
+    @staticmethod
+    def _safe_image_domain(image_url: str) -> str:
+        """Return a safe lowercase domain label for an image URL."""
+
+        parsed = urlparse(str(image_url or ""))
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return ""
+        return parsed.netloc.lower().removeprefix("www.")
+
+    @staticmethod
+    def _is_inaccessible_image_domain(domain: str) -> bool:
+        """Return whether a domain is temporarily blocked for image input."""
+
+        normalized = str(domain or "").lower().removeprefix("www.")
+        if not normalized:
+            return False
+        expires_at = _INACCESSIBLE_IMAGE_DOMAIN_CACHE.get(normalized)
+        if not expires_at:
+            return False
+        if expires_at <= int(time.time()):
+            _INACCESSIBLE_IMAGE_DOMAIN_CACHE.pop(normalized, None)
             return False
         return True
 
@@ -2433,6 +2553,41 @@ class VisualAnswerService:
         finally:
             if redis_client:
                 await redis_client.aclose()
+
+    async def commit_positive_cache(self, block: ImageBlock, *, conversation_id: str) -> None:
+        """Commit a selected image to cache after vision understanding succeeds.
+
+        Args:
+            block: Image block that survived output understanding.
+            conversation_id: Correlation id for safe structured logs.
+
+        Side Effects:
+            Writes a positive Redis cache entry only when ``block.cache_key`` is
+            present. This deliberately moves positive-cache ownership after the
+            output understanding gate so inaccessible provider URLs do not get
+            cached as successful image answers.
+        """
+
+        if not block.cache_key:
+            logger.info(
+                "visual.output_cache_rejected conversation_id=%s slot_id=%s reason=missing_cache_key",
+                conversation_id,
+                block.slot_id,
+            )
+            return
+        await self._write_cache(
+            block.cache_key,
+            block.to_frontend(),
+            block.cache_ttl_seconds or _POSITIVE_CACHE_TTL_SECONDS,
+            conversation_id,
+        )
+        logger.info(
+            "visual.output_cache_committed conversation_id=%s slot_id=%s provider=%s source_domain=%s",
+            conversation_id,
+            block.slot_id,
+            block.provider,
+            block.source_domain or "unknown",
+        )
 
     @classmethod
     def _cache_key(cls, query: str, purpose: str) -> str:

@@ -17,6 +17,7 @@ from backend.services.query_policy_service import (
 )
 from backend.services.visual_answer_service import (
     _NEGATIVE_CACHE_TTL_SECONDS,
+    _INACCESSIBLE_IMAGE_DOMAIN_CACHE,
     ImageBlock,
     ImageCandidate,
     PlannedImageSlot,
@@ -148,6 +149,32 @@ def test_is_safe_candidate_rejects_domains_that_block_server_side_image_input():
     )
 
     assert not VisualAnswerService._is_safe_candidate(candidate)
+
+
+def test_is_safe_candidate_rejects_temporarily_penalized_input_domain():
+    """HTTP 403 image-input domains should be avoided by future selection."""
+
+    _INACCESSIBLE_IMAGE_DOMAIN_CACHE.clear()
+    VisualAnswerService.mark_inaccessible_image_domain(
+        "https://blocked.example.org/image.png",
+        reason="HTTPStatusError:403",
+    )
+    candidate = ImageCandidate(
+        provider="tavily_images",
+        image_url="https://blocked.example.org/image.png",
+        thumbnail_url="https://blocked.example.org/thumb.png",
+        source_url="https://blocked.example.org/article",
+        title="mRNA vaccine process diagram",
+        caption="mRNA vaccine process diagram",
+        license="unknown",
+        width=1200,
+        height=800,
+    )
+
+    try:
+        assert not VisualAnswerService._is_safe_candidate(candidate)
+    finally:
+        _INACCESSIBLE_IMAGE_DOMAIN_CACHE.clear()
 
 
 def test_serpapi_candidate_requires_actual_image_url():
@@ -557,6 +584,52 @@ async def test_write_negative_cache_records_reason_capability_and_short_ttl(monk
         payload["capability_fingerprint"]
         == VisualAnswerService._visual_cache_capability_fingerprint()
     )
+
+
+@pytest.mark.asyncio
+async def test_planned_selection_does_not_write_positive_cache_before_understanding(monkeypatch):
+    """Positive cache must wait until output understanding succeeds."""
+
+    redis = _FakeRedis(None)
+    service = VisualAnswerService(redis_factory=lambda *args, **kwargs: redis)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
+    image = ImageBlock(
+        slot_id="visual-1",
+        topic="mRNA vaccine",
+        purpose="diagram",
+        image_url="https://example.org/mrna.png",
+        thumbnail_url="https://example.org/mrna.png",
+        source_url="https://example.org/source",
+        source_domain="example.org",
+        caption="mRNA vaccine process",
+        provider="wikimedia",
+        license="unknown",
+        safety_status="pass",
+        match_confidence=0.8,
+    )
+
+    async def fake_resolve(**kwargs):
+        return [image]
+
+    monkeypatch.setattr(service, "_resolve_images", fake_resolve)
+
+    resolved = await service._resolve_planned_image_blocks(
+        planned_slots=[
+            PlannedImageSlot(
+                slot_id="img_1",
+                query="mRNA vaccine process diagram",
+                caption_hint="",
+            )
+        ],
+        existing_web_results=[],
+        tool_registry=None,
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+    )
+
+    assert resolved["img_1"].cache_key.startswith("visual_image:v6:diagram:")
+    assert redis.set_key == ""
 
 
 @pytest.mark.asyncio

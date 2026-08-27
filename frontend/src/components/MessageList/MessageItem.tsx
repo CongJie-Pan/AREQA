@@ -83,6 +83,35 @@ function isSafeImageUrl(url: string | undefined): boolean {
   return isSafeUrl(url);
 }
 
+/**
+ * Normalize legacy Supabase Storage signed image URLs before rendering.
+ *
+ * Older persisted PDF visual blocks may contain Supabase REST signed paths that
+ * start with `/object/sign/...` instead of `/storage/v1/object/sign/...`. The
+ * backend now emits the canonical path, but the frontend keeps this
+ * compatibility shim so refreshed historical conversations can still display
+ * their already-saved images without requiring a data migration.
+ */
+function normalizeSupabaseStorageImageUrl(url: string | undefined): string {
+  if (!url) return '';
+
+  try {
+    const parsedUrl = new URL(url);
+    if (
+      parsedUrl.protocol === 'https:' &&
+      parsedUrl.hostname.endsWith('.supabase.co') &&
+      parsedUrl.pathname.startsWith('/object/')
+    ) {
+      parsedUrl.pathname = `/storage/v1${parsedUrl.pathname}`;
+      return parsedUrl.toString();
+    }
+  } catch {
+    return url;
+  }
+
+  return url;
+}
+
 type WindowWithFind = Window & {
   find?: (
     searchString: string,
@@ -605,9 +634,10 @@ function getImageAspectRatio(block: ImageBlock): React.CSSProperties {
 function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnType<typeof useStyles>['styles'] }) {
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
-  const imageUrl = block.thumbnailUrl || block.imageUrl;
+  const imageUrl = normalizeSupabaseStorageImageUrl(block.thumbnailUrl || block.imageUrl);
+  const fullImageUrl = normalizeSupabaseStorageImageUrl(block.imageUrl || block.thumbnailUrl);
   const safeImageUrl = isSafeImageUrl(imageUrl) ? imageUrl : '';
-  const safeFullImageUrl = safeImageUrl;
+  const safeFullImageUrl = isSafeImageUrl(fullImageUrl) ? fullImageUrl : safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
   const displayCaption = block.attributionCaption || block.caption || block.topic;
   const sourceLabel = block.sourceDomain || 'source';

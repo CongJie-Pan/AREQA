@@ -239,7 +239,9 @@ class AttachmentImageStorageService:
         if signed_url.startswith("http://") or signed_url.startswith("https://"):
             return signed_url
         if signed_url.startswith("/"):
-            return f"{supabase_url}{signed_url}"
+            if signed_url.startswith("/storage/v1/"):
+                return f"{supabase_url}{signed_url}"
+            return f"{supabase_url}/storage/v1{signed_url}"
         return f"{supabase_url}/storage/v1/{signed_url.lstrip('/')}"
 
     @staticmethod

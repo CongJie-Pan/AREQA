@@ -37,12 +37,14 @@ class VisualImageInput:
         source: Stable source label, either ``data_uri`` or ``remote_url``.
         media_type: Detected image media type when known.
         size_bytes: Downloaded byte count when known.
+        reason: Stable unavailable reason when source is ``remote_url``.
     """
 
     content_part: dict[str, Any]
     source: str
     media_type: str = "unknown"
     size_bytes: int = 0
+    reason: str = ""
 
 
 class VisualInputService:
@@ -79,11 +81,10 @@ class VisualInputService:
             fetching when they require deterministic vision input.
         """
 
-        fallback = self.remote_url_part(image_url)
         source_domain = self._safe_domain(image_url)
         if not self._is_safe_http_url(image_url):
             self._log_unavailable(conversation_id, source_domain, "invalid_image_url")
-            return fallback
+            return self.remote_url_part(image_url, reason="invalid_image_url")
 
         try:
             async with httpx.AsyncClient(
@@ -100,26 +101,26 @@ class VisualInputService:
                 source_domain,
                 f"HTTPStatusError:{exc.response.status_code}",
             )
-            return fallback
+            return self.remote_url_part(image_url, reason=f"HTTPStatusError:{exc.response.status_code}")
         except Exception as exc:
             self._log_unavailable(conversation_id, source_domain, type(exc).__name__)
-            return fallback
+            return self.remote_url_part(image_url, reason=type(exc).__name__)
 
         if not data:
             self._log_unavailable(conversation_id, source_domain, "empty_response")
-            return fallback
+            return self.remote_url_part(image_url, reason="empty_response")
         if len(data) > self.max_bytes:
             self._log_unavailable(conversation_id, source_domain, "image_too_large")
-            return fallback
+            return self.remote_url_part(image_url, reason="image_too_large")
 
         media_type = self._detect_image_type(data, response.headers.get("content-type", ""))
         if media_type not in IMAGE_TYPES:
             self._log_unavailable(conversation_id, source_domain, "unsupported_content_type")
-            return fallback
+            return self.remote_url_part(image_url, reason="unsupported_content_type")
 
         if not self._verify_image(data):
             self._log_unavailable(conversation_id, source_domain, "invalid_image_content")
-            return fallback
+            return self.remote_url_part(image_url, reason="invalid_image_content")
 
         encoded = base64.b64encode(data).decode("ascii")
         logger.info(
@@ -137,12 +138,13 @@ class VisualInputService:
         )
 
     @staticmethod
-    def remote_url_part(image_url: str) -> VisualImageInput:
+    def remote_url_part(image_url: str, *, reason: str = "") -> VisualImageInput:
         """Build a remote URL fallback image part."""
 
         return VisualImageInput(
             content_part={"type": "image_url", "image_url": {"url": str(image_url or "")}},
             source="remote_url",
+            reason=reason,
         )
 
     @staticmethod

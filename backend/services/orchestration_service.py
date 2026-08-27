@@ -714,6 +714,7 @@ class OrchestrationService:
             final_messages = self._add_verified_visual_instruction(
                 final_messages,
                 preverified_image_blocks,
+                response_policy=response_policy,
             )
 
         effective_max_tokens = max_tokens
@@ -992,6 +993,7 @@ class OrchestrationService:
     def _add_verified_visual_instruction(
         messages: List[Dict[str, Any]],
         image_blocks: dict[str, Any],
+        response_policy: Any = None,
     ) -> List[Dict[str, Any]]:
         """Add verified image inventory and integrated-answer marker rules.
 
@@ -1001,14 +1003,44 @@ class OrchestrationService:
         marker is stripped before public streaming and later converted into
         structured answer blocks; the prompt must not expose raw image URLs or
         ask the model to invent image metadata.
+
+        Args:
+            messages: Prompt messages assembled for the main answer model.
+            image_blocks: Verified image inventory keyed by image slot id.
+            response_policy: Optional structured response policy. When the user
+                explicitly required visual support and no verified image is
+                available, the prompt asks the model to briefly disclose that no
+                reliable image can be provided instead of silently ignoring the
+                explicit visual request.
+
+        Returns:
+            Prompt messages with visual inventory or no-image instructions.
+
+        Side Effects:
+            Mutates the first system message in ``messages`` or inserts one if
+            none exists. The instruction contains no image URLs, raw user text,
+            prompts, model output, or secrets.
         """
 
         instruction: str
         if not image_blocks:
+            visual_support = getattr(
+                getattr(response_policy, "visual_support", None),
+                "value",
+                getattr(response_policy, "visual_support", None),
+            )
+            required_image_notice = (
+                "因為使用者明確要求圖片/圖解，但本回合沒有找到可驗證且可讀取的合適圖片，"
+                "請在回答開頭或第一個自然段落中用一句簡短文字說明目前無法提供可靠圖片，"
+                "然後改用文字、步驟、表格或 ASCII 示意來解釋；語氣保持中性，不要冗長道歉。"
+                if visual_support == "REQUIRED"
+                else ""
+            )
             instruction = (
                 "【已驗證圖片狀態】本回合沒有可用的已驗證圖片。"
                 "不得輸出 <AREQA_IMAGE_SLOT .../>、[[AREQA_IMAGE_REQUEST ...]] 或 [[AREQA_VERIFIED_IMAGE ...]]；"
                 "若需要視覺輔助，請只用文字描述，不要假裝已插入圖片。"
+                f"{required_image_notice}"
             )
         else:
             inventory = [

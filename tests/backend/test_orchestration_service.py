@@ -19,6 +19,8 @@ from backend.services.query_policy_service import (
     ResponseStructure,
     ResponseTone,
     TaskIntent,
+    VisualReason,
+    VisualSupport,
 )
 from unittest.mock import patch
 
@@ -136,6 +138,58 @@ def test_verified_visual_instruction_forbids_all_image_markers_when_empty():
     assert "不得輸出 <AREQA_IMAGE_SLOT .../>" in system_prompt
     assert "[[AREQA_IMAGE_REQUEST ...]]" in system_prompt
     assert "[[AREQA_VERIFIED_IMAGE ...]]" in system_prompt
+
+
+def test_required_visual_instruction_discloses_unavailable_verified_image():
+    """Explicit visual requests should not be silently ignored when no image survived."""
+
+    messages = [{"role": "system", "content": "base prompt"}]
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        visual_support=VisualSupport.REQUIRED,
+        visual_reason=VisualReason.EXPLICIT_VISUAL_REQUEST,
+    )
+
+    result = OrchestrationService._add_verified_visual_instruction(
+        messages,
+        {},
+        response_policy=response_policy,
+    )
+
+    system_prompt = result[0]["content"]
+    assert "使用者明確要求圖片/圖解" in system_prompt
+    assert "目前無法提供可靠圖片" in system_prompt
+    assert "不要冗長道歉" in system_prompt
+
+
+def test_optional_visual_instruction_does_not_mention_image_failure_to_user():
+    """Optional visual enrichment failures should stay silent in normal answers."""
+
+    messages = [{"role": "system", "content": "base prompt"}]
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        visual_support=VisualSupport.OPTIONAL,
+        visual_reason=VisualReason.KNOWLEDGE_EXPLANATION,
+    )
+
+    result = OrchestrationService._add_verified_visual_instruction(
+        messages,
+        {},
+        response_policy=response_policy,
+    )
+
+    system_prompt = result[0]["content"]
+    assert "本回合沒有可用的已驗證圖片" in system_prompt
+    assert "使用者明確要求圖片/圖解" not in system_prompt
+    assert "目前無法提供可靠圖片" not in system_prompt
 
 
 @pytest.mark.asyncio

@@ -47,7 +47,7 @@ class FakeAsyncClient:
 
         self.calls.append({"url": url, **kwargs})
         if "/object/sign/" in url:
-            return FakeResponse({"signedURL": "/storage/v1/object/sign/bucket/path?token=abc"})
+            return FakeResponse({"signedURL": "/object/sign/bucket/path?token=abc"})
         return FakeResponse({"Key": "ok"})
 
 
@@ -103,6 +103,17 @@ async def test_persist_pdf_image_block_uploads_to_supabase_and_returns_signed_ur
     assert len(clients[0].calls) == 2
     assert clients[0].calls[0]["headers"]["x-upsert"] == "true"
     assert clients[0].calls[1]["json"] == {"expiresIn": 120}
+
+
+def test_absolute_signed_url_normalizes_supabase_storage_relative_path():
+    """Supabase signed URL payloads may omit the `/storage/v1` prefix."""
+
+    signed_url = AttachmentImageStorageService._absolute_signed_url(
+        "https://example.supabase.co",
+        {"signedURL": "/object/sign/bucket/path.png?token=abc"},
+    )
+
+    assert signed_url == "https://example.supabase.co/storage/v1/object/sign/bucket/path.png?token=abc"
 
 
 @pytest.mark.asyncio

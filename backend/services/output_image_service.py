@@ -114,77 +114,63 @@ class OutputImageService:
         enriched: dict[str, ImageBlock] = {}
         for slot_id, block in blocks.items():
             result: VisualUnderstandingResult | None = None
-            attempted_urls = self._understanding_image_urls(block)
+            understood_block = block
+            candidate_blocks = [block, *block.alternative_blocks]
             budget_seconds = self._understanding_budget_seconds()
             loop = asyncio.get_running_loop()
             deadline = loop.time() + budget_seconds
-            try:
-                for image_url in attempted_urls:
-                    try:
-                        remaining_seconds = deadline - loop.time()
-                        if remaining_seconds <= 0:
-                            raise TimeoutError
-                        image_input = await asyncio.wait_for(
-                            self.visual_input_service.prepare_image_part(
-                                image_url=image_url,
-                                conversation_id=conversation_id,
-                            ),
-                            timeout=remaining_seconds,
-                        )
-                        if image_input.source != "data_uri":
-                            logger.info(
-                                "visual.output_understanding_input_unavailable conversation_id=%s slot_id=%s source_domain=%s input_source=%s",
-                                conversation_id,
-                                slot_id,
-                                self._safe_domain(image_url) or "unknown",
-                                image_input.source,
-                            )
-                            continue
-                        remaining_seconds = deadline - loop.time()
-                        if remaining_seconds <= 0:
-                            raise TimeoutError
-                        candidate_result = await asyncio.wait_for(
-                            self.understanding_agent.analyze(
-                                client=model_client,
-                                model=settings.model_visual_understanding,
-                                image_url=image_url,
-                                image_part=image_input.content_part,
-                                user_msg=user_msg,
-                                visual_brief=None,
-                                conversation_id=conversation_id,
-                            ),
-                            timeout=remaining_seconds,
-                        )
-                    except TimeoutError:
-                        raise
-                    except Exception as exc:
+            attempt_count = 0
+            for candidate_index, candidate_block in enumerate(candidate_blocks):
+                try:
+                    candidate_result, candidate_attempts = await self._understand_image_block(
+                        block=candidate_block,
+                        user_msg=user_msg,
+                        conversation_id=conversation_id,
+                        model_client=model_client,
+                        deadline=deadline,
+                    )
+                except TimeoutError:
+                    logger.info(
+                        "visual.output_understanding_budget_exhausted conversation_id=%s slot_id=%s budget_seconds=%.1f",
+                        conversation_id,
+                        slot_id,
+                        budget_seconds,
+                    )
+                    break
+                attempt_count += candidate_attempts
+                if self._has_usable_understanding(candidate_result):
+                    result = candidate_result
+                    understood_block = candidate_block
+                    if candidate_index > 0:
                         logger.info(
-                            "visual.output_understanding_attempt_failed conversation_id=%s slot_id=%s reason=%s",
+                            "visual.output_candidate_retry_succeeded conversation_id=%s slot_id=%s candidate_index=%s",
                             conversation_id,
                             slot_id,
-                            type(exc).__name__,
+                            candidate_index,
                         )
-                        continue
-                    if self._has_usable_understanding(candidate_result):
-                        result = candidate_result
-                        break
-            except TimeoutError:
-                logger.info(
-                    "visual.output_understanding_budget_exhausted conversation_id=%s slot_id=%s budget_seconds=%.1f",
-                    conversation_id,
-                    slot_id,
-                    budget_seconds,
-                )
+                    break
+                if candidate_index < len(candidate_blocks) - 1:
+                    logger.info(
+                        "visual.output_candidate_retry conversation_id=%s slot_id=%s next_candidate_index=%s",
+                        conversation_id,
+                        slot_id,
+                        candidate_index + 1,
+                    )
 
             if result is None:
                 logger.info(
                     "visual.output_image_omitted conversation_id=%s slot_id=%s reason=understanding_unavailable attempt_count=%s",
                     conversation_id,
                     slot_id,
-                    len(attempted_urls),
+                    attempt_count,
                 )
                 continue
-            enriched[slot_id] = self._apply_understanding(block, result)
+            enriched_block = self._apply_understanding(understood_block, result)
+            await visual_answer_service.commit_positive_cache(
+                enriched_block,
+                conversation_id=conversation_id,
+            )
+            enriched[slot_id] = enriched_block
 
         logger.info(
             "visual.output_images_prepared conversation_id=%s selected_image_count=%s understood_image_count=%s omitted_image_count=%s understanding_enabled=%s",
@@ -195,6 +181,99 @@ class OutputImageService:
             settings.enable_visual_understanding,
         )
         return enriched
+
+    async def _understand_image_block(
+        self,
+        *,
+        block: ImageBlock,
+        user_msg: str,
+        conversation_id: str,
+        model_client: Any,
+        deadline: float,
+    ) -> tuple[VisualUnderstandingResult | None, int]:
+        """Try to produce usable vision evidence for one selected image block.
+
+        Args:
+            block: Selected or fallback image block.
+            user_msg: Latest user message sent only to the vision model.
+            conversation_id: Correlation id for privacy-safe logs.
+            model_client: OpenAI-compatible async client.
+            deadline: Monotonic event-loop deadline shared by all candidates.
+
+        Returns:
+            Tuple of optional vision result and attempted URL count.
+
+        Raises:
+            TimeoutError: If the shared understanding budget is exhausted.
+
+        Side Effects:
+            May download selected image URLs and call the vision model. Logs
+            safe reason/domain metadata only. HTTP 403-like image input failures
+            temporarily penalize the image domain through ``VisualAnswerService``
+            so future selection avoids repeatedly choosing blocked hosts.
+        """
+
+        attempted_urls = self._understanding_image_urls(block)
+        if not attempted_urls:
+            return None, 0
+        loop = asyncio.get_running_loop()
+        attempts = 0
+        for image_url in attempted_urls:
+            attempts += 1
+            try:
+                remaining_seconds = deadline - loop.time()
+                if remaining_seconds <= 0:
+                    raise TimeoutError
+                image_input = await asyncio.wait_for(
+                    self.visual_input_service.prepare_image_part(
+                        image_url=image_url,
+                        conversation_id=conversation_id,
+                    ),
+                    timeout=remaining_seconds,
+                )
+                if image_input.source != "data_uri":
+                    logger.info(
+                        "visual.output_understanding_input_unavailable conversation_id=%s slot_id=%s source_domain=%s input_source=%s reason=%s",
+                        conversation_id,
+                        block.slot_id,
+                        self._safe_domain(image_url) or "unknown",
+                        image_input.source,
+                        image_input.reason or "unknown",
+                    )
+                    if image_input.reason in {"HTTPStatusError:403", "HTTPStatusError:401"}:
+                        VisualAnswerService.mark_inaccessible_image_domain(
+                            image_url,
+                            reason=image_input.reason,
+                        )
+                    continue
+                remaining_seconds = deadline - loop.time()
+                if remaining_seconds <= 0:
+                    raise TimeoutError
+                candidate_result = await asyncio.wait_for(
+                    self.understanding_agent.analyze(
+                        client=model_client,
+                        model=settings.model_visual_understanding,
+                        image_url=image_url,
+                        image_part=image_input.content_part,
+                        user_msg=user_msg,
+                        visual_brief=None,
+                        conversation_id=conversation_id,
+                    ),
+                    timeout=remaining_seconds,
+                )
+            except TimeoutError:
+                raise
+            except Exception as exc:
+                logger.info(
+                    "visual.output_understanding_attempt_failed conversation_id=%s slot_id=%s reason=%s",
+                    conversation_id,
+                    block.slot_id,
+                    type(exc).__name__,
+                )
+                continue
+            if self._has_usable_understanding(candidate_result):
+                return candidate_result, attempts
+        return None, attempts
 
     async def prepare_attachment_image_blocks(
         self,
@@ -327,7 +406,7 @@ class OutputImageService:
         return urlparse(str(image_url or "")).netloc.lower().removeprefix("www.")
 
     @staticmethod
-    def _has_usable_understanding(result: VisualUnderstandingResult) -> bool:
+    def _has_usable_understanding(result: VisualUnderstandingResult | None) -> bool:
         """Return whether vision output is sufficient for grounded answer prose.
 
         Args:
@@ -339,7 +418,8 @@ class OutputImageService:
         """
 
         return bool(
-            result.source == "vision_model"
+            result
+            and result.source == "vision_model"
             and result.summary.strip()
             and (result.visible_elements or result.how_to_read)
         )
@@ -381,6 +461,9 @@ class OutputImageService:
             vision_confidence=result.confidence,
             vision_limitations=result.limitations,
             vision_source=result.source,
+            cache_key=block.cache_key,
+            cache_ttl_seconds=block.cache_ttl_seconds,
+            alternative_blocks=(),
             storage_bucket=block.storage_bucket,
             storage_path=block.storage_path,
             storage_expires_at=block.storage_expires_at,

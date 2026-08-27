@@ -141,4 +141,37 @@ describe('MessageItem visual answer rendering', () => {
     expect(screen.getByText('上傳附件')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /來源/i })).not.toBeInTheDocument();
   });
+
+  it('normalizes legacy Supabase Storage signed image URLs for PDF attachment blocks', () => {
+    renderMessage(
+      assistantMessage([
+        {
+          type: 'image_block',
+          slotId: 'pdf-img-legacy',
+          topic: 'paper.pdf 第 4 頁',
+          purpose: 'chart',
+          imageUrl:
+            'https://example.supabase.co/object/sign/areqa-pdf-visuals/conversations/c1/pdf-visuals/pdf.png?token=abc',
+          thumbnailUrl:
+            'https://example.supabase.co/object/sign/areqa-pdf-visuals/conversations/c1/pdf-visuals/pdf.png?token=abc',
+          sourceUrl: '#pdf-attachment-page-4',
+          sourceDomain: 'uploaded PDF',
+          caption: 'Attention diagram',
+          attributionCaption: 'paper.pdf，第 4 頁',
+          provider: 'pdf_attachment',
+          transient: false,
+          status: 'resolved',
+          safetyStatus: 'pass',
+          matchConfidence: 0.92,
+          width: 640,
+          height: 480,
+        },
+      ]),
+    );
+
+    expect(screen.getByAltText('paper.pdf，第 4 頁')).toHaveAttribute(
+      'src',
+      'https://example.supabase.co/storage/v1/object/sign/areqa-pdf-visuals/conversations/c1/pdf-visuals/pdf.png?token=abc',
+    );
+  });
 });
