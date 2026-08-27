@@ -516,6 +516,36 @@ def _apply_pdf_auto_explain_guardrail(
     return guarded
 
 
+def apply_pdf_auto_explain_guardrail(
+    policy: ResponsePolicy,
+    *,
+    user_msg: str,
+    has_pdf_attachment: bool,
+) -> ResponsePolicy:
+    """Apply the final deterministic PDF overview invariant.
+
+    Args:
+        policy: Policy selected by a classifier, legacy bridge, skipped
+            classifier path, or timeout fallback.
+        user_msg: Current user message. It is inspected locally but must never
+            be logged by callers.
+        has_pdf_attachment: Whether request metadata confirms a PDF attachment.
+
+    Returns:
+        A policy normalized for unambiguous whole-paper PDF overview requests.
+
+    Side Effects:
+        Delegates privacy-safe structured logging to the internal guardrail only
+        when a policy is changed.
+    """
+
+    return _apply_pdf_auto_explain_guardrail(
+        policy,
+        user_msg=user_msg,
+        has_pdf_attachment=has_pdf_attachment,
+    )
+
+
 async def parse_and_decompose_query_impl(
     query: str,
     client: Any,

@@ -1688,6 +1688,166 @@ async def test_select_image_block_rejects_preflight_candidate_when_grounding_una
     assert "grounding_model_unavailable" in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_preflight_selection_keeps_extra_grounded_candidate_for_output_retry(monkeypatch):
+    """Preflight should retain alternatives for later downloadability retries."""
+
+    import config as runtime_config
+
+    class _SelectiveGroundingAgent:
+        def __init__(self):
+            self.checked_titles = []
+
+        async def evaluate(self, *, candidate, **kwargs):
+            self.checked_titles.append(candidate.title)
+            if "second" in candidate.title.lower():
+                return VisualGroundingDecision(
+                    accepted=False,
+                    expected_visual_type="process_diagram",
+                    candidate_visual_type="decorative",
+                    reason="visual_type_mismatch",
+                )
+            return VisualGroundingDecision(
+                accepted=True,
+                expected_visual_type="process_diagram",
+                candidate_visual_type="process_diagram",
+                reason="teaching_goal_match",
+            )
+
+    monkeypatch.setattr(runtime_config.settings, "visual_preflight_grounding_max_candidates", 1)
+    service = VisualAnswerService()
+    grounding_agent = _SelectiveGroundingAgent()
+    service._visual_grounding_agent = grounding_agent
+    brief = VisualBrief(
+        visual_type="process_diagram",
+        search_query="mRNA vaccine cell process diagram",
+        caption_goal="Show how mRNA vaccine instructions are translated in cells.",
+        reject_if=("decorative", "document_scan"),
+    )
+
+    blocks = await service._select_image_blocks(
+        [
+            ImageCandidate(
+                provider="tavily_images",
+                image_url="https://blocked.example.org/primary.png",
+                thumbnail_url="https://blocked.example.org/primary.png",
+                source_url="https://blocked.example.org/source",
+                title="First mRNA vaccine process diagram",
+                caption="mRNA vaccine process diagram",
+                license="unknown",
+                width=900,
+                height=500,
+            ),
+            ImageCandidate(
+                provider="tavily_images",
+                image_url="https://decorative.example.org/second.png",
+                thumbnail_url="https://decorative.example.org/second.png",
+                source_url="https://decorative.example.org/source",
+                title="Second mRNA vaccine decorative image",
+                caption="mRNA vaccine process diagram",
+                license="unknown",
+                width=900,
+                height=500,
+            ),
+            ImageCandidate(
+                provider="tavily_images",
+                image_url="https://stable.example.org/third.png",
+                thumbnail_url="https://stable.example.org/third.png",
+                source_url="https://stable.example.org/source",
+                title="Third mRNA vaccine process diagram",
+                caption="mRNA vaccine process diagram",
+                license="unknown",
+                width=900,
+                height=500,
+            ),
+        ],
+        "mRNA vaccine cell process diagram",
+        "tavily_images",
+        "conversation-1",
+        "Show the mRNA vaccine process inside a cell.",
+        SimpleNamespace(),
+        brief,
+        limit=2,
+    )
+
+    assert len(blocks) == 2
+    assert blocks[0].source_domain == "blocked.example.org"
+    assert blocks[1].source_domain == "stable.example.org"
+    assert len(grounding_agent.checked_titles) == 3
+
+
+@pytest.mark.asyncio
+async def test_resolve_planned_preflight_keeps_two_alternatives_for_understanding_retry(
+    monkeypatch,
+    caplog,
+):
+    """Resolved preflight slots should carry extra candidates into output retry."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    observed = {}
+    images = [
+        ImageBlock(
+            slot_id=f"visual-{index}",
+            topic="mRNA vaccine process",
+            purpose="diagram",
+            image_url=f"https://example{index}.org/mrna.png",
+            thumbnail_url=f"https://example{index}.org/mrna.png",
+            source_url=f"https://example{index}.org/source",
+            source_domain=f"example{index}.org",
+            caption="mRNA vaccine process diagram",
+            provider="tavily_images",
+            license="unknown",
+            safety_status="pass",
+            match_confidence=0.8,
+        )
+        for index in range(1, 4)
+    ]
+
+    async def fake_read_cache(*args, **kwargs):
+        return None
+
+    async def fake_resolve_images(**kwargs):
+        observed["selection_limit"] = kwargs["selection_limit"]
+        return images
+
+    monkeypatch.setattr(service, "_read_cache", fake_read_cache)
+    monkeypatch.setattr(service, "_resolve_images", fake_resolve_images)
+
+    brief = VisualBrief(
+        visual_type="process_diagram",
+        search_query="mRNA vaccine cell process diagram",
+        caption_goal="Show how mRNA vaccine instructions are translated in cells.",
+        reject_if=("decorative", "document_scan"),
+    )
+    blocks = await service._resolve_planned_image_blocks(
+        planned_slots=[
+            PlannedImageSlot(
+                slot_id="img_1",
+                query=brief.search_query,
+                caption_hint="",
+                anchor_after_paragraph=0,
+            )
+        ],
+        existing_web_results=None,
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        model_client=SimpleNamespace(),
+        visual_brief=brief,
+    )
+
+    block = blocks["img_1"]
+    assert observed["selection_limit"] == service.max_images + 1
+    assert block.image_url == "https://example1.org/mrna.png"
+    assert [alternative.image_url for alternative in block.alternative_blocks] == [
+        "https://example2.org/mrna.png",
+        "https://example3.org/mrna.png",
+    ]
+    assert "alternative_count=2" in caplog.text
+
+
 def test_image_block_debug_log_respects_config(monkeypatch, caplog):
     """Image block diagnostics should be controlled by config settings."""
 

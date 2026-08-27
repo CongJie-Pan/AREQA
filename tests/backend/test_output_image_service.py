@@ -33,6 +33,11 @@ class _FakeVisualAnswerService:
             )
         }
 
+    async def commit_positive_cache(self, block, *, conversation_id):
+        """Match VisualAnswerService's cache write contract without persistence."""
+        self.cached_block = block
+        self.cache_conversation_id = conversation_id
+
 
 class _FakeUnderstandingAgent:
     """Vision-understanding double that returns deterministic analysis."""

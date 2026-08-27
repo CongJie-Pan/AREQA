@@ -36,6 +36,7 @@ from services.conversation_stream_service import ConversationStreamService
 from services.post_turn_service import PostTurnService
 from services.query_policy_service import (
     AttachmentTask,
+    apply_pdf_auto_explain_guardrail,
     classify_response_policy_impl,
     count_pdf_attachments,
     default_response_policy,
@@ -606,6 +607,12 @@ class OrchestrationService:
                     run_context.run_id,
                 )
 
+        response_policy = apply_pdf_auto_explain_guardrail(
+            response_policy,
+            user_msg=last_user_msg,
+            has_pdf_attachment=has_pdf_attachment,
+        )
+        policy = response_policy.legacy_policy
         logger.info(
             "orchestration.response_policy_applied conversation_id=%s source=%s metadata=%s",
             conversation_id,

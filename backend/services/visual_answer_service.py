@@ -802,6 +802,7 @@ class VisualAnswerService:
                 allow_open_provider_fallback=(
                     visual_brief is None or settings.enable_visual_preflight_open_provider_fallback
                 ),
+                selection_limit=self.max_images + 1 if visual_brief is not None else self.max_images,
             )
             if not image_blocks:
                 await self._write_cache(
@@ -825,7 +826,7 @@ class VisualAnswerService:
                     cache_ttl_seconds=_POSITIVE_CACHE_TTL_SECONDS,
                     alternative_blocks=(),
                 )
-                for alternative in image_blocks[1 : max(1, self.max_images)]
+                for alternative in image_blocks[1 : self.max_images + 1]
             )
             block = replace(
                 block,
@@ -835,9 +836,10 @@ class VisualAnswerService:
             )
             resolved[slot.slot_id] = block
             logger.info(
-                "visual.slot_resolution_completed conversation_id=%s slot_id=%s source=provider",
+                "visual.slot_resolution_completed conversation_id=%s slot_id=%s source=provider alternative_count=%s",
                 conversation_id,
                 slot.slot_id,
+                len(alternative_blocks),
             )
         return resolved
 
@@ -932,6 +934,7 @@ class VisualAnswerService:
         visual_brief: VisualBrief | None = None,
         allow_og_fallback: bool = True,
         allow_open_provider_fallback: bool = True,
+        selection_limit: int | None = None,
     ) -> list[ImageBlock]:
         """Resolve provider images with caller-controlled fallback breadth.
 
@@ -942,6 +945,12 @@ class VisualAnswerService:
         Structured logs emitted from this path use stable provider identifiers,
         correlation ids, counts, and safe reason codes only; they must not log
         raw prompts, full URLs, credentials, or model output.
+
+        Args:
+            selection_limit: Optional internal candidate count. Preflight can
+                ask for more candidates than the visible image limit so output
+                understanding may retry if the primary image host blocks
+                backend-side download.
         """
 
         resolved_query = visual_query or self._visual_search_query(user_msg)[0]
@@ -955,6 +964,7 @@ class VisualAnswerService:
                 model_client=model_client,
                 visual_brief=visual_brief,
                 allow_open_provider_fallback=allow_open_provider_fallback,
+                selection_limit=selection_limit,
             )
 
         if settings.enable_perplexity_visual_search:
@@ -1133,6 +1143,7 @@ class VisualAnswerService:
         model_client: Any = None,
         visual_brief: VisualBrief,
         allow_open_provider_fallback: bool,
+        selection_limit: int | None = None,
     ) -> list[ImageBlock]:
         """Query preflight providers concurrently and select one grounded image.
 
@@ -1140,6 +1151,11 @@ class VisualAnswerService:
         more than exhausting every provider in sequence. Each provider keeps its
         own timeout and error logs, while this coordinator only logs safe
         provider counts and merged candidate counts.
+
+        Args:
+            selection_limit: Optional number of grounded image blocks to return
+                for downstream understanding retries. This is not the frontend
+                display limit.
         """
 
         provider_tasks: list[asyncio.Task[tuple[str, list[ImageCandidate]]]] = []
@@ -1264,7 +1280,7 @@ class VisualAnswerService:
                         visual_context,
                         model_client,
                         visual_brief,
-                        limit=self.max_images,
+                        limit=max(1, int(selection_limit or self.max_images)),
                     )
                     if blocks:
                         for pending_task in pending:
@@ -2085,7 +2101,10 @@ class VisualAnswerService:
 
         selected_blocks: list[ImageBlock] = []
         max_grounding_candidates = (
-            max(1, int(getattr(settings, "visual_preflight_grounding_max_candidates", 1)))
+            max(
+                limit + 1,
+                int(getattr(settings, "visual_preflight_grounding_max_candidates", 1)),
+            )
             if visual_brief is not None
             else max(1, int(getattr(settings, "visual_grounding_max_candidates", 3)))
         )

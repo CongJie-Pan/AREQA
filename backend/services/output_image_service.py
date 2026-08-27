@@ -231,19 +231,21 @@ class OutputImageService:
                     ),
                     timeout=remaining_seconds,
                 )
-                if image_input.source != "data_uri":
+                input_source = getattr(image_input, "source", "unknown")
+                if input_source != "data_uri":
+                    unavailable_reason = getattr(image_input, "reason", None) or "unknown"
                     logger.info(
                         "visual.output_understanding_input_unavailable conversation_id=%s slot_id=%s source_domain=%s input_source=%s reason=%s",
                         conversation_id,
                         block.slot_id,
                         self._safe_domain(image_url) or "unknown",
-                        image_input.source,
-                        image_input.reason or "unknown",
+                        input_source,
+                        unavailable_reason,
                     )
-                    if image_input.reason in {"HTTPStatusError:403", "HTTPStatusError:401"}:
+                    if unavailable_reason in {"HTTPStatusError:403", "HTTPStatusError:401"}:
                         VisualAnswerService.mark_inaccessible_image_domain(
                             image_url,
-                            reason=image_input.reason,
+                            reason=unavailable_reason,
                         )
                     continue
                 remaining_seconds = deadline - loop.time()
