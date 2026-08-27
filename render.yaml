@@ -5,7 +5,7 @@ services:
     env: python
     plan: free
     rootDir: backend
-    buildCommand: python -m pip install --upgrade pip uv && python -m uv pip install --system -r requirements-render.txt
+    buildCommand: python -m pip install --upgrade pip uv && python -m uv pip install -r requirements-render.txt
     startCommand: python -m uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
