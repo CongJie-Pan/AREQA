@@ -196,7 +196,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
                 {t('loginSignupAreqa')}
               </h2>
               <Image 
-                src="/icon/areqa_icon_v3.png" 
+                src="/icon/areqa_icon_v4_circle.png" 
                 alt="AREQA Logo" 
                 width={80}
                 height={80}
