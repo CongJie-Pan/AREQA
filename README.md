@@ -150,6 +150,7 @@ npm run test:smoke --prefix frontend
 - `VISUAL_PREFLIGHT_TIMEOUT_SECONDS`: 整體圖片 preflight timeout，預設 `6.0` 秒。
 - `VISUAL_GROUNDING_TIMEOUT_SECONDS` / `VISUAL_UNDERSTANDING_TIMEOUT_SECONDS`: 圖片 grounding 與理解模型 timeout，預設分別為 `1.5` / `4.0` 秒。
 - `ENABLE_VISUAL_UNDERSTANDING`: 啟用輸出圖片的理解驗證，預設開啟。
+- `ENABLE_PDF_PAPER_AUTO_EXPLAIN`: PDF attachment 搭配泛用「幫我看/解釋這篇」請求時，自動套用論文導讀結構，預設開啟。
 - `ENABLE_TAVILY_VISUAL_SEARCH` / `ENABLE_SERPAPI_VISUAL_SEARCH`: 控制備援圖片 provider，預設開啟。
 - `ENABLE_MAILBOX_FEATURE` / `ENABLE_COMPEER_FEATURE` / `ENABLE_COMPEER_TELEMETRY`: 控制瀏覽器可見的 Mailbox、ComPeer 與遙測功能；目前預設皆為關閉，後端 `/api/v1/features` 會以安全的布林值提供前端。
 - `ENABLE_MAILBOX_SENDING` / `ENABLE_COMPEER_AUTO_PROACTIVE`: 分別控制寄信與自動主動關懷；目前預設關閉。
@@ -572,7 +573,8 @@ flowchart TD
 - **HyDE 查詢分解**: 使用 LLM 將使用者問題拆解為 `exact_entity` / `abstract_concept` 兩類子查詢，提升混合檢索的召回率。
 - **Search Mode 與 Agent Routing**: `/api/v1/stream` 支援 `search_mode: auto | always | never`。`SearchPolicy` 與 `TutorAgent` 會在 rollout 設定允許時決定是否進行外部搜尋；`TurnPlanService` 再把 search decision 轉成前景執行計畫與模型呼叫預算。
 - **Tool Registry**: `ConversationStreamService` 透過 `ToolRegistry` 管理前景工具，目前包含 `web_search` 與 `schedule_letter`。外部工具呼叫會受到 `ToolBudgetTracker` 約束。
-- **附件 Grounding**: `/api/v1/stream` 可接收 JSON 或 `multipart/form-data`。附件由 `attachment_service.py` 驗證總大小、類型與內容，文字/圖片內容會作為 request-scoped grounding 注入當輪上下文，不寫入長期記憶。
+- **附件 Grounding**: `/api/v1/stream` 可接收 JSON 或 `multipart/form-data`。附件由 `attachment_service.py` 驗證總大小、類型與內容，文字/圖片/PDF 內容會作為 request-scoped grounding 注入當輪上下文，不寫入長期記憶。
+- **PDF 論文自動導讀**: `paper_attachment_policy_service.py` 會在 PDF attachment 搭配空白或泛用請求時，自動注入論文解說結構（研究動機與目標、研究方法、實驗過程與結果、研究結論、局限與延伸），但不覆蓋翻譯、指定頁面、只看某段等明確使用者任務。此功能由 `ENABLE_PDF_PAPER_AUTO_EXPLAIN` 控制。
 - **文獻渲染與防閃爍**: 前端以卡片網格展示引用文獻，支援 favicon、一鍵跳轉。使用 `remend` 自癒 Markdown 解析與 `useDeferredValue`，確保串流過程畫面不閃爍。行內引用為金色圓角標籤（Golden Citation Chips），點擊彈出對應 Modal。
 
 ### 2. 圖文回答與視覺 Grounding (Visual Answers)
@@ -745,7 +747,7 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
 
 `render.yaml` 定義兩個 web service：
 
-- `areqa-backend`: root directory `backend`，build 時先安裝 `uv`，再用 `uv pip install --system -r requirements-render.txt` 安裝後端依賴；以 `uvicorn main:app --host 0.0.0.0 --port $PORT` 啟動。
+- `areqa-backend`: root directory `backend`，build 時先安裝 `uv`，再用 `uv pip install -r requirements-render.txt` 安裝到 Render 啟動用的 Python environment；以 `uvicorn main:app --host 0.0.0.0 --port $PORT` 啟動。
 - `areqa-frontend`: root directory `frontend`，執行 `npm install && npm run build`，再以 `npm run start` 啟動。
 
 Render 後端需要在 Dashboard 設定 `HF_TOKEN`、`OPENROUTER_API_KEY`、`JWT_SECRET`、`REDIS_URL`、`DATABASE_URL`、Supabase 與 Perplexity 相關 secrets；前端使用 `NEXT_PUBLIC_BACKEND_URL` 指向後端服務。`render.yaml` 的 `MODEL_ZPD_QUERY`、ComPeer dev controls 與 Node/Python 版本是部署設定，不會覆蓋 Codespace 的本地開發版本。
