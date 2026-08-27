@@ -74,6 +74,9 @@ class PaperVisualPlanItem:
             introduced by the main answer model.
         visual_type: Bounded purpose label such as ``architecture`` or
             ``results_table``.
+        target_caption: Exact or near-exact figure/table caption from the page
+            map. The renderer uses this only for deterministic caption matching;
+            it is never treated as geometry.
         teaching_caption: Short user-facing explanation of why this visual helps
             understand the paper.
         rationale: Internal bounded reason for logs/tests and prompt inventory.
@@ -89,6 +92,7 @@ class PaperVisualPlanItem:
     teaching_caption: str
     rationale: str
     source: str = "model"
+    target_caption: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,8 +275,11 @@ class PaperVisualPlannerService:
             "paper's method, architecture, key mechanism, experimental results, or result tables. "
             "Return strict JSON only: {\"selected_visuals\":[{\"page_number\":number,"
             "\"answer_section\":string,\"visual_type\":\"architecture|method_diagram|results_chart|"
-            "results_table|mechanism|other\",\"teaching_caption\":string,\"rationale\":string}]}. "
+            "results_table|mechanism|other\",\"target_caption\":string,"
+            "\"teaching_caption\":string,\"rationale\":string}]}. "
             f"Select at most {max_visuals} visuals. Do not invent pages not present in the page map. "
+            "When the page map has a relevant Figure/Table caption, copy that caption into target_caption "
+            "so the renderer can crop the intended figure/table. Leave target_caption empty only if no caption fits. "
             "Keep teaching_caption under 180 characters and rationale under 160 characters.\n\n"
             f"Filename: {filename}\n"
             f"Page map:\n{page_map}"
@@ -339,11 +346,13 @@ class PaperVisualPlannerService:
             if page_number not in available_pages or page_number in seen_pages:
                 continue
             seen_pages.add(page_number)
+            page = next((candidate_page for candidate_page in pages if candidate_page.page_number == page_number), None)
             selected.append(
                 PaperVisualPlanItem(
                     page_number=page_number,
                     answer_section=self._bounded_text(item.get("answer_section"), "論文重點圖解", 80),
                     visual_type=self._bounded_visual_type(item.get("visual_type")),
+                    target_caption=self._bounded_target_caption(item.get("target_caption"), page),
                     teaching_caption=self._bounded_text(
                         item.get("teaching_caption"),
                         "這張圖是理解論文方法或結果的關鍵視覺線索。",
@@ -387,6 +396,7 @@ class PaperVisualPlannerService:
                     "page_number": page.page_number,
                     "answer_section": answer_section,
                     "visual_type": visual_type,
+                    "target_caption": self._best_fallback_caption(page, prefer_results=is_result),
                     "teaching_caption": teaching_caption,
                     "rationale": "fallback_ranked_by_caption_and_section_terms",
                 }
@@ -418,6 +428,39 @@ class PaperVisualPlannerService:
         visual_type = str(value or "").strip().lower()
         allowed = {"architecture", "method_diagram", "results_chart", "results_table", "mechanism", "other"}
         return visual_type if visual_type in allowed else "other"
+
+    @classmethod
+    def _bounded_target_caption(cls, value: Any, page: _PaperPageContext | None) -> str:
+        """Return a caption that is present or plausibly represented on the page."""
+
+        text = cls._bounded_text(value, "", 220)
+        if not text or page is None:
+            return ""
+        normalized_text = cls._normalize_caption_match_text(text)
+        for caption in page.captions:
+            normalized_caption = cls._normalize_caption_match_text(caption)
+            if normalized_text in normalized_caption or normalized_caption in normalized_text:
+                return caption[:220]
+        return text
+
+    @staticmethod
+    def _best_fallback_caption(page: _PaperPageContext, *, prefer_results: bool) -> str:
+        """Choose the most relevant detected caption for deterministic fallback crops."""
+
+        if not page.captions:
+            return ""
+        if prefer_results:
+            for caption in page.captions:
+                lowered = caption.lower()
+                if any(term in lowered for term in _RESULT_TERMS):
+                    return caption
+        return page.captions[0]
+
+    @staticmethod
+    def _normalize_caption_match_text(value: str) -> str:
+        """Normalize caption text for conservative planner-output validation."""
+
+        return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", value.lower()).strip()
 
     @staticmethod
     def _log_completed(

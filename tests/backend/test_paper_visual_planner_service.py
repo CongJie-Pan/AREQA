@@ -36,6 +36,21 @@ def make_two_page_paper_pdf() -> bytes:
     return pdf_bytes
 
 
+def make_multi_caption_page_pdf() -> bytes:
+    """Create one page with two captioned visuals to test target matching."""
+
+    document = fitz.open()
+    page = document.new_page(width=360, height=420)
+    page.draw_rect(fitz.Rect(40, 55, 300, 125), color=(0, 0, 0), width=1)
+    page.insert_text((42, 150), "Figure 1. Model architecture", fontsize=12)
+    page.draw_rect(fitz.Rect(40, 245, 300, 325), color=(0, 0, 0), width=1)
+    page.draw_line((60, 310), (280, 255), color=(0, 0, 1), width=2)
+    page.insert_text((42, 350), "Table 2. BLEU results on translation benchmarks", fontsize=12)
+    pdf_bytes = document.tobytes()
+    document.close()
+    return pdf_bytes
+
+
 class _FakePlannerClient:
     """Chat-completions fake that selects the results page."""
 
@@ -57,6 +72,7 @@ class _FakePlannerClient:
                             '{"selected_visuals":[{"page_number":2,'
                             '"answer_section":"實驗結果與關鍵數據",'
                             '"visual_type":"results_table",'
+                            '"target_caption":"Table 2. BLEU results on translation benchmarks",'
                             '"teaching_caption":"這張表呈現 BLEU 結果，是理解論文實驗主張的關鍵。",'
                             '"rationale":"results_table_carries_main_evidence"}]}'
                         )
@@ -85,6 +101,7 @@ async def test_paper_visual_planner_model_selects_results_page(caplog):
     assert len(plan) == 1
     assert plan[0].page_number == 2
     assert plan[0].visual_type == "results_table"
+    assert plan[0].target_caption.startswith("Table 2")
     assert plan[0].source == "model"
     assert "BLEU" in plan[0].teaching_caption
     assert client.calls[0]["model"]
@@ -112,6 +129,7 @@ async def test_paper_visual_planner_fallback_prioritizes_results_page(caplog):
     assert plan[0].page_number == 2
     assert plan[0].source == "fallback"
     assert plan[0].visual_type in {"results_chart", "results_table"}
+    assert plan[0].target_caption.startswith("Table 2")
     assert "source=fallback" in caplog.text
 
 
@@ -124,6 +142,7 @@ def test_pdf_visual_extraction_respects_planner_page_order():
             page_number=2,
             answer_section="實驗結果與關鍵數據",
             visual_type="results_table",
+            target_caption="Table 2. BLEU results on translation benchmarks",
             teaching_caption="這張表呈現 BLEU 結果，是理解論文實驗主張的關鍵。",
             rationale="results_table_carries_main_evidence",
         ),
@@ -139,7 +158,64 @@ def test_pdf_visual_extraction_respects_planner_page_order():
     assert len(candidates) == 1
     assert candidates[0].page_number == 2
     assert candidates[0].selection_source == "planner"
+    assert candidates[0].crop_reason == "target_caption_visual_cluster"
     assert candidates[0].visual_type == "results_table"
+    assert candidates[0].target_caption.startswith("Table 2")
     assert "BLEU" in candidates[0].teaching_caption
     assert "實驗結果" in candidates[0].to_image_block().explanatory_caption
     assert candidates[0].teaching_caption in candidates[0].to_image_block().explanatory_caption
+
+
+def test_pdf_visual_extraction_crops_planner_target_caption_on_multi_caption_page():
+    """Renderer should prefer the planner-selected caption on pages with multiple visuals."""
+
+    service = PdfVisualExtractionService(max_candidates=1, max_pages_scanned=1, render_zoom=1.0)
+    plan = (
+        PaperVisualPlanItem(
+            page_number=1,
+            answer_section="實驗結果與關鍵數據",
+            visual_type="results_table",
+            target_caption="Table 2. BLEU results on translation benchmarks",
+            teaching_caption="這張表呈現 BLEU 結果，是理解論文實驗主張的關鍵。",
+            rationale="target_caption_disambiguates_same_page_visuals",
+        ),
+    )
+
+    candidates = service.extract_candidates(
+        pdf_bytes=make_multi_caption_page_pdf(),
+        filename="paper.pdf",
+        conversation_id="target-caption-conversation",
+        visual_plan=plan,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].crop_reason == "target_caption_visual_cluster"
+    assert candidates[0].target_caption.startswith("Table 2")
+    assert candidates[0].height < 180
+
+
+def test_pdf_visual_extraction_falls_back_when_target_caption_does_not_match():
+    """Invalid model captions must not prevent deterministic crop fallback."""
+
+    service = PdfVisualExtractionService(max_candidates=1, max_pages_scanned=1, render_zoom=1.0)
+    plan = (
+        PaperVisualPlanItem(
+            page_number=1,
+            answer_section="方法與模型架構",
+            visual_type="architecture",
+            target_caption="Nonexistent Figure 99. Hallucinated caption",
+            teaching_caption="這張圖呈現模型架構。",
+            rationale="bad_model_caption",
+        ),
+    )
+
+    candidates = service.extract_candidates(
+        pdf_bytes=make_multi_caption_page_pdf(),
+        filename="paper.pdf",
+        conversation_id="target-caption-fallback",
+        visual_plan=plan,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].crop_reason == "caption_visual_cluster"
+    assert candidates[0].target_caption.startswith("Nonexistent Figure 99")

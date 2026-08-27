@@ -100,6 +100,7 @@ async def test_attachment_visual_extraction_uses_paper_visual_planner_for_auto_e
             page_number=2,
             answer_section="實驗結果與關鍵數據",
             visual_type="results_table",
+            target_caption="Table 2. BLEU results",
             teaching_caption="這張表呈現 BLEU 結果，是理解論文實驗主張的關鍵。",
             rationale="results_table_carries_main_evidence",
         ),

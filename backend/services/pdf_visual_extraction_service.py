@@ -67,6 +67,8 @@ class PdfVisualCandidate:
         answer_section: Paper-explanation section where the main answer should
             introduce this visual.
         visual_type: Planner-selected visual purpose.
+        target_caption: Planner-selected figure/table caption text used only for
+            deterministic crop provenance.
         teaching_caption: Planner-authored explanation that may be shown to the
             user and passed to the main answer model.
         planner_rationale: Safe bounded reason for selection.
@@ -92,6 +94,7 @@ class PdfVisualCandidate:
     crop_reason: str = "full_page_fallback"
     answer_section: str = ""
     visual_type: str = "chart"
+    target_caption: str = ""
     teaching_caption: str = ""
     planner_rationale: str = ""
     selection_source: str = "heuristic"
@@ -380,7 +383,8 @@ class PdfVisualExtractionService:
         import fitz  # type: ignore[import-not-found]
 
         page = document.load_page(page_index)
-        crop_rect, crop_reason = self._find_figure_crop_rect(page)
+        target_caption = self._bounded_plan_text(getattr(plan_item, "target_caption", ""), 220)
+        crop_rect, crop_reason = self._find_figure_crop_rect(page, target_caption=target_caption)
         clip = crop_rect if crop_rect is not None else None
         pixmap = page.get_pixmap(
             matrix=fitz.Matrix(self.render_zoom, self.render_zoom),
@@ -408,10 +412,10 @@ class PdfVisualExtractionService:
         encoded = base64.b64encode(png_bytes).decode("ascii")
         digest = hashlib.sha256(png_bytes).hexdigest()
         page_number = page_index + 1
-        teaching_caption = self._bounded_plan_text(getattr(plan_item, "teaching_caption", ""), 220)
         answer_section = self._bounded_plan_text(getattr(plan_item, "answer_section", ""), 100)
         planner_rationale = self._bounded_plan_text(getattr(plan_item, "rationale", ""), 180)
         visual_type = self._bounded_visual_type(getattr(plan_item, "visual_type", "chart"))
+        teaching_caption = self._bounded_plan_text(getattr(plan_item, "teaching_caption", ""), 220)
         return PdfVisualCandidate(
             slot_id=f"pdf_img_{candidate_index}",
             filename=filename,
@@ -426,6 +430,7 @@ class PdfVisualExtractionService:
             crop_reason=crop_reason,
             answer_section=answer_section,
             visual_type=visual_type,
+            target_caption=target_caption,
             teaching_caption=teaching_caption,
             planner_rationale=planner_rationale,
             selection_source=selection_source,
@@ -444,12 +449,16 @@ class PdfVisualExtractionService:
         visual_type = re.sub(r"[^a-zA-Z0-9_-]", "", str(value or "").strip().lower())[:40]
         return visual_type or "chart"
 
-    def _find_figure_crop_rect(self, page: Any) -> tuple[Any | None, str]:
+    def _find_figure_crop_rect(self, page: Any, *, target_caption: str = "") -> tuple[Any | None, str]:
         """Find a caption-adjacent figure crop rectangle for one PDF page.
 
         Args:
             page: PyMuPDF page object. The type stays ``Any`` because PyMuPDF is
                 imported lazily and optional in test environments.
+            target_caption: Optional planner-selected caption text. When it
+                matches a caption block on the page, only that caption's visual
+                cluster is considered first. This preserves deterministic
+                renderer ownership of crop geometry.
 
         Returns:
             ``(rect, reason)`` when the page contains a safe figure crop, or
@@ -467,7 +476,13 @@ class PdfVisualExtractionService:
         if not visual_rects:
             return None, "no_visual_rects"
 
-        for caption_rect, _caption_text in self._caption_blocks(page):
+        caption_blocks = self._caption_blocks(page)
+        ordered_caption_blocks, matched_target = self._ordered_caption_blocks(
+            caption_blocks,
+            target_caption=target_caption,
+        )
+
+        for caption_rect, _caption_text in ordered_caption_blocks:
             above = [
                 rect
                 for rect in visual_rects
@@ -484,12 +499,94 @@ class PdfVisualExtractionService:
             nearby = above or below
             if not nearby:
                 continue
+            if matched_target and _caption_text == matched_target:
+                nearby = self._nearest_caption_visuals(nearby, caption_rect)
             crop_rect = self._union_rects([*nearby, caption_rect])
             crop_rect = self._pad_rect(crop_rect, page_rect, PDF_VISUAL_CROP_PADDING_POINTS)
             if self._is_usable_crop_rect(crop_rect, page_rect):
+                if matched_target and _caption_text == matched_target:
+                    return crop_rect, "target_caption_visual_cluster"
                 return crop_rect, "caption_visual_cluster"
 
         return None, "no_caption_visual_cluster"
+
+    @staticmethod
+    def _nearest_caption_visuals(visual_rects: list[Any], caption_rect: Any) -> list[Any]:
+        """Return the closest visual rectangles for a planner-targeted caption.
+
+        Planner-targeted crops should disambiguate pages with multiple figures
+        or tables. The legacy crop path unions every nearby rectangle, but for a
+        matched target caption the nearest visual is the safest deterministic
+        anchor because including farther rectangles can accidentally merge
+        unrelated figures on the same page.
+        """
+
+        if len(visual_rects) <= 1:
+            return visual_rects
+
+        def vertical_gap(rect: Any) -> float:
+            if rect.y1 <= caption_rect.y0:
+                return max(0.0, caption_rect.y0 - rect.y1)
+            if rect.y0 >= caption_rect.y1:
+                return max(0.0, rect.y0 - caption_rect.y1)
+            return 0.0
+
+        nearest = min(visual_rects, key=vertical_gap)
+        nearest_gap = vertical_gap(nearest)
+        same_cluster = [
+            rect
+            for rect in visual_rects
+            if abs(vertical_gap(rect) - nearest_gap) <= 12.0
+        ]
+        return same_cluster or [nearest]
+
+    @classmethod
+    def _ordered_caption_blocks(
+        cls,
+        caption_blocks: list[tuple[Any, str]],
+        *,
+        target_caption: str,
+    ) -> tuple[list[tuple[Any, str]], str]:
+        """Return caption blocks with the target caption first when matched."""
+
+        target = cls._normalize_caption_match_text(target_caption)
+        if not target:
+            return caption_blocks, ""
+
+        best_index = -1
+        best_score = 0.0
+        for index, (_rect, caption_text) in enumerate(caption_blocks):
+            score = cls._caption_match_score(target, cls._normalize_caption_match_text(caption_text))
+            if score > best_score:
+                best_index = index
+                best_score = score
+
+        if best_index < 0 or best_score < 0.55:
+            return caption_blocks, ""
+
+        matched = caption_blocks[best_index]
+        reordered = [matched, *caption_blocks[:best_index], *caption_blocks[best_index + 1 :]]
+        return reordered, matched[1]
+
+    @staticmethod
+    def _caption_match_score(target: str, candidate: str) -> float:
+        """Return conservative token-overlap score for caption targeting."""
+
+        if not target or not candidate:
+            return 0.0
+        if target in candidate or candidate in target:
+            return 1.0
+        target_tokens = set(target.split())
+        candidate_tokens = set(candidate.split())
+        if not target_tokens or not candidate_tokens:
+            return 0.0
+        return len(target_tokens & candidate_tokens) / max(len(target_tokens), len(candidate_tokens))
+
+    @staticmethod
+    def _normalize_caption_match_text(value: str) -> str:
+        """Normalize caption text for deterministic target matching."""
+
+        return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", str(value or "").lower()).strip()
 
     def _caption_blocks(self, page: Any) -> list[tuple[Any, str]]:
         """Return text blocks that look like figure or table captions."""
