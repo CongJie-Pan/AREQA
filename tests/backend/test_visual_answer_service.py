@@ -12,6 +12,7 @@ from backend.services.query_policy_service import (
     ResponseStructure,
     ResponseTone,
     TaskIntent,
+    VisualReason,
     VisualSupport,
 )
 from backend.services.visual_answer_service import (
@@ -96,6 +97,11 @@ class _SequentialPageClient:
 def _policy(task_intent=TaskIntent.GENERAL_QA, visual_support=VisualSupport.NONE):
     """Build a minimal response policy for visual service tests."""
 
+    visual_reason = (
+        VisualReason.KNOWLEDGE_EXPLANATION
+        if visual_support is not VisualSupport.NONE
+        else VisualReason.NOT_NEEDED
+    )
     return ResponsePolicy(
         task_intent=task_intent,
         answer_depth=AnswerDepth.SCAFFOLDED,
@@ -103,6 +109,7 @@ def _policy(task_intent=TaskIntent.GENERAL_QA, visual_support=VisualSupport.NONE
         structure=ResponseStructure.STEP_BY_STEP,
         followup_mode=FollowupMode.OPTIONAL,
         visual_support=visual_support,
+        visual_reason=visual_reason,
         legacy_policy="NORMAL",
     )
 
@@ -218,6 +225,26 @@ def test_should_attempt_preflight_when_policy_agent_allows_visual_support():
         "第二次世界大戰歐洲戰場",
         turn_plan,
     )
+
+
+def test_preflight_decision_exposes_safe_log_metadata():
+    """The visual gate should expose reason metadata without raw user text."""
+
+    service = VisualAnswerService()
+
+    decision = service.preflight_decision(
+        _policy(TaskIntent.GENERAL_QA, visual_support=VisualSupport.OPTIONAL),
+        "請解釋這個學習概念",
+        None,
+    )
+
+    assert decision.allowed is True
+    assert decision.trigger == "response_policy"
+    assert decision.visual_support == "OPTIONAL"
+    assert decision.visual_reason == "KNOWLEDGE_EXPLANATION"
+    assert decision.explicit_visual_request is False
+    assert decision.known_visual_affordance is False
+    assert decision.max_images == service.max_images
 
 
 def test_should_not_attempt_preflight_for_learning_route_without_visual_context():

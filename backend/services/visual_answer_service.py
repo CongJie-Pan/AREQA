@@ -137,6 +137,35 @@ _VISUAL_QUERY_REWRITE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 
 
 @dataclass(frozen=True, slots=True)
+class VisualPreflightDecision:
+    """Privacy-safe decision metadata for visual preflight cost gating.
+
+    Args:
+        allowed: Whether provider lookup or PDF rendering may run this turn.
+        trigger: Stable reason bucket that made the gate allow or deny work.
+        visual_support: EDF response-policy visual support enum value.
+        visual_reason: EDF response-policy visual reason enum value.
+        explicit_visual_request: Whether the user explicitly asked for visual
+            output using a bounded keyword allowlist.
+        known_visual_affordance: Whether a deterministic educational affordance
+            matched a graph-heavy concept.
+        max_images: Effective service image cap.
+
+    Side Effects:
+        None. Callers own structured logging so they can add request-scoped
+        correlation fields without passing raw user text into log metadata.
+    """
+
+    allowed: bool
+    trigger: str
+    visual_support: str
+    visual_reason: str
+    explicit_visual_request: bool
+    known_visual_affordance: bool
+    max_images: int
+
+
+@dataclass(frozen=True, slots=True)
 class ImageBlock:
     """Verified image display metadata for the frontend.
 
@@ -345,6 +374,67 @@ class VisualAnswerService:
 
         return self._should_attempt_preflight(response_policy, user_msg, None)
 
+    def preflight_decision(
+        self,
+        response_policy: ResponsePolicy,
+        user_msg: str,
+        turn_plan: Any = None,
+    ) -> VisualPreflightDecision:
+        """Return privacy-safe metadata for the visual preflight gate.
+
+        Args:
+            response_policy: EDF policy selected for the current turn.
+            user_msg: Latest user message used only for bounded visual intent
+                checks; it must not be logged by callers.
+            turn_plan: Optional deterministic turn plan retained for signature
+                compatibility with orchestration paths.
+
+        Returns:
+            A ``VisualPreflightDecision`` containing only enum values, booleans,
+            counters, and reason buckets suitable for backend logs.
+
+        Side Effects:
+            None. The stable log event emitted by orchestration is
+            ``visual.preflight_policy_gate`` with request correlation metadata.
+        """
+
+        del turn_plan
+        normalized = user_msg.lower()
+        explicit_visual_request = any(keyword in normalized for keyword in _VISUAL_KEYWORDS)
+        affordance = match_visual_affordance(user_msg)
+        known_visual_affordance = bool(affordance and affordance.preflight_trigger)
+        agent_allows_visuals = response_policy.visual_support in {
+            VisualSupport.OPTIONAL,
+            VisualSupport.REQUIRED,
+        }
+        allowed = bool(
+            self.max_images > 0
+            and (
+                explicit_visual_request
+                or known_visual_affordance
+                or agent_allows_visuals
+            )
+        )
+        if self.max_images <= 0:
+            trigger = "disabled"
+        elif explicit_visual_request:
+            trigger = "explicit_visual_request"
+        elif known_visual_affordance:
+            trigger = "known_visual_affordance"
+        elif agent_allows_visuals:
+            trigger = "response_policy"
+        else:
+            trigger = "policy_gate"
+        return VisualPreflightDecision(
+            allowed=allowed,
+            trigger=trigger,
+            visual_support=response_policy.visual_support.value,
+            visual_reason=response_policy.visual_reason.value,
+            explicit_visual_request=explicit_visual_request,
+            known_visual_affordance=known_visual_affordance,
+            max_images=self.max_images,
+        )
+
     def _should_attempt_preflight(
         self,
         response_policy: ResponsePolicy,
@@ -361,22 +451,7 @@ class VisualAnswerService:
         provider/PDF-rendering cost for ordinary responses.
         """
 
-        normalized = user_msg.lower()
-        explicit_visual_request = any(keyword in normalized for keyword in _VISUAL_KEYWORDS)
-        affordance = match_visual_affordance(user_msg)
-        known_visual_affordance = bool(affordance and affordance.preflight_trigger)
-        agent_allows_visuals = response_policy.visual_support in {
-            VisualSupport.OPTIONAL,
-            VisualSupport.REQUIRED,
-        }
-        return bool(
-            self.max_images > 0
-            and (
-                explicit_visual_request
-                or known_visual_affordance
-                or agent_allows_visuals
-            )
-        )
+        return self.preflight_decision(response_policy, user_msg, turn_plan).allowed
 
     async def build_answer_blocks(
         self,

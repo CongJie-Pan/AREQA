@@ -30,7 +30,7 @@
 - 安裝 Antigravity CLI (`agy`)
 - 安裝 Drift (`drift`, `driftdetect-mcp`)
 - 安裝 Codex CLI (`codex`)
-- 建立 `backend/.venv` 並安裝 `backend/requirements.txt`
+- 建立 `backend/.venv`，優先用 `uv pip install` 安裝 `backend/requirements.txt`（無 `uv` 時才 fallback 到 pip）
 - 安裝 `frontend/node_modules`
 - 在 shell 啟動時自動啟用 `backend/.venv`
 
@@ -73,9 +73,12 @@ npm ci --prefix frontend
 
 ```bash
 python3.11 -m venv backend/.venv
-./backend/.venv/bin/pip install --upgrade pip setuptools wheel
-./backend/.venv/bin/pip install -r backend/requirements.txt
+python3.11 -m pip install --user --upgrade uv
+uv pip install --python backend/.venv/bin/python --upgrade pip setuptools wheel
+uv pip install --python backend/.venv/bin/python -r backend/requirements.txt
 ```
+
+若部署環境沒有 `uv`，仍可使用 `./backend/.venv/bin/pip install -r backend/requirements.txt`；requirements 檔仍是後端依賴來源。
 
 ### 常用指令
 
@@ -714,7 +717,7 @@ Conversation Store → /api/title
 
 ### 2. 後端運行步驟 (Codespace Python 3.11)
 
-後端使用 FastAPI 提供非同步 SSE 串流服務，並使用 Redis / PostgreSQL 作為記憶、信箱與快取資料層。`backend/requirements.txt` 已包含後端執行與測試所需的主要依賴。
+後端使用 FastAPI 提供非同步 SSE 串流服務，並使用 Redis / PostgreSQL 作為記憶、信箱與快取資料層。`backend/requirements.txt` 已包含後端執行與測試所需的主要依賴；Codespace 與 Render 會優先用 `uv pip install` 加速 Python dependency 安裝。
 
 在 Codespace 中，`setup.sh` 會建立 `backend/.venv`；只啟動後端時可執行：
 
@@ -742,7 +745,7 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
 
 `render.yaml` 定義兩個 web service：
 
-- `areqa-backend`: root directory `backend`，使用 `requirements-render.txt`，以 `uvicorn main:app --host 0.0.0.0 --port $PORT` 啟動。
+- `areqa-backend`: root directory `backend`，build 時先安裝 `uv`，再用 `uv pip install --system -r requirements-render.txt` 安裝後端依賴；以 `uvicorn main:app --host 0.0.0.0 --port $PORT` 啟動。
 - `areqa-frontend`: root directory `frontend`，執行 `npm install && npm run build`，再以 `npm run start` 啟動。
 
 Render 後端需要在 Dashboard 設定 `HF_TOKEN`、`OPENROUTER_API_KEY`、`JWT_SECRET`、`REDIS_URL`、`DATABASE_URL`、Supabase 與 Perplexity 相關 secrets；前端使用 `NEXT_PUBLIC_BACKEND_URL` 指向後端服務。`render.yaml` 的 `MODEL_ZPD_QUERY`、ComPeer dev controls 與 Node/Python 版本是部署設定，不會覆蓋 Codespace 的本地開發版本。

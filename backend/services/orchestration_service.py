@@ -614,11 +614,24 @@ class OrchestrationService:
         preverified_image_blocks = None
         if settings.enable_visual_preflight:
             trace.mark("visual_preflight_started")
-            visual_preflight_allowed = self.visual_answer_service._should_attempt_preflight(
+            visual_preflight_decision = self.visual_answer_service.preflight_decision(
                 response_policy,
                 last_user_msg,
                 turn_plan if turn_plan_enabled else None,
             )
+            logger.info(
+                "visual.preflight_policy_gate conversation_id=%s allowed=%s trigger=%s visual_support=%s visual_reason=%s explicit_visual=%s known_affordance=%s max_images=%s has_attachment_visual_sources=%s",
+                conversation_id,
+                visual_preflight_decision.allowed,
+                visual_preflight_decision.trigger,
+                visual_preflight_decision.visual_support,
+                visual_preflight_decision.visual_reason,
+                visual_preflight_decision.explicit_visual_request,
+                visual_preflight_decision.known_visual_affordance,
+                visual_preflight_decision.max_images,
+                bool(attachment_visual_sources),
+            )
+            visual_preflight_allowed = visual_preflight_decision.allowed
             if attachment_visual_sources and visual_preflight_allowed:
                 attachment_visual_candidates = await self._extract_attachment_visual_candidates(
                     attachment_visual_sources,
