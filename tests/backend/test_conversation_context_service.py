@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from backend.services.conversation_context_service import ConversationContextService
+from backend.services.conversation_context_service import ConversationContextService, _example_instruction
 from backend.services.parts_context_service import PartsContext
 from backend.services.query_policy_service import (
     AnswerDepth,
@@ -111,6 +111,25 @@ async def test_context_prompt_resolves_answer_language(interface_language, user_
     system_prompt = result.messages[0]["content"]
     assert f"本回合正式回答必須使用{expected_language}" in system_prompt
     assert "請一律使用繁體中文" not in system_prompt
+
+
+@pytest.mark.parametrize(
+    ("interface_language", "user_message", "expected_instruction"),
+    [
+        ("zh-TW", "請解釋什麼是貝氏定理", "【案例說明要求】"),
+        ("zh-CN", "请解释什么是贝叶斯定理", "【案例说明要求】"),
+        ("en", "Explain Bayes theorem", "【Example requirement】"),
+    ],
+)
+def test_example_instruction_matches_resolved_answer_language(
+    interface_language,
+    user_message,
+    expected_instruction,
+):
+    instruction = _example_instruction(interface_language, user_message)
+
+    assert expected_instruction in instruction
+    assert "至少" in instruction or "at least one" in instruction
 
 
 @pytest.mark.asyncio

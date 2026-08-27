@@ -143,6 +143,30 @@ def _answer_language_instruction(interface_language: str, latest_user_message: s
     )
 
 
+def _example_instruction(interface_language: str, latest_user_message: str = "") -> str:
+    """Return a language-matched rule for grounding answers with examples."""
+    answer_language = resolve_answer_language(interface_language, latest_user_message)
+    if answer_language == "English":
+        return (
+            "\n【Example requirement】When the user asks about a concept, method, "
+            "comparison, process, cause, or abstract idea, include at least one "
+            "concrete example that directly illustrates the answer. Keep the "
+            "example concise and relevant; do not force an example for simple "
+            "factual, translation, formatting, or purely transactional requests."
+        )
+    if answer_language == "簡體中文":
+        return (
+            "\n【案例说明要求】当使用者询问概念、方法、比较、流程、原因或抽象想法时，"
+            "请至少加入一个能直接说明答案的具体案例。案例要简洁、贴近问题；"
+            "若问题只是简单事实、翻译、格式调整或纯操作请求，不要强行加入案例。"
+        )
+    return (
+        "\n【案例說明要求】當使用者詢問概念、方法、比較、流程、原因或抽象想法時，"
+        "請至少加入一個能直接說明答案的具體案例。案例要簡潔、貼近問題；"
+        "若問題只是簡單事實、翻譯、格式調整或純操作請求，不要強行加入案例。"
+    )
+
+
 @dataclass(frozen=True)
 class ConversationContext:
     """Return finalized model messages and verified learner-state metadata."""
@@ -253,6 +277,7 @@ class ConversationContextService:
             system_prompt += "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
 
         system_prompt += _answer_language_instruction(interface_language, last_user_msg)
+        system_prompt += _example_instruction(interface_language, last_user_msg)
         system_prompt += "\n【工具使用規則】你必須先完整回答使用者的問題，再選擇性提出已授權的工具請求。嚴禁只呼叫工具而不輸出任何文字回應。"
         system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
         system_prompt += (
