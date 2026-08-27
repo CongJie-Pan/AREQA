@@ -15,7 +15,7 @@ import hashlib
 import io
 import logging
 import re
-from typing import Any
+from typing import Any, Iterable
 
 from PIL import Image, UnidentifiedImageError
 
@@ -33,6 +33,17 @@ DEFAULT_MAX_PDF_VISUAL_PAGES_SCANNED = 8
 PDF_VISUAL_RENDER_ZOOM = 1.6
 PDF_VISUAL_MIN_PAGE_SCORE = 1
 PDF_VISUAL_MAX_DATA_URI_BYTES = min(MAX_ATTACHMENT_BYTES, 2 * 1024 * 1024)
+PDF_VISUAL_CROP_PADDING_POINTS = 12.0
+PDF_VISUAL_MAX_CAPTION_GAP_POINTS = 260.0
+PDF_VISUAL_MIN_CROP_AREA_RATIO = 0.02
+PDF_VISUAL_MAX_CROP_AREA_RATIO = 0.7
+PDF_VISUAL_MIN_VISUAL_RECT_AREA = 24.0
+PDF_VISUAL_MIN_THIN_RECT_POINTS = 2.0
+
+_PDF_FIGURE_CAPTION_PATTERN = re.compile(
+    r"\b(?:fig(?:ure)?\.?|table)\s*\d+[A-Za-z]?\b|(?:圖|表)\s*\d+",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +61,9 @@ class PdfVisualCandidate:
         visual_score: Cheap page-level score from PDF drawings/images/caption
             hints. Higher values are selected first.
         sha256: SHA-256 of the rendered PNG bytes for deduplication and logs.
+        crop_applied: Whether the image is a clipped figure region instead of
+            a full-page thumbnail.
+        crop_reason: Safe reason code explaining the crop decision.
 
     Returns:
         Immutable request-scoped candidate metadata.
@@ -67,6 +81,8 @@ class PdfVisualCandidate:
     caption_hint: str
     visual_score: int
     sha256: str
+    crop_applied: bool = False
+    crop_reason: str = "full_page_fallback"
 
     def to_image_block(self) -> ImageBlock:
         """Convert the candidate into the existing frontend image block shape.
@@ -208,6 +224,7 @@ class PdfVisualExtractionService:
                     caption_hint=caption_hint,
                     filename=filename,
                     candidate_index=len(candidates) + 1,
+                    conversation_id=conversation_id,
                 )
                 if candidate:
                     candidates.append(candidate)
@@ -274,13 +291,41 @@ class PdfVisualExtractionService:
         caption_hint: str,
         filename: str,
         candidate_index: int,
+        conversation_id: str,
     ) -> PdfVisualCandidate | None:
-        """Render one selected PDF page to a bounded PNG data URI."""
+        """Render one selected PDF page or figure crop to a bounded PNG data URI.
+
+        Args:
+            document: Open PyMuPDF document.
+            page_index: Zero-based page index selected by the cheap visual
+                scorer.
+            visual_score: Page-level visual score used for candidate ranking.
+            caption_hint: Safe short display caption derived from page text.
+            filename: Sanitized upload filename for display metadata.
+            candidate_index: Stable one-based visual candidate index.
+            conversation_id: Correlation id for privacy-safe structured logs.
+
+        Returns:
+            A request-scoped visual candidate. When caption-adjacent visual
+            geometry is detected, the PNG is clipped to the figure plus caption;
+            otherwise it preserves the previous full-page thumbnail behavior.
+
+        Side Effects:
+            Emits ``pdf_visual.crop_selected`` with correlation-safe page,
+            dimensions, and reason-code metadata. It never logs raw PDF text,
+            rendered bytes, prompts, credentials, or user content.
+        """
 
         import fitz  # type: ignore[import-not-found]
 
         page = document.load_page(page_index)
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(self.render_zoom, self.render_zoom), alpha=False)
+        crop_rect, crop_reason = self._find_figure_crop_rect(page)
+        clip = crop_rect if crop_rect is not None else None
+        pixmap = page.get_pixmap(
+            matrix=fitz.Matrix(self.render_zoom, self.render_zoom),
+            clip=clip,
+            alpha=False,
+        )
         png_bytes = pixmap.tobytes("png")
         if not self._is_valid_png(png_bytes):
             return None
@@ -289,6 +334,16 @@ class PdfVisualExtractionService:
         if len(png_bytes) > PDF_VISUAL_MAX_DATA_URI_BYTES:
             return None
 
+        width, height = self._png_dimensions(png_bytes)
+        logger.info(
+            "pdf_visual.crop_selected conversation_id=%s page_number=%s crop_applied=%s reason=%s width=%s height=%s",
+            conversation_id,
+            page_index + 1,
+            crop_rect is not None,
+            crop_reason,
+            width,
+            height,
+        )
         encoded = base64.b64encode(png_bytes).decode("ascii")
         digest = hashlib.sha256(png_bytes).hexdigest()
         page_number = page_index + 1
@@ -297,12 +352,247 @@ class PdfVisualExtractionService:
             filename=filename,
             page_number=page_number,
             image_data_uri=f"data:image/png;base64,{encoded}",
-            width=pixmap.width,
-            height=pixmap.height,
+            width=width,
+            height=height,
             caption_hint=caption_hint,
             visual_score=visual_score,
             sha256=digest,
+            crop_applied=crop_rect is not None,
+            crop_reason=crop_reason,
         )
+
+    def _find_figure_crop_rect(self, page: Any) -> tuple[Any | None, str]:
+        """Find a caption-adjacent figure crop rectangle for one PDF page.
+
+        Args:
+            page: PyMuPDF page object. The type stays ``Any`` because PyMuPDF is
+                imported lazily and optional in test environments.
+
+        Returns:
+            ``(rect, reason)`` when the page contains a safe figure crop, or
+            ``(None, reason)`` when callers should render the full page.
+
+        Side Effects:
+            None. This method reads page geometry only and does not log raw page
+            text.
+        """
+
+        import fitz  # type: ignore[import-not-found]
+
+        page_rect = fitz.Rect(page.rect)
+        visual_rects = self._visual_rects(page)
+        if not visual_rects:
+            return None, "no_visual_rects"
+
+        for caption_rect, _caption_text in self._caption_blocks(page):
+            above = [
+                rect
+                for rect in visual_rects
+                if self._is_caption_adjacent_visual(rect, caption_rect, side="above")
+            ]
+            below = [
+                rect
+                for rect in visual_rects
+                if self._is_caption_adjacent_visual(rect, caption_rect, side="below")
+            ]
+            # Figure captions in papers most often sit below the visual. If a
+            # caption has a usable visual cluster above it, mixing in lower
+            # formulas or later-page diagrams produces oversized crops.
+            nearby = above or below
+            if not nearby:
+                continue
+            crop_rect = self._union_rects([*nearby, caption_rect])
+            crop_rect = self._pad_rect(crop_rect, page_rect, PDF_VISUAL_CROP_PADDING_POINTS)
+            if self._is_usable_crop_rect(crop_rect, page_rect):
+                return crop_rect, "caption_visual_cluster"
+
+        return None, "no_caption_visual_cluster"
+
+    def _caption_blocks(self, page: Any) -> list[tuple[Any, str]]:
+        """Return text blocks that look like figure or table captions."""
+
+        import fitz  # type: ignore[import-not-found]
+
+        captions: list[tuple[Any, str]] = []
+        try:
+            blocks = page.get_text("dict").get("blocks", [])
+        except Exception:
+            return captions
+        for block in blocks:
+            if block.get("type") != 0:
+                continue
+            text = self._block_text(block)
+            if not text or not _PDF_FIGURE_CAPTION_PATTERN.search(text):
+                continue
+            captions.append((fitz.Rect(block.get("bbox")), text[:220]))
+        return captions
+
+    @staticmethod
+    def _block_text(block: dict[str, Any]) -> str:
+        """Collapse one PyMuPDF text block into bounded plain text."""
+
+        return re.sub(
+            r"\s+",
+            " ",
+            " ".join(
+                str(span.get("text") or "")
+                for line in block.get("lines", [])
+                for span in line.get("spans", [])
+            ),
+        ).strip()[:500]
+
+    def _visual_rects(self, page: Any) -> list[Any]:
+        """Return image and vector drawing rectangles suitable for crop search."""
+
+        rects: list[Any] = []
+        rects.extend(self._image_rects(page))
+        rects.extend(self._drawing_rects(page))
+        return self._dedupe_rects(rects)
+
+    @staticmethod
+    def _image_rects(page: Any) -> list[Any]:
+        """Return visible embedded-image rectangles from a PyMuPDF page."""
+
+        import fitz  # type: ignore[import-not-found]
+
+        rects: list[Any] = []
+        try:
+            images = page.get_images(full=True)
+        except Exception:
+            return rects
+        for image in images:
+            xref = image[0]
+            try:
+                rects.extend(fitz.Rect(rect) for rect in page.get_image_rects(xref))
+            except Exception:
+                continue
+        return rects
+
+    @staticmethod
+    def _drawing_rects(page: Any) -> list[Any]:
+        """Return vector drawing rectangles, inflating thin strokes for matching."""
+
+        import fitz  # type: ignore[import-not-found]
+
+        rects: list[Any] = []
+        try:
+            drawings = page.get_drawings()
+        except Exception:
+            return rects
+        for drawing in drawings:
+            rect = drawing.get("rect")
+            if rect is None:
+                continue
+            normalized = PdfVisualExtractionService._normalize_visual_rect(
+                fitz.Rect(rect),
+                fitz.Rect(page.rect),
+            )
+            if normalized is not None:
+                rects.append(normalized)
+        return rects
+
+    @staticmethod
+    def _normalize_visual_rect(rect: Any, page_rect: Any) -> Any | None:
+        """Inflate usable thin PDF drawing rectangles and reject tiny marks."""
+
+        import fitz  # type: ignore[import-not-found]
+
+        normalized = fitz.Rect(rect)
+        if normalized.is_infinite:
+            return None
+        if normalized.width < PDF_VISUAL_MIN_THIN_RECT_POINTS:
+            center = (normalized.x0 + normalized.x1) / 2
+            normalized.x0 = center - (PDF_VISUAL_MIN_THIN_RECT_POINTS / 2)
+            normalized.x1 = center + (PDF_VISUAL_MIN_THIN_RECT_POINTS / 2)
+        if normalized.height < PDF_VISUAL_MIN_THIN_RECT_POINTS:
+            center = (normalized.y0 + normalized.y1) / 2
+            normalized.y0 = center - (PDF_VISUAL_MIN_THIN_RECT_POINTS / 2)
+            normalized.y1 = center + (PDF_VISUAL_MIN_THIN_RECT_POINTS / 2)
+        normalized = normalized & page_rect
+        if normalized.is_empty:
+            return None
+        if normalized.get_area() < PDF_VISUAL_MIN_VISUAL_RECT_AREA:
+            return None
+        return normalized
+
+    @staticmethod
+    def _is_caption_adjacent_visual(visual_rect: Any, caption_rect: Any, *, side: str) -> bool:
+        """Return whether a visual rectangle plausibly belongs to a caption."""
+
+        horizontal_overlap = max(
+            0.0,
+            min(visual_rect.x1, caption_rect.x1) - max(visual_rect.x0, caption_rect.x0),
+        )
+        min_width = max(1.0, min(visual_rect.width, caption_rect.width))
+        overlaps_same_column = horizontal_overlap / min_width >= 0.15
+        visual_above_caption = side == "above" and visual_rect.y1 <= caption_rect.y0 + 8
+        visual_below_caption = side == "below" and visual_rect.y0 >= caption_rect.y1 - 8
+        vertical_gap = (
+            caption_rect.y0 - visual_rect.y1
+            if visual_above_caption
+            else visual_rect.y0 - caption_rect.y1
+        )
+        return (
+            overlaps_same_column
+            and (visual_above_caption or visual_below_caption)
+            and 0 <= vertical_gap <= PDF_VISUAL_MAX_CAPTION_GAP_POINTS
+        )
+
+    @staticmethod
+    def _union_rects(rects: Iterable[Any]) -> Any:
+        """Return the bounding rectangle covering all input rectangles."""
+
+        import fitz  # type: ignore[import-not-found]
+
+        iterator = iter(rects)
+        union = fitz.Rect(next(iterator))
+        for rect in iterator:
+            union |= fitz.Rect(rect)
+        return union
+
+    @staticmethod
+    def _pad_rect(rect: Any, page_rect: Any, padding: float) -> Any:
+        """Pad a rectangle while keeping it inside the PDF page bounds."""
+
+        import fitz  # type: ignore[import-not-found]
+
+        padded = fitz.Rect(rect)
+        padded.x0 -= padding
+        padded.y0 -= padding
+        padded.x1 += padding
+        padded.y1 += padding
+        return padded & fitz.Rect(page_rect)
+
+    @staticmethod
+    def _is_usable_crop_rect(crop_rect: Any, page_rect: Any) -> bool:
+        """Return whether a crop is neither too small nor effectively full-page."""
+
+        page_area = max(float(page_rect.get_area()), 1.0)
+        area_ratio = float(crop_rect.get_area()) / page_area
+        return (
+            crop_rect.width >= 80
+            and crop_rect.height >= 60
+            and PDF_VISUAL_MIN_CROP_AREA_RATIO <= area_ratio <= PDF_VISUAL_MAX_CROP_AREA_RATIO
+        )
+
+    @staticmethod
+    def _dedupe_rects(rects: list[Any]) -> list[Any]:
+        """Remove duplicate rectangles caused by repeated PDF image references."""
+
+        seen: set[tuple[int, int, int, int]] = set()
+        unique = []
+        for rect in rects:
+            key = (
+                round(rect.x0),
+                round(rect.y0),
+                round(rect.x1),
+                round(rect.y1),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(rect)
+        return unique
 
     @staticmethod
     def _is_valid_png(data: bytes) -> bool:
@@ -326,6 +616,13 @@ class PdfVisualExtractionService:
             output = io.BytesIO()
             image.save(output, format="PNG", optimize=True)
             return output.getvalue()
+
+    @staticmethod
+    def _png_dimensions(data: bytes) -> tuple[int, int]:
+        """Return PNG dimensions after any final downscaling step."""
+
+        with Image.open(io.BytesIO(data)) as image:
+            return image.size
 
     @staticmethod
     def _log_completed(
