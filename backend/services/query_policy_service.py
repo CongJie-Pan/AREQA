@@ -100,6 +100,40 @@ ALLOWED_LEGACY_POLICIES = {
     "NORMAL",
 }
 
+_PDF_BROAD_AUTO_EXPLAIN_PATTERNS = (
+    re.compile(
+        r"\b(?:please\s+)?(?:help\s+me\s+)?explain\s+(?:this|the)\s+"
+        r"(?:paper|pdf|document)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:please\s+)?(?:help\s+me\s+)?(?:summari[sz]e|read)\s+"
+        r"(?:this|the)\s+(?:paper|pdf|document)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bwhat\s+is\s+(?:this|the)\s+(?:paper|pdf|document)\s+about\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:幫我|請)?(?:解釋|說明|導讀|摘要|總結|閱讀|讀)(?:一下)?"
+        r"(?:這|這篇|這份|該)?(?:論文|PDF|文件|文獻)"
+    ),
+    re.compile(
+        r"(?:這|這篇|這份|該)?(?:論文|PDF|文件|文獻)(?:在)?"
+        r"(?:講|說|討論|研究)(?:什麼|甚麼)"
+    ),
+)
+
+_PDF_TARGETED_TASK_PATTERN = re.compile(
+    r"\b(?:method|methods|methodology|limitation|limitations|future\s+work|"
+    r"translate|translation|proofread|rewrite|citation|citations|reference|"
+    r"references|compare|comparison|page|section|formula|equation|only)\b|"
+    r"(?:方法|局限|限制|未來|翻譯|改寫|潤稿|校對|引用|參考文獻|比較|第\s*\d+\s*頁|"
+    r"第\s*\d+\s*章|公式|方程式|只看|只要)",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ResponsePolicy:
@@ -398,6 +432,90 @@ def _apply_attachment_guardrails(
     )
 
 
+def _is_broad_pdf_auto_explain_request(user_msg: str) -> bool:
+    """Return whether a PDF turn is an unambiguous whole-paper overview request.
+
+    Args:
+        user_msg: Current user message. The caller must not log this value.
+
+    Returns:
+        ``True`` only for narrow broad-reading prompts such as "explain this
+        paper" or "summarize this PDF". Focused operations remain owned by the
+        model classifier so section-specific PDF work is not collapsed into the
+        generic paper overview template.
+
+    Side Effects:
+        None.
+    """
+
+    normalized = re.sub(r"\s+", " ", str(user_msg or "")).strip()
+    if not normalized:
+        return True
+    if _PDF_TARGETED_TASK_PATTERN.search(normalized):
+        return False
+    return any(pattern.search(normalized) for pattern in _PDF_BROAD_AUTO_EXPLAIN_PATTERNS)
+
+
+def _apply_pdf_auto_explain_guardrail(
+    policy: ResponsePolicy,
+    *,
+    user_msg: str,
+    has_pdf_attachment: bool,
+) -> ResponsePolicy:
+    """Stabilize deterministic PDF overview routing after model classification.
+
+    Args:
+        policy: Sanitized classifier output after attachment consistency checks.
+        user_msg: Current user message. It is inspected locally but never
+            logged by this helper.
+        has_pdf_attachment: Whether request metadata confirms a PDF attachment.
+
+    Returns:
+        The original policy for non-PDF or focused requests. For unambiguous
+        whole-paper overview requests with a PDF attachment, returns a policy
+        with ``PAPER_AUTO_EXPLAIN`` and optional attachment visual support.
+
+    Side Effects:
+        Emits ``orchestration.response_policy_pdf_guardrail_applied`` only when
+        this deterministic guardrail changes the classifier result. The log
+        contains enum metadata and a reason code, never raw user text, prompts,
+        model output, credentials, or attachment content.
+    """
+
+    if (
+        not has_pdf_attachment
+        or policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
+        or not _is_broad_pdf_auto_explain_request(user_msg)
+    ):
+        return policy
+
+    guarded = ResponsePolicy(
+        task_intent=policy.task_intent,
+        answer_depth=policy.answer_depth,
+        tone=policy.tone,
+        structure=policy.structure,
+        followup_mode=policy.followup_mode,
+        visual_support=(
+            policy.visual_support
+            if policy.visual_support is not VisualSupport.NONE
+            else VisualSupport.OPTIONAL
+        ),
+        visual_reason=(
+            policy.visual_reason
+            if policy.visual_support is not VisualSupport.NONE
+            else VisualReason.ATTACHMENT_FIGURE_EXPLANATION
+        ),
+        attachment_task=AttachmentTask.PAPER_AUTO_EXPLAIN,
+        attachment_reason=AttachmentReason.GENERIC_PAPER_EXPLANATION,
+        legacy_policy=policy.legacy_policy,
+    )
+    logger.info(
+        "orchestration.response_policy_pdf_guardrail_applied reason=broad_pdf_auto_explain metadata=%s",
+        json.dumps(guarded.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
+    )
+    return guarded
+
+
 async def parse_and_decompose_query_impl(
     query: str,
     client: Any,
@@ -582,6 +700,11 @@ Current user message:
                 response_policy_from_legacy(content),
                 has_pdf_attachment=has_pdf_attachment,
             )
+            policy = _apply_pdf_auto_explain_guardrail(
+                policy,
+                user_msg=user_msg,
+                has_pdf_attachment=has_pdf_attachment,
+            )
             logger.info(
                 "orchestration.response_policy_selected metadata=%s",
                 json.dumps(policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
@@ -594,13 +717,22 @@ Current user message:
             response_policy_from_dict(parsed),
             has_pdf_attachment=has_pdf_attachment,
         )
+        policy = _apply_pdf_auto_explain_guardrail(
+            policy,
+            user_msg=user_msg,
+            has_pdf_attachment=has_pdf_attachment,
+        )
         logger.info(
             "orchestration.response_policy_selected metadata=%s",
             json.dumps(policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
         )
         return policy
     except Exception as exc:
-        fallback = default_response_policy()
+        fallback = _apply_pdf_auto_explain_guardrail(
+            default_response_policy(),
+            user_msg=user_msg,
+            has_pdf_attachment=has_pdf_attachment,
+        )
         logger.warning(
             "orchestration.response_policy_failed reason=%s fallback=%s",
             type(exc).__name__,

@@ -165,7 +165,7 @@ async def test_classify_dialogue_policy_impl_preserves_string_contract():
 
 @pytest.mark.asyncio
 async def test_classify_response_policy_selects_pdf_auto_explain_for_english_generic_request():
-    """The LLM policy service owns generic English paper-task classification."""
+    """Generic English PDF paper requests should keep the auto-explain task."""
 
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -201,6 +201,121 @@ async def test_classify_response_policy_selects_pdf_auto_explain_for_english_gen
     prompt = mock_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
     assert '"has_pdf_attachment": true' in prompt
     assert "please help me explain this paper" in prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_msg",
+    [
+        "Please explain this paper",
+        "Please help me explain this paper",
+    ],
+)
+async def test_pdf_broad_request_guardrail_overrides_missed_classifier_auto_explain(
+    user_msg,
+    caplog,
+):
+    """Clear whole-paper PDF overview requests should not drift into generic tutoring."""
+
+    caplog.set_level("INFO")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "EXPLAIN_TEXT",
+              "answer_depth": "SCAFFOLDED",
+              "tone": "TUTORING",
+              "structure": "STEP_BY_STEP",
+              "followup_mode": "REQUIRED",
+              "visual_support": "NONE",
+              "visual_reason": "NOT_NEEDED",
+              "attachment_task": "NONE",
+              "attachment_reason": "NOT_PAPER_TASK",
+              "legacy_policy": "PROBE_UNDERSTANDING"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        user_msg,
+        [],
+        has_pdf_attachment=True,
+        pdf_attachment_count=1,
+    )
+
+    assert policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
+    assert policy.attachment_reason is AttachmentReason.GENERIC_PAPER_EXPLANATION
+    assert policy.visual_support is VisualSupport.OPTIONAL
+    assert policy.visual_reason is VisualReason.ATTACHMENT_FIGURE_EXPLANATION
+    assert "orchestration.response_policy_pdf_guardrail_applied" in caplog.text
+    assert user_msg not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pdf_broad_request_guardrail_applies_to_classifier_failure(caplog):
+    """Classifier outages should still route clear PDF overview prompts safely."""
+
+    caplog.set_level("INFO")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response("not-json")
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "Please help me explain this paper",
+        [],
+        has_pdf_attachment=True,
+        pdf_attachment_count=1,
+    )
+
+    assert policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
+    assert policy.attachment_reason is AttachmentReason.GENERIC_PAPER_EXPLANATION
+    assert policy.visual_support is VisualSupport.OPTIONAL
+    assert "orchestration.response_policy_failed" in caplog.text
+    assert "Please help me explain this paper" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pdf_broad_request_guardrail_does_not_override_focused_pdf_task():
+    """Focused PDF requests should remain under classifier ownership."""
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "EXPLAIN_TEXT",
+              "answer_depth": "SCAFFOLDED",
+              "tone": "TUTORING",
+              "structure": "STEP_BY_STEP",
+              "followup_mode": "OPTIONAL",
+              "visual_support": "OPTIONAL",
+              "visual_reason": "ATTACHMENT_FIGURE_EXPLANATION",
+              "attachment_task": "PAPER_TARGETED_QA",
+              "attachment_reason": "TARGETED_ATTACHMENT_TASK",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "Please explain this paper methods section only.",
+        [],
+        has_pdf_attachment=True,
+        pdf_attachment_count=1,
+    )
+
+    assert policy.attachment_task is AttachmentTask.PAPER_TARGETED_QA
+    assert policy.attachment_reason is AttachmentReason.TARGETED_ATTACHMENT_TASK
 
 
 @pytest.mark.asyncio

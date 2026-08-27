@@ -648,9 +648,10 @@ class OrchestrationService:
             == AttachmentTask.PAPER_AUTO_EXPLAIN.value
         )
         logger.info(
-            "paper.auto_explain_policy_selected conversation_id=%s enabled=%s task=%s reason=%s pdf_count=%s",
+            "paper.auto_explain_policy_selected conversation_id=%s enabled=%s applied=%s task=%s reason=%s pdf_count=%s",
             conversation_id,
             settings.enable_pdf_paper_auto_explain,
+            should_auto_explain_paper,
             response_policy.attachment_task.value,
             response_policy.attachment_reason.value,
             pdf_attachment_count,
@@ -710,6 +711,12 @@ class OrchestrationService:
                     model_client=self.client,
                     turn_plan=turn_plan if turn_plan_enabled else None,
                 )
+            logger.info(
+                "visual.preverified_inventory_ready conversation_id=%s available_image_count=%s has_attachment_visual_sources=%s",
+                conversation_id,
+                len(preverified_image_blocks),
+                bool(attachment_visual_sources),
+            )
             trace.mark("visual_preflight_finished")
             final_messages = self._add_verified_visual_instruction(
                 final_messages,
@@ -787,6 +794,13 @@ class OrchestrationService:
             yield sse_adapter.encode_legacy(
                 f"event: answer_blocks\ndata: {json.dumps(answer_blocks, ensure_ascii=False)}\n\n",
                 run_context.run_id,
+            )
+        else:
+            logger.info(
+                "visual.answer_blocks_skipped conversation_id=%s planned_image_slot_count=%s preverified_image_count=%s",
+                conversation_id,
+                len(planned_image_slots),
+                len(preverified_image_blocks or {}),
             )
 
         async for event in self._node_post_generation(

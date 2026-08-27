@@ -1390,6 +1390,7 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
     assert "PDF 論文自動解說任務" in captured_messages[0]["content"]
     assert "研究動機與目標" in captured_messages[0]["content"]
     assert "paper.auto_explain_policy_selected" in caplog.text
+    assert "applied=True" in caplog.text
     assert "task=PAPER_AUTO_EXPLAIN" in caplog.text
     assert "pdf_count=1" in caplog.text
 

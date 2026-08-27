@@ -855,6 +855,9 @@ async def test_build_answer_blocks_omits_unused_preverified_image(caplog):
     )
 
     assert blocks == []
+    assert "visual.preverified_available" in caplog.text
+    assert "available_image_count=1" in caplog.text
+    assert "planned_image_slot_count=0" in caplog.text
     assert "visual.preverified_unused" in caplog.text
     assert "reason=no_model_marker" in caplog.text
 

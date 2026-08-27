@@ -537,6 +537,12 @@ class VisualAnswerService:
 
         try:
             if preverified_image_blocks is not None:
+                logger.info(
+                    "visual.preverified_available conversation_id=%s available_image_count=%s planned_image_slot_count=%s",
+                    conversation_id,
+                    len(preverified_image_blocks),
+                    len(planned_slots),
+                )
                 if not preverified_image_blocks:
                     logger.info(
                         "visual.preverified_unused conversation_id=%s available_image_count=0",
