@@ -109,8 +109,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const activeConversationId = useConversationStore(
     (state) => state.activeConversationId
   );
-  const isConversationLoading = useConversationStore((state) => state.isLoading);
-  const shouldShowEmptyChat = isEmpty && !isConversationLoading;
+  const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
+  const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading;
   const landingPromptSent = useRef(false);
 
   useEffect(() => {

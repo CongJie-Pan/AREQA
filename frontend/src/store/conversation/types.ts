@@ -15,6 +15,8 @@ export interface ConversationState {
   activeConversationId: string | null;
   /** Whether loading conversations */
   isLoading: boolean;
+  /** Whether keeping old messages visible while switching to another conversation */
+  isMessageHandoffLoading: boolean;
   /** Current error if any */
   error: Error | null;
   /** Map of conversation IDs to their currently streaming title */
@@ -39,8 +41,10 @@ export interface ConversationActions {
   clearActiveConversation: () => void;
   /** Clear all conversation state without deleting persisted data */
   clearState: () => void;
-  /** Set loading state for conversation list or message handoff work */
+  /** Set loading state for conversation list work */
   setLoading: (isLoading: boolean) => void;
+  /** Set message handoff loading state used only during conversation switches */
+  setMessageHandoffLoading: (isLoading: boolean) => void;
   /** Set error state */
   setError: (error: Error | null) => void;
   /** Generate a conversation title using streaming */

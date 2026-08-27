@@ -101,6 +101,7 @@ describe('Chat Service', () => {
       selectConversation: vi.fn(),
       deleteConversation: vi.fn(),
       setLoading: vi.fn(),
+      setMessageHandoffLoading: vi.fn(),
     };
 
     vi.mocked(useChatStore.getState).mockReturnValue(mockChatStore);
@@ -132,8 +133,9 @@ describe('Chat Service', () => {
       expect(mockChatStore.resetStreamingState).toHaveBeenCalled();
       expect(mockChatStore.setMessages).toHaveBeenCalledWith(targetMessages);
       expect(mockConversationStore.selectConversation).toHaveBeenCalledWith('target-conv');
-      expect(mockConversationStore.setLoading).toHaveBeenNthCalledWith(1, true);
-      expect(mockConversationStore.setLoading).toHaveBeenLastCalledWith(false);
+      expect(mockConversationStore.setLoading).not.toHaveBeenCalled();
+      expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenNthCalledWith(1, true);
+      expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenLastCalledWith(false);
     });
   });
 

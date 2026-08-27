@@ -37,6 +37,7 @@ const initialState = {
   conversations: [] as Conversation[],
   activeConversationId: null as string | null,
   isLoading: false,
+  isMessageHandoffLoading: false,
   error: null as Error | null,
   streamingTitles: {} as Record<string, string>,
 };
@@ -113,6 +114,7 @@ export const useConversationStore = create<ConversationStore>((set) => ({
       conversations: [],
       activeConversationId: null,
       isLoading: false,
+      isMessageHandoffLoading: false,
       error: null,
       streamingTitles: {},
     });
@@ -120,6 +122,10 @@ export const useConversationStore = create<ConversationStore>((set) => ({
 
   setLoading: (isLoading: boolean) => {
     set({ isLoading });
+  },
+
+  setMessageHandoffLoading: (isLoading: boolean) => {
+    set({ isMessageHandoffLoading: isLoading });
   },
 
   setError: (error: Error | null) => {

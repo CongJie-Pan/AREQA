@@ -3,6 +3,7 @@ import { act, render, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MessageList } from '../../../../frontend/src/components/MessageList';
 import { useChatStore } from '../../../../frontend/src/store/chat';
+import { useConversationStore } from '../../../../frontend/src/store/conversation';
 
 // Mock store
 vi.mock('../../../../frontend/src/store/chat', () => ({
@@ -10,6 +11,10 @@ vi.mock('../../../../frontend/src/store/chat', () => ({
   chatSelectors: {
     displayMessages: (state: any) => state.messages,
   }
+}));
+
+vi.mock('../../../../frontend/src/store/conversation', () => ({
+  useConversationStore: vi.fn(),
 }));
 
 // Mock styles
@@ -63,6 +68,11 @@ describe('MessageList Scroll Behavior Regression', () => {
       };
       return typeof selector === 'function' ? selector(state) : state;
     });
+
+    (useConversationStore as any).mockImplementation((selector: any) => {
+      const state = { isLoading: false, isMessageHandoffLoading: false };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
   });
 
   afterEach(() => {
@@ -105,6 +115,57 @@ describe('MessageList Scroll Behavior Regression', () => {
       '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',
     );
     expect(screen.queryByLabelText('今天想學什麼呢？🤔')).not.toBeInTheDocument();
+  });
+
+  it('does not flash the new-chat empty state while a saved conversation is loading', () => {
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        messages: [],
+        isStreaming: false,
+        currentStreamingId: null,
+        thinkingContent: '',
+        isThinking: false,
+        ragStatus: 'idle',
+        ragMessage: '',
+        ragSources: [],
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+    (useConversationStore as any).mockImplementation((selector: any) => {
+      const state = { isLoading: false, isMessageHandoffLoading: true };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    const { container } = render(<MessageList />);
+
+    expect(container.querySelector('.areqa-message-list-non-empty')).toBeInTheDocument();
+    expect(container.querySelector('.areqa-message-list-empty')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('AREQA Logo')).not.toBeInTheDocument();
+  });
+
+  it('keeps the new-chat empty state visible while only the conversation list is loading', () => {
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        messages: [],
+        isStreaming: false,
+        currentStreamingId: null,
+        thinkingContent: '',
+        isThinking: false,
+        ragStatus: 'idle',
+        ragMessage: '',
+        ragSources: [],
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+    (useConversationStore as any).mockImplementation((selector: any) => {
+      const state = { isLoading: true, isMessageHandoffLoading: false };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    const { container } = render(<MessageList />);
+
+    expect(container.querySelector('.areqa-message-list-empty')).toBeInTheDocument();
+    expect(screen.getByAltText('AREQA Logo')).toBeInTheDocument();
   });
 
   it('reserves mobile top space for fixed chat action controls when messages exist', () => {

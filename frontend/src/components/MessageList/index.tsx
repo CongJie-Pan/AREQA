@@ -191,7 +191,7 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
   const ragMessage = useChatStore((state) => state.ragMessage);
   const ragSources = useChatStore((state) => state.ragSources);
   const setMessageFeedback = useChatStore((state) => state.setMessageFeedback);
-  const isConversationLoading = useConversationStore((state) => state.isLoading);
+  const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
 
   const handleFeedback = useCallback(async (
     messageId: string,
@@ -300,9 +300,11 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
     }
   }, []);
 
-  if (messages.length === 0 && isConversationLoading) {
+  if (messages.length === 0 && isMessageHandoffLoading) {
     // Keep the transcript quiet while a saved conversation is loading. Rendering
     // the empty-state hero here causes a visible new-chat flash during switches.
+    // This uses a dedicated handoff flag so normal conversation-list loading
+    // never hides the intentional new-chat screen.
     return (
       <div
         aria-busy="true"
