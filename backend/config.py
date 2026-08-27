@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     visual_preflight_grounding_max_candidates: int = 2
     enable_visual_understanding: bool = True
     visual_understanding_timeout_seconds: float = 4.0
+    enable_pdf_attachment_visuals: bool = True
+    pdf_attachment_visual_max_candidates: int = 2
+    pdf_attachment_visual_max_pages_scanned: int = 8
 
     # Candidate memory promotion policy. Values are intentionally configurable
     # so the policy remains domain-neutral and can be tuned without code edits.

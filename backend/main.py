@@ -1602,7 +1602,10 @@ async def stream_endpoint(
     if uploads:
         from services.attachment_service import process_attachments
 
-        processed_attachments = await process_attachments(uploads)
+        processed_attachments = await process_attachments(
+            uploads,
+            conversation_id=chat_req.conversation_id,
+        )
 
     # Anonymous chat is intentionally ephemeral. It can answer questions, but
     # must not share persistent memory with other visitors.
@@ -1651,6 +1654,12 @@ async def stream_endpoint(
             if not done_sent:
                 yield "data: [DONE]\n\n"
 
+    attachment_visual_candidates = [
+        candidate
+        for attachment in processed_attachments
+        for candidate in attachment.visual_candidates
+    ]
+
     event_stream = orchestrator.execute(
             messages=chat_req.messages,
             conversation_id=chat_req.conversation_id,
@@ -1666,6 +1675,7 @@ async def stream_endpoint(
             search_mode=chat_req.search_mode,
             interface_language=chat_req.interface_language,
             attachments=[attachment.content_part for attachment in processed_attachments],
+            attachment_visual_candidates=attachment_visual_candidates,
         )
 
     return StreamingResponse(

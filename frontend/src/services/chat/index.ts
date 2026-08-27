@@ -23,6 +23,7 @@ import type { AnswerBlock, Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
+import { persistentAnswerBlocks } from '@/utils/answerBlocks';
 
 /**
  * Active abort controller for the current stream
@@ -303,7 +304,8 @@ export async function sendMessage(
         if (thinkingContent) messageData.reasoning = { content: thinkingContent, duration: thinkingDuration };
         if (citations.length > 0) messageData.citations = citations;
         if (sourcesPayload.length > 0) messageData.sources = sourcesPayload;
-        if (answerBlocksPayload.length > 0) messageData.answerBlocks = answerBlocksPayload;
+        const answerBlocksForPersistence = persistentAnswerBlocks(answerBlocksPayload);
+        if (answerBlocksForPersistence) messageData.answerBlocks = answerBlocksForPersistence;
         if (suggestionsList.length > 0) messageData.suggestions = suggestionsList;
         if (shouldPersist) {
           await databaseService.message.add(conversationIdForSave, {
@@ -787,9 +789,8 @@ export async function regenerateMessage(messageId: string): Promise<void> {
             messageData.sources = sourcesPayload;
           }
 
-          if (answerBlocksPayload.length > 0) {
-            messageData.answerBlocks = answerBlocksPayload;
-          }
+          const answerBlocksForPersistence = persistentAnswerBlocks(answerBlocksPayload);
+          if (answerBlocksForPersistence) messageData.answerBlocks = answerBlocksForPersistence;
 
           if (suggestionsList.length > 0) {
             messageData.suggestions = suggestionsList;
@@ -1038,9 +1039,8 @@ export async function editUserMessage(
             messageData.sources = sourcesPayload;
           }
 
-          if (answerBlocksPayload.length > 0) {
-            messageData.answerBlocks = answerBlocksPayload;
-          }
+          const answerBlocksForPersistence = persistentAnswerBlocks(answerBlocksPayload);
+          if (answerBlocksForPersistence) messageData.answerBlocks = answerBlocksForPersistence;
 
           if (suggestionsList.length > 0) {
             messageData.suggestions = suggestionsList;

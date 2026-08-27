@@ -110,4 +110,35 @@ describe('MessageItem visual answer rendering', () => {
       'https://example.edu/forest-plot',
     );
   });
+
+  it('renders PDF attachment image blocks without an external source link', () => {
+    renderMessage(
+      assistantMessage([
+        {
+          type: 'image_block',
+          slotId: 'pdf-img-1',
+          topic: 'paper.pdf 第 3 頁',
+          purpose: 'chart',
+          imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
+          thumbnailUrl: 'data:image/png;base64,iVBORw0KGgo=',
+          sourceUrl: '#pdf-attachment-page-3',
+          sourceDomain: 'uploaded PDF',
+          caption: 'Figure 2. Result chart',
+          attributionCaption: 'paper.pdf，第 3 頁',
+          provider: 'pdf_attachment',
+          transient: true,
+          status: 'resolved',
+          safetyStatus: 'pass',
+          matchConfidence: 0.92,
+          width: 640,
+          height: 480,
+        },
+      ]),
+    );
+
+    expect(screen.getByAltText('paper.pdf，第 3 頁')).toBeInTheDocument();
+    expect(screen.getByText('uploaded PDF')).toBeInTheDocument();
+    expect(screen.getByText('上傳附件')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /來源/i })).not.toBeInTheDocument();
+  });
 });

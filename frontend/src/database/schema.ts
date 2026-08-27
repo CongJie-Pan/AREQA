@@ -75,8 +75,8 @@ export interface ImageBlock {
   sourceUrl: string;
   sourceDomain: string;
   caption: string;
-  provider?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | string;
-  tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | string;
+  provider?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | 'pdf_attachment' | string;
+  tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | 'pdf_attachment' | string;
   license?: string;
   licenseUrl?: string;
   creator?: string;
@@ -89,6 +89,7 @@ export interface ImageBlock {
   visionConfidence?: 'high' | 'medium' | 'low' | 'unknown' | string;
   visionLimitations?: string[];
   visionSource?: 'vision_model' | 'missing_model_client' | 'invalid_image_url' | 'provider_unavailable' | string;
+  transient?: boolean;
   status?: 'pending' | 'resolved' | 'error';
   width?: number;
   height?: number;

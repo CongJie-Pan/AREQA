@@ -68,6 +68,21 @@ function isSafeUrl(url: string | undefined): boolean {
   }
 }
 
+/**
+ * Validate image URLs separately from navigation URLs.
+ *
+ * PDF attachment visuals are delivered as backend-generated data URI images so
+ * the uploaded file's pixels do not need a public URL. Only image data URIs are
+ * accepted here; links still use the stricter navigation URL whitelist above.
+ */
+function isSafeImageUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  if (/^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(url)) {
+    return true;
+  }
+  return isSafeUrl(url);
+}
+
 type WindowWithFind = Window & {
   find?: (
     searchString: string,
@@ -591,11 +606,12 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const imageUrl = block.thumbnailUrl || block.imageUrl;
-  const safeImageUrl = isSafeUrl(imageUrl) ? imageUrl : '';
+  const safeImageUrl = isSafeImageUrl(imageUrl) ? imageUrl : '';
   const safeFullImageUrl = safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
   const displayCaption = block.attributionCaption || block.caption || block.topic;
   const sourceLabel = block.sourceDomain || 'source';
+  const isPdfAttachmentImage = block.provider === 'pdf_attachment';
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
 
@@ -619,7 +635,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
     );
   }
 
-  if (!safeImageUrl || !safeSourceUrl || block.safetyStatus !== 'pass') {
+  if (!safeImageUrl || (!safeSourceUrl && !isPdfAttachmentImage) || block.safetyStatus !== 'pass') {
     return null;
   }
 
@@ -654,17 +670,21 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           <span className={styles.answerImageCaptionText}>{displayCaption}</span>
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
-            <a
-              href={safeSourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.answerImageSource}
-              title={block.sourceUrl}
-              onClick={(event) => event.stopPropagation()}
-            >
-              來源
-              <ExternalLink size={12} aria-hidden="true" />
-            </a>
+            {isPdfAttachmentImage ? (
+              <span>上傳附件</span>
+            ) : (
+              <a
+                href={safeSourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.answerImageSource}
+                title={block.sourceUrl}
+                onClick={(event) => event.stopPropagation()}
+              >
+                來源
+                <ExternalLink size={12} aria-hidden="true" />
+              </a>
+            )}
           </span>
         </figcaption>
       </figure>
@@ -691,15 +711,17 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
                 <strong>Attribution:</strong> {block.attributionString || block.creator}
               </p>
             )}
-            <a
-              href={safeSourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.answerImageLightboxSource}
-            >
-              View original source
-              <ExternalLink size={14} aria-hidden="true" />
-            </a>
+            {!isPdfAttachmentImage && safeSourceUrl && (
+              <a
+                href={safeSourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.answerImageLightboxSource}
+              >
+                View original source
+                <ExternalLink size={14} aria-hidden="true" />
+              </a>
+            )}
           </div>
         </div>
       </Modal>

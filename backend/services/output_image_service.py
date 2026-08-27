@@ -189,6 +189,70 @@ class OutputImageService:
         )
         return enriched
 
+    async def prepare_attachment_image_blocks(
+        self,
+        *,
+        candidates: list[Any] | tuple[Any, ...],
+        user_msg: str,
+        conversation_id: str,
+        model_client: Any = None,
+    ) -> dict[str, ImageBlock]:
+        """Prepare verified image blocks from request-scoped attachment visuals.
+
+        Args:
+            candidates: PDF visual candidates from attachment processing.
+            user_msg: Latest user message. Sent to the vision model for task
+                context but never logged by this service.
+            conversation_id: Correlation id for safe structured logs.
+            model_client: OpenAI-compatible async client for vision analysis.
+
+        Returns:
+            Mapping from slot id to image blocks. When visual understanding is
+            enabled, candidates without usable vision output are omitted so the
+            answer model cannot cite unseen attachment pixels.
+
+        Side Effects:
+            May call the configured vision model with in-memory data URI images.
+            Logs only candidate counts, slot ids, and bounded reason codes.
+        """
+
+        if not candidates:
+            return {}
+
+        blocks: dict[str, ImageBlock] = {}
+        for candidate in list(candidates)[:2]:
+            if not hasattr(candidate, "to_image_block"):
+                continue
+            block = candidate.to_image_block()
+            if settings.enable_visual_understanding:
+                result = await self.understanding_agent.analyze(
+                    client=model_client,
+                    model=settings.model_visual_understanding,
+                    image_url=block.image_url,
+                    image_part={"type": "image_url", "image_url": {"url": block.image_url}},
+                    user_msg=user_msg,
+                    visual_brief=None,
+                    conversation_id=conversation_id,
+                )
+                if not self._has_usable_understanding(result):
+                    logger.info(
+                        "visual.attachment_image_omitted conversation_id=%s slot_id=%s reason=understanding_unavailable",
+                        conversation_id,
+                        block.slot_id,
+                    )
+                    continue
+                block = self._apply_understanding(block, result)
+            blocks[block.slot_id] = block
+
+        logger.info(
+            "visual.attachment_images_prepared conversation_id=%s candidate_count=%s selected_image_count=%s understanding_enabled=%s",
+            conversation_id,
+            len(candidates),
+            len(blocks),
+            settings.enable_visual_understanding,
+        )
+        return blocks
+
     def _understanding_budget_seconds(self) -> float:
         """Return one latency budget shared by all URLs for a selected image.
 
@@ -306,4 +370,5 @@ class OutputImageService:
             vision_confidence=result.confidence,
             vision_limitations=result.limitations,
             vision_source=result.source,
+            transient=block.transient,
         )

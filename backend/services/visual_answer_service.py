@@ -168,6 +168,8 @@ class ImageBlock:
         vision_confidence: Optional confidence label from the vision model.
         vision_limitations: Optional bounded uncertainty notes.
         vision_source: Stable source label for image-understanding metadata.
+        transient: Whether the block contains request-scoped attachment pixels
+            that clients must not write to durable stores.
     """
 
     slot_id: str
@@ -197,6 +199,7 @@ class ImageBlock:
     vision_confidence: str = "unknown"
     vision_limitations: tuple[str, ...] = ()
     vision_source: str = "unavailable"
+    transient: bool = False
 
     def to_frontend(self) -> dict[str, Any]:
         """Return the camelCase wire shape consumed by the frontend."""
@@ -242,6 +245,8 @@ class ImageBlock:
             payload["visionLimitations"] = list(self.vision_limitations)
         if self.vision_source and self.vision_source != "unavailable":
             payload["visionSource"] = self.vision_source
+        if self.transient:
+            payload["transient"] = True
         if self.width is not None:
             payload["width"] = self.width
         if self.height is not None:
@@ -756,6 +761,7 @@ class VisualAnswerService:
             vision_confidence=block.vision_confidence,
             vision_limitations=block.vision_limitations,
             vision_source=block.vision_source,
+            transient=block.transient,
         )
 
     @staticmethod
@@ -2487,6 +2493,7 @@ class VisualAnswerService:
             vision_confidence=str(payload.get("visionConfidence") or "unknown"),
             vision_limitations=VisualAnswerService._string_tuple(payload.get("visionLimitations"), 6, 160),
             vision_source=str(payload.get("visionSource") or "unavailable"),
+            transient=bool(payload.get("transient")),
         )
 
     @staticmethod

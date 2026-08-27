@@ -335,6 +335,8 @@ class VisualUnderstandingAgent:
     def _is_safe_image_url(image_url: str) -> bool:
         """Validate the image URL shape before sending it to a model provider."""
 
+        if str(image_url or "").startswith("data:image/"):
+            return True
         parsed = urlparse(str(image_url or ""))
         return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 

@@ -211,7 +211,8 @@ class OrchestrationService:
                       repetition_penalty: float, request: Request, user_id: str,
                       search_mode: Optional[str] = None,
                       interface_language: InterfaceLanguage = "zh-TW",
-                      attachments: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
+                      attachments: Optional[List[Dict[str, Any]]] = None,
+                      attachment_visual_candidates: Optional[List[Any]] = None) -> AsyncGenerator[str, None]:
         """
         Execute the main conversational flow, yielding server-sent events (SSE) back to the client.
 
@@ -229,6 +230,9 @@ class OrchestrationService:
             user_id (str): The unique identifier for the user.
             search_mode (Optional[str]): Explicit search mode override. Defaults to None.
             attachments (Optional[List[Dict[str, Any]]]): Files or attachments provided by the user. Defaults to None.
+            attachment_visual_candidates (Optional[List[Any]]): Request-scoped
+                PDF visual candidates prepared from attachments. Defaults to
+                None.
 
         Yields:
             str: SSE formatted string events representing status updates and token chunks.
@@ -609,18 +613,26 @@ class OrchestrationService:
         preverified_image_blocks = None
         if settings.enable_visual_preflight:
             trace.mark("visual_preflight_started")
-            preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
-                visual_answer_service=self.visual_answer_service,
-                user_msg=last_user_msg,
-                response_policy=response_policy,
-                existing_web_results=run_state.web_search_results,
-                tool_registry=self.tool_registry,
-                tool_budget=run_state.tool_budget,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                model_client=self.client,
-                turn_plan=turn_plan if turn_plan_enabled else None,
-            )
+            if attachment_visual_candidates:
+                preverified_image_blocks = await self.output_image_service.prepare_attachment_image_blocks(
+                    candidates=attachment_visual_candidates,
+                    user_msg=last_user_msg,
+                    conversation_id=conversation_id,
+                    model_client=self.client,
+                )
+            if preverified_image_blocks is None:
+                preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
+                    visual_answer_service=self.visual_answer_service,
+                    user_msg=last_user_msg,
+                    response_policy=response_policy,
+                    existing_web_results=run_state.web_search_results,
+                    tool_registry=self.tool_registry,
+                    tool_budget=run_state.tool_budget,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    model_client=self.client,
+                    turn_plan=turn_plan if turn_plan_enabled else None,
+                )
             trace.mark("visual_preflight_finished")
             final_messages = self._add_verified_visual_instruction(
                 final_messages,

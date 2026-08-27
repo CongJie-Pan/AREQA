@@ -4,6 +4,7 @@ import type { AnswerBlock, Conversation, Message } from '@/database/schema';
 import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
+import { persistentAnswerBlocks } from '@/utils/answerBlocks';
 import type { MessageFeedback, MessageFeedbackDetails, MessageFeedbackReason } from '@/database/schema';
 
 type MessageSearchResult = NonNullable<Message['searchResults']>[number];
@@ -248,7 +249,7 @@ export const syncService = {
         citations: msg.citations ?? null,
         search_results: msg.searchResults ?? null,
         sources: msg.sources ?? null,
-        answer_blocks: msg.answerBlocks ?? null,
+        answer_blocks: persistentAnswerBlocks(msg.answerBlocks) ?? null,
         suggestions: msg.suggestions ?? null,
         reasoning: msg.reasoning ?? null,
         feedback: msg.feedback ?? null,
