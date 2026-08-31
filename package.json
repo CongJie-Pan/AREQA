@@ -11,7 +11,8 @@
         "test:all": "npm run test:frontend && npm run test:backend",
         "check:report:strict": "npm run check:report:strict --prefix frontend",
         "lint:report": "npm run lint:report --prefix frontend",
-        "typecheck:report": "npm run typecheck:report --prefix frontend"
+        "typecheck:report": "npm run typecheck:report --prefix frontend",
+        "drift:refresh": "bash scripts/drift-refresh.sh"
     },
     "devDependencies": {
         "concurrently": "^9.2.1",

@@ -1,161 +1,499 @@
-2026-08-27T13:12:20.968947948Z 2026-08-27 13:12:20 [INFO] services.turn_intake_service: orchestration.memory_ingestion_dispatched run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 outcome=working_context_only reason=interrogative_not_memory_evidence
-2026-08-27T13:12:20.972083331Z 2026-08-27 13:12:20 [INFO] services.orchestration_service: orchestration.web_search_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 user_id=3e76acb3-2b87-4720-a05a-e3f40d488869
-2026-08-27T13:12:21.614318635Z 2026-08-27 13:12:21 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:21.812096069Z 2026-08-27 13:12:21 [INFO] services.orchestration_service: orchestration.web_query_ready conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 elapsed_ms=836 max_results=8 context_size=high rewritten=True
-2026-08-27T13:12:21.859165183Z 2026-08-27 13:12:21 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:22.190657488Z 2026-08-27 13:12:22 [ERROR] services.orchestration_service: orchestration.web_search_failed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 reason=HTTPStatusError
-2026-08-27T13:12:22.190678168Z Traceback (most recent call last):
-2026-08-27T13:12:22.190682998Z   File "/opt/render/project/src/backend/services/orchestration_service.py", line 1280, in _node_perplexity_search
-2026-08-27T13:12:22.190686978Z     tool_result = await self.tool_registry.execute(
-2026-08-27T13:12:22.190690838Z   File "/opt/render/project/src/backend/tools/registry.py", line 55, in execute
-2026-08-27T13:12:22.190694069Z     result = await definition.handler(arguments)
-2026-08-27T13:12:22.190697519Z   File "/opt/render/project/src/backend/tools/web_search.py", line 79, in execute
-2026-08-27T13:12:22.190701269Z     response.raise_for_status()
-2026-08-27T13:12:22.190706249Z   File "/opt/render/project/src/.venv/lib/python3.10/site-packages/httpx/_models.py", line 829, in raise_for_status
-2026-08-27T13:12:22.190709799Z     raise HTTPStatusError(message, request=request, response=self)
-2026-08-27T13:12:22.190713739Z httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://api.perplexity.ai/search'
-2026-08-27T13:12:22.190718189Z For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
-2026-08-27T13:12:22.273328085Z 2026-08-27 13:12:22 [INFO] services.query_policy_service: orchestration.response_policy_selected metadata={"answer_depth": "SCAFFOLDED", "attachment_reason": "NO_ATTACHMENT", "attachment_task": "NONE", "followup_mode": "OPTIONAL", "legacy_policy": "NORMAL", "structure": "STEP_BY_STEP", "task_intent": "EXPLAIN_TEXT", "tone": "TUTORING", "visual_reason": "KNOWLEDGE_EXPLANATION", "visual_support": "OPTIONAL"}
-2026-08-27T13:12:22.273382936Z 2026-08-27 13:12:22 [INFO] services.orchestration_service: orchestration.dialogue_policy_selected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 policy=NORMAL
-2026-08-27T13:12:22.273445448Z 2026-08-27 13:12:22 [INFO] services.orchestration_service: orchestration.response_policy_applied conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 source=classifier metadata={"answer_depth": "SCAFFOLDED", "attachment_reason": "NO_ATTACHMENT", "attachment_task": "NONE", "followup_mode": "OPTIONAL", "legacy_policy": "NORMAL", "structure": "STEP_BY_STEP", "task_intent": "EXPLAIN_TEXT", "tone": "TUTORING", "visual_reason": "KNOWLEDGE_EXPLANATION", "visual_support": "OPTIONAL"}
-2026-08-27T13:12:23.312995155Z 2026-08-27 13:12:23 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:24.73754763Z 2026-08-27 13:12:24 [INFO] services.parts_context_service: parts_context.rewrite_selected route=WEB_REQUIRED metadata={"confidence": "high", "has_act": true, "has_composed_instruction": true, "has_persona": true, "has_recipient": true, "has_structure": true, "has_theme": true, "missing_field_count": 1}
-2026-08-27T13:12:24.745628902Z 2026-08-27 13:12:24 [INFO] services.conversation_context_service: orchestration.long_term_memory_skipped reason=EXTERNAL_SEARCH_REQUIRED memory_reason=SUBSTANTIVE_QUERY
-2026-08-27T13:12:24.745648163Z 2026-08-27 13:12:24 [INFO] services.orchestration_service: orchestration.context_prepared conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 learner_understanding=unknown retrieved_memory=False
-2026-08-27T13:12:24.745752475Z 2026-08-27 13:12:24 [INFO] services.orchestration_service: paper.auto_explain_policy_selected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 enabled=True applied=False task=NONE reason=NO_ATTACHMENT pdf_count=0
-2026-08-27T13:12:24.745897397Z 2026-08-27 13:12:24 [INFO] services.orchestration_service: visual.preflight_policy_gate conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 allowed=True trigger=response_policy visual_support=OPTIONAL visual_reason=KNOWLEDGE_EXPLANATION explicit_visual=False known_affordance=False max_images=2 has_attachment_visual_sources=False
-2026-08-27T13:12:25.28579927Z 2026-08-27 13:12:25 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:25.469092494Z 2026-08-27 13:12:25 [INFO] services.visual_grounding_agent: visual.brief_planned conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 visual_type=process_diagram source=agent reject_count=5 task_intent=explain_text answer_depth=scaffolded turn_route=web_required
-2026-08-27T13:12:25.469108074Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.preflight_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 slot_count=1 visual_type=process_diagram brief_source=agent
-2026-08-27T13:12:25.469118474Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.slot_resolution_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 slot_id=img_1
-2026-08-27T13:12:25.470679036Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.cache_scope_selected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 scope=preflight visual_type=process_diagram
-2026-08-27T13:12:25.544285251Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.cache_hit conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 status=hit
-2026-08-27T13:12:25.544303732Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.cache_rejected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 reason=unsafe_cached_image
-2026-08-27T13:12:25.546046947Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.parallel_provider_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider_count=5
-2026-08-27T13:12:25.583748342Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.provider_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=perplexity_images timeout_seconds=4.5
-2026-08-27T13:12:25.661436649Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.provider_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=wikimedia timeout_seconds=3.0
-2026-08-27T13:12:25.748690729Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.provider_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=openverse timeout_seconds=3.0
-2026-08-27T13:12:25.774118668Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.provider_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=tavily_images timeout_seconds=3.0
-2026-08-27T13:12:25.849091081Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.provider_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=serpapi_images timeout_seconds=3.0
-2026-08-27T13:12:25.988446115Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.provider_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=openverse candidate_count=0
-2026-08-27T13:12:25.988630078Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.parallel_provider_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=openverse candidate_count=0
-2026-08-27T13:12:25.988641968Z 2026-08-27 13:12:25 [INFO] services.visual_answer_service: visual.parallel_candidates_merged conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider_count=1 candidate_count=0 pending_provider_count=4
-2026-08-27T13:12:26.15037763Z 2026-08-27 13:12:26 [INFO] services.visual_answer_service: visual.provider_failed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=perplexity_images reason=HTTPStatusError status_code=401
-2026-08-27T13:12:26.150552764Z 2026-08-27 13:12:26 [INFO] services.visual_answer_service: visual.parallel_provider_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=perplexity_images candidate_count=0
-2026-08-27T13:12:26.150564094Z 2026-08-27 13:12:26 [INFO] services.visual_answer_service: visual.parallel_candidates_merged conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider_count=2 candidate_count=0 pending_provider_count=3
-2026-08-27T13:12:26.497629061Z 2026-08-27 13:12:26 [INFO] services.visual_answer_service: visual.provider_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=wikimedia candidate_count=2
-2026-08-27T13:12:26.497779954Z 2026-08-27 13:12:26 [INFO] services.visual_answer_service: visual.parallel_provider_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=wikimedia candidate_count=2
-2026-08-27T13:12:26.497793234Z 2026-08-27 13:12:26 [INFO] services.visual_answer_service: visual.parallel_candidates_merged conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider_count=3 candidate_count=2 pending_provider_count=2
-2026-08-27T13:12:26.498199193Z 2026-08-27 13:12:26 [INFO] services.visual_answer_service: visual.candidate_top_scored conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=wikimedia candidate_count=2 safe_candidate_count=2 top_score=0.58 threshold=0.40 source_domain=commons.wikimedia.org license=Public domain dimension_bucket=large
-2026-08-27T13:12:27.278316139Z 2026-08-27 13:12:27 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:27.513469233Z 2026-08-27 13:12:27 [INFO] services.visual_grounding_agent: visual.grounding_checked conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 accepted=False expected_type=process_diagram candidate_type=document_scan reason=document_scan_mismatch
-2026-08-27T13:12:27.513492624Z 2026-08-27 13:12:27 [INFO] services.visual_answer_service: visual.candidate_rejected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=wikimedia reason=grounding_document_scan_mismatch expected_type=process_diagram candidate_type=document_scan
-2026-08-27T13:12:28.182780459Z 2026-08-27 13:12:28 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:28.201450623Z 2026-08-27 13:12:28 [INFO] services.visual_grounding_agent: visual.grounding_checked conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 accepted=False expected_type=process_diagram candidate_type=document_scan reason=document_scan_rejected
-2026-08-27T13:12:28.201476663Z 2026-08-27 13:12:28 [INFO] services.visual_answer_service: visual.candidate_rejected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=wikimedia reason=grounding_document_scan_rejected expected_type=process_diagram candidate_type=document_scan
-2026-08-27T13:12:28.201498114Z 2026-08-27 13:12:28 [INFO] services.visual_answer_service: visual.image_omitted conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 reason=grounding_rejected provider=wikimedia checked_candidate_count=2 threshold=0.40
-2026-08-27T13:12:28.440157128Z 2026-08-27 13:12:28 [INFO] services.visual_answer_service: visual.provider_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=tavily_images candidate_count=45
-2026-08-27T13:12:28.440345062Z 2026-08-27 13:12:28 [INFO] services.visual_answer_service: visual.parallel_provider_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=tavily_images candidate_count=45
-2026-08-27T13:12:28.440368032Z 2026-08-27 13:12:28 [INFO] services.visual_answer_service: visual.parallel_candidates_merged conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider_count=4 candidate_count=47 pending_provider_count=1
-2026-08-27T13:12:28.441895773Z 2026-08-27 13:12:28 [INFO] services.visual_answer_service: visual.candidate_top_scored conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=tavily_images candidate_count=45 safe_candidate_count=22 top_score=1.00 threshold=0.40 source_domain=pharmaceutical-journal.com license=unknown dimension_bucket=unknown
-2026-08-27T13:12:28.895035436Z 2026-08-27 13:12:28 [INFO] services.visual_answer_service: visual.provider_failed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=serpapi_images reason=ReadTimeout status_code=unknown
-2026-08-27T13:12:29.053164245Z 2026-08-27 13:12:29 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:29.075483302Z 2026-08-27 13:12:29 [INFO] services.visual_grounding_agent: visual.grounding_checked conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 accepted=True expected_type=process_diagram candidate_type=process_diagram reason=matches_visual_brief_and_caption_goal
-2026-08-27T13:12:29.868032708Z 2026-08-27 13:12:29 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:30.578357106Z 2026-08-27 13:12:30 [INFO] services.visual_grounding_agent: visual.grounding_failed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 reason=TimeoutError
-2026-08-27T13:12:30.578384517Z 2026-08-27 13:12:30 [INFO] services.visual_answer_service: visual.candidate_rejected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 provider=tavily_images reason=grounding_model_unavailable expected_type=unknown candidate_type=unknown
-2026-08-27T13:12:30.578388637Z 2026-08-27 13:12:30 [INFO] services.visual_answer_service: visual.image_selected conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 source_domain=pharmaceutical-journal.com provider=tavily_images confidence_bucket=high
-2026-08-27T13:12:30.578391907Z 2026-08-27 13:12:30 [INFO] services.visual_answer_service: visual.image_block_ready conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 stage=tavily_images provider=tavily_images source_domain=pharmaceutical-journal.com has_explanatory_caption=False pedagogical_score=0.20
-2026-08-27T13:12:30.578396067Z 2026-08-27 13:12:30 [INFO] services.visual_answer_service: visual.slot_resolution_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 slot_id=img_1 source=provider
-2026-08-27T13:12:30.578398867Z 2026-08-27 13:12:30 [INFO] services.visual_answer_service: visual.preflight_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 resolved_image_count=1
-2026-08-27T13:12:30.662925872Z 2026-08-27 13:12:30 [INFO] services.visual_input_service: visual.input_data_uri_unavailable conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 source_domain=pharmaceutical-journal.com reason=HTTPStatusError:403
-2026-08-27T13:12:30.663026754Z 2026-08-27 13:12:30 [INFO] services.output_image_service: visual.output_understanding_input_unavailable conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 slot_id=img_1 source_domain=pharmaceutical-journal.com input_source=remote_url reason=HTTPStatusError:403
-2026-08-27T13:12:30.663148176Z 2026-08-27 13:12:30 [INFO] services.visual_answer_service: visual.input_domain_penalized source_domain=pharmaceutical-journal.com reason=httpstatuserror_403 ttl_seconds=21600
-2026-08-27T13:12:30.663169296Z 2026-08-27 13:12:30 [INFO] services.output_image_service: visual.output_image_omitted conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 slot_id=img_1 reason=understanding_unavailable attempt_count=1
-2026-08-27T13:12:30.663221137Z 2026-08-27 13:12:30 [INFO] services.output_image_service: visual.output_images_prepared conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 selected_image_count=1 understood_image_count=0 omitted_image_count=1 understanding_enabled=True
-2026-08-27T13:12:30.663240048Z 2026-08-27 13:12:30 [INFO] services.orchestration_service: visual.preverified_inventory_ready conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 available_image_count=0 has_attachment_visual_sources=False
-2026-08-27T13:12:30.663392171Z 2026-08-27 13:12:30 [INFO] services.conversation_stream_service: orchestration.stream_started conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 model=google/gemini-3.7-flash attachment_parser=False
-2026-08-27T13:12:33.063070989Z 2026-08-27 13:12:33 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:36.327411323Z 2026-08-27 13:12:36 [INFO] services.conversation_stream_service: orchestration.stream_completed conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 elapsed_ms=5663
-2026-08-27T13:12:36.327723249Z 2026-08-27 13:12:36 [INFO] services.visual_answer_service: visual.slots_planned conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 slot_count=2 reason=policy_or_explicit_visual
-2026-08-27T13:12:36.32773481Z 2026-08-27 13:12:36 [INFO] services.visual_answer_service: visual.preverified_available conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 available_image_count=0 planned_image_slot_count=0
-2026-08-27T13:12:36.327802561Z 2026-08-27 13:12:36 [INFO] services.visual_answer_service: visual.preverified_unused conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 available_image_count=0
-2026-08-27T13:12:36.327871142Z 2026-08-27 13:12:36 [INFO] services.orchestration_service: visual.answer_blocks_skipped conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 planned_image_slot_count=0 preverified_image_count=0
-2026-08-27T13:12:36.328098827Z 2026-08-27 13:12:36 [INFO] services.suggestion_service: suggestions.requested language=English model=google/gemini-2.5-flash-lite context_count=0
-2026-08-27T13:12:36.952516396Z 2026-08-27 13:12:36 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:37.14043595Z 2026-08-27 13:12:37 [INFO] services.suggestion_service: suggestions.model_returned language=English response_chars=175
-2026-08-27T13:12:37.14046115Z 2026-08-27 13:12:37 [INFO] services.suggestion_service: suggestions.json_parsed language=English candidate_count=3
-2026-08-27T13:12:37.140791107Z 2026-08-27 13:12:37 [INFO] services.suggestion_service: suggestions.filtered language=English candidate_count=3 accepted_count=3
-2026-08-27T13:12:37.14091885Z 2026-08-27 13:12:37 [INFO] services.post_turn_service: orchestration.suggestions_generated run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 language=en count=3
-2026-08-27T13:12:37.140974511Z 2026-08-27 13:12:37 [INFO] services.post_turn_service: orchestration.suggestions_emitted run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 count=3
-2026-08-27T13:12:37.14143827Z 2026-08-27 13:12:37 [INFO] services.orchestration_service: orchestration.post_turn_queued run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078
-2026-08-27T13:12:37.141622744Z 2026-08-27 13:12:37 [INFO] services.orchestration_service: orchestration.turn_trace_completed run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 trace={'run_id': 'da8f56c010af4d699689db7485c22d7d', 'conversation_id': 'bd77cc31-dc1e-40cc-b9b4-896bef80a078', 'elapsed_ms': 19070, 'phases': [{'name': 'request_accepted', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_started', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'search_routing_finished', 'elapsed_ms': 2875, 'occurrence': 1}, {'name': 'turn_plan_web_required', 'elapsed_ms': 2875, 'occurrence': 1}, {'name': 'turn_intake_started', 'elapsed_ms': 2875, 'occurrence': 1}, {'name': 'turn_intake_finished', 'elapsed_ms': 2900, 'occurrence': 1}, {'name': 'policy_classifier_started', 'elapsed_ms': 2901, 'occurrence': 1}, {'name': 'rag_skipped', 'elapsed_ms': 2901, 'occurrence': 1}, {'name': 'web_search_started', 'elapsed_ms': 2901, 'occurrence': 1}, {'name': 'policy_classifier_finished', 'elapsed_ms': 4202, 'occurrence': 1}, {'name': 'prompt_assembly_started', 'elapsed_ms': 4202, 'occurrence': 1}, {'name': 'parts_context_started', 'elapsed_ms': 4202, 'occurrence': 1}, {'name': 'parts_context_finished', 'elapsed_ms': 6666, 'occurrence': 1}, {'name': 'hot_memory_snapshot_started', 'elapsed_ms': 6668, 'occurrence': 1}, {'name': 'hot_memory_snapshot_finished', 'elapsed_ms': 6673, 'occurrence': 1}, {'name': 'prompt_assembly_finished', 'elapsed_ms': 6674, 'occurrence': 1}, {'name': 'visual_preflight_started', 'elapsed_ms': 6674, 'occurrence': 1}, {'name': 'visual_preflight_finished', 'elapsed_ms': 12592, 'occurrence': 1}, {'name': 'main_model_started', 'elapsed_ms': 12592, 'occurrence': 1}, {'name': 'first_answer_delta', 'elapsed_ms': 16083, 'occurrence': 1}, {'name': 'main_model_finished', 'elapsed_ms': 18256, 'occurrence': 1}, {'name': 'suggestions_started', 'elapsed_ms': 18257, 'occurrence': 1}, {'name': 'suggestions_finished', 'elapsed_ms': 19070, 'occurrence': 1}, {'name': 'post_turn_queued', 'elapsed_ms': 19070, 'occurrence': 1}, {'name': 'terminal_sent', 'elapsed_ms': 19070, 'occurrence': 1}], 'model_calls': {'main_answer': 1, 'parts_context_rewrite': 1, 'policy_classifier': 1, 'search_routing': 1, 'suggestions': 1, 'web_query_rewrite': 1}, 'tool_calls': {'hot_memory': 1}, 'cache_statuses': {'hot_memory:not_applicable': 1}}
-2026-08-27T13:12:37.141691855Z 2026-08-27 13:12:37 [INFO] services.orchestration_service: orchestration.turn_trace_summary run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 summary={"cache_statuses": {"hot_memory:not_applicable": 1}, "conversation_id": "bd77cc31-dc1e-40cc-b9b4-896bef80a078", "elapsed_ms": 19070, "is_slow": true, "main_model_started_ms": 12592, "model_calls": {"main_answer": 1, "parts_context_rewrite": 1, "policy_classifier": 1, "search_routing": 1, "suggestions": 1, "web_query_rewrite": 1}, "phase_durations_ms": {"hot_memory_snapshot": 5, "main_model": 5664, "parts_context": 2464, "policy_classifier": 1301, "prompt_assembly": 2472, "search_routing": 2874, "suggestions": 813, "turn_intake": 25, "visual_preflight": 5918}, "provider_first_token_ms": 3491, "run_id": "da8f56c010af4d699689db7485c22d7d", "slow_reasons": ["total_elapsed", "time_to_first_answer", "top_phase:visual_preflight"], "terminal_sent_ms": 19070, "time_to_first_answer_ms": 16083, "tool_calls": {"hot_memory": 1}, "top_phase_durations": [{"duration_ms": 5918, "name": "visual_preflight"}, {"duration_ms": 5664, "name": "main_model"}, {"duration_ms": 2874, "name": "search_routing"}, {"duration_ms": 2472, "name": "prompt_assembly"}, {"duration_ms": 2464, "name": "parts_context"}]}
-2026-08-27T13:12:37.141773727Z 2026-08-27 13:12:37 [WARNING] services.orchestration_service: orchestration.turn_trace_slow run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 summary={"cache_statuses": {"hot_memory:not_applicable": 1}, "conversation_id": "bd77cc31-dc1e-40cc-b9b4-896bef80a078", "elapsed_ms": 19070, "is_slow": true, "main_model_started_ms": 12592, "model_calls": {"main_answer": 1, "parts_context_rewrite": 1, "policy_classifier": 1, "search_routing": 1, "suggestions": 1, "web_query_rewrite": 1}, "phase_durations_ms": {"hot_memory_snapshot": 5, "main_model": 5664, "parts_context": 2464, "policy_classifier": 1301, "prompt_assembly": 2472, "search_routing": 2874, "suggestions": 813, "turn_intake": 25, "visual_preflight": 5918}, "provider_first_token_ms": 3491, "run_id": "da8f56c010af4d699689db7485c22d7d", "slow_reasons": ["total_elapsed", "time_to_first_answer", "top_phase:visual_preflight"], "terminal_sent_ms": 19070, "time_to_first_answer_ms": 16083, "tool_calls": {"hot_memory": 1}, "top_phase_durations": [{"duration_ms": 5918, "name": "visual_preflight"}, {"duration_ms": 5664, "name": "main_model"}, {"duration_ms": 2874, "name": "search_routing"}, {"duration_ms": 2472, "name": "prompt_assembly"}, {"duration_ms": 2464, "name": "parts_context"}]}
-2026-08-27T13:12:37.142063782Z 2026-08-27 13:12:37 [INFO] services.post_turn_service: orchestration.post_turn_dispatched run_id=da8f56c010af4d699689db7485c22d7d conversation_id=bd77cc31-dc1e-40cc-b9b4-896bef80a078 reflection_durable=False evaluation_durable=False
-2026-08-27T13:12:37.144203035Z 2026-08-27 13:12:37 [WARNING] persistqueue.queue: Default tempdir '/tmp/tmp650e49xo' is not on the same filesystem with queue path '/opt/render/project/src/data/gum_data/3e76acb3-2b87-4720-a05a-e3f40d488869/batches/queue',defaulting to '/opt/render/project/src/data/gum_data/3e76acb3-2b87-4720-a05a-e3f40d488869/batches/queue'.
-2026-08-27T13:12:37.433005301Z [GUM] Initializing new GUM instance for user 3e76acb3-2b87-4720-a05a-e3f40d488869...
-2026-08-27T13:12:37.433023331Z INFO:     74.220.52.215:0 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
-2026-08-27T13:12:38.476623547Z 2026-08-27 13:12:38 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:38.647421698Z 2026-08-27 13:12:38 [INFO] memory_store: [MemoryStore] Published learner state snapshot v14 for user 3e76acb3-2b87-4720-a05a-e3f40d488869
-2026-08-27T13:12:38.799488194Z 2026-08-27 13:12:38 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:41.373438847Z 2026-08-27 13:12:41 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:12:41.949026197Z 2026-08-27 13:12:41,948 - INFO - [STITCH] Filtering 2 candidates using Label Density Ranking...
-2026-08-27T13:12:41.949049158Z 2026-08-27 13:12:41 [INFO] gum: [STITCH] Filtering 2 candidates using Label Density Ranking...
-2026-08-27T13:12:41.949064778Z 2026-08-27 13:12:41,948 - INFO - [STITCH] Filtered down to 1 candidates.
-2026-08-27T13:12:41.949067498Z 2026-08-27 13:12:41 [INFO] gum: [STITCH] Filtered down to 1 candidates.
-2026-08-27T13:12:42.68891621Z 2026-08-27 13:12:42 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:08.430442758Z 2026-08-27 13:13:08 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:10.35965206Z 2026-08-27 13:13:10 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:11.222782881Z 2026-08-27 13:13:11 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:12.253093165Z 2026-08-27 13:13:12 [INFO] auth: JWT successfully verified for user_id: 3e76acb3-2b87-4720-a05a-e3f40d488869
-2026-08-27T13:13:12.433691057Z 2026-08-27 13:13:12 [INFO] services.attachment_service: attachment.processing_started count=1
-2026-08-27T13:13:12.44877992Z 2026-08-27 13:13:12 [INFO] services.attachment_service: attachment.processed filename=Attention Is all you need.pdf declared_type=application/pdf media_type=application/pdf size_bucket=gte_1mb sha256_prefix=bdfaa68d8984
-2026-08-27T13:13:12.456638988Z [EDF-LOG] evaluate_student_state: LLM returned state: STARTING, strategy: 提供具體步驟與視覺化類比，將 mRNA 疫苗的作用機制拆解為細胞內的蛋白質製造過程，並解釋其如何作為指令集而非直接改變基因。, trigger_proactive: False
-2026-08-27T13:13:12.456656498Z INFO:     74.220.52.215:0 - "POST /api/v1/stream HTTP/1.1" 200 OK
-2026-08-27T13:13:12.457213259Z 2026-08-27 13:13:12 [INFO] services.orchestration_service: orchestration.attachment_routing conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 count=1 types=['file']
-2026-08-27T13:13:12.458367042Z 2026-08-27 13:13:12 [INFO] services.orchestration_service: orchestration.turn_plan_selected run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 route=ATTACHMENT_GROUNDED enabled=True reason=ATTACHMENT_CONTEXT_PRIORITY max_foreground_model_calls=3
-2026-08-27T13:13:12.465093217Z 2026-08-27 13:13:12 [INFO] memory_store: [MemoryStore] Updated working memory for user 3e76acb3-2b87-4720-a05a-e3f40d488869: ['current_focus', 'current_focus_conversation_id']
-2026-08-27T13:13:12.465150408Z 2026-08-27 13:13:12 [INFO] services.memory_ingestion_service: memory.ingestion_decided user_id=3e76acb3-2b87-4720-a05a-e3f40d488869 message_id=65c40b859ab5be73fffc4bf1 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 candidate_id=none state=working_context_only reason=ordinary_user_message_for_current_turn category=current_focus promoted=False
-2026-08-27T13:13:12.46523096Z 2026-08-27 13:13:12 [INFO] services.turn_intake_service: orchestration.memory_ingestion_dispatched run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 outcome=working_context_only reason=ordinary_user_message_for_current_turn
-2026-08-27T13:13:13.966625712Z 2026-08-27 13:13:13 [WARNING] services.orchestration_service: orchestration.dialogue_policy_timeout conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 fallback=NORMAL
-2026-08-27T13:13:13.966895197Z 2026-08-27 13:13:13 [INFO] services.orchestration_service: orchestration.response_policy_applied conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 source=timeout_fallback metadata={"answer_depth": "SCAFFOLDED", "attachment_reason": "NO_ATTACHMENT", "attachment_task": "NONE", "followup_mode": "OPTIONAL", "legacy_policy": "NORMAL", "structure": "STEP_BY_STEP", "task_intent": "GENERAL_QA", "tone": "TUTORING", "visual_reason": "NOT_NEEDED", "visual_support": "NONE"}
-2026-08-27T13:13:14.662484008Z 2026-08-27 13:13:14 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:14.88791011Z 2026-08-27 13:13:14 [INFO] services.parts_context_service: parts_context.rewrite_selected route=ATTACHMENT_GROUNDED metadata={"confidence": "high", "has_act": true, "has_composed_instruction": true, "has_persona": true, "has_recipient": true, "has_structure": true, "has_theme": true, "missing_field_count": 1}
-2026-08-27T13:13:14.893309838Z 2026-08-27 13:13:14 [INFO] services.conversation_context_service: orchestration.long_term_memory_skipped reason=ATTACHMENT_CONTEXT_PRIORITY memory_reason=SUBSTANTIVE_QUERY
-2026-08-27T13:13:14.89341059Z 2026-08-27 13:13:14 [INFO] services.orchestration_service: orchestration.context_prepared conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 learner_understanding=unknown retrieved_memory=False
-2026-08-27T13:13:14.893727896Z 2026-08-27 13:13:14 [INFO] services.orchestration_service: paper.auto_explain_policy_selected conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 enabled=True applied=False task=NONE reason=NO_ATTACHMENT pdf_count=1
-2026-08-27T13:13:14.894127274Z 2026-08-27 13:13:14 [INFO] services.orchestration_service: visual.preflight_policy_gate conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 allowed=False trigger=policy_gate visual_support=NONE visual_reason=NOT_NEEDED explicit_visual=False known_affordance=False max_images=2 has_attachment_visual_sources=True
-2026-08-27T13:13:14.894612444Z 2026-08-27 13:13:14 [INFO] services.orchestration_service: visual.attachment_preflight_skipped conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 reason=policy_gate source_count=1
-2026-08-27T13:13:14.894870419Z 2026-08-27 13:13:14 [INFO] services.orchestration_service: visual.preverified_inventory_ready conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 available_image_count=0 has_attachment_visual_sources=True
-2026-08-27T13:13:14.895206276Z 2026-08-27 13:13:14 [INFO] services.conversation_stream_service: orchestration.stream_started conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 model=google/gemini-3.7-flash attachment_parser=True
-2026-08-27T13:13:20.299321757Z 2026-08-27 13:13:20 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:22.775227628Z 2026-08-27 13:13:22 [INFO] services.conversation_stream_service: orchestration.stream_completed conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 elapsed_ms=7879
-2026-08-27T13:13:22.775508084Z 2026-08-27 13:13:22 [INFO] services.orchestration_service: visual.answer_blocks_skipped conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 planned_image_slot_count=0 preverified_image_count=0
-2026-08-27T13:13:22.775683768Z 2026-08-27 13:13:22 [INFO] services.suggestion_service: suggestions.requested language=English model=google/gemini-2.5-flash-lite context_count=0
-2026-08-27T13:13:23.399749747Z 2026-08-27 13:13:23 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:23.651283028Z 2026-08-27 13:13:23 [INFO] services.suggestion_service: suggestions.model_returned language=English response_chars=199
-2026-08-27T13:13:23.651305278Z 2026-08-27 13:13:23 [INFO] services.suggestion_service: suggestions.json_parsed language=English candidate_count=3
-2026-08-27T13:13:23.651354289Z 2026-08-27 13:13:23 [INFO] services.suggestion_service: suggestions.filtered language=English candidate_count=3 accepted_count=3
-2026-08-27T13:13:23.651473251Z 2026-08-27 13:13:23 [INFO] services.post_turn_service: orchestration.suggestions_generated run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 language=en count=3
-2026-08-27T13:13:23.651517612Z 2026-08-27 13:13:23 [INFO] services.post_turn_service: orchestration.suggestions_emitted run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 count=3
-2026-08-27T13:13:23.652051223Z 2026-08-27 13:13:23 [INFO] services.orchestration_service: orchestration.post_turn_queued run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409
-2026-08-27T13:13:23.652219126Z 2026-08-27 13:13:23 [INFO] services.orchestration_service: orchestration.turn_trace_completed run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 trace={'run_id': '2dedaa3f60cf4146a8618a1c349c5b96', 'conversation_id': 'f75ca9f5-1fe2-4d91-8fb7-360656de8409', 'elapsed_ms': 11195, 'phases': [{'name': 'request_accepted', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_started', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_finished', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'turn_plan_attachment_grounded', 'elapsed_ms': 1, 'occurrence': 1}, {'name': 'turn_intake_started', 'elapsed_ms': 2, 'occurrence': 1}, {'name': 'turn_intake_finished', 'elapsed_ms': 8, 'occurrence': 1}, {'name': 'policy_classifier_started', 'elapsed_ms': 9, 'occurrence': 1}, {'name': 'rag_skipped', 'elapsed_ms': 9, 'occurrence': 1}, {'name': 'policy_classifier_timeout', 'elapsed_ms': 1510, 'occurrence': 1}, {'name': 'prompt_assembly_started', 'elapsed_ms': 1510, 'occurrence': 1}, {'name': 'parts_context_started', 'elapsed_ms': 1510, 'occurrence': 1}, {'name': 'parts_context_finished', 'elapsed_ms': 2430, 'occurrence': 1}, {'name': 'hot_memory_snapshot_started', 'elapsed_ms': 2430, 'occurrence': 1}, {'name': 'hot_memory_snapshot_finished', 'elapsed_ms': 2434, 'occurrence': 1}, {'name': 'prompt_assembly_finished', 'elapsed_ms': 2437, 'occurrence': 1}, {'name': 'visual_preflight_started', 'elapsed_ms': 2437, 'occurrence': 1}, {'name': 'visual_preflight_finished', 'elapsed_ms': 2438, 'occurrence': 1}, {'name': 'main_model_started', 'elapsed_ms': 2439, 'occurrence': 1}, {'name': 'first_answer_delta', 'elapsed_ms': 8101, 'occurrence': 1}, {'name': 'main_model_finished', 'elapsed_ms': 10318, 'occurrence': 1}, {'name': 'suggestions_started', 'elapsed_ms': 10319, 'occurrence': 1}, {'name': 'suggestions_finished', 'elapsed_ms': 11195, 'occurrence': 1}, {'name': 'post_turn_queued', 'elapsed_ms': 11195, 'occurrence': 1}, {'name': 'terminal_sent', 'elapsed_ms': 11195, 'occurrence': 1}], 'model_calls': {'main_answer': 1, 'parts_context_rewrite': 1, 'policy_classifier': 1, 'suggestions': 1}, 'tool_calls': {'hot_memory': 1}, 'cache_statuses': {'hot_memory:not_applicable': 1}}
-2026-08-27T13:13:23.652313398Z 2026-08-27 13:13:23 [INFO] services.orchestration_service: orchestration.turn_trace_summary run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 summary={"cache_statuses": {"hot_memory:not_applicable": 1}, "conversation_id": "f75ca9f5-1fe2-4d91-8fb7-360656de8409", "elapsed_ms": 11195, "is_slow": true, "main_model_started_ms": 2439, "model_calls": {"main_answer": 1, "parts_context_rewrite": 1, "policy_classifier": 1, "suggestions": 1}, "phase_durations_ms": {"hot_memory_snapshot": 4, "main_model": 7879, "parts_context": 920, "policy_classifier": 1501, "prompt_assembly": 927, "search_routing": 0, "suggestions": 876, "turn_intake": 6, "visual_preflight": 1}, "provider_first_token_ms": 5662, "run_id": "2dedaa3f60cf4146a8618a1c349c5b96", "slow_reasons": ["total_elapsed", "time_to_first_answer", "provider_first_token", "top_phase:main_model"], "terminal_sent_ms": 11195, "time_to_first_answer_ms": 8101, "tool_calls": {"hot_memory": 1}, "top_phase_durations": [{"duration_ms": 7879, "name": "main_model"}, {"duration_ms": 1501, "name": "policy_classifier"}, {"duration_ms": 927, "name": "prompt_assembly"}, {"duration_ms": 920, "name": "parts_context"}, {"duration_ms": 876, "name": "suggestions"}]}
-2026-08-27T13:13:23.65238093Z 2026-08-27 13:13:23 [WARNING] services.orchestration_service: orchestration.turn_trace_slow run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 summary={"cache_statuses": {"hot_memory:not_applicable": 1}, "conversation_id": "f75ca9f5-1fe2-4d91-8fb7-360656de8409", "elapsed_ms": 11195, "is_slow": true, "main_model_started_ms": 2439, "model_calls": {"main_answer": 1, "parts_context_rewrite": 1, "policy_classifier": 1, "suggestions": 1}, "phase_durations_ms": {"hot_memory_snapshot": 4, "main_model": 7879, "parts_context": 920, "policy_classifier": 1501, "prompt_assembly": 927, "search_routing": 0, "suggestions": 876, "turn_intake": 6, "visual_preflight": 1}, "provider_first_token_ms": 5662, "run_id": "2dedaa3f60cf4146a8618a1c349c5b96", "slow_reasons": ["total_elapsed", "time_to_first_answer", "provider_first_token", "top_phase:main_model"], "terminal_sent_ms": 11195, "time_to_first_answer_ms": 8101, "tool_calls": {"hot_memory": 1}, "top_phase_durations": [{"duration_ms": 7879, "name": "main_model"}, {"duration_ms": 1501, "name": "policy_classifier"}, {"duration_ms": 927, "name": "prompt_assembly"}, {"duration_ms": 920, "name": "parts_context"}, {"duration_ms": 876, "name": "suggestions"}]}
-2026-08-27T13:13:23.652647445Z 2026-08-27 13:13:23 [INFO] services.post_turn_service: orchestration.post_turn_dispatched run_id=2dedaa3f60cf4146a8618a1c349c5b96 conversation_id=f75ca9f5-1fe2-4d91-8fb7-360656de8409 reflection_durable=False evaluation_durable=False
-2026-08-27T13:13:23.915952922Z INFO:     74.220.52.215:0 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
-2026-08-27T13:13:24.467351592Z 2026-08-27 13:13:24 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:24.535867758Z 2026-08-27 13:13:24 [INFO] memory_store: [MemoryStore] Published learner state snapshot v15 for user 3e76acb3-2b87-4720-a05a-e3f40d488869
-2026-08-27T13:13:24.561344829Z 2026-08-27 13:13:24 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:27.714665531Z 2026-08-27 13:13:27 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:28.109428067Z 2026-08-27 13:13:28,109 - INFO - [STITCH] Filtering 4 candidates using Label Density Ranking...
-2026-08-27T13:13:28.109454998Z 2026-08-27 13:13:28 [INFO] gum: [STITCH] Filtering 4 candidates using Label Density Ranking...
-2026-08-27T13:13:28.109477478Z 2026-08-27 13:13:28,109 - INFO - [STITCH] Filtered down to 0 candidates.
-2026-08-27T13:13:28.109499879Z 2026-08-27 13:13:28 [INFO] gum: [STITCH] Filtered down to 0 candidates.
-2026-08-27T13:13:28.109535269Z 2026-08-27 13:13:28,109 - WARNING - [STITCH] Strict mode: No candidates matched the predicted labels. Returning empty results.
-2026-08-27T13:13:28.10954226Z 2026-08-27 13:13:28 [WARNING] gum: [STITCH] Strict mode: No candidates matched the predicted labels. Returning empty results.
-2026-08-27T13:13:28.880048259Z 2026-08-27 13:13:28 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:43.401880882Z 2026-08-27 13:13:43 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:45.112017085Z 2026-08-27 13:13:45 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-08-27T13:13:46.676403815Z 2026-08-27 13:13:46 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+(.venv) @CongJie-Pan ➜ /workspaces/AREQA (master) $ npm run drift:refresh
+
+> drift:refresh
+> bash scripts/drift-refresh.sh
+
+
+==> Rescan main project scope
+
+🔍 Drift - Enterprise Pattern Scanner
+
+✔ Discovered 154 files
+✔ Loaded 170 detectors (101 available) [1 worker threads]
+✔ Analyzed 154 files in 17.28s (701 pattern types, 228 violations)
+
+Patterns detected by category:
+  types: 15596 occurrences
+  styling: 14177 occurrences
+  components: 11530 occurrences
+  data-access: 11488 occurrences
+  errors: 10263 occurrences
+  structural: 7715 occurrences
+  performance: 7666 occurrences
+  logging: 6327 occurrences
+  security: 4925 occurrences
+  testing: 3387 occurrences
+  config: 3140 occurrences
+  auth: 2622 occurrences
+  accessibility: 1740 occurrences
+  documentation: 951 occurrences
+  api: 156 occurrences
+
+⚠️  228 Violations Found:
+
+  Warnings (201):
+    backend/agents/tutor_agent.py:60 - List endpoint without pagination support
+    backend/cold_memory.py:78 - Using POST for read operation. Consider using GET for idempotent read operations.
+    backend/cold_memory.py:84 - List endpoint without pagination support
+    backend/cold_memory.py:197 - List endpoint without pagination support
+    backend/cold_memory.py:201 - List endpoint without pagination support
+    ... and 196 more warnings
+✔ Saved 1 new patterns (700 already existed)
+
+✔ Found 0 contracts (22 BE endpoints, 0 FE calls)
+
+View contracts in the dashboard:
+  drift dashboard
+
+✔ Found 0 tables, 0 access points (native)
+
+View data boundaries:
+  drift boundaries
+  drift boundaries table <name>
+✔ Built 3 views, 2 indexes in 77ms
+
+Scan Summary
+────────────────────────────────────────
+  Files scanned:      154
+  Total patterns:     701
+    Discovered:       220
+    Approved:         481
+    Ignored:          0
+
+High Confidence Patterns (ready for approval):
+
+┌───────────────┬──────────────────────────────┬────────────────────┬────────────┬────────────┬──────────┐
+│ ID            │ Name                         │ Category           │ Confidence │  Locations │ Outliers │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 8cacdca3c8399 │ Circular Dependencies Detect │ structural         │        90% │         14 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 47b257dfc91f8 │ Co-Location Detector         │ structural         │        88% │         17 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ d13abc2984a44 │ Barrel Exports Detector      │ structural         │        85% │         15 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ dbed6407126d0 │ Ref Forwarding Detector      │ components         │        90% │         15 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 60e11601c1a7c │ Composition Detector         │ components         │        87% │         20 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ c1a697077ebb8 │ Ref Forwarding Detector      │ components         │        88% │         15 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 6a5888475f0f4 │ Modal Patterns Detector      │ components         │        85% │          6 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 3e6ff1db23c7e │ Ref Forwarding Detector      │ components         │        88% │          1 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 92bac182e0a6b │ Design Tokens Detector       │ styling            │        85% │         22 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 50fbf26310f94 │ Typography Detector          │ styling            │        89% │          2 │        0 │
+└───────────────┴──────────────────────────────┴────────────────────┴────────────┴────────────┴──────────┘
+  ... and 60 more
+
+📊 Pattern Review
+──────────────────────────────────────────────────
+  Patterns discovered:     220
+  Auto-approve eligible:   3 (≥90% confidence)
+  Needs review:            217
+
+Quick actions:
+  drift approve --auto     - Auto-approve 3 high-confidence patterns
+  drift audit --review     - Generate detailed review report
+  drift approve <id>       - Approve a specific pattern
+
+For agent assistance, copy this to your AI assistant:
+┌─────────────────────────────────────────────────────────────┐
+│ Run `drift audit --review` and approve high-confidence     │
+│ patterns that match codebase conventions. Flag any that    │
+│ look like false positives or duplicates.                   │
+└─────────────────────────────────────────────────────────────┘
+
+
+==> Build call graph
+
+🚀 Building Call Graph
+══════════════════════════════════════════════════
+
+🔍 Detected Project Stack
+──────────────────────────────────────────────────
+  Languages: 🟦 typescript  🟨 javascript
+
+
+✓ Call graph built successfully (native Rust)
+
+📊 Graph Statistics
+──────────────────────────────────────────────────
+  Files:         659
+  Functions:     5,483
+  Call Sites:    45,191 (20,463 resolved, 45%)
+  Entry Points:  5,468 (API routes, exports)
+  Data Accessors: 660 (functions with DB access)
+  Duration:      5.39s
+
+──────────────────────────────────────────────────
+📌 Next Steps:
+  • drift callgraph reach <function>  Trace data access from function
+  • drift callgraph inverse <table>   Find who accesses table
+  • drift callgraph impact <file>     Analyze change impact
+
+
+==> Build test topology
+
+🧪 Building Test Topology
+══════════════════════════════════════════════════
+
+✓ Test topology built successfully
+
+📊 Test Summary
+──────────────────────────────────────────────────
+  Test Files:      0
+  Test Cases:      0
+  Avg Quality:     0/100
+
+📈 Coverage
+──────────────────────────────────────────────────
+  Files:     0/311 (0%)
+  Functions: 0/3402 (0%)
+
+──────────────────────────────────────────────────
+📌 Next Steps:
+  • drift test-topology status     View test coverage summary
+  • drift test-topology uncovered  Find untested functions
+  • drift test-topology mocks      Analyze mock patterns
+  • drift test-topology affected   Get minimum test set for changes
+
+
+==> Build coupling graph
+
+🔗 Building Module Coupling Graph
+══════════════════════════════════════════════════
+
+✓ Module coupling graph built successfully (native)
+
+Files analyzed: 639
+Modules: 497
+Cycles: 0
+Health score: 100/100
+Duration: 228ms
+
+📊 Overview
+──────────────────────────────────────────────────
+  Modules:         497
+  Dependencies:    0
+  Cycles:          0
+
+📈 Metrics
+──────────────────────────────────────────────────
+  Avg Instability: 0.00
+  Avg Distance:    1.00
+
+✓ No dependency cycles detected
+
+──────────────────────────────────────────────────
+📌 Next Steps:
+  • drift coupling status       View coupling overview
+  • drift coupling cycles       List dependency cycles
+  • drift coupling hotspots     Find highly coupled modules
+
+
+==> Build error handling analysis
+
+🛡️  Building Error Handling Analysis
+══════════════════════════════════════════════════
+
+✓ Error handling analysis built successfully (native)
+
+Files analyzed: 639
+Error boundaries: 0
+Gaps found: 0
+Duration: 174ms
+
+📊 Summary
+──────────────────────────────────────────────────
+  Functions:       639
+  Coverage:        0%
+  Avg Quality:     70/100
+  Unhandled Paths: 0
+
+📈 Quality Distribution
+──────────────────────────────────────────────────
+  ● Excellent: 0
+  ● Good:      0
+  ● Fair:      0
+  ● Poor:      0
+
+──────────────────────────────────────────────────
+📌 Next Steps:
+  • drift error-handling status     View error handling overview
+  • drift error-handling gaps       Find error handling gaps
+  • drift error-handling boundaries List error boundaries
+
+
+==> Audit Drift patterns
+
+🔍 Drift - Pattern Audit
+Project: /workspaces/AREQA
+
+✔ Loaded 701 patterns
+✔ Audit complete
+
+📊 Audit Summary
+──────────────────────────────────────────────────
+  Total patterns:        701
+  Auto-approve eligible: 370 (≥90% confidence)
+  Needs review:          330
+  Likely false positives:1
+  Duplicate candidates:  35
+
+  Health Score:          89/100
+
+By Category
+──────────────────────────────────────────────────
+  data-access      77 patterns (43 auto, 33 review, 1 fp) avg: 90%
+  components       60 patterns (23 auto, 37 review, 0 fp) avg: 91%
+  types            57 patterns (25 auto, 32 review, 0 fp) avg: 91%
+  styling          55 patterns (31 auto, 24 review, 0 fp) avg: 91%
+  errors           52 patterns (28 auto, 24 review, 0 fp) avg: 91%
+  security         51 patterns (30 auto, 21 review, 0 fp) avg: 90%
+  structural       49 patterns (28 auto, 21 review, 0 fp) avg: 90%
+  logging          49 patterns (29 auto, 20 review, 0 fp) avg: 90%
+  performance      48 patterns (32 auto, 16 review, 0 fp) avg: 91%
+  auth             43 patterns (25 auto, 18 review, 0 fp) avg: 90%
+  config           43 patterns (28 auto, 15 review, 0 fp) avg: 91%
+  testing          41 patterns (12 auto, 29 review, 0 fp) avg: 89%
+  accessibility    33 patterns (15 auto, 18 review, 0 fp) avg: 89%
+  documentation    22 patterns (11 auto, 11 review, 0 fp) avg: 89%
+  api              21 patterns (10 auto, 11 review, 0 fp) avg: 95%
+
+⚠️  35 Duplicate Groups Detected
+──────────────────────────────────────────────────
+  dup-00fab86b: Component Structure Detector, Near Duplicate Detector
+    Similarity: 98% | High location overlap detected
+    Recommendation: merge
+  dup-c5a687d1: Exception Hierarchy Detector, Try/Catch Detector
+    Similarity: 54% | High location overlap detected
+    Recommendation: review
+  dup-77bc242a: Test File Naming Detector, Test Co-Location Detector
+    Similarity: 93% | High location overlap detected
+    Recommendation: merge
+  dup-f90ed5a1: Test File Naming Detector, Test Co-Location Detector
+    Similarity: 100% | High location overlap detected
+    Recommendation: merge
+  dup-f41b1cdb: File Location Detector, Interface vs Type Detector
+    Similarity: 90% | High location overlap detected
+    Recommendation: merge
+  ... and 30 more
+
+⚠️  2 Cross-Validation Issues
+──────────────────────────────────────────────────
+  🟡 Pattern "HTTP Methods Detector" has high outlier ratio (76%)
+  🟡 Pattern "Response Envelope Detector" has high outlier ratio (53%)
+
+➡️ Trend: stable
+──────────────────────────────────────────────────
+  Health delta:     +0
+  Confidence delta: +0.1%
+  New issues:       2
+  Resolved issues:  2
+
+Next steps:
+  drift approve --auto  - Auto-approve 370 high-confidence patterns
+  drift audit --review  - Generate detailed review report
+
+
+==> Auto-approve eligible patterns
+
+🔍 Drift - Approve Pattern
+Project: /workspaces/AREQA
+
+✔ Patterns loaded
+
+Auto-Approve Candidates (≥90% confidence)
+
+┌───────────────┬──────────────────────────────┬────────────────────┬────────────┬────────────┬──────────┐
+│ ID            │ Name                         │ Category           │ Confidence │  Locations │ Outliers │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 12f7d30c153e5 │ Transaction Patterns Detecto │ data-access        │        95% │          1 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 1f82ac2254f36 │ Rate Limiting Detector       │ security           │        95% │         37 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ f4235f9b9d7fa │ Semantic HTML Detector       │ accessibility      │        95% │         25 │        0 │
+└───────────────┴──────────────────────────────┴────────────────────┴────────────┴────────────┴──────────┘
+
+✔ Auto-approve 3 patterns with ≥90% confidence? Yes
+✔ Auto-approved 3 patterns (≥90% confidence)
+
+217 patterns remain below threshold. Run `drift audit --review` for details.
+
+
+==> Show detailed Drift status
+
+🔍 Drift - Status
+
+✔ Patterns loaded
+
+Pattern Summary
+┌─────────────────────────┬───────────────┐
+│ Metric                  │         Count │
+├─────────────────────────┼───────────────┤
+│ Total Patterns          │           701 │
+├─────────────────────────┼───────────────┤
+│   Approved              │           484 │
+├─────────────────────────┼───────────────┤
+│   Discovered            │           217 │
+├─────────────────────────┼───────────────┤
+│   Ignored               │             0 │
+├─────────────────────────┼───────────────┤
+│                         │               │
+├─────────────────────────┼───────────────┤
+│ Total Violations        │             0 │
+├─────────────────────────┼───────────────┤
+│   Errors                │             0 │
+├─────────────────────────┼───────────────┤
+│   Warnings              │             0 │
+└─────────────────────────┴───────────────┘
+
+Health Score
+────────────────────────────────────────
+  81/100
+
+By Category
+┌─────────────────────────┬────────────┬────────────┬────────────┐
+│ Category                │   Patterns │ Violations │   Coverage │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ data-access             │         77 │          0 │        75% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ components              │         60 │          0 │        78% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ types                   │         57 │          0 │        79% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ styling                 │         55 │          0 │        82% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ errors                  │         52 │          0 │        83% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ security                │         51 │          0 │        78% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ logging                 │         49 │          0 │        76% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ structural              │         49 │          0 │        78% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ performance             │         48 │          0 │        79% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ auth                    │         43 │          0 │        79% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ config                  │         43 │          0 │        84% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ testing                 │         41 │          0 │        71% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ accessibility           │         33 │          0 │        73% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ documentation           │         22 │          0 │        73% │
+├─────────────────────────┼────────────┼────────────┼────────────┤
+│ api                     │         21 │          0 │       100% │
+└─────────────────────────┴────────────┴────────────┴────────────┘
+
+By Confidence Level
+────────────────────────────────────────
+  High:      551
+  Medium:    150
+  Low:       0
+  Uncertain: 0
+
+Discovered Patterns (awaiting review)
+
+┌───────────────┬──────────────────────────────┬────────────────────┬────────────┬────────────┬──────────┐
+│ ID            │ Name                         │ Category           │ Confidence │  Locations │ Outliers │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 8cacdca3c8399 │ Circular Dependencies Detect │ structural         │        90% │         14 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ dbed6407126d0 │ Ref Forwarding Detector      │ components         │        90% │         15 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ c2ab0501b9a4e │ ORM Model Detector           │ data-access        │        90% │         39 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ d3c413bfb1af6 │ DTO Patterns Detector        │ data-access        │        90% │        100 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 31caa07bc3d27 │ Validation Patterns Detector │ data-access        │        90% │         20 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 248f4225821dc │ JSDoc Patterns Detector      │ documentation      │        90% │          4 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 10b7f571a29e1 │ Repository Pattern Detector  │ data-access        │        90% │          1 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 798dedd5f0dd8 │ Rate Limiting Detector       │ security           │        90% │          3 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 43a044794ee40 │ Sensitive Field Detector     │ data-access        │        89% │          1 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 50fbf26310f94 │ Typography Detector          │ styling            │        89% │          2 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 049838ae1fd05 │ Resource Ownership Detector  │ auth               │        89% │         15 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 93e73a5a178af │ CSRF Protection Detector     │ security           │        89% │          1 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 6eb3d081b8fa0 │ Type Assertions Detector     │ types              │        89% │          2 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 5652c67c393ef │ Code Splitting Detector      │ performance        │        89% │          1 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 47b257dfc91f8 │ Co-Location Detector         │ structural         │        88% │         17 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ c1a697077ebb8 │ Ref Forwarding Detector      │ components         │        88% │         15 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 5c05fd04e746d │ Class Naming Detector        │ styling            │        88% │          4 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 99bd91c99b119 │ Token Handling Detector      │ auth               │        88% │         16 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 70148c28daa96 │ RBAC Patterns Detector       │ auth               │        88% │          3 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 636c3208f6aab │ Circuit Breaker Detector     │ errors             │        88% │         29 │        0 │
+└───────────────┴──────────────────────────────┴────────────────────┴────────────┴────────────┴──────────┘
+  ... and 197 more
+
+Approved Patterns
+
+┌───────────────┬──────────────────────────────┬────────────────────┬────────────┬────────────┬──────────┐
+│ ID            │ Name                         │ Category           │ Confidence │  Locations │ Outliers │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 2fd92152f6541 │ Circular Dependencies Detect │ structural         │        95% │        100 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 56b39c1762e66 │ Module Boundaries Detector   │ structural         │        95% │         11 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 2fb4fee9e8aba │ Co-Location Detector         │ structural         │        95% │        100 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 68a8cf8aef971 │ Module Boundaries Detector   │ structural         │        95% │         17 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 14287f8fe377a │ File Naming Detector         │ structural         │        95% │         56 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ ac1d49511006e │ Import Ordering Detector     │ structural         │        95% │         16 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 2faeb4fbfaaf2 │ Circular Dependencies Detect │ structural         │        95% │          8 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 902769122a573 │ File Naming Detector         │ structural         │        95% │        100 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ adfc551d7a679 │ Directory Structure Detector │ structural         │        95% │        100 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 9a4be6eb85d31 │ Co-Location Detector         │ structural         │        95% │         55 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ ff929d6777253 │ Import Ordering Detector     │ structural         │        95% │        100 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 3b62dffdde3b2 │ Package Boundaries Detector  │ structural         │        95% │          1 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 61e7d6976c235 │ File Naming Detector         │ structural         │        95% │         16 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 7a61290edcb78 │ File Naming Detector         │ structural         │        95% │         15 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 3f947ef4795ca │ Directory Structure Detector │ structural         │        95% │         44 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ e524fdf9ed175 │ Directory Structure Detector │ structural         │        95% │         11 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ 11c02123ccceb │ Co-Location Detector         │ structural         │        95% │         58 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ a084234eb0b9e │ Co-Location Detector         │ structural         │        95% │         12 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ d7fe560625603 │ Barrel Exports Detector      │ structural         │        95% │         86 │        0 │
+├───────────────┼──────────────────────────────┼────────────────────┼────────────┼────────────┼──────────┤
+│ c20edc5e8f1e2 │ Barrel Exports Detector      │ structural         │        95% │         12 │        0 │
+└───────────────┴──────────────────────────────┴────────────────────┴────────────┴────────────┴──────────┘
+  ... and 464 more
+
+Quick actions:
+  drift approve <pattern-id>  - Approve a pattern
+  drift ignore <pattern-id>   - Ignore a pattern
+  drift check                 - Check for violations
+
+
+Drift refresh complete.

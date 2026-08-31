@@ -8,6 +8,7 @@ BACKEND_DIR="${WORKSPACE_DIR}/backend"
 FRONTEND_DIR="${WORKSPACE_DIR}/frontend"
 VENV_PATH="${BACKEND_DIR}/.venv"
 PYTHON_BIN="python3"
+DRIFTIGNORE_FILE="${WORKSPACE_DIR}/.driftignore"
 
 if command -v python3.11 >/dev/null 2>&1; then
   PYTHON_BIN="python3.11"
@@ -23,6 +24,23 @@ ensure_uv() {
   USER_BASE="$("$PYTHON_BIN" -m site --user-base)"
   export PATH="${USER_BASE}/bin:${PATH}"
 }
+
+ensure_driftignore_entry() {
+  local pattern="$1"
+
+  if [ ! -f "$DRIFTIGNORE_FILE" ]; then
+    printf "# Drift ignore patterns\n" > "$DRIFTIGNORE_FILE"
+  fi
+
+  if ! grep -qxF "$pattern" "$DRIFTIGNORE_FILE"; then
+    printf "\n%s\n" "$pattern" >> "$DRIFTIGNORE_FILE"
+  fi
+}
+
+echo "🔎 Ensuring Drift ignore patterns..."
+ensure_driftignore_entry ".git/"
+ensure_driftignore_entry "misc/"
+ensure_driftignore_entry "temp/"
 
 echo "📦 Initializing Git LFS..."
 git lfs install --skip-smudge
@@ -128,11 +146,12 @@ echo -e "\033[1;32m🤖 Drift AI Brain, Antigravity CLI & Codex are Ready!\033[0
 echo -e "\033[1;33m👉 Run \033[1;37magy\033[0m"
 echo -e "\033[1;33m👉 Login Codex if this is your first time: \033[1;37mcodex login\033[0m"
 echo -e "\033[1;33m👉 Start Codex development: \033[1;37mcodex\033[0m"
-echo -e "\033[1;33m👉 Force rescan (recommended after refactoring): \033[1;37mdrift scan backend frontend --force\033[0m"
+echo -e "\033[1;33m👉 Force rescan (recommended after refactoring): \033[1;37mdrift scan backend frontend tests --force\033[0m"
+echo -e "\033[1;33m👉 Full manual Drift refresh: \033[1;37mnpm run drift:refresh\033[0m"
 echo -e "\033[1;33m👉 If you want to start over completely:\033[0m"
 echo -e "\033[1;37m   1. rm -rf .drift\033[0m"
 echo -e "\033[1;37m   2. drift init\033[0m"
-echo -e "\033[1;37m   3. drift scan backend frontend\033[0m"
+echo -e "\033[1;37m   3. drift scan backend frontend tests\033[0m"
 echo -e "\033[1;36m======================================\033[0m"
 EOF
 fi
