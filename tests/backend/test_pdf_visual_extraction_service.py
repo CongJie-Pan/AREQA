@@ -86,6 +86,8 @@ def test_extract_candidates_crops_caption_adjacent_figure_region(caplog):
     assert "pdf_visual.crop_selected" in caplog.text
     assert "conversation_id=crop-conversation" in caplog.text
     assert "crop_applied=True" in caplog.text
+    assert candidate.visual_quality_score >= 0.7
+    assert candidate.visual_quality_reason == "crop_quality_pass"
 
 
 def test_extract_candidates_crops_real_transformer_pdf_figure_two(caplog):
@@ -117,3 +119,25 @@ def test_extract_candidates_crops_real_transformer_pdf_figure_two(caplog):
     assert height < 350
     assert "pdf_visual.crop_selected" in caplog.text
     assert "conversation_id=transformer-crop" in caplog.text
+
+
+def test_pdf_crop_choice_expands_weak_target_strip():
+    """A weak targeted crop should be enlarged before rendering."""
+
+    service = PdfVisualExtractionService(max_candidates=1, max_pages_scanned=1, render_zoom=1.0)
+    page_rect = fitz.Rect(0, 0, 400, 600)
+    weak_strip = fitz.Rect(48, 230, 352, 282)
+
+    choice = service._select_crop_choice(
+        crop_rect=weak_strip,
+        crop_reason="target_caption_visual_cluster",
+        page_rect=page_rect,
+        target_caption="Table 2: Dataset composition",
+    )
+
+    assert choice.crop_applied is True
+    assert choice.crop_reason == "target_caption_visual_cluster_expanded"
+    assert choice.quality_reason == "expanded_crop_quality_pass"
+    assert choice.quality_score > 0.7
+    assert choice.clip is not None
+    assert choice.clip.height > weak_strip.height

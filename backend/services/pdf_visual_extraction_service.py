@@ -39,6 +39,8 @@ PDF_VISUAL_MIN_CROP_AREA_RATIO = 0.02
 PDF_VISUAL_MAX_CROP_AREA_RATIO = 0.7
 PDF_VISUAL_MIN_VISUAL_RECT_AREA = 24.0
 PDF_VISUAL_MIN_THIN_RECT_POINTS = 2.0
+PDF_VISUAL_MAX_TARGET_CROP_ASPECT_RATIO = 5.5
+PDF_VISUAL_MIN_TARGET_QUALITY_SCORE = 0.72
 
 _PDF_FIGURE_CAPTION_PATTERN = re.compile(
     r"\b(?:fig(?:ure)?\.?|table)\s*\d+[A-Za-z]?\b|(?:圖|表)\s*\d+",
@@ -73,6 +75,10 @@ class PdfVisualCandidate:
             user and passed to the main answer model.
         planner_rationale: Safe bounded reason for selection.
         selection_source: ``planner``/``fallback``/``heuristic`` source label.
+        visual_quality_score: Deterministic geometry-only quality estimate for
+            the rendered PDF visual. Higher means the image is more likely to
+            be complete and useful.
+        visual_quality_reason: Stable reason code for the quality decision.
 
     Returns:
         Immutable request-scoped candidate metadata.
@@ -98,6 +104,8 @@ class PdfVisualCandidate:
     teaching_caption: str = ""
     planner_rationale: str = ""
     selection_source: str = "heuristic"
+    visual_quality_score: float = 0.0
+    visual_quality_reason: str = "unknown"
 
     def to_image_block(self) -> ImageBlock:
         """Convert the candidate into the existing frontend image block shape.
@@ -111,6 +119,9 @@ class PdfVisualCandidate:
 
         topic = f"{self.filename} 第 {self.page_number} 頁"
         caption = self.caption_hint or f"上傳 PDF 第 {self.page_number} 頁的圖像內容"
+        vision_limitations = ()
+        if self.visual_quality_reason.endswith("quality_fallback"):
+            vision_limitations = ("PDF 圖表裁切品質不足，系統改用較完整的頁面截圖。",)
         if self.answer_section and self.teaching_caption:
             explanatory_caption = f"這張圖適合用來說明{self.answer_section}。{self.teaching_caption}"
         else:
@@ -131,12 +142,35 @@ class PdfVisualCandidate:
             width=self.width,
             height=self.height,
             safety_status="pass",
-            match_confidence=0.92,
-            heuristic_score=min(1.0, 0.5 + (self.visual_score / 20)),
-            pedagogical_score=min(1.0, 0.55 + (self.visual_score / 20)),
+            match_confidence=min(0.96, max(0.55, self.visual_quality_score)),
+            heuristic_score=min(1.0, max(self.visual_quality_score, 0.5 + (self.visual_score / 20))),
+            pedagogical_score=min(1.0, max(self.visual_quality_score, 0.55 + (self.visual_score / 20))),
+            vision_limitations=vision_limitations,
             vision_source="unavailable",
             transient=True,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _PdfCropChoice:
+    """Geometry-only crop decision selected before rendering pixels.
+
+    Args:
+        clip: Optional PyMuPDF rectangle. ``None`` means render the full page.
+        crop_applied: Whether the rendered PNG is clipped.
+        crop_reason: Stable renderer reason code.
+        quality_score: Conservative score derived from crop geometry only.
+        quality_reason: Stable reason code explaining why this crop was chosen.
+
+    Side Effects:
+        None.
+    """
+
+    clip: Any | None
+    crop_applied: bool
+    crop_reason: str
+    quality_score: float
+    quality_reason: str
 
 
 class PdfVisualExtractionService:
@@ -386,10 +420,15 @@ class PdfVisualExtractionService:
         page = document.load_page(page_index)
         target_caption = self._bounded_plan_text(getattr(plan_item, "target_caption", ""), 220)
         crop_rect, crop_reason = self._find_figure_crop_rect(page, target_caption=target_caption)
-        clip = crop_rect if crop_rect is not None else None
+        crop_choice = self._select_crop_choice(
+            crop_rect=crop_rect,
+            crop_reason=crop_reason,
+            page_rect=fitz.Rect(page.rect),
+            target_caption=target_caption,
+        )
         pixmap = page.get_pixmap(
             matrix=fitz.Matrix(self.render_zoom, self.render_zoom),
-            clip=clip,
+            clip=crop_choice.clip,
             alpha=False,
         )
         png_bytes = pixmap.tobytes("png")
@@ -402,13 +441,15 @@ class PdfVisualExtractionService:
 
         width, height = self._png_dimensions(png_bytes)
         logger.info(
-            "pdf_visual.crop_selected conversation_id=%s page_number=%s crop_applied=%s reason=%s width=%s height=%s",
+            "pdf_visual.crop_selected conversation_id=%s page_number=%s crop_applied=%s reason=%s width=%s height=%s quality_score=%.2f quality_reason=%s",
             conversation_id,
             page_index + 1,
-            crop_rect is not None,
-            crop_reason,
+            crop_choice.crop_applied,
+            crop_choice.crop_reason,
             width,
             height,
+            crop_choice.quality_score,
+            crop_choice.quality_reason,
         )
         encoded = base64.b64encode(png_bytes).decode("ascii")
         digest = hashlib.sha256(png_bytes).hexdigest()
@@ -427,14 +468,16 @@ class PdfVisualExtractionService:
             caption_hint=caption_hint,
             visual_score=visual_score,
             sha256=digest,
-            crop_applied=crop_rect is not None,
-            crop_reason=crop_reason,
+            crop_applied=crop_choice.crop_applied,
+            crop_reason=crop_choice.crop_reason,
             answer_section=answer_section,
             visual_type=visual_type,
             target_caption=target_caption,
             teaching_caption=teaching_caption,
             planner_rationale=planner_rationale,
             selection_source=selection_source,
+            visual_quality_score=crop_choice.quality_score,
+            visual_quality_reason=crop_choice.quality_reason,
         )
 
     @staticmethod
@@ -501,7 +544,11 @@ class PdfVisualExtractionService:
             if not nearby:
                 continue
             if matched_target and _caption_text == matched_target:
-                nearby = self._nearest_caption_visuals(nearby, caption_rect)
+                nearby = (
+                    self._table_caption_visuals(nearby, caption_rect)
+                    if self._is_table_caption(_caption_text)
+                    else self._nearest_caption_visuals(nearby, caption_rect)
+                )
             crop_rect = self._union_rects([*nearby, caption_rect])
             crop_rect = self._pad_rect(crop_rect, page_rect, PDF_VISUAL_CROP_PADDING_POINTS)
             if self._is_usable_crop_rect(crop_rect, page_rect):
@@ -510,6 +557,115 @@ class PdfVisualExtractionService:
                 return crop_rect, "caption_visual_cluster"
 
         return None, "no_caption_visual_cluster"
+
+    def _select_crop_choice(
+        self,
+        *,
+        crop_rect: Any | None,
+        crop_reason: str,
+        page_rect: Any,
+        target_caption: str,
+    ) -> _PdfCropChoice:
+        """Choose the best deterministic crop variant for a PDF visual.
+
+        Args:
+            crop_rect: Caption-adjacent crop returned by the geometry matcher.
+            crop_reason: Stable matcher reason code.
+            page_rect: Full PDF page rectangle.
+            target_caption: Planner-selected caption, if any.
+
+        Returns:
+            A crop choice. The choice may use the original crop, an expanded
+            crop, or the full page when crop quality is too weak.
+
+        Side Effects:
+            None. Callers emit the single structured crop log after rendering
+            so dimensions and quality metadata stay correlated.
+        """
+
+        if crop_rect is None:
+            return _PdfCropChoice(
+                clip=None,
+                crop_applied=False,
+                crop_reason=crop_reason,
+                quality_score=0.62,
+                quality_reason="full_page_no_crop",
+            )
+
+        original_score = self._crop_quality_score(crop_rect, page_rect, crop_reason=crop_reason)
+        if not target_caption or original_score >= PDF_VISUAL_MIN_TARGET_QUALITY_SCORE:
+            return _PdfCropChoice(
+                clip=crop_rect,
+                crop_applied=True,
+                crop_reason=crop_reason,
+                quality_score=original_score,
+                quality_reason="crop_quality_pass",
+            )
+
+        expanded_rect = self._expanded_crop_rect(crop_rect, page_rect)
+        expanded_score = (
+            self._crop_quality_score(expanded_rect, page_rect, crop_reason=f"{crop_reason}_expanded")
+            if expanded_rect is not None
+            else 0.0
+        )
+        if expanded_rect is not None and expanded_score > original_score:
+            return _PdfCropChoice(
+                clip=expanded_rect,
+                crop_applied=True,
+                crop_reason=f"{crop_reason}_expanded",
+                quality_score=expanded_score,
+                quality_reason="expanded_crop_quality_pass",
+            )
+
+        return _PdfCropChoice(
+            clip=None,
+            crop_applied=False,
+            crop_reason=f"{crop_reason}_full_page_quality_fallback",
+            quality_score=0.62,
+            quality_reason="full_page_quality_fallback",
+        )
+
+    @staticmethod
+    def _crop_quality_score(crop_rect: Any, page_rect: Any, *, crop_reason: str) -> float:
+        """Return a conservative geometry-only visual completeness score."""
+
+        page_area = max(float(page_rect.get_area()), 1.0)
+        area_ratio = float(crop_rect.get_area()) / page_area
+        aspect_ratio = float(crop_rect.width) / max(float(crop_rect.height), 1.0)
+        height_ratio = float(crop_rect.height) / max(float(page_rect.height), 1.0)
+
+        score = 0.82 if "target_caption" in crop_reason else 0.74
+        if 0.08 <= area_ratio <= 0.45:
+            score += 0.08
+        elif area_ratio < 0.05:
+            score -= 0.18
+        if height_ratio < 0.16:
+            score -= 0.16
+        if aspect_ratio > PDF_VISUAL_MAX_TARGET_CROP_ASPECT_RATIO:
+            score -= 0.18
+        if area_ratio > PDF_VISUAL_MAX_CROP_AREA_RATIO:
+            score -= 0.12
+        return max(0.0, min(1.0, score))
+
+    @staticmethod
+    def _expanded_crop_rect(crop_rect: Any, page_rect: Any) -> Any | None:
+        """Return a larger crop around a weak target crop when still bounded."""
+
+        import fitz  # type: ignore[import-not-found]
+
+        expanded = fitz.Rect(crop_rect)
+        vertical_growth = max(36.0, crop_rect.height * 0.8)
+        horizontal_growth = max(24.0, crop_rect.width * 0.12)
+        expanded.x0 -= horizontal_growth
+        expanded.x1 += horizontal_growth
+        expanded.y0 -= vertical_growth
+        expanded.y1 += vertical_growth
+        expanded = expanded & fitz.Rect(page_rect)
+        if expanded.is_empty:
+            return None
+        if not PdfVisualExtractionService._is_usable_crop_rect(expanded, page_rect):
+            return None
+        return expanded
 
     @staticmethod
     def _nearest_caption_visuals(visual_rects: list[Any], caption_rect: Any) -> list[Any]:
@@ -540,6 +696,54 @@ class PdfVisualExtractionService:
             if abs(vertical_gap(rect) - nearest_gap) <= 12.0
         ]
         return same_cluster or [nearest]
+
+    @staticmethod
+    def _table_caption_visuals(visual_rects: list[Any], caption_rect: Any) -> list[Any]:
+        """Return visual rectangles that plausibly belong to one captioned table.
+
+        PDF tables are often represented as many independent line rectangles.
+        Using only the nearest rectangle can crop the final row plus caption
+        while dropping the header and most rows. The cluster expands from the
+        nearest same-column rectangle until it sees a large vertical gap, which
+        keeps multi-line tables intact without merging an earlier figure on the
+        same page.
+        """
+
+        same_column: list[Any] = []
+        for rect in visual_rects:
+            horizontal_overlap = max(
+                0.0,
+                min(rect.x1, caption_rect.x1) - max(rect.x0, caption_rect.x0),
+            )
+            min_width = max(1.0, min(rect.width, caption_rect.width))
+            if horizontal_overlap / min_width >= 0.25:
+                same_column.append(rect)
+        if not same_column:
+            return PdfVisualExtractionService._nearest_caption_visuals(visual_rects, caption_rect)
+
+        above = [rect for rect in same_column if rect.y1 <= caption_rect.y0 + 8]
+        below = [rect for rect in same_column if rect.y0 >= caption_rect.y1 - 8]
+        if above:
+            ordered = sorted(above, key=lambda rect: rect.y1, reverse=True)
+            cluster = [ordered[0]]
+            for rect in ordered[1:]:
+                previous = cluster[-1]
+                gap = previous.y0 - rect.y1
+                if gap > 48.0:
+                    break
+                cluster.append(rect)
+            return cluster
+        if below:
+            ordered = sorted(below, key=lambda rect: rect.y0)
+            cluster = [ordered[0]]
+            for rect in ordered[1:]:
+                previous = cluster[-1]
+                gap = rect.y0 - previous.y1
+                if gap > 48.0:
+                    break
+                cluster.append(rect)
+            return cluster
+        return PdfVisualExtractionService._nearest_caption_visuals(same_column, caption_rect)
 
     @classmethod
     def _ordered_caption_blocks(
@@ -588,6 +792,12 @@ class PdfVisualExtractionService:
         """Normalize caption text for deterministic target matching."""
 
         return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", str(value or "").lower()).strip()
+
+    @staticmethod
+    def _is_table_caption(caption_text: str) -> bool:
+        """Return whether caption text identifies a table."""
+
+        return bool(re.search(r"\btable\s*\d+|表\s*\d+", str(caption_text or ""), re.IGNORECASE))
 
     def _caption_blocks(self, page: Any) -> list[tuple[Any, str]]:
         """Return text blocks that look like figure or table captions."""

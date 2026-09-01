@@ -133,6 +133,58 @@ _SECTION_KEYWORDS = (
         ("limitation", "limitations", "conclusion", "discussion", "future work", "限制", "結論", "讨论", "討論"),
     ),
 )
+_OVERVIEW_CAPTION_TERMS = (
+    "pipeline",
+    "framework",
+    "architecture",
+    "overview",
+    "model architecture",
+    "generative sequence",
+    "method",
+    "mechanism",
+    "workflow",
+    "流程",
+    "架構",
+    "框架",
+    "方法",
+    "機制",
+)
+_DATASET_CAPTION_TERMS = (
+    "dataset",
+    "composition",
+    "breakdown",
+    "statistics",
+    "sample",
+    "identity",
+    "region",
+    "資料集",
+    "數據集",
+    "组成",
+    "組成",
+    "分布",
+)
+_RESULT_CAPTION_TERMS = (
+    "result",
+    "results",
+    "aggregate",
+    "performance",
+    "quality",
+    "score",
+    "accuracy",
+    "benchmark",
+    "tdq",
+    "3h",
+    "bleu",
+    "評估",
+    "結果",
+    "表現",
+)
+_FALLBACK_SECTION_ORDER = {
+    "研究方法": 0,
+    "實驗設計與過程": 1,
+    "實驗結果": 2,
+    "論文重點圖解": 3,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -449,37 +501,139 @@ class PaperVisualPlannerService:
         pages: tuple[_PaperPageContext, ...],
         max_visuals: int,
     ) -> tuple[PaperVisualPlanItem, ...]:
-        """Select result-heavy and method-heavy pages without model support."""
+        """Select section-diverse teaching visuals without model support.
+
+        The fallback planner runs when the model planner times out or is
+        unavailable, so it must be deterministic and cheap. Broad paper
+        explanations are read in section order, therefore multiple-visual
+        fallbacks prefer an overview/method caption before dataset/setup and
+        result captions. Single-visual fallbacks preserve the older
+        result-heavy behavior because one image is most useful when it carries
+        the paper's key evidence.
+        """
 
         scored = sorted(
             ((self._fallback_page_score(page), page) for page in pages),
             key=lambda item: item[0],
             reverse=True,
         )
+        if max_visuals <= 1:
+            ordered_pages = [page for score, page in scored if score > 0]
+        else:
+            ordered_pages = self._section_diverse_fallback_pages(scored)
+
         raw_items: list[dict[str, Any]] = []
-        for score, page in scored:
+        seen_sections: set[str] = set()
+        delayed_duplicates: list[dict[str, Any]] = []
+        for page in ordered_pages:
+            score = self._fallback_page_score(page)
             if score <= 0:
                 continue
-            text = f"{page.section_hint} {' '.join(page.captions)} {page.text_excerpt}".lower()
-            is_result = any(term in text for term in _RESULT_TERMS)
-            visual_type = "results_table" if "table" in text or "表" in text else "results_chart" if is_result else "method_diagram"
-            answer_section = "實驗結果與關鍵數據" if is_result else "方法與模型架構"
-            teaching_caption = (
-                "這張圖表承載論文的實驗結果或關鍵數據，適合用來說明模型表現與作者主張。"
-                if is_result
-                else "這張圖呈現論文的方法、模型架構或核心機制，適合先用來建立整體理解。"
-            )
-            raw_items.append(
-                {
-                    "page_number": page.page_number,
-                    "answer_section": answer_section,
-                    "visual_type": visual_type,
-                    "target_caption": self._best_fallback_caption(page, prefer_results=is_result),
-                    "teaching_caption": teaching_caption,
-                    "rationale": "fallback_ranked_by_caption_and_section_terms",
-                }
-            )
+            item = self._fallback_item_for_page(page)
+            if max_visuals > 1 and item["answer_section"] in seen_sections:
+                delayed_duplicates.append(item)
+                continue
+            seen_sections.add(item["answer_section"])
+            raw_items.append(item)
+            if len(raw_items) >= max_visuals:
+                break
+        if len(raw_items) < max_visuals:
+            for item in delayed_duplicates:
+                raw_items.append(item)
+                if len(raw_items) >= max_visuals:
+                    break
         return self._sanitize_plan_items(raw_items, pages, max_visuals, source="fallback")
+
+    def _section_diverse_fallback_pages(
+        self,
+        scored_pages: list[tuple[int, _PaperPageContext]],
+    ) -> list[_PaperPageContext]:
+        """Return pages ordered by teaching section and fallback score."""
+
+        eligible_pages = [page for score, page in scored_pages if score > 0]
+        return sorted(
+            eligible_pages,
+            key=lambda page: (
+                _FALLBACK_SECTION_ORDER.get(self._fallback_item_for_page(page)["answer_section"], 9),
+                -self._fallback_page_score(page),
+                page.page_number,
+            ),
+        )
+
+    def _fallback_item_for_page(self, page: _PaperPageContext) -> dict[str, Any]:
+        """Build one deterministic planner item from the best caption on a page."""
+
+        target_caption, answer_section, visual_type = self._best_fallback_visual(page)
+        teaching_caption = self._fallback_teaching_caption(answer_section, visual_type)
+        return {
+            "page_number": page.page_number,
+            "answer_section": answer_section,
+            "visual_type": visual_type,
+            "target_caption": target_caption,
+            "teaching_caption": teaching_caption,
+            "rationale": "fallback_ranked_by_caption_purpose_and_section_terms",
+        }
+
+    @classmethod
+    def _best_fallback_visual(cls, page: _PaperPageContext) -> tuple[str, str, str]:
+        """Return ``(caption, section, visual_type)`` for a fallback page.
+
+        The page text often contains references to many figures and tables.
+        Caption-level selection prevents a nearby table reference from replacing
+        a more useful overview figure on the same page.
+        """
+
+        for caption in page.captions:
+            caption_text = caption.lower()
+            if cls._is_figure_caption(caption_text) and any(term in caption_text for term in _OVERVIEW_CAPTION_TERMS):
+                return caption, "研究方法", "architecture"
+        for caption in page.captions:
+            caption_text = caption.lower()
+            if any(term in caption_text for term in _DATASET_CAPTION_TERMS):
+                return caption, "實驗設計與過程", "results_table" if cls._is_table_caption(caption_text) else "other"
+        for caption in page.captions:
+            caption_text = caption.lower()
+            if any(term in caption_text for term in _RESULT_CAPTION_TERMS):
+                visual_type = "results_table" if cls._is_table_caption(caption_text) else "results_chart"
+                return caption, "實驗結果", visual_type
+
+        text = f"{page.section_hint} {' '.join(page.captions)} {page.text_excerpt}".lower()
+        if any(term in text for term in _METHOD_TERMS):
+            return cls._first_caption(page), "研究方法", "method_diagram"
+        if any(term in text for term in _RESULT_TERMS):
+            caption = cls._first_caption(page)
+            return caption, "實驗結果", "results_table" if cls._is_table_caption(caption.lower()) else "results_chart"
+        return cls._first_caption(page), "論文重點圖解", "other"
+
+    @staticmethod
+    def _is_figure_caption(caption_text: str) -> bool:
+        """Return whether normalized caption text names a figure."""
+
+        return bool(re.search(r"\bfig(?:ure)?\.?\s*\d+|圖\s*\d+", caption_text, re.IGNORECASE))
+
+    @staticmethod
+    def _is_table_caption(caption_text: str) -> bool:
+        """Return whether normalized caption text names a table."""
+
+        return bool(re.search(r"\btable\s*\d+|表\s*\d+", caption_text, re.IGNORECASE))
+
+    @staticmethod
+    def _first_caption(page: _PaperPageContext) -> str:
+        """Return the first detected caption or an empty target."""
+
+        return page.captions[0] if page.captions else ""
+
+    @staticmethod
+    def _fallback_teaching_caption(answer_section: str, visual_type: str) -> str:
+        """Return a section-aware teaching caption for fallback visuals."""
+
+        if answer_section == "研究方法":
+            return "這張圖呈現論文的方法、架構或核心流程，適合先用來建立整體理解。"
+        if answer_section == "實驗設計與過程":
+            return "這張圖表呈現資料集、流程或實驗設定，適合用來理解研究如何被建構與執行。"
+        if answer_section == "實驗結果":
+            return "這張圖表承載論文的實驗結果或關鍵數據，適合用來說明模型表現與作者主張。"
+        return "這張圖提供論文中的重要視覺線索，適合搭配段落說明快速理解重點。"
 
     @staticmethod
     def _fallback_page_score(page: _PaperPageContext) -> int:
@@ -555,19 +709,6 @@ class PaperVisualPlannerService:
             if normalized_text in normalized_caption or normalized_caption in normalized_text:
                 return caption[:220]
         return text
-
-    @staticmethod
-    def _best_fallback_caption(page: _PaperPageContext, *, prefer_results: bool) -> str:
-        """Choose the most relevant detected caption for deterministic fallback crops."""
-
-        if not page.captions:
-            return ""
-        if prefer_results:
-            for caption in page.captions:
-                lowered = caption.lower()
-                if any(term in lowered for term in _RESULT_TERMS):
-                    return caption
-        return page.captions[0]
 
     @staticmethod
     def _normalize_caption_match_text(value: str) -> str:

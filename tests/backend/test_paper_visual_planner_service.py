@@ -51,6 +51,52 @@ def make_multi_caption_page_pdf() -> bytes:
     return pdf_bytes
 
 
+def make_cultureconverse_like_pdf() -> bytes:
+    """Create a paper-like PDF with overview, dataset, and result captions."""
+
+    document = fitz.open()
+    page_1 = document.new_page(width=520, height=420)
+    page_1.insert_text((36, 32), "Evaluation Method simulation pipeline and role visibility.", fontsize=10)
+    page_1.draw_rect(fitz.Rect(50, 62, 460, 150), color=(0, 0, 0), width=1)
+    page_1.insert_text(
+        (52, 178),
+        "Figure 1: CULTURECONVERSE pipeline expands seeds into blueprints and turn shards.",
+        fontsize=10,
+    )
+    page_1.draw_rect(fitz.Rect(50, 240, 460, 300), color=(0, 0, 0), width=1)
+    page_1.insert_text((52, 328), "Table 1: Role-specific visibility during simulation and evaluation.", fontsize=10)
+
+    page_2 = document.new_page(width=520, height=420)
+    page_2.insert_text((36, 32), "Experiments dataset statistics and identity breakdown.", fontsize=10)
+    page_2.draw_rect(fitz.Rect(50, 72, 460, 210), color=(0, 0, 0), width=1)
+    page_2.insert_text((52, 238), "Table 2: Dataset composition and regional identity breakdown.", fontsize=10)
+
+    page_3 = document.new_page(width=520, height=420)
+    page_3.insert_text((36, 32), "Results aggregate performance TDQ 3H benchmark.", fontsize=10)
+    page_3.draw_rect(fitz.Rect(50, 72, 460, 210), color=(0, 0, 0), width=1)
+    page_3.insert_text((52, 238), "Table 4: Aggregate results across evaluated models.", fontsize=10)
+
+    pdf_bytes = document.tobytes()
+    document.close()
+    return pdf_bytes
+
+
+def make_fragmented_table_pdf() -> bytes:
+    """Create a PDF table represented by many independent drawing rectangles."""
+
+    document = fitz.open()
+    page = document.new_page(width=360, height=360)
+    page.insert_text((36, 28), "Dataset composition table.", fontsize=9)
+    for y in range(70, 191, 24):
+        page.draw_line((52, y), (302, y), color=(0, 0, 0), width=1)
+    for x in (52, 135, 220, 302):
+        page.draw_line((x, 70), (x, 190), color=(0, 0, 0), width=1)
+    page.insert_text((54, 220), "Table 2: Dataset composition for benchmark splits.", fontsize=11)
+    pdf_bytes = document.tobytes()
+    document.close()
+    return pdf_bytes
+
+
 class _FakePlannerClient:
     """Chat-completions fake that selects the results page."""
 
@@ -180,6 +226,29 @@ async def test_paper_visual_planner_fallback_prioritizes_results_page(caplog):
     assert "source=fallback" in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_paper_visual_planner_fallback_prefers_overview_caption_for_broad_explanation():
+    """Broad fallback planning should not replace a pipeline figure with a nearby table."""
+
+    service = PaperVisualPlannerService()
+
+    plan = await service.plan_visuals(
+        pdf_bytes=make_cultureconverse_like_pdf(),
+        filename="cultureconverse.pdf",
+        conversation_id="culture-fallback-conversation",
+        client=None,
+        max_visuals=3,
+    )
+
+    assert [item.answer_section for item in plan] == ["研究方法", "實驗設計與過程", "實驗結果"]
+    assert plan[0].page_number == 1
+    assert plan[0].visual_type == "architecture"
+    assert plan[0].target_caption.startswith("Figure 1")
+    assert "pipeline" in plan[0].target_caption
+    assert plan[1].target_caption.startswith("Table 2")
+    assert plan[2].target_caption.startswith("Table 4")
+
+
 def test_pdf_visual_extraction_respects_planner_page_order():
     """Renderer should render planner-selected pages before heuristic pages."""
 
@@ -240,6 +309,34 @@ def test_pdf_visual_extraction_crops_planner_target_caption_on_multi_caption_pag
     assert candidates[0].crop_reason == "target_caption_visual_cluster"
     assert candidates[0].target_caption.startswith("Table 2")
     assert candidates[0].height < 180
+
+
+def test_pdf_visual_extraction_keeps_full_table_cluster_for_target_caption():
+    """Targeted table crops should keep the table body instead of the nearest row only."""
+
+    service = PdfVisualExtractionService(max_candidates=1, max_pages_scanned=1, render_zoom=1.0)
+    plan = (
+        PaperVisualPlanItem(
+            page_number=1,
+            answer_section="實驗設計與過程",
+            visual_type="results_table",
+            target_caption="Table 2: Dataset composition for benchmark splits.",
+            teaching_caption="這張表呈現資料集組成。",
+            rationale="table_cluster_crop",
+        ),
+    )
+
+    candidates = service.extract_candidates(
+        pdf_bytes=make_fragmented_table_pdf(),
+        filename="paper.pdf",
+        conversation_id="fragmented-table-conversation",
+        visual_plan=plan,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].crop_reason == "target_caption_visual_cluster"
+    assert candidates[0].target_caption.startswith("Table 2")
+    assert candidates[0].height >= 175
 
 
 def test_pdf_visual_extraction_falls_back_when_target_caption_does_not_match():
