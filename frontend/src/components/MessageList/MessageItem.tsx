@@ -13,7 +13,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, X } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, X } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -656,7 +656,9 @@ function getImageAspectRatio(block: ImageBlock): React.CSSProperties {
  * Render one verified image block inside an assistant answer.
  *
  * The backend owns retrieval and safety verification. This component keeps the
- * source attribution visible and rejects unsafe URLs before they reach the DOM.
+ * source attribution visible, rejects unsafe URLs before they reach the DOM,
+ * and opens a viewport-level image viewer whose image/source links preserve the
+ * original provider navigation path.
  */
 function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnType<typeof useStyles>['styles'] }) {
   const { language, t } = useUserPreferences();
@@ -679,6 +681,19 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   React.useEffect(() => {
     setIsImageLoaded(false);
   }, [safeImageUrl]);
+
+  React.useEffect(() => {
+    if (!isLightboxOpen) return;
+
+    // The image viewer is intentionally independent of Ant Design Modal so it
+    // can match the full-screen visual treatment while retaining keyboard exit.
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsLightboxOpen(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLightboxOpen]);
 
   if (visualStatus === 'pending') {
     return (
@@ -749,43 +764,83 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           </span>
         </figcaption>
       </figure>
-      <Modal
-        open={isLightboxOpen}
-        onCancel={() => setIsLightboxOpen(false)}
-        footer={null}
-        centered
-        width="min(92vw, 1080px)"
-        className={styles.answerImageLightbox}
-        title={displayCaption}
-      >
-        <div className={styles.answerImageLightboxBody}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={safeFullImageUrl}
-            alt={displayCaption}
-            className={styles.answerImageLightboxImage}
-          />
-          <div className={styles.answerImageLightboxMeta}>
-            {block.explanatoryCaption && <p>{block.explanatoryCaption}</p>}
-            {(block.attributionString || block.creator) && (
-              <p>
-                <strong>Attribution:</strong> {block.attributionString || block.creator}
-              </p>
-            )}
-            {!isPdfAttachmentImage && safeSourceUrl && (
+      {isLightboxOpen && createPortal(
+        <div
+          className={styles.answerImageLightbox}
+          role="dialog"
+          aria-modal="true"
+          aria-label={displayCaption}
+          onClick={() => setIsLightboxOpen(false)}
+        >
+          <button
+            type="button"
+            className={styles.answerImageLightboxBack}
+            aria-label="關閉圖片檢視"
+            onClick={() => setIsLightboxOpen(false)}
+          >
+            <ArrowLeft size={24} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={styles.answerImageLightboxClose}
+            aria-label="關閉圖片檢視"
+            onClick={() => setIsLightboxOpen(false)}
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+          <div className={styles.answerImageLightboxStage} onClick={(event) => event.stopPropagation()}>
+            {safeSourceUrl && !isPdfAttachmentImage ? (
               <a
                 href={safeSourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={styles.answerImageLightboxSource}
+                className={styles.answerImageLightboxImageLink}
+                title={block.sourceUrl}
               >
-                View original source
-                <ExternalLink size={14} aria-hidden="true" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={safeFullImageUrl}
+                  alt={displayCaption}
+                  className={styles.answerImageLightboxImage}
+                />
               </a>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={safeFullImageUrl}
+                alt={displayCaption}
+                className={styles.answerImageLightboxImage}
+              />
             )}
           </div>
+          <div className={styles.answerImageLightboxMeta} onClick={(event) => event.stopPropagation()}>
+            <p className={styles.answerImageLightboxCaption}>{displayCaption}</p>
+            {block.explanatoryCaption && <p>{block.explanatoryCaption}</p>}
+            {(block.attributionString || block.creator) && (
+              <p>{block.attributionString || block.creator}</p>
+            )}
+            <div className={styles.answerImageLightboxSourceLine}>
+              <span>{sourceLabel}</span>
+              {isPdfAttachmentImage ? (
+                <span>{t('uploadedAttachmentBadge')}</span>
+              ) : safeSourceUrl ? (
+                <a
+                  href={safeSourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.answerImageLightboxSource}
+                  title={block.sourceUrl}
+                >
+                  開啟原始來源
+                  <ExternalLink size={14} aria-hidden="true" />
+                </a>
+              ) : null}
+            </div>
+          </div>
         </div>
-      </Modal>
+        ,
+        document.body
+      )}
     </>
   );
 }

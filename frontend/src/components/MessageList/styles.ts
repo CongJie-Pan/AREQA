@@ -1228,50 +1228,144 @@ quoteBlockContent: css`
   `,
 
   answerImageLightbox: css`
-    .ant-modal-content {
-      background: var(--card);
-      border: 1px solid var(--border);
-    }
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    align-items: center;
+    justify-items: center;
+    width: 100vw;
+    min-height: 100dvh;
+    padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+      max(18px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+    background: rgba(18, 18, 18, 0.98);
+    color: rgba(255, 255, 255, 0.9);
+    animation: ${fadeIn} 160ms ease both;
 
-    .ant-modal-header {
-      background: transparent;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .ant-modal-title,
-    .ant-modal-close {
-      color: var(--card-foreground);
+    @media (max-width: 768px) {
+      padding: max(14px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+        max(14px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     }
   `,
 
-  answerImageLightboxBody: css`
-    display: grid;
-    gap: 16px;
+  answerImageLightboxBack: css`
+    position: fixed;
+    top: max(22px, env(safe-area-inset-top));
+    left: max(22px, env(safe-area-inset-left));
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.78);
+    cursor: pointer;
+    transition: background 160ms ease, color 160ms ease;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+      outline: none;
+    }
+  `,
+
+  answerImageLightboxClose: css`
+    position: fixed;
+    top: max(22px, env(safe-area-inset-top));
+    right: max(22px, env(safe-area-inset-right));
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.76);
+    cursor: pointer;
+    transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+
+    &:hover,
+    &:focus-visible {
+      border-color: rgba(255, 255, 255, 0.26);
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      outline: none;
+    }
+  `,
+
+  answerImageLightboxStage: css`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: min(100%, 76vw);
+    min-height: 0;
+    max-height: calc(100dvh - 118px);
+    cursor: default;
+
+    @media (max-width: 768px) {
+      width: 100%;
+      max-height: calc(100dvh - 148px);
+    }
+  `,
+
+  answerImageLightboxImageLink: css`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    max-height: inherit;
+    cursor: zoom-in;
   `,
 
   answerImageLightboxImage: css`
     display: block;
-    width: 100%;
-    max-height: 70vh;
+    max-width: 100%;
+    max-height: inherit;
+    width: auto;
+    height: auto;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: 0;
     background: #ffffff;
   `,
 
   answerImageLightboxMeta: css`
-    display: grid;
-    gap: 8px;
-    color: var(--areqa-message-muted-text);
+    justify-self: start;
+    width: min(100%, 1180px);
+    padding: 12px 18px 0;
+    color: rgba(255, 255, 255, 0.72);
     font-size: 13px;
-    line-height: 1.6;
+    font-style: italic;
+    line-height: 1.55;
 
     p {
-      margin: 0;
+      max-width: min(100%, 980px);
+      margin: 0 0 4px;
     }
 
     a {
-      color: ${token.colorLink};
+      color: rgba(255, 255, 255, 0.88);
     }
+  `,
+
+  answerImageLightboxCaption: css`
+    color: rgba(255, 255, 255, 0.86);
+  `,
+
+  answerImageLightboxSourceLine: css`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    max-width: min(100%, 980px);
   `,
 
   answerImageLightboxSource: css`
@@ -1279,11 +1373,11 @@ quoteBlockContent: css`
     align-items: center;
     gap: 6px;
     width: fit-content;
-    color: ${token.colorLink};
+    color: rgba(255, 255, 255, 0.9);
     text-decoration: none;
 
     &:hover {
-      color: ${token.colorLinkHover};
+      color: #ffffff;
       text-decoration: underline;
     }
   `,

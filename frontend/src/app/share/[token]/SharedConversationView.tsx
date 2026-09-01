@@ -5,7 +5,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Maximize2, X } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Maximize2, X } from 'lucide-react';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 import styles from './styles.module.css';
 
@@ -17,6 +17,8 @@ export interface SharedAnswerBlock {
   sourceDomain?: string;
   caption?: string;
   explanatoryCaption?: string;
+  attributionString?: string;
+  creator?: string;
 }
 
 export interface SharedMessage {
@@ -44,6 +46,22 @@ function isSafeUrl(url: string | undefined): boolean {
   } catch {
     return url.startsWith('/') || url.startsWith('#');
   }
+}
+
+/**
+ * Validate shared answer image URLs before rendering.
+ *
+ * Shared conversations can replay persisted backend image blocks. This helper
+ * mirrors the chat view's browser-side guard so unsafe schemes never reach an
+ * image element.
+ */
+function isSafeImageUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  return (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(url)
+  );
 }
 
 function SharedMarkdownTable({
@@ -162,6 +180,131 @@ function SharedMarkdown({ children }: { children: string }) {
   );
 }
 
+/**
+ * Render a shared answer image with an immersive source-aware viewer.
+ *
+ * Args:
+ *   block: Persisted display metadata for a backend-verified answer image.
+ *
+ * Returns:
+ *   A figure with a clickable thumbnail and an optional full-screen viewer.
+ *
+ * Compatibility:
+ *   The shared page does not have the full chat style hook, so this component
+ *   keeps the viewer self-contained in the CSS module while preserving the
+ *   same source navigation behavior used by live conversations.
+ */
+function SharedImageBlockFigure({ block }: { block: SharedAnswerBlock }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const safeImageUrl = isSafeImageUrl(block.imageUrl) ? block.imageUrl : '';
+  const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
+  const caption = block.caption || block.explanatoryCaption || '';
+  const sourceLabel = block.sourceDomain || 'Source';
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    // Keep shared image expansion keyboard-dismissable without coupling this
+    // read-only page to the main chat modal stack.
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsExpanded(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isExpanded]);
+
+  if (!safeImageUrl) return null;
+
+  return (
+    <>
+      <figure className={styles.imageBlock}>
+        <button
+          aria-label={caption ? `放大檢視圖片：${caption}` : '放大檢視圖片'}
+          className={styles.imageBlockButton}
+          type="button"
+          onClick={() => setIsExpanded(true)}
+        >
+          {/* Shared answer images can come from many attributed providers, so Next Image cannot use a stable allowlist here. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={safeImageUrl} alt={caption} />
+        </button>
+        {(caption || safeSourceUrl) && (
+          <figcaption>
+            {caption}
+            {safeSourceUrl && (
+              <>
+                {' '}
+                <a href={safeSourceUrl} rel="noreferrer" target="_blank">
+                  {sourceLabel}
+                </a>
+              </>
+            )}
+          </figcaption>
+        )}
+      </figure>
+
+      {isExpanded && (
+        <div
+          aria-label={caption || '圖片檢視'}
+          aria-modal="true"
+          className={styles.imageLightbox}
+          role="dialog"
+          onMouseDown={() => setIsExpanded(false)}
+        >
+          <button
+            aria-label="關閉圖片檢視"
+            className={styles.imageLightboxBack}
+            type="button"
+            onClick={() => setIsExpanded(false)}
+          >
+            <ArrowLeft size={24} aria-hidden="true" />
+          </button>
+          <button
+            aria-label="關閉圖片檢視"
+            className={styles.imageLightboxClose}
+            type="button"
+            onClick={() => setIsExpanded(false)}
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+          <div className={styles.imageLightboxStage} onMouseDown={(event) => event.stopPropagation()}>
+            {safeSourceUrl ? (
+              <a
+                className={styles.imageLightboxImageLink}
+                href={safeSourceUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={safeImageUrl} alt={caption} />
+              </a>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={safeImageUrl} alt={caption} />
+            )}
+          </div>
+          <div className={styles.imageLightboxMeta} onMouseDown={(event) => event.stopPropagation()}>
+            {caption && <p className={styles.imageLightboxCaption}>{caption}</p>}
+            {(block.attributionString || block.creator) && <p>{block.attributionString || block.creator}</p>}
+            {safeSourceUrl && (
+              <a
+                className={styles.imageLightboxSource}
+                href={safeSourceUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                開啟原始來源
+                <ExternalLink size={14} aria-hidden="true" />
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function SharedAnswerBlocks({ blocks }: { blocks: SharedAnswerBlock[] }) {
   return blocks.map((block, index) => {
     if (block.type === 'paragraph' && block.text) {
@@ -169,26 +312,7 @@ function SharedAnswerBlocks({ blocks }: { blocks: SharedAnswerBlock[] }) {
     }
 
     if (block.type === 'image_block' && block.imageUrl) {
-      return (
-        <figure className={styles.imageBlock} key={`image-${index}`}>
-          {/* Shared answer images can come from many attributed providers, so Next Image cannot use a stable allowlist here. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={block.imageUrl} alt={block.caption || block.explanatoryCaption || ''} />
-          {(block.caption || block.explanatoryCaption || block.sourceUrl) && (
-            <figcaption>
-              {block.explanatoryCaption || block.caption}
-              {block.sourceUrl && isSafeUrl(block.sourceUrl) && (
-                <>
-                  {' '}
-                  <a href={block.sourceUrl} rel="noreferrer" target="_blank">
-                    {block.sourceDomain || 'Source'}
-                  </a>
-                </>
-              )}
-            </figcaption>
-          )}
-        </figure>
-      );
+      return <SharedImageBlockFigure block={block} key={`image-${index}`} />;
     }
 
     return null;
