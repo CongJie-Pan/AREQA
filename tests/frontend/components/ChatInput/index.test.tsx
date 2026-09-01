@@ -76,6 +76,24 @@ describe('ChatInput', () => {
     expect(mockOnSend).toHaveBeenCalledWith('$$x^2 + y^2 = z^2$$');
   });
 
+  it('should clear the text input immediately while send is still pending', async () => {
+    let resolveSend: (value?: void | { completed: boolean }) => void = () => {};
+    const pendingSend = vi.fn(() => new Promise<void | { completed: boolean }>((resolve) => {
+      resolveSend = resolve;
+    }));
+    render(<ChatInput onSend={pendingSend} />);
+    const input = screen.getByLabelText('訊息輸入框');
+
+    fireEvent.change(input, { target: { value: 'explain this paper' } });
+    fireEvent.click(screen.getByLabelText(/發送訊息/i));
+
+    expect(pendingSend).toHaveBeenCalledWith('explain this paper');
+    expect(input).toHaveValue('');
+
+    resolveSend({ completed: true });
+    await waitFor(() => expect(input).toHaveValue(''));
+  });
+
   it('should show quote preview when quotedText is provided', () => {
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {
@@ -259,15 +277,17 @@ describe('ChatInput', () => {
     });
   });
 
-  it('should preserve attachments when sending fails', async () => {
+  it('should preserve draft text and attachments when sending fails', async () => {
     const attachment = new File(['notes'], 'notes.txt', { type: 'text/plain' });
     const failedSend = vi.fn().mockRejectedValue(new Error('network failure'));
     render(<ChatInput onSend={failedSend} />);
 
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: 'retry this' } });
     fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
 
-    await waitFor(() => expect(failedSend).toHaveBeenCalledWith('', [attachment]));
+    await waitFor(() => expect(failedSend).toHaveBeenCalledWith('retry this', [attachment]));
+    await waitFor(() => expect(screen.getByLabelText('訊息輸入框')).toHaveValue('retry this'));
     expect(screen.getByLabelText('待送附件')).toBeInTheDocument();
   });
 

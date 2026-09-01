@@ -358,9 +358,11 @@ export function ChatInput({
 
   const handleSend = useCallback(async () => {
     const trimmedValue = value.trim();
+    const previewsToSend = attachmentPreviews;
+    const quotedTextToSend = quotedText;
 
     // Validation checks
-    if (!trimmedValue && !quotedText && attachmentPreviews.length === 0) {
+    if (!trimmedValue && !quotedTextToSend && previewsToSend.length === 0) {
       return;
     }
 
@@ -374,8 +376,8 @@ export function ChatInput({
 
     // Construct final message with quote if exists
     let finalMessage = trimmedValue;
-    if (quotedText) {
-      const formattedQuote = quotedText
+    if (quotedTextToSend) {
+      const formattedQuote = quotedTextToSend
         .split('\n')
         .map(line => (line.startsWith('>') ? line : `> ${line}`))
         .join('\n');
@@ -383,28 +385,41 @@ export function ChatInput({
       finalMessage = `${formattedQuote}\n\n${quotePrompt}`;
     }
 
+    setValue('');
+    setAttachmentPreviews([]);
+    setQuotedText(null);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    const restoreDraft = () => {
+      setValue((currentValue) => (currentValue === '' ? value : currentValue));
+      setAttachmentPreviews((currentPreviews) => (
+        currentPreviews.length === 0 ? previewsToSend : currentPreviews
+      ));
+      if (quotedTextToSend) {
+        setQuotedText(quotedTextToSend);
+      }
+    };
+
     try {
-      const filesToSend = attachmentPreviews.map((preview) => preview.file);
+      const filesToSend = previewsToSend.map((preview) => preview.file);
       const result = filesToSend.length > 0
         ? await onSend(finalMessage, filesToSend)
         : await onSend(finalMessage);
 
-      if (result && 'completed' in result && !result.completed) return;
+      if (result && 'completed' in result && !result.completed) {
+        restoreDraft();
+        return;
+      }
 
-      setValue('');
-      for (const preview of attachmentPreviews) {
+      for (const preview of previewsToSend) {
         if (preview.objectUrl) URL.revokeObjectURL(preview.objectUrl);
       }
-      setAttachmentPreviews([]);
-      setQuotedText(null); // Clear quote after sending
     } catch {
       // Preserve text and attachments so the user can retry the request.
+      restoreDraft();
       return;
-    }
-
-    // Reset textarea height
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
     }
   }, [value, attachmentPreviews, disabled, onSend, maxLength, quotedText, setQuotedText, t]);
 
