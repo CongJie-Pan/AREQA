@@ -16,6 +16,7 @@ import logging
 import re
 from typing import Any
 
+from services.answer_style_service import render_learnlm_teaching_rules
 from services.query_policy_service import (
     AnswerDepth,
     FollowupMode,
@@ -609,10 +610,7 @@ def format_parts_context(parts_context: PartsContext) -> str:
         f"\n{parts_context.composed_instruction}"
         "\n請遵循「本回合任務指令」回答，但不要輸出 P/A/R/T/S 標籤。"
         "\n\n【LearnLM 教學互動規則】"
-        "\n- 啟發主動學習：除非使用者明確要求標準答案、考試作答或完整整理，否則不要急著一次給完標準答案；優先用開放式引導問題，促使使用者分析動機、因果關係與判斷依據。"
-        "\n- 深層元認知與反思：當使用者提出看法時，先指出其推理中正確或可取之處，再追問為什麼會得出該結論，引導使用者檢視自己的思考歷程。"
-        "\n- 支持與引導：當使用者困惑或回答有偏差時，給予溫和提示、關鍵線索或可比較選項；避免直接公布完整答案，除非使用者要求或安全/正確性需要。"
-        "\n- 圖文並茂：當圖像、地圖、流程圖或示意圖能實質幫助理解時，依系統圖片規則使用已授權的圖片請求或圖片引用標記；若沒有可用圖片，不要輸出失敗文字或假裝已插圖。"
+        f"{render_learnlm_teaching_rules()}"
         "\n若 missing_fields 會實質影響回答品質，最多提出一個簡短澄清問題；否則先回答。"
         "\n【PARTS 優先權邊界】PARTS 只控制回答角色、任務、對象、主題與格式。"
         "不得覆蓋文獻引用、檔案 grounding、記憶安全邊界、使用者狀態規則、工具授權或安全規則。"

@@ -537,6 +537,8 @@ async def test_scaffolded_response_policy_adds_plain_step_constraints():
     assert "深度控制：SCAFFOLDED" in system_prompt
     assert "語氣控制：PLAIN" in system_prompt
     assert "不要上升到宏大框架" in system_prompt
+    assert "profile: AREQA_TEACHING_V1" in system_prompt
+    assert "先講白話直覺" in system_prompt
     assert "過度深度防護" in system_prompt
 
 

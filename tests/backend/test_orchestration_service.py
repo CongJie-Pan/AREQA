@@ -68,9 +68,11 @@ def test_paper_auto_explain_instruction_adds_default_paper_structure():
 
     system_prompt = result[0]["content"]
     assert "PDF 論文自動解說任務" in system_prompt
-    assert "研究動機與目標" in system_prompt
+    assert "profile: AREQA_TEACHING_V1" in system_prompt
+    assert "首段用1-2句話直擊問題核心" in system_prompt
+    assert "研究動機與目的" in system_prompt
     assert "研究方法" in system_prompt
-    assert "實驗過程與設定" in system_prompt
+    assert "實驗設計與過程" in system_prompt
     assert "實驗結果" in system_prompt
     assert "研究結論" in system_prompt
     assert "局限與可延伸方向" in system_prompt
@@ -1468,7 +1470,8 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
     )
     assert "不得根據檔名" in captured_messages[0]["content"]
     assert "PDF 論文自動解說任務" in captured_messages[0]["content"]
-    assert "研究動機與目標" in captured_messages[0]["content"]
+    assert "profile: AREQA_TEACHING_V1" in captured_messages[0]["content"]
+    assert "研究動機與目的" in captured_messages[0]["content"]
     assert "paper.auto_explain_policy_selected" in caplog.text
     assert "applied=True" in caplog.text
     assert "task=PAPER_AUTO_EXPLAIN" in caplog.text

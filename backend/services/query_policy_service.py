@@ -9,6 +9,8 @@ import logging
 import re
 from typing import Any, Dict, List
 
+from services.answer_style_service import render_paper_overview_style
+
 
 logger = logging.getLogger(__name__)
 
@@ -366,8 +368,10 @@ def paper_auto_explain_instruction() -> str:
     """Return the prompt overlay for generic PDF paper explanation.
 
     Returns:
-        Traditional Chinese task structure. The existing language policy can
-        still ask the answer model to respond in the user's preferred language.
+        Traditional Chinese paper-task constraints that preserve the normal
+        tutoring style while requiring complete paper overview coverage. The
+        existing language policy can still ask the answer model to respond in
+        the user's preferred language.
 
     Side Effects:
         None. The caller owns structured logging before this prompt is applied.
@@ -376,10 +380,11 @@ def paper_auto_explain_instruction() -> str:
     return (
         "【PDF 論文自動解說任務】本回合使用者上傳 PDF，且 policy classifier 判定使用者"
         "是在要求一般性的論文導讀，沒有指定更細的任務。請把它視為一篇需要導讀的論文或技術文件，"
-        "根據實際可讀取的 PDF 內容，自動用以下結構回答："
-        "\n1. 研究動機與目標：說明作者想解決什麼問題、為什麼重要。"
+        f"{render_paper_overview_style()}"
+        "根據實際可讀取的 PDF 內容，回答必須自然覆蓋以下導讀要點："
+        "\n1. 研究動機與目的：說明作者想解決什麼問題、為什麼重要。"
         "\n2. 研究方法：說明核心方法、模型、資料、流程或理論設計。"
-        "\n3. 實驗過程與設定：說明資料集、比較基準、實驗設計、評估指標或分析流程。"
+        "\n3. 實驗設計與過程：說明資料集、比較基準、實驗設計、評估指標或分析流程。"
         "\n4. 實驗結果：整理主要發現、圖表或數據代表的意思。"
         "\n5. 研究結論：說明作者最後主張什麼、貢獻是什麼。"
         "\n6. 局限與可延伸方向：若 PDF 有提到 limitation/future work，請整理；"

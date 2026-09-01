@@ -17,6 +17,7 @@ import re
 from typing import Any, Awaitable, Callable, Dict, List
 
 from memory_gate import is_sensitive_context_query, requests_recent_working_context_recall
+from services.answer_style_service import render_response_strategy_style_reminder
 from services.query_policy_service import (
     AnswerDepth,
     FollowupMode,
@@ -567,6 +568,10 @@ class ConversationContextService:
 
         depth_overlay = overlays.get(response_policy.answer_depth.value, "")
         tone_overlay = overlays.get(response_policy.tone.value, "")
+        style_reminder = render_response_strategy_style_reminder(
+            answer_depth=response_policy.answer_depth,
+            tone=response_policy.tone,
+        )
         guardrail = ""
         if response_policy.answer_depth in {AnswerDepth.DIRECT, AnswerDepth.SCAFFOLDED}:
             guardrail = (
@@ -584,6 +589,7 @@ class ConversationContextService:
             f"\n- tone: {response_policy.tone.value}{tone_overlay}"
             f"\n- structure: {response_policy.structure.value}，{structure_rules[response_policy.structure]}"
             f"\n- followup_mode: {response_policy.followup_mode.value}，{followup_rules[response_policy.followup_mode]}"
+            f"{style_reminder}"
             f"{guardrail}"
         )
 

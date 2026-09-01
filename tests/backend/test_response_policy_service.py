@@ -492,13 +492,17 @@ def test_count_pdf_attachments_counts_file_parts_only():
 
 
 def test_paper_auto_explain_instruction_contains_required_sections():
-    """The reusable prompt overlay should preserve the paper overview template."""
+    """The paper overlay should preserve tutoring style and required coverage."""
 
     instruction = paper_auto_explain_instruction()
 
-    assert "研究動機與目標" in instruction
+    assert "profile: AREQA_TEACHING_V1" in instruction
+    assert "首段用1-2句話直擊問題核心" in instruction
+    assert "分步方式降低理解負擔" in instruction
+    assert "先講白話直覺" in instruction
+    assert "研究動機與目的" in instruction
     assert "研究方法" in instruction
-    assert "實驗過程與設定" in instruction
+    assert "實驗設計與過程" in instruction
     assert "實驗結果" in instruction
     assert "研究結論" in instruction
     assert "局限與可延伸方向" in instruction
