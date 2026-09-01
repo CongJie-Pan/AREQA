@@ -118,14 +118,14 @@ class PdfVisualCandidate:
         """
 
         topic = f"{self.filename} 第 {self.page_number} 頁"
-        caption = self.caption_hint or f"上傳 PDF 第 {self.page_number} 頁的圖像內容"
+        caption = (
+            self.target_caption
+            or self.caption_hint
+            or f"上傳 PDF 第 {self.page_number} 頁的圖像內容"
+        )
         vision_limitations = ()
         if self.visual_quality_reason.endswith("quality_fallback"):
             vision_limitations = ("PDF 圖表裁切品質不足，系統改用較完整的頁面截圖。",)
-        if self.answer_section and self.teaching_caption:
-            explanatory_caption = f"這張圖適合用來說明{self.answer_section}。{self.teaching_caption}"
-        else:
-            explanatory_caption = self.teaching_caption or ""
         return ImageBlock(
             slot_id=self.slot_id,
             topic=topic,
@@ -138,7 +138,7 @@ class PdfVisualCandidate:
             provider=PDF_ATTACHMENT_IMAGE_PROVIDER,
             license="user_provided_attachment",
             attribution_caption=f"{self.filename}，第 {self.page_number} 頁",
-            explanatory_caption=explanatory_caption,
+            explanatory_caption="",
             width=self.width,
             height=self.height,
             safety_status="pass",

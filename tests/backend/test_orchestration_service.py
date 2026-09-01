@@ -125,7 +125,8 @@ async def test_attachment_visual_extraction_uses_paper_visual_planner_for_auto_e
     assert candidates[0].page_number == 2
     assert candidates[0].selection_source == "planner"
     assert candidates[0].to_image_block().purpose == "results_table"
-    assert "BLEU" in candidates[0].to_image_block().explanatory_caption
+    assert "BLEU" in candidates[0].to_image_block().caption
+    assert candidates[0].to_image_block().explanatory_caption == ""
 
 
 def test_verified_visual_instruction_injects_inventory():
@@ -163,6 +164,7 @@ def test_verified_visual_instruction_injects_inventory():
     assert "vision_summary" in system_prompt
     assert "movement arrows" in system_prompt
     assert "how_to_read" in system_prompt
+    assert "purpose" in system_prompt
     assert "主回答素材的一部分" in system_prompt
     assert "不是回答後的附件" in system_prompt
     assert "必須把最相關的已驗證圖片整合進教學流程" in system_prompt
@@ -205,6 +207,9 @@ def test_verified_visual_instruction_lists_multiple_verified_markers():
     for index in range(1, 5):
         assert f'[[AREQA_VERIFIED_IMAGE id="pdf_img_{index}"]]' in system_prompt
     assert "依照圖片清單中的章節提示分散到對應段落" in system_prompt
+    assert "必須至少使用 3 張已驗證 PDF 圖片" in system_prompt
+    assert "研究方法、實驗設計與過程、實驗結果" in system_prompt
+    assert "不得逐字複製系統提供的圖片用途或教學提示句" in system_prompt
     assert "data:image/png" not in system_prompt
 
 
@@ -396,6 +401,27 @@ def test_image_marker_filter_positions_marker_inside_one_chunk_with_utf16_offset
     assert marker_filter.drain_new_slots() == []
 
 
+def test_image_marker_filter_accepts_four_verified_markers_for_paper_mode():
+    """Paper overview streaming can accept four preverified PDF image markers."""
+
+    marker_filter = ImageRequestMarkerFilter(max_slots=4)
+
+    public = marker_filter.feed(
+        "下圖說明研究方法的主要流程與角色分工。[[AREQA_VERIFIED_IMAGE id=\"pdf_img_1\"]]\n\n"
+        "下圖說明資料集組成與實驗設計的範圍。[[AREQA_VERIFIED_IMAGE id=\"pdf_img_2\"]]\n\n"
+        "下圖說明實驗結果中模型表現的比較。[[AREQA_VERIFIED_IMAGE id=\"pdf_img_3\"]]\n\n"
+        "下圖補充泛化實驗與後續分析的關係。[[AREQA_VERIFIED_IMAGE id=\"pdf_img_4\"]]"
+    )
+
+    assert "AREQA_VERIFIED_IMAGE" not in public
+    assert [slot.slot_id for slot in marker_filter.slots] == [
+        "pdf_img_1",
+        "pdf_img_2",
+        "pdf_img_3",
+        "pdf_img_4",
+    ]
+
+
 @pytest.mark.parametrize(
     "prefix",
     [
@@ -579,6 +605,7 @@ async def test_pdf_stream_uses_openrouter_native_parser(
         {"id": "file-parser", "pdf": {"engine": "native"}}
     ]
     assert "orchestration.stream_started" in caplog.text
+    assert "image_slot_cap=2" in caplog.text
 
 @pytest.fixture
 def mock_router():
@@ -1410,6 +1437,7 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
     service = OrchestrationService(mock_router, mock_rag, None, mock_client)
     request = MagicMock()
     captured_messages = []
+    captured_stream_kwargs = {}
     caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
 
     async def fail_if_searched(*args, **kwargs):
@@ -1418,6 +1446,7 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
 
     async def llm_stream(*args, **kwargs):
         captured_messages.extend(args[3])
+        captured_stream_kwargs.update(kwargs)
         yield 'event: accumulator\ndata: {"accumulator":"attachment answer"}\n\n'
 
     service._node_perplexity_search = fail_if_searched
@@ -1476,6 +1505,7 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
     assert "applied=True" in caplog.text
     assert "task=PAPER_AUTO_EXPLAIN" in caplog.text
     assert "pdf_count=1" in caplog.text
+    assert captured_stream_kwargs["max_image_slots"] == 4
 
 
 @pytest.mark.asyncio

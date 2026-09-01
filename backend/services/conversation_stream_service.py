@@ -109,7 +109,7 @@ class ImageRequestMarkerFilter:
             max_slots: Hard cap on accepted visual slots for one answer.
         """
 
-        self.max_slots = max(0, min(max_slots, 2))
+        self.max_slots = max(0, min(max_slots, 4))
         self._pending = ""
         self._public_accumulator = ""
         self._slots: list[ImageRequestSlot] = []
@@ -375,6 +375,7 @@ class ConversationStreamService:
         request: Any,
         tool_budget: Any = None,
         trace: Any = None,
+        max_image_slots: int = 2,
     ) -> AsyncGenerator[str, None]:
         """Yield filtered answer deltas and typed metadata events.
 
@@ -391,6 +392,9 @@ class ConversationStreamService:
             request: FastAPI request used to detect disconnects.
             tool_budget: Optional foreground tool budget tracker.
             trace: Optional turn latency trace.
+            max_image_slots: Maximum image markers accepted for this turn.
+                General answers keep the legacy cap of two, while paper
+                overviews may allow more preverified PDF figures.
 
         Yields:
             Legacy-compatible SSE answer chunks, privacy-safe ``image_slot``
@@ -442,16 +446,17 @@ class ConversationStreamService:
             tool_budget = ToolBudgetTracker(ToolBudget())
 
         accumulator = ""
-        image_marker_filter = ImageRequestMarkerFilter(max_slots=2)
+        image_marker_filter = ImageRequestMarkerFilter(max_slots=max_image_slots)
         output_filter = PublicAnswerFilter()
         boundary_filter = StreamingResponseBoundaryFilter()
         tool_call_name = ""
         tool_call_args = ""
         logger.info(
-            "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s",
+            "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s image_slot_cap=%s",
             conversation_id,
             target_model,
             has_pdf,
+            image_marker_filter.max_slots,
         )
         try:
             if trace:

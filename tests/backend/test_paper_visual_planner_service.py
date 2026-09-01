@@ -278,9 +278,11 @@ def test_pdf_visual_extraction_respects_planner_page_order():
     assert candidates[0].visual_type == "results_table"
     assert candidates[0].target_caption.startswith("Table 2")
     assert "BLEU" in candidates[0].teaching_caption
-    assert candidates[0].to_image_block().explanatory_caption.startswith("這張圖適合用來說明實驗結果")
-    assert "建議放在" not in candidates[0].to_image_block().explanatory_caption
-    assert candidates[0].teaching_caption in candidates[0].to_image_block().explanatory_caption
+    block = candidates[0].to_image_block()
+    assert block.caption.startswith("Table 2")
+    assert block.explanatory_caption == ""
+    assert "這張圖適合用來說明" not in block.caption
+    assert "建議放在" not in block.caption
 
 
 def test_pdf_visual_extraction_crops_planner_target_caption_on_multi_caption_page():

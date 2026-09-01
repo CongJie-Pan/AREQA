@@ -665,6 +665,7 @@ class OrchestrationService:
         )
         if should_auto_explain_paper:
             final_messages = self._add_paper_auto_explain_instruction(final_messages)
+        max_image_slots = 4 if should_auto_explain_paper else 2
 
         preverified_image_blocks = None
         if settings.enable_visual_preflight:
@@ -745,7 +746,7 @@ class OrchestrationService:
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
         planned_image_slots: list[dict[str, Any]] = []
-        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace):
+        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace, max_image_slots=max_image_slots):
             if event.startswith("event: accumulator\n"):
                 try:
                     data_line = next(line for line in event.splitlines() if line.startswith("data: "))
@@ -1091,6 +1092,7 @@ class OrchestrationService:
                 {
                     "id": slot_id,
                     "topic": block.topic,
+                    "purpose": block.purpose,
                     "caption": block.caption,
                     "explanatory_caption": block.explanatory_caption,
                     "vision_summary": block.vision_summary,
@@ -1110,17 +1112,27 @@ class OrchestrationService:
                 for slot_id in image_blocks.keys()
             ]
             verified_marker_examples = "、".join(verified_markers)
+            available_image_count = len(image_blocks)
+            minimum_paper_image_count = min(3, available_image_count)
+            paper_minimum_instruction = (
+                f"如果這是論文總覽回答且清單中至少有 {minimum_paper_image_count} 張圖片，"
+                f"必須至少使用 {minimum_paper_image_count} 張已驗證 PDF 圖片，"
+                "並分別銜接研究方法、實驗設計與過程、實驗結果；"
+                if minimum_paper_image_count >= 3
+                else ""
+            )
             instruction = (
                 "【已驗證圖片清單】以下圖片已由系統搜尋、驗證並讀圖；"
                 "它們是本回合主回答素材的一部分，不是回答後的附件。"
                 "你只能使用清單中的 id，不能自行編造圖片、URL 或來源。"
                 "你必須把最相關的已驗證圖片整合進教學流程；"
+                f"{paper_minimum_instruction}"
                 "若有多張圖片，請依照圖片清單中的章節提示分散到對應段落，"
                 "特別是論文總覽回答應優先覆蓋研究動機與目的、研究方法、實驗設計與過程、實驗結果。"
                 "在最適合的位置先寫 1 至 2 句完整導圖文字，"
                 "明確使用「下圖」、「圖中」或對應語言的圖片引用。"
-                "若清單提供 explanatory_caption，必須優先用它判斷圖片應銜接的論文段落與教學重點；"
-                "導圖文字必須至少引用 explanatory_caption、vision_summary、visible_elements 或 how_to_read 中一項可見特徵，"
+                "導圖文字必須至少引用 caption、vision_summary、visible_elements 或 how_to_read 中一項可見特徵，"
+                "不得逐字複製系統提供的圖片用途或教學提示句；"
                 "並且導圖段落後必須緊接著輸出標記，也就是對應圖片的標記；可用標記為："
                 f"{verified_marker_examples}。"
                 "圖片後的文字必須接續引用或延伸圖片內容，不能像圖片不存在一樣繼續純文字回答。"
@@ -1492,7 +1504,7 @@ class OrchestrationService:
             blocks.append(f"{role_labels.get(role, role)}:\n{content}")
         return "\n\n".join(blocks)
 
-    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None, trace: Optional[TurnLatencyTrace] = None) -> AsyncGenerator[str, None]:
+    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None, trace: Optional[TurnLatencyTrace] = None, max_image_slots: int = 2) -> AsyncGenerator[str, None]:
         """
         Execute the main LLM generation stream, handling tool calls and yielding tokens.
 
@@ -1525,6 +1537,7 @@ class OrchestrationService:
             request=request,
             tool_budget=tool_budget,
             trace=trace,
+            max_image_slots=max_image_slots,
         ):
             yield event
 
