@@ -117,10 +117,10 @@ _PDF_BROAD_AUTO_EXPLAIN_PATTERNS = (
     ),
     re.compile(
         r"(?:幫我|請)?(?:解釋|說明|導讀|摘要|總結|閱讀|讀)(?:一下)?"
-        r"(?:這|這篇|這份|該)?(?:論文|PDF|文件|文獻)"
+        r"(?:這|這篇|這份|此|此篇|本篇|該|該篇)?(?:論文|PDF|文件|文獻)"
     ),
     re.compile(
-        r"(?:這|這篇|這份|該)?(?:論文|PDF|文件|文獻)(?:在)?"
+        r"(?:這|這篇|這份|此|此篇|本篇|該|該篇)?(?:論文|PDF|文件|文獻)(?:在)?"
         r"(?:講|說|討論|研究)(?:什麼|甚麼)"
     ),
 )
@@ -516,6 +516,120 @@ def _apply_pdf_auto_explain_guardrail(
     return guarded
 
 
+def _pdf_auto_explain_policy_from(
+    policy: ResponsePolicy,
+    *,
+    reason: AttachmentReason = AttachmentReason.GENERIC_PAPER_EXPLANATION,
+) -> ResponsePolicy:
+    """Return ``policy`` converted to a whole-paper PDF overview task.
+
+    Args:
+        policy: Current response policy selected by the model or fallback path.
+        reason: Stable attachment reason for the policy transition.
+
+    Returns:
+        A response policy that enables the paper overview prompt and optional
+        attachment visual support.
+
+    Side Effects:
+        None. Callers own structured logs at their decision boundary.
+    """
+
+    return ResponsePolicy(
+        task_intent=policy.task_intent,
+        answer_depth=policy.answer_depth,
+        tone=policy.tone,
+        structure=policy.structure,
+        followup_mode=policy.followup_mode,
+        visual_support=(
+            policy.visual_support
+            if policy.visual_support is not VisualSupport.NONE
+            else VisualSupport.OPTIONAL
+        ),
+        visual_reason=(
+            policy.visual_reason
+            if policy.visual_support is not VisualSupport.NONE
+            else VisualReason.ATTACHMENT_FIGURE_EXPLANATION
+        ),
+        attachment_task=AttachmentTask.PAPER_AUTO_EXPLAIN,
+        attachment_reason=reason,
+        legacy_policy=policy.legacy_policy,
+    )
+
+
+async def _apply_pdf_semantic_auto_explain_fallback(
+    policy: ResponsePolicy,
+    *,
+    client: Any,
+    model: str,
+    user_msg: str,
+    has_pdf_attachment: bool,
+) -> ResponsePolicy:
+    """Use a narrow second LLM check for ambiguous PDF overview requests.
+
+    Args:
+        policy: Current response policy after deterministic guardrails.
+        client: Chat-completions compatible model client.
+        model: Model identifier used by the policy classifier.
+        user_msg: Current user message. It is sent to the fallback classifier
+            but never logged.
+        has_pdf_attachment: Whether request metadata confirms a PDF attachment.
+
+    Returns:
+        ``policy`` unchanged unless the fallback model explicitly classifies the
+        turn as a whole-paper overview request.
+
+    Side Effects:
+        May make one small LLM call. Emits privacy-safe structured logs
+        ``orchestration.response_policy_pdf_semantic_fallback_applied`` and
+        ``orchestration.response_policy_pdf_semantic_fallback_failed`` with only
+        enum metadata and reason codes, never raw user text or model output.
+    """
+
+    if (
+        not has_pdf_attachment
+        or policy.attachment_task is not AttachmentTask.NONE
+        or _is_broad_pdf_auto_explain_request(user_msg)
+        or _PDF_TARGETED_TASK_PATTERN.search(str(user_msg or ""))
+    ):
+        return policy
+
+    prompt = (
+        "A PDF is attached. Decide whether the user is asking for a broad, whole-paper "
+        "overview/explanation/reading guide rather than a focused operation such as translation, "
+        "citation extraction, proofreading, page-specific QA, comparison, or a single section only. "
+        "Return strict JSON only: {\"is_whole_paper_overview\": true|false}.\n\n"
+        f"User message:\n{user_msg}"
+    )
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "Return only valid JSON. Do not explain."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=40,
+            temperature=0.0,
+        )
+        content = str(response.choices[0].message.content or "").strip()
+        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content).strip()
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        parsed = json.loads(match.group(0) if match else content)
+        if isinstance(parsed, dict) and parsed.get("is_whole_paper_overview") is True:
+            guarded = _pdf_auto_explain_policy_from(policy)
+            logger.info(
+                "orchestration.response_policy_pdf_semantic_fallback_applied metadata=%s",
+                json.dumps(guarded.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
+            )
+            return guarded
+    except Exception as exc:
+        logger.info(
+            "orchestration.response_policy_pdf_semantic_fallback_failed reason=%s",
+            type(exc).__name__,
+        )
+    return policy
+
+
 def apply_pdf_auto_explain_guardrail(
     policy: ResponsePolicy,
     *,
@@ -735,6 +849,13 @@ Current user message:
                 user_msg=user_msg,
                 has_pdf_attachment=has_pdf_attachment,
             )
+            policy = await _apply_pdf_semantic_auto_explain_fallback(
+                policy,
+                client=client,
+                model=model,
+                user_msg=user_msg,
+                has_pdf_attachment=has_pdf_attachment,
+            )
             logger.info(
                 "orchestration.response_policy_selected metadata=%s",
                 json.dumps(policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
@@ -752,6 +873,13 @@ Current user message:
             user_msg=user_msg,
             has_pdf_attachment=has_pdf_attachment,
         )
+        policy = await _apply_pdf_semantic_auto_explain_fallback(
+            policy,
+            client=client,
+            model=model,
+            user_msg=user_msg,
+            has_pdf_attachment=has_pdf_attachment,
+        )
         logger.info(
             "orchestration.response_policy_selected metadata=%s",
             json.dumps(policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
@@ -760,6 +888,13 @@ Current user message:
     except Exception as exc:
         fallback = _apply_pdf_auto_explain_guardrail(
             default_response_policy(),
+            user_msg=user_msg,
+            has_pdf_attachment=has_pdf_attachment,
+        )
+        fallback = await _apply_pdf_semantic_auto_explain_fallback(
+            fallback,
+            client=client,
+            model=model,
             user_msg=user_msg,
             has_pdf_attachment=has_pdf_attachment,
         )

@@ -209,6 +209,9 @@ async def test_classify_response_policy_selects_pdf_auto_explain_for_english_gen
     [
         "Please explain this paper",
         "Please help me explain this paper",
+        "請幫我說明此篇論文",
+        "請幫我導讀本篇論文",
+        "幫我解釋該篇文獻",
     ],
 )
 async def test_pdf_broad_request_guardrail_overrides_missed_classifier_auto_explain(
@@ -279,6 +282,89 @@ async def test_pdf_broad_request_guardrail_applies_to_classifier_failure(caplog)
     assert policy.visual_support is VisualSupport.OPTIONAL
     assert "orchestration.response_policy_failed" in caplog.text
     assert "Please help me explain this paper" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pdf_semantic_fallback_recovers_ambiguous_overview_request(caplog):
+    """A second LLM check should recover broad PDF requests missed by the main classifier."""
+
+    caplog.set_level("INFO")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=[
+            _mock_chat_response(
+                """
+                {
+                  "task_intent": "GENERAL_QA",
+                  "answer_depth": "SCAFFOLDED",
+                  "tone": "TUTORING",
+                  "structure": "STEP_BY_STEP",
+                  "followup_mode": "OPTIONAL",
+                  "visual_support": "NONE",
+                  "visual_reason": "NOT_NEEDED",
+                  "attachment_task": "NONE",
+                  "attachment_reason": "NOT_PAPER_TASK",
+                  "legacy_policy": "NORMAL"
+                }
+                """
+            ),
+            _mock_chat_response('{"is_whole_paper_overview": true}'),
+        ]
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "可以帶我看懂這份研究嗎？",
+        [],
+        has_pdf_attachment=True,
+        pdf_attachment_count=1,
+    )
+
+    assert policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
+    assert policy.attachment_reason is AttachmentReason.GENERIC_PAPER_EXPLANATION
+    assert policy.visual_support is VisualSupport.OPTIONAL
+    assert mock_client.chat.completions.create.await_count == 2
+    assert "orchestration.response_policy_pdf_semantic_fallback_applied" in caplog.text
+    assert "可以帶我看懂" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pdf_semantic_fallback_does_not_override_focused_pdf_task():
+    """Focused PDF requests should not spend or apply the semantic overview fallback."""
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "EXPLAIN_TEXT",
+              "answer_depth": "SCAFFOLDED",
+              "tone": "TUTORING",
+              "structure": "STEP_BY_STEP",
+              "followup_mode": "OPTIONAL",
+              "visual_support": "OPTIONAL",
+              "visual_reason": "ATTACHMENT_FIGURE_EXPLANATION",
+              "attachment_task": "PAPER_TARGETED_QA",
+              "attachment_reason": "TARGETED_ATTACHMENT_TASK",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "只說明這篇論文的 methods section",
+        [],
+        has_pdf_attachment=True,
+        pdf_attachment_count=1,
+    )
+
+    assert policy.attachment_task is AttachmentTask.PAPER_TARGETED_QA
+    assert policy.attachment_reason is AttachmentReason.TARGETED_ATTACHMENT_TASK
+    assert mock_client.chat.completions.create.await_count == 1
 
 
 @pytest.mark.asyncio
