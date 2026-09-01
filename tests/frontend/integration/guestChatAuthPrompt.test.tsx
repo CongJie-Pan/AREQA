@@ -3,6 +3,8 @@ import { App } from 'antd';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
+import { initializeChatService } from '@/services/chat';
+import { syncService } from '@/services/syncService';
 
 const authenticatedFetchMock = vi.hoisted(() => vi.fn());
 
@@ -57,6 +59,15 @@ vi.mock('@/services/syncService', () => ({
 
 vi.mock('@/services/authenticatedFetch', () => ({
   authenticatedFetch: authenticatedFetchMock,
+}));
+
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
 vi.mock('@/store/chat', () => ({
@@ -189,6 +200,30 @@ describe('Guest chat authentication prompt flow', () => {
       expect(conversationState.clearState).toHaveBeenCalled();
       expect(chatState.clearMessages).toHaveBeenCalled();
       expect(chatState.resetStreamingState).toHaveBeenCalled();
+    });
+  });
+
+  it('loads cached conversations before slow cloud sync finishes after refresh', async () => {
+    let resolveCloudSync: () => void = () => {};
+    currentSession = { user: { id: 'user-1' } };
+    vi.mocked(syncService.pullFromCloud).mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveCloudSync = resolve;
+    }));
+
+    renderChat();
+
+    await waitFor(() => {
+      expect(initializeChatService).toHaveBeenCalledWith('user-1');
+    });
+    expect(syncService.pullFromCloud).toHaveBeenCalledWith('user-1');
+    expect(initializeChatService).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCloudSync();
+    });
+
+    await waitFor(() => {
+      expect(initializeChatService).toHaveBeenCalledTimes(2);
     });
   });
 

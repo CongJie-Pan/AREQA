@@ -28,6 +28,7 @@ import { databaseService } from '@/services/database';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { logger } from '@/utils/logger';
 
 /**
  * Error type classification for user-friendly messages
@@ -224,8 +225,33 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       try {
         if (user) setShowAuthPrompt(false);
-        await syncService.pullFromCloud(user.id);
-        if (!cancelled) await initializeChatService(user.id);
+        const localLoadStartedAt = performance.now();
+        await initializeChatService(user.id);
+        logger.info('chat_history_local_cache_loaded', {
+          component: 'ChatContainer',
+          durationMs: Math.round(performance.now() - localLoadStartedAt),
+          source: 'dexie',
+        });
+        if (!cancelled) setIsChatReady(true);
+
+        const cloudSyncStartedAt = performance.now();
+        void syncService.pullFromCloud(user.id)
+          .then(async () => {
+            if (cancelled) return;
+            await initializeChatService(user.id);
+            logger.info('chat_history_cloud_sync_finished', {
+              component: 'ChatContainer',
+              durationMs: Math.round(performance.now() - cloudSyncStartedAt),
+              refreshedConversationStore: true,
+            });
+          })
+          .catch((syncError) => {
+            logger.error(
+              'chat_history_cloud_sync_unhandled_error',
+              syncError instanceof Error ? syncError : new Error(String(syncError)),
+              { component: 'ChatContainer' },
+            );
+          });
       } catch (error) {
         console.error('Failed to initialize authenticated history:', error);
       } finally {
