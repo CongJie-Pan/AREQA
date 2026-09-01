@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import sys
 
+import httpx
 import pytest
 
 
@@ -97,6 +98,59 @@ async def test_sse_parser_handles_split_chunks_and_content_detection():
     assert events[1][0] == "message"
     assert benchmark.event_has_content(*events[1]) is True
     assert benchmark.event_has_content("metadata", "{}") is False
+
+
+@pytest.mark.asyncio
+async def test_live_run_allows_anonymous_stream_and_records_event_first_seen(monkeypatch):
+    captured_headers = {}
+
+    class FakeStreamResponse:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_text(self):
+            yield "event: metadata\ndata: {}\n\n"
+            yield "event: status\ndata: {\"status\": \"routing\"}\n\n"
+            yield "data: {\"choices\": [{\"delta\": {\"content\": \"answer\"}}]}\n\n"
+            yield "data: [DONE]\n\n"
+
+    class FakeStreamContext:
+        async def __aenter__(self):
+            return FakeStreamResponse()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url, headers, json):
+            captured_headers.update(headers)
+            return FakeStreamContext()
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    metrics = await benchmark.run_live_once(
+        "http://backend.test",
+        None,
+        "請簡短回答",
+        "general",
+        5.0,
+    )
+
+    assert "Authorization" not in captured_headers
+    assert captured_headers["X-Request-ID"].startswith("latency-benchmark-")
+    assert metrics.first_content_ms >= metrics.first_event_ms
+    assert metrics.event_counts["status"] == 1
+    assert metrics.event_first_seen_ms
+    assert "metadata" in metrics.event_first_seen_ms
 
 
 def test_markdown_report_distinguishes_mock_results_from_production_data():

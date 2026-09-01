@@ -25,9 +25,9 @@ from dotenv import load_dotenv
 
 VARIANTS = ("baseline", "no_policy_wait", "no_cold_memory", "optimized")
 DEFAULT_PROMPTS = (
-    "請簡單解釋什麼是成長型思維。",
-    "你還記得我之前提過的學習偏好嗎？",
-    "心理壓力通常會如何影響專注力？",
+    "請說明二戰日本與德國的同盟關係，我想學習知道",
+    "請解釋量子力學中的疊加原理，並舉例說明",
+    "請提供一個關於人工智慧倫理的案例，並分析其影響",
 )
 
 
@@ -45,6 +45,9 @@ class RunMetrics:
     embedding_calls: int
     memory_queries: int
     event_counts: dict[str, int]
+    request_id: str | None = None
+    conversation_id: str | None = None
+    event_first_seen_ms: dict[str, float] | None = None
 
 
 def percentile(values: list[float], quantile: float) -> float:
@@ -196,7 +199,7 @@ def event_has_content(event_type: str, data: str) -> bool:
 
 async def run_live_once(
     backend_url: str,
-    token: str,
+    token: str | None,
     prompt: str,
     prompt_kind: str,
     timeout: float,
@@ -206,10 +209,15 @@ async def run_live_once(
     first_visible_status_ms: float | None = None
     first_content_ms: float | None = None
     event_counts: dict[str, int] = {}
-    headers = {"Authorization": f"Bearer {token}"}
+    event_first_seen_ms: dict[str, float] = {}
+    request_id = f"latency-benchmark-{int(time.time() * 1000)}"
+    conversation_id = request_id
+    headers = {"X-Request-ID": request_id}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     payload = {
         "messages": [{"role": "user", "content": prompt}],
-        "conversation_id": f"latency-benchmark-{int(time.time() * 1000)}",
+        "conversation_id": conversation_id,
         "use_rag": False,
         "use_web_search": False,
         "force_think": False,
@@ -225,6 +233,7 @@ async def run_live_once(
                 now_ms = _elapsed_ms(started)
                 first_event_ms = first_event_ms if first_event_ms is not None else now_ms
                 event_counts[event_type] = event_counts.get(event_type, 0) + 1
+                event_first_seen_ms.setdefault(event_type, now_ms)
                 if event_type in {"status", "action", "tool_started", "warning"}:
                     if first_visible_status_ms is None:
                         first_visible_status_ms = now_ms
@@ -251,10 +260,18 @@ async def run_live_once(
         embedding_calls=0,
         memory_queries=0,
         event_counts=event_counts,
+        request_id=request_id,
+        conversation_id=conversation_id,
+        event_first_seen_ms=dict(sorted(event_first_seen_ms.items())),
     )
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    mode_note = (
+        "Mock results validate the experiment mechanics only; they are not production latency measurements."
+        if report["mode"] == "mocked"
+        else "Live results measure client-visible SSE timings; internal phase attribution requires server logs from `orchestration.turn_trace_summary`."
+    )
     lines = [
         "# AREQA Chat Latency Benchmark",
         "",
@@ -276,13 +293,38 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "> Mock results validate the experiment mechanics only; they are not production latency measurements."
-            if report["mode"] == "mocked"
-            else "> Live results measure client-visible SSE timings; internal phase attribution requires server instrumentation.",
+            f"> {mode_note}",
+            "",
+            "## Research Findings",
+            "",
+            "- Research question: Which client-visible milestone contributes most to chat response slowness?",
+            "- Primary metric: first content time, because it matches the user's perceived wait before an answer starts.",
+            "- Secondary metric: completed time, because slow post-token streaming still affects end-to-end responsiveness.",
+            "- Attribution boundary: event counts and first-seen timings identify whether the delay happens before routing/status events, before answer content, or during completion.",
             "",
         ]
     )
+    slow_candidates = _slow_candidate_lines(report)
+    if slow_candidates:
+        lines.extend(["## Slow Candidates", "", *slow_candidates, ""])
     return "\n".join(lines)
+
+
+def _slow_candidate_lines(report: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for variant, metrics in report["summary"].items():
+        first_content = metrics["first_content_median_ms"]
+        completed = metrics["completed_median_ms"]
+        visible = metrics["first_visible_status_median_ms"]
+        if visible is None:
+            lines.append(
+                f"- `{variant}` has no visible status before answer content; users may perceive a blank wait until {first_content:.2f} ms."
+            )
+        if completed > first_content * 2:
+            lines.append(
+                f"- `{variant}` spends more time after first content than before it; inspect streaming throughput and post-answer events."
+            )
+    return lines
 
 
 async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
@@ -294,8 +336,8 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                 if index >= args.warmup:
                     runs.append(sample)
     else:
-        if not args.backend_url or not args.token:
-            raise RuntimeError("Live mode requires --backend-url and --token (or matching environment variables)")
+        if not args.backend_url:
+            raise RuntimeError("Live mode requires --backend-url or BACKEND_API_URL")
         for index in range(args.warmup + args.runs):
             prompt_index = index % len(DEFAULT_PROMPTS)
             sample = await run_live_once(
@@ -312,7 +354,12 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         "schema_version": 1,
         "mode": args.mode,
         "generated_at_epoch": int(time.time()),
-        "configuration": {"runs": args.runs, "warmup": args.warmup},
+        "configuration": {
+            "runs": args.runs,
+            "warmup": args.warmup,
+            "backend_url": args.backend_url if args.mode == "live" else None,
+            "authenticated": bool(args.token) if args.mode == "live" else None,
+        },
         "summary": summarize(runs),
         "runs": [asdict(run) for run in runs],
     }
@@ -325,7 +372,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--backend-url", default=os.environ.get("BACKEND_API_URL", ""))
-    parser.add_argument("--token", default=os.environ.get("BENCHMARK_AUTH_TOKEN", ""))
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("BENCHMARK_AUTH_TOKEN", ""),
+        help="Optional bearer token. Omit for local anonymous ephemeral chat.",
+    )
     parser.add_argument("--output", type=Path, default=Path("/tmp/areqa-latency.json"))
     args = parser.parse_args()
     if args.runs < 1 or args.warmup < 0:
