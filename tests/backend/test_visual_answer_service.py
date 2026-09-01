@@ -822,6 +822,55 @@ async def test_build_answer_blocks_interleaves_preverified_image_without_query()
 
 
 @pytest.mark.asyncio
+async def test_build_answer_blocks_interleaves_four_preverified_pdf_images():
+    """Paper explanations should render all verified PDF markers the model used."""
+
+    service = VisualAnswerService()
+    images = {
+        f"pdf_img_{index}": ImageBlock(
+            slot_id=f"pdf_img_{index}",
+            topic=f"Paper figure {index}",
+            purpose="diagram",
+            image_url=f"https://example.supabase.co/pdf_img_{index}.png",
+            thumbnail_url=f"https://example.supabase.co/pdf_img_{index}.png",
+            source_url=f"#pdf-attachment-page-{index}",
+            source_domain="uploaded PDF",
+            caption=f"Figure {index}",
+            license="user_provided_attachment",
+            safety_status="pass",
+            match_confidence=0.8,
+        )
+        for index in range(1, 5)
+    }
+
+    blocks = await service.build_answer_blocks(
+        answer_text="動機段\n\n方法段\n\n實驗設計段\n\n結果段",
+        user_msg="請幫我說明這篇論文",
+        response_policy=_policy(TaskIntent.EXPLAIN_TEXT, visual_support=VisualSupport.OPTIONAL),
+        planned_image_slots=[
+            {"slot_id": "pdf_img_1", "anchor_after_paragraph": 0},
+            {"slot_id": "pdf_img_2", "anchor_after_paragraph": 1},
+            {"slot_id": "pdf_img_3", "anchor_after_paragraph": 2},
+            {"slot_id": "pdf_img_4", "anchor_after_paragraph": 3},
+        ],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="conversation-1",
+        preverified_image_blocks=images,
+    )
+
+    image_blocks = [block for block in blocks if block["type"] == "image_block"]
+    assert [block["slotId"] for block in image_blocks] == [
+        "pdf_img_1",
+        "pdf_img_2",
+        "pdf_img_3",
+        "pdf_img_4",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_build_answer_blocks_omits_unused_preverified_image(caplog):
     """Verified preflight images must not render when the model omits markers."""
 

@@ -82,6 +82,35 @@ class _FakePlannerClient:
         )
 
 
+class _LooseSectionPlannerClient:
+    """Chat-completions fake that returns a raw model-oriented section label."""
+
+    def __init__(self) -> None:
+        """Initialize the OpenAI-compatible fake shape."""
+
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    async def _create(self, **kwargs):
+        """Return planner output that needs section normalization."""
+
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=(
+                            '{"selected_visuals":[{"page_number":1,'
+                            '"answer_section":"model",'
+                            '"visual_type":"architecture",'
+                            '"target_caption":"Figure 1. Model architecture",'
+                            '"teaching_caption":"這張圖呈現方法架構。",'
+                            '"rationale":"core_method_diagram"}]}'
+                        )
+                    )
+                )
+            ]
+        )
+
+
 @pytest.mark.asyncio
 async def test_paper_visual_planner_model_selects_results_page(caplog):
     """The model planner should return sanitized visual plan items."""
@@ -108,6 +137,24 @@ async def test_paper_visual_planner_model_selects_results_page(caplog):
     assert "paper_visual.planner_completed" in caplog.text
     assert "source=model" in caplog.text
     assert "pages=2" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_paper_visual_planner_normalizes_model_section_label():
+    """Planner output should not expose raw internal section labels."""
+
+    service = PaperVisualPlannerService(timeout_seconds=1.0)
+
+    plan = await service.plan_visuals(
+        pdf_bytes=make_two_page_paper_pdf(),
+        filename="paper.pdf",
+        conversation_id="section-conversation",
+        client=_LooseSectionPlannerClient(),
+        max_visuals=1,
+    )
+
+    assert len(plan) == 1
+    assert plan[0].answer_section == "研究方法"
 
 
 @pytest.mark.asyncio
@@ -162,7 +209,8 @@ def test_pdf_visual_extraction_respects_planner_page_order():
     assert candidates[0].visual_type == "results_table"
     assert candidates[0].target_caption.startswith("Table 2")
     assert "BLEU" in candidates[0].teaching_caption
-    assert "實驗結果" in candidates[0].to_image_block().explanatory_caption
+    assert candidates[0].to_image_block().explanatory_caption.startswith("這張圖適合用來說明實驗結果")
+    assert "建議放在" not in candidates[0].to_image_block().explanatory_caption
     assert candidates[0].teaching_caption in candidates[0].to_image_block().explanatory_caption
 
 

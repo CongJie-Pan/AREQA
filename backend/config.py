@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     enable_visual_understanding: bool = True
     visual_understanding_timeout_seconds: float = 4.0
     enable_pdf_attachment_visuals: bool = True
-    pdf_attachment_visual_max_candidates: int = 2
+    pdf_attachment_visual_max_candidates: int = 4
     pdf_attachment_visual_max_pages_scanned: int = 8
     enable_pdf_attachment_image_storage: bool = True
     pdf_attachment_image_storage_bucket: str = "areqa-pdf-visuals"

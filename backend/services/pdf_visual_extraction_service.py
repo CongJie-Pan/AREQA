@@ -111,9 +111,10 @@ class PdfVisualCandidate:
 
         topic = f"{self.filename} 第 {self.page_number} 頁"
         caption = self.caption_hint or f"上傳 PDF 第 {self.page_number} 頁的圖像內容"
-        explanatory_caption = self.teaching_caption or ""
         if self.answer_section and self.teaching_caption:
-            explanatory_caption = f"建議放在「{self.answer_section}」：{self.teaching_caption}"
+            explanatory_caption = f"這張圖適合用來說明{self.answer_section}。{self.teaching_caption}"
+        else:
+            explanatory_caption = self.teaching_caption or ""
         return ImageBlock(
             slot_id=self.slot_id,
             topic=topic,
@@ -175,7 +176,7 @@ class PdfVisualExtractionService:
             "pdf_attachment_visual_max_pages_scanned",
             DEFAULT_MAX_PDF_VISUAL_PAGES_SCANNED,
         )
-        self.max_candidates = max(0, min(int(max_candidates or configured_candidates), 3))
+        self.max_candidates = max(0, min(int(max_candidates or configured_candidates), 4))
         self.max_pages_scanned = max(1, min(int(max_pages_scanned or configured_pages), 20))
         self.render_zoom = max(0.5, min(float(render_zoom), 2.0))
 

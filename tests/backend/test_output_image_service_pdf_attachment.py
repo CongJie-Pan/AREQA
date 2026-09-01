@@ -69,6 +69,16 @@ class FakeAttachmentImageStorageService:
         )
 
 
+@dataclass
+class UnavailableUnderstandingAgent:
+    """Test double that simulates an unavailable PDF vision model."""
+
+    async def analyze(self, **kwargs):
+        """Return a non-usable vision result without raising."""
+
+        return VisualUnderstandingResult(source="provider_unavailable")
+
+
 def make_candidate() -> PdfVisualCandidate:
     """Build one small request-scoped PDF visual candidate."""
 
@@ -85,6 +95,26 @@ def make_candidate() -> PdfVisualCandidate:
         answer_section="實驗結果與關鍵數據",
         visual_type="results_table",
         teaching_caption="這張表呈現 BLEU 結果，是理解論文實驗主張的關鍵。",
+    )
+
+
+def make_candidate_with_slot(slot_id: str, page_number: int) -> PdfVisualCandidate:
+    """Build one request-scoped PDF visual candidate with a custom slot."""
+
+    candidate = make_candidate()
+    return PdfVisualCandidate(
+        slot_id=slot_id,
+        filename=candidate.filename,
+        page_number=page_number,
+        image_data_uri=candidate.image_data_uri,
+        width=candidate.width,
+        height=candidate.height,
+        caption_hint=f"Figure {page_number}. Paper visual",
+        visual_score=candidate.visual_score,
+        sha256=f"sha-{page_number}",
+        answer_section=candidate.answer_section,
+        visual_type=candidate.visual_type,
+        teaching_caption=candidate.teaching_caption,
     )
 
 
@@ -119,3 +149,55 @@ async def test_prepare_attachment_image_blocks_uses_pdf_candidate_and_vision():
     assert payload["storagePath"] == "path"
     assert payload["storageExpiresAt"] == 1234567890
     assert "transient" not in payload
+
+
+@pytest.mark.asyncio
+async def test_prepare_attachment_image_blocks_keeps_pdf_candidate_when_vision_unavailable(caplog):
+    """PDF attachment visuals should fail soft when vision analysis is unavailable."""
+
+    caplog.set_level("INFO")
+    service = OutputImageService(
+        understanding_agent=UnavailableUnderstandingAgent(),
+        attachment_image_storage_service=FakeAttachmentImageStorageService(),
+    )
+
+    blocks = await service.prepare_attachment_image_blocks(
+        candidates=[make_candidate()],
+        user_msg="Explain the paper figure.",
+        conversation_id="conversation-1",
+        model_client=object(),
+    )
+
+    block = blocks["pdf_img_1"]
+    payload = block.to_frontend()
+
+    assert payload["provider"] == "pdf_attachment"
+    assert payload["imageUrl"].startswith("https://example.supabase.co/")
+    assert "visionSource" not in payload
+    assert "visionSummary" not in payload
+    assert "visual.attachment_understanding_failed_soft" in caplog.text
+    assert "slot_id=pdf_img_1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_prepare_attachment_image_blocks_accepts_four_pdf_candidates():
+    """Paper auto-explain should be able to pass four verified PDF visuals."""
+
+    service = OutputImageService(
+        understanding_agent=FakeUnderstandingAgent(),
+        attachment_image_storage_service=FakeAttachmentImageStorageService(),
+    )
+
+    blocks = await service.prepare_attachment_image_blocks(
+        candidates=[
+            make_candidate_with_slot("pdf_img_1", 1),
+            make_candidate_with_slot("pdf_img_2", 2),
+            make_candidate_with_slot("pdf_img_3", 3),
+            make_candidate_with_slot("pdf_img_4", 4),
+        ],
+        user_msg="Explain the paper figure.",
+        conversation_id="conversation-1",
+        model_client=object(),
+    )
+
+    assert list(blocks) == ["pdf_img_1", "pdf_img_2", "pdf_img_3", "pdf_img_4"]

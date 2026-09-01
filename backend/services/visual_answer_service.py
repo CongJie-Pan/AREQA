@@ -524,6 +524,7 @@ class VisualAnswerService:
         planned_slots = self._planned_slots_from_payload(
             planned_image_slots or [],
             require_query=preverified_image_blocks is None,
+            max_slots=len(preverified_image_blocks) if preverified_image_blocks is not None else self.max_images,
         )
         if not paragraphs or (not planned_slots and not self.should_enrich(response_policy, user_msg)):
             return []
@@ -2842,6 +2843,7 @@ class VisualAnswerService:
         payload: list[dict[str, Any]],
         *,
         require_query: bool = True,
+        max_slots: int = 2,
     ) -> list[PlannedImageSlot]:
         """Validate model-planned image slot payloads from the stream accumulator.
 
@@ -2850,6 +2852,9 @@ class VisualAnswerService:
             require_query: Whether an image search query is required. Verified
                 preflight markers only need a slot id because retrieval already
                 happened before generation.
+            max_slots: Maximum number of marker payloads to accept. Web-search
+                image requests use the service's normal cap; preverified PDF
+                inventories may allow more already-rendered attachment images.
 
         Returns:
             A capped list of safe planned slots. Raw query and caption content
@@ -2858,7 +2863,8 @@ class VisualAnswerService:
 
         slots: list[PlannedImageSlot] = []
         seen: set[str] = set()
-        for index, item in enumerate(payload[:2]):
+        bounded_max_slots = max(0, min(int(max_slots or 0), 4))
+        for index, item in enumerate(payload[:bounded_max_slots]):
             slot_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(item.get("slot_id") or f"img_{index + 1}"))[:40]
             query = VisualAnswerService._clean_text(str(item.get("query") or ""))[:120]
             if not slot_id or slot_id in seen or (require_query and not query):

@@ -176,6 +176,36 @@ def test_verified_visual_instruction_injects_inventory():
     assert "https://upload.wikimedia.org" not in system_prompt
 
 
+def test_verified_visual_instruction_lists_multiple_verified_markers():
+    """Multiple preverified images should each have an allowed marker."""
+
+    messages = [{"role": "system", "content": "base prompt"}]
+    images = {
+        f"pdf_img_{index}": ImageBlock(
+            slot_id=f"pdf_img_{index}",
+            topic=f"Paper figure {index}",
+            purpose="diagram",
+            image_url=f"data:image/png;base64,{index}",
+            thumbnail_url=f"data:image/png;base64,{index}",
+            source_url=f"#pdf-attachment-page-{index}",
+            source_domain="uploaded PDF",
+            caption=f"Figure {index}",
+            explanatory_caption="這張圖適合用來說明研究方法。",
+            safety_status="pass",
+            match_confidence=0.8,
+        )
+        for index in range(1, 5)
+    }
+
+    result = OrchestrationService._add_verified_visual_instruction(messages, images)
+
+    system_prompt = result[0]["content"]
+    for index in range(1, 5):
+        assert f'[[AREQA_VERIFIED_IMAGE id="pdf_img_{index}"]]' in system_prompt
+    assert "依照圖片清單中的章節提示分散到對應段落" in system_prompt
+    assert "data:image/png" not in system_prompt
+
+
 def test_verified_visual_instruction_forbids_all_image_markers_when_empty():
     """Missing preverified images should not let any visual marker leak."""
 

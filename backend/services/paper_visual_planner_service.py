@@ -62,6 +62,77 @@ _METHOD_TERMS = (
     "架构",
     "注意力",
 )
+_SECTION_LABELS = (
+    "研究動機與目的",
+    "研究方法",
+    "實驗設計與過程",
+    "實驗結果",
+    "限制與結論",
+    "論文重點圖解",
+)
+_SECTION_KEYWORDS = (
+    (
+        "研究動機與目的",
+        ("motivation", "purpose", "objective", "introduction", "abstract", "background", "動機", "目的", "背景"),
+    ),
+    (
+        "研究方法",
+        (
+            "method",
+            "methodology",
+            "model",
+            "architecture",
+            "framework",
+            "mechanism",
+            "approach",
+            "方法",
+            "模型",
+            "架構",
+            "机制",
+            "機制",
+        ),
+    ),
+    (
+        "實驗設計與過程",
+        (
+            "experiment setup",
+            "experimental setup",
+            "design",
+            "process",
+            "simulation",
+            "pipeline",
+            "procedure",
+            "dataset",
+            "實驗設計",
+            "過程",
+            "流程",
+            "資料集",
+            "数据集",
+        ),
+    ),
+    (
+        "實驗結果",
+        (
+            "result",
+            "results",
+            "evaluation",
+            "benchmark",
+            "performance",
+            "table",
+            "chart",
+            "accuracy",
+            "結果",
+            "評估",
+            "评估",
+            "效能",
+            "表現",
+        ),
+    ),
+    (
+        "限制與結論",
+        ("limitation", "limitations", "conclusion", "discussion", "future work", "限制", "結論", "讨论", "討論"),
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +249,7 @@ class PaperVisualPlannerService:
             privacy-safe ``paper_visual.planner_*`` structured logs.
         """
 
-        bounded_max_visuals = max(0, min(int(max_visuals or 0), 3))
+        bounded_max_visuals = max(0, min(int(max_visuals or 0), 4))
         if bounded_max_visuals <= 0:
             return ()
 
@@ -273,6 +344,9 @@ class PaperVisualPlannerService:
             "You are AREQA's Paper Visual Planner. Select the most useful PDF pages/figures/tables "
             "for a teaching-style explanation of the uploaded paper. Prefer visuals that carry the "
             "paper's method, architecture, key mechanism, experimental results, or result tables. "
+            "For broad paper explanations, cover distinct teaching sections when possible: research "
+            "motivation/purpose, research method, experiment design/process, and experimental results. "
+            "Prefer a pipeline, method, or framework overview before example-only figures when both are available. "
             "Return strict JSON only: {\"selected_visuals\":[{\"page_number\":number,"
             "\"answer_section\":string,\"visual_type\":\"architecture|method_diagram|results_chart|"
             "results_table|mechanism|other\",\"target_caption\":string,"
@@ -350,7 +424,11 @@ class PaperVisualPlannerService:
             selected.append(
                 PaperVisualPlanItem(
                     page_number=page_number,
-                    answer_section=self._bounded_text(item.get("answer_section"), "論文重點圖解", 80),
+                    answer_section=self._normalize_answer_section(
+                        item.get("answer_section"),
+                        visual_type=item.get("visual_type"),
+                        target_caption=item.get("target_caption"),
+                    ),
                     visual_type=self._bounded_visual_type(item.get("visual_type")),
                     target_caption=self._bounded_target_caption(item.get("target_caption"), page),
                     teaching_caption=self._bounded_text(
@@ -420,6 +498,41 @@ class PaperVisualPlannerService:
 
         text = re.sub(r"\s+", " ", str(value or "")).strip()
         return (text or fallback)[:max_length]
+
+    @classmethod
+    def _normalize_answer_section(
+        cls,
+        value: Any,
+        *,
+        visual_type: Any = "",
+        target_caption: Any = "",
+    ) -> str:
+        """Map model-produced placement labels to stable paper sections.
+
+        Args:
+            value: Raw planner ``answer_section`` value, which may contain
+                internal labels such as ``model``.
+            visual_type: Optional visual-purpose label used as a secondary
+                signal when the section text is underspecified.
+            target_caption: Optional caption text selected by the planner.
+
+        Returns:
+            One of the bounded Traditional Chinese section labels used by the
+            paper explanation UI and prompt inventory.
+
+        Side Effects:
+            None. This validation boundary prevents arbitrary model labels from
+            leaking into user-facing attachment captions.
+        """
+
+        raw_text = cls._bounded_text(value, "", 80)
+        if raw_text in _SECTION_LABELS:
+            return raw_text
+        normalized = f"{raw_text} {visual_type or ''} {target_caption or ''}".lower()
+        for label, keywords in _SECTION_KEYWORDS:
+            if any(keyword in normalized for keyword in keywords):
+                return label
+        return "論文重點圖解"
 
     @staticmethod
     def _bounded_visual_type(value: Any) -> str:

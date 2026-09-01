@@ -308,28 +308,40 @@ class OutputImageService:
             return {}
 
         blocks: dict[str, ImageBlock] = {}
-        for candidate in list(candidates)[:2]:
+        for candidate in list(candidates)[:4]:
             if not hasattr(candidate, "to_image_block"):
                 continue
             block = candidate.to_image_block()
             if settings.enable_visual_understanding:
-                result = await self.understanding_agent.analyze(
-                    client=model_client,
-                    model=settings.model_visual_understanding,
-                    image_url=block.image_url,
-                    image_part={"type": "image_url", "image_url": {"url": block.image_url}},
-                    user_msg=user_msg,
-                    visual_brief=None,
-                    conversation_id=conversation_id,
-                )
+                try:
+                    result = await self.understanding_agent.analyze(
+                        client=model_client,
+                        model=settings.model_visual_understanding,
+                        image_url=block.image_url,
+                        image_part={
+                            "type": "image_url",
+                            "image_url": {"url": block.image_url},
+                        },
+                        user_msg=user_msg,
+                        visual_brief=None,
+                        conversation_id=conversation_id,
+                    )
+                except Exception as exc:
+                    logger.info(
+                        "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=%s",
+                        conversation_id,
+                        block.slot_id,
+                        type(exc).__name__,
+                    )
+                    result = None
                 if not self._has_usable_understanding(result):
                     logger.info(
-                        "visual.attachment_image_omitted conversation_id=%s slot_id=%s reason=understanding_unavailable",
+                        "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=understanding_unavailable",
                         conversation_id,
                         block.slot_id,
                     )
-                    continue
-                block = self._apply_understanding(block, result)
+                else:
+                    block = self._apply_understanding(block, result)
             block = await self.attachment_image_storage_service.persist_pdf_image_block(
                 block=block,
                 conversation_id=conversation_id,

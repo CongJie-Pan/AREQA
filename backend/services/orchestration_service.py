@@ -1105,19 +1105,24 @@ class OrchestrationService:
                 }
                 for slot_id, block in image_blocks.items()
             ]
-            primary_slot_id = next(iter(image_blocks.keys()))
-            verified_marker = f'[[AREQA_VERIFIED_IMAGE id="{primary_slot_id}"]]'
+            verified_markers = [
+                f'[[AREQA_VERIFIED_IMAGE id="{slot_id}"]]'
+                for slot_id in image_blocks.keys()
+            ]
+            verified_marker_examples = "、".join(verified_markers)
             instruction = (
                 "【已驗證圖片清單】以下圖片已由系統搜尋、驗證並讀圖；"
-                "它是本回合主回答素材的一部分，不是回答後的附件。"
+                "它們是本回合主回答素材的一部分，不是回答後的附件。"
                 "你只能使用清單中的 id，不能自行編造圖片、URL 或來源。"
-                "你必須把最相關的已驗證圖片整合進教學流程，"
+                "你必須把最相關的已驗證圖片整合進教學流程；"
+                "若有多張圖片，請依照圖片清單中的章節提示分散到對應段落，"
+                "特別是論文總覽回答應優先覆蓋研究動機與目的、研究方法、實驗設計與過程、實驗結果。"
                 "在最適合的位置先寫 1 至 2 句完整導圖文字，"
                 "明確使用「下圖」、「圖中」或對應語言的圖片引用。"
                 "若清單提供 explanatory_caption，必須優先用它判斷圖片應銜接的論文段落與教學重點；"
                 "導圖文字必須至少引用 explanatory_caption、vision_summary、visible_elements 或 how_to_read 中一項可見特徵，"
-                "並且導圖段落後必須緊接著輸出標記："
-                f"{verified_marker}。"
+                "並且導圖段落後必須緊接著輸出標記，也就是對應圖片的標記；可用標記為："
+                f"{verified_marker_examples}。"
                 "圖片後的文字必須接續引用或延伸圖片內容，不能像圖片不存在一樣繼續純文字回答。"
                 "請優先使用這個自然教學結構："
                 "「下圖是一張 {topic 或 vision_summary 所描述的圖}，呈現 {與使用者問題最相關的核心過程或關係}。"
