@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "mode": "mocked",
+  "generated_at_epoch": 1788266741,
+  "configuration": {
+    "runs": 1,
+    "warmup": 0,
+    "backend_url": null,
+    "authenticated": null
+  },
+  "summary": {
+    "baseline": {
+      "runs": 1,
+      "first_content_median_ms": 176.07,
+      "first_content_p95_ms": 176.07,
+      "completed_median_ms": 201.28,
+      "completed_p95_ms": 201.28,
+      "first_visible_status_median_ms": null,
+      "avg_completion_calls": 3,
+      "avg_embedding_calls": 1,
+      "avg_memory_queries": 2,
+      "ttft_improvement_percent": 0.0
+    },
+    "no_policy_wait": {
+      "runs": 1,
+      "first_content_median_ms": 115.85,
+      "first_content_p95_ms": 115.85,
+      "completed_median_ms": 141.04,
+      "completed_p95_ms": 141.04,
+      "first_visible_status_median_ms": null,
+      "avg_completion_calls": 2,
+      "avg_embedding_calls": 1,
+      "avg_memory_queries": 2,
+      "ttft_improvement_percent": 34.2
+    },
+    "no_cold_memory": {
+      "runs": 1,
+      "first_content_median_ms": 85.68,
+      "first_content_p95_ms": 85.68,
+      "completed_median_ms": 110.85,
+      "completed_p95_ms": 110.85,
+      "first_visible_status_median_ms": null,
+      "avg_completion_calls": 2,
+      "avg_embedding_calls": 0,
+      "avg_memory_queries": 0,
+      "ttft_improvement_percent": 51.34
+    },
+    "optimized": {
+      "runs": 1,
+      "first_content_median_ms": 25.35,
+      "first_content_p95_ms": 25.35,
+      "completed_median_ms": 50.52,
+      "completed_p95_ms": 50.52,
+      "first_visible_status_median_ms": 1.13,
+      "avg_completion_calls": 1,
+      "avg_embedding_calls": 0,
+      "avg_memory_queries": 0,
+      "ttft_improvement_percent": 85.6
+    }
+  },
+  "runs": [
+    {
+      "mode": "mocked",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 1.2118960003135726,
+      "first_visible_status_ms": null,
+      "main_model_start_ms": 155.82011900005455,
+      "first_content_ms": 176.07131100021434,
+      "completed_ms": 201.2840310003412,
+      "completion_calls": 3,
+      "embedding_calls": 1,
+      "memory_queries": 2,
+      "event_counts": {
+        "metadata": 1,
+        "status": 0,
+        "action": 0,
+        "message": 1,
+        "done": 1
+      },
+      "request_id": null,
+      "conversation_id": null,
+      "event_first_seen_ms": null
+    },
+    {
+      "mode": "mocked",
+      "variant": "no_policy_wait",
+      "prompt_kind": "general",
+      "first_event_ms": 1.1501029998726153,
+      "first_visible_status_ms": null,
+      "main_model_start_ms": 95.49353500005964,
+      "first_content_ms": 115.85489099979895,
+      "completed_ms": 141.03668100005962,
+      "completion_calls": 2,
+      "embedding_calls": 1,
+      "memory_queries": 2,
+      "event_counts": {
+        "metadata": 1,
+        "status": 0,
+        "action": 0,
+        "message": 1,
+        "done": 1
+      },
+      "request_id": null,
+      "conversation_id": null,
+      "event_first_seen_ms": null
+    },
+    {
+      "mode": "mocked",
+      "variant": "no_cold_memory",
+      "prompt_kind": "general",
+      "first_event_ms": 1.1562050003703916,
+      "first_visible_status_ms": null,
+      "main_model_start_ms": 65.52439100005358,
+      "first_content_ms": 85.68264900031863,
+      "completed_ms": 110.84638500005894,
+      "completion_calls": 2,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 0,
+        "action": 0,
+        "message": 1,
+        "done": 1
+      },
+      "request_id": null,
+      "conversation_id": null,
+      "event_first_seen_ms": null
+    },
+    {
+      "mode": "mocked",
+      "variant": "optimized",
+      "prompt_kind": "general",
+      "first_event_ms": 1.132860999859986,
+      "first_visible_status_ms": 1.1340139999447274,
+      "main_model_start_ms": 5.238312000074075,
+      "first_content_ms": 25.353379000080167,
+      "completed_ms": 50.52030199976798,
+      "completion_calls": 1,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 1,
+        "action": 1,
+        "message": 1,
+        "done": 1
+      },
+      "request_id": null,
+      "conversation_id": null,
+      "event_first_seen_ms": null
+    }
+  ]
+}

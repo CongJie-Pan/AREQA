@@ -203,6 +203,7 @@ async def run_live_once(
     prompt: str,
     prompt_kind: str,
     timeout: float,
+    verbose: bool = False,
 ) -> RunMetrics:
     started = time.perf_counter()
     first_event_ms: float | None = None
@@ -224,6 +225,12 @@ async def run_live_once(
         "max_tokens": 256,
     }
 
+    def progress(message: str) -> None:
+        if verbose:
+            print(message, flush=True)
+
+    progress(f"[live] request_id={request_id} prompt_kind={prompt_kind}")
+    progress(f"[live] POST {backend_url.rstrip('/')}/api/v1/stream")
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream(
             "POST", f"{backend_url.rstrip('/')}/api/v1/stream", headers=headers, json=payload
@@ -231,18 +238,25 @@ async def run_live_once(
             response.raise_for_status()
             async for event_type, data in iter_sse_events(response):
                 now_ms = _elapsed_ms(started)
-                first_event_ms = first_event_ms if first_event_ms is not None else now_ms
+                if first_event_ms is None:
+                    first_event_ms = now_ms
+                    progress(f"[live] first_event={now_ms:.2f} ms event={event_type}")
                 event_counts[event_type] = event_counts.get(event_type, 0) + 1
-                event_first_seen_ms.setdefault(event_type, now_ms)
+                if event_type not in event_first_seen_ms:
+                    event_first_seen_ms[event_type] = now_ms
+                    progress(f"[live] first_seen:{event_type}={now_ms:.2f} ms")
                 if event_type in {"status", "action", "tool_started", "warning"}:
                     if first_visible_status_ms is None:
                         first_visible_status_ms = now_ms
+                        progress(f"[live] first_visible_status={now_ms:.2f} ms event={event_type}")
                 if first_content_ms is None and event_has_content(event_type, data):
                     first_content_ms = now_ms
+                    progress(f"[live] first_content={now_ms:.2f} ms")
                 if data == "[DONE]":
                     break
 
     completed_ms = _elapsed_ms(started)
+    progress(f"[live] completed={completed_ms:.2f} ms")
     if first_event_ms is None:
         raise RuntimeError("Live stream returned no SSE events")
     if first_content_ms is None:
@@ -332,6 +346,11 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     if args.mode == "mocked":
         for variant in VARIANTS:
             for index in range(args.warmup + args.runs):
+                if not args.quiet:
+                    print(
+                        f"[mocked] {variant} run {index + 1}/{args.warmup + args.runs}",
+                        flush=True,
+                    )
                 sample = await run_mock_once(variant, "general")
                 if index >= args.warmup:
                     runs.append(sample)
@@ -340,12 +359,19 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             raise RuntimeError("Live mode requires --backend-url or BACKEND_API_URL")
         for index in range(args.warmup + args.runs):
             prompt_index = index % len(DEFAULT_PROMPTS)
+            phase = "warmup" if index < args.warmup else "run"
+            if not args.quiet:
+                print(
+                    f"[live] {phase} {index + 1}/{args.warmup + args.runs}",
+                    flush=True,
+                )
             sample = await run_live_once(
                 args.backend_url,
                 args.token,
                 DEFAULT_PROMPTS[prompt_index],
                 ("general", "explicit_recall", "sensitive")[prompt_index],
                 args.timeout,
+                verbose=not args.quiet,
             )
             if index >= args.warmup:
                 runs.append(sample)
@@ -368,8 +394,8 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("mocked", "live"), default="mocked")
-    parser.add_argument("--runs", type=int, default=10)
-    parser.add_argument("--warmup", type=int, default=2)
+    parser.add_argument("--runs", type=int, default=1)
+    parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--backend-url", default=os.environ.get("BACKEND_API_URL", ""))
     parser.add_argument(
@@ -378,6 +404,7 @@ def parse_args() -> argparse.Namespace:
         help="Optional bearer token. Omit for local anonymous ephemeral chat.",
     )
     parser.add_argument("--output", type=Path, default=Path("/tmp/areqa-latency.json"))
+    parser.add_argument("--quiet", action="store_true", help="Only print the final report.")
     args = parser.parse_args()
     if args.runs < 1 or args.warmup < 0:
         parser.error("--runs must be >= 1 and --warmup must be >= 0")

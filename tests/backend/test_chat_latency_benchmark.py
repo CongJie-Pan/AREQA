@@ -153,6 +153,69 @@ async def test_live_run_allows_anonymous_stream_and_records_event_first_seen(mon
     assert "metadata" in metrics.event_first_seen_ms
 
 
+@pytest.mark.asyncio
+async def test_live_run_prints_progress_for_stream_milestones(monkeypatch, capsys):
+    class FakeStreamResponse:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_text(self):
+            yield "event: metadata\ndata: {}\n\n"
+            yield "event: status\ndata: {\"status\": \"routing\"}\n\n"
+            yield "data: {\"choices\": [{\"delta\": {\"content\": \"answer\"}}]}\n\n"
+            yield "data: [DONE]\n\n"
+
+    class FakeStreamContext:
+        async def __aenter__(self):
+            return FakeStreamResponse()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url, headers, json):
+            return FakeStreamContext()
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    await benchmark.run_live_once(
+        "http://backend.test",
+        None,
+        "請簡短回答",
+        "general",
+        5.0,
+        verbose=True,
+    )
+
+    output = capsys.readouterr().out
+
+    assert "[live] request_id=latency-benchmark-" in output
+    assert "[live] first_event=" in output
+    assert "[live] first_seen:status=" in output
+    assert "[live] first_visible_status=" in output
+    assert "[live] first_content=" in output
+    assert "[live] completed=" in output
+
+
+def test_default_cli_runs_once_without_warmup(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["benchmark_chat_latency.py"])
+
+    args = benchmark.parse_args()
+
+    assert args.runs == 1
+    assert args.warmup == 0
+    assert args.quiet is False
+
+
 def test_markdown_report_distinguishes_mock_results_from_production_data():
     report = {
         "mode": "mocked",
