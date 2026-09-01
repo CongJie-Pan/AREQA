@@ -61,6 +61,8 @@ export function ConversationList({
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
+  const [marqueeTitleWidths, setMarqueeTitleWidths] = useState<Record<string, number>>({});
+  const titleRefs = useRef<Record<string, HTMLSpanElement | null>>({});
 
   const conversations = useConversationStore((state) => state.conversations);
   const activeId = useConversationStore((state) => state.activeConversationId);
@@ -219,6 +221,17 @@ export function ConversationList({
 
     void handleSelect(id);
   }, [handleSelect]);
+
+  const handleTitlePointerEnter = useCallback((id: string) => {
+    const titleNode = titleRefs.current[id];
+    if (!titleNode) return;
+
+    const isOverflowing = titleNode.scrollWidth > titleNode.clientWidth;
+    const marqueeWidth = isOverflowing ? titleNode.clientWidth : 0;
+    setMarqueeTitleWidths((current) => (
+      current[id] === marqueeWidth ? current : { ...current, [id]: marqueeWidth }
+    ));
+  }, []);
 
   /**
    * Group conversations by date
@@ -384,12 +397,23 @@ export function ConversationList({
                       onClick={() => handleItemClick(conv.id)}
                       onPointerCancel={handleItemPointerEnd}
                       onPointerDown={() => handleItemPointerDown(conv.id)}
+                      onPointerEnter={() => handleTitlePointerEnter(conv.id)}
                       onPointerLeave={handleItemPointerEnd}
                       onPointerUp={handleItemPointerEnd}
                     >
                       <MessageSquare size={16} className={cx('areqa-conversation-item-icon', styles.itemIcon)} />
                       <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
-                        <span className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}>
+                        <span
+                          className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}
+                          data-overflow={marqueeTitleWidths[conv.id] ? 'true' : undefined}
+                          onPointerEnter={() => handleTitlePointerEnter(conv.id)}
+                          ref={(node) => {
+                            titleRefs.current[conv.id] = node;
+                          }}
+                          style={{
+                            '--areqa-title-marquee-width': `${marqueeTitleWidths[conv.id] || 0}px`,
+                          } as React.CSSProperties}
+                        >
                           {isTitlePending ? (
                             <span
                               className={styles.titleSkeleton}
@@ -397,7 +421,7 @@ export function ConversationList({
                               role="status"
                             />
                           ) : (
-                            displayTitle
+                            <span>{displayTitle}</span>
                           )}
                         </span>
                       </div>

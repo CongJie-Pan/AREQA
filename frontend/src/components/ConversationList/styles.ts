@@ -24,6 +24,17 @@ const titleSkeletonShimmer = keyframes`
   }
 `;
 
+const titleMarquee = keyframes`
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(calc(-100% + var(--areqa-title-marquee-width, 100%)));
+  }
+`;
+
 export const useStyles = createStyles(({ css }) => ({
   container: css`
     display: flex;
@@ -34,7 +45,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   header: css`
-    padding: 4px 16px 16px;
+    padding: 4px 16px 8px;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -122,7 +133,7 @@ export const useStyles = createStyles(({ css }) => ({
   list: css`
     flex: 1;
     overflow-y: auto;
-    padding: 8px;
+    padding: 2px 8px 8px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -139,7 +150,7 @@ export const useStyles = createStyles(({ css }) => ({
     font-size: 14px;
     font-weight: 600;
     color: var(--muted-foreground);
-    padding: 20px 12px 10px;
+    padding: 10px 12px 6px;
     letter-spacing: 0.3px;
   `,
 
@@ -197,12 +208,45 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   itemTitle: css`
+    --areqa-title-marquee-width: 100%;
+    display: block;
+    max-width: 100%;
     font-size: 14px;
     color: var(--foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     transition: color 0.2s;
+
+    > span {
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    &[data-overflow='true']:hover,
+    .areqa-conversation-item:hover &[data-overflow='true'] {
+      text-overflow: clip;
+    }
+
+    &[data-overflow='true']:hover > span,
+    .areqa-conversation-item:hover &[data-overflow='true'] > span {
+      max-width: none;
+      overflow: visible;
+      text-overflow: clip;
+      animation: ${titleMarquee} 5.5s linear infinite alternate;
+      will-change: transform;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      &[data-overflow='true']:hover > span,
+      .areqa-conversation-item:hover &[data-overflow='true'] > span {
+        animation: none;
+      }
+    }
   `,
 
   cursor: css`

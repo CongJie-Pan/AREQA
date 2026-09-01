@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { App } from 'antd';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -182,5 +182,33 @@ describe('ConversationList title states', () => {
 
     expect(screen.getByRole('status', { name: 'New chat' })).toBeInTheDocument();
     expect(screen.queryByText('新對話')).not.toBeInTheDocument();
+  });
+
+  it('enables title marquee only when the rendered title overflows on hover', () => {
+    useConversationStore.setState({
+      conversations: [
+        conversation({
+          id: 'conversation-long-title',
+          title: 'CULTURECONVERSE跨文化多輪模擬評估框架與實驗結果分析',
+        }),
+      ],
+      activeConversationId: 'conversation-long-title',
+    });
+
+    renderConversationList();
+
+    const titleContainer = screen
+      .getByText('CULTURECONVERSE跨文化多輪模擬評估框架與實驗結果分析')
+      .closest('.areqa-conversation-item-title') as HTMLElement;
+
+    Object.defineProperties(titleContainer, {
+      clientWidth: { configurable: true, value: 120 },
+      scrollWidth: { configurable: true, value: 360 },
+    });
+
+    fireEvent.pointerEnter(titleContainer);
+
+    expect(titleContainer).toHaveAttribute('data-overflow', 'true');
+    expect(titleContainer).toHaveStyle({ '--areqa-title-marquee-width': '120px' });
   });
 });
