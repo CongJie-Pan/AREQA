@@ -8,7 +8,7 @@ import { createStyles } from 'antd-style';
 export const useStyles = createStyles(({ css, token }) => ({
   container: css`
     position: fixed;
-    top: var(--areqa-visual-viewport-top, 0);
+    top: 0;
     right: 0;
     bottom: auto;
     left: 0;
