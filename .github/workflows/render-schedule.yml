@@ -1,0 +1,54 @@
+name: Render Service Schedule
+
+on:
+  schedule:
+    # Asia/Taipei 00:00 = UTC 16:00
+    - cron: '0 16 * * *'
+    # Asia/Taipei 08:20 = UTC 00:20
+    - cron: '20 0 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Render service action'
+        required: true
+        default: 'resume'
+        type: choice
+        options:
+          - resume
+          - suspend
+
+jobs:
+  schedule-render-services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve action
+        id: action
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 16 * * *" ]; then
+            echo "value=suspend" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=resume" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply action to backend and frontend
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_BACKEND_SERVICE_ID: ${{ secrets.RENDER_BACKEND_SERVICE_ID }}
+          RENDER_FRONTEND_SERVICE_ID: ${{ secrets.RENDER_FRONTEND_SERVICE_ID }}
+          RENDER_ACTION: ${{ steps.action.outputs.value }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for service_id in "$RENDER_BACKEND_SERVICE_ID" "$RENDER_FRONTEND_SERVICE_ID"; do
+            echo "Calling Render ${RENDER_ACTION} for ${service_id}"
+            curl --fail-with-body --show-error --silent \
+              --request POST \
+              --header "Authorization: Bearer ${RENDER_API_KEY}" \
+              --header "Accept: application/json" \
+              "https://api.render.com/v1/services/${service_id}/${RENDER_ACTION}"
+          done
