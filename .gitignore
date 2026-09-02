@@ -36,6 +36,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.local.example
+.dev.vars
 
 # vercel
 .vercel
@@ -51,6 +52,7 @@ next-env.d.ts
 
 backend/.venv
 frontend/node_modules
+misc/server_control/node_modules
 /.drift
 /.driftignore
 /node_modules
