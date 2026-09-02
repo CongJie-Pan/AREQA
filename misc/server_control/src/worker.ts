@@ -473,6 +473,7 @@ function renderControlPage(appUrl: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#111827">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%97%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
   <title>AREQA Control</title>
   <style>
     :root {
@@ -660,10 +661,12 @@ function renderControlPage(appUrl: string): string {
   <script>
     const configuredAppUrl = ${safeAppUrl};
     const tokenKey = 'areqa-control-token';
-    const pollMs = 5000;
+    const pollMs = 1000;
+    const resumePollTimeoutMs = 180000;
+    const suspendPollDurationMs = 10000;
     let token = localStorage.getItem(tokenKey) || '';
     let busy = false;
-    let pollTimer = null;
+    let actionPollTimer = null;
 
     const els = {
       tokenPanel: document.getElementById('tokenPanel'),
@@ -701,6 +704,21 @@ function renderControlPage(appUrl: string): string {
         els.statusGrid.innerHTML = '';
         setMessage('Enter your control token to manage AREQA services.');
       }
+    }
+
+    function stopActionPolling() {
+      if (actionPollTimer) {
+        clearInterval(actionPollTimer);
+        actionPollTimer = null;
+      }
+    }
+
+    function everyServiceHasState(services, state) {
+      return Array.isArray(services) && services.length === 2 && services.every((service) => service.state === state);
+    }
+
+    function anyServiceFailed(services) {
+      return Array.isArray(services) && services.some((service) => service.state === 'failed');
     }
 
     function serviceCard(service) {
@@ -743,10 +761,10 @@ function renderControlPage(appUrl: string): string {
       return payload;
     }
 
-    async function refreshStatus({ quiet = false } = {}) {
-      if (!token || busy) return;
+    async function refreshStatus({ quiet = false, allowWhileBusy = false } = {}) {
+      if (!token || (busy && !allowWhileBusy)) return null;
       if (!quiet) setMessage('Refreshing status...');
-      setBusy(true);
+      if (!allowWhileBusy) setBusy(true);
       try {
         const payload = await apiFetch('/api/status');
         els.statusGrid.innerHTML = payload.services.map(serviceCard).join('');
@@ -760,6 +778,7 @@ function renderControlPage(appUrl: string): string {
         }
         els.updatedAt.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
         if (!quiet) setMessage('Status refreshed.', 'ok');
+        return payload;
       } catch (error) {
         setMessage(error.message, 'error');
         if (error.message.includes('Invalid control token')) {
@@ -767,9 +786,47 @@ function renderControlPage(appUrl: string): string {
           token = '';
           renderLockedState();
         }
+        return null;
       } finally {
-        setBusy(false);
+        if (!allowWhileBusy) setBusy(false);
       }
+    }
+
+    function startActionPolling(action) {
+      stopActionPolling();
+
+      const deadline = Date.now() + (action === 'resume' ? resumePollTimeoutMs : suspendPollDurationMs);
+      actionPollTimer = setInterval(async () => {
+        const payload = await refreshStatus({ quiet: true, allowWhileBusy: true });
+        const services = payload?.services || [];
+
+        if (action === 'resume' && everyServiceHasState(services, 'active')) {
+          stopActionPolling();
+          setMessage('AREQA services are active.', 'ok');
+          return;
+        }
+
+        if (action === 'resume' && anyServiceFailed(services)) {
+          stopActionPolling();
+          setMessage('At least one service failed to deploy.', 'error');
+          return;
+        }
+
+        if (action === 'suspend' && everyServiceHasState(services, 'suspended')) {
+          stopActionPolling();
+          setMessage('AREQA services are suspended.', 'ok');
+          return;
+        }
+
+        if (Date.now() >= deadline) {
+          stopActionPolling();
+          setMessage(
+            action === 'resume'
+              ? 'AREQA is still starting. Use Refresh to check again.'
+              : 'Suspend check finished. Use Refresh to verify later.',
+          );
+        }
+      }, pollMs);
     }
 
     async function runAction(action) {
@@ -780,7 +837,13 @@ function renderControlPage(appUrl: string): string {
         const payload = await apiFetch('/api/' + action, { method: 'POST' });
         els.statusGrid.innerHTML = payload.services.map(serviceCard).join('');
         els.updatedAt.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
-        setMessage(payload.ok ? 'Action completed.' : 'Some services returned an error.', payload.ok ? 'ok' : 'error');
+        setMessage(
+          payload.ok
+            ? (action === 'resume' ? 'Resume requested. Checking every second...' : 'Suspend requested. Checking for 10 seconds...')
+            : 'Some services returned an error.',
+          payload.ok ? 'ok' : 'error',
+        );
+        if (payload.ok) startActionPolling(action);
       } catch (error) {
         setMessage(error.message, 'error');
       } finally {
@@ -788,23 +851,18 @@ function renderControlPage(appUrl: string): string {
       }
     }
 
-    function startPolling() {
-      if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(() => refreshStatus({ quiet: true }), pollMs);
-    }
-
     els.saveTokenButton.addEventListener('click', () => {
       token = els.tokenInput.value.trim();
       if (!token) return;
       localStorage.setItem(tokenKey, token);
       renderLockedState();
-      refreshStatus();
-      startPolling();
+      setMessage('Unlocked. Use Refresh, Resume All, or Suspend All.');
     });
 
     els.lockButton.addEventListener('click', () => {
       localStorage.removeItem(tokenKey);
       token = '';
+      stopActionPolling();
       renderLockedState();
     });
 
@@ -817,8 +875,7 @@ function renderControlPage(appUrl: string): string {
 
     renderLockedState();
     if (token) {
-      refreshStatus();
-      startPolling();
+      setMessage('Ready. Use Refresh, Resume All, or Suspend All.');
     }
   </script>
 </body>

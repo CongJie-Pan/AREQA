@@ -74,3 +74,20 @@ npm run deploy
 
 Open the Worker URL, enter `CONTROL_TOKEN`, then use `Resume All`, `Suspend All`,
 `Refresh`, and `Open AREQA`.
+
+## GitHub Actions Deployment
+
+The repository includes `.github/workflows/server-control-deploy.yml`. It deploys
+this Worker automatically when files under `misc/server_control/**` change on
+`master` or `main`.
+
+Add this GitHub Actions secret:
+
+```text
+CLOUDFLARE_API_TOKEN
+```
+
+Create the token in Cloudflare with permission to edit Workers scripts for the
+account that owns `areqa-server-control`. Runtime secrets such as
+`RENDER_API_KEY` remain stored in Cloudflare Worker secrets and do not need to be
+duplicated in GitHub for Worker deployment.
