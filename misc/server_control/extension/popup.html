@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AREQA Control</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>AREQA Control</h1>
+        <p>Backend and frontend only</p>
+      </div>
+      <button id="clearButton" type="button" title="Clear saved settings">Lock</button>
+    </header>
+
+    <section id="settingsPanel" class="panel">
+      <label for="tokenInput">Control token</label>
+      <input id="tokenInput" type="password" placeholder="CONTROL_TOKEN">
+
+      <button id="saveButton" class="primary" type="button">Unlock</button>
+    </section>
+
+    <section id="statusGrid" class="status-grid"></section>
+
+    <section class="actions">
+      <button id="resumeButton" class="primary" type="button">Resume All</button>
+      <button id="suspendButton" class="danger" type="button">Suspend All</button>
+      <div class="row">
+        <button id="refreshButton" type="button">Refresh</button>
+        <button id="openButton" type="button">Open AREQA</button>
+      </div>
+    </section>
+
+    <div id="message" class="message"></div>
+    <footer id="updatedAt">Not refreshed yet</footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

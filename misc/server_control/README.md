@@ -16,7 +16,9 @@ uses secrets to call the Render API.
 - Status refresh shows each service state and latest deploy status when Render
   exposes it.
 - Browser access is protected by `CONTROL_TOKEN`.
-- The page polls every 5 seconds after unlock.
+- The page refreshes only on manual refresh or immediately after resume/suspend
+  actions.
+- A local Chrome extension popup is available under `extension/`.
 
 ## Required Secrets
 
@@ -91,3 +93,25 @@ Create the token in Cloudflare with permission to edit Workers scripts for the
 account that owns `areqa-server-control`. Runtime secrets such as
 `RENDER_API_KEY` remain stored in Cloudflare Worker secrets and do not need to be
 duplicated in GitHub for Worker deployment.
+
+## Chrome Extension
+
+Load the unpacked extension from:
+
+```text
+misc/server_control/extension
+```
+
+In Chrome:
+
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Click `Load unpacked`.
+4. Select `misc/server_control/extension`.
+5. Open the extension popup and enter `CONTROL_TOKEN`.
+
+The extension calls the Worker API only. It does not store or receive the Render
+API key.
+
+The extension icon uses the Twemoji `1f5c4` graphic, converted to PNG for
+Chrome extension compatibility. Twemoji graphics are licensed under CC-BY 4.0.
