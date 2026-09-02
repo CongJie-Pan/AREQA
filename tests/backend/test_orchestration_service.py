@@ -575,6 +575,48 @@ async def test_llm_stream_strips_verified_image_markers(mock_client):
 
 
 @pytest.mark.asyncio
+async def test_llm_stream_uses_openrouter_latency_routing_and_session_id(
+    mock_client, caplog
+):
+    """Main answer requests should opt into OpenRouter low-latency routing."""
+
+    caplog.set_level(logging.INFO)
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+    service = ConversationStreamService(mock_client, MagicMock())
+
+    async def chunks():
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = "answer"
+        chunk.choices[0].delta.tool_calls = None
+        yield chunk
+
+    mock_client.chat.completions.create = AsyncMock(return_value=chunks())
+
+    _ = [event async for event in service.stream(
+        user_id="u1",
+        conversation_id="conversation with spaces",
+        last_user_msg="請簡短回答",
+        messages=[{"role": "user", "content": "請簡短回答"}],
+        force_think=False,
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.0,
+        request=request,
+    )]
+
+    kwargs = mock_client.chat.completions.create.await_args.kwargs
+    assert kwargs["extra_body"]["session_id"] == "conversation_with_spaces"
+    assert kwargs["extra_body"]["provider"] == {
+        "preferred_max_latency": {"p90": 2.5}
+    }
+    assert "openrouter_session=True" in caplog.text
+    assert "latency_routing=True" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_pdf_stream_uses_openrouter_native_parser(
     mock_router, mock_rag, mock_suggestion, mock_client, caplog
 ):
@@ -604,6 +646,10 @@ async def test_pdf_stream_uses_openrouter_native_parser(
     assert kwargs["extra_body"]["plugins"] == [
         {"id": "file-parser", "pdf": {"engine": "native"}}
     ]
+    assert kwargs["extra_body"]["session_id"] == "conv"
+    assert kwargs["extra_body"]["provider"] == {
+        "preferred_max_latency": {"p90": 2.5}
+    }
     assert "orchestration.stream_started" in caplog.text
     assert "image_slot_cap=2" in caplog.text
 

@@ -33,6 +33,9 @@ def test_settings_loads_defaults():
     assert s.turn_trace_slow_total_threshold_ms == 8000
     assert s.turn_trace_slow_first_token_threshold_ms == 5000
     assert s.turn_trace_top_phase_count == 5
+    assert s.enable_openrouter_main_session_id is True
+    assert s.enable_openrouter_main_latency_routing is True
+    assert s.openrouter_main_preferred_latency_p90_seconds == 2.5
     assert s.explicit_recall_memory_timeout_ms == 2000
     assert s.enable_explicit_recall_memory_cache is True
     assert s.explicit_recall_memory_cache_ttl_seconds == 120
@@ -68,6 +71,9 @@ def test_settings_can_be_overridden_by_env():
         'PARTS_REWRITE_TIMEOUT_MS': '250',
         'ENABLE_PARTS_PROMPT_DEBUG_LOGS': 'true',
         'TURN_TRACE_SLOW_TOTAL_THRESHOLD_MS': '9000',
+        'ENABLE_OPENROUTER_MAIN_SESSION_ID': 'false',
+        'ENABLE_OPENROUTER_MAIN_LATENCY_ROUTING': 'false',
+        'OPENROUTER_MAIN_PREFERRED_LATENCY_P90_SECONDS': '1.2',
         'EXPLICIT_RECALL_MEMORY_TIMEOUT_MS': '1500',
         'ENABLE_EXPLICIT_RECALL_MEMORY_CACHE': 'false',
         'COLD_MEMORY_EMBEDDING_TIMEOUT_MS': '900',
@@ -99,6 +105,9 @@ def test_settings_can_be_overridden_by_env():
         assert s.parts_rewrite_timeout_ms == 250
         assert s.enable_parts_prompt_debug_logs is True
         assert s.turn_trace_slow_total_threshold_ms == 9000
+        assert s.enable_openrouter_main_session_id is False
+        assert s.enable_openrouter_main_latency_routing is False
+        assert s.openrouter_main_preferred_latency_p90_seconds == 1.2
         assert s.explicit_recall_memory_timeout_ms == 1500
         assert s.enable_explicit_recall_memory_cache is False
         assert s.cold_memory_embedding_timeout_ms == 900

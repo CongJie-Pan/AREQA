@@ -24,6 +24,7 @@ _IMAGE_REQUEST_END = "]]"
 _IMAGE_REQUEST_PATTERN = re.compile(r"\[\[AREQA_IMAGE_REQUEST(?P<body>.*?)\]\]", re.DOTALL)
 _VERIFIED_IMAGE_PATTERN = re.compile(r"\[\[AREQA_VERIFIED_IMAGE(?P<body>.*?)\]\]", re.DOTALL)
 _IMAGE_SLOT_PATTERN = re.compile(r"<AREQA_IMAGE_SLOT(?P<body>.*?)/?>", re.DOTALL)
+_OPENROUTER_SESSION_ID_PATTERN = re.compile(r"[^A-Za-z0-9_.:-]+")
 _IMAGE_REQUEST_ATTR_PATTERN = re.compile(
     r"""(?P<key>id|query|caption_hint|caption|alt)\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
     re.DOTALL,
@@ -414,6 +415,15 @@ class ConversationStreamService:
         started_at = time.time()
         target_model = settings.model_main_thinking if force_think else settings.model_main_instruct
         extra_body = {"repetition_penalty": repetition_penalty}
+        session_id = _openrouter_session_id(conversation_id)
+        if settings.enable_openrouter_main_session_id and session_id:
+            extra_body["session_id"] = session_id
+        if settings.enable_openrouter_main_latency_routing:
+            extra_body["provider"] = {
+                "preferred_max_latency": {
+                    "p90": settings.openrouter_main_preferred_latency_p90_seconds,
+                }
+            }
         has_pdf = any(
             isinstance(message.get("content"), list)
             and any(
@@ -452,16 +462,19 @@ class ConversationStreamService:
         tool_call_name = ""
         tool_call_args = ""
         logger.info(
-            "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s image_slot_cap=%s",
+            "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s image_slot_cap=%s openrouter_session=%s latency_routing=%s",
             conversation_id,
             target_model,
             has_pdf,
             image_marker_filter.max_slots,
+            bool(extra_body.get("session_id")),
+            bool(extra_body.get("provider")),
         )
         try:
             if trace:
                 trace.increment_model_call("main_answer")
                 trace.mark_once("main_model_started")
+                trace.mark_once("main_model_provider_request_started")
             generation = asyncio.create_task(
                 self.client.chat.completions.create(
                     model=target_model,
@@ -480,6 +493,8 @@ class ConversationStreamService:
                 if not done:
                     yield ": heartbeat\n\n"
             response = await generation
+            if trace:
+                trace.mark_once("main_model_provider_stream_received")
             async for chunk in response:
                 if await request.is_disconnected():
                     logger.info("orchestration.stream_cancelled conversation_id=%s", conversation_id)
@@ -604,3 +619,21 @@ class ConversationStreamService:
             except Exception as exc:
                 logger.warning("orchestration.mail_tool_failed reason=%s", type(exc).__name__)
         yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator, 'image_slots': [slot.to_payload() for slot in image_marker_filter.slots]}, ensure_ascii=False)}\n\n"
+
+
+def _openrouter_session_id(conversation_id: str) -> str:
+    """Return a stable OpenRouter session id without exposing raw user content.
+
+    Args:
+        conversation_id: Conversation-scoped correlation identifier. This value
+            is already used in safe operational logs and should not contain raw
+            user text.
+
+    Returns:
+        A provider-safe session id suitable for OpenRouter sticky routing. Empty
+        or malformed inputs fall back to an empty string so callers can skip the
+        optional optimization without failing the stream.
+    """
+
+    normalized = _OPENROUTER_SESSION_ID_PATTERN.sub("_", str(conversation_id or "").strip())
+    return normalized[:128]

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     turn_trace_slow_total_threshold_ms: int = 8000
     turn_trace_slow_first_token_threshold_ms: int = 5000
     turn_trace_top_phase_count: int = 5
+    enable_openrouter_main_session_id: bool = True
+    enable_openrouter_main_latency_routing: bool = True
+    openrouter_main_preferred_latency_p90_seconds: float = 2.5
     explicit_recall_memory_timeout_ms: int = 2000
     enable_explicit_recall_memory_cache: bool = True
     explicit_recall_memory_cache_ttl_seconds: int = 120
