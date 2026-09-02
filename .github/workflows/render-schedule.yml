@@ -4,8 +4,6 @@ on:
   schedule:
     # Asia/Taipei 00:00 = UTC 16:00
     - cron: '0 16 * * *'
-    # Asia/Taipei 08:20 = UTC 00:20
-    - cron: '20 0 * * *'
   workflow_dispatch:
     inputs:
       action:
@@ -28,10 +26,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "value=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "0 16 * * *" ]; then
-            echo "value=suspend" >> "$GITHUB_OUTPUT"
           else
-            echo "value=resume" >> "$GITHUB_OUTPUT"
+            echo "value=suspend" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Apply action to backend and frontend
