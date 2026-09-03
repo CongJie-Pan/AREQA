@@ -130,6 +130,31 @@ def make_fragmented_table_pdf() -> bytes:
     return pdf_bytes
 
 
+def make_sparse_rule_table_pdf() -> bytes:
+    """Create a sparse-rule table like ablation tables in two-column papers."""
+
+    document = fitz.open()
+    page = document.new_page(width=520, height=620)
+    page.insert_text((330, 72), "Oracle access analysis in the right column.", fontsize=10)
+    for y in (70, 86, 262):
+        page.draw_line((70, y), (290, y), color=(0, 0, 0), width=1)
+    page.insert_text((72, 102), "w/o Q2 0.471 0.279", fontsize=9)
+    page.insert_text((72, 126), "w/o Q3 0.573 0.075", fontsize=9)
+    page.insert_text((72, 150), "w/o Q4 0.497 0.311", fontsize=9)
+    page.insert_text(
+        (70, 284),
+        "Table 2: Predicting Q0: Ablation study on real conversation data.",
+        fontsize=10,
+    )
+    for y in (346, 374, 484):
+        page.draw_line((70, y), (290, y), color=(0, 0, 0), width=1)
+    page.draw_line((194, 346), (194, 484), color=(0, 0, 0), width=1)
+    page.insert_text((72, 404), "Expected LLM Qi RMSE", fontsize=9)
+    pdf_bytes = document.tobytes()
+    document.close()
+    return pdf_bytes
+
+
 class _FakePlannerClient:
     """Chat-completions fake that selects the results page."""
 
@@ -399,6 +424,35 @@ def test_pdf_visual_extraction_keeps_full_table_cluster_for_target_caption():
     assert candidates[0].crop_reason == "target_caption_visual_cluster"
     assert candidates[0].target_caption.startswith("Table 2")
     assert candidates[0].height >= 175
+
+
+def test_pdf_visual_extraction_keeps_sparse_table_rules_above_target_caption():
+    """Sparse table crops should not collapse to the nearest line or right column."""
+
+    service = PdfVisualExtractionService(max_candidates=1, max_pages_scanned=1, render_zoom=1.0)
+    plan = (
+        PaperVisualPlanItem(
+            page_number=1,
+            answer_section="實驗結果與消融分析",
+            visual_type="ablation_table",
+            target_caption="Table 2: Predicting Q0: Ablation study on real conversation data.",
+            teaching_caption="這張表呈現消融結果。",
+            rationale="sparse_table_rules_crop",
+        ),
+    )
+
+    candidates = service.extract_candidates(
+        pdf_bytes=make_sparse_rule_table_pdf(),
+        filename="paper.pdf",
+        conversation_id="sparse-table-conversation",
+        visual_plan=plan,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].crop_reason == "target_caption_visual_cluster"
+    assert candidates[0].target_caption.startswith("Table 2")
+    assert candidates[0].height >= 240
+    assert candidates[0].width < 330
 
 
 def test_pdf_visual_extraction_falls_back_when_target_caption_does_not_match():

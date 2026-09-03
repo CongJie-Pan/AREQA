@@ -30,9 +30,42 @@ import { persistentAnswerBlocks } from '@/utils/answerBlocks';
  * Allows cancellation of ongoing requests
  */
 let currentAbortController: AbortController | null = null;
+const CONVERSATION_PREVIEW_MAX_LENGTH = 100;
 
 function canPersistHistory(): boolean {
   return getCurrentUserId() !== null;
+}
+
+/**
+ * Patch the active conversation row after a completed assistant response.
+ *
+ * Args:
+ *   conversationId: Persisted conversation that received the response.
+ *   content: Assistant answer used only for the safe local preview.
+ *   messageCountDelta: Number of messages added during this operation.
+ *
+ * Side Effects:
+ *   Updates the in-memory conversation list without reloading the full sidebar.
+ *
+ * Compatibility:
+ *   Title generation still owns final title persistence and its eventual list
+ *   refresh. This patch only removes the extra completion-time reload that can
+ *   visually churn the sidebar while image blocks are settling.
+ */
+function updateConversationPreviewInStore(
+  conversationId: string,
+  content: string,
+  messageCountDelta = 0
+): void {
+  const store = useConversationStore.getState();
+  const current = store.conversations.find((conversation) => conversation.id === conversationId);
+  store.updateConversation(conversationId, {
+    lastMessagePreview: content.slice(0, CONVERSATION_PREVIEW_MAX_LENGTH),
+    updatedAt: new Date(),
+    ...(current
+      ? { messageCount: Math.max(0, current.messageCount + messageCountDelta) }
+      : {}),
+  });
 }
 
 /**
@@ -313,10 +346,7 @@ export async function sendMessage(
             ...messageData,
           });
         }
-        if (shouldPersist) {
-          const userId = getCurrentUserId();
-          if (userId) await conversationStore.loadConversations(userId);
-        }
+        if (shouldPersist) updateConversationPreviewInStore(conversationIdForSave, answerContent, 2);
         if (shouldPersist && messages.length === 1 && answerContent) {
           useConversationStore.getState().generateTitle(conversationIdForSave, [
             ...messages, { role: 'assistant', content: answerContent },
@@ -801,11 +831,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           }
 
 
-          // Reload conversations to update stats
-          if (shouldPersist) {
-            const userId = getCurrentUserId();
-            if (userId) await conversationStore.loadConversations(userId);
-          }
+          if (shouldPersist) updateConversationPreviewInStore(activeConversationId, answerContent);
 
           // Trigger title generation if this is the first assistant response
           if (shouldPersist && apiMessages.length === 1 && answerContent) {
@@ -1054,11 +1080,7 @@ export async function editUserMessage(
           }
 
 
-          // Reload conversations to update stats
-          if (shouldPersist) {
-            const userId = getCurrentUserId();
-            if (userId) await conversationStore.loadConversations(userId);
-          }
+          if (shouldPersist) updateConversationPreviewInStore(activeConversationId, answerContent);
 
           // Trigger title generation if this is the first assistant response
           if (shouldPersist && apiMessages.length === 1 && answerContent) {

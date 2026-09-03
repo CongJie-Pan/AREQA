@@ -14,6 +14,7 @@ import type { CitationSource } from '@/components/Citations';
 import type { AnswerBlock, AttachmentMetadata, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 
 const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+const MAX_STREAM_IMAGE_SLOTS = 4;
 
 /**
  * RAG statuses that are allowed to keep the frontend waiting panel visible.
@@ -372,7 +373,7 @@ export const useChatStore = create<ChatStore>((set) => ({
    *   Atomically updates only the active streaming message. Invalid, duplicate,
    *   or excess slots are ignored without changing state.
    *
-   * The backend already bounds markers to two per answer. The store repeats
+   * The backend already bounds markers to four per answer. The store repeats
    * that boundary and validates offsets because SSE payloads are untrusted at
    * the browser boundary. Raw marker queries and captions never reach state.
    */
@@ -392,7 +393,10 @@ export const useChatStore = create<ChatStore>((set) => ({
         ? state.messages.map((message) => {
             if (message.id !== state.currentStreamingId) return message;
             const slots = message.streamImageSlots ?? [];
-            if (slots.some((item) => item.slotId === slot.slotId) || slots.length >= 2) {
+            if (
+              slots.some((item) => item.slotId === slot.slotId) ||
+              slots.length >= MAX_STREAM_IMAGE_SLOTS
+            ) {
               return message;
             }
             return { ...message, streamImageSlots: [...slots, slot] };

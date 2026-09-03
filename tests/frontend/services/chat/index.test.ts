@@ -95,11 +95,21 @@ describe('Chat Service', () => {
 
     mockConversationStore = {
       activeConversationId: 'test-conv-id',
+      conversations: [{
+        id: 'test-conv-id',
+        userId: 'test-user-id',
+        title: 'Existing chat',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        messageCount: 1,
+        lastMessagePreview: 'previous',
+      }],
       createConversation: vi.fn().mockResolvedValue('new-conv-id'),
       loadConversations: vi.fn(),
       generateTitle: vi.fn(),
       selectConversation: vi.fn(),
       deleteConversation: vi.fn(),
+      updateConversation: vi.fn(),
       setLoading: vi.fn(),
       setMessageHandoffLoading: vi.fn(),
     };
@@ -159,6 +169,14 @@ describe('Chat Service', () => {
       expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(INPUT_CONTENT, 'test-conv-id', []);
       expect(databaseService.message.add).toHaveBeenCalledTimes(2); // user msg + assistant msg
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
+      expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({
+          lastMessagePreview: 'response chunk',
+          messageCount: 3,
+        }),
+      );
+      expect(mockConversationStore.loadConversations).not.toHaveBeenCalled();
       expect(createChatStream).toHaveBeenCalled();
       expect(result).toEqual({ completed: true });
     });
@@ -310,6 +328,14 @@ describe('Chat Service', () => {
         TARGET_MSG_ID,
         expect.objectContaining({ role: 'assistant', content: 'new response chunk' }),
       );
+      expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({
+          lastMessagePreview: 'new response chunk',
+          messageCount: 1,
+        }),
+      );
+      expect(mockConversationStore.loadConversations).not.toHaveBeenCalled();
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
     });
 

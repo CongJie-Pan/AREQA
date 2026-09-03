@@ -258,8 +258,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /放大檢視圖片/ }));
 
-    expect(screen.getByText('View original source')).toHaveAttribute('href', 'https://example.com/article');
-    expect(screen.getByText('Attribution:')).toBeInTheDocument();
+    expect(screen.getByText('開啟原始來源')).toHaveAttribute('href', 'https://example.com/article');
     expect(screen.getByText(/Example Creator \/ CC BY-SA 4.0/)).toBeInTheDocument();
     expect(screen.queryByText('License:')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'CC BY-SA 4.0' })).not.toBeInTheDocument();
@@ -559,5 +558,51 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(historicalBlocks[0]).toHaveTextContent(before);
     expect(historicalBlocks[1].querySelector('img')).toHaveAttribute('alt', 'Forest plot example');
     expect(historicalBlocks[2]).toHaveTextContent('圖片後段');
+  });
+
+  it('uses complete structured blocks after streaming when live image slots are incomplete', () => {
+    const answerBlocks = [
+      { type: 'paragraph' as const, text: '第一段' },
+      ...[1, 2, 3, 4].map((index) => ({
+        type: 'image_block' as const,
+        slotId: `img_${index}`,
+        topic: `Figure ${index}`,
+        purpose: 'diagram' as const,
+        imageUrl: `https://example.com/figure-${index}.png`,
+        sourceUrl: 'https://example.com/article',
+        sourceDomain: 'example.com',
+        caption: `Figure ${index} caption`,
+        safetyStatus: 'pass' as const,
+        matchConfidence: 0.8,
+      })),
+      { type: 'paragraph' as const, text: '最後一段' },
+    ];
+    const liveMessage = {
+      ...baseMessage,
+      content: '第一段\n\n最後一段',
+      streamImageSlots: [
+        { slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 3 },
+        { slotId: 'img_2', anchorAfterParagraph: 0, contentOffset: 6 },
+      ],
+    };
+    const { container, rerender } = render(
+      <MessageItem message={liveMessage} isStreaming={true} />
+    );
+
+    expect(container.querySelectorAll('[data-live-answer-part]')).not.toHaveLength(0);
+
+    rerender(
+      <MessageItem
+        message={{ ...liveMessage, answerBlocks }}
+        isStreaming={false}
+      />
+    );
+
+    expect(container.querySelectorAll('[data-live-answer-part]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-answer-block-index]')).toHaveLength(6);
+    expect(screen.getByAltText('Figure 1 caption')).toBeInTheDocument();
+    expect(screen.getByAltText('Figure 2 caption')).toBeInTheDocument();
+    expect(screen.getByAltText('Figure 3 caption')).toBeInTheDocument();
+    expect(screen.getByAltText('Figure 4 caption')).toBeInTheDocument();
   });
 });

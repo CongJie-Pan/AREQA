@@ -547,7 +547,7 @@ class PdfVisualExtractionService:
                 continue
             if matched_target and _caption_text == matched_target:
                 nearby = (
-                    self._table_caption_visuals(nearby, caption_rect)
+                    self._table_caption_visuals(nearby, caption_rect, page_rect)
                     if self._is_table_caption(_caption_text)
                     else self._nearest_caption_visuals(nearby, caption_rect)
                 )
@@ -700,15 +700,19 @@ class PdfVisualExtractionService:
         return same_cluster or [nearest]
 
     @staticmethod
-    def _table_caption_visuals(visual_rects: list[Any], caption_rect: Any) -> list[Any]:
+    def _table_caption_visuals(
+        visual_rects: list[Any],
+        caption_rect: Any,
+        page_rect: Any | None = None,
+    ) -> list[Any]:
         """Return visual rectangles that plausibly belong to one captioned table.
 
         PDF tables are often represented as many independent line rectangles.
         Using only the nearest rectangle can crop the final row plus caption
-        while dropping the header and most rows. The cluster expands from the
-        nearest same-column rectangle until it sees a large vertical gap, which
-        keeps multi-line tables intact without merging an earlier figure on the
-        same page.
+        while dropping the header and most rows. Dense tables still expand from
+        the nearest same-column rectangle until a large vertical gap appears.
+        Sparse table-rule crops prefer all same-column horizontal ruling lines
+        above the caption when the resulting crop remains bounded.
         """
 
         same_column: list[Any] = []
@@ -726,6 +730,13 @@ class PdfVisualExtractionService:
         above = [rect for rect in same_column if rect.y1 <= caption_rect.y0 + 8]
         below = [rect for rect in same_column if rect.y0 >= caption_rect.y1 - 8]
         if above:
+            sparse_table_rules = PdfVisualExtractionService._sparse_table_rules_above_caption(
+                above,
+                caption_rect,
+                page_rect,
+            )
+            if sparse_table_rules:
+                return sparse_table_rules
             ordered = sorted(above, key=lambda rect: rect.y1, reverse=True)
             cluster = [ordered[0]]
             for rect in ordered[1:]:
@@ -746,6 +757,56 @@ class PdfVisualExtractionService:
                 cluster.append(rect)
             return cluster
         return PdfVisualExtractionService._nearest_caption_visuals(same_column, caption_rect)
+
+    @staticmethod
+    def _sparse_table_rules_above_caption(
+        above_rects: list[Any],
+        caption_rect: Any,
+        page_rect: Any | None,
+    ) -> list[Any]:
+        """Return full sparse table ruling lines above a table caption.
+
+        Args:
+            above_rects: Same-column visual rectangles located above the caption.
+            caption_rect: Caption rectangle used as the table anchor.
+            page_rect: Optional page bounds used to reject oversized table crops.
+
+        Returns:
+            Ordered horizontal rule rectangles when they form one bounded sparse
+            table; otherwise an empty list so the dense-cluster fallback applies.
+
+        Side Effects:
+            None.
+        """
+
+        min_rule_width = max(80.0, caption_rect.width * 0.5)
+        rules = [
+            rect
+            for rect in above_rects
+            if rect.width >= min_rule_width and rect.height <= max(4.5, rect.width * 0.035)
+        ]
+        if len(rules) < 2:
+            return []
+
+        ordered = sorted(rules, key=lambda rect: rect.y0)
+        crop_rect = PdfVisualExtractionService._union_rects([*ordered, caption_rect])
+        if page_rect is not None and not PdfVisualExtractionService._is_usable_crop_rect(
+            crop_rect,
+            page_rect,
+        ):
+            return []
+
+        crop_height = max(1.0, crop_rect.height)
+        caption_gap = max(0.0, caption_rect.y0 - ordered[-1].y1)
+        if caption_gap > max(72.0, crop_height * 0.35):
+            return []
+
+        table_width = max(rect.width for rect in ordered)
+        horizontal_spread = max(rect.x1 for rect in ordered) - min(rect.x0 for rect in ordered)
+        if horizontal_spread > table_width * 1.25:
+            return []
+
+        return ordered
 
     @classmethod
     def _ordered_caption_blocks(

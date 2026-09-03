@@ -107,11 +107,18 @@ describe('Chat Store', () => {
     state.addImageSlot({ slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 5 });
     state.addImageSlot({ slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 5 });
     state.addImageSlot({ slotId: 'invalid', anchorAfterParagraph: -1, contentOffset: -1 });
+    state.addImageSlot({ slotId: 'img_2', anchorAfterParagraph: 1, contentOffset: 10 });
+    state.addImageSlot({ slotId: 'img_3', anchorAfterParagraph: 2, contentOffset: 15 });
+    state.addImageSlot({ slotId: 'img_4', anchorAfterParagraph: 3, contentOffset: 20 });
+    state.addImageSlot({ slotId: 'img_5', anchorAfterParagraph: 4, contentOffset: 25 });
     state.endStreaming();
 
     const message = useChatStore.getState().messages.find((item) => item.id === messageId);
     expect(message?.streamImageSlots).toEqual([
       { slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 5 },
+      { slotId: 'img_2', anchorAfterParagraph: 1, contentOffset: 10 },
+      { slotId: 'img_3', anchorAfterParagraph: 2, contentOffset: 15 },
+      { slotId: 'img_4', anchorAfterParagraph: 3, contentOffset: 20 },
     ]);
   });
 

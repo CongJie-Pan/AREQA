@@ -74,6 +74,8 @@ def test_paper_auto_explain_instruction_adds_default_paper_structure():
     assert "研究方法與模型架構" in system_prompt
     assert "實驗設計與資料集" in system_prompt
     assert "實驗結果與消融分析" in system_prompt
+    assert "一般回答模式的白話教學感" in system_prompt
+    assert "不要寫成正式審稿報告" in system_prompt
     assert "段落文字為主" in system_prompt
     assert "研究結論" in system_prompt
     assert "局限與可延伸方向" in system_prompt

@@ -504,6 +504,8 @@ def test_paper_auto_explain_instruction_contains_required_sections():
     assert "研究方法與模型架構" in instruction
     assert "實驗設計與資料集" in instruction
     assert "實驗結果與消融分析" in instruction
+    assert "一般回答模式的白話教學感" in instruction
+    assert "不要寫成正式審稿報告" in instruction
     assert "段落文字為主" in instruction
     assert "列點與表格只能作為輔助摘要" in instruction
     assert "研究結論" in instruction

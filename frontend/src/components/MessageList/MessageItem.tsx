@@ -1025,7 +1025,14 @@ export const MessageItem = memo(function MessageItem({
   const displayContent = isUser ? legacyMessage.content : message.content;
   const hasAnswerBlocks = Boolean(message.answerBlocks && message.answerBlocks.length > 0);
   const liveImageSlots = message.streamImageSlots ?? [];
-  const shouldUseLiveOrderedAnswer = hasLiveStreamed && liveImageSlots.length > 0;
+  const answerBlockImageCount = React.useMemo(
+    () => (message.answerBlocks ?? []).filter((block) => block.type === 'image_block').length,
+    [message.answerBlocks],
+  );
+  const hasCompleteLiveImageSlots =
+    !hasAnswerBlocks || answerBlockImageCount === 0 || liveImageSlots.length >= answerBlockImageCount;
+  const shouldUseLiveOrderedAnswer =
+    hasLiveStreamed && liveImageSlots.length > 0 && (isStreaming || hasCompleteLiveImageSlots);
   const shouldUseStructuredAnswerBlocks = hasAnswerBlocks && !shouldUseLiveOrderedAnswer;
   const displayAttachments = React.useMemo(() => {
     if (message.attachments && message.attachments.length > 0) return message.attachments;
