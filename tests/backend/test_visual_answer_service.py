@@ -242,7 +242,7 @@ def test_should_not_enrich_general_non_visual_prompt():
 
 
 def test_should_attempt_preflight_when_policy_agent_allows_visual_support():
-    """Visual preflight should follow the EDF visual decision."""
+    """Optional visual policy still allows non-blocking visual enrichment."""
 
     service = VisualAnswerService()
     turn_plan = SimpleNamespace(route="LEARNING_HELP")
@@ -266,12 +266,63 @@ def test_preflight_decision_exposes_safe_log_metadata():
     )
 
     assert decision.allowed is True
-    assert decision.trigger == "response_policy"
+    assert decision.blocking_allowed is False
+    assert decision.trigger == "response_policy_optional"
     assert decision.visual_support == "OPTIONAL"
     assert decision.visual_reason == "KNOWLEDGE_EXPLANATION"
     assert decision.explicit_visual_request is False
     assert decision.known_visual_affordance is False
     assert decision.max_images == service.max_images
+
+
+def test_preflight_decision_blocks_for_required_visual_policy():
+    """Required visual policy may block TTFT even without deterministic keywords."""
+
+    service = VisualAnswerService()
+
+    decision = service.preflight_decision(
+        _policy(TaskIntent.GENERAL_QA, visual_support=VisualSupport.REQUIRED),
+        "請用圖解方式解釋這個學習概念",
+        None,
+    )
+
+    assert decision.allowed is True
+    assert decision.blocking_allowed is True
+    assert decision.trigger == "explicit_visual_request"
+    assert decision.visual_support == "REQUIRED"
+
+
+def test_preflight_decision_blocks_for_required_policy_without_keyword():
+    """The LLM policy can mark semantic visual requirements without keyword fallback."""
+
+    service = VisualAnswerService()
+
+    decision = service.preflight_decision(
+        _policy(TaskIntent.GENERAL_QA, visual_support=VisualSupport.REQUIRED),
+        "請把這個概念轉成更容易看的形式",
+        None,
+    )
+
+    assert decision.allowed is True
+    assert decision.blocking_allowed is True
+    assert decision.trigger == "response_policy_required"
+
+
+def test_known_visual_affordance_allows_enrichment_without_blocking_ttft():
+    """Deterministic concept affordances are useful but should not block text."""
+
+    service = VisualAnswerService()
+
+    decision = service.preflight_decision(
+        _policy(TaskIntent.GENERAL_QA),
+        "什麼是 meta analysis 統合分析",
+        None,
+    )
+
+    assert decision.allowed is True
+    assert decision.blocking_allowed is False
+    assert decision.trigger == "known_visual_affordance"
+    assert decision.known_visual_affordance is True
 
 
 def test_should_not_attempt_preflight_for_learning_route_without_visual_context():

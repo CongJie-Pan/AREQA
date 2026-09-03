@@ -1186,13 +1186,14 @@ async def test_turn_plan_enabled_runs_general_policy_classifier_by_default(
 
 
 @pytest.mark.asyncio
-async def test_visual_preflight_receives_learning_turn_plan_after_policy_timeout(
-    mock_router, mock_rag, mock_client, monkeypatch
+async def test_visual_preflight_skips_blocking_work_after_policy_timeout(
+    mock_router, mock_rag, mock_client, monkeypatch, caplog
 ):
-    """Visual preflight should still run for learning routes after policy fallback."""
+    """Policy fallback should not spend optional visual work before first text."""
 
     import config as runtime_config
 
+    caplog.set_level(logging.INFO)
     monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", True)
     monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight", True)
     service = OrchestrationService(mock_router, mock_rag, None, mock_client)
@@ -1222,8 +1223,112 @@ async def test_visual_preflight_receives_learning_turn_plan_after_policy_timeout
             "u1",
         )]
 
+    service.visual_answer_service.prepare_preflight_image_blocks.assert_not_awaited()
+    assert "visual.preflight_blocking_skipped" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_optional_visual_policy_does_not_block_before_first_text(
+    mock_router, mock_rag, mock_client, monkeypatch, caplog
+):
+    """OPTIONAL visual enrichment should not trigger blocking preflight."""
+
+    import config as runtime_config
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight", True)
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        visual_support=VisualSupport.OPTIONAL,
+        visual_reason=VisualReason.KNOWLEDGE_EXPLANATION,
+        legacy_policy="PROBE_UNDERSTANDING",
+    )
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    service.visual_answer_service.prepare_preflight_image_blocks = AsyncMock(return_value={})
+    request = MagicMock()
+
+    async def llm_stream(*args, **kwargs):
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": "請解釋第二次世界大戰歐洲戰場"}],
+            "optional-visual-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    service.visual_answer_service.prepare_preflight_image_blocks.assert_not_awaited()
+    assert "blocking_allowed=False" in caplog.text
+    assert "trigger=response_policy_optional" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_required_visual_policy_allows_blocking_preflight(
+    mock_router, mock_rag, mock_client, monkeypatch
+):
+    """REQUIRED visual policy may block so explicit semantic visual requests work."""
+
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_turn_plan_runtime", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_visual_preflight", True)
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        visual_support=VisualSupport.REQUIRED,
+        visual_reason=VisualReason.EXPLICIT_VISUAL_REQUEST,
+        legacy_policy="PROBE_UNDERSTANDING",
+    )
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    service.visual_answer_service.prepare_preflight_image_blocks = AsyncMock(return_value={})
+    request = MagicMock()
+
+    async def llm_stream(*args, **kwargs):
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": "請把這個概念轉成更容易看的形式"}],
+            "required-visual-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
     kwargs = service.visual_answer_service.prepare_preflight_image_blocks.await_args.kwargs
-    assert kwargs["response_policy"].task_intent == TaskIntent.GENERAL_QA
+    assert kwargs["response_policy"].visual_support == VisualSupport.REQUIRED
     assert kwargs["turn_plan"].route.value == "LEARNING_HELP"
 
 

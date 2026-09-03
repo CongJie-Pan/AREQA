@@ -676,9 +676,10 @@ class OrchestrationService:
                 turn_plan if turn_plan_enabled else None,
             )
             logger.info(
-                "visual.preflight_policy_gate conversation_id=%s allowed=%s trigger=%s visual_support=%s visual_reason=%s explicit_visual=%s known_affordance=%s max_images=%s has_attachment_visual_sources=%s",
+                "visual.preflight_policy_gate conversation_id=%s allowed=%s blocking_allowed=%s trigger=%s visual_support=%s visual_reason=%s explicit_visual=%s known_affordance=%s max_images=%s has_attachment_visual_sources=%s",
                 conversation_id,
                 visual_preflight_decision.allowed,
+                visual_preflight_decision.blocking_allowed,
                 visual_preflight_decision.trigger,
                 visual_preflight_decision.visual_support,
                 visual_preflight_decision.visual_reason,
@@ -687,7 +688,10 @@ class OrchestrationService:
                 visual_preflight_decision.max_images,
                 bool(attachment_visual_sources),
             )
-            visual_preflight_allowed = visual_preflight_decision.allowed
+            visual_preflight_allowed = bool(
+                visual_preflight_decision.blocking_allowed
+                or attachment_visual_sources
+            )
             if attachment_visual_sources and visual_preflight_allowed:
                 attachment_visual_candidates = await self._extract_attachment_visual_candidates(
                     attachment_visual_sources,
@@ -709,18 +713,29 @@ class OrchestrationService:
                 )
                 preverified_image_blocks = {}
             if preverified_image_blocks is None:
-                preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
-                    visual_answer_service=self.visual_answer_service,
-                    user_msg=last_user_msg,
-                    response_policy=response_policy,
-                    existing_web_results=run_state.web_search_results,
-                    tool_registry=self.tool_registry,
-                    tool_budget=run_state.tool_budget,
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    model_client=self.client,
-                    turn_plan=turn_plan if turn_plan_enabled else None,
-                )
+                if visual_preflight_allowed:
+                    preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
+                        visual_answer_service=self.visual_answer_service,
+                        user_msg=last_user_msg,
+                        response_policy=response_policy,
+                        existing_web_results=run_state.web_search_results,
+                        tool_registry=self.tool_registry,
+                        tool_budget=run_state.tool_budget,
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        model_client=self.client,
+                        turn_plan=turn_plan if turn_plan_enabled else None,
+                    )
+                else:
+                    logger.info(
+                        "visual.preflight_blocking_skipped conversation_id=%s trigger=%s visual_support=%s explicit_visual=%s known_affordance=%s",
+                        conversation_id,
+                        visual_preflight_decision.trigger,
+                        visual_preflight_decision.visual_support,
+                        visual_preflight_decision.explicit_visual_request,
+                        visual_preflight_decision.known_visual_affordance,
+                    )
+                    preverified_image_blocks = {}
             logger.info(
                 "visual.preverified_inventory_ready conversation_id=%s available_image_count=%s has_attachment_visual_sources=%s",
                 conversation_id,

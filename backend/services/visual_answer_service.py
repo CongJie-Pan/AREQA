@@ -144,6 +144,9 @@ class VisualPreflightDecision:
 
     Args:
         allowed: Whether provider lookup or PDF rendering may run this turn.
+        blocking_allowed: Whether provider lookup or PDF rendering may block
+            the first text token. Only hard visual requirements should set this
+            to true; optional visual enrichment must not extend TTFT.
         trigger: Stable reason bucket that made the gate allow or deny work.
         visual_support: EDF response-policy visual support enum value.
         visual_reason: EDF response-policy visual reason enum value.
@@ -159,6 +162,7 @@ class VisualPreflightDecision:
     """
 
     allowed: bool
+    blocking_allowed: bool
     trigger: str
     visual_support: str
     visual_reason: str
@@ -429,9 +433,15 @@ class VisualAnswerService:
         explicit_visual_request = any(keyword in normalized for keyword in _VISUAL_KEYWORDS)
         affordance = match_visual_affordance(user_msg)
         known_visual_affordance = bool(affordance and affordance.preflight_trigger)
-        agent_allows_visuals = response_policy.visual_support in {
-            VisualSupport.OPTIONAL,
-            VisualSupport.REQUIRED,
+        visual_support_value = getattr(
+            response_policy.visual_support,
+            "value",
+            response_policy.visual_support,
+        )
+        agent_requires_visuals = visual_support_value == VisualSupport.REQUIRED.value
+        agent_allows_visuals = visual_support_value in {
+            VisualSupport.OPTIONAL.value,
+            VisualSupport.REQUIRED.value,
         }
         allowed = bool(
             self.max_images > 0
@@ -441,18 +451,28 @@ class VisualAnswerService:
                 or agent_allows_visuals
             )
         )
+        blocking_allowed = bool(
+            self.max_images > 0
+            and (
+                explicit_visual_request
+                or agent_requires_visuals
+            )
+        )
         if self.max_images <= 0:
             trigger = "disabled"
         elif explicit_visual_request:
             trigger = "explicit_visual_request"
         elif known_visual_affordance:
             trigger = "known_visual_affordance"
+        elif agent_requires_visuals:
+            trigger = "response_policy_required"
         elif agent_allows_visuals:
-            trigger = "response_policy"
+            trigger = "response_policy_optional"
         else:
             trigger = "policy_gate"
         return VisualPreflightDecision(
             allowed=allowed,
+            blocking_allowed=blocking_allowed,
             trigger=trigger,
             visual_support=response_policy.visual_support.value,
             visual_reason=response_policy.visual_reason.value,
