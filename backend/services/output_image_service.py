@@ -481,5 +481,7 @@ class OutputImageService:
             storage_bucket=block.storage_bucket,
             storage_path=block.storage_path,
             storage_expires_at=block.storage_expires_at,
+            placement_section=block.placement_section,
+            planner_hint=block.planner_hint,
             transient=block.transient,
         )

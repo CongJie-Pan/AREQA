@@ -81,6 +81,39 @@ def make_cultureconverse_like_pdf() -> bytes:
     return pdf_bytes
 
 
+def make_llm_rubric_like_pdf() -> bytes:
+    """Create a PDF shaped like method, judge setup, main results, and ablation."""
+
+    document = fitz.open()
+    for index in range(1, 9):
+        page = document.new_page(width=520, height=420)
+        page.insert_text((36, 32), f"Page {index}", fontsize=9)
+        if index == 2:
+            page.insert_text((36, 54), "Method framework rubric modeling architecture.", fontsize=10)
+            page.draw_rect(fitz.Rect(50, 82, 460, 185), color=(0, 0, 0), width=1)
+            page.insert_text((52, 214), "Figure 1. Overview of the LLM-Rubric framework.", fontsize=10)
+        elif index == 3:
+            page.insert_text((36, 54), "Experiment design dataset and different human judges.", fontsize=10)
+            page.draw_rect(fitz.Rect(50, 82, 460, 210), color=(0, 0, 0), width=1)
+            page.insert_text((52, 238), "Figure 2. Marginal distributions assigned by different human judges.", fontsize=10)
+        elif index == 5:
+            page.insert_text((36, 54), "Method qualitative examples and implementation details.", fontsize=10)
+            page.draw_rect(fitz.Rect(50, 82, 460, 210), color=(0, 0, 0), width=1)
+            page.insert_text((52, 238), "Table 1. Example rubric annotations for one scored episode.", fontsize=10)
+        elif index == 7:
+            page.insert_text((36, 54), "Results performance predicting overall quality human judges.", fontsize=10)
+            page.draw_rect(fitz.Rect(50, 82, 460, 210), color=(0, 0, 0), width=1)
+            page.insert_text((52, 238), "Table 1. Performance in predicting overall quality from human judges.", fontsize=10)
+        elif index == 8:
+            page.insert_text((36, 54), "Ablation results design decisions rubric dimension.", fontsize=10)
+            page.draw_rect(fitz.Rect(50, 82, 460, 210), color=(0, 0, 0), width=1)
+            page.insert_text((52, 238), "Table 2. Ablation study on rubric dimensions and design decisions.", fontsize=10)
+
+    pdf_bytes = document.tobytes()
+    document.close()
+    return pdf_bytes
+
+
 def make_fragmented_table_pdf() -> bytes:
     """Create a PDF table represented by many independent drawing rectangles."""
 
@@ -249,6 +282,31 @@ async def test_paper_visual_planner_fallback_prefers_overview_caption_for_broad_
     assert plan[2].target_caption.startswith("Table 4")
 
 
+@pytest.mark.asyncio
+async def test_paper_visual_planner_fallback_keeps_section_coverage_and_ablation():
+    """Broad fallback planning should reserve slots for setup, main results, and ablation."""
+
+    service = PaperVisualPlannerService()
+
+    plan = await service.plan_visuals(
+        pdf_bytes=make_llm_rubric_like_pdf(),
+        filename="llm-rubric.pdf",
+        conversation_id="llm-rubric-fallback-conversation",
+        client=None,
+        max_visuals=4,
+    )
+
+    assert [item.page_number for item in plan] == [2, 3, 7, 8]
+    assert [item.answer_section for item in plan] == [
+        "研究方法",
+        "實驗設計與過程",
+        "實驗結果",
+        "實驗結果",
+    ]
+    assert plan[2].visual_type == "main_results_table"
+    assert plan[3].visual_type == "ablation_table"
+
+
 def test_pdf_visual_extraction_respects_planner_page_order():
     """Renderer should render planner-selected pages before heuristic pages."""
 
@@ -281,6 +339,8 @@ def test_pdf_visual_extraction_respects_planner_page_order():
     block = candidates[0].to_image_block()
     assert block.caption.startswith("Table 2")
     assert block.explanatory_caption == ""
+    assert block.placement_section == "實驗結果與關鍵數據"
+    assert "理解論文實驗主張" in block.planner_hint
     assert "這張圖適合用來說明" not in block.caption
     assert "建議放在" not in block.caption
 

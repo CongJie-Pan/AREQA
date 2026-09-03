@@ -71,9 +71,10 @@ def test_paper_auto_explain_instruction_adds_default_paper_structure():
     assert "profile: AREQA_TEACHING_V1" in system_prompt
     assert "首段用1-2句話直擊問題核心" in system_prompt
     assert "研究動機與目的" in system_prompt
-    assert "研究方法" in system_prompt
-    assert "實驗設計與過程" in system_prompt
-    assert "實驗結果" in system_prompt
+    assert "研究方法與模型架構" in system_prompt
+    assert "實驗設計與資料集" in system_prompt
+    assert "實驗結果與消融分析" in system_prompt
+    assert "段落文字為主" in system_prompt
     assert "研究結論" in system_prompt
     assert "局限與可延伸方向" in system_prompt
     assert "不得根據檔名" in system_prompt
@@ -184,17 +185,31 @@ def test_verified_visual_instruction_lists_multiple_verified_markers():
     """Multiple preverified images should each have an allowed marker."""
 
     messages = [{"role": "system", "content": "base prompt"}]
+    sections = {
+        1: "研究方法",
+        2: "實驗設計與過程",
+        3: "實驗結果",
+        4: "實驗結果",
+    }
+    purposes = {
+        1: "architecture",
+        2: "results_chart",
+        3: "main_results_table",
+        4: "ablation_table",
+    }
     images = {
         f"pdf_img_{index}": ImageBlock(
             slot_id=f"pdf_img_{index}",
             topic=f"Paper figure {index}",
-            purpose="diagram",
+            purpose=purposes[index],
             image_url=f"data:image/png;base64,{index}",
             thumbnail_url=f"data:image/png;base64,{index}",
             source_url=f"#pdf-attachment-page-{index}",
             source_domain="uploaded PDF",
             caption=f"Figure {index}",
             explanatory_caption="這張圖適合用來說明研究方法。",
+            placement_section=sections[index],
+            planner_hint="internal planner hint",
             safety_status="pass",
             match_confidence=0.8,
         )
@@ -207,8 +222,10 @@ def test_verified_visual_instruction_lists_multiple_verified_markers():
     for index in range(1, 5):
         assert f'[[AREQA_VERIFIED_IMAGE id="pdf_img_{index}"]]' in system_prompt
     assert "依照圖片清單中的章節提示分散到對應段落" in system_prompt
-    assert "必須至少使用 3 張已驗證 PDF 圖片" in system_prompt
-    assert "研究方法、實驗設計與過程、實驗結果" in system_prompt
+    assert "不要只滿足總張數，每個核心節都要有圖" in system_prompt
+    assert "先主要結果、再消融分析" in system_prompt
+    assert '"placement_section": "研究方法"' in system_prompt
+    assert '"purpose": "main_results_table"' in system_prompt
     assert "不得逐字複製系統提供的圖片用途或教學提示句" in system_prompt
     assert "data:image/png" not in system_prompt
 

@@ -501,8 +501,10 @@ def test_paper_auto_explain_instruction_contains_required_sections():
     assert "分步方式降低理解負擔" in instruction
     assert "先講白話直覺" in instruction
     assert "研究動機與目的" in instruction
-    assert "研究方法" in instruction
-    assert "實驗設計與過程" in instruction
-    assert "實驗結果" in instruction
+    assert "研究方法與模型架構" in instruction
+    assert "實驗設計與資料集" in instruction
+    assert "實驗結果與消融分析" in instruction
+    assert "段落文字為主" in instruction
+    assert "列點與表格只能作為輔助摘要" in instruction
     assert "研究結論" in instruction
     assert "局限與可延伸方向" in instruction

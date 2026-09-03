@@ -7,6 +7,7 @@ import pytest
 
 from backend.services.query_policy_service import (
     AnswerDepth,
+    AttachmentTask,
     FollowupMode,
     ResponsePolicy,
     ResponseStructure,
@@ -95,7 +96,11 @@ class _SequentialPageClient:
         return response
 
 
-def _policy(task_intent=TaskIntent.GENERAL_QA, visual_support=VisualSupport.NONE):
+def _policy(
+    task_intent=TaskIntent.GENERAL_QA,
+    visual_support=VisualSupport.NONE,
+    attachment_task=AttachmentTask.NONE,
+):
     """Build a minimal response policy for visual service tests."""
 
     visual_reason = (
@@ -111,6 +116,7 @@ def _policy(task_intent=TaskIntent.GENERAL_QA, visual_support=VisualSupport.NONE
         followup_mode=FollowupMode.OPTIONAL,
         visual_support=visual_support,
         visual_reason=visual_reason,
+        attachment_task=attachment_task,
         legacy_policy="NORMAL",
     )
 
@@ -919,6 +925,77 @@ async def test_build_answer_blocks_interleaves_four_preverified_pdf_images():
         "pdf_img_3",
         "pdf_img_4",
     ]
+
+
+@pytest.mark.asyncio
+async def test_build_answer_blocks_logs_missing_preverified_paper_section(caplog):
+    """Paper-mode logs should identify required sections whose verified image marker was omitted."""
+
+    caplog.set_level("INFO")
+    service = VisualAnswerService()
+    images = {
+        "pdf_img_method": ImageBlock(
+            slot_id="pdf_img_method",
+            topic="Method figure",
+            purpose="architecture",
+            image_url="data:image/png;base64,method",
+            thumbnail_url="data:image/png;base64,method",
+            source_url="#pdf-attachment-page-2",
+            source_domain="uploaded PDF",
+            caption="Figure 1. Framework",
+            license="user_provided_attachment",
+            placement_section="研究方法",
+        ),
+        "pdf_img_setup": ImageBlock(
+            slot_id="pdf_img_setup",
+            topic="Setup figure",
+            purpose="results_chart",
+            image_url="data:image/png;base64,setup",
+            thumbnail_url="data:image/png;base64,setup",
+            source_url="#pdf-attachment-page-3",
+            source_domain="uploaded PDF",
+            caption="Figure 2. Judge distributions",
+            license="user_provided_attachment",
+            placement_section="實驗設計與過程",
+        ),
+        "pdf_img_results": ImageBlock(
+            slot_id="pdf_img_results",
+            topic="Results table",
+            purpose="main_results_table",
+            image_url="data:image/png;base64,results",
+            thumbnail_url="data:image/png;base64,results",
+            source_url="#pdf-attachment-page-7",
+            source_domain="uploaded PDF",
+            caption="Table 1. Main results",
+            license="user_provided_attachment",
+            placement_section="實驗結果",
+        ),
+    }
+
+    blocks = await service.build_answer_blocks(
+        answer_text="方法段\n\n實驗設計段\n\n結果段",
+        user_msg="請幫我說明這篇論文",
+        response_policy=_policy(
+            TaskIntent.EXPLAIN_TEXT,
+            visual_support=VisualSupport.OPTIONAL,
+            attachment_task=AttachmentTask.PAPER_AUTO_EXPLAIN,
+        ),
+        planned_image_slots=[
+            {"slot_id": "pdf_img_method", "anchor_after_paragraph": 0},
+            {"slot_id": "pdf_img_setup", "anchor_after_paragraph": 1},
+        ],
+        tool_registry=SimpleNamespace(),
+        tool_budget=None,
+        existing_web_results=None,
+        user_id="user-1",
+        conversation_id="paper-conversation",
+        preverified_image_blocks=images,
+    )
+
+    image_blocks = [block for block in blocks if block["type"] == "image_block"]
+    assert [block["slotId"] for block in image_blocks] == ["pdf_img_method", "pdf_img_setup"]
+    assert "visual.paper_required_section_missing" in caplog.text
+    assert "section=實驗結果" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -1108,6 +1108,8 @@ class OrchestrationService:
                     "id": slot_id,
                     "topic": block.topic,
                     "purpose": block.purpose,
+                    "placement_section": getattr(block, "placement_section", ""),
+                    "planner_hint": getattr(block, "planner_hint", ""),
                     "caption": block.caption,
                     "explanatory_caption": block.explanatory_caption,
                     "vision_summary": block.vision_summary,
@@ -1128,12 +1130,14 @@ class OrchestrationService:
             ]
             verified_marker_examples = "、".join(verified_markers)
             available_image_count = len(image_blocks)
-            minimum_paper_image_count = min(3, available_image_count)
-            paper_minimum_instruction = (
-                f"如果這是論文總覽回答且清單中至少有 {minimum_paper_image_count} 張圖片，"
-                f"必須至少使用 {minimum_paper_image_count} 張已驗證 PDF 圖片，"
-                "並分別銜接研究方法、實驗設計與過程、實驗結果；"
-                if minimum_paper_image_count >= 3
+            paper_section_instruction = (
+                "如果這是論文總覽回答，且圖片清單可用 placement_section、purpose、caption "
+                "對應「研究方法」、「實驗設計與過程」、「實驗結果」，"
+                "這三個核心節各必須緊接一張已驗證 PDF 圖片；"
+                "不要只滿足總張數，每個核心節都要有圖。"
+                "如果「實驗結果」同時有主要結果與消融分析圖片，且回答包含「實驗結果與消融分析」，"
+                "請在該節使用兩張結果圖片，先主要結果、再消融分析；"
+                if available_image_count >= 3
                 else ""
             )
             instruction = (
@@ -1141,7 +1145,7 @@ class OrchestrationService:
                 "它們是本回合主回答素材的一部分，不是回答後的附件。"
                 "你只能使用清單中的 id，不能自行編造圖片、URL 或來源。"
                 "你必須把最相關的已驗證圖片整合進教學流程；"
-                f"{paper_minimum_instruction}"
+                f"{paper_section_instruction}"
                 "若有多張圖片，請依照圖片清單中的章節提示分散到對應段落，"
                 "特別是論文總覽回答應優先覆蓋研究動機與目的、研究方法、實驗設計與過程、實驗結果。"
                 "在最適合的位置先寫 1 至 2 句完整導圖文字，"

@@ -154,6 +154,8 @@ _DATASET_CAPTION_TERMS = (
     "composition",
     "breakdown",
     "statistics",
+    "distribution",
+    "distributions",
     "sample",
     "identity",
     "region",
@@ -179,12 +181,33 @@ _RESULT_CAPTION_TERMS = (
     "結果",
     "表現",
 )
+_MAIN_RESULT_CAPTION_TERMS = (
+    "main result",
+    "main results",
+    "performance",
+    "predicting",
+    "human judges",
+    "overall quality",
+    "rmse",
+    "pearson",
+    "correlation",
+    "結果",
+    "表現",
+)
+_ABLATION_CAPTION_TERMS = (
+    "ablation",
+    "w/o",
+    "design decision",
+    "rubric dimension",
+    "消融",
+)
 _FALLBACK_SECTION_ORDER = {
     "研究方法": 0,
     "實驗設計與過程": 1,
     "實驗結果": 2,
     "論文重點圖解": 3,
 }
+_REQUIRED_FALLBACK_SECTIONS = ("研究方法", "實驗設計與過程", "實驗結果")
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,12 +419,13 @@ class PaperVisualPlannerService:
             "You are AREQA's Paper Visual Planner. Select the most useful PDF pages/figures/tables "
             "for a teaching-style explanation of the uploaded paper. Prefer visuals that carry the "
             "paper's method, architecture, key mechanism, experimental results, or result tables. "
-            "For broad paper explanations, cover distinct teaching sections when possible: research "
-            "motivation/purpose, research method, experiment design/process, and experimental results. "
+            "For broad paper explanations, cover research method, experiment design/process, and "
+            "experimental results when possible. When both main results and ablations are available, "
+            "select the main results first, then the ablation if visual capacity remains. "
             "Prefer a pipeline, method, or framework overview before example-only figures when both are available. "
             "Return strict JSON only: {\"selected_visuals\":[{\"page_number\":number,"
             "\"answer_section\":string,\"visual_type\":\"architecture|method_diagram|results_chart|"
-            "results_table|mechanism|other\",\"target_caption\":string,"
+            "results_table|main_results_table|ablation_table|mechanism|other\",\"target_caption\":string,"
             "\"teaching_caption\":string,\"rationale\":string}]}. "
             f"Select at most {max_visuals} visuals. Do not invent pages not present in the page map. "
             "When the page map has a relevant Figure/Table caption, copy that caption into target_caption "
@@ -518,46 +542,89 @@ class PaperVisualPlannerService:
             reverse=True,
         )
         if max_visuals <= 1:
-            ordered_pages = [page for score, page in scored if score > 0]
-        else:
-            ordered_pages = self._section_diverse_fallback_pages(scored)
+            raw_items = [self._fallback_item_for_page(page) for score, page in scored if score > 0]
+            return self._sanitize_plan_items(raw_items, pages, max_visuals, source="fallback")
 
+        candidates = [
+            (self._fallback_item_for_page(page), page, score)
+            for score, page in scored
+            if score > 0
+        ]
         raw_items: list[dict[str, Any]] = []
-        seen_sections: set[str] = set()
-        delayed_duplicates: list[dict[str, Any]] = []
-        for page in ordered_pages:
-            score = self._fallback_page_score(page)
-            if score <= 0:
+        seen_pages: set[int] = set()
+
+        for section in _REQUIRED_FALLBACK_SECTIONS:
+            section_candidates = [
+                (item, page, score)
+                for item, page, score in candidates
+                if item["answer_section"] == section and page.page_number not in seen_pages
+            ]
+            if not section_candidates:
                 continue
-            item = self._fallback_item_for_page(page)
-            if max_visuals > 1 and item["answer_section"] in seen_sections:
-                delayed_duplicates.append(item)
-                continue
-            seen_sections.add(item["answer_section"])
+            item, page, _score = min(section_candidates, key=self._fallback_candidate_rank)
             raw_items.append(item)
+            seen_pages.add(page.page_number)
             if len(raw_items) >= max_visuals:
                 break
+
         if len(raw_items) < max_visuals:
-            for item in delayed_duplicates:
+            fill_candidates = [
+                (item, page, score)
+                for item, page, score in candidates
+                if page.page_number not in seen_pages
+            ]
+            for item, page, _score in sorted(fill_candidates, key=self._fallback_fill_rank):
                 raw_items.append(item)
+                seen_pages.add(page.page_number)
                 if len(raw_items) >= max_visuals:
                     break
         return self._sanitize_plan_items(raw_items, pages, max_visuals, source="fallback")
 
-    def _section_diverse_fallback_pages(
-        self,
-        scored_pages: list[tuple[int, _PaperPageContext]],
-    ) -> list[_PaperPageContext]:
-        """Return pages ordered by teaching section and fallback score."""
+    @staticmethod
+    def _fallback_candidate_rank(
+        item_with_page: tuple[dict[str, Any], _PaperPageContext, int],
+    ) -> tuple[int, int, int, int]:
+        """Rank fallback candidates by teaching section, visual specificity, score, and page."""
 
-        eligible_pages = [page for score, page in scored_pages if score > 0]
-        return sorted(
-            eligible_pages,
-            key=lambda page: (
-                _FALLBACK_SECTION_ORDER.get(self._fallback_item_for_page(page)["answer_section"], 9),
-                -self._fallback_page_score(page),
-                page.page_number,
-            ),
+        item, page, score = item_with_page
+        visual_type_priority = {
+            "architecture": 0,
+            "method_diagram": 1,
+            "main_results_table": 0,
+            "ablation_table": 1,
+            "results_table": 2,
+            "results_chart": 3,
+            "mechanism": 4,
+            "other": 8,
+        }
+        return (
+            _FALLBACK_SECTION_ORDER.get(str(item.get("answer_section") or ""), 9),
+            visual_type_priority.get(str(item.get("visual_type") or ""), 8),
+            -score,
+            page.page_number,
+        )
+
+    @staticmethod
+    def _fallback_fill_rank(
+        item_with_page: tuple[dict[str, Any], _PaperPageContext, int],
+    ) -> tuple[int, int, int]:
+        """Rank extra fallback visuals after required section coverage is met."""
+
+        item, page, score = item_with_page
+        visual_type_priority = {
+            "main_results_table": 0,
+            "ablation_table": 1,
+            "results_table": 2,
+            "results_chart": 3,
+            "architecture": 4,
+            "method_diagram": 5,
+            "mechanism": 6,
+            "other": 8,
+        }
+        return (
+            visual_type_priority.get(str(item.get("visual_type") or ""), 8),
+            -score,
+            page.page_number,
         )
 
     def _fallback_item_for_page(self, page: _PaperPageContext) -> dict[str, Any]:
@@ -589,8 +656,18 @@ class PaperVisualPlannerService:
                 return caption, "研究方法", "architecture"
         for caption in page.captions:
             caption_text = caption.lower()
+            if any(term in caption_text for term in _ABLATION_CAPTION_TERMS):
+                visual_type = "ablation_table" if cls._is_table_caption(caption_text) else "results_chart"
+                return caption, "實驗結果", visual_type
+        for caption in page.captions:
+            caption_text = caption.lower()
             if any(term in caption_text for term in _DATASET_CAPTION_TERMS):
                 return caption, "實驗設計與過程", "results_table" if cls._is_table_caption(caption_text) else "other"
+        for caption in page.captions:
+            caption_text = caption.lower()
+            if any(term in caption_text for term in _MAIN_RESULT_CAPTION_TERMS):
+                visual_type = "main_results_table" if cls._is_table_caption(caption_text) else "results_chart"
+                return caption, "實驗結果", visual_type
         for caption in page.captions:
             caption_text = caption.lower()
             if any(term in caption_text for term in _RESULT_CAPTION_TERMS):
@@ -693,7 +770,16 @@ class PaperVisualPlannerService:
         """Return allowlisted visual purpose label."""
 
         visual_type = str(value or "").strip().lower()
-        allowed = {"architecture", "method_diagram", "results_chart", "results_table", "mechanism", "other"}
+        allowed = {
+            "architecture",
+            "method_diagram",
+            "results_chart",
+            "results_table",
+            "main_results_table",
+            "ablation_table",
+            "mechanism",
+            "other",
+        }
         return visual_type if visual_type in allowed else "other"
 
     @classmethod
@@ -726,10 +812,12 @@ class PaperVisualPlannerService:
         """Emit the stable planner completion log without raw PDF text."""
 
         logger.info(
-            "paper_visual.planner_completed conversation_id=%s filename=%s source=%s selected_count=%s pages=%s",
+            "paper_visual.planner_completed conversation_id=%s filename=%s source=%s selected_count=%s pages=%s sections=%s visual_types=%s",
             conversation_id,
             filename,
             source,
             len(items),
             ",".join(str(item.page_number) for item in items) or "none",
+            ",".join(item.answer_section for item in items) or "none",
+            ",".join(item.visual_type for item in items) or "none",
         )

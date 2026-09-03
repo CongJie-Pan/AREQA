@@ -23,7 +23,7 @@ import httpx
 import redis.asyncio as aioredis
 
 from config import settings
-from services.query_policy_service import ResponsePolicy, VisualSupport
+from services.query_policy_service import AttachmentTask, ResponsePolicy, VisualSupport
 from services.visual_affordance_registry import match_visual_affordance
 from services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
 
@@ -215,6 +215,10 @@ class ImageBlock:
         storage_path: Optional Supabase Storage object path for persisted
             attachment-derived images.
         storage_expires_at: Unix timestamp when a signed image URL expires.
+        placement_section: Backend-only paper section where this verified image
+            should be placed by the main answer model.
+        planner_hint: Backend-only planner rationale. This is prompt inventory
+            material only and is intentionally not serialized to the frontend.
         transient: Whether the block contains request-scoped attachment pixels
             that clients must not write to durable stores.
     """
@@ -252,6 +256,8 @@ class ImageBlock:
     storage_bucket: str = ""
     storage_path: str = ""
     storage_expires_at: int | None = None
+    placement_section: str = ""
+    planner_hint: str = ""
     transient: bool = False
 
     def to_frontend(self) -> dict[str, Any]:
@@ -558,6 +564,12 @@ class VisualAnswerService:
 
         try:
             if preverified_image_blocks is not None:
+                self._log_missing_paper_required_sections(
+                    conversation_id,
+                    response_policy,
+                    planned_slots,
+                    preverified_image_blocks,
+                )
                 logger.info(
                     "visual.preverified_available conversation_id=%s available_image_count=%s planned_image_slot_count=%s",
                     conversation_id,
@@ -902,8 +914,44 @@ class VisualAnswerService:
             storage_bucket=block.storage_bucket,
             storage_path=block.storage_path,
             storage_expires_at=block.storage_expires_at,
+            placement_section=block.placement_section,
+            planner_hint=block.planner_hint,
             transient=block.transient,
         )
+
+    @staticmethod
+    def _log_missing_paper_required_sections(
+        conversation_id: str,
+        response_policy: ResponsePolicy,
+        planned_slots: list[PlannedImageSlot],
+        preverified_image_blocks: dict[str, ImageBlock],
+    ) -> None:
+        """Log paper sections that had a verified visual but no used marker."""
+
+        attachment_task = getattr(
+            response_policy.attachment_task,
+            "value",
+            response_policy.attachment_task,
+        )
+        if attachment_task != AttachmentTask.PAPER_AUTO_EXPLAIN.value:
+            return
+        used_slot_ids = {slot.slot_id for slot in planned_slots}
+        required_sections = ("研究方法", "實驗設計與過程", "實驗結果")
+        for required_section in required_sections:
+            available_ids = [
+                slot_id
+                for slot_id, block in preverified_image_blocks.items()
+                if block.placement_section == required_section
+            ]
+            if not available_ids:
+                continue
+            if any(slot_id in used_slot_ids for slot_id in available_ids):
+                continue
+            logger.info(
+                "visual.paper_required_section_missing conversation_id=%s section=%s available=True used=False",
+                conversation_id,
+                required_section,
+            )
 
     @staticmethod
     def _slot_visual_intent(slot: PlannedImageSlot) -> str:

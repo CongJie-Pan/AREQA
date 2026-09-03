@@ -147,6 +147,8 @@ class PdfVisualCandidate:
             pedagogical_score=min(1.0, max(self.visual_quality_score, 0.55 + (self.visual_score / 20))),
             vision_limitations=vision_limitations,
             vision_source="unavailable",
+            placement_section=self.answer_section,
+            planner_hint=self.teaching_caption,
             transient=True,
         )
 
