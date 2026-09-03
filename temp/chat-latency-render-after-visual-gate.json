@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "mode": "live",
+  "generated_at_epoch": 1788417644,
+  "configuration": {
+    "runs": 1,
+    "warmup": 0,
+    "backend_url": "https://areqa-backend-v9ln.onrender.com",
+    "authenticated": false
+  },
+  "summary": {
+    "baseline": {
+      "runs": 1,
+      "first_content_median_ms": 7656.48,
+      "first_content_p95_ms": 7656.48,
+      "completed_median_ms": 8719.17,
+      "completed_p95_ms": 8719.17,
+      "first_visible_status_median_ms": 1043.66,
+      "avg_completion_calls": 0,
+      "avg_embedding_calls": 0,
+      "avg_memory_queries": 0,
+      "ttft_improvement_percent": 0.0
+    }
+  },
+  "runs": [
+    {
+      "mode": "live",
+      "variant": "baseline",
+      "prompt_kind": "general",
+      "first_event_ms": 1042.960122000295,
+      "first_visible_status_ms": 1043.6589440005264,
+      "main_model_start_ms": null,
+      "first_content_ms": 7656.483613000091,
+      "completed_ms": 8719.170014000156,
+      "completion_calls": 0,
+      "embedding_calls": 0,
+      "memory_queries": 0,
+      "event_counts": {
+        "metadata": 1,
+        "status": 8,
+        "action": 1,
+        "message": 2,
+        "done": 1
+      },
+      "request_id": "latency-benchmark-1788417636254",
+      "conversation_id": "latency-benchmark-1788417636254",
+      "event_first_seen_ms": {
+        "action": 1043.7284930003443,
+        "done": 8718.400991000635,
+        "message": 7656.483613000091,
+        "metadata": 1042.960122000295,
+        "status": 1043.6589440005264
+      }
+    }
+  ]
+}
