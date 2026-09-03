@@ -5,7 +5,7 @@ Measured runs: `1`
 
 | Variant | Runs | First content median | First content p95 | Completed median | Visible status | TTFT improvement |
 |---|---:|---:|---:|---:|---:|---:|
-| baseline | 1 | 7656.48 ms | 7656.48 ms | 8719.17 ms | 1043.66 ms | 0.00% |
+| baseline | 1 | 8545.45 ms | 8545.45 ms | 9554.67 ms | 2070.61 ms | 0.00% |
 
 > Live results measure client-visible SSE timings; internal phase attribution requires server logs from `orchestration.turn_trace_summary`.
 
