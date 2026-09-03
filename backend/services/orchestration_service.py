@@ -576,7 +576,14 @@ class OrchestrationService:
         policy = response_policy.legacy_policy
         if policy_task:
             try:
-                policy_result = await asyncio.wait_for(policy_task, timeout=1.5)
+                policy_timeout_seconds = (
+                    max(int(getattr(settings, "policy_classifier_timeout_ms", 700)), 1)
+                    / 1000
+                )
+                policy_result = await asyncio.wait_for(
+                    policy_task,
+                    timeout=policy_timeout_seconds,
+                )
                 response_policy = (
                     policy_result
                     if hasattr(policy_result, "legacy_policy")
@@ -644,6 +651,7 @@ class OrchestrationService:
             turn_plan=turn_plan if turn_plan_enabled else None,
             response_policy=response_policy,
             interface_language=interface_language,
+            has_attachments=has_attachments,
         )
         trace.mark("prompt_assembly_finished")
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
@@ -1398,7 +1406,7 @@ class OrchestrationService:
             trace.mark("web_search_finished")
         yield "event: results_obj\n\n"
 
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW") -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", has_attachments: bool = False) -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -1425,9 +1433,30 @@ class OrchestrationService:
 
         parts_context = None
         if settings.enable_parts_prompt_context:
+            enable_parts_llm_rewrite = self._should_run_parts_llm_rewrite(
+                global_enabled=settings.enable_parts_llm_rewrite,
+                turn_plan=turn_plan,
+                response_policy=response_policy,
+                use_rag=use_rag,
+                use_web_search=use_web_search,
+                has_attachments=has_attachments,
+                allow_ungrounded=getattr(
+                    settings,
+                    "enable_parts_llm_rewrite_for_ungrounded_turns",
+                    False,
+                ),
+            )
+            logger.info(
+                "parts_context.rewrite_gate conversation_id=%s enabled=%s route=%s grounded=%s allow_ungrounded=%s",
+                conversation_id,
+                enable_parts_llm_rewrite,
+                self._turn_plan_route_name(turn_plan),
+                bool(use_rag or use_web_search or has_attachments),
+                bool(getattr(settings, "enable_parts_llm_rewrite_for_ungrounded_turns", False)),
+            )
             if trace:
                 trace.mark("parts_context_started")
-                if settings.enable_parts_llm_rewrite and self.client:
+                if enable_parts_llm_rewrite and self.client:
                     trace.increment_model_call("parts_context_rewrite")
             parts_context = await self.parts_context_service.build(
                 user_message=last_user_msg,
@@ -1436,9 +1465,10 @@ class OrchestrationService:
                 turn_plan=turn_plan,
                 use_rag=use_rag,
                 use_web_search=use_web_search,
+                has_attachments=has_attachments,
                 client=self.client,
                 model=settings.model_policy_classifier,
-                enable_llm_rewrite=settings.enable_parts_llm_rewrite,
+                enable_llm_rewrite=enable_parts_llm_rewrite,
                 timeout_ms=settings.parts_rewrite_timeout_ms,
                 enable_debug_logs=settings.enable_parts_prompt_debug_logs,
             )
@@ -1484,6 +1514,68 @@ class OrchestrationService:
             context.retrieved_memory,
         )
         return context.messages
+
+    @staticmethod
+    def _should_run_parts_llm_rewrite(
+        *,
+        global_enabled: bool,
+        turn_plan: Optional[TurnPlan],
+        response_policy: Any,
+        use_rag: bool,
+        use_web_search: bool,
+        has_attachments: bool,
+        allow_ungrounded: bool,
+    ) -> bool:
+        """Return whether PARTS should spend a blocking rewrite model call.
+
+        Args:
+            global_enabled: Runtime kill switch for all PARTS LLM rewrites.
+            turn_plan: Optional foreground plan selected for this turn.
+            response_policy: Structured response policy already selected or
+                defaulted for prompt assembly.
+            use_rag: Whether local RAG context is active.
+            use_web_search: Whether web search context is active.
+            has_attachments: Whether request-scoped attachments are active.
+            allow_ungrounded: Rollout flag for spending rewrite cost on turns
+                without document, retrieval, web, or attachment grounding.
+
+        Returns:
+            ``True`` only when the rewrite has grounding value that justifies
+            delaying the first token, unless explicitly re-enabled for
+            ungrounded turns.
+
+        Side Effects:
+            None. The caller emits ``parts_context.rewrite_gate`` with safe
+            route and boolean metadata only.
+        """
+
+        if not global_enabled:
+            return False
+        if allow_ungrounded:
+            return True
+        attachment_task = getattr(response_policy, "attachment_task", AttachmentTask.NONE)
+        attachment_task_value = getattr(attachment_task, "value", attachment_task)
+        route_name = OrchestrationService._turn_plan_route_name(turn_plan)
+        grounded_routes = {
+            "ATTACHMENT_GROUNDED",
+            "RAG_EXPLICIT",
+            "WEB_REQUIRED",
+        }
+        return bool(
+            use_rag
+            or use_web_search
+            or has_attachments
+            or route_name in grounded_routes
+            or attachment_task_value != AttachmentTask.NONE.value
+        )
+
+    @staticmethod
+    def _turn_plan_route_name(turn_plan: Optional[TurnPlan]) -> str:
+        """Return a safe route name for logs and latency gates."""
+
+        route = getattr(turn_plan, "route", None)
+        value = getattr(route, "value", route)
+        return str(value or "UNKNOWN")
 
     @staticmethod
     def _recent_conversation_context(messages: List[Dict[str, Any]], max_turns: int = 5) -> str:

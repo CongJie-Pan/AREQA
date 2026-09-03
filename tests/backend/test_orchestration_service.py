@@ -1440,6 +1440,7 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
 
     monkeypatch.setattr(runtime_config.settings, "enable_parts_prompt_context", True)
     monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite_for_ungrounded_turns", True)
     monkeypatch.setattr(runtime_config.settings, "parts_rewrite_timeout_ms", 321)
     monkeypatch.setattr(runtime_config.settings, "enable_parts_prompt_debug_logs", True)
     monkeypatch.setattr(runtime_config.settings, "model_policy_classifier", "policy-model")
@@ -1514,6 +1515,105 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
     assert parts_kwargs["enable_debug_logs"] is True
     context_kwargs = service.context_service.build_conversation_context.await_args.kwargs
     assert context_kwargs["parts_context"] == parts_context
+
+
+@pytest.mark.asyncio
+async def test_prompt_assembly_skips_ungrounded_parts_llm_rewrite_by_default(
+    mock_router, mock_rag, mock_client, monkeypatch, caplog
+):
+    """Ungrounded turns should keep PARTS context without spending rewrite cost."""
+
+    import config as runtime_config
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_prompt_context", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite_for_ungrounded_turns", False)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    service.context_service.build_conversation_context = AsyncMock(
+        return_value=ConversationContext(
+            messages=[{"role": "user", "content": "answer"}],
+            learner_understanding="unknown",
+            retrieved_memory=False,
+        )
+    )
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        legacy_policy="NORMAL",
+    )
+
+    with patch("memory_store.get_global_store", return_value=None):
+        await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="ungrounded-parts-conv",
+            messages=[{"role": "user", "content": "請解釋第二次世界大戰主因"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="請解釋第二次世界大戰主因",
+            response_policy=response_policy,
+        )
+
+    mock_client.chat.completions.create.assert_not_awaited()
+    context_kwargs = service.context_service.build_conversation_context.await_args.kwargs
+    assert context_kwargs["parts_context"] is not None
+    assert "parts_context.rewrite_gate" in caplog.text
+    assert "enabled=False" in caplog.text
+    assert "route=UNKNOWN" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_prompt_assembly_allows_attachment_parts_llm_rewrite(
+    mock_router, mock_rag, mock_client, monkeypatch
+):
+    """Attachment-grounded turns may spend rewrite cost before generation."""
+
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_prompt_context", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite", True)
+    monkeypatch.setattr(runtime_config.settings, "enable_parts_llm_rewrite_for_ungrounded_turns", False)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    service.context_service.build_conversation_context = AsyncMock(
+        return_value=ConversationContext(
+            messages=[{"role": "user", "content": "answer"}],
+            learner_understanding="unknown",
+            retrieved_memory=False,
+        )
+    )
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.EXPLAIN_TEXT,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+        attachment_task=AttachmentTask.PAPER_TARGETED_QA,
+        attachment_reason=AttachmentReason.TARGETED_ATTACHMENT_TASK,
+        legacy_policy="NORMAL",
+    )
+
+    with patch("memory_store.get_global_store", return_value=None):
+        await service._node_prompt_assembly(
+            user_id="u1",
+            conversation_id="attachment-parts-conv",
+            messages=[{"role": "user", "content": "請解釋這段 method"}],
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            context_results_obj=None,
+            last_user_msg="請解釋這段 method",
+            response_policy=response_policy,
+            has_attachments=True,
+        )
+
+    assert mock_client.chat.completions.create.await_count == 1
+    context_kwargs = service.context_service.build_conversation_context.await_args.kwargs
+    assert context_kwargs["parts_context"] is not None
 
 
 @pytest.mark.asyncio

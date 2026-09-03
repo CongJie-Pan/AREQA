@@ -32,9 +32,11 @@ class Settings(BaseSettings):
     foreground_model_call_budget_general: int = 2
     foreground_model_call_budget_learning: int = 3
     enable_policy_classifier_for_general_chat: bool = True
+    policy_classifier_timeout_ms: int = 700
     enable_sync_long_term_memory_for_general_chat: bool = False
     enable_parts_prompt_context: bool = True
     enable_parts_llm_rewrite: bool = True
+    enable_parts_llm_rewrite_for_ungrounded_turns: bool = False
     parts_rewrite_timeout_ms: int = 2500
     enable_parts_prompt_debug_logs: bool = False
     enable_production_turn_trace_summary: bool = True
