@@ -37,7 +37,7 @@ describe('ChatContainer mobile viewport styles', () => {
     );
 
     const messageAreaIndex = chatContainer.indexOf('areqa-chat-message-area');
-    const liveTutorIndex = chatContainer.indexOf('<LiveTutorPanel activeConversationId={activeConversationId} />');
+    const liveTutorIndex = chatContainer.indexOf('<LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />');
     const inputAreaIndex = chatContainer.indexOf('areqa-chat-input-area');
 
     expect(messageAreaIndex).toBeGreaterThan(-1);
@@ -52,8 +52,12 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(chatContainer).toContain('areqa-chat-message-area-live-tutor');
     expect(chatContainerStyles).toContain('contentLiveTutor');
     expect(chatContainerStyles).toContain('messageAreaLiveTutor');
-    expect(chatContainerStyles).toContain('flex-basis: 0;');
+    expect(chatContainerStyles).toContain('messageAreaLiveTutorEmpty');
+    expect(chatContainer).toContain('!isEmptyLiveTutor && (');
+    expect(liveTutorPanel).not.toContain('transcriptText');
+    expect(liveTutorPanel).not.toContain('secondaryTranscript');
     expect(liveTutorStyles).toContain('flex: 1 1 auto;');
+    expect(liveTutorStyles).toContain('width: clamp(76px, 8vw, 108px);');
     expect(liveTutorStyles).toContain('--live-tutor-audio-scale');
     expect(liveTutorStyles).toContain('scale(var(--live-tutor-audio-scale))');
   });
@@ -70,5 +74,6 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(microphoneRequestIndex).toBeGreaterThan(-1);
     expect(sessionRequestIndex).toBeGreaterThan(microphoneRequestIndex);
     expect(realtimeClient).toContain('Microphone permission denied');
+    expect(realtimeClient).toContain('microphone_insecure_context');
   });
 });

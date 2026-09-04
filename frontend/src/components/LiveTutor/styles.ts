@@ -19,15 +19,20 @@ export const useStyles = createStyles(({ css }) => ({
     flex: 1 1 auto;
     flex-direction: column;
     overflow: hidden;
-    padding: clamp(10px, 1.6vw, 18px) clamp(16px, 4vw, 44px);
-    background:
-      radial-gradient(circle at 50% 62%, color-mix(in srgb, #7f8cff 12%, transparent), transparent 16rem),
-      var(--background);
+    padding: 8px clamp(16px, 4vw, 44px) 12px;
+    background: var(--background);
     color: var(--foreground);
 
-    @media (max-width: 640px) {
-      padding: 10px 26px 16px;
-      background: var(--background);
+    @media (max-width: 768px) {
+      padding: 8px 18px 10px;
+    }
+  `,
+
+  panelWithMessages: css`
+    flex: 0 0 clamp(150px, 25dvh, 230px);
+
+    @media (max-width: 768px) {
+      flex-basis: clamp(150px, 24dvh, 210px);
     }
   `,
 
@@ -38,7 +43,7 @@ export const useStyles = createStyles(({ css }) => ({
     justify-content: space-between;
     gap: 12px;
 
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       min-height: 38px;
     }
   `,
@@ -47,35 +52,12 @@ export const useStyles = createStyles(({ css }) => ({
     display: grid;
     min-height: 0;
     flex: 1 1 auto;
-    grid-template-rows: minmax(0, auto) auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     align-items: center;
-    padding-bottom: clamp(6px, 2vh, 22px);
+    padding-bottom: 4px;
 
-    @media (max-width: 640px) {
-      grid-template-rows: minmax(0, 1fr) auto minmax(0, 2.2fr);
+    @media (max-width: 768px) {
       padding-bottom: 0;
-    }
-  `,
-
-  captionArea: css`
-    display: flex;
-    width: min(980px, 100%);
-    min-width: 0;
-    flex-direction: column;
-    gap: 8px;
-    justify-self: center;
-    align-self: start;
-    overflow-y: auto;
-    padding-top: 4px;
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--foreground) 28%, transparent) transparent;
-
-    @media (max-width: 640px) {
-      max-height: 86px;
-      gap: 8px;
-      align-self: end;
-      padding-top: 0;
-      text-align: center;
     }
   `,
 
@@ -85,50 +67,28 @@ export const useStyles = createStyles(({ css }) => ({
     font-weight: 600;
     letter-spacing: 0;
 
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       font-size: 12px;
     }
   `,
 
-  transcriptText: css`
-    color: var(--foreground);
-    font-size: clamp(15px, 1.6vw, 20px);
-    font-weight: 500;
-    line-height: 1.55;
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
-  `,
-
-  secondaryTranscript: css`
-    max-width: 760px;
-    color: color-mix(in srgb, var(--foreground) 58%, transparent);
-    font-size: clamp(13px, 1.25vw, 15px);
-    line-height: 1.55;
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
-  `,
-
   voiceCore: css`
     display: grid;
-    min-height: clamp(150px, 26vh, 300px);
+    min-height: 0;
+    grid-row: 2;
     place-items: center;
     align-self: center;
     justify-self: center;
-
-    @media (max-width: 640px) {
-      min-height: clamp(240px, 42dvh, 460px);
-      align-self: center;
-    }
   `,
 
   logoOrb: css`
     position: relative;
-    width: clamp(132px, 15vw, 220px);
+    width: clamp(76px, 8vw, 108px);
     aspect-ratio: 1;
     border-radius: 50%;
     box-shadow:
-      0 16px 42px rgba(17, 24, 39, 0.16),
-      0 0 calc(20px + var(--live-tutor-audio-level) * 46px) rgba(127, 140, 255, 0.34);
+      0 10px 28px rgba(17, 24, 39, 0.14),
+      0 0 calc(12px + var(--live-tutor-audio-level) * 32px) rgba(127, 140, 255, 0.3);
     transform: scale(var(--live-tutor-audio-scale)) translateZ(0);
     transform-origin: center;
     transition: transform 90ms linear, box-shadow 120ms linear;
@@ -145,11 +105,11 @@ export const useStyles = createStyles(({ css }) => ({
       z-index: -1;
     }
 
-    @media (max-width: 640px) {
-      width: clamp(214px, 54vw, 300px);
+    @media (max-width: 768px) {
+      width: clamp(88px, 24vw, 116px);
       box-shadow:
-        0 18px 54px rgba(17, 24, 39, 0.12),
-        0 0 calc(24px + var(--live-tutor-audio-level) * 56px) rgba(127, 140, 255, 0.32);
+        0 12px 34px rgba(17, 24, 39, 0.12),
+        0 0 calc(14px + var(--live-tutor-audio-level) * 36px) rgba(127, 140, 255, 0.3);
     }
   `,
 
@@ -184,7 +144,7 @@ export const useStyles = createStyles(({ css }) => ({
     align-items: center;
     gap: 8px;
 
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       gap: 6px;
     }
   `,
@@ -208,7 +168,7 @@ export const useStyles = createStyles(({ css }) => ({
       transform: translateY(-1px);
     }
 
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       width: 36px;
       height: 36px;
     }
@@ -232,30 +192,54 @@ export const useStyles = createStyles(({ css }) => ({
       transform: translateY(-1px);
     }
 
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       width: 38px;
       height: 38px;
     }
   `,
 
-  error: css`
+  errorRow: css`
+    display: flex;
     width: min(680px, 100%);
+    align-items: center;
+    grid-row: 1;
     justify-self: center;
-    margin: 10px 0;
-    padding: 9px 14px;
+    gap: 8px;
+    padding: 4px 0;
+  `,
+
+  error: css`
+    min-width: 0;
+    flex: 1;
+    padding: 8px 12px;
     border: 1px solid rgba(255, 92, 92, 0.46);
-    border-radius: 999px;
+    border-radius: 6px;
     background: rgba(180, 52, 52, 0.18);
     color: #ffd7d7;
     font-size: 13px;
     line-height: 1.45;
     text-align: center;
 
-    @media (max-width: 640px) {
-      width: 100%;
-      margin: 8px 0 4px;
-      border-radius: 18px;
+    @media (max-width: 768px) {
       font-size: 13px;
+    }
+  `,
+
+  retryButton: css`
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--foreground);
+    cursor: pointer;
+
+    &:hover {
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
     }
   `,
 }));

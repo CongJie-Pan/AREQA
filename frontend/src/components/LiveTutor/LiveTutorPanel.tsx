@@ -10,18 +10,25 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Mic, MicOff, X } from 'lucide-react';
+import { Mic, MicOff, RotateCcw, X } from 'lucide-react';
 import Image from 'next/image';
 import { Tooltip } from 'antd';
 import { useStyles } from './styles';
-import { startRealtimeClient, type RealtimeClientController, type RealtimeStatus } from '@/services/realtime';
-import { useChatStore, type DisplayMessage } from '@/store/chat';
+import {
+  RealtimeClientError,
+  startRealtimeClient,
+  type RealtimeClientController,
+  type RealtimeStatus,
+} from '@/services/realtime';
+import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
 import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { logger } from '@/utils/logger';
+import { selectLiveTutorConversationId, selectLiveTutorMessages } from './session';
 
 const STATUS_LABELS = {
   'zh-TW': {
@@ -59,38 +66,38 @@ const STATUS_LABELS = {
 const COPY = {
   'zh-TW': {
     title: 'AREQA 即時語音',
-    you: '你說',
-    areqa: 'AREQA 回應',
-    emptyUser: '開始說話後，這裡會顯示辨識文字。',
-    emptyAssistant: 'AREQA 的語音回覆字幕會顯示在這裡。',
     mute: '靜音',
     unmute: '取消靜音',
     end: '結束語音',
-    permissionDenied: '請允許瀏覽器使用麥克風，才能開始即時語音。',
+    retry: '重新連線',
+    permissionDenied: '麥克風權限已被封鎖，請在瀏覽器網站設定中允許後重試。',
+    insecureContext: '麥克風只能在 HTTPS 安全連線中使用。',
+    microphoneUnavailable: '找不到可用的麥克風。',
+    microphoneBusy: '麥克風目前無法使用，請關閉其他錄音程式後重試。',
     setupFailed: '無法啟動即時語音，請確認麥克風權限、OpenAI Realtime 權限或稍後再試。',
   },
   'zh-CN': {
     title: 'AREQA 即时语音',
-    you: '你说',
-    areqa: 'AREQA 回应',
-    emptyUser: '开始说话后，这里会显示识别文字。',
-    emptyAssistant: 'AREQA 的语音回复字幕会显示在这里。',
     mute: '静音',
     unmute: '取消静音',
     end: '结束语音',
-    permissionDenied: '请允许浏览器使用麦克风，才能开始即时语音。',
+    retry: '重新连接',
+    permissionDenied: '麦克风权限已被阻止，请在浏览器网站设置中允许后重试。',
+    insecureContext: '麦克风只能在 HTTPS 安全连接中使用。',
+    microphoneUnavailable: '找不到可用的麦克风。',
+    microphoneBusy: '麦克风目前无法使用，请关闭其他录音程序后重试。',
     setupFailed: '无法启动即时语音，请确认麦克风权限、OpenAI Realtime 权限或稍后再试。',
   },
   en: {
     title: 'AREQA Live Voice',
-    you: 'You said',
-    areqa: 'AREQA replied',
-    emptyUser: 'Your recognized speech will appear here.',
-    emptyAssistant: "AREQA's spoken reply captions will appear here.",
     mute: 'Mute',
     unmute: 'Unmute',
     end: 'End voice',
-    permissionDenied: 'Allow microphone access in your browser to start live voice.',
+    retry: 'Reconnect',
+    permissionDenied: 'Microphone access is blocked. Allow it in browser site settings, then retry.',
+    insecureContext: 'Microphone access requires a secure HTTPS connection.',
+    microphoneUnavailable: 'No microphone is available.',
+    microphoneBusy: 'The microphone is unavailable. Close other recording apps and retry.',
     setupFailed: 'Unable to start live voice. Check microphone permission, OpenAI Realtime access, or try again later.',
   },
 } as const;
@@ -103,17 +110,22 @@ function conversationPreview(content: string): string {
   return content.slice(0, 100);
 }
 
-function isMicrophonePermissionError(error: Error): boolean {
-  return error.name === 'NotAllowedError'
-    || error.name === 'SecurityError'
-    || error.message.toLowerCase().includes('permission');
-}
-
 export interface LiveTutorPanelProps {
   activeConversationId?: string | null;
+  hasMessages?: boolean;
 }
 
-export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
+/**
+ * Renders and owns one conversation-bound browser Realtime voice session.
+ *
+ * Final transcripts are written to the normal chat store; the panel deliberately
+ * renders no duplicate transcript surface. Safe lifecycle logs contain ids and
+ * counts only, never speech or model output.
+ *
+ * @param props - Active conversation and whether normal messages are visible.
+ * @returns The inline voice panel, or `null` while voice mode is closed.
+ */
+export function LiveTutorPanel({ activeConversationId, hasMessages = false }: LiveTutorPanelProps) {
   const { styles, cx } = useStyles();
   const { language } = useUserPreferences();
   const labels = COPY[language];
@@ -121,7 +133,7 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const controllerRef = useRef<RealtimeClientController | null>(null);
-  const conversationIdRef = useRef<string>(activeConversationId || '');
+  const conversationIdRef = useRef('');
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantTranscriptRef = useRef('');
   const hasStartedRef = useRef(false);
@@ -130,15 +142,10 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   const isOpen = useLiveTutorStore((state) => state.isOpen);
   const status = useLiveTutorStore((state) => state.status);
   const isMuted = useLiveTutorStore((state) => state.isMuted);
-  const userTranscript = useLiveTutorStore((state) => state.userTranscript);
-  const assistantTranscript = useLiveTutorStore((state) => state.assistantTranscript);
   const error = useLiveTutorStore((state) => state.error);
   const close = useLiveTutorStore((state) => state.close);
   const setStatus = useLiveTutorStore((state) => state.setStatus);
   const setMuted = useLiveTutorStore((state) => state.setMuted);
-  const setUserTranscript = useLiveTutorStore((state) => state.setUserTranscript);
-  const setAssistantTranscript = useLiveTutorStore((state) => state.setAssistantTranscript);
-  const appendAssistantTranscript = useLiveTutorStore((state) => state.appendAssistantTranscript);
   const setError = useLiveTutorStore((state) => state.setError);
   const resetTranscript = useLiveTutorStore((state) => state.resetTranscript);
 
@@ -148,18 +155,15 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   const createConversation = useConversationStore((state) => state.createConversation);
   const selectConversation = useConversationStore((state) => state.selectConversation);
 
-  useEffect(() => {
-    if (activeConversationId && !conversationIdRef.current) {
-      conversationIdRef.current = activeConversationId;
-    }
-  }, [activeConversationId]);
-
   const ensureConversationId = useCallback(async (): Promise<string> => {
-    if (conversationIdRef.current) return conversationIdRef.current;
-    const currentActiveConversationId = useConversationStore.getState().activeConversationId;
-    if (currentActiveConversationId) {
-      conversationIdRef.current = currentActiveConversationId;
-      return currentActiveConversationId;
+    const chatMessages = useChatStore.getState().messages;
+    const selectedConversationId = selectLiveTutorConversationId(
+      useConversationStore.getState().activeConversationId,
+      chatMessages,
+    );
+    if (selectedConversationId) {
+      conversationIdRef.current = selectedConversationId;
+      return selectedConversationId;
     }
     if (canPersistHistory()) {
       const createdId = await createConversation();
@@ -183,41 +187,22 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     });
   }, []);
 
-  const persistTranscript = useCallback(async (
-    role: 'user' | 'assistant',
+  const persistUserTranscript = useCallback(async (
     content: string,
+    conversationId: string,
   ) => {
     const trimmed = content.trim();
     if (!trimmed) return;
-    const conversationId = await ensureConversationId();
-    if (role === 'user') {
-      const userMessageId = addUserMessage(trimmed, conversationId);
-      bumpConversationPreview(conversationId, trimmed);
-      if (canPersistHistory()) {
-        await databaseService.message.add(conversationId, {
-          id: userMessageId,
-          role: 'user',
-          content: trimmed,
-        });
-      }
-      return;
-    }
-
-    const assistantMessageId = assistantMessageIdRef.current ?? addAssistantMessage(conversationId);
-    assistantMessageIdRef.current = null;
-    updateAssistantMessage(assistantMessageId, {
-      content: trimmed,
-      isStreaming: false,
-    });
+    const userMessageId = addUserMessage(trimmed, conversationId);
     bumpConversationPreview(conversationId, trimmed);
     if (canPersistHistory()) {
       await databaseService.message.add(conversationId, {
-        id: assistantMessageId,
-        role: 'assistant',
+        id: userMessageId,
+        role: 'user',
         content: trimmed,
       });
     }
-  }, [addAssistantMessage, addUserMessage, bumpConversationPreview, ensureConversationId, updateAssistantMessage]);
+  }, [addUserMessage, bumpConversationPreview]);
 
   const finalizeAssistantDraft = useCallback((
     conversationId: string,
@@ -251,14 +236,19 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
     isCancelledRef.current = false;
+    conversationIdRef.current = '';
     resetTranscript();
     setError(null);
     const conversationId = await ensureConversationId();
+    logger.info('realtime.voice_session_bound', {
+      component: 'LiveTutorPanel',
+      conversationId,
+      contextMessageCount: selectLiveTutorMessages(useChatStore.getState().messages, conversationId).length,
+    });
     const controller = await startRealtimeClient({
       conversationId,
       interfaceLanguage: language,
-      recentMessages: () => useChatStore.getState().messages
-        .filter((message: DisplayMessage) => message.conversationId === conversationId),
+      recentMessages: () => selectLiveTutorMessages(useChatStore.getState().messages, conversationId),
       onRemoteStream: (stream) => {
         if (isCancelledRef.current) return;
         if (audioRef.current) {
@@ -278,13 +268,11 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
       onAssistantResponseStarted: () => {
         if (isCancelledRef.current) return;
         finalizeAssistantDraft(conversationId);
-        setAssistantTranscript('');
       },
       onUserTranscript: (transcript) => {
         if (isCancelledRef.current) return;
         finalizeAssistantDraft(conversationId);
-        setUserTranscript(transcript);
-        void persistTranscript('user', transcript);
+        void persistUserTranscript(transcript, conversationId);
       },
       onAssistantTranscriptDelta: (delta) => {
         if (isCancelledRef.current) return;
@@ -292,7 +280,6 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
           assistantMessageIdRef.current = addAssistantMessage(conversationId);
         }
         assistantTranscriptRef.current += delta;
-        appendAssistantTranscript(delta);
         updateAssistantMessage(assistantMessageIdRef.current, {
           content: assistantTranscriptRef.current,
           isStreaming: true,
@@ -300,13 +287,19 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
       },
       onAssistantTranscriptDone: (transcript) => {
         if (isCancelledRef.current) return;
-        setAssistantTranscript(transcript);
         finalizeAssistantDraft(conversationId, transcript);
       },
       onError: (nextError) => {
         if (isCancelledRef.current) return;
-        const message = isMicrophonePermissionError(nextError)
-          ? labels.permissionDenied
+        const localizedErrors = {
+          microphone_denied: labels.permissionDenied,
+          microphone_insecure_context: labels.insecureContext,
+          microphone_unavailable: labels.microphoneUnavailable,
+          microphone_busy: labels.microphoneBusy,
+          provider_error: nextError.message,
+        } as const;
+        const message = nextError instanceof RealtimeClientError
+          ? localizedErrors[nextError.code]
           : nextError.message || labels.setupFailed;
         setError(message);
       },
@@ -317,19 +310,19 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     }
     controllerRef.current = controller;
   }, [
-    appendAssistantTranscript,
     addAssistantMessage,
     ensureConversationId,
     finalizeAssistantDraft,
+    labels.insecureContext,
+    labels.microphoneBusy,
+    labels.microphoneUnavailable,
     labels.permissionDenied,
     labels.setupFailed,
     language,
-    persistTranscript,
+    persistUserTranscript,
     resetTranscript,
-    setAssistantTranscript,
     setError,
     setStatus,
-    setUserTranscript,
     updateAssistantMessage,
   ]);
 
@@ -341,6 +334,7 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     hasStartedRef.current = false;
     assistantMessageIdRef.current = null;
     assistantTranscriptRef.current = '';
+    conversationIdRef.current = '';
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     panelRef.current?.style.setProperty('--live-tutor-audio-level', '0');
     setStatus('idle');
@@ -350,6 +344,11 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     stop();
     close();
   }, [close, stop]);
+
+  const handleRetry = useCallback(() => {
+    stop();
+    void start();
+  }, [start, stop]);
 
   const handleMute = useCallback(() => {
     const nextMuted = !isMuted;
@@ -365,18 +364,28 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     };
   }, [isOpen, start, stop]);
 
+  useEffect(() => {
+    const sessionConversationId = conversationIdRef.current;
+    if (!isOpen || !sessionConversationId || activeConversationId === sessionConversationId) return;
+    logger.info('realtime.voice_session_closed_on_conversation_change', {
+      component: 'LiveTutorPanel',
+      conversationId: sessionConversationId,
+    });
+    handleClose();
+  }, [activeConversationId, handleClose, isOpen]);
+
   const isActiveAudio = useMemo(() => (
     status === 'listening' || status === 'thinking' || status === 'speaking'
   ), [status]);
 
   if (!isOpen) return null;
 
-  const primaryCaption = assistantTranscript || userTranscript || statusLabels[status];
-  const captionText = error ? (assistantTranscript || userTranscript) : primaryCaption;
-  const secondaryCaption = assistantTranscript && userTranscript ? userTranscript : '';
-
   return (
-    <section ref={panelRef} className={styles.panel} aria-label={labels.title}>
+    <section
+      ref={panelRef}
+      className={cx(styles.panel, hasMessages && styles.panelWithMessages)}
+      aria-label={labels.title}
+    >
       <div className={styles.header}>
         <div className={styles.status}>{statusLabels[status]}</div>
         <div className={styles.controlCluster}>
@@ -394,16 +403,16 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
       </div>
 
       <div className={styles.body}>
-        {captionText && (
-          <div className={styles.captionArea}>
-            <div className={styles.transcriptText}>{captionText}</div>
-            {secondaryCaption && (
-              <div className={styles.secondaryTranscript}>{secondaryCaption}</div>
-            )}
+        {error && (
+          <div className={styles.errorRow}>
+            <div className={styles.error}>{error}</div>
+            <Tooltip title={labels.retry} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+              <button type="button" className={styles.retryButton} onClick={handleRetry} aria-label={labels.retry}>
+                <RotateCcw size={17} />
+              </button>
+            </Tooltip>
           </div>
         )}
-
-        {error && <div className={styles.error}>{error}</div>}
 
         <div className={styles.voiceCore} aria-hidden>
           <div className={cx(styles.logoOrb, isActiveAudio && styles.logoOrbActive)}>

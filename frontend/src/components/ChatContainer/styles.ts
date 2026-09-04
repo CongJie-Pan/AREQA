@@ -214,17 +214,17 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   messageAreaLiveTutor: css`
-    flex: 0 1 clamp(112px, 24vh, 260px);
-    min-height: 96px;
+    flex: 1 1 auto;
+    min-height: 0;
+  `,
 
-    @media (max-width: 768px) {
-      height: 0;
-      min-height: 0;
-      flex-basis: 0;
-      overflow: hidden;
-      opacity: 0;
-      pointer-events: none;
-    }
+  messageAreaLiveTutorEmpty: css`
+    height: 0;
+    min-height: 0;
+    flex: 0 0 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
   `,
 
   inputArea: css`

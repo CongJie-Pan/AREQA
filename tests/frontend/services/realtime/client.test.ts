@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import { startRealtimeClient } from '@/services/realtime/client';
+import { RealtimeClientError, startRealtimeClient } from '@/services/realtime/client';
 
 vi.mock('@/services/authenticatedFetch', () => ({
   authenticatedFetch: vi.fn(),
@@ -48,6 +48,37 @@ function realtimeOptions(overrides: Partial<Parameters<typeof startRealtimeClien
     onError: vi.fn(),
     ...overrides,
   };
+}
+
+function installMicrophone(): { stream: MediaStream; stop: ReturnType<typeof vi.fn> } {
+  const stop = vi.fn();
+  const track = { stop, enabled: true };
+  const stream = {
+    getTracks: () => [track],
+    getAudioTracks: () => [track],
+  } as unknown as MediaStream;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => stream),
+      },
+    },
+  });
+  return { stream, stop };
+}
+
+function mockRealtimeSession(): void {
+  vi.mocked(authenticatedFetch).mockResolvedValueOnce(
+    new Response(JSON.stringify({
+      client_secret: 'ek_test',
+      model: 'gpt-realtime-2.1-mini',
+      voice: 'marin',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
 }
 
 describe('Realtime client lifecycle', () => {
@@ -101,25 +132,13 @@ describe('Realtime client lifecycle', () => {
 
     expect(authenticatedFetch).not.toHaveBeenCalled();
     expect(options.onError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'microphone_denied',
       message: 'Microphone permission denied',
     }));
   });
 
   it('stops microphone tracks when session creation fails after permission succeeds', async () => {
-    const stop = vi.fn();
-    const track = { stop, enabled: true };
-    const stream = {
-      getTracks: () => [track],
-      getAudioTracks: () => [track],
-    } as unknown as MediaStream;
-    Object.defineProperty(globalThis, 'navigator', {
-      configurable: true,
-      value: {
-        mediaDevices: {
-          getUserMedia: vi.fn(async () => stream),
-        },
-      },
-    });
+    const { stop } = installMicrophone();
     vi.mocked(authenticatedFetch).mockResolvedValue(
       new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
         status: 429,
@@ -133,30 +152,8 @@ describe('Realtime client lifecycle', () => {
   });
 
   it('emits assistant response boundaries before a new response appends transcript deltas', async () => {
-    const stop = vi.fn();
-    const track = { stop, enabled: true };
-    const stream = {
-      getTracks: () => [track],
-      getAudioTracks: () => [track],
-    } as unknown as MediaStream;
-    Object.defineProperty(globalThis, 'navigator', {
-      configurable: true,
-      value: {
-        mediaDevices: {
-          getUserMedia: vi.fn(async () => stream),
-        },
-      },
-    });
-    vi.mocked(authenticatedFetch).mockResolvedValue(
-      new Response(JSON.stringify({
-        client_secret: 'ek_test',
-        model: 'gpt-realtime-2.1-mini',
-        voice: 'marin',
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
+    installMicrophone();
+    mockRealtimeSession();
     const onAssistantResponseStarted = vi.fn();
     const onAssistantTranscriptDelta = vi.fn();
 
@@ -177,5 +174,67 @@ describe('Realtime client lifecycle', () => {
     expect(onAssistantResponseStarted.mock.invocationCallOrder[0]).toBeLessThan(
       onAssistantTranscriptDelta.mock.invocationCallOrder[0],
     );
+  });
+
+  it('completes one context tool call once when both provider completion events arrive', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ recent_messages: [], memory_items: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const recentMessages = () => [{
+      id: 'message-1',
+      userId: 'user-1',
+      conversationId: 'conv_123',
+      role: 'user' as const,
+      content: '請解釋這篇論文',
+      attachments: [{ name: 'paper.pdf', mediaType: 'application/pdf', sizeBytes: 123 }],
+      createdAt: new Date(),
+    }];
+
+    await startRealtimeClient(realtimeOptions({ recentMessages }));
+    const functionCall = {
+      call_id: 'call_123',
+      name: 'get_areqa_context',
+    };
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.function_call_arguments.done', ...functionCall }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.output_item.done', item: { type: 'function_call', ...functionCall } }),
+    });
+
+    await vi.waitFor(() => expect(lastPeerConnection?.channel.send).toHaveBeenCalledTimes(2));
+    expect(authenticatedFetch).toHaveBeenCalledTimes(2);
+    const contextRequest = vi.mocked(authenticatedFetch).mock.calls[1]?.[1];
+    expect(String(contextRequest?.body)).toContain('paper.pdf');
+    expect(lastPeerConnection?.channel.send).toHaveBeenLastCalledWith(expect.stringContaining('"tool_choice":"none"'));
+  });
+
+  it('surfaces a stable provider error code without exposing the provider message', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onError = vi.fn();
+
+    await startRealtimeClient(realtimeOptions({ onError }));
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          code: 'conversation_already_has_active_response',
+          message: 'sensitive provider details',
+        },
+      }),
+    });
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'provider_error',
+      message: 'Realtime provider error (conversation_already_has_active_response)',
+    } satisfies Partial<RealtimeClientError>));
   });
 });

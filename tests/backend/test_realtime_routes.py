@@ -32,7 +32,18 @@ def test_realtime_session_config_uses_allowed_mvp_model_and_context_tool():
     assert config["type"] == "realtime"
     assert config["model"] == "gpt-realtime-2.1-mini"
     assert config["audio"]["output"]["voice"] == "marin"
+    assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["tools"][0]["name"] == "get_areqa_context"
+    assert config["tool_choice"] == "required"
+
+
+def test_realtime_session_config_preserves_simplified_chinese_preference():
+    payload = RealtimeSessionRequest(interface_language="zh-CN")
+
+    config = _build_realtime_session_config(payload)
+
+    assert "Simplified Chinese" in config["instructions"]
+    assert "Simplified Chinese" in config["audio"]["input"]["transcription"]["prompt"]
 
 
 def test_realtime_session_rejects_unsupported_models():

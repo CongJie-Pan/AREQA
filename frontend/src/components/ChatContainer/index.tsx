@@ -107,6 +107,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const openLiveTutor = useLiveTutorStore((state) => state.open);
   const isLiveTutorOpen = useLiveTutorStore((state) => state.isOpen);
   const isEmpty = messages.length === 0;
+  const isEmptyLiveTutor = isLiveTutorOpen && isEmpty;
 
   const activeConversation = useConversationStore((state) =>
     conversationSelectors.activeConversation(state)
@@ -608,16 +609,19 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   isLiveTutorOpen && 'areqa-chat-message-area-live-tutor',
                   styles.messageArea,
                   isLiveTutorOpen && styles.messageAreaLiveTutor,
+                  isEmptyLiveTutor && styles.messageAreaLiveTutorEmpty,
                 )}
               >
-                <MessageList 
-                  onRegenerate={handleRegenerate} 
-                  onEdit={handleEdit} 
-                  onSelectSuggestion={handleSend}
-                />
+                {!isEmptyLiveTutor && (
+                  <MessageList
+                    onRegenerate={handleRegenerate}
+                    onEdit={handleEdit}
+                    onSelectSuggestion={handleSend}
+                  />
+                )}
               </div>
 
-              <LiveTutorPanel activeConversationId={activeConversationId} />
+              <LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />
 
               {/* Chat Input */}
               <div className={cx('areqa-chat-input-area', styles.inputArea)}>

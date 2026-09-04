@@ -10,10 +10,33 @@
 import { API_CONFIG } from '@/config/api';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import type { DisplayMessage } from '@/store/chat';
+import { logger } from '@/utils/logger';
 
 const OPENAI_REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 const MODEL = 'gpt-realtime-2.1-mini';
 const MAX_REALTIME_ERROR_BODY_CHARS = 500;
+const MAX_PROVIDER_ERROR_CODE_CHARS = 80;
+
+export type RealtimeClientErrorCode =
+  | 'microphone_denied'
+  | 'microphone_insecure_context'
+  | 'microphone_unavailable'
+  | 'microphone_busy'
+  | 'provider_error';
+
+/** Error with a stable code that the UI can localize without parsing text. */
+export class RealtimeClientError extends Error {
+  /**
+   * Creates a browser-safe Realtime error.
+   *
+   * @param code - Stable client-facing failure category.
+   * @param message - Safe diagnostic message without transcript or credentials.
+   */
+  constructor(public readonly code: RealtimeClientErrorCode, message: string) {
+    super(message);
+    this.name = 'RealtimeClientError';
+  }
+}
 
 export type RealtimeStatus =
   | 'connecting'
@@ -56,6 +79,11 @@ interface RealtimeEvent {
   call_id?: string;
   name?: string;
   arguments?: string;
+  error?: {
+    type?: string;
+    code?: string;
+    message?: string;
+  };
   item?: {
     type?: string;
     call_id?: string;
@@ -77,16 +105,50 @@ function realtimeFailureMessage(stage: 'session' | 'sdp', status: number, body =
   return `Realtime ${stage} failed (${status}).${details}`;
 }
 
-function microphonePermissionMessage(error: unknown): Error {
+/** Maps browser capture failures to stable, localizable error categories. */
+function microphoneAccessError(error: unknown): Error {
   const browserError = error instanceof Error ? error : new Error(String(error));
+  if (typeof window !== 'undefined' && window.isSecureContext === false) {
+    return new RealtimeClientError(
+      'microphone_insecure_context',
+      'Microphone access requires a secure HTTPS connection',
+    );
+  }
   if (
     browserError.name === 'NotAllowedError'
     || browserError.name === 'SecurityError'
     || browserError.message.toLowerCase().includes('permission')
   ) {
-    return new Error('Microphone permission denied');
+    return new RealtimeClientError('microphone_denied', 'Microphone permission denied');
+  }
+  if (browserError.name === 'NotFoundError') {
+    return new RealtimeClientError('microphone_unavailable', 'No microphone is available');
+  }
+  if (browserError.name === 'NotReadableError') {
+    return new RealtimeClientError('microphone_busy', 'The microphone is unavailable or already in use');
   }
   return browserError;
+}
+
+/**
+ * Converts an OpenAI data-channel error into a bounded client error.
+ *
+ * The stable `realtime.provider_error` warning records only provider error
+ * categories. Provider messages are intentionally excluded because they can
+ * contain request details.
+ *
+ * @param event - Realtime server error event.
+ * @returns A localized-UI-safe error with a stable category.
+ */
+function safeProviderError(event: RealtimeEvent): RealtimeClientError {
+  const rawCode = event.error?.code || event.error?.type || 'unknown';
+  const code = rawCode.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, MAX_PROVIDER_ERROR_CODE_CHARS) || 'unknown';
+  logger.warn('realtime.provider_error', {
+    provider: 'openai',
+    errorCode: code,
+    errorType: event.error?.type?.slice(0, MAX_PROVIDER_ERROR_CODE_CHARS) || 'unknown',
+  });
+  return new RealtimeClientError('provider_error', `Realtime provider error (${code})`);
 }
 
 async function readSafeErrorBody(response: Response): Promise<string> {
@@ -148,7 +210,7 @@ async function fetchAreqaContext(
         .slice(-12)
         .map((message) => ({
           role: message.role,
-          content: message.content.slice(0, 1200),
+          content: realtimeContextContent(message),
         })),
     }),
   });
@@ -158,20 +220,55 @@ async function fetchAreqaContext(
   return response.json();
 }
 
+/**
+ * Serializes user-visible message context without attachment bytes or URLs.
+ *
+ * @param message - Chat message owned by the bound conversation.
+ * @returns Bounded text plus sanitized attachment display names.
+ */
+function realtimeContextContent(message: DisplayMessage): string {
+  const attachmentNames = message.attachments
+    ?.map((attachment) => attachment.name.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  const attachmentContext = attachmentNames?.length
+    ? `\n[User-visible attachments: ${attachmentNames.join(', ')}]`
+    : '';
+  return `${message.content}${attachmentContext}`.slice(0, 1200);
+}
+
 function sendRealtimeEvent(channel: RTCDataChannel, payload: unknown): void {
   if (channel.readyState === 'open') {
     channel.send(JSON.stringify(payload));
   }
 }
 
+/**
+ * Resolves one context tool call and resumes the model without tools.
+ *
+ * @param event - Function-call completion event from the provider.
+ * @param channel - Open Realtime data channel.
+ * @param options - Immutable session options and current context callback.
+ * @param completedToolCalls - Per-session idempotency set keyed by call id.
+ * @returns A promise that settles after output delivery or duplicate suppression.
+ */
 async function handleToolCall(
   event: RealtimeEvent,
   channel: RTCDataChannel,
   options: StartRealtimeClientOptions,
+  completedToolCalls: Set<string>,
 ): Promise<void> {
   const callId = event.call_id || event.item?.call_id;
   const name = event.name || event.item?.name;
   if (!callId || name !== 'get_areqa_context') return;
+  if (completedToolCalls.has(callId)) {
+    logger.debug('realtime.context_tool_duplicate_ignored', {
+      conversationId: options.conversationId,
+      callId,
+    });
+    return;
+  }
+  completedToolCalls.add(callId);
 
   const context = await fetchAreqaContext(
     options.conversationId,
@@ -186,7 +283,15 @@ async function handleToolCall(
       output: JSON.stringify(context),
     },
   });
-  sendRealtimeEvent(channel, { type: 'response.create' });
+  sendRealtimeEvent(channel, {
+    type: 'response.create',
+    response: { tool_choice: 'none' },
+  });
+  logger.info('realtime.context_tool_completed', {
+    conversationId: options.conversationId,
+    callId,
+    messageCount: options.recentMessages().length,
+  });
 }
 
 function startInputAudioLevelMonitor(
@@ -277,6 +382,7 @@ export async function startRealtimeClient(
   let dataChannel: RTCDataChannel | null = null;
   let stopAudioLevelMonitor: (() => void) | null = null;
   let assistantTranscript = '';
+  const completedToolCalls = new Set<string>();
 
   const cleanup = () => {
     stopAudioLevelMonitor?.();
@@ -292,9 +398,17 @@ export async function startRealtimeClient(
   try {
     options.onStatus('connecting');
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new RealtimeClientError(
+          typeof window !== 'undefined' && window.isSecureContext === false
+            ? 'microphone_insecure_context'
+            : 'microphone_unavailable',
+          'Microphone capture is unavailable in this browser context',
+        );
+      }
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (error) {
-      throw microphonePermissionMessage(error);
+      throw error instanceof RealtimeClientError ? error : microphoneAccessError(error);
     }
     const session = await createRealtimeSession(options.conversationId, options.interfaceLanguage);
     stopAudioLevelMonitor = startInputAudioLevelMonitor(localStream, options.onInputAudioLevel);
@@ -354,10 +468,10 @@ export async function startRealtimeClient(
             break;
           case 'response.function_call_arguments.done':
           case 'response.output_item.done':
-            await handleToolCall(event, dataChannel as RTCDataChannel, options);
+            await handleToolCall(event, dataChannel as RTCDataChannel, options, completedToolCalls);
             break;
           case 'error':
-            options.onError(new Error('Realtime provider returned an error'));
+            options.onError(safeProviderError(event));
             break;
         }
       })().catch((error) => {
