@@ -92,6 +92,7 @@ class TurnIntakeService:
         conversation_id: str,
         user_message: str,
         run_id: str,
+        skip_timestamp: bool = False,
     ) -> TurnIntakeResult:
         """Persist interaction, trusted evidence, and scoped roleplay state."""
 
@@ -102,15 +103,16 @@ class TurnIntakeService:
             create_memory_ingestion_service,
         )
 
-        try:
-            await set_last_interaction_time(user_id, time.time())
-        except Exception as exc:
-            logger.warning(
-                "orchestration.interaction_timestamp_failed run_id=%s conversation_id=%s reason=%s",
-                run_id,
-                conversation_id,
-                type(exc).__name__,
-            )
+        if not skip_timestamp:
+            try:
+                await set_last_interaction_time(user_id, time.time())
+            except Exception as exc:
+                logger.warning(
+                    "orchestration.interaction_timestamp_failed run_id=%s conversation_id=%s reason=%s",
+                    run_id,
+                    conversation_id,
+                    type(exc).__name__,
+                )
 
         store = get_global_store()
         if not store:
