@@ -15,6 +15,18 @@ export const API_CONFIG = {
   chatEndpoint: process.env.NEXT_PUBLIC_CHAT_API_ENDPOINT || '/api/chat',
 
   /**
+   * Realtime voice session endpoint.
+   * Default: '/api/realtime/session' (proxied through Next.js)
+   */
+  realtimeSessionEndpoint: process.env.NEXT_PUBLIC_REALTIME_SESSION_ENDPOINT || '/api/realtime/session',
+
+  /**
+   * Realtime AREQA context endpoint used by the browser-side tool bridge.
+   * Default: '/api/realtime/context' (proxied through Next.js)
+   */
+  realtimeContextEndpoint: process.env.NEXT_PUBLIC_REALTIME_CONTEXT_ENDPOINT || '/api/realtime/context',
+
+  /**
    * Request timeout in milliseconds
    * Default: 30 seconds
    */
