@@ -322,6 +322,32 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  voiceButton: css`
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 36px;
+    border: 1px solid rgba(216, 162, 92, 0.38);
+    border-radius: 50%;
+    background: rgba(216, 162, 92, 0.12);
+    color: #d8a25c;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover:not(:disabled) {
+      border-color: #d8a25c;
+      background: rgba(216, 162, 92, 0.2);
+      transform: translateY(-1px);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+  `,
+
   // Circular send button aligned in the toolbar
   sendButton: css`
     flex-shrink: 0;

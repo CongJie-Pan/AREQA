@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, X, CornerDownRight, Plus, FileText } from 'lucide-react';
+import { Send, Square, X, CornerDownRight, Plus, FileText, Mic } from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -198,6 +198,8 @@ export interface ChatInputProps {
   isStreaming?: boolean;
   /** Callback when stop button is clicked */
   onStop?: () => void;
+  /** Callback when the live voice tutor button is clicked. */
+  onOpenLiveTutor?: () => void;
 }
 
 /**
@@ -212,6 +214,7 @@ export function ChatInput({
   maxLength = MAX_MESSAGE_LENGTH,
   isStreaming = false,
   onStop,
+  onOpenLiveTutor,
 }: ChatInputProps) {
   const { styles, cx } = useStyles();
   const { t } = useUserPreferences();
@@ -544,6 +547,19 @@ export function ChatInput({
           maxLength={maxLength + 100}
           aria-label={t('messageTextarea')}
         />
+        {onOpenLiveTutor && (
+          <Tooltip title="開啟即時語音" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button
+              type="button"
+              className={cx('areqa-chat-input-voice-button', styles.voiceButton)}
+              onClick={onOpenLiveTutor}
+              disabled={disabled}
+              aria-label="開啟即時語音"
+            >
+              <Mic size={18} />
+            </button>
+          </Tooltip>
+        )}
         {isStreaming && onStop ? (
           <button
             type="button"

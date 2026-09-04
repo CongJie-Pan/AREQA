@@ -20,9 +20,11 @@ import { GumPanel } from '@/components/GumPanel';
 import { MailboxPanel } from '@/components/MailboxPanel';
 import { ProactiveManager } from '@/components/ProactiveManager';
 import { AuthPrompt } from '@/components/Auth';
+import { LiveTutorPanel } from '@/components/LiveTutor';
 import { supabase } from '@/lib/supabase';
 import { initializeAuth, useAuthStore } from '@/store/auth';
 import { useFeatureStore } from '@/store/features';
+import { useLiveTutorStore } from '@/store/liveTutor';
 import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
@@ -102,6 +104,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const error = useChatStore((state) => state.error);
   const setError = useChatStore((state) => state.setError);
   const messages = useChatStore(chatSelectors.displayMessages);
+  const openLiveTutor = useLiveTutorStore((state) => state.open);
   const isEmpty = messages.length === 0;
 
   const activeConversation = useConversationStore((state) =>
@@ -616,6 +619,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   }
                   isStreaming={isStreaming}
                   onStop={handleStop}
+                  onOpenLiveTutor={openLiveTutor}
                 />
               </div>
             </>
@@ -625,6 +629,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       {/* Text Selection Toolbar */}
       <TextSelectionToolbar />
+
+      <LiveTutorPanel activeConversationId={activeConversationId} />
 
       {/* Proactive Polling & Telemetry */}
       {(mailboxEnabled || compeerEnabled) && <ProactiveManager />}

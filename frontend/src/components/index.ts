@@ -9,6 +9,7 @@ export { Citations } from './Citations';
 export { RAGStatusPanel } from './RAGStatusPanel';
 export { MessageList, MessageItem } from './MessageList';
 export { ChatInput } from './ChatInput';
+export { LiveTutorPanel } from './LiveTutor';
 export { ConversationList } from './ConversationList';
 export { ChatContainer } from './ChatContainer';
 export { ErrorBoundary } from './ErrorBoundary';
