@@ -194,12 +194,37 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  contentLiveTutor: css`
+    justify-content: flex-start;
+    padding-bottom: 0;
+
+    & > div:last-child {
+      max-width: none;
+      width: 100%;
+      align-self: stretch;
+    }
+  `,
+
   messageArea: css`
     flex: 1;
     overflow-y: auto;
     min-height: 0;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+  `,
+
+  messageAreaLiveTutor: css`
+    flex: 0 1 clamp(112px, 24vh, 260px);
+    min-height: 96px;
+
+    @media (max-width: 768px) {
+      height: 0;
+      min-height: 0;
+      flex-basis: 0;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
   `,
 
   inputArea: css`

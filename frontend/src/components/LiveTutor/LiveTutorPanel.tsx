@@ -66,6 +66,7 @@ const COPY = {
     mute: '靜音',
     unmute: '取消靜音',
     end: '結束語音',
+    permissionDenied: '請允許瀏覽器使用麥克風，才能開始即時語音。',
     setupFailed: '無法啟動即時語音，請確認麥克風權限、OpenAI Realtime 權限或稍後再試。',
   },
   'zh-CN': {
@@ -77,6 +78,7 @@ const COPY = {
     mute: '静音',
     unmute: '取消静音',
     end: '结束语音',
+    permissionDenied: '请允许浏览器使用麦克风，才能开始即时语音。',
     setupFailed: '无法启动即时语音，请确认麦克风权限、OpenAI Realtime 权限或稍后再试。',
   },
   en: {
@@ -88,6 +90,7 @@ const COPY = {
     mute: 'Mute',
     unmute: 'Unmute',
     end: 'End voice',
+    permissionDenied: 'Allow microphone access in your browser to start live voice.',
     setupFailed: 'Unable to start live voice. Check microphone permission, OpenAI Realtime access, or try again later.',
   },
 } as const;
@@ -98,6 +101,12 @@ function canPersistHistory(): boolean {
 
 function conversationPreview(content: string): string {
   return content.slice(0, 100);
+}
+
+function isMicrophonePermissionError(error: Error): boolean {
+  return error.name === 'NotAllowedError'
+    || error.name === 'SecurityError'
+    || error.message.toLowerCase().includes('permission');
 }
 
 export interface LiveTutorPanelProps {
@@ -116,6 +125,7 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantTranscriptRef = useRef('');
   const hasStartedRef = useRef(false);
+  const isCancelledRef = useRef(false);
 
   const isOpen = useLiveTutorStore((state) => state.isOpen);
   const status = useLiveTutorStore((state) => state.status);
@@ -209,34 +219,75 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     }
   }, [addAssistantMessage, addUserMessage, bumpConversationPreview, ensureConversationId, updateAssistantMessage]);
 
+  const finalizeAssistantDraft = useCallback((
+    conversationId: string,
+    contentOverride?: string,
+  ) => {
+    const content = (contentOverride ?? assistantTranscriptRef.current).trim();
+    const assistantMessageId = assistantMessageIdRef.current;
+    if (!assistantMessageId || !content) {
+      assistantMessageIdRef.current = null;
+      assistantTranscriptRef.current = '';
+      return;
+    }
+
+    updateAssistantMessage(assistantMessageId, {
+      content,
+      isStreaming: false,
+    });
+    assistantMessageIdRef.current = null;
+    assistantTranscriptRef.current = '';
+    bumpConversationPreview(conversationId, content);
+    if (canPersistHistory()) {
+      void databaseService.message.add(conversationId, {
+        id: assistantMessageId,
+        role: 'assistant',
+        content,
+      }).catch(() => undefined);
+    }
+  }, [bumpConversationPreview, updateAssistantMessage]);
+
   const start = useCallback(async () => {
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
+    isCancelledRef.current = false;
     resetTranscript();
     setError(null);
     const conversationId = await ensureConversationId();
-    controllerRef.current = await startRealtimeClient({
+    const controller = await startRealtimeClient({
       conversationId,
       interfaceLanguage: language,
       recentMessages: () => useChatStore.getState().messages
         .filter((message: DisplayMessage) => message.conversationId === conversationId),
       onRemoteStream: (stream) => {
+        if (isCancelledRef.current) return;
         if (audioRef.current) {
           audioRef.current.srcObject = stream;
           void audioRef.current.play();
         }
       },
       onInputAudioLevel: (level) => {
+        if (isCancelledRef.current) return;
         const scale = 1 + Math.min(Math.max(level, 0), 1) * 0.18;
         panelRef.current?.style.setProperty('--live-tutor-audio-scale', scale.toFixed(3));
         panelRef.current?.style.setProperty('--live-tutor-audio-level', level.toFixed(3));
       },
-      onStatus: (nextStatus: RealtimeStatus) => setStatus(nextStatus),
+      onStatus: (nextStatus: RealtimeStatus) => {
+        if (!isCancelledRef.current) setStatus(nextStatus);
+      },
+      onAssistantResponseStarted: () => {
+        if (isCancelledRef.current) return;
+        finalizeAssistantDraft(conversationId);
+        setAssistantTranscript('');
+      },
       onUserTranscript: (transcript) => {
+        if (isCancelledRef.current) return;
+        finalizeAssistantDraft(conversationId);
         setUserTranscript(transcript);
         void persistTranscript('user', transcript);
       },
       onAssistantTranscriptDelta: (delta) => {
+        if (isCancelledRef.current) return;
         if (!assistantMessageIdRef.current) {
           assistantMessageIdRef.current = addAssistantMessage(conversationId);
         }
@@ -248,18 +299,29 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
         });
       },
       onAssistantTranscriptDone: (transcript) => {
+        if (isCancelledRef.current) return;
         setAssistantTranscript(transcript);
-        assistantTranscriptRef.current = '';
-        void persistTranscript('assistant', transcript);
+        finalizeAssistantDraft(conversationId, transcript);
       },
       onError: (nextError) => {
-        setError(nextError.message || labels.setupFailed);
+        if (isCancelledRef.current) return;
+        const message = isMicrophonePermissionError(nextError)
+          ? labels.permissionDenied
+          : nextError.message || labels.setupFailed;
+        setError(message);
       },
     });
+    if (isCancelledRef.current || !useLiveTutorStore.getState().isOpen) {
+      controller.disconnect();
+      return;
+    }
+    controllerRef.current = controller;
   }, [
     appendAssistantTranscript,
     addAssistantMessage,
     ensureConversationId,
+    finalizeAssistantDraft,
+    labels.permissionDenied,
     labels.setupFailed,
     language,
     persistTranscript,
@@ -272,12 +334,8 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   ]);
 
   const stop = useCallback(() => {
-    if (assistantMessageIdRef.current) {
-      updateAssistantMessage(assistantMessageIdRef.current, {
-        content: assistantTranscriptRef.current,
-        isStreaming: false,
-      });
-    }
+    isCancelledRef.current = true;
+    finalizeAssistantDraft(conversationIdRef.current);
     controllerRef.current?.disconnect();
     controllerRef.current = null;
     hasStartedRef.current = false;
@@ -286,7 +344,7 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     panelRef.current?.style.setProperty('--live-tutor-audio-level', '0');
     setStatus('idle');
-  }, [setStatus, updateAssistantMessage]);
+  }, [finalizeAssistantDraft, setStatus]);
 
   const handleClose = useCallback(() => {
     stop();
@@ -314,6 +372,7 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   if (!isOpen) return null;
 
   const primaryCaption = assistantTranscript || userTranscript || statusLabels[status];
+  const captionText = error ? (assistantTranscript || userTranscript) : primaryCaption;
   const secondaryCaption = assistantTranscript && userTranscript ? userTranscript : '';
 
   return (
@@ -335,12 +394,14 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
       </div>
 
       <div className={styles.body}>
-        <div className={styles.captionArea}>
-          <div className={styles.transcriptText}>{primaryCaption}</div>
-          {secondaryCaption && (
-            <div className={styles.secondaryTranscript}>{secondaryCaption}</div>
-          )}
-        </div>
+        {captionText && (
+          <div className={styles.captionArea}>
+            <div className={styles.transcriptText}>{captionText}</div>
+            {secondaryCaption && (
+              <div className={styles.secondaryTranscript}>{secondaryCaption}</div>
+            )}
+          </div>
+        )}
 
         {error && <div className={styles.error}>{error}</div>}
 

@@ -30,6 +30,7 @@ export interface StartRealtimeClientOptions {
   onRemoteStream: (stream: MediaStream) => void;
   onInputAudioLevel?: (level: number) => void;
   onStatus: (status: RealtimeStatus) => void;
+  onAssistantResponseStarted?: () => void;
   onUserTranscript: (transcript: string) => void;
   onAssistantTranscriptDelta: (delta: string) => void;
   onAssistantTranscriptDone: (transcript: string) => void;
@@ -74,6 +75,18 @@ function realtimeFailureMessage(stage: 'session' | 'sdp', status: number, body =
     return `Realtime ${stage} authorization failed (${status}). Check OpenAI Realtime model access and API key permissions.`;
   }
   return `Realtime ${stage} failed (${status}).${details}`;
+}
+
+function microphonePermissionMessage(error: unknown): Error {
+  const browserError = error instanceof Error ? error : new Error(String(error));
+  if (
+    browserError.name === 'NotAllowedError'
+    || browserError.name === 'SecurityError'
+    || browserError.message.toLowerCase().includes('permission')
+  ) {
+    return new Error('Microphone permission denied');
+  }
+  return browserError;
 }
 
 async function readSafeErrorBody(response: Response): Promise<string> {
@@ -194,6 +207,9 @@ function startInputAudioLevelMonitor(
     analyser.smoothingTimeConstant = 0.72;
     source = audioContext.createMediaStreamSource(stream);
     source.connect(analyser);
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume().catch(() => undefined);
+    }
   } catch {
     return () => undefined;
   }
@@ -246,9 +262,12 @@ function startInputAudioLevelMonitor(
  *   problems are diagnosable without exposing secrets.
  *
  * Side Effects:
- *   Requests microphone access, creates a peer connection, plays remote audio
- *   through the caller-provided stream, and sends context tool outputs through
- *   the OpenAI Realtime data channel.
+ *   Requests microphone access before creating the OpenAI session, creates a
+ *   peer connection, plays remote audio through the caller-provided stream,
+ *   sends context tool outputs through the OpenAI Realtime data channel, and
+ *   reports only a normalized local audio level to the UI. Microphone denial
+ *   short-circuits before the backend session endpoint to avoid unnecessary
+ *   upstream Realtime sessions.
  */
 export async function startRealtimeClient(
   options: StartRealtimeClientOptions,
@@ -272,11 +291,12 @@ export async function startRealtimeClient(
 
   try {
     options.onStatus('connecting');
-    const [session, microphoneStream] = await Promise.all([
-      createRealtimeSession(options.conversationId, options.interfaceLanguage),
-      navigator.mediaDevices.getUserMedia({ audio: true }),
-    ]);
-    localStream = microphoneStream;
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      throw microphonePermissionMessage(error);
+    }
+    const session = await createRealtimeSession(options.conversationId, options.interfaceLanguage);
     stopAudioLevelMonitor = startInputAudioLevelMonitor(localStream, options.onInputAudioLevel);
     peerConnection = new RTCPeerConnection();
     dataChannel = peerConnection.createDataChannel('oai-events');
@@ -304,9 +324,11 @@ export async function startRealtimeClient(
         const event = JSON.parse(String(message.data)) as RealtimeEvent;
         switch (event.type) {
           case 'input_audio_buffer.speech_started':
+            options.onAssistantResponseStarted?.();
             options.onStatus('listening');
             break;
           case 'response.created':
+            options.onAssistantResponseStarted?.();
             assistantTranscript = '';
             options.onStatus('thinking');
             break;
@@ -326,7 +348,7 @@ export async function startRealtimeClient(
           case 'response.audio_transcript.done':
           case 'response.output_text.done':
             if (assistantTranscript.trim()) {
-              options.onAssistantTranscriptDone(assistantTranscript.trim());
+              options.onAssistantTranscriptDone(event.transcript?.trim() || assistantTranscript.trim());
               assistantTranscript = '';
             }
             break;

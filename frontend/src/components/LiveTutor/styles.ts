@@ -15,42 +15,45 @@ export const useStyles = createStyles(({ css }) => ({
     width: 100%;
     --live-tutor-audio-level: 0;
     --live-tutor-audio-scale: 1;
-    min-height: clamp(180px, 30dvh, 320px);
-    max-height: min(42dvh, 360px);
-    flex: 0 0 auto;
+    min-height: 0;
+    flex: 1 1 auto;
     flex-direction: column;
     overflow: hidden;
-    padding: clamp(12px, 1.8vw, 20px) clamp(16px, 4vw, 44px);
+    padding: clamp(10px, 1.6vw, 18px) clamp(16px, 4vw, 44px);
     background:
       radial-gradient(circle at 50% 62%, color-mix(in srgb, #7f8cff 12%, transparent), transparent 16rem),
       var(--background);
     color: var(--foreground);
 
     @media (max-width: 640px) {
-      min-height: clamp(280px, 52dvh, 520px);
-      max-height: 58dvh;
-      padding: 12px 24px 18px;
+      padding: 10px 26px 16px;
       background: var(--background);
     }
   `,
 
   header: css`
     display: flex;
-    min-height: 36px;
+    min-height: 42px;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+
+    @media (max-width: 640px) {
+      min-height: 38px;
+    }
   `,
 
   body: css`
     display: grid;
     min-height: 0;
     flex: 1 1 auto;
-    grid-template-rows: minmax(0, auto) auto 1fr;
+    grid-template-rows: minmax(0, auto) auto minmax(0, 1fr);
     align-items: center;
+    padding-bottom: clamp(6px, 2vh, 22px);
 
     @media (max-width: 640px) {
-      grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) auto minmax(0, 2.2fr);
+      padding-bottom: 0;
     }
   `,
 
@@ -68,7 +71,7 @@ export const useStyles = createStyles(({ css }) => ({
     scrollbar-color: color-mix(in srgb, var(--foreground) 28%, transparent) transparent;
 
     @media (max-width: 640px) {
-      max-height: 92px;
+      max-height: 86px;
       gap: 8px;
       align-self: end;
       padding-top: 0;
@@ -107,20 +110,20 @@ export const useStyles = createStyles(({ css }) => ({
 
   voiceCore: css`
     display: grid;
-    min-height: clamp(118px, 18dvh, 220px);
+    min-height: clamp(150px, 26vh, 300px);
     place-items: center;
     align-self: center;
     justify-self: center;
 
     @media (max-width: 640px) {
-      min-height: clamp(190px, 32dvh, 330px);
+      min-height: clamp(240px, 42dvh, 460px);
       align-self: center;
     }
   `,
 
   logoOrb: css`
     position: relative;
-    width: clamp(96px, 10vw, 136px);
+    width: clamp(132px, 15vw, 220px);
     aspect-ratio: 1;
     border-radius: 50%;
     box-shadow:
@@ -143,7 +146,7 @@ export const useStyles = createStyles(({ css }) => ({
     }
 
     @media (max-width: 640px) {
-      width: clamp(176px, 47vw, 240px);
+      width: clamp(214px, 54vw, 300px);
       box-shadow:
         0 18px 54px rgba(17, 24, 39, 0.12),
         0 0 calc(24px + var(--live-tutor-audio-level) * 56px) rgba(127, 140, 255, 0.32);
@@ -236,10 +239,10 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   error: css`
-    width: min(720px, 100%);
+    width: min(680px, 100%);
     justify-self: center;
-    margin: 8px 0;
-    padding: 10px 14px;
+    margin: 10px 0;
+    padding: 9px 14px;
     border: 1px solid rgba(255, 92, 92, 0.46);
     border-radius: 999px;
     background: rgba(180, 52, 52, 0.18);
@@ -247,5 +250,12 @@ export const useStyles = createStyles(({ css }) => ({
     font-size: 13px;
     line-height: 1.45;
     text-align: center;
+
+    @media (max-width: 640px) {
+      width: 100%;
+      margin: 8px 0 4px;
+      border-radius: 18px;
+      font-size: 13px;
+    }
   `,
 }));

@@ -105,6 +105,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const setError = useChatStore((state) => state.setError);
   const messages = useChatStore(chatSelectors.displayMessages);
   const openLiveTutor = useLiveTutorStore((state) => state.open);
+  const isLiveTutorOpen = useLiveTutorStore((state) => state.isOpen);
   const isEmpty = messages.length === 0;
 
   const activeConversation = useConversationStore((state) =>
@@ -582,9 +583,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
         <div
           className={cx(
             'areqa-chat-content',
-            shouldShowEmptyChat && !gumPanelType && 'areqa-chat-content-empty',
+            shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && 'areqa-chat-content-empty',
+            isLiveTutorOpen && !gumPanelType && 'areqa-chat-content-live-tutor',
             styles.content,
-            shouldShowEmptyChat && !gumPanelType && styles.contentEmpty,
+            shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && styles.contentEmpty,
+            isLiveTutorOpen && !gumPanelType && styles.contentLiveTutor,
           )}
         >
           {mailboxEnabled && gumPanelType === 'mailbox' ? (
@@ -598,7 +601,15 @@ export function ChatContainer({ className }: ChatContainerProps) {
           ) : (
             <>
               {/* Message List */}
-              <div id="export-chat-container" className={cx('areqa-chat-message-area', styles.messageArea)}>
+              <div
+                id="export-chat-container"
+                className={cx(
+                  'areqa-chat-message-area',
+                  isLiveTutorOpen && 'areqa-chat-message-area-live-tutor',
+                  styles.messageArea,
+                  isLiveTutorOpen && styles.messageAreaLiveTutor,
+                )}
+              >
                 <MessageList 
                   onRegenerate={handleRegenerate} 
                   onEdit={handleEdit} 
