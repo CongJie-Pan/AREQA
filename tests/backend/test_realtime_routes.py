@@ -41,7 +41,17 @@ def test_realtime_session_rejects_unsupported_models():
     assert error.value.detail["code"] == "REALTIME_MODEL_UNSUPPORTED"
 
 
-def test_client_secret_extraction_accepts_current_response_shape():
+def test_client_secret_extraction_accepts_official_ephemeral_token_shape():
+    value, expires_at = _client_secret_from_response({
+        "value": "ek_test",
+        "expires_at": 1788510000,
+    })
+
+    assert value == "ek_test"
+    assert expires_at == "1788510000"
+
+
+def test_client_secret_extraction_accepts_nested_client_secret_shape():
     value, expires_at = _client_secret_from_response({
         "client_secret": {
             "value": "ek_test",

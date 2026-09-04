@@ -197,7 +197,18 @@ def _client_secret_from_response(payload: dict[str, Any]) -> tuple[str, str | No
 
     Raises:
         ValueError: If the expected client secret is missing.
+
+    Compatibility:
+        OpenAI's WebRTC ephemeral-token examples return the token at root
+        `value`. Older or alternate shapes may include `client_secret.value`.
+        Accepting both keeps the route compatible without exposing the raw
+        upstream payload in logs.
     """
+
+    root_value = payload.get("value")
+    if isinstance(root_value, str) and root_value:
+        expires_at = payload.get("expires_at")
+        return root_value, str(expires_at) if expires_at is not None else None
 
     client_secret = payload.get("client_secret")
     if not isinstance(client_secret, dict):
