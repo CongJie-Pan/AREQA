@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -312,6 +313,16 @@ class OutputImageService:
             if not hasattr(candidate, "to_image_block"):
                 continue
             block = candidate.to_image_block()
+            attachment_caption = "：".join(
+                part
+                for part in (
+                    str(getattr(candidate, "answer_section", "") or "").strip(),
+                    str(getattr(candidate, "teaching_caption", "") or "").strip(),
+                )
+                if part
+            )
+            if attachment_caption and not block.explanatory_caption:
+                block = replace(block, explanatory_caption=attachment_caption)
             if settings.enable_visual_understanding:
                 try:
                     result = await self.understanding_agent.analyze(
