@@ -11,7 +11,7 @@
 
 > **最後更新**：2026-08-27（依目前 GitHub Codespace、frontend / backend 實際代碼與腳本校正）
 
-> 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`render.yaml`、`frontend/package.json`、`backend/requirements.txt` 與 `backend/main.py` 的實際 route 為準。
+> 更新這份文件時，請以目前工作區中的 `frontend/`、`backend/`、`docs/deployment/render.example.yaml`、`frontend/package.json`、`backend/requirements.txt` 與 `backend/main.py` 的實際 route 為準。
 
 ---
 
@@ -750,12 +750,14 @@ Next.js 開發伺服器預設監聽 `0.0.0.0:3000`。聊天與標題生成預設
 
 ### 4. Render 部署
 
-`render.yaml` 定義兩個 web service：
+`docs/deployment/render.example.yaml` 保留 Render 部署參考，但專案根目錄刻意不放 `render.yaml`，避免 Render Blueprint 在連接分支時自動建立重複的 `areqa-backend` / `areqa-frontend` 服務。
+
+範例檔定義兩個 web service：
 
 - `areqa-backend`: root directory `backend`，build 時先安裝 `uv`，再用 `uv pip install --python "${VIRTUAL_ENV:-/opt/render/project/src/.venv}/bin/python" -r requirements-render.txt` 明確安裝到 Render 啟動用的 `.venv`；start command 也使用同一個 `.venv/bin/python -m uvicorn` 啟動。
 - `areqa-frontend`: root directory `frontend`，執行 `npm install && npm run build`，再以 `npm run start` 啟動。
 
-Render 後端需要在 Dashboard 設定 `HF_TOKEN`、`OPENROUTER_API_KEY`、`JWT_SECRET`、`REDIS_URL`、`DATABASE_URL`、Supabase 與 Perplexity 相關 secrets；前端使用 `NEXT_PUBLIC_BACKEND_URL` 指向後端服務。`render.yaml` 的 `MODEL_ZPD_QUERY`、ComPeer dev controls 與 Node/Python 版本是部署設定，不會覆蓋 Codespace 的本地開發版本。
+Render 後端需要在 Dashboard 設定 `HF_TOKEN`、`OPENROUTER_API_KEY`、`JWT_SECRET`、`REDIS_URL`、`DATABASE_URL`、Supabase 與 Perplexity 相關 secrets；前端使用 `NEXT_PUBLIC_BACKEND_URL` 指向後端服務。範例檔的 `MODEL_ZPD_QUERY`、ComPeer dev controls 與 Node/Python 版本是部署設定，不會覆蓋 Codespace 的本地開發版本。
 
 ---
 
