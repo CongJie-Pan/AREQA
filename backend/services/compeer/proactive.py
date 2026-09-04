@@ -37,13 +37,6 @@ async def _process_proactive_user(store, user_id: str) -> None:
     later mailbox task without exposing hot-memory or generated-message content.
     """
 
-    if not _facade()._auto_proactive_enabled():
-        logger.debug(
-            "compeer.auto_proactive_disabled user_id=%s source=process_user",
-            user_id,
-        )
-        return
-
     iteration_id = uuid.uuid4().hex
     trigger_proactive = False
     avatar_summon = False
@@ -57,6 +50,12 @@ async def _process_proactive_user(store, user_id: str) -> None:
             avatar_summon = True
             active_avatar = hot_mem.get("active_avatar")
         else:
+            if not _facade()._auto_proactive_enabled():
+                logger.debug(
+                    "compeer.auto_proactive_disabled user_id=%s source=process_user",
+                    user_id,
+                )
+                return
             cooldown_active = await _facade().is_in_cooldown(user_id)
             if hot_mem.get("trigger_proactive") and not cooldown_active:
                 trigger_proactive = True
@@ -460,7 +459,12 @@ async def proactive_scheduler_loop():
     logger.info("compeer.scheduler_started")
     while True:
         try:
-            if not _facade()._auto_proactive_enabled():
+            from config import settings
+
+            if (
+                not _facade()._auto_proactive_enabled()
+                and not settings.enable_mailbox_sending
+            ):
                 logger.debug("compeer.scheduler_disabled reason=auto_proactive_disabled")
                 await _facade().asyncio.sleep(10)
                 continue

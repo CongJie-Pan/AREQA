@@ -207,7 +207,9 @@ try:
         classify_dialogue_policy,
         log_action,
         log_share_debug,
+        parse_and_decompose_query,
         proactive_check_endpoint,
+        reorder_for_attention,
         retrieve_endpoint,
         _safe_share_debug_context,
     )
@@ -242,7 +244,9 @@ except ModuleNotFoundError:
         classify_dialogue_policy,
         log_action,
         log_share_debug,
+        parse_and_decompose_query,
         proactive_check_endpoint,
+        reorder_for_attention,
         retrieve_endpoint,
         _safe_share_debug_context,
     )
