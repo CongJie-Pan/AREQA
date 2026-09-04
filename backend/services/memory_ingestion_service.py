@@ -7,10 +7,7 @@ lifecycle, or independent-evidence checks.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from enum import Enum
-import hashlib
 import logging
 import re
 from typing import Any
@@ -31,99 +28,19 @@ from services.memory_semantic_analyzer import (
 logger = logging.getLogger(__name__)
 
 
-_CONCRETE_EXAMPLE_MARKERS = ("具體例子", "具體案例", "實際例子", "實際情境")
-_ABSTRACT_CONCEPT_MARKERS = ("抽象概念", "抽象原理")
-_NEGATIVE_PREFERENCE_MARKERS = ("不喜歡", "討厭", "不希望", "不想要")
-_CONCRETE_ABSTRACT_PREFERENCE_KEY = (
-    "learning_preference:abstract_concepts:concrete_examples"
+
+from services.memory_ingestion import rules as _memory_ingestion_rules_module
+from services.memory_ingestion.models import (
+    MemoryEligibilityState,
+    MemoryIngestionResult,
+    UserEvidence,
+    build_user_evidence,
 )
-_GOAL_MATCH_NOISE = (
-    "請在這段期間協助我安排練習",
-    "請不要再提醒我",
-    "不要再提醒我",
-    "不用再提醒我",
-    "停止提醒",
-    "我已經",
-    "我想",
-    "這個月",
-    "這週",
-    "下週",
-    "目前",
-    "已經",
-    "完成了",
-    "完成",
-    "複習目標",
-    "學習目標",
-    "讀書計畫",
-    "目標",
-    "複習",
-    "請",
-    "的",
-)
+from services.memory_ingestion.factory import create_memory_ingestion_service_impl
+from services.memory_ingestion.rules import MemoryIngestionRulesMixin
 
 
-class MemoryEligibilityState(str, Enum):
-    """Describe the server-owned outcome of one evidence ingestion."""
-
-    REJECTED = "rejected"
-    WORKING_CONTEXT_ONLY = "working_context_only"
-    CANDIDATE = "candidate"
-    PROMOTION_ELIGIBLE = "promotion_eligible"
-
-
-@dataclass(frozen=True)
-class UserEvidence:
-    """Immutable provenance for one exact user-authored message."""
-
-    user_id: str
-    message_id: str
-    conversation_id: str
-    timestamp: str
-    raw_message_text: str
-    source_role: str = "user"
-
-
-@dataclass(frozen=True)
-class MemoryIngestionResult:
-    """Typed policy result returned without exposing model reasoning."""
-
-    state: MemoryEligibilityState
-    reason_code: str
-    category: str
-    candidate_id: str | None = None
-    expires_at: str | None = None
-    promoted: bool = False
-
-
-def build_user_evidence(
-    user_id: str,
-    conversation_id: str,
-    raw_message_text: str,
-    *,
-    message_id: str = "",
-    timestamp: str = "",
-) -> UserEvidence:
-    """Build stable provenance when the transport lacks a message identifier.
-
-    The digest is deterministic for one conversation/message pair, preventing
-    background reprocessing from counting the same message twice.
-    """
-
-    text = (raw_message_text or "").strip()
-    stable_id = message_id or hashlib.sha256(
-        f"{user_id}|{conversation_id}|{text}".encode("utf-8")
-    ).hexdigest()[:24]
-    return UserEvidence(
-        user_id=user_id,
-        message_id=stable_id,
-        conversation_id=conversation_id,
-        timestamp=timestamp or datetime.now(timezone.utc).isoformat(),
-        raw_message_text=text,
-        source_role="user",
-    )
-
-
-class MemoryIngestionService:
+class MemoryIngestionService(MemoryIngestionRulesMixin):
     """Apply deterministic memory policy with optional advisory matching."""
 
     def __init__(
@@ -626,161 +543,6 @@ class MemoryIngestionService:
         )
         return None
 
-    @staticmethod
-    def _profile_learning_preference_rejection_reason(draft: MemoryCandidateDraft) -> str:
-        """Return a safe reason when a draft cannot enter profile validation."""
-
-        if draft.candidate_type != "learning_preference":
-            return "non_learning_preference"
-        if draft.durability != "profile_memory":
-            return "non_profile_durability"
-        if draft.confidence < settings.memory_extraction_min_confidence:
-            return "low_confidence"
-        return ""
-
-    async def _active_candidates(
-        self,
-        user_id: str,
-        category: str,
-        now: datetime,
-    ) -> list[dict[str, Any]]:
-        """Return non-sensitive active candidates scoped to one user/category."""
-
-        candidates = await self.store.get_cold_candidates(user_id)
-        result = []
-        for candidate in candidates:
-            if candidate.get("user_id") != user_id or candidate.get("category") != category:
-                continue
-            if candidate.get("status") != "candidate" or candidate.get("requires_confirmation"):
-                continue
-            expires_at = candidate.get("expires_at")
-            if expires_at:
-                try:
-                    expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
-                    if expiry.tzinfo is None:
-                        expiry = expiry.replace(tzinfo=timezone.utc)
-                    if expiry <= now:
-                        continue
-                except ValueError:
-                    continue
-            result.append(candidate)
-        return result
-
-    @staticmethod
-    def _normalize_candidate(text: str) -> str:
-        """Create a conservative key; semantic equivalence requires the analyzer."""
-
-        return re.sub(r"[\s，,。！？!?：:；;]", "", text).lower()
-
-    @staticmethod
-    def _canonicalize_passive_preference(text: str, category: str) -> str:
-        """Canonicalize one narrow, low-risk positive learning preference."""
-
-        if category != "passive_preference":
-            return ""
-        normalized = MemoryIngestionService._normalize_candidate(text)
-        if any(marker in normalized for marker in _NEGATIVE_PREFERENCE_MARKERS):
-            return ""
-        if not any(marker in normalized for marker in _CONCRETE_EXAMPLE_MARKERS):
-            return ""
-        if not any(marker in normalized for marker in _ABSTRACT_CONCEPT_MARKERS):
-            return ""
-        if not any(marker in normalized for marker in ("學", "理解", "偏好", "希望")):
-            return ""
-        return _CONCRETE_ABSTRACT_PREFERENCE_KEY
-
-    @staticmethod
-    def _normalize_goal_topic(text: str) -> str:
-        """Remove lifecycle boilerplate while preserving a goal's topic."""
-
-        normalized = MemoryIngestionService._normalize_candidate(text)
-        for marker in _GOAL_MATCH_NOISE:
-            normalized = normalized.replace(marker, "")
-        return normalized
-
-    @staticmethod
-    def _goal_topics_match(completion_topic: str, candidate_topic: str) -> bool:
-        """Match only non-empty deterministic topics, allowing added qualifiers."""
-
-        if len(completion_topic) < 2 or len(candidate_topic) < 2:
-            return False
-        return completion_topic in candidate_topic or candidate_topic in completion_topic
-
-    async def _has_promoted_canonical_profile(self, user_id: str, canonical_key: str) -> bool:
-        """Return whether an equivalent canonical preference is already promoted."""
-
-        candidates = await self.store.get_cold_candidates(user_id)
-        return any(
-            candidate.get("user_id") == user_id
-            and candidate.get("status") == "promoted"
-            and str(candidate.get("canonical_key") or "") == canonical_key
-            for candidate in candidates
-            if isinstance(candidate, dict)
-        )
-
-    @staticmethod
-    def _rewrite_self_report_for_profile(text: str) -> str:
-        """Convert exact first-person evidence into a concise profile statement."""
-
-        cleaned = re.sub(r"\s+", " ", (text or "").strip()).strip("。 ")
-        return re.sub(r"^我", "使用者", cleaned, count=1)
-
-    @staticmethod
-    def _evidence_record(evidence: UserEvidence) -> dict[str, str]:
-        """Serialize immutable user evidence for candidate lifecycle updates."""
-
-        return {
-            "message_id": evidence.message_id,
-            "conversation_id": evidence.conversation_id,
-            "timestamp": evidence.timestamp,
-            "source_role": evidence.source_role,
-            "message": evidence.raw_message_text,
-            "quote": evidence.raw_message_text,
-        }
-
-    @staticmethod
-    def _validate_provenance(evidence: UserEvidence) -> str:
-        """Return a stable rejection code for missing immutable provenance."""
-
-        if evidence.source_role != "user":
-            return "non_user_source"
-        for field in ("user_id", "message_id", "conversation_id", "timestamp", "raw_message_text"):
-            if not str(getattr(evidence, field, "")).strip():
-                return f"missing_{field}"
-        return ""
-
-    @staticmethod
-    def _result(
-        state: MemoryEligibilityState,
-        reason_code: str,
-        category: str,
-        evidence: UserEvidence,
-        *,
-        candidate_id: str | None = None,
-        expires_at: str | None = None,
-        promoted: bool = False,
-    ) -> MemoryIngestionResult:
-        logger.info(
-            "memory.ingestion_decided user_id=%s message_id=%s conversation_id=%s candidate_id=%s state=%s reason=%s category=%s promoted=%s",
-            evidence.user_id,
-            evidence.message_id,
-            evidence.conversation_id,
-            candidate_id or "none",
-            state.value,
-            reason_code,
-            category,
-            promoted,
-        )
-        return MemoryIngestionResult(
-            state=state,
-            reason_code=reason_code,
-            category=category,
-            candidate_id=candidate_id,
-            expires_at=expires_at,
-            promoted=promoted,
-        )
-
-
 def create_memory_ingestion_service(
     store: Any,
     *,
@@ -795,70 +557,10 @@ def create_memory_ingestion_service(
     boundary.
     """
 
-    analyzer = None
-    extraction_agent = None
-    semantic_enabled = bool(
-        settings.memory_semantic_analysis_enabled
-        and settings.memory_semantic_external_processing_acknowledged
-    )
-    if (
-        settings.memory_extraction_agent_enabled
-        and settings.memory_semantic_external_processing_acknowledged
-        and client is not None
-    ):
-        from services.memory_extraction_agent import OpenRouterMemoryExtractionAgent
+    return create_memory_ingestion_service_impl(MemoryIngestionService, store, client=client)
 
-        extraction_agent = OpenRouterMemoryExtractionAgent(
-            client,
-            settings.model_memory_semantic_analyzer,
-            timeout_seconds=settings.memory_extraction_timeout_seconds,
-        )
-        logger.debug(
-            "memory.extraction_agent_configured mode=external model=%s timeout_seconds=%s min_confidence=%s privacy_acknowledged=%s client_available=%s",
-            settings.model_memory_semantic_analyzer,
-            settings.memory_extraction_timeout_seconds,
-            settings.memory_extraction_min_confidence,
-            settings.memory_semantic_external_processing_acknowledged,
-            client is not None,
-        )
-    elif settings.memory_extraction_agent_enabled:
-        from services.memory_extraction_agent import LocalMemoryExtractionAgent
 
-        extraction_agent = LocalMemoryExtractionAgent()
-        logger.debug(
-            "memory.extraction_agent_configured mode=local model=none timeout_seconds=%s min_confidence=%s privacy_acknowledged=%s client_available=%s",
-            settings.memory_extraction_timeout_seconds,
-            settings.memory_extraction_min_confidence,
-            settings.memory_semantic_external_processing_acknowledged,
-            client is not None,
-        )
-    else:
-        logger.debug(
-            "memory.extraction_agent_configured mode=disabled model=none timeout_seconds=%s min_confidence=%s privacy_acknowledged=%s client_available=%s",
-            settings.memory_extraction_timeout_seconds,
-            settings.memory_extraction_min_confidence,
-            settings.memory_semantic_external_processing_acknowledged,
-            client is not None,
-        )
-
-    if semantic_enabled and client is not None:
-        from services.memory_semantic_analyzer import OpenRouterMemorySemanticAnalyzer
-
-        analyzer = OpenRouterMemorySemanticAnalyzer(
-            client,
-            settings.model_memory_semantic_analyzer,
-            timeout_seconds=settings.memory_semantic_timeout_seconds,
-        )
-    elif settings.memory_semantic_analysis_enabled:
-        logger.warning(
-            "memory.semantic_analysis_blocked reason=%s",
-            "privacy_acknowledgement_missing"
-            if not settings.memory_semantic_external_processing_acknowledged
-            else "client_unavailable",
-        )
-    return MemoryIngestionService(
-        store,
-        extraction_agent=extraction_agent,
-        semantic_analyzer=analyzer,
-        semantic_enabled=semantic_enabled,
-    )
+# Moved deterministic rule helpers still reference the historical facade name
+# in their globals. Binding it here preserves private-helper compatibility
+# after the mechanical split.
+_memory_ingestion_rules_module.MemoryIngestionService = MemoryIngestionService
