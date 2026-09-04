@@ -219,6 +219,7 @@ try:
         ws_manager,
         ws_notifications,
     )
+    from app.routes.realtime import router as realtime_router
     from app.routes.stream import (
         router as stream_router,
         ChatRequest,
@@ -256,6 +257,7 @@ except ModuleNotFoundError:
         ws_manager,
         ws_notifications,
     )
+    from backend.app.routes.realtime import router as realtime_router
     from backend.app.routes.stream import (
         router as stream_router,
         ChatRequest,
@@ -275,6 +277,7 @@ except ModuleNotFoundError:
 
 app.include_router(diagnostics_router)
 app.include_router(notifications_router)
+app.include_router(realtime_router)
 app.include_router(stream_router)
 app.include_router(title_router)
 
