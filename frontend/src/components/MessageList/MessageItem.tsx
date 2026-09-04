@@ -674,6 +674,9 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const displayCaption = isPdfAttachmentImage
     ? localizePdfAttachmentCaption(rawDisplayCaption, language, t)
     : rawDisplayCaption;
+  // PDF planner captions can contain model-authored English metadata; the main
+  // answer text already explains the attachment visual in the user's language.
+  const displayExplanatoryCaption = isPdfAttachmentImage ? '' : block.explanatoryCaption;
   const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : block.sourceDomain || 'source';
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
@@ -717,8 +720,8 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
 
   return (
     <>
-      {block.explanatoryCaption && (
-        <p className={styles.answerImageExplanation}>{block.explanatoryCaption}</p>
+      {displayExplanatoryCaption && (
+        <p className={styles.answerImageExplanation}>{displayExplanatoryCaption}</p>
       )}
       <figure className={styles.answerImageCard}>
         <button
@@ -815,7 +818,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           </div>
           <div className={styles.answerImageLightboxMeta} onClick={(event) => event.stopPropagation()}>
             <p className={styles.answerImageLightboxCaption}>{displayCaption}</p>
-            {block.explanatoryCaption && <p>{block.explanatoryCaption}</p>}
+            {displayExplanatoryCaption && <p>{displayExplanatoryCaption}</p>}
             {(block.attributionString || block.creator) && (
               <p>{block.attributionString || block.creator}</p>
             )}

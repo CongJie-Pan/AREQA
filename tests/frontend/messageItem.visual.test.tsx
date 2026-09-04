@@ -137,6 +137,7 @@ describe('MessageItem visual answer rendering', () => {
           sourceDomain: 'uploaded PDF',
           caption: 'Figure 2. Result chart',
           attributionCaption: 'paper.pdf，第 3 頁',
+          explanatoryCaption: '研究方法：The proposed evaluation taxonomy defines eight pedagogical dimensions.',
           provider: 'pdf_attachment',
           transient: true,
           status: 'resolved',
@@ -151,6 +152,7 @@ describe('MessageItem visual answer rendering', () => {
     expect(screen.getByAltText('paper.pdf，第 3 頁')).toBeInTheDocument();
     expect(screen.getByText('上傳 PDF')).toBeInTheDocument();
     expect(screen.getByText('上傳附件')).toBeInTheDocument();
+    expect(screen.queryByText(/The proposed evaluation taxonomy/)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /來源/i })).not.toBeInTheDocument();
   });
 
