@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import time
+import hashlib
 from typing import Any, List, Literal
 
 import httpx
@@ -220,6 +221,73 @@ def _client_secret_from_response(payload: dict[str, Any]) -> tuple[str, str | No
     return value, str(expires_at) if expires_at is not None else None
 
 
+def _safe_realtime_user_identifier(user_id: str | None) -> str | None:
+    """Return a privacy-preserving identifier for OpenAI safety telemetry.
+
+    Args:
+        user_id: Authenticated internal user id, when available.
+
+    Returns:
+        A stable SHA-256 digest prefix suitable for provider-side abuse
+        monitoring, or None for anonymous requests.
+
+    Compatibility:
+        The raw application user id is never logged or sent to OpenAI. Guest
+        calls omit the header because there is no stable server-owned id.
+    """
+
+    if not user_id:
+        return None
+    return hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+
+
+def _realtime_upstream_error(status_code: int) -> HTTPException:
+    """Map OpenAI Realtime failures to client-safe FastAPI errors.
+
+    Args:
+        status_code: HTTP status returned by OpenAI.
+
+    Returns:
+        An HTTPException with a stable AREQA error code and a status that keeps
+        retryable rate-limit failures distinct from backend/provider outages.
+
+    Side Effects:
+        None. Callers are responsible for structured logging with safe metadata.
+    """
+
+    if status_code == 429:
+        return HTTPException(
+            status_code=429,
+            detail={
+                "code": "OPENAI_REALTIME_RATE_LIMITED",
+                "message": "OpenAI Realtime is rate limited. Please wait and try again.",
+            },
+        )
+    if status_code in {401, 403}:
+        return HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPENAI_REALTIME_AUTH_FAILED",
+                "message": "OpenAI Realtime access is not available for this server configuration.",
+            },
+        )
+    if status_code >= 500:
+        return HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPENAI_REALTIME_UNAVAILABLE",
+                "message": "OpenAI Realtime is temporarily unavailable.",
+            },
+        )
+    return HTTPException(
+        status_code=502,
+        detail={
+            "code": "OPENAI_REALTIME_SESSION_FAILED",
+            "message": "Unable to create realtime session.",
+        },
+    )
+
+
 @router.post("/api/v1/realtime/session")
 async def create_realtime_session(
     payload: RealtimeSessionRequest,
@@ -270,29 +338,30 @@ async def create_realtime_session(
         session_config["audio"]["output"]["voice"],
     )
     try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        safety_identifier = _safe_realtime_user_identifier(current_user_id)
+        if safety_identifier:
+            headers["OpenAI-Safety-Identifier"] = safety_identifier
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 REALTIME_CLIENT_SECRET_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json={"session": session_config},
             )
         if response.status_code >= 400:
+            # Stable event: realtime.session_create_failed. Metadata is limited
+            # to correlation ids, upstream status, and latency; no secrets,
+            # prompts, transcripts, or provider response bodies are logged.
             logger.warning(
                 "realtime.session_create_failed conversation_id=%s status=%s elapsed_ms=%s",
                 payload.conversation_id,
                 response.status_code,
                 int((time.time() - started_at) * 1000),
             )
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "code": "OPENAI_REALTIME_SESSION_FAILED",
-                    "message": "Unable to create realtime session.",
-                },
-            )
+            raise _realtime_upstream_error(response.status_code)
         secret_value, expires_at = _client_secret_from_response(response.json())
     except HTTPException:
         raise

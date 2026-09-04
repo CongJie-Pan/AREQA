@@ -13,6 +13,7 @@ import type { DisplayMessage } from '@/store/chat';
 
 const OPENAI_REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 const MODEL = 'gpt-realtime-2.1-mini';
+const MAX_REALTIME_ERROR_BODY_CHARS = 500;
 
 export type RealtimeStatus =
   | 'connecting'
@@ -27,6 +28,7 @@ export interface StartRealtimeClientOptions {
   interfaceLanguage: 'zh-TW' | 'zh-CN' | 'en';
   recentMessages: () => DisplayMessage[];
   onRemoteStream: (stream: MediaStream) => void;
+  onInputAudioLevel?: (level: number) => void;
   onStatus: (status: RealtimeStatus) => void;
   onUserTranscript: (transcript: string) => void;
   onAssistantTranscriptDelta: (delta: string) => void;
@@ -61,6 +63,38 @@ interface RealtimeEvent {
   };
 }
 
+function realtimeFailureMessage(stage: 'session' | 'sdp', status: number, body = ''): string {
+  const details = body ? ` ${body.slice(0, MAX_REALTIME_ERROR_BODY_CHARS)}` : '';
+  if (status === 429) {
+    return stage === 'sdp'
+      ? 'Realtime SDP negotiation was rate limited (429). Please wait and try again, or check OpenAI Realtime quota/model access.'
+      : 'Realtime session creation was rate limited (429). Please wait and try again, or check OpenAI Realtime quota/model access.';
+  }
+  if (status === 401 || status === 403) {
+    return `Realtime ${stage} authorization failed (${status}). Check OpenAI Realtime model access and API key permissions.`;
+  }
+  return `Realtime ${stage} failed (${status}).${details}`;
+}
+
+async function readSafeErrorBody(response: Response): Promise<string> {
+  try {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const payload = await response.json() as {
+        error?: { message?: string; code?: string };
+        detail?: { message?: string; code?: string } | string;
+      };
+      if (payload.error?.message) return payload.error.message;
+      if (typeof payload.detail === 'string') return payload.detail;
+      if (payload.detail?.message) return payload.detail.message;
+      return '';
+    }
+    return (await response.text()).slice(0, MAX_REALTIME_ERROR_BODY_CHARS);
+  } catch {
+    return '';
+  }
+}
+
 async function createRealtimeSession(
   conversationId: string,
   interfaceLanguage: StartRealtimeClientOptions['interfaceLanguage'],
@@ -76,7 +110,7 @@ async function createRealtimeSession(
     }),
   });
   if (!response.ok) {
-    throw new Error(`Realtime session failed (${response.status})`);
+    throw new Error(realtimeFailureMessage('session', response.status, await readSafeErrorBody(response)));
   }
   const payload = await response.json() as RealtimeSessionResponse;
   if (!payload.client_secret || !payload.model) {
@@ -142,6 +176,60 @@ async function handleToolCall(
   sendRealtimeEvent(channel, { type: 'response.create' });
 }
 
+function startInputAudioLevelMonitor(
+  stream: MediaStream,
+  onLevel?: StartRealtimeClientOptions['onInputAudioLevel'],
+): () => void {
+  if (!onLevel || typeof window === 'undefined' || !window.AudioContext) {
+    return () => undefined;
+  }
+
+  let audioContext: AudioContext;
+  let analyser: AnalyserNode;
+  let source: MediaStreamAudioSourceNode;
+  try {
+    audioContext = new window.AudioContext();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.72;
+    source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+  } catch {
+    return () => undefined;
+  }
+
+  const samples = new Uint8Array(analyser.fftSize);
+  let animationFrameId = 0;
+  let smoothedLevel = 0;
+  let closed = false;
+
+  const tick = () => {
+    if (closed) return;
+    analyser.getByteTimeDomainData(samples);
+    let sumSquares = 0;
+    for (const sample of samples) {
+      const centered = (sample - 128) / 128;
+      sumSquares += centered * centered;
+    }
+    const rms = Math.sqrt(sumSquares / samples.length);
+    const normalizedLevel = Math.min(1, rms * 3.6);
+    smoothedLevel = smoothedLevel * 0.82 + normalizedLevel * 0.18;
+    onLevel(smoothedLevel);
+    animationFrameId = window.requestAnimationFrame(tick);
+  };
+
+  animationFrameId = window.requestAnimationFrame(tick);
+
+  return () => {
+    closed = true;
+    if (animationFrameId) window.cancelAnimationFrame(animationFrameId);
+    source.disconnect();
+    analyser.disconnect();
+    onLevel(0);
+    void audioContext.close().catch(() => undefined);
+  };
+}
+
 /**
  * Start an OpenAI Realtime WebRTC voice session.
  *
@@ -153,7 +241,9 @@ async function handleToolCall(
  *
  * Raises:
  *   Error through `onError` when microphone permission, session creation, SDP
- *   negotiation, or peer connection setup fails.
+ *   negotiation, or peer connection setup fails. Provider 429/401/403
+ *   responses are preserved in user-visible messages so quota and access
+ *   problems are diagnosable without exposing secrets.
  *
  * Side Effects:
  *   Requests microphone access, creates a peer connection, plays remote audio
@@ -166,12 +256,15 @@ export async function startRealtimeClient(
   let peerConnection: RTCPeerConnection | null = null;
   let localStream: MediaStream | null = null;
   let dataChannel: RTCDataChannel | null = null;
+  let stopAudioLevelMonitor: (() => void) | null = null;
   let assistantTranscript = '';
 
   const cleanup = () => {
+    stopAudioLevelMonitor?.();
     dataChannel?.close();
     peerConnection?.close();
     localStream?.getTracks().forEach((track) => track.stop());
+    stopAudioLevelMonitor = null;
     dataChannel = null;
     peerConnection = null;
     localStream = null;
@@ -184,6 +277,7 @@ export async function startRealtimeClient(
       navigator.mediaDevices.getUserMedia({ audio: true }),
     ]);
     localStream = microphoneStream;
+    stopAudioLevelMonitor = startInputAudioLevelMonitor(localStream, options.onInputAudioLevel);
     peerConnection = new RTCPeerConnection();
     dataChannel = peerConnection.createDataChannel('oai-events');
 
@@ -260,7 +354,7 @@ export async function startRealtimeClient(
       body: offer.sdp,
     });
     if (!sdpResponse.ok) {
-      throw new Error(`Realtime SDP negotiation failed (${sdpResponse.status})`);
+      throw new Error(realtimeFailureMessage('sdp', sdpResponse.status, await readSafeErrorBody(sdpResponse)));
     }
     const answerSdp = await sdpResponse.text();
     await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });

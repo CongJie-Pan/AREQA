@@ -1,39 +1,56 @@
 /**
- * Live Tutor fullscreen voice-mode styles.
+ * Live Tutor inline voice-mode styles.
  *
- * The layout mirrors modern voice chat UIs: readable caption area, a centered
- * ambient voice orb, and a bottom command bar that respects mobile safe areas.
+ * ChatContainer renders this panel between the conversation and the normal
+ * composer. The component owns only the voice affordance, leaving text input
+ * layout and keyboard-safe behavior to ChatInput.
  */
 
 import { createStyles } from 'antd-style';
 
 export const useStyles = createStyles(({ css }) => ({
-  overlay: css`
-    position: fixed;
-    inset: 0;
-    z-index: 1300;
-    background: #000000;
-    color: #ffffff;
-    pointer-events: auto;
-  `,
-
   panel: css`
     position: relative;
-    display: grid;
+    display: flex;
     width: 100%;
-    min-height: 100dvh;
-    grid-template-rows: minmax(150px, 0.95fr) auto minmax(120px, 1fr) auto;
+    --live-tutor-audio-level: 0;
+    --live-tutor-audio-scale: 1;
+    min-height: clamp(180px, 30dvh, 320px);
+    max-height: min(42dvh, 360px);
+    flex: 0 0 auto;
+    flex-direction: column;
     overflow: hidden;
-    padding: clamp(18px, 3.2vw, 42px);
-    padding-bottom: calc(clamp(18px, 3.2vw, 42px) + env(safe-area-inset-bottom));
+    padding: clamp(12px, 1.8vw, 20px) clamp(16px, 4vw, 44px);
     background:
-      radial-gradient(circle at 50% 58%, rgba(91, 101, 255, 0.12), transparent 24rem),
-      #000000;
+      radial-gradient(circle at 50% 62%, color-mix(in srgb, #7f8cff 12%, transparent), transparent 16rem),
+      var(--background);
+    color: var(--foreground);
 
     @media (max-width: 640px) {
-      grid-template-rows: minmax(140px, 0.9fr) auto minmax(96px, 0.8fr) auto;
-      padding: 18px 14px;
-      padding-bottom: calc(14px + env(safe-area-inset-bottom));
+      min-height: clamp(280px, 52dvh, 520px);
+      max-height: 58dvh;
+      padding: 12px 24px 18px;
+      background: var(--background);
+    }
+  `,
+
+  header: css`
+    display: flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  `,
+
+  body: css`
+    display: grid;
+    min-height: 0;
+    flex: 1 1 auto;
+    grid-template-rows: minmax(0, auto) auto 1fr;
+    align-items: center;
+
+    @media (max-width: 640px) {
+      grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
     }
   `,
 
@@ -42,21 +59,25 @@ export const useStyles = createStyles(({ css }) => ({
     width: min(980px, 100%);
     min-width: 0;
     flex-direction: column;
-    gap: 14px;
+    gap: 8px;
     justify-self: center;
+    align-self: start;
     overflow-y: auto;
-    padding-top: clamp(4px, 1.6vh, 28px);
+    padding-top: 4px;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+    scrollbar-color: color-mix(in srgb, var(--foreground) 28%, transparent) transparent;
 
     @media (max-width: 640px) {
-      gap: 10px;
+      max-height: 92px;
+      gap: 8px;
+      align-self: end;
       padding-top: 0;
+      text-align: center;
     }
   `,
 
   status: css`
-    color: rgba(255, 255, 255, 0.64);
+    color: color-mix(in srgb, var(--foreground) 64%, transparent);
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0;
@@ -67,18 +88,18 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   transcriptText: css`
-    color: #ffffff;
-    font-size: clamp(17px, 2vw, 24px);
+    color: var(--foreground);
+    font-size: clamp(15px, 1.6vw, 20px);
     font-weight: 500;
-    line-height: 1.65;
+    line-height: 1.55;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
   `,
 
   secondaryTranscript: css`
     max-width: 760px;
-    color: rgba(255, 255, 255, 0.58);
-    font-size: clamp(14px, 1.45vw, 17px);
+    color: color-mix(in srgb, var(--foreground) 58%, transparent);
+    font-size: clamp(13px, 1.25vw, 15px);
     line-height: 1.55;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
@@ -86,115 +107,102 @@ export const useStyles = createStyles(({ css }) => ({
 
   voiceCore: css`
     display: grid;
-    min-height: clamp(130px, 24vh, 260px);
+    min-height: clamp(118px, 18dvh, 220px);
     place-items: center;
     align-self: center;
     justify-self: center;
+
+    @media (max-width: 640px) {
+      min-height: clamp(190px, 32dvh, 330px);
+      align-self: center;
+    }
   `,
 
-  orb: css`
+  logoOrb: css`
     position: relative;
-    width: clamp(86px, 10vw, 116px);
+    width: clamp(96px, 10vw, 136px);
     aspect-ratio: 1;
     border-radius: 50%;
-    background:
-      radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.95), transparent 10%),
-      radial-gradient(circle at 31% 33%, rgba(255, 255, 255, 0.72), transparent 25%),
-      radial-gradient(circle at 68% 28%, rgba(95, 88, 255, 0.95), transparent 34%),
-      radial-gradient(circle at 64% 72%, rgba(235, 244, 255, 0.95), transparent 42%),
-      linear-gradient(145deg, #8b8dff 0%, #eef5ff 48%, #c8d7ff 100%);
     box-shadow:
-      0 0 28px rgba(112, 113, 255, 0.42),
-      0 0 72px rgba(255, 255, 255, 0.14),
-      inset -12px -14px 28px rgba(77, 89, 210, 0.22),
-      inset 10px 10px 28px rgba(255, 255, 255, 0.52);
-    transform: translateZ(0);
+      0 16px 42px rgba(17, 24, 39, 0.16),
+      0 0 calc(20px + var(--live-tutor-audio-level) * 46px) rgba(127, 140, 255, 0.34);
+    transform: scale(var(--live-tutor-audio-scale)) translateZ(0);
+    transform-origin: center;
+    transition: transform 90ms linear, box-shadow 120ms linear;
+    will-change: transform;
 
-    &::before,
     &::after {
       position: absolute;
       content: '';
       border-radius: inherit;
       pointer-events: none;
-    }
-
-    &::before {
-      inset: 12%;
-      background: linear-gradient(35deg, transparent 0 26%, rgba(255, 255, 255, 0.52) 44%, transparent 68% 100%);
-      filter: blur(3px);
-      opacity: 0.88;
-      transform: rotate(12deg);
-    }
-
-    &::after {
-      inset: -18%;
-      background: radial-gradient(circle, rgba(107, 116, 255, 0.24), transparent 62%);
-      filter: blur(8px);
-      opacity: 0.9;
+      inset: -14%;
+      background: radial-gradient(circle, rgba(127, 140, 255, calc(0.12 + var(--live-tutor-audio-level) * 0.18)), transparent 66%);
+      filter: blur(10px);
       z-index: -1;
     }
-  `,
-
-  orbActive: css`
-    animation: liveTutorOrbBreath 1.9s ease-in-out infinite;
-
-    @keyframes liveTutorOrbBreath {
-      0%, 100% {
-        transform: scale(0.96);
-        box-shadow:
-          0 0 26px rgba(112, 113, 255, 0.36),
-          0 0 66px rgba(255, 255, 255, 0.12),
-          inset -12px -14px 28px rgba(77, 89, 210, 0.22),
-          inset 10px 10px 28px rgba(255, 255, 255, 0.52);
-      }
-      50% {
-        transform: scale(1.04);
-        box-shadow:
-          0 0 34px rgba(112, 113, 255, 0.58),
-          0 0 94px rgba(255, 255, 255, 0.18),
-          inset -12px -14px 28px rgba(77, 89, 210, 0.24),
-          inset 10px 10px 30px rgba(255, 255, 255, 0.58);
-      }
-    }
-  `,
-
-  bottomBar: css`
-    display: flex;
-    width: min(1058px, 100%);
-    min-height: 70px;
-    align-items: center;
-    justify-self: center;
-    gap: 12px;
-    padding: 8px 10px 8px 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 999px;
-    background: rgba(35, 35, 35, 0.98);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
 
     @media (max-width: 640px) {
-      min-height: 62px;
-      gap: 9px;
-      padding: 7px 8px 7px 13px;
+      width: clamp(176px, 47vw, 240px);
+      box-shadow:
+        0 18px 54px rgba(17, 24, 39, 0.12),
+        0 0 calc(24px + var(--live-tutor-audio-level) * 56px) rgba(127, 140, 255, 0.32);
     }
   `,
 
-  addButton: css`
+  logoImage: css`
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 50%;
+    user-select: none;
+  `,
+
+  logoOrbActive: css`
+    animation: liveTutorLogoRestingPulse 2.4s ease-in-out infinite;
+
+    @keyframes liveTutorLogoRestingPulse {
+      0%, 100% {
+        filter: saturate(1);
+      }
+      50% {
+        filter: saturate(1.08);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  `,
+
+  controlCluster: css`
     display: inline-flex;
-    width: 40px;
-    height: 40px;
     flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+
+    @media (max-width: 640px) {
+      gap: 6px;
+    }
+  `,
+
+  muteButton: css`
+    display: inline-flex;
+    width: 38px;
+    height: 38px;
     align-items: center;
     justify-content: center;
     border: 0;
     border-radius: 50%;
     background: transparent;
-    color: rgba(255, 255, 255, 0.92);
+    color: color-mix(in srgb, var(--foreground) 86%, transparent);
     cursor: pointer;
-    transition: background 0.16s ease, color 0.16s ease;
+    transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.08);
-      color: #ffffff;
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--foreground);
+      transform: translateY(-1px);
     }
 
     @media (max-width: 640px) {
@@ -203,92 +211,34 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
 
-  inputDivider: css`
-    width: 1px;
-    height: 28px;
-    flex: 0 0 auto;
-    background: rgba(255, 255, 255, 0.34);
-  `,
-
-  inputPlaceholder: css`
-    min-width: 0;
-    flex: 1 1 auto;
-    color: rgba(255, 255, 255, 0.62);
-    font-size: 19px;
-    line-height: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-
-    @media (max-width: 640px) {
-      font-size: 17px;
-    }
-  `,
-
-  controlCluster: css`
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 10px;
-
-    @media (max-width: 640px) {
-      gap: 7px;
-    }
-  `,
-
-  muteButton: css`
-    display: inline-flex;
-    width: 48px;
-    height: 48px;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.9);
-    cursor: pointer;
-    transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.08);
-      color: #ffffff;
-      transform: translateY(-1px);
-    }
-
-    @media (max-width: 640px) {
-      width: 44px;
-      height: 44px;
-    }
-  `,
-
   closeButton: css`
     display: inline-flex;
-    width: 54px;
-    height: 54px;
+    width: 42px;
+    height: 42px;
     align-items: center;
     justify-content: center;
     border: 0;
     border-radius: 50%;
-    background: #f4f4f4;
-    color: #121212;
+    background: color-mix(in srgb, var(--foreground) 92%, transparent);
+    color: var(--background);
     cursor: pointer;
     transition: background 0.16s ease, transform 0.16s ease;
 
     &:hover {
-      background: #ffffff;
+      background: var(--foreground);
       transform: translateY(-1px);
     }
 
     @media (max-width: 640px) {
-      width: 48px;
-      height: 48px;
+      width: 38px;
+      height: 38px;
     }
   `,
 
   error: css`
     width: min(720px, 100%);
     justify-self: center;
-    margin: 0 0 16px;
+    margin: 8px 0;
     padding: 10px 14px;
     border: 1px solid rgba(255, 92, 92, 0.46);
     border-radius: 999px;

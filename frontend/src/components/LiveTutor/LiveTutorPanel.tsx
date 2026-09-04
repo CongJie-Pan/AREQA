@@ -4,12 +4,14 @@
  * AREQA Live Tutor voice panel.
  *
  * The panel owns the browser-only Realtime session and mirrors finalized voice
- * transcripts into the existing chat conversation. It does not feed audio
- * events into the text SSE stream, which keeps the original chat path stable.
+ * transcripts into the existing chat conversation. It is rendered inline by
+ * ChatContainer between the message list and the normal text input so voice
+ * mode does not replace the established composer.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Mic, MicOff, Plus, X } from 'lucide-react';
+import { Mic, MicOff, X } from 'lucide-react';
+import Image from 'next/image';
 import { Tooltip } from 'antd';
 import { useStyles } from './styles';
 import { startRealtimeClient, type RealtimeClientController, type RealtimeStatus } from '@/services/realtime';
@@ -64,9 +66,7 @@ const COPY = {
     mute: '靜音',
     unmute: '取消靜音',
     end: '結束語音',
-    close: '關閉',
-    typePlaceholder: 'Type',
-    setupFailed: '無法啟動即時語音，請確認麥克風權限與 OpenAI Realtime 設定。',
+    setupFailed: '無法啟動即時語音，請確認麥克風權限、OpenAI Realtime 權限或稍後再試。',
   },
   'zh-CN': {
     title: 'AREQA 即时语音',
@@ -77,9 +77,7 @@ const COPY = {
     mute: '静音',
     unmute: '取消静音',
     end: '结束语音',
-    close: '关闭',
-    typePlaceholder: 'Type',
-    setupFailed: '无法启动即时语音，请确认麦克风权限与 OpenAI Realtime 设置。',
+    setupFailed: '无法启动即时语音，请确认麦克风权限、OpenAI Realtime 权限或稍后再试。',
   },
   en: {
     title: 'AREQA Live Voice',
@@ -90,9 +88,7 @@ const COPY = {
     mute: 'Mute',
     unmute: 'Unmute',
     end: 'End voice',
-    close: 'Close',
-    typePlaceholder: 'Type',
-    setupFailed: 'Unable to start live voice. Check microphone permission and OpenAI Realtime configuration.',
+    setupFailed: 'Unable to start live voice. Check microphone permission, OpenAI Realtime access, or try again later.',
   },
 } as const;
 
@@ -113,6 +109,7 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   const { language } = useUserPreferences();
   const labels = COPY[language];
   const statusLabels = STATUS_LABELS[language];
+  const panelRef = useRef<HTMLElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const controllerRef = useRef<RealtimeClientController | null>(null);
   const conversationIdRef = useRef<string>(activeConversationId || '');
@@ -229,6 +226,11 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
           void audioRef.current.play();
         }
       },
+      onInputAudioLevel: (level) => {
+        const scale = 1 + Math.min(Math.max(level, 0), 1) * 0.18;
+        panelRef.current?.style.setProperty('--live-tutor-audio-scale', scale.toFixed(3));
+        panelRef.current?.style.setProperty('--live-tutor-audio-level', level.toFixed(3));
+      },
       onStatus: (nextStatus: RealtimeStatus) => setStatus(nextStatus),
       onUserTranscript: (transcript) => {
         setUserTranscript(transcript);
@@ -281,6 +283,8 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
     hasStartedRef.current = false;
     assistantMessageIdRef.current = null;
     assistantTranscriptRef.current = '';
+    panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
+    panelRef.current?.style.setProperty('--live-tutor-audio-level', '0');
     setStatus('idle');
   }, [setStatus, updateAssistantMessage]);
 
@@ -313,10 +317,25 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
   const secondaryCaption = assistantTranscript && userTranscript ? userTranscript : '';
 
   return (
-    <div className={styles.overlay}>
-      <section className={styles.panel} aria-label={labels.title}>
+    <section ref={panelRef} className={styles.panel} aria-label={labels.title}>
+      <div className={styles.header}>
+        <div className={styles.status}>{statusLabels[status]}</div>
+        <div className={styles.controlCluster}>
+          <Tooltip title={isMuted ? labels.unmute : labels.mute} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button type="button" className={styles.muteButton} onClick={handleMute} aria-label={isMuted ? labels.unmute : labels.mute}>
+              {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
+          </Tooltip>
+          <Tooltip title={labels.end} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button type="button" className={styles.closeButton} onClick={handleClose} aria-label={labels.end}>
+              <X size={22} strokeWidth={1.8} />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+
+      <div className={styles.body}>
         <div className={styles.captionArea}>
-          <div className={styles.status}>{statusLabels[status]}</div>
           <div className={styles.transcriptText}>{primaryCaption}</div>
           {secondaryCaption && (
             <div className={styles.secondaryTranscript}>{secondaryCaption}</div>
@@ -326,32 +345,22 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
         {error && <div className={styles.error}>{error}</div>}
 
         <div className={styles.voiceCore} aria-hidden>
-          <div className={cx(styles.orb, isActiveAudio && styles.orbActive)} />
-        </div>
-
-        <div className={styles.bottomBar}>
-          <button type="button" className={styles.addButton} aria-label={labels.title}>
-            <Plus size={28} strokeWidth={1.8} />
-          </button>
-          <div className={styles.inputDivider} aria-hidden />
-          <div className={styles.inputPlaceholder}>{labels.typePlaceholder}</div>
-          <div className={styles.controlCluster}>
-            <Tooltip title={isMuted ? labels.unmute : labels.mute} color="#262626" styles={{ container: { color: '#ffffff' } }}>
-              <button type="button" className={styles.muteButton} onClick={handleMute} aria-label={isMuted ? labels.unmute : labels.mute}>
-                {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
-              </button>
-            </Tooltip>
-            <Tooltip title={labels.end} color="#262626" styles={{ container: { color: '#ffffff' } }}>
-              <button type="button" className={styles.closeButton} onClick={handleClose} aria-label={labels.end}>
-                <X size={26} strokeWidth={1.8} />
-              </button>
-            </Tooltip>
+          <div className={cx(styles.logoOrb, isActiveAudio && styles.logoOrbActive)}>
+            <Image
+              src="/icon/areqa_icon_v4_circle.png"
+              alt=""
+              width={192}
+              height={192}
+              className={styles.logoImage}
+              draggable={false}
+              priority
+            />
           </div>
         </div>
+      </div>
 
-        <audio ref={audioRef} autoPlay />
-      </section>
-    </div>
+      <audio ref={audioRef} autoPlay />
+    </section>
   );
 }
 

@@ -606,6 +606,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
                 />
               </div>
 
+              <LiveTutorPanel activeConversationId={activeConversationId} />
+
               {/* Chat Input */}
               <div className={cx('areqa-chat-input-area', styles.inputArea)}>
                 <ChatInput
@@ -629,8 +631,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       {/* Text Selection Toolbar */}
       <TextSelectionToolbar />
-
-      <LiveTutorPanel activeConversationId={activeConversationId} />
 
       {/* Proactive Polling & Telemetry */}
       {(mailboxEnabled || compeerEnabled) && <ProactiveManager />}
