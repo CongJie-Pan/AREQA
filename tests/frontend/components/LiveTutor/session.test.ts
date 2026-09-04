@@ -17,6 +17,10 @@ function message(conversationId: string, content: string): DisplayMessage {
 }
 
 describe('Live Tutor session binding', () => {
+  it('leaves a new empty voice session unbound until speech produces a message', () => {
+    expect(selectLiveTutorConversationId(null, [])).toBeNull();
+  });
+
   it('always prefers the currently active conversation over previously rendered messages', () => {
     expect(selectLiveTutorConversationId('conversation-current', [
       message('conversation-stale', 'old'),
