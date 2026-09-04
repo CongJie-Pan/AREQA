@@ -315,4 +315,26 @@ describe('ChatInput', () => {
     fireEvent.click(screen.getByLabelText('停止生成'));
     expect(onStop).toHaveBeenCalledTimes(1);
   });
+
+  it('should replace the voice and send controls while live voice is active', () => {
+    const onToggleLiveVoiceMute = vi.fn();
+    const onCloseLiveVoice = vi.fn();
+    render(
+      <ChatInput
+        onSend={mockOnSend}
+        onOpenLiveTutor={vi.fn()}
+        isLiveVoiceActive
+        isLiveVoiceMuted
+        onToggleLiveVoiceMute={onToggleLiveVoiceMute}
+        onCloseLiveVoice={onCloseLiveVoice}
+      />,
+    );
+
+    expect(screen.queryByLabelText('開啟即時語音')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('發送訊息')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('取消靜音'));
+    fireEvent.click(screen.getByLabelText('結束語音'));
+    expect(onToggleLiveVoiceMute).toHaveBeenCalledOnce();
+    expect(onCloseLiveVoice).toHaveBeenCalledOnce();
+  });
 });

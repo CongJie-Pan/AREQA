@@ -57,7 +57,11 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(liveTutorPanel).not.toContain('transcriptText');
     expect(liveTutorPanel).not.toContain('secondaryTranscript');
     expect(liveTutorStyles).toContain('flex: 1 1 auto;');
-    expect(liveTutorStyles).toContain('width: clamp(76px, 8vw, 108px);');
+    expect(liveTutorStyles).toContain('background: transparent;');
+    expect(liveTutorStyles).toContain('width: clamp(78px, 8vw, 104px);');
+    expect(liveTutorStyles).not.toContain('logoOrbActive');
+    expect(liveTutorPanel).not.toContain('statusLabels');
+    expect(liveTutorPanel).not.toContain('styles.controlCluster');
     expect(liveTutorStyles).toContain('--live-tutor-audio-scale');
     expect(liveTutorStyles).toContain('scale(var(--live-tutor-audio-scale))');
   });

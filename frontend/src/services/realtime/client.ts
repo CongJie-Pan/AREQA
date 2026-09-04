@@ -90,6 +90,36 @@ interface RealtimeEvent {
     name?: string;
     arguments?: string;
   };
+  response?: {
+    output?: Array<{
+      type?: string;
+      role?: string;
+      content?: Array<{
+        type?: string;
+        text?: string;
+        transcript?: string;
+      }>;
+    }>;
+  };
+}
+
+/**
+ * Extracts the authoritative assistant transcript from a completed response.
+ *
+ * Realtime transports may emit transcript deltas, a transcript-only done
+ * event, or only the final response output. Supporting all three prevents a
+ * valid spoken answer from disappearing when intermediate events are omitted.
+ *
+ * @param event - Provider event parsed from the Realtime data channel.
+ * @returns Concatenated assistant text, or an empty string when unavailable.
+ */
+function completedResponseTranscript(event: RealtimeEvent): string {
+  return (event.response?.output ?? [])
+    .filter((item) => item.type === 'message' && item.role === 'assistant')
+    .flatMap((item) => item.content ?? [])
+    .map((content) => content.transcript || content.text || '')
+    .join('')
+    .trim();
 }
 
 function realtimeFailureMessage(stage: 'session' | 'sdp', status: number, body = ''): string {
@@ -333,8 +363,11 @@ function startInputAudioLevelMonitor(
       sumSquares += centered * centered;
     }
     const rms = Math.sqrt(sumSquares / samples.length);
-    const normalizedLevel = Math.min(1, rms * 3.6);
-    smoothedLevel = smoothedLevel * 0.82 + normalizedLevel * 0.18;
+    // Gate normal room noise, then use faster attack than release so speech
+    // produces a visible pulse without jitter between syllables.
+    const normalizedLevel = Math.min(1, Math.max(0, rms - 0.012) * 8.5);
+    const smoothing = normalizedLevel > smoothedLevel ? 0.48 : 0.18;
+    smoothedLevel += (normalizedLevel - smoothedLevel) * smoothing;
     onLevel(smoothedLevel);
     animationFrameId = window.requestAnimationFrame(tick);
   };
@@ -382,6 +415,7 @@ export async function startRealtimeClient(
   let dataChannel: RTCDataChannel | null = null;
   let stopAudioLevelMonitor: (() => void) | null = null;
   let assistantTranscript = '';
+  let assistantTranscriptFinalized = false;
   const completedToolCalls = new Set<string>();
 
   const cleanup = () => {
@@ -444,6 +478,7 @@ export async function startRealtimeClient(
           case 'response.created':
             options.onAssistantResponseStarted?.();
             assistantTranscript = '';
+            assistantTranscriptFinalized = false;
             options.onStatus('thinking');
             break;
           case 'response.audio.delta':
@@ -453,6 +488,8 @@ export async function startRealtimeClient(
             if (event.transcript?.trim()) options.onUserTranscript(event.transcript.trim());
             break;
           case 'response.audio_transcript.delta':
+          case 'response.output_audio_transcript.delta':
+          case 'response.text.delta':
           case 'response.output_text.delta':
             if (event.delta) {
               assistantTranscript += event.delta;
@@ -460,12 +497,24 @@ export async function startRealtimeClient(
             }
             break;
           case 'response.audio_transcript.done':
+          case 'response.output_audio_transcript.done':
+          case 'response.text.done':
           case 'response.output_text.done':
-            if (assistantTranscript.trim()) {
+            if (!assistantTranscriptFinalized && (event.transcript?.trim() || assistantTranscript.trim())) {
               options.onAssistantTranscriptDone(event.transcript?.trim() || assistantTranscript.trim());
               assistantTranscript = '';
+              assistantTranscriptFinalized = true;
             }
             break;
+          case 'response.done': {
+            const completedTranscript = completedResponseTranscript(event);
+            if (!assistantTranscriptFinalized && (completedTranscript || assistantTranscript.trim())) {
+              options.onAssistantTranscriptDone(completedTranscript || assistantTranscript.trim());
+              assistantTranscript = '';
+              assistantTranscriptFinalized = true;
+            }
+            break;
+          }
           case 'response.function_call_arguments.done':
           case 'response.output_item.done':
             await handleToolCall(event, dataChannel as RTCDataChannel, options, completedToolCalls);

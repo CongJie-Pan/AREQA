@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, X, CornerDownRight, Plus, FileText, Mic } from 'lucide-react';
+import { Send, Square, X, CornerDownRight, Plus, FileText, Mic, MicOff } from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -200,7 +200,21 @@ export interface ChatInputProps {
   onStop?: () => void;
   /** Callback when the live voice tutor button is clicked. */
   onOpenLiveTutor?: () => void;
+  /** Whether the composer is controlling an active live voice session. */
+  isLiveVoiceActive?: boolean;
+  /** Whether the active live voice microphone is muted. */
+  isLiveVoiceMuted?: boolean;
+  /** Callback that toggles microphone capture for the active voice session. */
+  onToggleLiveVoiceMute?: () => void;
+  /** Callback that ends the active live voice session. */
+  onCloseLiveVoice?: () => void;
 }
+
+const LIVE_VOICE_LABELS = {
+  'zh-TW': { open: '開啟即時語音', mute: '靜音', unmute: '取消靜音', close: '結束語音' },
+  'zh-CN': { open: '开启即时语音', mute: '静音', unmute: '取消静音', close: '结束语音' },
+  en: { open: 'Start live voice', mute: 'Mute', unmute: 'Unmute', close: 'End voice' },
+} as const;
 
 /**
  * ChatInput provides text input for sending messages
@@ -215,9 +229,14 @@ export function ChatInput({
   isStreaming = false,
   onStop,
   onOpenLiveTutor,
+  isLiveVoiceActive = false,
+  isLiveVoiceMuted = false,
+  onToggleLiveVoiceMute,
+  onCloseLiveVoice,
 }: ChatInputProps) {
   const { styles, cx } = useStyles();
-  const { t } = useUserPreferences();
+  const { t, language } = useUserPreferences();
+  const liveVoiceLabels = LIVE_VOICE_LABELS[language];
   const [value, setValue] = useState('');
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -547,20 +566,42 @@ export function ChatInput({
           maxLength={maxLength + 100}
           aria-label={t('messageTextarea')}
         />
-        {onOpenLiveTutor && (
-          <Tooltip title="開啟即時語音" color="#262626" styles={{ container: { color: '#ffffff' } }}>
+        {isLiveVoiceActive && onToggleLiveVoiceMute ? (
+          <Tooltip title={isLiveVoiceMuted ? liveVoiceLabels.unmute : liveVoiceLabels.mute} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button
+              type="button"
+              className={cx('areqa-chat-input-voice-button', styles.voiceButton)}
+              onClick={onToggleLiveVoiceMute}
+              aria-label={isLiveVoiceMuted ? liveVoiceLabels.unmute : liveVoiceLabels.mute}
+            >
+              {isLiveVoiceMuted ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
+          </Tooltip>
+        ) : onOpenLiveTutor ? (
+          <Tooltip title={liveVoiceLabels.open} color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
               className={cx('areqa-chat-input-voice-button', styles.voiceButton)}
               onClick={onOpenLiveTutor}
               disabled={disabled}
-              aria-label="開啟即時語音"
+              aria-label={liveVoiceLabels.open}
             >
               <Mic size={18} />
             </button>
           </Tooltip>
-        )}
-        {isStreaming && onStop ? (
+        ) : null}
+        {isLiveVoiceActive && onCloseLiveVoice ? (
+          <Tooltip title={liveVoiceLabels.close} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button
+              type="button"
+              className={cx('areqa-chat-input-send-button', styles.sendButton, styles.liveVoiceCloseButton)}
+              onClick={onCloseLiveVoice}
+              aria-label={liveVoiceLabels.close}
+            >
+              <X size={20} />
+            </button>
+          </Tooltip>
+        ) : isStreaming && onStop ? (
           <button
             type="button"
             className={cx('areqa-chat-input-send-button', styles.sendButton, styles.stopButton)}

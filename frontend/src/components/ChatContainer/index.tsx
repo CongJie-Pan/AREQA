@@ -106,6 +106,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const messages = useChatStore(chatSelectors.displayMessages);
   const openLiveTutor = useLiveTutorStore((state) => state.open);
   const isLiveTutorOpen = useLiveTutorStore((state) => state.isOpen);
+  const isLiveTutorMuted = useLiveTutorStore((state) => state.isMuted);
+  const setLiveTutorMuted = useLiveTutorStore((state) => state.setMuted);
+  const closeLiveTutor = useLiveTutorStore((state) => state.close);
   const isEmpty = messages.length === 0;
   const isEmptyLiveTutor = isLiveTutorOpen && isEmpty;
 
@@ -118,6 +121,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
   const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading;
   const landingPromptSent = useRef(false);
+
+  const toggleLiveTutorMute = useCallback(() => {
+    setLiveTutorMuted(!useLiveTutorStore.getState().isMuted);
+  }, [setLiveTutorMuted]);
 
   useEffect(() => {
     void fetchFeatures();
@@ -637,6 +644,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   isStreaming={isStreaming}
                   onStop={handleStop}
                   onOpenLiveTutor={openLiveTutor}
+                  isLiveVoiceActive={isLiveTutorOpen}
+                  isLiveVoiceMuted={isLiveTutorMuted}
+                  onToggleLiveVoiceMute={toggleLiveTutorMute}
+                  onCloseLiveVoice={closeLiveTutor}
                 />
               </div>
             </>

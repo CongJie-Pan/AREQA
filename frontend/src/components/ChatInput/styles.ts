@@ -392,6 +392,19 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  liveVoiceCloseButton: css`
+    background: var(--foreground);
+    color: var(--background);
+
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--foreground) 86%, transparent);
+    }
+
+    &:active:not(:disabled) {
+      background: color-mix(in srgb, var(--foreground) 78%, transparent);
+    }
+  `,
+
   // Pill-shaped mode toggle buttons with icon + label text
   toggleButton: css`
     display: inline-flex;

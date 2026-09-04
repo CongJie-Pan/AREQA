@@ -176,6 +176,70 @@ describe('Realtime client lifecycle', () => {
     );
   });
 
+  it('supports current output-audio transcript events without duplicating the final response', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onAssistantTranscriptDelta = vi.fn();
+    const onAssistantTranscriptDone = vi.fn();
+
+    await startRealtimeClient(realtimeOptions({
+      onAssistantTranscriptDelta,
+      onAssistantTranscriptDone,
+    }));
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.created' }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.output_audio_transcript.delta', delta: '這是回答' }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.output_audio_transcript.done', transcript: '這是回答' }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({
+        type: 'response.done',
+        response: {
+          output: [{
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'audio', transcript: '這是回答' }],
+          }],
+        },
+      }),
+    });
+
+    await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledOnce());
+    expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('這是回答');
+    expect(onAssistantTranscriptDone).toHaveBeenCalledWith('這是回答');
+  });
+
+  it('recovers assistant text from response.done when no transcript deltas arrive', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onAssistantTranscriptDone = vi.fn();
+
+    await startRealtimeClient(realtimeOptions({ onAssistantTranscriptDone }));
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.created' }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({
+        type: 'response.done',
+        response: {
+          output: [{
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'audio', transcript: '完整語音回覆' }],
+          }],
+        },
+      }),
+    });
+
+    await vi.waitFor(() => {
+      expect(onAssistantTranscriptDone).toHaveBeenCalledWith('完整語音回覆');
+    });
+  });
+
   it('completes one context tool call once when both provider completion events arrive', async () => {
     installMicrophone();
     mockRealtimeSession();
