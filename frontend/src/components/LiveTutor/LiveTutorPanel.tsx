@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Mic, MicOff, PhoneOff, X } from 'lucide-react';
+import { Mic, MicOff, Plus, X } from 'lucide-react';
 import { Tooltip } from 'antd';
 import { useStyles } from './styles';
 import { startRealtimeClient, type RealtimeClientController, type RealtimeStatus } from '@/services/realtime';
@@ -65,6 +65,7 @@ const COPY = {
     unmute: '取消靜音',
     end: '結束語音',
     close: '關閉',
+    typePlaceholder: 'Type',
     setupFailed: '無法啟動即時語音，請確認麥克風權限與 OpenAI Realtime 設定。',
   },
   'zh-CN': {
@@ -77,6 +78,7 @@ const COPY = {
     unmute: '取消静音',
     end: '结束语音',
     close: '关闭',
+    typePlaceholder: 'Type',
     setupFailed: '无法启动即时语音，请确认麦克风权限与 OpenAI Realtime 设置。',
   },
   en: {
@@ -89,6 +91,7 @@ const COPY = {
     unmute: 'Unmute',
     end: 'End voice',
     close: 'Close',
+    typePlaceholder: 'Type',
     setupFailed: 'Unable to start live voice. Check microphone permission and OpenAI Realtime configuration.',
   },
 } as const;
@@ -306,62 +309,44 @@ export function LiveTutorPanel({ activeConversationId }: LiveTutorPanelProps) {
 
   if (!isOpen) return null;
 
+  const primaryCaption = assistantTranscript || userTranscript || statusLabels[status];
+  const secondaryCaption = assistantTranscript && userTranscript ? userTranscript : '';
+
   return (
     <div className={styles.overlay}>
       <section className={styles.panel} aria-label={labels.title}>
-        <header className={styles.header}>
-          <div className={styles.titleGroup}>
-            <div className={styles.title}>{labels.title}</div>
-            <div className={styles.status}>{statusLabels[status]}</div>
-          </div>
-          <Tooltip title={labels.close} color="#262626" styles={{ container: { color: '#ffffff' } }}>
-            <button type="button" className={styles.iconButton} onClick={handleClose} aria-label={labels.close}>
-              <X size={18} />
-            </button>
-          </Tooltip>
-        </header>
-
-        <div className={styles.body}>
-          <div className={styles.avatarStage}>
-            <div className={styles.avatar}>
-              {isActiveAudio && <span className={styles.avatarPulse} />}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo/areqa_icon_v4_A_text.png" alt="AREQA" className={styles.logo} />
-            </div>
-          </div>
-
-          <div className={styles.wave} aria-hidden={!isActiveAudio}>
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-
-          <div className={styles.transcript}>
-            <div className={styles.transcriptBlock}>
-              <div className={styles.transcriptLabel}>{labels.you}</div>
-              <div className={styles.transcriptText}>{userTranscript || labels.emptyUser}</div>
-            </div>
-            <div className={styles.transcriptBlock}>
-              <div className={styles.transcriptLabel}>{labels.areqa}</div>
-              <div className={styles.transcriptText}>{assistantTranscript || labels.emptyAssistant}</div>
-            </div>
-          </div>
+        <div className={styles.captionArea}>
+          <div className={styles.status}>{statusLabels[status]}</div>
+          <div className={styles.transcriptText}>{primaryCaption}</div>
+          {secondaryCaption && (
+            <div className={styles.secondaryTranscript}>{secondaryCaption}</div>
+          )}
         </div>
 
         {error && <div className={styles.error}>{error}</div>}
 
-        <div className={styles.controls}>
-          <Tooltip title={isMuted ? labels.unmute : labels.mute} color="#262626" styles={{ container: { color: '#ffffff' } }}>
-            <button type="button" className={styles.primaryControl} onClick={handleMute} aria-label={isMuted ? labels.unmute : labels.mute}>
-              {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
-            </button>
-          </Tooltip>
-          <Tooltip title={labels.end} color="#262626" styles={{ container: { color: '#ffffff' } }}>
-            <button type="button" className={cx(styles.endControl)} onClick={handleClose} aria-label={labels.end}>
-              <PhoneOff size={22} />
-            </button>
-          </Tooltip>
+        <div className={styles.voiceCore} aria-hidden>
+          <div className={cx(styles.orb, isActiveAudio && styles.orbActive)} />
+        </div>
+
+        <div className={styles.bottomBar}>
+          <button type="button" className={styles.addButton} aria-label={labels.title}>
+            <Plus size={28} strokeWidth={1.8} />
+          </button>
+          <div className={styles.inputDivider} aria-hidden />
+          <div className={styles.inputPlaceholder}>{labels.typePlaceholder}</div>
+          <div className={styles.controlCluster}>
+            <Tooltip title={isMuted ? labels.unmute : labels.mute} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+              <button type="button" className={styles.muteButton} onClick={handleMute} aria-label={isMuted ? labels.unmute : labels.mute}>
+                {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+              </button>
+            </Tooltip>
+            <Tooltip title={labels.end} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+              <button type="button" className={styles.closeButton} onClick={handleClose} aria-label={labels.end}>
+                <X size={26} strokeWidth={1.8} />
+              </button>
+            </Tooltip>
+          </div>
         </div>
 
         <audio ref={audioRef} autoPlay />

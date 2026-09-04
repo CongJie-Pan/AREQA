@@ -1,9 +1,8 @@
 /**
- * Live Tutor responsive panel styles.
+ * Live Tutor fullscreen voice-mode styles.
  *
- * Desktop uses a compact floating panel so the existing chat remains readable.
- * Mobile uses a bottom sheet with safe-area padding because microphone controls
- * must stay reachable on Android and iPhone browsers.
+ * The layout mirrors modern voice chat UIs: readable caption area, a centered
+ * ambient voice orb, and a bottom command bar that respects mobile safe areas.
  */
 
 import { createStyles } from 'antd-style';
@@ -13,252 +12,290 @@ export const useStyles = createStyles(({ css }) => ({
     position: fixed;
     inset: 0;
     z-index: 1300;
-    pointer-events: none;
-
-    @media (max-width: 768px) {
-      display: flex;
-      align-items: flex-end;
-      background: rgba(0, 0, 0, 0.32);
-      pointer-events: auto;
-    }
+    background: #000000;
+    color: #ffffff;
+    pointer-events: auto;
   `,
 
   panel: css`
-    position: absolute;
-    right: 24px;
-    bottom: 96px;
-    display: flex;
-    width: min(400px, calc(100vw - 32px));
-    max-height: min(640px, calc(100vh - 128px));
-    flex-direction: column;
+    position: relative;
+    display: grid;
+    width: 100%;
+    min-height: 100dvh;
+    grid-template-rows: minmax(150px, 0.95fr) auto minmax(120px, 1fr) auto;
     overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--card) 94%, black);
-    color: var(--foreground);
-    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.42);
-    pointer-events: auto;
+    padding: clamp(18px, 3.2vw, 42px);
+    padding-bottom: calc(clamp(18px, 3.2vw, 42px) + env(safe-area-inset-bottom));
+    background:
+      radial-gradient(circle at 50% 58%, rgba(91, 101, 255, 0.12), transparent 24rem),
+      #000000;
 
-    @media (max-width: 768px) {
-      position: relative;
-      right: auto;
-      bottom: auto;
-      width: 100%;
-      max-height: 88vh;
-      min-height: 45vh;
-      border-right: 0;
-      border-bottom: 0;
-      border-left: 0;
-      border-radius: 22px 22px 0 0;
-      padding-bottom: env(safe-area-inset-bottom);
+    @media (max-width: 640px) {
+      grid-template-rows: minmax(140px, 0.9fr) auto minmax(96px, 0.8fr) auto;
+      padding: 18px 14px;
+      padding-bottom: calc(14px + env(safe-area-inset-bottom));
     }
   `,
 
-  header: css`
+  captionArea: css`
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 16px 10px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  `,
-
-  titleGroup: css`
-    display: flex;
+    width: min(980px, 100%);
     min-width: 0;
     flex-direction: column;
-    gap: 2px;
-  `,
+    gap: 14px;
+    justify-self: center;
+    overflow-y: auto;
+    padding-top: clamp(4px, 1.6vh, 28px);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
 
-  title: css`
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 15px;
-    font-weight: 700;
+    @media (max-width: 640px) {
+      gap: 10px;
+      padding-top: 0;
+    }
   `,
 
   status: css`
-    color: var(--muted-foreground);
-    font-size: 12px;
-  `,
+    color: rgba(255, 255, 255, 0.64);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
 
-  iconButton: css`
-    display: inline-flex;
-    width: 36px;
-    height: 36px;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--border);
-    border-radius: 50%;
-    background: var(--muted);
-    color: var(--foreground);
-    cursor: pointer;
-    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
-
-    &:hover {
-      border-color: #d8a25c;
-      transform: translateY(-1px);
+    @media (max-width: 640px) {
+      font-size: 12px;
     }
-  `,
-
-  body: css`
-    display: flex;
-    flex: 1 1 auto;
-    min-height: 0;
-    flex-direction: column;
-    gap: 14px;
-    padding: 16px;
-  `,
-
-  avatarStage: css`
-    display: flex;
-    min-height: 170px;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    border-radius: 14px;
-    background:
-      radial-gradient(circle at 50% 35%, rgba(216, 162, 92, 0.2), transparent 42%),
-      var(--muted);
-
-    @media (max-width: 768px) {
-      min-height: 150px;
-    }
-  `,
-
-  avatar: css`
-    position: relative;
-    display: grid;
-    width: 112px;
-    height: 112px;
-    place-items: center;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.08);
-  `,
-
-  avatarPulse: css`
-    position: absolute;
-    inset: -10px;
-    border: 1px solid rgba(216, 162, 92, 0.48);
-    border-radius: 50%;
-    animation: liveTutorPulse 1.6s ease-in-out infinite;
-
-    @keyframes liveTutorPulse {
-      0%, 100% { opacity: 0.28; transform: scale(0.95); }
-      50% { opacity: 0.9; transform: scale(1.08); }
-    }
-  `,
-
-  logo: css`
-    width: 78px;
-    height: 78px;
-    border-radius: 50%;
-    object-fit: cover;
-  `,
-
-  wave: css`
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    min-height: 24px;
-
-    span {
-      display: block;
-      width: 4px;
-      height: 12px;
-      border-radius: 999px;
-      background: #d8a25c;
-      animation: liveTutorWave 0.9s ease-in-out infinite;
-    }
-
-    span:nth-child(2) { animation-delay: 0.1s; }
-    span:nth-child(3) { animation-delay: 0.2s; }
-    span:nth-child(4) { animation-delay: 0.3s; }
-
-    @keyframes liveTutorWave {
-      0%, 100% { transform: scaleY(0.55); opacity: 0.55; }
-      50% { transform: scaleY(1.7); opacity: 1; }
-    }
-  `,
-
-  transcript: css`
-    display: flex;
-    min-height: 150px;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: 10px;
-    overflow-y: auto;
-    border-radius: 12px;
-  `,
-
-  transcriptBlock: css`
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 10px 12px;
-    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--muted) 72%, transparent);
-  `,
-
-  transcriptLabel: css`
-    color: var(--muted-foreground);
-    font-size: 11px;
-    font-weight: 700;
   `,
 
   transcriptText: css`
-    color: var(--foreground);
-    font-size: 14px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  `,
-
-  controls: css`
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 0 16px 16px;
-  `,
-
-  primaryControl: css`
-    display: inline-flex;
-    width: 54px;
-    height: 54px;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 50%;
-    background: #d8a25c;
-    color: #17120d;
-    cursor: pointer;
-  `,
-
-  endControl: css`
-    display: inline-flex;
-    width: 54px;
-    height: 54px;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 50%;
-    background: #b43434;
     color: #ffffff;
+    font-size: clamp(17px, 2vw, 24px);
+    font-weight: 500;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  `,
+
+  secondaryTranscript: css`
+    max-width: 760px;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: clamp(14px, 1.45vw, 17px);
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  `,
+
+  voiceCore: css`
+    display: grid;
+    min-height: clamp(130px, 24vh, 260px);
+    place-items: center;
+    align-self: center;
+    justify-self: center;
+  `,
+
+  orb: css`
+    position: relative;
+    width: clamp(86px, 10vw, 116px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.95), transparent 10%),
+      radial-gradient(circle at 31% 33%, rgba(255, 255, 255, 0.72), transparent 25%),
+      radial-gradient(circle at 68% 28%, rgba(95, 88, 255, 0.95), transparent 34%),
+      radial-gradient(circle at 64% 72%, rgba(235, 244, 255, 0.95), transparent 42%),
+      linear-gradient(145deg, #8b8dff 0%, #eef5ff 48%, #c8d7ff 100%);
+    box-shadow:
+      0 0 28px rgba(112, 113, 255, 0.42),
+      0 0 72px rgba(255, 255, 255, 0.14),
+      inset -12px -14px 28px rgba(77, 89, 210, 0.22),
+      inset 10px 10px 28px rgba(255, 255, 255, 0.52);
+    transform: translateZ(0);
+
+    &::before,
+    &::after {
+      position: absolute;
+      content: '';
+      border-radius: inherit;
+      pointer-events: none;
+    }
+
+    &::before {
+      inset: 12%;
+      background: linear-gradient(35deg, transparent 0 26%, rgba(255, 255, 255, 0.52) 44%, transparent 68% 100%);
+      filter: blur(3px);
+      opacity: 0.88;
+      transform: rotate(12deg);
+    }
+
+    &::after {
+      inset: -18%;
+      background: radial-gradient(circle, rgba(107, 116, 255, 0.24), transparent 62%);
+      filter: blur(8px);
+      opacity: 0.9;
+      z-index: -1;
+    }
+  `,
+
+  orbActive: css`
+    animation: liveTutorOrbBreath 1.9s ease-in-out infinite;
+
+    @keyframes liveTutorOrbBreath {
+      0%, 100% {
+        transform: scale(0.96);
+        box-shadow:
+          0 0 26px rgba(112, 113, 255, 0.36),
+          0 0 66px rgba(255, 255, 255, 0.12),
+          inset -12px -14px 28px rgba(77, 89, 210, 0.22),
+          inset 10px 10px 28px rgba(255, 255, 255, 0.52);
+      }
+      50% {
+        transform: scale(1.04);
+        box-shadow:
+          0 0 34px rgba(112, 113, 255, 0.58),
+          0 0 94px rgba(255, 255, 255, 0.18),
+          inset -12px -14px 28px rgba(77, 89, 210, 0.24),
+          inset 10px 10px 30px rgba(255, 255, 255, 0.58);
+      }
+    }
+  `,
+
+  bottomBar: css`
+    display: flex;
+    width: min(1058px, 100%);
+    min-height: 70px;
+    align-items: center;
+    justify-self: center;
+    gap: 12px;
+    padding: 8px 10px 8px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    background: rgba(35, 35, 35, 0.98);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+
+    @media (max-width: 640px) {
+      min-height: 62px;
+      gap: 9px;
+      padding: 7px 8px 7px 13px;
+    }
+  `,
+
+  addButton: css`
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.92);
     cursor: pointer;
+    transition: background 0.16s ease, color 0.16s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+
+    @media (max-width: 640px) {
+      width: 36px;
+      height: 36px;
+    }
+  `,
+
+  inputDivider: css`
+    width: 1px;
+    height: 28px;
+    flex: 0 0 auto;
+    background: rgba(255, 255, 255, 0.34);
+  `,
+
+  inputPlaceholder: css`
+    min-width: 0;
+    flex: 1 1 auto;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 19px;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    @media (max-width: 640px) {
+      font-size: 17px;
+    }
+  `,
+
+  controlCluster: css`
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+
+    @media (max-width: 640px) {
+      gap: 7px;
+    }
+  `,
+
+  muteButton: css`
+    display: inline-flex;
+    width: 48px;
+    height: 48px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 640px) {
+      width: 44px;
+      height: 44px;
+    }
+  `,
+
+  closeButton: css`
+    display: inline-flex;
+    width: 54px;
+    height: 54px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: #f4f4f4;
+    color: #121212;
+    cursor: pointer;
+    transition: background 0.16s ease, transform 0.16s ease;
+
+    &:hover {
+      background: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 640px) {
+      width: 48px;
+      height: 48px;
+    }
   `,
 
   error: css`
-    margin: 0 16px 12px;
-    padding: 10px 12px;
-    border: 1px solid rgba(180, 52, 52, 0.45);
-    border-radius: 10px;
-    background: rgba(180, 52, 52, 0.12);
+    width: min(720px, 100%);
+    justify-self: center;
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 92, 92, 0.46);
+    border-radius: 999px;
+    background: rgba(180, 52, 52, 0.18);
     color: #ffd7d7;
     font-size: 13px;
+    line-height: 1.45;
+    text-align: center;
   `,
 }));
