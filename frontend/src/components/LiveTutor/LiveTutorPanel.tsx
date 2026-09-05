@@ -89,6 +89,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const panelRef = useRef<HTMLElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const controllerRef = useRef<RealtimeClientController | null>(null);
+  const activeConversationIdRef = useRef<string | null | undefined>(activeConversationId);
   const conversationIdRef = useRef('');
   const persistedConversationIdRef = useRef('');
   const transcriptQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -113,6 +114,10 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const setStatus = useLiveTutorStore((state) => state.setStatus);
   const setError = useLiveTutorStore((state) => state.setError);
   const resetTranscript = useLiveTutorStore((state) => state.resetTranscript);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
 
   const prepareSessionConversationId = useCallback((): string => {
     const chatMessages = useChatStore.getState().messages;
@@ -167,7 +172,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     const normalizedTranscript = normalizeVoiceTranscript(transcript, language).trim();
     if (!normalizedTranscript || isCancelledRef.current) return;
     const turnId = ++turnSequenceRef.current;
-    const conversationId = persistedConversationIdRef.current || activeConversationId || undefined;
+    const conversationId = persistedConversationIdRef.current || activeConversationIdRef.current || undefined;
     logger.info('realtime.areqa_voice_turn_started', {
       component: 'LiveTutorPanel',
       conversationId: conversationId ?? 'new',
@@ -195,7 +200,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       conversationId: answerConversationId ?? 'unknown',
       answerChars: answer.length,
     });
-  }, [activeConversationId, findLatestAssistantAnswer, language]);
+  }, [findLatestAssistantAnswer, language]);
 
   const start = useCallback(async () => {
     if (hasStartedRef.current) return;

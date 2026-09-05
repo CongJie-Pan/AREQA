@@ -84,13 +84,20 @@ function resetStores(): void {
   });
 }
 
-async function renderOpenPanel(): Promise<RenderResult> {
+async function renderOpenPanel(
+  props: { activeConversationId?: string | null; hasMessages?: boolean } = {},
+): Promise<RenderResult> {
   act(() => {
     useLiveTutorStore.getState().open();
   });
   let result: RenderResult | null = null;
   await act(async () => {
-    result = render(<LiveTutorPanel activeConversationId="conv_paper" hasMessages />);
+    result = render(
+      <LiveTutorPanel
+        activeConversationId={props.activeConversationId ?? 'conv_paper'}
+        hasMessages={props.hasMessages ?? true}
+      />,
+    );
   });
   return result;
 }
@@ -189,6 +196,23 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
       useLiveTutorStore.getState().requestClose();
     });
     await waitFor(() => expect(playLiveVoiceCue).toHaveBeenCalledWith('hangup'));
+    act(() => view.unmount());
+  });
+
+  it('keeps the realtime session alive when the first voice turn creates a conversation', async () => {
+    useConversationStore.setState({ activeConversationId: null });
+    useChatStore.setState({ messages: [] });
+
+    const view = await renderOpenPanel({ activeConversationId: null, hasMessages: false });
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    act(() => {
+      useConversationStore.setState({ activeConversationId: 'conv_created' });
+      view.rerender(<LiveTutorPanel activeConversationId="conv_created" hasMessages />);
+    });
+
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    expect(controller.disconnect).not.toHaveBeenCalled();
     act(() => view.unmount());
   });
 
