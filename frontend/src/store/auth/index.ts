@@ -26,6 +26,21 @@ let initializationPromise: Promise<void> | null = null;
 let unsubscribe: (() => void) | null = null;
 let validationPromise: Promise<boolean> | null = null;
 let invalidationPromise: Promise<void> | null = null;
+const AUTH_REQUEST_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(operation: PromiseLike<T>, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => {
+      reject(new Error(`${label} timed out`));
+    }, AUTH_REQUEST_TIMEOUT_MS);
+
+    Promise.resolve(operation)
+      .then(resolve, reject)
+      .finally(() => {
+        globalThis.clearTimeout(timeoutId);
+      });
+  });
+}
 
 const applySession = (session: Session | null) => {
   useAuthStore.setState({
@@ -53,7 +68,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       });
       unsubscribe = () => subscription.unsubscribe();
 
-      const { data, error } = await supabase.auth.getSession();
+      const { data, error } = await withTimeout(supabase.auth.getSession(), 'Supabase session lookup');
       if (error && !hasReceivedAuthEvent) {
         set({ user: null, isInitialized: true, lastValidatedAt: Date.now() });
       } else if (!hasReceivedAuthEvent && data.session?.user) {
@@ -61,7 +76,14 @@ export const useAuthStore = create<AuthStore>((set) => ({
       }
 
       await useAuthStore.getState().validateSession();
-    })().finally(() => {
+    })().catch((error) => {
+      console.warn('Failed to initialize Supabase auth:', error instanceof Error ? error.message : error);
+      set({ user: null, isInitialized: true, lastValidatedAt: Date.now() });
+    }).finally(() => {
+      const current = useAuthStore.getState();
+      if (!current.isInitialized) {
+        set({ user: null, isInitialized: true, lastValidatedAt: Date.now() });
+      }
       initializationPromise = null;
     });
 
@@ -76,7 +98,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       let error: { status?: number; name?: string } | null = null;
 
       try {
-        const result = await supabase.auth.getUser();
+        const result = await withTimeout(supabase.auth.getUser(), 'Supabase user validation');
         data = result.data;
         error = result.error;
       } catch (caughtError) {
@@ -116,10 +138,17 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
     invalidationPromise = (async () => {
       set({ user: null, isInitialized: true, lastValidatedAt: Date.now() });
-      const { error } = await supabase.auth.signOut({ scope: 'local' });
-      if (error) {
-        // Local state is already cleared; a stale local token must not keep the UI authenticated.
-        console.warn('Failed to remove the local Supabase session:', error.message);
+      try {
+        const { error } = await withTimeout(
+          supabase.auth.signOut({ scope: 'local' }),
+          'Supabase local sign out',
+        );
+        if (error) {
+          // Local state is already cleared; a stale local token must not keep the UI authenticated.
+          console.warn('Failed to remove the local Supabase session:', error.message);
+        }
+      } catch (error) {
+        console.warn('Failed to remove the local Supabase session:', error instanceof Error ? error.message : error);
       }
     })().finally(() => {
       invalidationPromise = null;

@@ -200,6 +200,7 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
                 alt="AREQA Logo" 
                 width={80}
                 height={80}
+                unoptimized
                 style={{ objectFit: 'contain', margin: '0 auto', display: 'block' }} 
               />
             </div>

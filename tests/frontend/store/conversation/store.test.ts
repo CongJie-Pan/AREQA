@@ -20,10 +20,12 @@ vi.mock('@/database/db', () => ({
 describe('Conversation Store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(databaseService.conversation.getAll).mockResolvedValue([]);
     useConversationStore.setState({
       conversations: [],
       activeConversationId: null,
       isLoading: false,
+      isMessageHandoffLoading: false,
       error: null,
       streamingTitles: {},
     });
@@ -36,7 +38,22 @@ describe('Conversation Store', () => {
     expect(databaseService.conversation.getAll).toHaveBeenCalledWith('user-1');
   });
 
+  it('clears the loading state when conversation history load stalls', async () => {
+    vi.useFakeTimers();
+    vi.mocked(databaseService.conversation.getAll).mockReturnValue(new Promise(() => undefined));
+
+    const loadPromise = useConversationStore.getState().loadConversations('user-1');
+    await vi.advanceTimersByTimeAsync(7000);
+    await loadPromise;
+
+    const state = useConversationStore.getState();
+    expect(state.isLoading).toBe(false);
+    expect(state.error?.message).toBe('Conversation history load timed out');
+    vi.useRealTimers();
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 

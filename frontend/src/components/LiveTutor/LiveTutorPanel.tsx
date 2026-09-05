@@ -406,6 +406,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
               alt=""
               width={192}
               height={192}
+              unoptimized
               className={styles.logoImage}
               draggable={false}
               priority

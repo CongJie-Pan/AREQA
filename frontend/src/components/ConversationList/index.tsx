@@ -272,11 +272,12 @@ export function ConversationList({
       {/* Logo & Toggle Area */}
       <div className={cx('areqa-conversation-logo-row', styles.logoContainer)}>
         <div className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}>
-          <Image 
-            src={sidebarLogoSrc} 
+          <Image
+            src={sidebarLogoSrc}
             alt="AREQA Logo" 
             width={150}
             height={36}
+            unoptimized
             className={cx('areqa-conversation-logo', styles.logo)}
             draggable={false}
             priority

@@ -11,6 +11,21 @@ import type { ConversationStore } from './types';
 
 const GENERATED_TITLE_MAX_LENGTH = 18;
 const GENERATED_ENGLISH_TITLE_MAX_LENGTH = 48;
+const CONVERSATION_LOAD_TIMEOUT_MS = 7000;
+
+function withTimeout<T>(operation: PromiseLike<T>, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => {
+      reject(new Error(`${label} timed out`));
+    }, CONVERSATION_LOAD_TIMEOUT_MS);
+
+    Promise.resolve(operation)
+      .then(resolve, reject)
+      .finally(() => {
+        globalThis.clearTimeout(timeoutId);
+      });
+  });
+}
 
 function isEnglishLikeTitle(title: string): boolean {
   const latinCount = (title.match(/[A-Za-z]/g) || []).length;
@@ -51,7 +66,10 @@ export const useConversationStore = create<ConversationStore>((set) => ({
   loadConversations: async (userId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const conversations = await databaseService.conversation.getAll(userId);
+      const conversations = await withTimeout(
+        databaseService.conversation.getAll(userId),
+        'Conversation history load',
+      );
       set({ conversations, isLoading: false });
     } catch (error) {
       set({
