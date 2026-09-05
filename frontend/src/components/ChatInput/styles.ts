@@ -21,8 +21,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     border-style: solid;
     border-color: rgba(255, 255, 255, 0.08);
     border-radius: 999px;
-    max-width: 960px;
-    width: min(88vw, 960px);
+    max-width: 800px;
+    width: min(90%, 800px);
     margin: 0 auto 12px;
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
     transition: all 0.2s ease;
@@ -38,8 +38,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     &:focus-within {
-      border-color: rgba(227, 186, 128, 0.52);
-      box-shadow: 0 0 0 1px rgba(227, 186, 128, 0.22), 0 12px 28px rgba(0, 0, 0, 0.32);
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 22px rgba(0, 0, 0, 0.28);
     }
   `,
 
@@ -371,11 +371,15 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   voiceButton: css`
-    background: #2f6bdc;
-    color: #ffffff;
+    background: #facd8a;
+    color: #111111;
 
     &:hover:not(:disabled) {
-      background: #3d7bef;
+      background: #ffd9a3;
+    }
+
+    &:active:not(:disabled) {
+      background: #edbb72;
     }
   `,
 
