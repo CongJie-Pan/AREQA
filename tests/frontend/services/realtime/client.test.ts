@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import { RealtimeClientError, startRealtimeClient } from '@/services/realtime/client';
+import { createAreqaSpeechScript, RealtimeClientError, startRealtimeClient } from '@/services/realtime/client';
 
 vi.mock('@/services/authenticatedFetch', () => ({
   authenticatedFetch: vi.fn(),
@@ -117,7 +117,7 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
   });
 
-  it('cancels the active realtime response before disconnecting', async () => {
+  it('does not send response.cancel while no realtime response is active', async () => {
     installMicrophone();
     mockRealtimeSession();
     const controller = await startRealtimeClient(realtimeOptions());
@@ -125,7 +125,7 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
 
     const sentEvents = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
-    expect(sentEvents).toContainEqual({ type: 'response.cancel' });
+    expect(sentEvents).not.toContainEqual(expect.objectContaining({ type: 'response.cancel' }));
   });
 
   it('renders AREQA-authored answers as out-of-band realtime audio', async () => {
@@ -170,10 +170,32 @@ describe('Realtime client lifecycle', () => {
     mockRealtimeSession();
     const controller = await startRealtimeClient(realtimeOptions());
 
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.created', response: { id: 'resp_123' } }),
+    });
     controller.cancelSpeech();
 
-    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({ type: 'response.cancel' }));
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({
+      type: 'response.cancel',
+      response_id: 'resp_123',
+    }));
     expect(lastPeerConnection?.channel.close).not.toHaveBeenCalled();
+    controller.disconnect();
+  });
+
+  it('clears active output audio during cancellation without requiring an active response', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'output_audio_buffer.started' }),
+    });
+    controller.cancelSpeech();
+
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({
+      type: 'output_audio_buffer.clear',
+    }));
     controller.disconnect();
   });
   const originalPeerConnection = globalThis.RTCPeerConnection;
@@ -412,5 +434,45 @@ describe('Realtime client lifecycle', () => {
       code: 'provider_error',
       message: 'Realtime provider error (conversation_already_has_active_response)',
     } satisfies Partial<RealtimeClientError>));
+  });
+
+  it('ignores non-fatal response_cancel_not_active provider errors', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onError = vi.fn();
+
+    await startRealtimeClient(realtimeOptions({ onError }));
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          code: 'response_cancel_not_active',
+          message: 'No active response to cancel',
+        },
+      }),
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('creates a plain speech script from rich markdown without mutating the answer', () => {
+    const answer = [
+      '# 論文重點 ✨',
+      '',
+      '- 研究問題：探討學生如何學習。[1]',
+      '1. 方法：使用訪談與測驗。',
+      '| 欄位 | 內容 |',
+      '| --- | --- |',
+      '| 樣本 | 30 人 |',
+      '請看 [完整資料](https://example.com)。',
+      '```ts',
+      'const privateDebug = true;',
+      '```',
+    ].join('\n');
+
+    expect(createAreqaSpeechScript(answer)).toBe(
+      '論文重點 研究問題：探討學生如何學習。 方法：使用訪談與測驗。 請看 完整資料。',
+    );
   });
 });

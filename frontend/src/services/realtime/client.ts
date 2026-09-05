@@ -89,6 +89,7 @@ interface RealtimeSessionResponse {
 interface RealtimeEvent {
   type?: string;
   item_id?: string;
+  response_id?: string;
   transcript?: string;
   text?: string;
   delta?: string;
@@ -107,6 +108,8 @@ interface RealtimeEvent {
     arguments?: string;
   };
   response?: {
+    id?: string;
+    status?: string;
     output?: Array<{
       type?: string;
       role?: string;
@@ -197,6 +200,10 @@ function safeProviderError(event: RealtimeEvent): RealtimeClientError {
   return new RealtimeClientError('provider_error', `Realtime provider error (${code})`);
 }
 
+function isNonFatalCancelError(event: RealtimeEvent): boolean {
+  return event.error?.code === 'response_cancel_not_active';
+}
+
 async function readSafeErrorBody(response: Response): Promise<string> {
   try {
     const contentType = response.headers.get('content-type') || '';
@@ -281,11 +288,47 @@ function languageName(language: StartRealtimeClientOptions['interfaceLanguage'])
 function createAreqaSpeechInstructions(language: StartRealtimeClientOptions['interfaceLanguage']): string {
   return [
     'You are AREQA voice output.',
-    'Speak the provided AREQA answer faithfully.',
-    'Do not add, omit, summarize, paraphrase, translate, or answer anything else.',
-    'Only apply natural pauses for punctuation and readability.',
+    'Speak the provided AREQA answer faithfully as smooth plain speech.',
+    'Do not add, translate, answer anything else, or introduce list/table/emoji formatting.',
+    'Use natural pauses for punctuation and readability.',
     `Use ${languageName(language)} pronunciation and script conventions.`,
   ].join(' ');
+}
+
+/**
+ * Converts rich chat markdown into a speech-friendly script.
+ *
+ * Args:
+ *   answer: Authoritative AREQA answer already visible in the chat surface.
+ *
+ * Returns:
+ *   Plain prose optimized for speech rendering. The visible chat answer is not
+ *   mutated; this function only prepares the out-of-band Realtime audio input.
+ *
+ * Compatibility:
+ *   This intentionally removes structures that sound unnatural when read aloud:
+ *   markdown tables, heavy list prefixes, links, code fences, citations, and
+ *   emoji. It does not retrieve or inject attachment context.
+ */
+export function createAreqaSpeechScript(answer: string): string {
+  return answer
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^\|?[\s:|-]{3,}\|?$/u.test(line))
+    .filter((line) => !line.includes('|'))
+    .map((line) => line
+      .replace(/^#{1,6}\s+/u, '')
+      .replace(/^\s*(?:[-*+]|\d+[.)]|[（(]?[一二三四五六七八九十]+[）).、])\s+/u, '')
+      .replace(/\[([^\]]+)]\(([^)]+)\)/g, '$1')
+      .replace(/\[(?:\d+(?:\s*[,、]\s*\d+)*)]/g, '')
+      .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '')
+      .trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function createAreqaSpeechInput(answer: string): unknown[] {
@@ -442,12 +485,33 @@ export async function startRealtimeClient(
   let stopAudioLevelMonitor: (() => void) | null = null;
   let assistantTranscript = '';
   let assistantTranscriptFinalized = false;
+  let activeResponseInProgress = false;
+  let activeResponseId: string | null = null;
+  let outputAudioBufferActive = false;
   const completedToolCalls = new Set<string>();
 
-  const cancelActiveResponse = () => {
-    if (dataChannel?.readyState === 'open') {
-      sendRealtimeEvent(dataChannel, { type: 'response.cancel' });
+  const cancelActiveResponse = (): boolean => {
+    if (dataChannel?.readyState !== 'open') return false;
+    let sentControlEvent = false;
+    if (activeResponseInProgress) {
+      sendRealtimeEvent(dataChannel, activeResponseId
+        ? { type: 'response.cancel', response_id: activeResponseId }
+        : { type: 'response.cancel' });
+      activeResponseInProgress = false;
+      activeResponseId = null;
+      sentControlEvent = true;
     }
+    if (outputAudioBufferActive) {
+      sendRealtimeEvent(dataChannel, { type: 'output_audio_buffer.clear' });
+      outputAudioBufferActive = false;
+      sentControlEvent = true;
+    }
+    if (!sentControlEvent) {
+      logger.debug('realtime.cancel_skipped_no_active_response', {
+        conversationId: options.getConversationId?.() || options.conversationId,
+      });
+    }
+    return sentControlEvent;
   };
 
   const cleanup = (options: { cancelResponse?: boolean } = {}) => {
@@ -539,20 +603,25 @@ export async function startRealtimeClient(
             options.onAssistantResponseStarted?.();
             assistantTranscript = '';
             assistantTranscriptFinalized = false;
+            activeResponseInProgress = true;
+            activeResponseId = event.response?.id || event.response_id || null;
             options.onStatus('thinking');
             break;
           case 'response.audio.delta':
             options.onStatus('speaking');
             break;
           case 'output_audio_buffer.started':
+            outputAudioBufferActive = true;
             options.onPlaybackState?.('started');
             options.onStatus('speaking');
             break;
           case 'output_audio_buffer.stopped':
+            outputAudioBufferActive = false;
             options.onPlaybackState?.('stopped');
             options.onStatus('listening');
             break;
           case 'output_audio_buffer.cleared':
+            outputAudioBufferActive = false;
             options.onPlaybackState?.('interrupted');
             break;
           case 'conversation.item.input_audio_transcription.completed':
@@ -582,6 +651,8 @@ export async function startRealtimeClient(
             break;
           }
           case 'response.done': {
+            activeResponseInProgress = false;
+            activeResponseId = null;
             const completedTranscript = completedResponseTranscript(event);
             if (!assistantTranscriptFinalized && (completedTranscript || assistantTranscript.trim())) {
               options.onAssistantTranscriptDone(completedTranscript || assistantTranscript.trim());
@@ -595,6 +666,12 @@ export async function startRealtimeClient(
             await handleToolCall(event, dataChannel as RTCDataChannel, options, completedToolCalls);
             break;
           case 'error':
+            if (isNonFatalCancelError(event)) {
+              logger.debug('realtime.cancel_not_active_ignored', {
+                conversationId: options.getConversationId?.() || options.conversationId,
+              });
+              break;
+            }
             options.onError(safeProviderError(event));
             break;
         }
@@ -626,7 +703,7 @@ export async function startRealtimeClient(
         });
       },
       speakAreqaAnswer: (answer: string) => {
-        const trimmedAnswer = answer.trim();
+        const trimmedAnswer = createAreqaSpeechScript(answer);
         if (!trimmedAnswer || dataChannel?.readyState !== 'open') return;
         sendRealtimeEvent(dataChannel, {
           type: 'response.create',
@@ -642,6 +719,7 @@ export async function startRealtimeClient(
         logger.info('realtime.areqa_speech_requested', {
           conversationId: options.getConversationId?.() || options.conversationId,
           answerChars: trimmedAnswer.length,
+          speechMode: 'plain_text',
         });
       },
       cancelSpeech: cancelActiveResponse,
