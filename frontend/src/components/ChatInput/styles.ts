@@ -15,16 +15,16 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-direction: column;
     gap: 0;
-    padding: 12px 18px;
+    padding: 8px 12px;
     background: #242424;
     border-width: 1px;
     border-style: solid;
     border-color: rgba(255, 255, 255, 0.08);
     border-radius: 999px;
-    max-width: 1056px;
-    width: min(92vw, 1056px);
-    margin: 0 auto 16px;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+    max-width: 960px;
+    width: min(88vw, 960px);
+    margin: 0 auto 12px;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
     transition: all 0.2s ease;
     
     @media (max-width: 768px) {
@@ -34,7 +34,7 @@ export const useStyles = createStyles(({ css, token }) => ({
       border-width: 1px;
       border-style: solid;
       border-color: rgba(255, 255, 255, 0.08);
-      padding: 9px 12px;
+      padding: 7px 10px;
     }
 
     &:focus-within {
@@ -106,12 +106,12 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     width: 100%;
     min-width: 0;
-    min-height: 40px;
-    gap: 10px;
+    min-height: 34px;
+    gap: 8px;
   `,
 
   inputRowRecording: css`
-    gap: 14px;
+    gap: 10px;
   `,
 
   // Borderless textarea that fills the input row
@@ -119,14 +119,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex: 1 1 auto;
     width: 0;
     min-width: 0;
-    min-height: 24px;
+    min-height: 22px;
     max-height: 200px;
     padding: 0;
     border: none;
     background: transparent;
     color: var(--foreground);
-    font-size: 16px;
-    line-height: 24px;
+    font-size: 15px;
+    line-height: 22px;
     resize: none;
     outline: none;
 
@@ -303,8 +303,8 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   attachmentButton: css`
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -334,44 +334,13 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
-  modelButton: css`
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    height: 34px;
-    min-width: 126px;
-    padding: 0 8px;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.82);
-    font-size: 16px;
-    line-height: 1;
-    white-space: nowrap;
-    cursor: default;
-
-    span:first-child {
-      color: #ffffff;
-      font-weight: 650;
-    }
-
-    svg {
-      color: rgba(255, 255, 255, 0.58);
-    }
-
-    @media (max-width: 560px) {
-      display: none;
-    }
-  `,
-
   iconButton: css`
-    width: 42px;
-    height: 42px;
+    width: 34px;
+    height: 34px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 42px;
+    flex: 0 0 34px;
     border: 0;
     border-radius: 50%;
     cursor: pointer;
@@ -475,45 +444,28 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   dictationWave: css`
-    --wave-index: 0;
+    --wave-level: 0.16;
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 4px;
+    gap: 3px;
     flex: 1 1 auto;
     min-width: 0;
-    height: 28px;
+    height: 24px;
     overflow: hidden;
 
     span {
-      width: 4px;
-      height: 4px;
-      flex: 0 0 4px;
+      width: 3px;
+      height: calc(4px + var(--wave-level) * 20px);
+      flex: 0 0 3px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.48);
+      background: rgba(255, 255, 255, calc(0.36 + var(--wave-level) * 0.52));
       transform-origin: center;
-      animation: areqaDictationWave 920ms ease-in-out infinite;
-      animation-delay: calc(var(--wave-index) * -18ms);
+      transition: height 72ms linear, background 72ms linear;
     }
 
-    span:nth-child(6n + 2),
-    span:nth-child(6n + 5) {
-      animation-duration: 780ms;
-    }
-
-    span:nth-last-child(-n + 30) {
+    span:nth-last-child(-n + 16) {
       background: rgba(255, 255, 255, 0.8);
-    }
-
-    @keyframes areqaDictationWave {
-      0%, 100% {
-        height: 4px;
-        opacity: 0.46;
-      }
-      45% {
-        height: 24px;
-        opacity: 0.95;
-      }
     }
   `,
 

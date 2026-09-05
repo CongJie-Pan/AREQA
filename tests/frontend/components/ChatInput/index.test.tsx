@@ -85,6 +85,7 @@ describe('ChatInput', () => {
     render(<ChatInput onSend={mockOnSend} />);
     expect(screen.getByPlaceholderText(/提問AREQA/i)).toBeDefined();
     expect(screen.getByLabelText('加入圖片或文件')).toBeInTheDocument();
+    expect(screen.queryByText('5.5 Medium')).not.toBeInTheDocument();
     expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
     const input = screen.getByLabelText('訊息輸入框');
     const attachmentButton = screen.getByLabelText('加入圖片或文件');
@@ -405,6 +406,9 @@ describe('ChatInput', () => {
 
     fireEvent.click(screen.getByLabelText('語音輸入'));
     expect(await screen.findByLabelText('確認語音輸入')).toBeInTheDocument();
+    const waveform = document.querySelector('[style*="--wave-level"]');
+    expect(waveform).toBeInTheDocument();
+    expect(waveform?.getAttribute('style')).not.toContain('--wave-index');
     fireEvent.click(screen.getByLabelText('確認語音輸入'));
 
     await waitFor(() => {

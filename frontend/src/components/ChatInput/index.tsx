@@ -10,7 +10,6 @@ import {
   ArrowUp,
   AudioLines,
   Check,
-  ChevronDown,
   CornerDownRight,
   FileText,
   Mic,
@@ -36,6 +35,8 @@ const MAX_MESSAGE_LENGTH = 4000;
 const MAX_ATTACHMENT_COUNT = 5;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const DICTATION_WAVE_BAR_COUNT = 44;
+const IDLE_DICTATION_WAVE_LEVEL = 0.16;
 const SUPPORTED_ATTACHMENT_TYPES = new Set([
   'image/png', 'image/jpeg', 'image/webp', 'image/gif',
   'application/pdf', 'text/plain', 'text/markdown',
@@ -193,6 +194,75 @@ function formatAttachmentSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Monitors a microphone stream and maps recent audio energy to waveform bars.
+ *
+ * Args:
+ *   stream: Browser microphone stream captured for composer dictation.
+ *   onLevels: Receives normalized bar levels in the range [0, 1].
+ *
+ * Returns:
+ *   Cleanup callback that stops animation frames and closes the audio context.
+ *
+ * Side effects:
+ *   Creates a short-lived Web Audio analyser. It does not record, persist, or
+ *   log raw audio; the caller owns MediaRecorder capture separately.
+ */
+function startDictationLevelMonitor(
+  stream: MediaStream,
+  onLevels: (levels: number[]) => void,
+): () => void {
+  if (typeof window === 'undefined' || !window.AudioContext) {
+    return () => undefined;
+  }
+
+  let audioContext: AudioContext;
+  let analyser: AnalyserNode;
+  let source: MediaStreamAudioSourceNode;
+  try {
+    audioContext = new window.AudioContext();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.64;
+    source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume().catch(() => undefined);
+    }
+  } catch {
+    return () => undefined;
+  }
+
+  const samples = new Uint8Array(analyser.frequencyBinCount);
+  let animationFrameId = 0;
+  let closed = false;
+  let smoothedLevel = IDLE_DICTATION_WAVE_LEVEL;
+
+  const tick = () => {
+    if (closed) return;
+    analyser.getByteFrequencyData(samples);
+    const sum = samples.reduce((total, sample) => total + sample, 0);
+    const rawLevel = Math.min(1, Math.max(0, (sum / Math.max(samples.length, 1) - 6) / 86));
+    smoothedLevel += (rawLevel - smoothedLevel) * (rawLevel > smoothedLevel ? 0.52 : 0.2);
+    onLevels(Array.from({ length: DICTATION_WAVE_BAR_COUNT }, (_, index) => {
+      const phase = Math.sin((index / DICTATION_WAVE_BAR_COUNT) * Math.PI);
+      return Math.min(1, IDLE_DICTATION_WAVE_LEVEL + smoothedLevel * (0.36 + phase * 0.64));
+    }));
+    animationFrameId = window.requestAnimationFrame(tick);
+  };
+
+  animationFrameId = window.requestAnimationFrame(tick);
+
+  return () => {
+    closed = true;
+    if (animationFrameId) window.cancelAnimationFrame(animationFrameId);
+    source.disconnect();
+    analyser.disconnect();
+    onLevels(Array.from({ length: DICTATION_WAVE_BAR_COUNT }, () => IDLE_DICTATION_WAVE_LEVEL));
+    void audioContext.close().catch(() => undefined);
+  };
+}
+
 export interface ChatInputProps {
   /** Callback when message is sent */
   onSend: (message: string, attachments?: File[]) =>
@@ -236,7 +306,6 @@ const DICTATION_LABELS = {
     confirm: '確認語音輸入',
     unavailable: '此瀏覽器不支援語音輸入。',
     failed: '語音轉文字失敗，請稍後再試。',
-    model: '模型選擇',
   },
   'zh-CN': {
     start: '语音输入',
@@ -244,7 +313,6 @@ const DICTATION_LABELS = {
     confirm: '确认语音输入',
     unavailable: '此浏览器不支持语音输入。',
     failed: '语音转文字失败，请稍后再试。',
-    model: '模型选择',
   },
   en: {
     start: 'Voice dictation',
@@ -252,7 +320,6 @@ const DICTATION_LABELS = {
     confirm: 'Confirm dictation',
     unavailable: 'Voice dictation is not supported in this browser.',
     failed: 'Speech transcription failed. Please try again.',
-    model: 'Model selector',
   },
 } as const;
 
@@ -282,6 +349,9 @@ export function ChatInput({
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
+  const [dictationLevels, setDictationLevels] = useState<number[]>(
+    () => Array.from({ length: DICTATION_WAVE_BAR_COUNT }, () => IDLE_DICTATION_WAVE_LEVEL),
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
@@ -291,6 +361,7 @@ export function ChatInput({
   const dictationStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const shouldTranscribeDictationRef = useRef(false);
+  const stopDictationLevelMonitorRef = useRef<(() => void) | null>(null);
   
   // Connect to global state for mode togglers
   const quotedText = useChatStore((state) => state.quotedText);
@@ -331,6 +402,8 @@ export function ChatInput({
       if (preview.objectUrl) URL.revokeObjectURL(preview.objectUrl);
     }
     mediaRecorderRef.current = null;
+    stopDictationLevelMonitorRef.current?.();
+    stopDictationLevelMonitorRef.current = null;
     dictationStreamRef.current?.getTracks().forEach((track) => track.stop());
     dictationStreamRef.current = null;
   }, []);
@@ -537,6 +610,9 @@ export function ChatInput({
   const hasComposerContent = value.trim().length > 0 || attachmentPreviews.length > 0 || Boolean(quotedText);
 
   const stopDictationTracks = useCallback(() => {
+    stopDictationLevelMonitorRef.current?.();
+    stopDictationLevelMonitorRef.current = null;
+    setDictationLevels(Array.from({ length: DICTATION_WAVE_BAR_COUNT }, () => IDLE_DICTATION_WAVE_LEVEL));
     dictationStreamRef.current?.getTracks().forEach((track) => track.stop());
     dictationStreamRef.current = null;
   }, []);
@@ -555,6 +631,7 @@ export function ChatInput({
       const recorder = new MediaRecorder(stream, options);
       dictationChunksRef.current = [];
       dictationStreamRef.current = stream;
+      stopDictationLevelMonitorRef.current = startDictationLevelMonitor(stream, setDictationLevels);
       mediaRecorderRef.current = recorder;
       shouldTranscribeDictationRef.current = false;
       recorder.ondataavailable = (event) => {
@@ -691,8 +768,8 @@ export function ChatInput({
         {dictationState !== 'idle' ? (
           <>
             <div className={styles.dictationWave} aria-hidden>
-              {Array.from({ length: 76 }).map((_, index) => (
-                <span key={index} style={{ '--wave-index': index } as React.CSSProperties} />
+              {dictationLevels.map((level, index) => (
+                <span key={index} style={{ '--wave-level': level.toFixed(3) } as React.CSSProperties} />
               ))}
             </div>
             <button
@@ -729,10 +806,6 @@ export function ChatInput({
               maxLength={maxLength + 100}
               aria-label={t('messageTextarea')}
             />
-            <button type="button" className={styles.modelButton} aria-label={dictationLabels.model}>
-              <span>5.5 Medium</span>
-              <ChevronDown size={14} />
-            </button>
             <Tooltip title={dictationLabels.start} color="#262626" styles={{ container: { color: '#ffffff' } }}>
               <button
                 type="button"
