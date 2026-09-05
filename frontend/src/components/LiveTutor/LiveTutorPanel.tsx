@@ -31,6 +31,8 @@ import { normalizeVoiceTranscript } from '@/services/realtime/language';
 const COPY = {
   'zh-TW': {
     title: 'AREQA 即時語音',
+    connecting: 'Connecting',
+    lostConnection: 'Lost Connection',
     retry: '重新連線',
     permissionDenied: '麥克風權限已被封鎖，請在瀏覽器網站設定中允許後重試。',
     insecureContext: '麥克風只能在 HTTPS 安全連線中使用。',
@@ -40,6 +42,8 @@ const COPY = {
   },
   'zh-CN': {
     title: 'AREQA 即时语音',
+    connecting: 'Connecting',
+    lostConnection: 'Lost Connection',
     retry: '重新连接',
     permissionDenied: '麦克风权限已被阻止，请在浏览器网站设置中允许后重试。',
     insecureContext: '麦克风只能在 HTTPS 安全连接中使用。',
@@ -49,6 +53,8 @@ const COPY = {
   },
   en: {
     title: 'AREQA Live Voice',
+    connecting: 'Connecting',
+    lostConnection: 'Lost Connection',
     retry: 'Reconnect',
     permissionDenied: 'Microphone access is blocked. Allow it in browser site settings, then retry.',
     insecureContext: 'Microphone access requires a secure HTTPS connection.',
@@ -68,8 +74,9 @@ export interface LiveTutorPanelProps {
  *
  * User transcripts are forwarded to `sendMessage()` so the normal chat stream,
  * persistence, memory, search policy, and rendering pipeline own the final
- * answer. Realtime transcript events from the spoken rendering are intentionally
- * ignored because the visible answer must remain AREQA-authored.
+ * answer. Realtime transcript deltas from the spoken rendering reveal the
+ * visible answer like subtitles, while persistence still uses AREQA's
+ * authoritative text.
  *
  * @param props - Active conversation and whether normal messages are visible.
  * @returns The inline voice panel, or `null` while voice mode is closed.
@@ -88,12 +95,16 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const inputLevelRef = useRef(0);
   const outputLevelRef = useRef(0);
   const turnSequenceRef = useRef(0);
+  const pendingVoiceFinalizeRef = useRef<((displayContent?: string) => Promise<void>) | null>(null);
+  const pendingVoiceAnswerRef = useRef('');
+  const spokenTranscriptRef = useRef('');
   const hasStartedRef = useRef(false);
   const isCancelledRef = useRef(false);
 
   const isOpen = useLiveTutorStore((state) => state.isOpen);
   const isMuted = useLiveTutorStore((state) => state.isMuted);
   const error = useLiveTutorStore((state) => state.error);
+  const status = useLiveTutorStore((state) => state.status);
   const closeRequestId = useLiveTutorStore((state) => state.closeRequestId);
   const close = useLiveTutorStore((state) => state.close);
   const setStatus = useLiveTutorStore((state) => state.setStatus);
@@ -159,14 +170,20 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       conversationId: conversationId ?? 'new',
       transcriptChars: normalizedTranscript.length,
     });
-    const result = await sendMessage(normalizedTranscript, conversationId);
+    const result = await sendMessage(normalizedTranscript, conversationId, [], {
+      responseMode: 'voice',
+      onVoiceContentChunk: () => undefined,
+    });
     if (isCancelledRef.current || turnSequenceRef.current !== turnId || !result.completed) return;
-    const answerConversationId = useConversationStore.getState().activeConversationId || conversationId;
+    const answerConversationId = result.conversationId || useConversationStore.getState().activeConversationId || conversationId;
     if (answerConversationId) {
       persistedConversationIdRef.current = answerConversationId;
       conversationIdRef.current = answerConversationId;
     }
-    const answer = findLatestAssistantAnswer(answerConversationId);
+    pendingVoiceFinalizeRef.current = result.finalizeVoiceResponse ?? null;
+    pendingVoiceAnswerRef.current = result.answerContent?.trim() ?? '';
+    spokenTranscriptRef.current = '';
+    const answer = result.answerContent?.trim() || findLatestAssistantAnswer(answerConversationId);
     if (!answer) return;
     if (turnSequenceRef.current !== turnId) return;
     controllerRef.current?.speakAreqaAnswer(answer);
@@ -189,6 +206,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     inputLevelRef.current = 0;
     outputLevelRef.current = 0;
     turnSequenceRef.current = 0;
+    pendingVoiceFinalizeRef.current = null;
+    pendingVoiceAnswerRef.current = '';
+    spokenTranscriptRef.current = '';
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     setError(null);
     const conversationId = prepareSessionConversationId();
@@ -239,6 +259,11 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       onPlaybackState: (state) => {
         if (isCancelledRef.current) return;
         playbackRef.current = state === 'started' ? 'playing' : state === 'stopped' ? 'finished' : 'interrupted';
+        if (state === 'stopped' && pendingVoiceFinalizeRef.current) {
+          const finalize = pendingVoiceFinalizeRef.current;
+          pendingVoiceFinalizeRef.current = null;
+          void finalize(spokenTranscriptRef.current || pendingVoiceAnswerRef.current || undefined);
+        }
       },
       onUserTranscript: (transcript) => {
         if (isCancelledRef.current) return;
@@ -246,8 +271,19 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
           await runAreqaAuthoredTurn(transcript);
         });
       },
-      onAssistantTranscriptDelta: () => undefined,
-      onAssistantTranscriptDone: () => undefined,
+      onAssistantTranscriptDelta: (delta) => {
+        if (isCancelledRef.current || !delta) return;
+        spokenTranscriptRef.current += delta;
+        useChatStore.getState().appendContent(delta);
+      },
+      onAssistantTranscriptDone: (transcript) => {
+        if (isCancelledRef.current) return;
+        const finalize = pendingVoiceFinalizeRef.current;
+        pendingVoiceFinalizeRef.current = null;
+        spokenTranscriptRef.current = transcript || spokenTranscriptRef.current;
+        pendingVoiceAnswerRef.current = '';
+        void finalize?.(spokenTranscriptRef.current);
+      },
       onError: (nextError) => {
         if (isCancelledRef.current) return;
         const localizedErrors = {
@@ -293,6 +329,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     controllerRef.current?.disconnect();
     void cancelCurrentStream();
     controllerRef.current = null;
+    pendingVoiceFinalizeRef.current = null;
+    pendingVoiceAnswerRef.current = '';
+    spokenTranscriptRef.current = '';
     hasStartedRef.current = false;
     inputLevelRef.current = 0;
     outputLevelRef.current = 0;
@@ -346,9 +385,13 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       aria-label={labels.title}
     >
       <div className={styles.body}>
+        {status === 'connecting' && !error && (
+          <div className={styles.statusText}>{labels.connecting}</div>
+        )}
+
         {error && (
           <div className={styles.errorRow}>
-            <div className={styles.error}>{error}</div>
+            <div className={styles.error}>{labels.lostConnection}</div>
             <Tooltip title={labels.retry} color="#262626" styles={{ container: { color: '#ffffff' } }}>
               <button type="button" className={styles.retryButton} onClick={handleRetry} aria-label={labels.retry}>
                 <RotateCcw size={17} />
@@ -357,20 +400,22 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
           </div>
         )}
 
-        <div className={styles.voiceCore} aria-hidden>
-          <div className={styles.logoOrb}>
-            <Image
-              src="/icon/areqa_icon_v4_circle.png"
-              alt=""
-              width={192}
-              height={192}
-              unoptimized
-              className={styles.logoImage}
-              draggable={false}
-              priority
-            />
+        {status !== 'connecting' && !error && (
+          <div className={styles.voiceCore} aria-hidden>
+            <div className={styles.logoOrb}>
+              <Image
+                src="/icon/areqa_icon_v4_circle.png"
+                alt=""
+                width={192}
+                height={192}
+                unoptimized
+                className={styles.logoImage}
+                draggable={false}
+                priority
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <audio ref={audioRef} autoPlay />

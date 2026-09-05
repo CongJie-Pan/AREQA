@@ -62,6 +62,14 @@ export const useStyles = createStyles(({ css }) => ({
     place-items: center;
   `,
 
+  statusText: css`
+    pointer-events: none;
+    color: color-mix(in srgb, var(--foreground) 74%, transparent);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+  `,
+
   logoOrb: css`
     width: clamp(78px, 8vw, 104px);
     aspect-ratio: 1;

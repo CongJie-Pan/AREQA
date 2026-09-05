@@ -32,6 +32,7 @@ class OrchestrationExecutionMixin:
                       force_think: bool, max_tokens: int, temperature: float, top_p: float,
                       repetition_penalty: float, request: Request, user_id: str, search_mode: Optional[str] = None,
                       interface_language: InterfaceLanguage = "zh-TW",
+                      response_mode: str = "text",
                       attachments: Optional[List[Dict[str, Any]]] = None,
                       attachment_visual_sources: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
@@ -433,6 +434,7 @@ class OrchestrationExecutionMixin:
             turn_plan=turn_plan if turn_plan_enabled else None,
             response_policy=response_policy,
             interface_language=interface_language,
+            response_mode=response_mode,
             has_attachments=has_attachments,
         )
         trace.mark("prompt_assembly_finished")

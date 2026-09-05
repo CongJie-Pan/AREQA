@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, waitFor, type RenderResult } from '@testing-library/react';
+import { act, render, screen, waitFor, type RenderResult } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveTutorPanel } from '@/components/LiveTutor/LiveTutorPanel';
 import { startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
@@ -120,7 +120,7 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
     resetStores();
   });
 
-  it('sends finalized speech transcripts through AREQA stream before asking Realtime to speak', async () => {
+  it('sends finalized speech transcripts through AREQA voice mode before asking Realtime to speak', async () => {
     const view = await renderOpenPanel();
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
 
@@ -129,10 +129,67 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
     });
 
     await waitFor(() => {
-      expect(sendMessage).toHaveBeenCalledWith('請解釋這篇論文', 'conv_paper');
+      expect(sendMessage).toHaveBeenCalledWith('請解釋這篇論文', 'conv_paper', [], expect.objectContaining({
+        responseMode: 'voice',
+      }));
       expect(controller.speakAreqaAnswer).toHaveBeenCalledWith('AREQA 根據目前對話脈絡產生的正式回答。');
     });
     expect(realtimeOptions?.conversationId).toBe('conv_paper');
+    act(() => view.unmount());
+  });
+
+  it('shows only Connecting before the realtime channel is ready', async () => {
+    vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
+      realtimeOptions = options;
+      options.onStatus('connecting');
+      return controller;
+    });
+
+    const view = await renderOpenPanel();
+
+    expect(screen.getByText('Connecting')).toBeInTheDocument();
+    act(() => view.unmount());
+  });
+
+  it('shows Lost Connection when realtime setup fails', async () => {
+    vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
+      realtimeOptions = options;
+      options.onError(new Error('provider down'));
+      return controller;
+    });
+
+    const view = await renderOpenPanel();
+
+    await waitFor(() => expect(screen.getByText('Lost Connection')).toBeInTheDocument());
+    act(() => view.unmount());
+  });
+
+  it('reveals visible assistant text from realtime speech transcript deltas and finalizes storage with AREQA text', async () => {
+    const finalizeVoiceResponse = vi.fn(async () => undefined);
+    vi.mocked(sendMessage).mockResolvedValue({
+      completed: true,
+      conversationId: 'conv_paper',
+      answerContent: 'AREQA 根據目前對話脈絡產生的正式回答。',
+      finalizeVoiceResponse,
+    });
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請解釋這篇論文');
+    });
+    act(() => {
+      useChatStore.getState().addAssistantMessage('conv_paper');
+      useChatStore.getState().startStreaming(useChatStore.getState().messages.at(-1)?.id ?? 'missing');
+    });
+    act(() => {
+      realtimeOptions?.onAssistantTranscriptDelta('AREQA 根據');
+      realtimeOptions?.onAssistantTranscriptDelta('目前對話脈絡');
+      realtimeOptions?.onAssistantTranscriptDone('AREQA 根據目前對話脈絡');
+    });
+
+    expect(useChatStore.getState().currentContent).toBe('AREQA 根據目前對話脈絡');
+    expect(finalizeVoiceResponse).toHaveBeenCalledWith('AREQA 根據目前對話脈絡');
     act(() => view.unmount());
   });
 

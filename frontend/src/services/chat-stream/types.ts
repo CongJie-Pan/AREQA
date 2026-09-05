@@ -178,3 +178,16 @@ export interface StreamCallbacks {
   /** Called when suggested follow-up questions are received */
   onSuggestions?: (suggestions: string[]) => void;
 }
+
+/**
+ * Optional controls for AREQA's backend answer surface.
+ *
+ * Compatibility:
+ * Text chat callers should omit this object. Live voice passes `voice` so the
+ * backend can produce speech-safe prose while preserving the same streaming
+ * endpoint and orchestration pipeline.
+ */
+export interface ChatStreamOptions {
+  /** Surface that will render the final answer. */
+  responseMode?: 'text' | 'voice';
+}

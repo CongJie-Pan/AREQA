@@ -50,7 +50,7 @@ def _orchestration_facade():
 
 
 class OrchestrationPromptingMixin:
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", has_attachments: bool = False) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", response_mode: str = "text", has_attachments: bool = False) -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -151,13 +151,57 @@ class OrchestrationPromptingMixin:
             parts_context=parts_context,
             interface_language=interface_language,
         )
+        final_messages = context.messages
+        if response_mode == "voice":
+            final_messages = self._apply_voice_response_instruction(final_messages)
+            logger.info(
+                "orchestration.voice_response_mode_applied conversation_id=%s",
+                conversation_id,
+            )
+
         logger.info(
             "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s",
             conversation_id,
             context.learner_understanding,
             context.retrieved_memory,
         )
-        return context.messages
+        return final_messages
+
+    @staticmethod
+    def _apply_voice_response_instruction(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Add speech-safe answer constraints to an assembled prompt.
+
+        Args:
+            messages: Final model messages after normal AREQA prompt assembly.
+
+        Returns:
+            A copied message list whose system prompt asks the model to produce
+            oral, plain-text prose for live voice rendering.
+
+        Side Effects:
+            None. The caller emits `orchestration.voice_response_mode_applied`
+            with only the conversation id. The instruction never logs prompt
+            text or user content.
+
+        Compatibility:
+            This overlay changes answer shape only for live voice requests. It
+            does not authorize tools, memory, citations, or retrieval behavior
+            beyond the already-assembled AREQA prompt.
+        """
+
+        voice_instruction = (
+            "\n\n【Live Voice 回答格式】本回合正在為即時語音輸出產生內容。"
+            "正式回答必須是適合朗讀的純文字：不要使用 Markdown、標題、表格、列點、"
+            "emoji、引用編號、程式碼區塊或任何只適合視覺閱讀的格式。"
+            "請使用自然口語、短句和穩定節奏；先直接回答，再補必要說明。"
+            "如果內容較長，請用連貫段落表達，不要改成清單。"
+            "除非使用者明確要求其他語言，中文回答一律使用繁體中文。"
+        )
+        copied = [message.copy() for message in messages]
+        if copied and copied[0].get("role") == "system":
+            copied[0]["content"] = f"{copied[0].get('content', '')}{voice_instruction}"
+            return copied
+        return [{"role": "system", "content": voice_instruction.strip()}, *copied]
 
     @staticmethod
     def _should_run_parts_llm_rewrite(

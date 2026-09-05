@@ -13,7 +13,7 @@ import { API_CONFIG } from '@/config/api';
 import { ChatStreamError, StreamParseError, isAbortError } from '@/utils/error';
 import { ThinkTagParser } from './parser';
 import { useChatStore } from '@/store/chat/store';
-import type { ChatMessage, StreamCallbacks } from './types';
+import type { ChatMessage, ChatStreamOptions, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { logger } from '@/utils/logger';
@@ -36,6 +36,12 @@ function readInterfaceLanguage(): 'zh-TW' | 'zh-CN' | 'en' {
  * @param messages - Array of chat messages
  * @param callbacks - Callbacks for handling stream events
  * @param abortSignal - Optional AbortSignal for cancelling the request
+ * @param useRag - Whether retrieval-augmented generation is enabled.
+ * @param forceThink - Whether the backend may emit thinking content.
+ * @param searchMode - Explicit web-search routing mode.
+ * @param conversationId - Conversation identifier used for scoped backend state.
+ * @param attachments - Optional files attached to the latest user turn.
+ * @param options - Optional answer-surface controls such as live voice mode.
  *
  * @example
  * ```typescript
@@ -67,7 +73,8 @@ export async function createChatStream(
   forceThink: boolean = false,
   searchMode: SearchMode = 'auto',
   conversationId: string = "",
-  attachments: File[] = []
+  attachments: File[] = [],
+  options: ChatStreamOptions = {},
 ): Promise<void> {
   const parser = new ThinkTagParser();
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -113,6 +120,7 @@ export async function createChatStream(
       use_web_search: searchMode === 'always',
       search_mode: searchMode,
       interface_language: readInterfaceLanguage(),
+      response_mode: options.responseMode ?? 'text',
     };
 
     const body = attachments.length > 0

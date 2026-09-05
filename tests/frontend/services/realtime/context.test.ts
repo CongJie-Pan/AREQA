@@ -25,6 +25,7 @@ describe('shared voice context', () => {
   it('normalizes speech to Traditional Chinese without translating English', () => {
     expect(normalizeVoiceTranscript('请解释这篇论文的研究方法与结论。OpenAI API', 'zh-TW'))
       .toBe('請解釋這篇論文的研究方法與結論。OpenAI API');
+    expect(normalizeVoiceTranscript('请解释论文', 'en')).toBe('請解釋論文');
     expect(normalizeVoiceTranscript('请解释论文', 'zh-CN')).toBe('请解释论文');
   });
 });

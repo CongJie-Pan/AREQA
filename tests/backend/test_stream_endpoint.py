@@ -6,6 +6,7 @@ import asyncio
 
 # Import the FastAPI app
 from backend.main import app, get_current_user, get_optional_current_user
+from backend.services.orchestration.prompting import OrchestrationPromptingMixin
 
 
 @pytest.fixture(autouse=True)
@@ -94,6 +95,46 @@ async def test_stream_wrapper_emits_done_after_orchestrator_error():
     assert response.status_code == 200
     assert '"error": "stream_failed"' in response.text
     assert response.text.count("data: [DONE]") == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_forwards_voice_response_mode_to_orchestrator():
+    captured = {}
+
+    class VoiceModeOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=VoiceModeOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                json={
+                    "messages": [{"role": "user", "content": "請用語音說明"}],
+                    "response_mode": "voice",
+                },
+            )
+
+    assert response.status_code == 200
+    assert captured["response_mode"] == "voice"
+
+
+def test_voice_response_instruction_forces_speech_safe_plain_text():
+    messages = [{"role": "system", "content": "base prompt"}]
+
+    result = OrchestrationPromptingMixin._apply_voice_response_instruction(messages)
+
+    assert result[0]["content"].startswith("base prompt")
+    assert "即時語音輸出" in result[0]["content"]
+    assert "不要使用 Markdown" in result[0]["content"]
+    assert "中文回答一律使用繁體中文" in result[0]["content"]
+    assert messages[0]["content"] == "base prompt"
 
 @pytest.mark.asyncio
 async def test_sse_streaming_sequence_with_rag():

@@ -84,8 +84,32 @@ describe('chat stream visible latency events', () => {
     expect(payload.search_mode).toBe('auto');
     expect(payload.use_web_search).toBe(false);
     expect(payload.interface_language).toBe('zh-TW');
+    expect(payload.response_mode).toBe('text');
     expect(onStatus).toHaveBeenCalledWith('retrieving', '正在整理相關脈絡');
     expect(onContent).toHaveBeenCalledWith('回答內容');
+  });
+
+  it('sends voice response mode when requested by live voice', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
+
+    await createChatStream(
+      [{ role: 'user', content: '請用語音說明' }],
+      {
+        onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+        onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(),
+      },
+      undefined,
+      false,
+      false,
+      'auto',
+      'conversation-voice',
+      [],
+      { responseMode: 'voice' },
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const payload = JSON.parse(String(request.body));
+    expect(payload.response_mode).toBe('voice');
   });
 
   it('sends the selected interface language with stream requests', async () => {

@@ -32,6 +32,23 @@ import { persistentAnswerBlocks } from '@/utils/answerBlocks';
 let currentAbortController: AbortController | null = null;
 const CONVERSATION_PREVIEW_MAX_LENGTH = 100;
 
+export type SendMessageResponseMode = 'text' | 'voice';
+
+export interface SendMessageOptions {
+  /** Selects the backend answer surface without changing chat persistence. */
+  responseMode?: SendMessageResponseMode;
+  /** Called with speech-safe AREQA text chunks before the visible voice subtitle is revealed. */
+  onVoiceContentChunk?: (chunk: string) => void;
+}
+
+export interface SendMessageResult {
+  completed: boolean;
+  conversationId?: string;
+  assistantMessageId?: string;
+  answerContent?: string;
+  finalizeVoiceResponse?: (displayContent?: string) => Promise<void>;
+}
+
 function canPersistHistory(): boolean {
   return getCurrentUserId() !== null;
 }
@@ -124,7 +141,13 @@ function validateMessageContent(content: string, hasAttachments = false): void {
  *
  * @param content - User message content
  * @param conversationId - Optional conversation ID (creates new if not provided)
- * @returns Promise that resolves when streaming is complete
+ * @param attachments - Optional files to attach to the user turn.
+ * @param options - Optional answer-surface controls. Live voice uses this to
+ *   request speech-safe prose while deferring visible text to spoken transcript
+ *   deltas.
+ * @returns Promise that resolves when streaming is complete. Voice callers also
+ *   receive the authoritative answer and a finalizer that persists it after
+ *   speech playback ends.
  *
  * @throws ValidationError if content is invalid
  * @throws Error if streaming fails
@@ -146,12 +169,15 @@ function validateMessageContent(content: string, hasAttachments = false): void {
 export async function sendMessage(
   content: string,
   conversationId?: string,
-  attachments: File[] = []
-): Promise<{ completed: boolean }> {
+  attachments: File[] = [],
+  options: SendMessageOptions = {},
+): Promise<SendMessageResult> {
   // Validate input
   validateMessageContent(content, attachments.length > 0);
   const sanitizedContent = content.trim() || (attachments.length > 0 ? '請分析我附加的檔案。' : '');
   const attachmentMetadata = filesToAttachmentMetadata(attachments);
+  const responseMode = options.responseMode ?? 'text';
+  const isVoiceResponse = responseMode === 'voice';
 
   // Cancel any ongoing stream
   if (currentAbortController) {
@@ -255,9 +281,65 @@ export async function sendMessage(
   let answerBlocksPayload: AnswerBlock[] = [];
   let suggestionsList: string[] = [];
   let completed = false;
+  let hasFinalizedAssistant = false;
+  const effectiveForceThink = isVoiceResponse ? false : chatStore.forceThink;
 
   // Capture conversation ID for async callback (prevents closure issues)
   const conversationIdForSave = activeConversationId;
+
+  /**
+   * Finalize and persist the assistant message exactly once.
+   *
+   * Args:
+   *   displayContent: Optional visible subtitle transcript. Persistence still
+   *     uses AREQA's authoritative answer text so speech transcript drift does
+   *     not corrupt history.
+   *
+   * Side Effects:
+   *   Ends the active chat stream, writes the assistant message to storage when
+   *   history persistence is available, and refreshes the conversation preview.
+   */
+  const finalizeAssistantMessage = async (displayContent?: string): Promise<void> => {
+    if (hasFinalizedAssistant) return;
+    hasFinalizedAssistant = true;
+    if (displayContent !== undefined) {
+      chatStore.updateMessageContent(assistantMessageId, displayContent);
+      useChatStore.setState({ currentContent: displayContent });
+    }
+    chatStore.endStreaming(
+      sourcesPayload.length > 0 ? sourcesPayload : undefined,
+      answerBlocksPayload.length > 0 ? answerBlocksPayload : undefined,
+    );
+
+    if (suggestionsList.length > 0) {
+      chatStore.updateAssistantMessage(assistantMessageId, { suggestions: suggestionsList });
+    }
+
+    const thinkingDuration = thinkingStartTime ? Date.now() - thinkingStartTime : undefined;
+    const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
+      role: 'assistant',
+      content: answerContent,
+    };
+    if (thinkingContent) messageData.reasoning = { content: thinkingContent, duration: thinkingDuration };
+    if (citations.length > 0) messageData.citations = citations;
+    if (sourcesPayload.length > 0) messageData.sources = sourcesPayload;
+    const answerBlocksForPersistence = persistentAnswerBlocks(answerBlocksPayload);
+    if (answerBlocksForPersistence) messageData.answerBlocks = answerBlocksForPersistence;
+    if (suggestionsList.length > 0) messageData.suggestions = suggestionsList;
+    if (shouldPersist) {
+      await databaseService.message.add(conversationIdForSave, {
+        id: assistantMessageId,
+        ...messageData,
+      });
+    }
+    if (shouldPersist) updateConversationPreviewInStore(conversationIdForSave, answerContent, 2);
+    if (shouldPersist && messages.length === 1 && answerContent) {
+      useConversationStore.getState().generateTitle(conversationIdForSave, [
+        ...messages, { role: 'assistant', content: answerContent },
+      ]);
+    }
+    currentAbortController = null;
+  };
 
   try {
     const callbacks = {
@@ -284,6 +366,10 @@ export async function sendMessage(
 
       onContent: (chunk: string) => {
         answerContent += chunk;
+        if (isVoiceResponse) {
+          options.onVoiceContentChunk?.(chunk);
+          return;
+        }
         chatStore.appendContent(chunk);
       },
 
@@ -318,41 +404,15 @@ export async function sendMessage(
 
       onDone: async (suggestions?: string[]) => {
         completed = true;
-        // Pass sourcesPayload directly to avoid race condition where
-        // state.ragSources may not yet be set when endStreaming reads it.
-        chatStore.endStreaming(
-          sourcesPayload.length > 0 ? sourcesPayload : undefined,
-          answerBlocksPayload.length > 0 ? answerBlocksPayload : undefined,
-        );
-
         if (suggestions && suggestions.length > 0) {
           suggestionsList = suggestions;
           chatStore.updateAssistantMessage(assistantMessageId, { suggestions });
         }
-
-        const thinkingDuration = thinkingStartTime ? Date.now() - thinkingStartTime : undefined;
-        const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
-          role: 'assistant', content: answerContent,
-        };
-        if (thinkingContent) messageData.reasoning = { content: thinkingContent, duration: thinkingDuration };
-        if (citations.length > 0) messageData.citations = citations;
-        if (sourcesPayload.length > 0) messageData.sources = sourcesPayload;
-        const answerBlocksForPersistence = persistentAnswerBlocks(answerBlocksPayload);
-        if (answerBlocksForPersistence) messageData.answerBlocks = answerBlocksForPersistence;
-        if (suggestionsList.length > 0) messageData.suggestions = suggestionsList;
-        if (shouldPersist) {
-          await databaseService.message.add(conversationIdForSave, {
-            id: assistantMessageId,
-            ...messageData,
-          });
+        if (!isVoiceResponse) {
+          // Pass closure-captured metadata directly to avoid races where SSE
+          // events have not committed to Zustand before the terminal event.
+          await finalizeAssistantMessage();
         }
-        if (shouldPersist) updateConversationPreviewInStore(conversationIdForSave, answerContent, 2);
-        if (shouldPersist && messages.length === 1 && answerContent) {
-          useConversationStore.getState().generateTitle(conversationIdForSave, [
-            ...messages, { role: 'assistant', content: answerContent },
-          ]);
-        }
-        currentAbortController = null;
       },
 
       onError: (error: Error) => {
@@ -368,10 +428,11 @@ export async function sendMessage(
         callbacks,
         abortSignal,
         chatStore.useRag,
-        chatStore.forceThink,
+        effectiveForceThink,
         chatStore.searchMode,
         activeConversationId,
         attachments,
+        { responseMode },
       );
     } else {
       await createChatStream(
@@ -379,13 +440,21 @@ export async function sendMessage(
         callbacks,
         abortSignal,
         chatStore.useRag,
-        chatStore.forceThink,
+        effectiveForceThink,
         chatStore.searchMode,
         activeConversationId,
+        [],
+        { responseMode },
       );
     }
 
-    return { completed };
+    return {
+      completed,
+      conversationId: conversationIdForSave,
+      assistantMessageId,
+      answerContent,
+      finalizeVoiceResponse: isVoiceResponse ? finalizeAssistantMessage : undefined,
+    };
   } catch (error) {
     // Clear abort controller
     currentAbortController = null;
