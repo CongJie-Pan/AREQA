@@ -3,9 +3,9 @@
  *
  * This module uses the low-level OpenAI Realtime WebRTC interface directly so
  * the MVP does not need an additional frontend SDK. It owns peer connection,
- * media, data-channel events, microphone levels, and remote playback. AREQA's
- * normal chat stream remains the answer source; Realtime only captures speech
- * and renders approved text as audio.
+ * media, data-channel events, microphone levels, and remote playback. Realtime
+ * is the live voice answer source; AREQA app context is available through the
+ * bounded `get_areqa_context` tool.
  */
 
 import { API_CONFIG } from '@/config/api';
@@ -69,11 +69,6 @@ export interface StartRealtimeClientOptions {
 
 export interface RealtimeClientController {
   setMuted: (muted: boolean) => void;
-  /**
-   * Render an AREQA-authored answer as audio without adding it to Realtime's
-   * default conversation or allowing Realtime to become the answer source.
-   */
-  speakAreqaAnswer: (answer: string) => void;
   /** Cancel any in-flight Realtime speech response while keeping the session open. */
   cancelSpeech: () => void;
   disconnect: () => void;
@@ -277,69 +272,6 @@ function sendRealtimeEvent(channel: RTCDataChannel, payload: unknown): void {
   if (channel.readyState === 'open') {
     channel.send(JSON.stringify(payload));
   }
-}
-
-function languageName(language: StartRealtimeClientOptions['interfaceLanguage']): string {
-  if (language === 'en') return 'English';
-  if (language === 'zh-CN') return 'Simplified Chinese';
-  return 'Traditional Chinese';
-}
-
-function createAreqaSpeechInstructions(language: StartRealtimeClientOptions['interfaceLanguage']): string {
-  return [
-    'You are AREQA voice output.',
-    'Speak the provided AREQA answer faithfully as smooth plain speech.',
-    'Do not add, translate, answer anything else, or introduce list/table/emoji formatting.',
-    'Use natural pauses for punctuation and readability.',
-    `Use ${languageName(language)} pronunciation and script conventions.`,
-  ].join(' ');
-}
-
-/**
- * Converts rich chat markdown into a speech-friendly script.
- *
- * Args:
- *   answer: Authoritative AREQA answer already visible in the chat surface.
- *
- * Returns:
- *   Plain prose optimized for speech rendering. The visible chat answer is not
- *   mutated; this function only prepares the out-of-band Realtime audio input.
- *
- * Compatibility:
- *   This intentionally removes structures that sound unnatural when read aloud:
- *   markdown tables, heavy list prefixes, links, code fences, citations, and
- *   emoji. It does not retrieve or inject attachment context.
- */
-export function createAreqaSpeechScript(answer: string): string {
-  return answer
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`([^`]+)`/g, '$1')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !/^\|?[\s:|-]{3,}\|?$/u.test(line))
-    .filter((line) => !line.includes('|'))
-    .map((line) => line
-      .replace(/^#{1,6}\s+/u, '')
-      .replace(/^\s*(?:[-*+]|\d+[.)]|[（(]?[一二三四五六七八九十]+[）).、])\s+/u, '')
-      .replace(/\[([^\]]+)]\(([^)]+)\)/g, '$1')
-      .replace(/\[(?:\d+(?:\s*[,、]\s*\d+)*)]/g, '')
-      .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '')
-      .trim())
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-}
-
-function createAreqaSpeechInput(answer: string): unknown[] {
-  return [{
-    type: 'message',
-    role: 'user',
-    content: [{
-      type: 'input_text',
-      text: `Read this AREQA answer exactly:\n\n${answer}`,
-    }],
-  }];
 }
 
 /**
@@ -702,26 +634,6 @@ export async function startRealtimeClient(
           track.enabled = !muted;
         });
       },
-      speakAreqaAnswer: (answer: string) => {
-        const trimmedAnswer = createAreqaSpeechScript(answer);
-        if (!trimmedAnswer || dataChannel?.readyState !== 'open') return;
-        sendRealtimeEvent(dataChannel, {
-          type: 'response.create',
-          response: {
-            conversation: 'none',
-            output_modalities: ['audio'],
-            tools: [],
-            instructions: createAreqaSpeechInstructions(options.interfaceLanguage),
-            input: createAreqaSpeechInput(trimmedAnswer),
-            metadata: { response_purpose: 'areqa_voice_render' },
-          },
-        });
-        logger.info('realtime.areqa_speech_requested', {
-          conversationId: options.getConversationId?.() || options.conversationId,
-          answerChars: trimmedAnswer.length,
-          speechMode: 'plain_text',
-        });
-      },
       cancelSpeech: cancelActiveResponse,
       disconnect: () => cleanup({ cancelResponse: true }),
     };
@@ -730,7 +642,6 @@ export async function startRealtimeClient(
     options.onError(error instanceof Error ? error : new Error(String(error)));
     return {
       setMuted: () => undefined,
-      speakAreqaAnswer: () => undefined,
       cancelSpeech: () => undefined,
       disconnect: () => undefined,
     };

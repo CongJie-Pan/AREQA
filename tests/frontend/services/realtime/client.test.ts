@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import { createAreqaSpeechScript, RealtimeClientError, startRealtimeClient } from '@/services/realtime/client';
+import { RealtimeClientError, startRealtimeClient } from '@/services/realtime/client';
 
 vi.mock('@/services/authenticatedFetch', () => ({
   authenticatedFetch: vi.fn(),
@@ -126,28 +126,6 @@ describe('Realtime client lifecycle', () => {
 
     const sentEvents = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
     expect(sentEvents).not.toContainEqual(expect.objectContaining({ type: 'response.cancel' }));
-  });
-
-  it('renders AREQA-authored answers as out-of-band realtime audio', async () => {
-    installMicrophone();
-    mockRealtimeSession();
-    const controller = await startRealtimeClient(realtimeOptions());
-
-    controller.speakAreqaAnswer('這是 AREQA 的正式回答。');
-
-    const sentEvents = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
-    const speechEvent = sentEvents?.find((event) => event.type === 'response.create');
-    expect(speechEvent).toMatchObject({
-      type: 'response.create',
-      response: {
-        conversation: 'none',
-        output_modalities: ['audio'],
-        tools: [],
-        metadata: { response_purpose: 'areqa_voice_render' },
-      },
-    });
-    expect(speechEvent?.response.input[0].content[0].text).toContain('這是 AREQA 的正式回答。');
-    controller.disconnect();
   });
 
   it('notifies the app when user speech starts so stale chat streams can be cancelled', async () => {
@@ -456,23 +434,4 @@ describe('Realtime client lifecycle', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it('creates a plain speech script from rich markdown without mutating the answer', () => {
-    const answer = [
-      '# 論文重點 ✨',
-      '',
-      '- 研究問題：探討學生如何學習。[1]',
-      '1. 方法：使用訪談與測驗。',
-      '| 欄位 | 內容 |',
-      '| --- | --- |',
-      '| 樣本 | 30 人 |',
-      '請看 [完整資料](https://example.com)。',
-      '```ts',
-      'const privateDebug = true;',
-      '```',
-    ].join('\n');
-
-    expect(createAreqaSpeechScript(answer)).toBe(
-      '論文重點 研究問題：探討學生如何學習。 方法：使用訪談與測驗。 請看 完整資料。',
-    );
-  });
 });

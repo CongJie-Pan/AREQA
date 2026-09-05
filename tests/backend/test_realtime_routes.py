@@ -23,7 +23,7 @@ from backend.app.routes.realtime import (
 )
 
 
-def test_realtime_session_config_uses_allowed_mvp_model_without_auto_answers():
+def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     payload = RealtimeSessionRequest(
         model="gpt-realtime-2.1-mini",
         voice="marin",
@@ -36,14 +36,17 @@ def test_realtime_session_config_uses_allowed_mvp_model_without_auto_answers():
     assert config["type"] == "realtime"
     assert config["model"] == "gpt-realtime-2.1-mini"
     assert config["audio"]["output"]["voice"] == "marin"
+    assert "AREQA Live Tutor" in config["instructions"]
+    assert "a re ka" in config["instructions"]
+    assert "one to three short sentences" in config["instructions"]
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["audio"]["input"]["turn_detection"] == {
         "type": "server_vad",
-        "create_response": False,
+        "create_response": True,
         "interrupt_response": True,
     }
-    assert config["tools"] == []
-    assert config["tool_choice"] == "none"
+    assert config["tools"][0]["name"] == "get_areqa_context"
+    assert config["tool_choice"] == "auto"
 
 
 def test_realtime_session_config_preserves_simplified_chinese_preference():
@@ -243,3 +246,6 @@ async def test_realtime_context_returns_bounded_recent_messages_for_guest():
         {"role": "assistant", "content": "可以，我們先看背景。"},
     ]
     assert response["memory_items"] == []
+    assert response["parts_context"]["persona"]
+    assert response["parts_context"]["instruction"]
+    assert "parts_context" in response["guidance"]

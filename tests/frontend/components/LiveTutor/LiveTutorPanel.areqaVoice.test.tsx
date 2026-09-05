@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, type RenderResult } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveTutorPanel } from '@/components/LiveTutor/LiveTutorPanel';
 import { playLiveVoiceCue, startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
-import { cancelCurrentStream, sendMessage } from '@/services/chat';
+import { cancelCurrentStream } from '@/services/chat';
 import { useChatStore, type DisplayMessage } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
@@ -23,13 +23,23 @@ vi.mock('@/services/realtime', () => ({
 }));
 
 vi.mock('@/services/chat', () => ({
-  sendMessage: vi.fn(),
   cancelCurrentStream: vi.fn(),
+}));
+
+vi.mock('@/database/db', () => ({
+  getCurrentUserId: vi.fn(() => null),
+}));
+
+vi.mock('@/services/database', () => ({
+  databaseService: {
+    message: {
+      add: vi.fn(),
+    },
+  },
 }));
 
 const controller = {
   setMuted: vi.fn(),
-  speakAreqaAnswer: vi.fn(),
   cancelSpeech: vi.fn(),
   disconnect: vi.fn(),
 };
@@ -102,7 +112,7 @@ async function renderOpenPanel(
   return result;
 }
 
-describe('LiveTutorPanel AREQA-authored voice integration', () => {
+describe('LiveTutorPanel realtime-primary voice integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     realtimeOptions = null;
@@ -112,16 +122,6 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
       options.onStatus('listening');
       return controller;
     });
-    vi.mocked(sendMessage).mockImplementation(async () => {
-      useChatStore.setState({
-        messages: [
-          message('user', '這篇論文的背景內容'),
-          message('user', '請解釋這篇論文'),
-          message('assistant', 'AREQA 根據目前對話脈絡產生的正式回答。'),
-        ],
-      });
-      return { completed: true };
-    });
     vi.mocked(cancelCurrentStream).mockResolvedValue(undefined);
   });
 
@@ -129,19 +129,25 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
     resetStores();
   });
 
-  it('sends finalized speech transcripts through AREQA voice mode before asking Realtime to speak', async () => {
+  it('mirrors realtime user and assistant transcripts into the chat without AREQA stream', async () => {
     const view = await renderOpenPanel();
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
 
     await act(async () => {
       realtimeOptions?.onUserTranscript('请解释这篇论文');
     });
+    act(() => {
+      realtimeOptions?.onAssistantResponseStarted?.();
+      realtimeOptions?.onAssistantTranscriptDelta('可以，我先簡短說。');
+      realtimeOptions?.onAssistantTranscriptDone('可以，我先簡短說。');
+    });
 
     await waitFor(() => {
-      expect(sendMessage).toHaveBeenCalledWith('請解釋這篇論文', 'conv_paper', [], expect.objectContaining({
-        responseMode: 'voice',
-      }));
-      expect(controller.speakAreqaAnswer).toHaveBeenCalledWith('AREQA 根據目前對話脈絡產生的正式回答。');
+      const messages = useChatStore.getState().messages;
+      expect(messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: '請解釋這篇論文' }),
+        expect.objectContaining({ role: 'assistant', content: '可以，我先簡短說。', isStreaming: false }),
+      ]));
     });
     expect(realtimeOptions?.conversationId).toBe('conv_paper');
     act(() => view.unmount());
@@ -172,7 +178,7 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
       realtimeOptions?.onUserTranscript('你好');
     });
 
-    expect(sendMessage).not.toHaveBeenCalled();
+    expect(useChatStore.getState().messages).toHaveLength(1);
     act(() => view.unmount());
   });
 
@@ -229,32 +235,35 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
     act(() => view.unmount());
   });
 
-  it('reveals visible assistant text from realtime speech transcript deltas and finalizes storage with AREQA text', async () => {
-    const finalizeVoiceResponse = vi.fn(async () => undefined);
-    vi.mocked(sendMessage).mockResolvedValue({
-      completed: true,
-      conversationId: 'conv_paper',
-      answerContent: 'AREQA 根據目前對話脈絡產生的正式回答。',
-      finalizeVoiceResponse,
-    });
+  it('streams visible assistant text from realtime speech transcript deltas', async () => {
     const view = await renderOpenPanel();
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
 
-    await act(async () => {
-      realtimeOptions?.onUserTranscript('請解釋這篇論文');
-    });
     act(() => {
-      useChatStore.getState().addAssistantMessage('conv_paper');
-      useChatStore.getState().startStreaming(useChatStore.getState().messages.at(-1)?.id ?? 'missing');
-    });
-    act(() => {
+      realtimeOptions?.onAssistantResponseStarted?.();
       realtimeOptions?.onAssistantTranscriptDelta('AREQA 根據');
       realtimeOptions?.onAssistantTranscriptDelta('目前對話脈絡');
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().messages.at(-1)).toEqual(expect.objectContaining({
+        role: 'assistant',
+        content: 'AREQA 根據目前對話脈絡',
+        isStreaming: true,
+      }));
+    });
+
+    act(() => {
       realtimeOptions?.onAssistantTranscriptDone('AREQA 根據目前對話脈絡');
     });
 
-    expect(useChatStore.getState().currentContent).toBe('AREQA 根據目前對話脈絡');
-    expect(finalizeVoiceResponse).toHaveBeenCalledWith('AREQA 根據目前對話脈絡');
+    await waitFor(() => {
+      expect(useChatStore.getState().messages.at(-1)).toEqual(expect.objectContaining({
+        role: 'assistant',
+        content: 'AREQA 根據目前對話脈絡',
+        isStreaming: false,
+      }));
+    });
     act(() => view.unmount());
   });
 
