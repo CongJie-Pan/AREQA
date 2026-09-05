@@ -621,6 +621,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
               >
                 {!isEmptyLiveTutor && (
                   <MessageList
+                    liveVoice={isLiveTutorOpen}
                     onRegenerate={handleRegenerate}
                     onEdit={handleEdit}
                     onSelectSuggestion={handleSend}

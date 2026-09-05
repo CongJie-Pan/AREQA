@@ -11,6 +11,7 @@ import { API_CONFIG } from '@/config/api';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import type { DisplayMessage } from '@/store/chat';
 import { logger } from '@/utils/logger';
+import { buildRealtimeContext } from './context';
 
 const OPENAI_REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 const MODEL = 'gpt-realtime-2.1-mini';
@@ -48,13 +49,16 @@ export type RealtimeStatus =
 
 export interface StartRealtimeClientOptions {
   conversationId: string;
+  getConversationId?: () => string;
   interfaceLanguage: 'zh-TW' | 'zh-CN' | 'en';
   recentMessages: () => DisplayMessage[];
   onRemoteStream: (stream: MediaStream) => void;
   onInputAudioLevel?: (level: number) => void;
+  onPlaybackState?: (state: 'started' | 'stopped' | 'interrupted') => void;
   onStatus: (status: RealtimeStatus) => void;
   onAssistantResponseStarted?: () => void;
-  onUserTranscript: (transcript: string) => void;
+  onUserTurnCommitted?: (itemId: string) => void;
+  onUserTranscript: (transcript: string, itemId?: string) => void;
   onAssistantTranscriptDelta: (delta: string) => void;
   onAssistantTranscriptDone: (transcript: string) => void;
   onError: (error: Error) => void;
@@ -74,6 +78,7 @@ interface RealtimeSessionResponse {
 
 interface RealtimeEvent {
   type?: string;
+  item_id?: string;
   transcript?: string;
   text?: string;
   delta?: string;
@@ -236,13 +241,7 @@ async function fetchAreqaContext(
     body: JSON.stringify({
       conversation_id: conversationId,
       interface_language: interfaceLanguage,
-      messages: recentMessages
-        .filter((message) => message.role === 'user' || message.role === 'assistant')
-        .slice(-12)
-        .map((message) => ({
-          role: message.role,
-          content: realtimeContextContent(message),
-        })),
+      messages: buildRealtimeContext(recentMessages).map(({ role, content }) => ({ role, content })),
     }),
   });
   if (!response.ok) {
@@ -257,17 +256,6 @@ async function fetchAreqaContext(
  * @param message - Chat message owned by the bound conversation.
  * @returns Bounded text plus sanitized attachment display names.
  */
-function realtimeContextContent(message: DisplayMessage): string {
-  const attachmentNames = message.attachments
-    ?.map((attachment) => attachment.name.trim())
-    .filter(Boolean)
-    .slice(0, 4);
-  const attachmentContext = attachmentNames?.length
-    ? `\n[User-visible attachments: ${attachmentNames.join(', ')}]`
-    : '';
-  return `${message.content}${attachmentContext}`.slice(0, 1200);
-}
-
 function sendRealtimeEvent(channel: RTCDataChannel, payload: unknown): void {
   if (channel.readyState === 'open') {
     channel.send(JSON.stringify(payload));
@@ -302,7 +290,7 @@ async function handleToolCall(
   completedToolCalls.add(callId);
 
   const context = await fetchAreqaContext(
-    options.conversationId,
+    options.getConversationId?.() || options.conversationId,
     options.interfaceLanguage,
     options.recentMessages(),
   );
@@ -466,6 +454,21 @@ export async function startRealtimeClient(
     });
 
     dataChannel.onopen = () => {
+      const history = buildRealtimeContext(options.recentMessages());
+      for (const message of history) {
+        sendRealtimeEvent(dataChannel as RTCDataChannel, {
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: message.role,
+            content: [{ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: message.content }],
+          },
+        });
+      }
+      logger.info('realtime.history_seeded', {
+        conversationId: options.getConversationId?.() || options.conversationId,
+        messageCount: history.length,
+      });
       options.onStatus('listening');
     };
     dataChannel.onmessage = (message) => {
@@ -473,8 +476,11 @@ export async function startRealtimeClient(
         const event = JSON.parse(String(message.data)) as RealtimeEvent;
         switch (event.type) {
           case 'input_audio_buffer.speech_started':
-            options.onAssistantResponseStarted?.();
+            options.onPlaybackState?.('interrupted');
             options.onStatus('listening');
+            break;
+          case 'input_audio_buffer.committed':
+            if (event.item_id) options.onUserTurnCommitted?.(event.item_id);
             break;
           case 'response.created':
             options.onAssistantResponseStarted?.();
@@ -485,8 +491,19 @@ export async function startRealtimeClient(
           case 'response.audio.delta':
             options.onStatus('speaking');
             break;
+          case 'output_audio_buffer.started':
+            options.onPlaybackState?.('started');
+            options.onStatus('speaking');
+            break;
+          case 'output_audio_buffer.stopped':
+            options.onPlaybackState?.('stopped');
+            options.onStatus('listening');
+            break;
+          case 'output_audio_buffer.cleared':
+            options.onPlaybackState?.('interrupted');
+            break;
           case 'conversation.item.input_audio_transcription.completed':
-            if (event.transcript?.trim()) options.onUserTranscript(event.transcript.trim());
+            if (event.transcript?.trim()) options.onUserTranscript(event.transcript.trim(), event.item_id);
             break;
           case 'response.audio_transcript.delta':
           case 'response.output_audio_transcript.delta':

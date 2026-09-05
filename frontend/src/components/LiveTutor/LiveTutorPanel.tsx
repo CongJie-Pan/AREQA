@@ -28,6 +28,7 @@ import { generateUUID } from '@/utils/id';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 import { selectLiveTutorConversationId, selectLiveTutorMessages } from './session';
+import { normalizeVoiceTranscript } from '@/services/realtime/language';
 
 const COPY = {
   'zh-TW': {
@@ -95,6 +96,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const transcriptQueueRef = useRef<Promise<void>>(Promise.resolve());
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantTranscriptRef = useRef('');
+  const lastVoiceMessageIdRef = useRef<string | null>(null);
+  const playbackRef = useRef<'waiting' | 'playing' | 'finished' | 'interrupted'>('waiting');
+  const userTurnIdsRef = useRef(new Map<string, string>());
   const hasStartedRef = useRef(false);
   const isCancelledRef = useRef(false);
 
@@ -184,25 +188,30 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
 
   const persistUserTranscript = useCallback(async (
     content: string,
+    itemId?: string,
   ) => {
-    const trimmed = content.trim();
+    const trimmed = normalizeVoiceTranscript(content, language).trim();
     if (!trimmed) return;
     const conversationId = await ensurePersistedConversationId();
-    const userMessageId = addUserMessage(trimmed, conversationId);
+    const pendingId = itemId ? userTurnIdsRef.current.get(itemId) : undefined;
+    const userMessageId = pendingId ?? addUserMessage(trimmed, conversationId);
+    if (pendingId) useChatStore.getState().updateMessageContent(pendingId, trimmed);
+    if (itemId) userTurnIdsRef.current.delete(itemId);
     bumpConversationPreview(conversationId, trimmed);
     if (canPersistHistory()) {
       await databaseService.message.add(conversationId, {
         id: userMessageId,
         role: 'user',
         content: trimmed,
+        createdAt: useChatStore.getState().messages.find((message) => message.id === userMessageId)?.createdAt,
       });
     }
-  }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId]);
+  }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId, language]);
 
   const finalizeAssistantDraft = useCallback(async (
     contentOverride?: string,
   ): Promise<void> => {
-    const content = (contentOverride ?? assistantTranscriptRef.current).trim();
+    const content = normalizeVoiceTranscript(contentOverride ?? assistantTranscriptRef.current, language).trim();
     if (!content) {
       assistantMessageIdRef.current = null;
       assistantTranscriptRef.current = '';
@@ -212,9 +221,11 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     const conversationId = await ensurePersistedConversationId();
     const assistantMessageId = assistantMessageIdRef.current
       ?? addAssistantMessage(conversationId);
+    lastVoiceMessageIdRef.current = assistantMessageId;
     updateAssistantMessage(assistantMessageId, {
       content,
       isStreaming: false,
+      voicePlayback: playbackRef.current === 'waiting' ? 'finished' : playbackRef.current,
     });
     assistantMessageIdRef.current = null;
     assistantTranscriptRef.current = '';
@@ -224,9 +235,10 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
         id: assistantMessageId,
         role: 'assistant',
         content,
+        createdAt: useChatStore.getState().messages.find((message) => message.id === assistantMessageId)?.createdAt,
       }).catch(() => undefined);
     }
-  }, [addAssistantMessage, bumpConversationPreview, ensurePersistedConversationId, updateAssistantMessage]);
+  }, [addAssistantMessage, bumpConversationPreview, ensurePersistedConversationId, updateAssistantMessage, language]);
 
   const appendAssistantTranscript = useCallback(async (delta: string): Promise<void> => {
     if (!delta) return;
@@ -235,11 +247,13 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     if (!assistantMessageIdRef.current) {
       assistantMessageIdRef.current = addAssistantMessage(conversationId);
     }
+    lastVoiceMessageIdRef.current = assistantMessageIdRef.current;
     updateAssistantMessage(assistantMessageIdRef.current, {
-      content: assistantTranscriptRef.current,
+      content: normalizeVoiceTranscript(assistantTranscriptRef.current, language),
       isStreaming: true,
+      voicePlayback: playbackRef.current,
     });
-  }, [addAssistantMessage, ensurePersistedConversationId, updateAssistantMessage]);
+  }, [addAssistantMessage, ensurePersistedConversationId, updateAssistantMessage, language]);
 
   const start = useCallback(async () => {
     if (hasStartedRef.current) return;
@@ -250,6 +264,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     conversationMaterializationRef.current = null;
     transcriptQueueRef.current = Promise.resolve();
     resetTranscript();
+    playbackRef.current = 'waiting';
+    userTurnIdsRef.current.clear();
     setError(null);
     const conversationId = prepareSessionConversationId();
     logger.info('realtime.voice_session_bound', {
@@ -260,6 +276,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     });
     const controller = await startRealtimeClient({
       conversationId,
+      getConversationId: () => persistedConversationIdRef.current || conversationId,
       interfaceLanguage: language,
       recentMessages: () => selectLiveTutorMessages(
         useChatStore.getState().messages,
@@ -283,13 +300,34 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       },
       onAssistantResponseStarted: () => {
         if (isCancelledRef.current) return;
-        enqueueTranscriptWork(() => finalizeAssistantDraft());
-      },
-      onUserTranscript: (transcript) => {
-        if (isCancelledRef.current) return;
+        playbackRef.current = 'waiting';
         enqueueTranscriptWork(async () => {
           await finalizeAssistantDraft();
-          await persistUserTranscript(transcript);
+          lastVoiceMessageIdRef.current = null;
+        });
+      },
+      onPlaybackState: (state) => {
+        if (isCancelledRef.current) return;
+        playbackRef.current = state === 'started' ? 'playing' : state === 'stopped' ? 'finished' : 'interrupted';
+        const playback = playbackRef.current;
+        enqueueTranscriptWork(async () => {
+          if (lastVoiceMessageIdRef.current) {
+            updateAssistantMessage(lastVoiceMessageIdRef.current, { voicePlayback: playback });
+          }
+        });
+      },
+      onUserTurnCommitted: (itemId) => {
+        if (isCancelledRef.current) return;
+        enqueueTranscriptWork(async () => {
+          if (userTurnIdsRef.current.has(itemId)) return;
+          const boundId = await ensurePersistedConversationId();
+          userTurnIdsRef.current.set(itemId, addUserMessage('', boundId));
+        });
+      },
+      onUserTranscript: (transcript, itemId) => {
+        if (isCancelledRef.current) return;
+        enqueueTranscriptWork(async () => {
+          await persistUserTranscript(transcript, itemId);
         });
       },
       onAssistantTranscriptDelta: (delta) => {
@@ -336,6 +374,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     resetTranscript,
     setError,
     setStatus,
+    updateAssistantMessage,
+    addUserMessage,
+    ensurePersistedConversationId,
   ]);
 
   const stop = useCallback(() => {
@@ -343,9 +384,19 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     controllerRef.current?.disconnect();
     controllerRef.current = null;
     hasStartedRef.current = false;
+    enqueueTranscriptWork(async () => {
+      await finalizeAssistantDraft();
+      if (lastVoiceMessageIdRef.current) {
+        updateAssistantMessage(lastVoiceMessageIdRef.current, { voicePlayback: 'finished', isStreaming: false });
+      }
+      for (const id of userTurnIdsRef.current.values()) {
+        useChatStore.getState().removeMessage(id);
+      }
+      userTurnIdsRef.current.clear();
+    });
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     setStatus('idle');
-  }, [setStatus]);
+  }, [setStatus, enqueueTranscriptWork, finalizeAssistantDraft, updateAssistantMessage]);
 
   const handleClose = useCallback(() => {
     stop();

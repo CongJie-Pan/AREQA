@@ -12,6 +12,8 @@ import { syncService } from '@/services/syncService';
 
 type AddMessageData = Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> & {
   id?: string;
+  /** Preserve turn order when speech transcription completes out of order. */
+  createdAt?: Date;
 };
 
 export const messageRepo = {
@@ -21,7 +23,7 @@ export const messageRepo = {
    * Sets conversation title from first user message
    * Uses atomic modify operation to prevent race conditions
    * @param conversationId - The conversation to add the message to
-   * @param messageData - Message data (excluding id, conversationId, createdAt)
+   * @param messageData - Message data with optional stable id and turn timestamp.
    * @returns The created message
    */
   async add(
@@ -36,7 +38,7 @@ export const messageRepo = {
       userId,
       conversationId,
       ...messageData,
-      createdAt: new Date(),
+      createdAt: messageData.createdAt ?? new Date(),
     };
 
     await db.transaction('rw', [db.messages, db.conversations], async () => {

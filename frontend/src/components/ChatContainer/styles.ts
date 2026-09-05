@@ -195,6 +195,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   contentLiveTutor: css`
+    position: relative;
     justify-content: flex-start;
     padding-bottom: 0;
 
@@ -214,8 +215,15 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   messageAreaLiveTutor: css`
+    display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+    overflow: hidden;
+
+    & > .areqa-message-list {
+      min-height: 0;
+    }
   `,
 
   messageAreaLiveTutorEmpty: css`

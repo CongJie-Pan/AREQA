@@ -8,6 +8,7 @@
 import React, { memo, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown, { Components } from 'react-markdown';
+import { useVoiceReveal } from './useVoiceReveal';
 import { Streamdown, type Components as StreamdownComponents } from 'streamdown';
 import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
@@ -615,11 +616,16 @@ export function normalizeCitationMarkers(content: string): string {
 function StreamingMarkdown({
   content,
   markdownComponents,
+  animate = false,
+  voicePlayback,
 }: {
   content: string;
   markdownComponents: Components;
+  animate?: boolean;
+  voicePlayback?: import('@/store/chat').DisplayMessage['voicePlayback'];
 }) {
-  const throttledContent = useThrottledValue(content, STREAMING_MARKDOWN_FLUSH_MS);
+  const visibleContent = useVoiceReveal(content, voicePlayback);
+  const throttledContent = useThrottledValue(visibleContent, STREAMING_MARKDOWN_FLUSH_MS);
   const deferredContent = React.useDeferredValue(throttledContent);
   const processedContent = React.useMemo(() => {
     return normalizeDisplayMathBlocks(normalizeCitationMarkers(deferredContent));
@@ -632,6 +638,7 @@ function StreamingMarkdown({
       disallowedElements={['script', 'iframe', 'object', 'embed']}
       linkSafety={STREAMDOWN_LINK_SAFETY}
       mode="streaming"
+      animated={animate ? { animation: 'fadeIn', sep: 'char', duration: 220, stagger: 12 } : false}
       plugins={STREAMDOWN_PLUGINS}
     >
       {processedContent}
@@ -1480,6 +1487,8 @@ export const MessageItem = memo(function MessageItem({
                 ) : (
                   <StreamingMarkdown
                     content={message.content}
+                    animate={hasLiveStreamed || Boolean(message.voicePlayback)}
+                    voicePlayback={message.voicePlayback}
                     markdownComponents={markdownComponents}
                   />
                 )}

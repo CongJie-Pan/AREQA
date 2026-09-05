@@ -168,6 +168,11 @@ const tableModalPanelIn = keyframes`
 `;
 
 export const useStyles = createStyles(({ css, token }) => ({
+  voiceSpacer: css`
+    height: 160px;
+    flex: 0 0 160px;
+    pointer-events: none;
+  `,
   // MessageList styles
   container: css`
     display: flex;

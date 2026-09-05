@@ -17,7 +17,8 @@ export const useStyles = createStyles(({ css }) => ({
     min-height: 0;
     flex: 1 1 auto;
     flex-direction: column;
-    overflow: hidden;
+    overflow: visible;
+    pointer-events: none;
     padding: 8px clamp(16px, 4vw, 44px) 12px;
     background: transparent;
     color: var(--foreground);
@@ -28,10 +29,17 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   panelWithMessages: css`
-    flex: 0 0 clamp(150px, 25dvh, 230px);
+    flex: 0 0 0;
+    height: 0;
+    padding: 0;
+    z-index: 2;
 
-    @media (max-width: 768px) {
-      flex-basis: clamp(150px, 24dvh, 210px);
+    & > div {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 160px;
     }
   `,
 
@@ -76,6 +84,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   errorRow: css`
+    pointer-events: auto;
     position: absolute;
     top: 0;
     left: 50%;

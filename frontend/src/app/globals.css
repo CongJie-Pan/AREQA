@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "streamdown/styles.css";
 
+@media (prefers-reduced-motion: reduce) {
+  [data-sd-animate] {
+    animation: none !important;
+  }
+}
+
 @source "../../node_modules/streamdown/dist/*.js";
 
 :root {

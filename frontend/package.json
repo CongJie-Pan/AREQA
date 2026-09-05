@@ -37,6 +37,7 @@
     "katex": "^0.17.0",
     "lucide-react": "^0.556.0",
     "next": "16.0.7",
+    "opencc-js": "^1.4.2",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-markdown": "^10.1.0",

@@ -82,6 +82,40 @@ function mockRealtimeSession(): void {
 }
 
 describe('Realtime client lifecycle', () => {
+  it('seeds role-preserving history when the channel opens, before speech responses', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const options = realtimeOptions({ recentMessages: () => [
+      { id: 'u1', conversationId: 'conv_123', userId: 'guest', role: 'user', content: 'Explain paper A', createdAt: new Date() },
+      { id: 'a1', conversationId: 'conv_123', userId: 'guest', role: 'assistant', content: 'Paper A studies learning.', createdAt: new Date() },
+    ] });
+    const controller = await startRealtimeClient(options);
+    lastPeerConnection?.channel.onopen?.();
+    const events = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
+    expect(events?.map((event) => event.item.role)).toEqual(['user', 'assistant']);
+    expect(events?.[1].item.content[0]).toEqual({ type: 'output_text', text: 'Paper A studies learning.' });
+    controller.disconnect();
+  });
+
+  it('reports playback independently of generation completion and binds late transcripts to their turn', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onPlaybackState = vi.fn();
+    const onUserTurnCommitted = vi.fn();
+    const options = realtimeOptions({ onPlaybackState, onUserTurnCommitted });
+    const controller = await startRealtimeClient(options);
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+    send({ type: 'input_audio_buffer.committed', item_id: 'turn1' });
+    send({ type: 'output_audio_buffer.started' });
+    send({ type: 'response.done' });
+    expect(onPlaybackState.mock.calls).toEqual([['started']]);
+    send({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'turn1', transcript: '問題' });
+    expect(options.onUserTranscript).toHaveBeenCalledWith('問題', 'turn1');
+    expect(onUserTurnCommitted).toHaveBeenCalledWith('turn1');
+    send({ type: 'output_audio_buffer.stopped' });
+    expect(onPlaybackState).toHaveBeenLastCalledWith('stopped');
+    controller.disconnect();
+  });
   const originalPeerConnection = globalThis.RTCPeerConnection;
   const originalFetch = globalThis.fetch;
   const originalNavigator = globalThis.navigator;

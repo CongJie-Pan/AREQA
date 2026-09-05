@@ -25,6 +25,8 @@ const EMPTY_STATE_HOLD_MS = 5000;
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 export interface MessageListProps {
+  /** Reserve scrollable space beneath the last message for the voice logo. */
+  liveVoice?: boolean;
   /** Class name for styling */
   className?: string;
   /** Callback when regenerate button is clicked */
@@ -172,7 +174,7 @@ function RotatingTypewriterLine({
 /**
  * MessageList displays all messages in the current conversation
  */
-export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestion }: MessageListProps) {
+export function MessageList({ className, liveVoice = false, onRegenerate, onEdit, onSelectSuggestion }: MessageListProps) {
   const { styles, cx } = useStyles();
   const { t } = useUserPreferences();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -365,7 +367,7 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
           <MessageItem
             key={message.id}
             message={message}
-            isStreaming={isCurrentStreaming && isStreaming}
+            isStreaming={Boolean(message.isStreaming || (isCurrentStreaming && isStreaming))}
             isLast={isLast}
             className={isAssistantAfterUser ? 'assistant-after-user' : ''}
             onSelectSuggestion={onSelectSuggestion}
@@ -396,6 +398,8 @@ export function MessageList({ className, onRegenerate, onEdit, onSelectSuggestio
           />
         );
       })}
+
+      {liveVoice && <div className={styles.voiceSpacer} aria-hidden="true" />}
 
       {/* Scroll to bottom button */}
       {showScrollButton && (

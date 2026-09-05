@@ -21,6 +21,16 @@ vi.mock('@/database/db', async (importOriginal) => {
 });
 
 describe('messageRepo - sync integration', () => {
+  it('reloads delayed user transcriptions before the assistant reply', async () => {
+    await messageRepo.add('conv_voice', {
+      id: 'reply', role: 'assistant', content: 'Answer', createdAt: new Date(2000),
+    });
+    await messageRepo.add('conv_voice', {
+      id: 'question', role: 'user', content: 'Question', createdAt: new Date(1000),
+    });
+    const messages = await messageRepo.getByConversationId('conv_voice', 'user_123');
+    expect(messages.map((message) => message.id)).toEqual(['question', 'reply']);
+  });
   beforeEach(async () => {
     vi.clearAllMocks();
     await db.open();
