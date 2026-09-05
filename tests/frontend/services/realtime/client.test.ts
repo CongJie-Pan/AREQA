@@ -240,6 +240,24 @@ describe('Realtime client lifecycle', () => {
     });
   });
 
+  it('accepts authoritative text from a done-only text event', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onAssistantTranscriptDone = vi.fn();
+
+    await startRealtimeClient(realtimeOptions({ onAssistantTranscriptDone }));
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.created' }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.output_text.done', text: '純文字回覆' }),
+    });
+
+    await vi.waitFor(() => {
+      expect(onAssistantTranscriptDone).toHaveBeenCalledWith('純文字回覆');
+    });
+  });
+
   it('completes one context tool call once when both provider completion events arrive', async () => {
     installMicrophone();
     mockRealtimeSession();

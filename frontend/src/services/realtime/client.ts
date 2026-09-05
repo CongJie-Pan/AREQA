@@ -75,6 +75,7 @@ interface RealtimeSessionResponse {
 interface RealtimeEvent {
   type?: string;
   transcript?: string;
+  text?: string;
   delta?: string;
   call_id?: string;
   name?: string;
@@ -499,13 +500,17 @@ export async function startRealtimeClient(
           case 'response.audio_transcript.done':
           case 'response.output_audio_transcript.done':
           case 'response.text.done':
-          case 'response.output_text.done':
-            if (!assistantTranscriptFinalized && (event.transcript?.trim() || assistantTranscript.trim())) {
-              options.onAssistantTranscriptDone(event.transcript?.trim() || assistantTranscript.trim());
+          case 'response.output_text.done': {
+            const finalizedTranscript = event.transcript?.trim()
+              || event.text?.trim()
+              || assistantTranscript.trim();
+            if (!assistantTranscriptFinalized && finalizedTranscript) {
+              options.onAssistantTranscriptDone(finalizedTranscript);
               assistantTranscript = '';
               assistantTranscriptFinalized = true;
             }
             break;
+          }
           case 'response.done': {
             const completedTranscript = completedResponseTranscript(event);
             if (!assistantTranscriptFinalized && (completedTranscript || assistantTranscript.trim())) {
