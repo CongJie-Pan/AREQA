@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
 from fastapi import HTTPException
+from starlette.datastructures import UploadFile
 
 import backend.app.routes.realtime as realtime_routes
 from backend.app.routes.realtime import (
@@ -16,6 +19,7 @@ from backend.app.routes.realtime import (
     _safe_realtime_user_identifier,
     create_realtime_session,
     get_realtime_context,
+    transcribe_speech,
 )
 
 
@@ -165,6 +169,59 @@ async def test_create_realtime_session_maps_openai_auth_failure_to_service_error
 
     assert error.value.status_code == 503
     assert error.value.detail["code"] == "OPENAI_REALTIME_AUTH_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_speech_uses_mini_transcribe_model(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"text": "請解釋這篇論文"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, *, headers, data, files):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["data"] = data
+            captured["files"] = files
+            return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(realtime_routes.httpx, "AsyncClient", FakeAsyncClient)
+    upload = UploadFile(filename="speech.webm", file=io.BytesIO(b"audio-bytes"))
+
+    response = await transcribe_speech(upload, interface_language="zh-TW", current_user_id=None)
+
+    assert response == {"text": "請解釋這篇論文"}
+    assert captured["data"]["model"] == "gpt-4o-mini-transcribe"
+    assert captured["data"]["response_format"] == "json"
+    assert "Traditional Chinese" in captured["data"]["prompt"]
+    assert captured["files"]["file"][0] == "speech.webm"
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_speech_rejects_empty_upload(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    upload = UploadFile(filename="empty.webm", file=io.BytesIO(b""))
+
+    with pytest.raises(HTTPException) as error:
+        await transcribe_speech(upload, interface_language="zh-TW", current_user_id=None)
+
+    assert error.value.status_code == 400
+    assert error.value.detail["code"] == "SPEECH_AUDIO_EMPTY"
 
 
 @pytest.mark.asyncio

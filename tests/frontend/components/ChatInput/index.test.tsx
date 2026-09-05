@@ -3,17 +3,43 @@ import { render, screen, fireEvent, waitFor, createEvent } from '@testing-librar
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { useChatStore } from '@/store/chat';
+import { transcribeSpeech } from '@/services/speech/transcription';
 
 // Mock Zustand store
 vi.mock('@/store/chat', () => ({
   useChatStore: vi.fn(),
 }));
 
+vi.mock('@/services/speech/transcription', () => ({
+  transcribeSpeech: vi.fn(),
+}));
+
+class FakeMediaRecorder {
+  static isTypeSupported = vi.fn(() => true);
+  state: RecordingState = 'inactive';
+  mimeType = 'audio/webm;codecs=opus';
+  ondataavailable: ((event: BlobEvent) => void) | null = null;
+  onstop: (() => void) | null = null;
+
+  constructor(public readonly stream: MediaStream) {}
+
+  start() {
+    this.state = 'recording';
+  }
+
+  stop() {
+    this.state = 'inactive';
+    this.ondataavailable?.({ data: new Blob(['audio'], { type: this.mimeType }) } as BlobEvent);
+    this.onstop?.();
+  }
+}
+
 describe('ChatInput', () => {
   const mockOnSend = vi.fn();
   const mockSetQuotedText = vi.fn();
   const createObjectUrlMock = vi.fn((file: File) => `blob:${file.name}`);
   const revokeObjectUrlMock = vi.fn();
+  const stopTrackMock = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,6 +51,21 @@ describe('ChatInput', () => {
       configurable: true,
       value: revokeObjectUrlMock,
     });
+    Object.defineProperty(globalThis, 'MediaRecorder', {
+      configurable: true,
+      value: FakeMediaRecorder,
+    });
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: vi.fn(async () => ({
+            getTracks: () => [{ stop: stopTrackMock }],
+          })),
+        },
+      },
+    });
+    vi.mocked(transcribeSpeech).mockResolvedValue('語音輸入完成');
     
     // Default store mock
     (useChatStore as any).mockImplementation((selector: any) => {
@@ -336,5 +377,40 @@ describe('ChatInput', () => {
     fireEvent.click(screen.getByLabelText('結束語音'));
     expect(onToggleLiveVoiceMute).toHaveBeenCalledOnce();
     expect(onCloseLiveVoice).toHaveBeenCalledOnce();
+  });
+
+  it('should show live voice as the primary action while the composer is empty', () => {
+    const onOpenLiveTutor = vi.fn();
+    render(<ChatInput onSend={mockOnSend} onOpenLiveTutor={onOpenLiveTutor} />);
+
+    expect(screen.queryByLabelText('發送訊息')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('開啟即時語音'));
+
+    expect(onOpenLiveTutor).toHaveBeenCalledOnce();
+  });
+
+  it('should replace live voice with send when the composer has text', () => {
+    const onOpenLiveTutor = vi.fn();
+    render(<ChatInput onSend={mockOnSend} onOpenLiveTutor={onOpenLiveTutor} />);
+
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '000' } });
+
+    expect(screen.queryByLabelText('開啟即時語音')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    expect(mockOnSend).toHaveBeenCalledWith('000');
+  });
+
+  it('should record speech to text and insert the transcript into the composer', async () => {
+    render(<ChatInput onSend={mockOnSend} onOpenLiveTutor={vi.fn()} />);
+
+    fireEvent.click(screen.getByLabelText('語音輸入'));
+    expect(await screen.findByLabelText('確認語音輸入')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('確認語音輸入'));
+
+    await waitFor(() => {
+      expect(transcribeSpeech).toHaveBeenCalledWith(expect.any(Blob), 'zh-TW');
+      expect(screen.getByLabelText('訊息輸入框')).toHaveValue('語音輸入完成');
+    });
+    expect(stopTrackMock).toHaveBeenCalled();
   });
 });

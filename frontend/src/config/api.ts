@@ -27,6 +27,12 @@ export const API_CONFIG = {
   realtimeContextEndpoint: process.env.NEXT_PUBLIC_REALTIME_CONTEXT_ENDPOINT || '/api/realtime/context',
 
   /**
+   * Speech-to-text endpoint for the composer microphone button.
+   * Default: '/api/speech/transcribe' (proxied through Next.js)
+   */
+  speechTranscriptionEndpoint: process.env.NEXT_PUBLIC_SPEECH_TRANSCRIPTION_ENDPOINT || '/api/speech/transcribe',
+
+  /**
    * Request timeout in milliseconds
    * Default: 30 seconds
    */

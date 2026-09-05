@@ -6,7 +6,19 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Send, Square, X, CornerDownRight, Plus, FileText, Mic, MicOff } from 'lucide-react';
+import {
+  ArrowUp,
+  AudioLines,
+  Check,
+  ChevronDown,
+  CornerDownRight,
+  FileText,
+  Mic,
+  MicOff,
+  Plus,
+  Square,
+  X,
+} from 'lucide-react';
 import { message, Tooltip } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -16,6 +28,7 @@ import { useChatStore } from '@/store/chat';
 import { useStyles } from './styles';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { transcribeSpeech } from '@/services/speech/transcription';
 
 /** Maximum allowed message length */
 const MAX_MESSAGE_LENGTH = 4000;
@@ -216,6 +229,33 @@ const LIVE_VOICE_LABELS = {
   en: { open: 'Start live voice', mute: 'Mute', unmute: 'Unmute', close: 'End voice' },
 } as const;
 
+const DICTATION_LABELS = {
+  'zh-TW': {
+    start: '語音輸入',
+    cancel: '取消語音輸入',
+    confirm: '確認語音輸入',
+    unavailable: '此瀏覽器不支援語音輸入。',
+    failed: '語音轉文字失敗，請稍後再試。',
+    model: '模型選擇',
+  },
+  'zh-CN': {
+    start: '语音输入',
+    cancel: '取消语音输入',
+    confirm: '确认语音输入',
+    unavailable: '此浏览器不支持语音输入。',
+    failed: '语音转文字失败，请稍后再试。',
+    model: '模型选择',
+  },
+  en: {
+    start: 'Voice dictation',
+    cancel: 'Cancel dictation',
+    confirm: 'Confirm dictation',
+    unavailable: 'Voice dictation is not supported in this browser.',
+    failed: 'Speech transcription failed. Please try again.',
+    model: 'Model selector',
+  },
+} as const;
+
 /**
  * ChatInput provides text input for sending messages
  * Supports Enter to send, Shift+Enter for new line
@@ -237,14 +277,20 @@ export function ChatInput({
   const { styles, cx } = useStyles();
   const { t, language } = useUserPreferences();
   const liveVoiceLabels = LIVE_VOICE_LABELS[language];
+  const dictationLabels = DICTATION_LABELS[language];
   const [value, setValue] = useState('');
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const internalDragRef = useRef(false);
   const attachmentPreviewsRef = useRef<AttachmentPreview[]>([]);
+  const dictationChunksRef = useRef<Blob[]>([]);
+  const dictationStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const shouldTranscribeDictationRef = useRef(false);
   
   // Connect to global state for mode togglers
   const quotedText = useChatStore((state) => state.quotedText);
@@ -284,6 +330,9 @@ export function ChatInput({
     for (const preview of attachmentPreviewsRef.current) {
       if (preview.objectUrl) URL.revokeObjectURL(preview.objectUrl);
     }
+    mediaRecorderRef.current = null;
+    dictationStreamRef.current?.getTracks().forEach((track) => track.stop());
+    dictationStreamRef.current = null;
   }, []);
 
   const reportAttachmentError = useCallback((errorKey: AttachmentValidationKey) => {
@@ -485,6 +534,80 @@ export function ChatInput({
   }, []);
 
   const canSend = (value.trim().length > 0 || attachmentPreviews.length > 0) && !disabled && !isOverLimit;
+  const hasComposerContent = value.trim().length > 0 || attachmentPreviews.length > 0 || Boolean(quotedText);
+
+  const stopDictationTracks = useCallback(() => {
+    dictationStreamRef.current?.getTracks().forEach((track) => track.stop());
+    dictationStreamRef.current = null;
+  }, []);
+
+  const startDictation = useCallback(async () => {
+    if (disabled || dictationState !== 'idle') return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      message.error(dictationLabels.unavailable);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const options = MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')
+        ? { mimeType: 'audio/webm;codecs=opus' }
+        : undefined;
+      const recorder = new MediaRecorder(stream, options);
+      dictationChunksRef.current = [];
+      dictationStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      shouldTranscribeDictationRef.current = false;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) dictationChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const shouldTranscribe = shouldTranscribeDictationRef.current;
+        const chunks = dictationChunksRef.current;
+        const mimeType = recorder.mimeType || 'audio/webm';
+        mediaRecorderRef.current = null;
+        shouldTranscribeDictationRef.current = false;
+        stopDictationTracks();
+        if (!shouldTranscribe) {
+          setDictationState('idle');
+          return;
+        }
+        setDictationState('transcribing');
+        void transcribeSpeech(new Blob(chunks, { type: mimeType }), language)
+          .then((transcript) => {
+            if (!transcript) return;
+            setValue((current) => (current.trim()
+              ? `${current.trimEnd()} ${transcript}`
+              : transcript));
+            requestAnimationFrame(() => textareaRef.current?.focus());
+          })
+          .catch(() => {
+            message.error(dictationLabels.failed);
+          })
+          .finally(() => {
+            setDictationState('idle');
+          });
+      };
+      recorder.start();
+      setDictationState('recording');
+    } catch {
+      stopDictationTracks();
+      mediaRecorderRef.current = null;
+      setDictationState('idle');
+      message.error(dictationLabels.failed);
+    }
+  }, [dictationLabels.failed, dictationLabels.unavailable, dictationState, disabled, language, stopDictationTracks]);
+
+  const stopDictation = useCallback((shouldTranscribe: boolean) => {
+    const recorder = mediaRecorderRef.current;
+    shouldTranscribeDictationRef.current = shouldTranscribe;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+      return;
+    }
+    shouldTranscribeDictationRef.current = false;
+    stopDictationTracks();
+    setDictationState('idle');
+  }, [stopDictationTracks]);
 
   return (
     <>
@@ -541,60 +664,117 @@ export function ChatInput({
         </div>
       )}
 
-      <div className={cx('areqa-chat-input-row', styles.inputRow)} role="group" aria-label={t('messageInputRow')}>
+      <div
+        className={cx(
+          'areqa-chat-input-row',
+          styles.inputRow,
+          dictationState !== 'idle' && styles.inputRowRecording,
+        )}
+        role="group"
+        aria-label={t('messageInputRow')}
+      >
         <Tooltip title={t('addAttachment')} color="#262626" styles={{ container: { color: '#ffffff' } }}>
           <button
             type="button"
-            className={cx('areqa-chat-input-attachment-button', styles.attachmentButton)}
+            className={cx(
+              'areqa-chat-input-attachment-button',
+              styles.attachmentButton,
+              dictationState !== 'idle' && styles.recordingInactiveControl,
+            )}
             onClick={() => fileInputRef.current?.click()}
-            disabled={disabled}
+            disabled={disabled || dictationState !== 'idle'}
             aria-label={t('addAttachment')}
           >
             <Plus size={18} />
           </button>
         </Tooltip>
-        <textarea
-          ref={textareaRef}
-          className={cx('areqa-chat-input-textarea', styles.textarea)}
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={placeholder ?? t('askPlaceholder')}
-          disabled={disabled}
-          rows={1}
-          maxLength={maxLength + 100}
-          aria-label={t('messageTextarea')}
-        />
-        {isLiveVoiceActive && onToggleLiveVoiceMute ? (
+        {dictationState !== 'idle' ? (
+          <>
+            <div className={styles.dictationWave} aria-hidden>
+              {Array.from({ length: 76 }).map((_, index) => (
+                <span key={index} style={{ '--wave-index': index } as React.CSSProperties} />
+              ))}
+            </div>
+            <button
+              type="button"
+              className={cx(styles.iconButton, styles.cancelDictationButton)}
+              onClick={() => stopDictation(false)}
+              aria-label={dictationLabels.cancel}
+              disabled={dictationState === 'transcribing'}
+            >
+              <X size={21} />
+            </button>
+            <button
+              type="button"
+              className={cx(styles.iconButton, styles.confirmDictationButton)}
+              onClick={() => stopDictation(true)}
+              aria-label={dictationLabels.confirm}
+              disabled={dictationState === 'transcribing'}
+            >
+              <Check size={22} />
+            </button>
+          </>
+        ) : (
+          <>
+            <textarea
+              ref={textareaRef}
+              className={cx('areqa-chat-input-textarea', styles.textarea)}
+              value={value}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={placeholder ?? t('askPlaceholder')}
+              disabled={disabled}
+              rows={1}
+              maxLength={maxLength + 100}
+              aria-label={t('messageTextarea')}
+            />
+            <button type="button" className={styles.modelButton} aria-label={dictationLabels.model}>
+              <span>5.5 Medium</span>
+              <ChevronDown size={14} />
+            </button>
+            <Tooltip title={dictationLabels.start} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+              <button
+                type="button"
+                className={cx('areqa-chat-input-dictation-button', styles.iconButton, styles.dictationButton)}
+                onClick={startDictation}
+                disabled={disabled || isLiveVoiceActive}
+                aria-label={dictationLabels.start}
+              >
+                <Mic size={20} />
+              </button>
+            </Tooltip>
+          </>
+        )}
+        {dictationState !== 'idle' ? null : isLiveVoiceActive && onToggleLiveVoiceMute ? (
           <Tooltip title={isLiveVoiceMuted ? liveVoiceLabels.unmute : liveVoiceLabels.mute} color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
-              className={cx('areqa-chat-input-voice-button', styles.voiceButton)}
+              className={cx('areqa-chat-input-voice-button', styles.iconButton, styles.voiceButton)}
               onClick={onToggleLiveVoiceMute}
               aria-label={isLiveVoiceMuted ? liveVoiceLabels.unmute : liveVoiceLabels.mute}
             >
               {isLiveVoiceMuted ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
           </Tooltip>
-        ) : onOpenLiveTutor ? (
+        ) : onOpenLiveTutor && !hasComposerContent ? (
           <Tooltip title={liveVoiceLabels.open} color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
-              className={cx('areqa-chat-input-voice-button', styles.voiceButton)}
+              className={cx('areqa-chat-input-voice-button', styles.iconButton, styles.voiceButton)}
               onClick={onOpenLiveTutor}
-              disabled={disabled}
+              disabled={disabled || hasComposerContent}
               aria-label={liveVoiceLabels.open}
             >
-              <Mic size={18} />
+              <AudioLines size={20} />
             </button>
           </Tooltip>
         ) : null}
-        {isLiveVoiceActive && onCloseLiveVoice ? (
+        {dictationState !== 'idle' ? null : isLiveVoiceActive && onCloseLiveVoice ? (
           <Tooltip title={liveVoiceLabels.close} color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
-              className={cx('areqa-chat-input-send-button', styles.sendButton, styles.liveVoiceCloseButton)}
+              className={cx('areqa-chat-input-send-button', styles.iconButton, styles.sendButton, styles.liveVoiceCloseButton)}
               onClick={onCloseLiveVoice}
               aria-label={liveVoiceLabels.close}
             >
@@ -604,23 +784,23 @@ export function ChatInput({
         ) : isStreaming && onStop ? (
           <button
             type="button"
-            className={cx('areqa-chat-input-send-button', styles.sendButton, styles.stopButton)}
+            className={cx('areqa-chat-input-send-button', styles.iconButton, styles.sendButton, styles.stopButton)}
             onClick={onStop}
             aria-label={t('stopGenerating')}
           >
             <Square size={16} fill="currentColor" />
           </button>
-        ) : (
+        ) : canSend || !onOpenLiveTutor ? (
           <button
             type="button"
-            className={cx('areqa-chat-input-send-button', styles.sendButton)}
+            className={cx('areqa-chat-input-send-button', styles.iconButton, styles.sendButton)}
             onClick={handleSend}
             disabled={!canSend}
             aria-label={t('sendMessage')}
           >
-            <Send size={18} />
+            <ArrowUp size={20} />
           </button>
-        )}
+        ) : null}
       </div>
 
       <input

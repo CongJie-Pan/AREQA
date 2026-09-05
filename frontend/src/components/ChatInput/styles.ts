@@ -15,31 +15,31 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-direction: column;
     gap: 0;
-    padding: 12px 20px 10px;
-    background: var(--card);
+    padding: 12px 18px;
+    background: #242424;
     border-width: 1px;
     border-style: solid;
-    border-color: var(--border);
-    border-radius: 24px;
-    max-width: 800px;
-    width: 90%;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    max-width: 1056px;
+    width: min(92vw, 1056px);
     margin: 0 auto 16px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
     transition: all 0.2s ease;
     
     @media (max-width: 768px) {
       width: calc(100% - 24px);
       margin: 0 auto 12px;
-      border-radius: 20px;
+      border-radius: 999px;
       border-width: 1px;
       border-style: solid;
-      border-color: var(--border);
-      padding: 10px 14px 8px;
+      border-color: rgba(255, 255, 255, 0.08);
+      padding: 9px 12px;
     }
 
     &:focus-within {
-      border-color: #d8a25c;
-      box-shadow: 0 0 0 2px rgba(216, 162, 92, 0.2);
+      border-color: rgba(227, 186, 128, 0.52);
+      box-shadow: 0 0 0 1px rgba(227, 186, 128, 0.22), 0 12px 28px rgba(0, 0, 0, 0.32);
     }
   `,
 
@@ -106,8 +106,12 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     width: 100%;
     min-width: 0;
-    min-height: 36px;
-    gap: 12px;
+    min-height: 40px;
+    gap: 10px;
+  `,
+
+  inputRowRecording: css`
+    gap: 14px;
   `,
 
   // Borderless textarea that fills the input row
@@ -299,15 +303,15 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   attachmentButton: css`
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border: none;
     border-radius: 50%;
     background: transparent;
-    color: var(--foreground);
+    color: rgba(255, 255, 255, 0.9);
     cursor: pointer;
     transition: all 0.2s;
 
@@ -322,54 +326,101 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
-  voiceButton: css`
-    width: 36px;
-    height: 36px;
+  recordingInactiveControl: css`
+    color: rgba(255, 255, 255, 0.28);
+
+    &:disabled {
+      opacity: 1;
+    }
+  `,
+
+  modelButton: css`
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 36px;
-    border: 1px solid rgba(216, 162, 92, 0.38);
+    gap: 4px;
+    height: 34px;
+    min-width: 126px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 16px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: default;
+
+    span:first-child {
+      color: #ffffff;
+      font-weight: 650;
+    }
+
+    svg {
+      color: rgba(255, 255, 255, 0.58);
+    }
+
+    @media (max-width: 560px) {
+      display: none;
+    }
+  `,
+
+  iconButton: css`
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 42px;
+    border: 0;
     border-radius: 50%;
-    background: rgba(216, 162, 92, 0.12);
-    color: #d8a25c;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
 
     &:hover:not(:disabled) {
-      border-color: #d8a25c;
-      background: rgba(216, 162, 92, 0.2);
       transform: translateY(-1px);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(0) scale(0.98);
     }
 
     &:disabled {
       cursor: not-allowed;
-      opacity: 0.45;
+      opacity: 0.42;
+    }
+  `,
+
+  dictationButton: css`
+    background: transparent;
+    color: rgba(255, 255, 255, 0.92);
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+  `,
+
+  voiceButton: css`
+    background: #2f6bdc;
+    color: #ffffff;
+
+    &:hover:not(:disabled) {
+      background: #3d7bef;
     }
   `,
 
   // Circular send button aligned in the toolbar
   sendButton: css`
-    flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    border-radius: 50%;
-    background: ${token.colorPrimary};
-    color: ${token.colorWhite};
-    cursor: pointer;
-    transition: all 0.2s;
+    background: #2f6bdc;
+    color: #ffffff;
 
     &:hover:not(:disabled) {
-      background: ${token.colorPrimaryHover};
-      transform: scale(1.05);
+      background: #3d7bef;
     }
 
     &:active:not(:disabled) {
-      background: ${token.colorPrimaryActive};
+      background: #255cc5;
     }
 
     &:disabled {
@@ -393,15 +444,76 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   liveVoiceCloseButton: css`
-    background: var(--foreground);
-    color: var(--background);
+    background: #f1f1f1;
+    color: #111111;
 
     &:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--foreground) 86%, transparent);
+      background: #ffffff;
     }
 
     &:active:not(:disabled) {
-      background: color-mix(in srgb, var(--foreground) 78%, transparent);
+      background: #e0e0e0;
+    }
+  `,
+
+  cancelDictationButton: css`
+    background: transparent;
+    color: #ffffff;
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  `,
+
+  confirmDictationButton: css`
+    background: transparent;
+    color: #ffffff;
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  `,
+
+  dictationWave: css`
+    --wave-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    overflow: hidden;
+
+    span {
+      width: 4px;
+      height: 4px;
+      flex: 0 0 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.48);
+      transform-origin: center;
+      animation: areqaDictationWave 920ms ease-in-out infinite;
+      animation-delay: calc(var(--wave-index) * -18ms);
+    }
+
+    span:nth-child(6n + 2),
+    span:nth-child(6n + 5) {
+      animation-duration: 780ms;
+    }
+
+    span:nth-last-child(-n + 30) {
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    @keyframes areqaDictationWave {
+      0%, 100% {
+        height: 4px;
+        opacity: 0.46;
+      }
+      45% {
+        height: 24px;
+        opacity: 0.95;
+      }
     }
   `,
 
