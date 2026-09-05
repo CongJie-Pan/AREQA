@@ -54,6 +54,7 @@ export interface StartRealtimeClientOptions {
   recentMessages: () => DisplayMessage[];
   onRemoteStream: (stream: MediaStream) => void;
   onInputAudioLevel?: (level: number) => void;
+  onOutputAudioLevel?: (level: number) => void;
   onPlaybackState?: (state: 'started' | 'stopped' | 'interrupted') => void;
   onStatus: (status: RealtimeStatus) => void;
   onAssistantResponseStarted?: () => void;
@@ -313,9 +314,9 @@ async function handleToolCall(
   });
 }
 
-function startInputAudioLevelMonitor(
+function startAudioLevelMonitor(
   stream: MediaStream,
-  onLevel?: StartRealtimeClientOptions['onInputAudioLevel'],
+  onLevel?: (level: number) => void,
 ): () => void {
   if (!onLevel || typeof window === 'undefined' || !window.AudioContext) {
     return () => undefined;
@@ -434,13 +435,21 @@ export async function startRealtimeClient(
       throw error instanceof RealtimeClientError ? error : microphoneAccessError(error);
     }
     const session = await createRealtimeSession(options.conversationId, options.interfaceLanguage);
-    stopAudioLevelMonitor = startInputAudioLevelMonitor(localStream, options.onInputAudioLevel);
+    stopAudioLevelMonitor = startAudioLevelMonitor(localStream, options.onInputAudioLevel);
     peerConnection = new RTCPeerConnection();
     dataChannel = peerConnection.createDataChannel('oai-events');
 
     peerConnection.ontrack = (event) => {
       const [remoteStream] = event.streams;
-      if (remoteStream) options.onRemoteStream(remoteStream);
+      if (remoteStream) {
+        options.onRemoteStream(remoteStream);
+        const stopOutputAudioLevelMonitor = startAudioLevelMonitor(remoteStream, options.onOutputAudioLevel);
+        const stopInputAudioLevelMonitor = stopAudioLevelMonitor ?? (() => undefined);
+        stopAudioLevelMonitor = () => {
+          stopInputAudioLevelMonitor();
+          stopOutputAudioLevelMonitor();
+        };
+      }
     };
     peerConnection.onconnectionstatechange = () => {
       if (!peerConnection) return;

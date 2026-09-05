@@ -11,7 +11,7 @@ describe('voice caption playback', () => {
       initialProps: { state: 'finished' as 'finished' | undefined },
     });
     expect(result.current).toBe('');
-    act(() => vi.advanceTimersByTime(20));
+    act(() => vi.advanceTimersByTime(130));
     expect(result.current).toBe('這');
     rerender({ state: undefined });
     expect(result.current).toBe('這是完整語音回覆');
@@ -24,7 +24,7 @@ describe('voice caption playback', () => {
     const { result, rerender } = renderHook(({ state }) => useVoiceReveal('第一段接著第二段', state), {
       initialProps: { state: 'playing' as 'playing' | 'interrupted' },
     });
-    act(() => vi.advanceTimersByTime(110));
+    act(() => vi.advanceTimersByTime(130));
     expect(result.current).toBe('第');
     rerender({ state: 'interrupted' });
     act(() => vi.advanceTimersByTime(5000));

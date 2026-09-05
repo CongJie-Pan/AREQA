@@ -169,8 +169,9 @@ const tableModalPanelIn = keyframes`
 
 export const useStyles = createStyles(({ css, token }) => ({
   voiceSpacer: css`
-    height: 160px;
-    flex: 0 0 160px;
+    height: 168px;
+    min-height: 168px;
+    flex: 0 0 168px;
     pointer-events: none;
   `,
   // MessageList styles
@@ -181,6 +182,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     padding: 0;
     overflow-y: scroll; /* Force scrollbar to be always visible */
     flex: 1;
+  `,
+
+  containerLiveVoice: css`
+    scroll-padding-bottom: 168px;
   `,
 
   nonEmpty: css`

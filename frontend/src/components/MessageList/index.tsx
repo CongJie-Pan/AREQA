@@ -282,13 +282,13 @@ export function MessageList({ className, liveVoice = false, onRegenerate, onEdit
 
         if (shouldAutoScroll) {
           container.scrollTo({
-            top: container.scrollHeight,
+            top: Math.max(0, container.scrollHeight - container.clientHeight),
             behavior: isStreaming ? 'auto' : 'smooth',
           });
         }
       });
     }
-  }, [messages, isStreaming, thinkingContent]);
+  }, [messages, isStreaming, thinkingContent, liveVoice]);
 
   // Scroll to bottom button click handler
   const scrollToBottom = useCallback(() => {
@@ -351,7 +351,14 @@ export function MessageList({ className, liveVoice = false, onRegenerate, onEdit
   return (
     <div
       ref={containerRef}
-      className={cx('areqa-message-list', 'areqa-message-list-non-empty', styles.container, styles.nonEmpty, className)}
+      className={cx(
+        'areqa-message-list',
+        'areqa-message-list-non-empty',
+        styles.container,
+        styles.nonEmpty,
+        liveVoice && styles.containerLiveVoice,
+        className,
+      )}
     >
       {messages.map((message, index) => {
         const isCurrentStreaming = message.id === currentStreamingId;

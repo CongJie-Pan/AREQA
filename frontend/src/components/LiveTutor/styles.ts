@@ -13,7 +13,7 @@ export const useStyles = createStyles(({ css }) => ({
     position: relative;
     display: flex;
     width: 100%;
-    --live-tutor-audio-scale: 0.9;
+    --live-tutor-audio-scale: 1;
     min-height: 0;
     flex: 1 1 auto;
     flex-direction: column;
@@ -68,6 +68,8 @@ export const useStyles = createStyles(({ css }) => ({
     transform: scale(var(--live-tutor-audio-scale)) translateZ(0);
     transform-origin: center;
     transition: transform 70ms linear;
+    filter: drop-shadow(0 0 14px color-mix(in srgb, #e3ba80 68%, transparent))
+      drop-shadow(0 0 38px color-mix(in srgb, #e3ba80 30%, transparent));
     will-change: transform;
 
     @media (max-width: 768px) {
@@ -81,6 +83,7 @@ export const useStyles = createStyles(({ css }) => ({
     height: auto;
     border-radius: 50%;
     user-select: none;
+    background: transparent;
   `,
 
   errorRow: css`

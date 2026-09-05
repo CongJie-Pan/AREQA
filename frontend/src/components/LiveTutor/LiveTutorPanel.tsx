@@ -98,6 +98,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const assistantTranscriptRef = useRef('');
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const playbackRef = useRef<'waiting' | 'playing' | 'finished' | 'interrupted'>('waiting');
+  const inputLevelRef = useRef(0);
+  const outputLevelRef = useRef(0);
   const userTurnIdsRef = useRef(new Map<string, string>());
   const hasStartedRef = useRef(false);
   const isCancelledRef = useRef(false);
@@ -173,6 +175,12 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
           { component: 'LiveTutorPanel' },
         );
       });
+  }, []);
+
+  const updateAudioScale = useCallback(() => {
+    const level = Math.max(inputLevelRef.current, outputLevelRef.current);
+    const scale = 1 + Math.min(Math.max(level, 0), 1) * 0.18;
+    panelRef.current?.style.setProperty('--live-tutor-audio-scale', scale.toFixed(3));
   }, []);
 
   const bumpConversationPreview = useCallback((conversationId: string, content: string) => {
@@ -265,6 +273,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     transcriptQueueRef.current = Promise.resolve();
     resetTranscript();
     playbackRef.current = 'waiting';
+    inputLevelRef.current = 0;
+    outputLevelRef.current = 0;
+    panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     userTurnIdsRef.current.clear();
     setError(null);
     const conversationId = prepareSessionConversationId();
@@ -291,9 +302,13 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       },
       onInputAudioLevel: (level) => {
         if (isCancelledRef.current) return;
-        const normalizedLevel = Math.min(Math.max(level, 0), 1);
-        const scale = 0.9 + normalizedLevel * 0.46;
-        panelRef.current?.style.setProperty('--live-tutor-audio-scale', scale.toFixed(3));
+        inputLevelRef.current = Math.min(Math.max(level, 0), 1);
+        updateAudioScale();
+      },
+      onOutputAudioLevel: (level) => {
+        if (isCancelledRef.current) return;
+        outputLevelRef.current = Math.min(Math.max(level, 0), 1);
+        updateAudioScale();
       },
       onStatus: (nextStatus) => {
         if (!isCancelledRef.current) setStatus(nextStatus);
@@ -374,6 +389,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     resetTranscript,
     setError,
     setStatus,
+    updateAudioScale,
     updateAssistantMessage,
     addUserMessage,
     ensurePersistedConversationId,
@@ -394,6 +410,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       }
       userTurnIdsRef.current.clear();
     });
+    inputLevelRef.current = 0;
+    outputLevelRef.current = 0;
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     setStatus('idle');
   }, [setStatus, enqueueTranscriptWork, finalizeAssistantDraft, updateAssistantMessage]);

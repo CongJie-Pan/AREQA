@@ -625,8 +625,9 @@ function StreamingMarkdown({
   voicePlayback?: import('@/store/chat').DisplayMessage['voicePlayback'];
 }) {
   const visibleContent = useVoiceReveal(content, voicePlayback);
+  const isVoicePlayback = Boolean(voicePlayback);
   const throttledContent = useThrottledValue(visibleContent, STREAMING_MARKDOWN_FLUSH_MS);
-  const deferredContent = React.useDeferredValue(throttledContent);
+  const deferredContent = React.useDeferredValue(isVoicePlayback ? visibleContent : throttledContent);
   const processedContent = React.useMemo(() => {
     return normalizeDisplayMathBlocks(normalizeCitationMarkers(deferredContent));
   }, [deferredContent]);
@@ -638,7 +639,7 @@ function StreamingMarkdown({
       disallowedElements={['script', 'iframe', 'object', 'embed']}
       linkSafety={STREAMDOWN_LINK_SAFETY}
       mode="streaming"
-      animated={animate ? { animation: 'fadeIn', sep: 'char', duration: 220, stagger: 12 } : false}
+      animated={animate ? { animation: 'fadeIn', sep: 'char', duration: 260, stagger: 16 } : false}
       plugins={STREAMDOWN_PLUGINS}
     >
       {processedContent}

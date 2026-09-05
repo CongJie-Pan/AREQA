@@ -161,22 +161,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
       });
     };
 
-    const stabilizeViewport = () => {
-      updateViewportHeight();
-      window.setTimeout(() => {
-        window.scrollTo(0, 0);
-        updateViewportHeight();
-      }, 0);
-    };
-
     updateViewportHeight();
     viewport?.addEventListener('resize', updateViewportHeight);
     viewport?.addEventListener('scroll', updateViewportHeight);
     window.addEventListener('resize', updateViewportHeight);
     window.addEventListener('orientationchange', updateViewportHeight);
-    window.addEventListener('focus', stabilizeViewport);
-    window.addEventListener('pageshow', stabilizeViewport);
-    document.addEventListener('visibilitychange', stabilizeViewport);
+    window.addEventListener('focus', updateViewportHeight);
+    window.addEventListener('pageshow', updateViewportHeight);
+    document.addEventListener('visibilitychange', updateViewportHeight);
 
     return () => {
       if (animationFrameId !== null) {
@@ -186,9 +178,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
       viewport?.removeEventListener('scroll', updateViewportHeight);
       window.removeEventListener('resize', updateViewportHeight);
       window.removeEventListener('orientationchange', updateViewportHeight);
-      window.removeEventListener('focus', stabilizeViewport);
-      window.removeEventListener('pageshow', stabilizeViewport);
-      document.removeEventListener('visibilitychange', stabilizeViewport);
+      window.removeEventListener('focus', updateViewportHeight);
+      window.removeEventListener('pageshow', updateViewportHeight);
+      document.removeEventListener('visibilitychange', updateViewportHeight);
       root.style.removeProperty('--areqa-visual-viewport-height');
       root.style.removeProperty('--areqa-visual-viewport-top');
     };

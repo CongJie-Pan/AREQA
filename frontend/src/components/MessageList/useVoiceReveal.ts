@@ -27,12 +27,10 @@ export function useVoiceReveal(content: string, playback: DisplayMessage['voiceP
       const target = targetRef.current;
       if (lengthRef.current >= target.length) { elapsed = Math.min(elapsed, 0); return; }
       elapsed += 10;
-      const delay = playback === 'finished' ? 20
-        : /[\u3400-\u9fff]/u.test(target[lengthRef.current] || '') ? 110 : 45;
+      const delay = /[\u3400-\u9fff]/u.test(target[lengthRef.current] || '') ? 118 : 58;
       if (elapsed < delay) return;
       elapsed -= delay;
-      const step = playback === 'finished' ? Math.max(1, Math.ceil((target.length - lengthRef.current) / 30)) : 1;
-      lengthRef.current = Math.min(target.length, lengthRef.current + step);
+      lengthRef.current = Math.min(target.length, lengthRef.current + 1);
       setLength(lengthRef.current);
     }, 10);
     return () => window.clearInterval(timer);
