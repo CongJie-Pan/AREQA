@@ -116,6 +116,66 @@ describe('Realtime client lifecycle', () => {
     expect(onPlaybackState).toHaveBeenLastCalledWith('stopped');
     controller.disconnect();
   });
+
+  it('cancels the active realtime response before disconnecting', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+
+    controller.disconnect();
+
+    const sentEvents = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
+    expect(sentEvents).toContainEqual({ type: 'response.cancel' });
+  });
+
+  it('renders AREQA-authored answers as out-of-band realtime audio', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+
+    controller.speakAreqaAnswer('這是 AREQA 的正式回答。');
+
+    const sentEvents = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
+    const speechEvent = sentEvents?.find((event) => event.type === 'response.create');
+    expect(speechEvent).toMatchObject({
+      type: 'response.create',
+      response: {
+        conversation: 'none',
+        output_modalities: ['audio'],
+        tools: [],
+        metadata: { response_purpose: 'areqa_voice_render' },
+      },
+    });
+    expect(speechEvent?.response.input[0].content[0].text).toContain('這是 AREQA 的正式回答。');
+    controller.disconnect();
+  });
+
+  it('notifies the app when user speech starts so stale chat streams can be cancelled', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onUserSpeechStarted = vi.fn();
+    const onPlaybackState = vi.fn();
+    await startRealtimeClient(realtimeOptions({ onUserSpeechStarted, onPlaybackState }));
+
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'input_audio_buffer.speech_started' }),
+    });
+
+    expect(onUserSpeechStarted).toHaveBeenCalledOnce();
+    expect(onPlaybackState).toHaveBeenCalledWith('interrupted');
+  });
+
+  it('can cancel realtime speech without closing the data channel', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+
+    controller.cancelSpeech();
+
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({ type: 'response.cancel' }));
+    expect(lastPeerConnection?.channel.close).not.toHaveBeenCalled();
+    controller.disconnect();
+  });
   const originalPeerConnection = globalThis.RTCPeerConnection;
   const originalFetch = globalThis.fetch;
   const originalNavigator = globalThis.navigator;

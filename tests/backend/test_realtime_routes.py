@@ -19,7 +19,7 @@ from backend.app.routes.realtime import (
 )
 
 
-def test_realtime_session_config_uses_allowed_mvp_model_and_context_tool():
+def test_realtime_session_config_uses_allowed_mvp_model_without_auto_answers():
     payload = RealtimeSessionRequest(
         model="gpt-realtime-2.1-mini",
         voice="marin",
@@ -33,8 +33,13 @@ def test_realtime_session_config_uses_allowed_mvp_model_and_context_tool():
     assert config["model"] == "gpt-realtime-2.1-mini"
     assert config["audio"]["output"]["voice"] == "marin"
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
-    assert config["tools"][0]["name"] == "get_areqa_context"
-    assert config["tool_choice"] == "required"
+    assert config["audio"]["input"]["turn_detection"] == {
+        "type": "server_vad",
+        "create_response": False,
+        "interrupt_response": True,
+    }
+    assert config["tools"] == []
+    assert config["tool_choice"] == "none"
 
 
 def test_realtime_session_config_preserves_simplified_chinese_preference():

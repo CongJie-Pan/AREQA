@@ -108,7 +108,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const isLiveTutorOpen = useLiveTutorStore((state) => state.isOpen);
   const isLiveTutorMuted = useLiveTutorStore((state) => state.isMuted);
   const setLiveTutorMuted = useLiveTutorStore((state) => state.setMuted);
-  const closeLiveTutor = useLiveTutorStore((state) => state.close);
+  const requestCloseLiveTutor = useLiveTutorStore((state) => state.requestClose);
   const isEmpty = messages.length === 0;
   const isEmptyLiveTutor = isLiveTutorOpen && isEmpty;
 
@@ -640,7 +640,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   isLiveVoiceActive={isLiveTutorOpen}
                   isLiveVoiceMuted={isLiveTutorMuted}
                   onToggleLiveVoiceMute={toggleLiveTutorMute}
-                  onCloseLiveVoice={closeLiveTutor}
+                  onCloseLiveVoice={requestCloseLiveTutor}
                 />
               </div>
             </>

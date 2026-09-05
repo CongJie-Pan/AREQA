@@ -639,6 +639,7 @@ function StreamingMarkdown({
       disallowedElements={['script', 'iframe', 'object', 'embed']}
       linkSafety={STREAMDOWN_LINK_SAFETY}
       mode="streaming"
+      isAnimating={animate}
       animated={animate ? { animation: 'fadeIn', sep: 'char', duration: 260, stagger: 16 } : false}
       plugins={STREAMDOWN_PLUGINS}
     >
