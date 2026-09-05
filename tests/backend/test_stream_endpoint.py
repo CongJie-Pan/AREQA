@@ -133,6 +133,9 @@ def test_voice_response_instruction_forces_speech_safe_plain_text():
     assert result[0]["content"].startswith("base prompt")
     assert "即時語音輸出" in result[0]["content"]
     assert "不要使用 Markdown" in result[0]["content"]
+    assert "範圍很廣" in result[0]["content"]
+    assert "多個角度" in result[0]["content"]
+    assert "先用一句自然口語的澄清問題" in result[0]["content"]
     assert "中文回答一律使用繁體中文" in result[0]["content"]
     assert messages[0]["content"] == "base prompt"
 

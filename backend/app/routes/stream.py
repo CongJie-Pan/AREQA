@@ -104,6 +104,12 @@ async def stream_endpoint(
     chat_req, uploads = await parse_stream_request(request)
     if not chat_req.messages:
         raise HTTPException(status_code=422, detail="At least one message is required")
+    logger.info(
+        "stream.request_accepted conversation_id=%s response_mode=%s message_count=%s",
+        chat_req.conversation_id,
+        chat_req.response_mode,
+        len(chat_req.messages),
+    )
 
     processed_attachments = []
     if uploads:

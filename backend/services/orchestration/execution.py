@@ -549,6 +549,13 @@ class OrchestrationExecutionMixin:
 
         if force_think:
             effective_max_tokens = 3200
+        if response_mode == "voice":
+            effective_max_tokens = min(effective_max_tokens, 420)
+            logger.info(
+                "orchestration.voice_token_budget_applied conversation_id=%s max_tokens=%s",
+                conversation_id,
+                effective_max_tokens,
+            )
 
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""

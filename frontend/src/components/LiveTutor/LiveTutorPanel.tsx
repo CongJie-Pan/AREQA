@@ -15,6 +15,7 @@ import { Tooltip } from 'antd';
 import { useStyles } from './styles';
 import {
   RealtimeClientError,
+  playLiveVoiceCue,
   startRealtimeClient,
   type RealtimeClientController,
 } from '@/services/realtime';
@@ -98,6 +99,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const pendingVoiceFinalizeRef = useRef<((displayContent?: string) => Promise<void>) | null>(null);
   const pendingVoiceAnswerRef = useRef('');
   const spokenTranscriptRef = useRef('');
+  const hasPlayedConnectedCueRef = useRef(false);
+  const hasSyncedInitialMuteRef = useRef(false);
   const hasStartedRef = useRef(false);
   const isCancelledRef = useRef(false);
 
@@ -209,6 +212,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     pendingVoiceFinalizeRef.current = null;
     pendingVoiceAnswerRef.current = '';
     spokenTranscriptRef.current = '';
+    hasPlayedConnectedCueRef.current = false;
+    hasSyncedInitialMuteRef.current = false;
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     setError(null);
     const conversationId = prepareSessionConversationId();
@@ -245,13 +250,27 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       },
       onUserSpeechStarted: () => {
         if (isCancelledRef.current) return;
+        const currentStatus = useLiveTutorStore.getState().status;
+        if (currentStatus === 'connecting' || currentStatus === 'idle') {
+          logger.info('realtime.voice_speech_ignored_before_ready', {
+            component: 'LiveTutorPanel',
+            status: currentStatus,
+            conversationId: persistedConversationIdRef.current || conversationId,
+          });
+          return;
+        }
         turnSequenceRef.current += 1;
         playbackRef.current = 'interrupted';
         controllerRef.current?.cancelSpeech();
         void cancelCurrentStream();
       },
       onStatus: (nextStatus) => {
-        if (!isCancelledRef.current) setStatus(nextStatus);
+        if (isCancelledRef.current) return;
+        setStatus(nextStatus);
+        if ((nextStatus === 'connected' || nextStatus === 'listening') && !hasPlayedConnectedCueRef.current) {
+          hasPlayedConnectedCueRef.current = true;
+          playLiveVoiceCue('connected');
+        }
       },
       onAssistantResponseStarted: () => {
         if (!isCancelledRef.current) playbackRef.current = 'waiting';
@@ -267,6 +286,16 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       },
       onUserTranscript: (transcript) => {
         if (isCancelledRef.current) return;
+        const currentStatus = useLiveTutorStore.getState().status;
+        if (currentStatus !== 'listening') {
+          logger.info('realtime.voice_transcript_ignored_before_ready', {
+            component: 'LiveTutorPanel',
+            status: currentStatus,
+            conversationId: persistedConversationIdRef.current || conversationId,
+            transcriptChars: transcript.trim().length,
+          });
+          return;
+        }
         enqueueTranscriptWork(async () => {
           await runAreqaAuthoredTurn(transcript);
         });
@@ -305,6 +334,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     }
     controllerRef.current = controller;
     controller.setMuted(useLiveTutorStore.getState().isMuted);
+    hasSyncedInitialMuteRef.current = true;
   }, [
     enqueueTranscriptWork,
     labels.insecureContext,
@@ -332,6 +362,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     pendingVoiceFinalizeRef.current = null;
     pendingVoiceAnswerRef.current = '';
     spokenTranscriptRef.current = '';
+    hasPlayedConnectedCueRef.current = false;
+    hasSyncedInitialMuteRef.current = false;
     hasStartedRef.current = false;
     inputLevelRef.current = 0;
     outputLevelRef.current = 0;
@@ -340,6 +372,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   }, [setStatus]);
 
   const handleClose = useCallback(() => {
+    playLiveVoiceCue('hangup');
     stop();
     close();
   }, [close, stop]);
@@ -359,7 +392,13 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
 
   useEffect(() => {
     controllerRef.current?.setMuted(isMuted);
-  }, [isMuted]);
+    if (!isOpen || !controllerRef.current) return;
+    if (!hasSyncedInitialMuteRef.current) {
+      hasSyncedInitialMuteRef.current = true;
+      return;
+    }
+    playLiveVoiceCue(isMuted ? 'muted' : 'unmuted');
+  }, [isMuted, isOpen]);
 
   useEffect(() => {
     if (!isOpen || closeRequestId === 0) return;

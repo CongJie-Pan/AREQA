@@ -122,6 +122,12 @@ export async function createChatStream(
       interface_language: readInterfaceLanguage(),
       response_mode: options.responseMode ?? 'text',
     };
+    logger.info('chat.stream_request_started', {
+      conversationId,
+      responseMode: requestPayload.response_mode,
+      messageCount: messages.length,
+      hasAttachments: attachments.length > 0,
+    });
 
     const body = attachments.length > 0
       ? (() => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendMessage, regenerateMessage, editUserMessage, switchConversation } from '@/services/chat';
+import { sendMessage, regenerateMessage, editUserMessage, switchConversation, cancelCurrentStream } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -241,7 +241,9 @@ describe('Chat Service', () => {
         mockChatStore.useRag,
         mockChatStore.forceThink,
         mockChatStore.searchMode,
-        'test-conv-id'
+        'test-conv-id',
+        [],
+        { responseMode: 'text' },
       );
     });
 
@@ -277,7 +279,61 @@ describe('Chat Service', () => {
         mockChatStore.searchMode,
         'test-conv-id',
         [attachment],
+        { responseMode: 'text' },
       );
+    });
+
+    it('uses voice response mode without forcing hidden thinking into the spoken turn', async () => {
+      mockChatStore.messages = [];
+      mockChatStore.forceThink = true;
+      const onVoiceContentChunk = vi.fn();
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onThinkingStart?.();
+        callbacks.onThinkingContent?.('hidden reasoning');
+        callbacks.onContent('口語回答');
+        await callbacks.onDone();
+      });
+
+      const result = await sendMessage('請介紹這個主題', undefined, [], {
+        responseMode: 'voice',
+        onVoiceContentChunk,
+      });
+
+      expect(createChatStream).toHaveBeenCalledWith(
+        [{ role: 'user', content: '請介紹這個主題' }],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        mockChatStore.useRag,
+        false,
+        mockChatStore.searchMode,
+        'test-conv-id',
+        [],
+        { responseMode: 'voice' },
+      );
+      expect(onVoiceContentChunk).toHaveBeenCalledWith('口語回答');
+      expect(mockChatStore.appendContent).not.toHaveBeenCalled();
+      expect(mockChatStore.appendThinkingContent).not.toHaveBeenCalled();
+      expect(mockChatStore.endStreaming).not.toHaveBeenCalled();
+      expect(result).toEqual(expect.objectContaining({
+        completed: true,
+        answerContent: '口語回答',
+        finalizeVoiceResponse: expect.any(Function),
+      }));
+    });
+
+    it('removes an empty streaming assistant placeholder when cancellation happens before content', async () => {
+      mockChatStore.currentStreamingId = 'assistant-empty';
+      mockChatStore.currentContent = '';
+      mockChatStore.isThinking = false;
+      mockChatStore.thinkingContent = '';
+
+      await cancelCurrentStream();
+
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('assistant-empty');
+      expect(mockChatStore.endStreaming).not.toHaveBeenCalled();
+      expect(databaseService.message.add).not.toHaveBeenCalled();
+      expect(mockChatStore.resetStreamingState).toHaveBeenCalled();
     });
 
     it('should not call createChatStream and set error when messages are empty after preparation (safety intercept)', async () => {

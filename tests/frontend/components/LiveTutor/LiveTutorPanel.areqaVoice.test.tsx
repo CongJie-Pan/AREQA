@@ -2,7 +2,7 @@ import React from 'react';
 import { act, render, screen, waitFor, type RenderResult } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveTutorPanel } from '@/components/LiveTutor/LiveTutorPanel';
-import { startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
+import { playLiveVoiceCue, startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
 import { cancelCurrentStream, sendMessage } from '@/services/chat';
 import { useChatStore, type DisplayMessage } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
@@ -18,6 +18,7 @@ vi.mock('@/services/realtime', () => ({
       super(message);
     }
   },
+  playLiveVoiceCue: vi.fn(),
   startRealtimeClient: vi.fn(),
 }));
 
@@ -101,6 +102,7 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
     resetStores();
     vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
       realtimeOptions = options;
+      options.onStatus('listening');
       return controller;
     });
     vi.mocked(sendMessage).mockImplementation(async () => {
@@ -148,6 +150,45 @@ describe('LiveTutorPanel AREQA-authored voice integration', () => {
     const view = await renderOpenPanel();
 
     expect(screen.getByText('Connecting')).toBeInTheDocument();
+    act(() => view.unmount());
+  });
+
+  it('ignores speech transcripts before the realtime session is listening', async () => {
+    vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
+      realtimeOptions = options;
+      options.onStatus('connecting');
+      return controller;
+    });
+    const view = await renderOpenPanel();
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('你好');
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('plays lifecycle cues for connected, mute, unmute, and hangup states', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    expect(playLiveVoiceCue).toHaveBeenCalledWith('connected');
+
+    act(() => {
+      useLiveTutorStore.getState().setMuted(true);
+    });
+    expect(playLiveVoiceCue).toHaveBeenCalledWith('muted');
+
+    act(() => {
+      useLiveTutorStore.getState().setMuted(false);
+    });
+    expect(playLiveVoiceCue).toHaveBeenCalledWith('unmuted');
+
+    act(() => {
+      useLiveTutorStore.getState().requestClose();
+    });
+    await waitFor(() => expect(playLiveVoiceCue).toHaveBeenCalledWith('hangup'));
     act(() => view.unmount());
   });
 

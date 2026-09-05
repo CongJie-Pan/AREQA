@@ -348,19 +348,19 @@ export async function sendMessage(
         // thinking/content token may arrive after this callback, and backend
         // streams are not guaranteed to emit a separate `generating` status.
         chatStore.setRagStatus('generating');
-        if (!latestState.forceThink) return;
+        if (!effectiveForceThink) return;
         thinkingStartTime = Date.now();
         // Store handles isThinking state
       },
 
       onThinkingContent: (chunk: string) => {
-        if (!latestState.forceThink) return;
+        if (!effectiveForceThink) return;
         thinkingContent += chunk;
         chatStore.appendThinkingContent(chunk);
       },
 
       onThinkingEnd: () => {
-        if (!latestState.forceThink) return;
+        if (!effectiveForceThink) return;
         chatStore.endThinking();
       },
 
@@ -448,12 +448,13 @@ export async function sendMessage(
       );
     }
 
+    if (!isVoiceResponse) return { completed };
     return {
       completed,
       conversationId: conversationIdForSave,
       assistantMessageId,
       answerContent,
-      finalizeVoiceResponse: isVoiceResponse ? finalizeAssistantMessage : undefined,
+      finalizeVoiceResponse: finalizeAssistantMessage,
     };
   } catch (error) {
     // Clear abort controller
@@ -543,18 +544,23 @@ export async function cancelCurrentStream(): Promise<void> {
   const thinkingContent = chatStore.thinkingContent;
   const thinkingStartTime = chatStore.thinkingStartTime;
   const currentContent = chatStore.currentContent;
+  const hasAssistantContent = Boolean(currentContent || thinkingContent);
 
   // If we're in thinking phase, save the accumulated thinking content to the message
   if (hasThinkingContent) {
     chatStore.endThinking();
   }
 
-  // Finalize the streaming message with whatever content we have
-  chatStore.endStreaming();
+  if (!hasAssistantContent && streamingMessageId) {
+    chatStore.removeMessage(streamingMessageId);
+  } else {
+    // Finalize the streaming message with whatever content we have.
+    chatStore.endStreaming();
+  }
 
   // Save partial response to database to prevent data loss on page refresh
   const activeConversationId = conversationStore.activeConversationId;
-  if (canPersistHistory() && streamingMessageId && activeConversationId) {
+  if (hasAssistantContent && canPersistHistory() && streamingMessageId && activeConversationId) {
     try {
       const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
         role: 'assistant',
