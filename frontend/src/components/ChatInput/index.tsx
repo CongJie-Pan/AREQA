@@ -35,8 +35,8 @@ const MAX_MESSAGE_LENGTH = 4000;
 const MAX_ATTACHMENT_COUNT = 5;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-const DICTATION_WAVE_BAR_COUNT = 44;
-const IDLE_DICTATION_WAVE_LEVEL = 0.16;
+const DICTATION_WAVE_BAR_COUNT = 34;
+const IDLE_DICTATION_WAVE_LEVEL = 0.1;
 const SUPPORTED_ATTACHMENT_TYPES = new Set([
   'image/png', 'image/jpeg', 'image/webp', 'image/gif',
   'application/pdf', 'text/plain', 'text/markdown',
@@ -222,8 +222,8 @@ function startDictationLevelMonitor(
   try {
     audioContext = new window.AudioContext();
     analyser = audioContext.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.64;
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.82;
     source = audioContext.createMediaStreamSource(stream);
     source.connect(analyser);
     if (audioContext.state === 'suspended') {
@@ -237,16 +237,21 @@ function startDictationLevelMonitor(
   let animationFrameId = 0;
   let closed = false;
   let smoothedLevel = IDLE_DICTATION_WAVE_LEVEL;
+  let frame = 0;
 
   const tick = () => {
     if (closed) return;
     analyser.getByteFrequencyData(samples);
     const sum = samples.reduce((total, sample) => total + sample, 0);
-    const rawLevel = Math.min(1, Math.max(0, (sum / Math.max(samples.length, 1) - 6) / 86));
-    smoothedLevel += (rawLevel - smoothedLevel) * (rawLevel > smoothedLevel ? 0.52 : 0.2);
+    const rawLevel = Math.min(1, Math.max(0, (sum / Math.max(samples.length, 1) - 5) / 92));
+    smoothedLevel += (rawLevel - smoothedLevel) * (rawLevel > smoothedLevel ? 0.28 : 0.12);
+    frame += 1;
     onLevels(Array.from({ length: DICTATION_WAVE_BAR_COUNT }, (_, index) => {
-      const phase = Math.sin((index / DICTATION_WAVE_BAR_COUNT) * Math.PI);
-      return Math.min(1, IDLE_DICTATION_WAVE_LEVEL + smoothedLevel * (0.36 + phase * 0.64));
+      const centerDistance = Math.abs(index - (DICTATION_WAVE_BAR_COUNT - 1) / 2) / (DICTATION_WAVE_BAR_COUNT / 2);
+      const centerWeight = Math.max(0.16, 1 - centerDistance ** 1.9);
+      const breathing = 0.04 * Math.sin(frame * 0.09 + index * 0.72);
+      const level = IDLE_DICTATION_WAVE_LEVEL + smoothedLevel * centerWeight + breathing;
+      return Math.min(0.84, Math.max(IDLE_DICTATION_WAVE_LEVEL, level));
     }));
     animationFrameId = window.requestAnimationFrame(tick);
   };

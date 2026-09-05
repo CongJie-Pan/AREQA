@@ -406,9 +406,9 @@ describe('ChatInput', () => {
 
     fireEvent.click(screen.getByLabelText('語音輸入'));
     expect(await screen.findByLabelText('確認語音輸入')).toBeInTheDocument();
-    const waveform = document.querySelector('[style*="--wave-level"]');
-    expect(waveform).toBeInTheDocument();
-    expect(waveform?.getAttribute('style')).not.toContain('--wave-index');
+    const waveformBars = document.querySelectorAll('[style*="--wave-level"]');
+    expect(waveformBars).toHaveLength(34);
+    expect(waveformBars[0]?.getAttribute('style')).not.toContain('--wave-index');
     fireEvent.click(screen.getByLabelText('確認語音輸入'));
 
     await waitFor(() => {

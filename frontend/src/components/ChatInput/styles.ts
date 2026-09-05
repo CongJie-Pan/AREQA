@@ -451,25 +451,51 @@ export const useStyles = createStyles(({ css, token }) => ({
     --wave-level: 0.16;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 3px;
+    justify-content: center;
+    gap: clamp(2px, 0.42vw, 5px);
     flex: 1 1 auto;
     min-width: 0;
-    height: 24px;
+    max-width: min(62vw, 460px);
+    height: 30px;
+    margin: 0 auto;
     overflow: hidden;
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0,
+      #000 9%,
+      #000 91%,
+      transparent 100%
+    );
 
     span {
-      width: 3px;
-      height: calc(4px + var(--wave-level) * 20px);
-      flex: 0 0 3px;
+      width: clamp(2px, 0.36vw, 4px);
+      height: 24px;
+      flex: 0 0 clamp(2px, 0.36vw, 4px);
       border-radius: 999px;
-      background: rgba(255, 255, 255, calc(0.36 + var(--wave-level) * 0.52));
+      background: rgba(255, 255, 255, calc(0.28 + var(--wave-level) * 0.58));
       transform-origin: center;
-      transition: height 72ms linear, background 72ms linear;
+      transform: scaleY(calc(0.16 + var(--wave-level) * 0.84));
+      transition:
+        transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        background 150ms ease,
+        opacity 150ms ease;
     }
 
-    span:nth-last-child(-n + 16) {
-      background: rgba(255, 255, 255, 0.8);
+    span:nth-child(4n + 1) {
+      opacity: 0.72;
+    }
+
+    span:nth-child(5n + 2) {
+      transform: scaleY(calc(0.12 + var(--wave-level) * 0.72));
+    }
+
+    span:nth-child(n + 13):nth-child(-n + 22) {
+      background: rgba(255, 255, 255, calc(0.48 + var(--wave-level) * 0.48));
+    }
+
+    @media (max-width: 560px) {
+      max-width: min(56vw, 260px);
+      gap: 2px;
     }
   `,
 
