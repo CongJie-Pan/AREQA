@@ -385,15 +385,15 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   // Circular send button aligned in the toolbar
   sendButton: css`
-    background: #2f6bdc;
-    color: #ffffff;
+    background: #facd8a;
+    color: #111111;
 
     &:hover:not(:disabled) {
-      background: #3d7bef;
+      background: #ffd9a3;
     }
 
     &:active:not(:disabled) {
-      background: #255cc5;
+      background: #edbb72;
     }
 
     &:disabled {
