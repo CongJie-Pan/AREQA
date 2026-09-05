@@ -1398,27 +1398,46 @@ quoteBlockContent: css`
     bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
-    background: #6f2f45;
-    color: #ffffff;
-    border: none;
+    background: rgba(18, 18, 20, 0.88);
+    color: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-    transition: all 0.2s ease;
+    box-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px);
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      box-shadow 0.18s ease,
+      transform 0.18s ease;
     z-index: 10;
 
     &:hover {
-      background: #853752;
-      transform: translateX(-50%) scale(1.1);
+      background: rgba(28, 28, 31, 0.94);
+      border-color: rgba(255, 255, 255, 0.24);
+      color: #ffffff;
+      transform: translateX(-50%) translateY(-1px);
+      box-shadow:
+        0 16px 32px rgba(0, 0, 0, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
     &:active {
-      transform: translateX(-50%) scale(0.95);
+      transform: translateX(-50%) translateY(0) scale(0.96);
+      background: rgba(10, 10, 12, 0.96);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgba(255, 255, 255, 0.72);
+      outline-offset: 3px;
     }
   `,
 

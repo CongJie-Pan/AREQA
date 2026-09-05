@@ -15,6 +15,9 @@ interface ToneStep {
   gain: number;
 }
 
+const LIVE_VOICE_CUE_GAIN_MULTIPLIER = 1.85;
+const MAX_LIVE_VOICE_CUE_GAIN = 0.12;
+
 const SOUND_STEPS: Record<LiveVoiceSound, ToneStep[]> = {
   connected: [
     { frequency: 660, durationMs: 82, gain: 0.035 },
@@ -51,10 +54,11 @@ export function playLiveVoiceCue(sound: LiveVoiceSound): void {
     for (const step of SOUND_STEPS[sound]) {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
+      const targetGain = Math.min(step.gain * LIVE_VOICE_CUE_GAIN_MULTIPLIER, MAX_LIVE_VOICE_CUE_GAIN);
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(step.frequency, startAt + offsetSeconds);
       gain.gain.setValueAtTime(0.0001, startAt + offsetSeconds);
-      gain.gain.exponentialRampToValueAtTime(step.gain, startAt + offsetSeconds + 0.012);
+      gain.gain.exponentialRampToValueAtTime(targetGain, startAt + offsetSeconds + 0.012);
       gain.gain.exponentialRampToValueAtTime(0.0001, startAt + offsetSeconds + step.durationMs / 1000);
       oscillator.connect(gain);
       gain.connect(context.destination);
