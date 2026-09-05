@@ -37,8 +37,14 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert config["model"] == "gpt-realtime-2.1-mini"
     assert config["audio"]["output"]["voice"] == "marin"
     assert "AREQA Live Tutor" in config["instructions"]
-    assert "a re ka" in config["instructions"]
+    assert "ah-ray-kah" in config["instructions"]
+    assert "阿瑞卡" in config["instructions"]
+    assert "write the speakable form" in config["instructions"]
+    assert "internal: never explain, spell out, or describe the pronunciation guide" in config["instructions"]
     assert "one to three short sentences" in config["instructions"]
+    assert "exactly one short open question" in config["instructions"]
+    assert "A learning answer should feel unfinished without learner choice" in config["instructions"]
+    assert "AREQA soul" in config["instructions"]
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["audio"]["input"]["turn_detection"] == {
         "type": "server_vad",
