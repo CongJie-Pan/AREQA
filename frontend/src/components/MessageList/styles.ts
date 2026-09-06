@@ -1400,6 +1400,10 @@ quoteBlockContent: css`
     transform: translateX(-50%);
     width: 48px;
     height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    flex: 0 0 48px;
+    box-sizing: border-box;
     border-radius: 50%;
     background: rgba(18, 18, 20, 0.88);
     color: rgba(255, 255, 255, 0.94);

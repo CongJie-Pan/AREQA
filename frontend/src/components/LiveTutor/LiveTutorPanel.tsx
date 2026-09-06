@@ -233,6 +233,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     const assistantMessageId = assistantMessageIdRef.current ?? addAssistantMessage(conversationId);
     lastVoiceMessageIdRef.current = assistantMessageId;
     updateAssistantMessage(assistantMessageId, {
+      conversationId,
       content,
       isStreaming: false,
       voicePlayback: playbackRef.current === 'waiting' ? 'finished' : playbackRef.current,
@@ -255,7 +256,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     if (!delta || isCancelledRef.current) return;
 
     assistantTranscriptRef.current += delta;
-    const conversationId = await ensurePersistedConversationId();
+    const conversationId = persistedConversationIdRef.current || conversationIdRef.current || prepareSessionConversationId();
     if (!assistantMessageIdRef.current) {
       assistantMessageIdRef.current = addAssistantMessage(conversationId);
     }
@@ -265,7 +266,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       isStreaming: true,
       voicePlayback: playbackRef.current,
     });
-  }, [addAssistantMessage, ensurePersistedConversationId, language, updateAssistantMessage]);
+  }, [addAssistantMessage, language, prepareSessionConversationId, updateAssistantMessage]);
 
   const updateAudioScale = useCallback(() => {
     const level = Math.max(inputLevelRef.current, outputLevelRef.current);

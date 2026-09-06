@@ -17,6 +17,8 @@ class FakeDataChannel {
 }
 
 let lastPeerConnection: FakePeerConnection | null = null;
+let lastWebSocket: FakeWebSocket | null = null;
+let lastScriptProcessor: FakeScriptProcessor | null = null;
 
 class FakePeerConnection {
   connectionState = 'new';
@@ -32,6 +34,81 @@ class FakePeerConnection {
 
   constructor() {
     lastPeerConnection = this;
+  }
+}
+
+class FakeScriptProcessor {
+  onaudioprocess: ((event: AudioProcessingEvent) => void) | null = null;
+  connect = vi.fn();
+  disconnect = vi.fn();
+}
+
+class FakeAudioBufferSource {
+  buffer: AudioBuffer | null = null;
+  onended: (() => void) | null = null;
+  connect = vi.fn();
+  disconnect = vi.fn();
+  start = vi.fn(() => {
+    this.onended?.();
+  });
+  stop = vi.fn();
+}
+
+class FakeAudioContext {
+  static instances: FakeAudioContext[] = [];
+  sampleRate = 48000;
+  currentTime = 0;
+  state: AudioContextState = 'running';
+  destination = {};
+  close = vi.fn(async () => undefined);
+  resume = vi.fn(async () => undefined);
+  createMediaStreamSource = vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  }));
+  createScriptProcessor = vi.fn(() => {
+    lastScriptProcessor = new FakeScriptProcessor();
+    return lastScriptProcessor;
+  });
+  createBuffer = vi.fn((_channels: number, length: number, sampleRate: number) => ({
+    duration: length / sampleRate,
+    copyToChannel: vi.fn(),
+  }));
+  createBufferSource = vi.fn(() => new FakeAudioBufferSource());
+
+  constructor(options?: AudioContextOptions) {
+    if (options?.sampleRate) this.sampleRate = options.sampleRate;
+    FakeAudioContext.instances.push(this);
+  }
+}
+
+class FakeWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+  readyState = FakeWebSocket.CONNECTING;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  send = vi.fn();
+  close = vi.fn(() => {
+    this.readyState = FakeWebSocket.CLOSED;
+    this.onclose?.({ code: 1000, wasClean: true } as CloseEvent);
+  });
+
+  constructor(public readonly url: string, public readonly protocols?: string | string[]) {
+    lastWebSocket = this;
+  }
+
+  open(): void {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.();
+  }
+
+  receive(event: object): void {
+    this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent);
   }
 }
 
@@ -176,13 +253,64 @@ describe('Realtime client lifecycle', () => {
     }));
     controller.disconnect();
   });
+
+  it('uses the websocket transport when flagged and owns audio playback events', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    installMicrophone();
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+    Object.defineProperty(globalThis, 'AudioContext', {
+      configurable: true,
+      value: FakeAudioContext,
+    });
+    const onPlaybackState = vi.fn();
+    const onAssistantTranscriptDelta = vi.fn();
+    const onAssistantTranscriptDone = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({
+      recentMessages: () => [
+        { id: 'u1', conversationId: 'conv_123', userId: 'guest', role: 'user', content: '你好', createdAt: new Date() },
+      ],
+      onPlaybackState,
+      onAssistantTranscriptDelta,
+      onAssistantTranscriptDone,
+    }));
+
+    lastWebSocket?.open();
+    expect(lastPeerConnection).toBeNull();
+    expect(lastWebSocket?.url).toBe('wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1-mini');
+    expect(lastWebSocket?.protocols).toEqual([
+      'realtime',
+      'openai-insecure-api-key.ek_test',
+    ]);
+    expect(lastWebSocket?.send).toHaveBeenCalledWith(expect.stringContaining('"conversation.item.create"'));
+
+    lastWebSocket?.receive({ type: 'response.created', response: { id: 'resp_ws' } });
+    lastWebSocket?.receive({ type: 'response.output_audio.delta', delta: 'AAAAAA==' });
+    lastWebSocket?.receive({ type: 'response.output_audio_transcript.delta', delta: '你好' });
+    lastWebSocket?.receive({ type: 'response.output_audio_transcript.done', transcript: '你好' });
+
+    await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('你好'));
+    expect(onPlaybackState).toHaveBeenCalledWith('started');
+    expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('你好');
+    controller.disconnect();
+  });
+
   const originalPeerConnection = globalThis.RTCPeerConnection;
   const originalFetch = globalThis.fetch;
   const originalNavigator = globalThis.navigator;
+  const originalWebSocket = globalThis.WebSocket;
+  const originalAudioContext = globalThis.AudioContext;
 
   beforeEach(() => {
     vi.clearAllMocks();
     lastPeerConnection = null;
+    lastWebSocket = null;
+    lastScriptProcessor = null;
+    FakeAudioContext.instances = [];
+    vi.unstubAllEnvs();
     Object.defineProperty(globalThis, 'RTCPeerConnection', {
       configurable: true,
       value: FakePeerConnection,
@@ -206,6 +334,15 @@ describe('Realtime client lifecycle', () => {
       configurable: true,
       value: originalNavigator,
     });
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: originalWebSocket,
+    });
+    Object.defineProperty(globalThis, 'AudioContext', {
+      configurable: true,
+      value: originalAudioContext,
+    });
+    vi.unstubAllEnvs();
   });
 
   it('does not create a provider session when microphone permission is denied', async () => {

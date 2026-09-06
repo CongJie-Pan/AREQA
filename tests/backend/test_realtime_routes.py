@@ -35,7 +35,9 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
 
     assert config["type"] == "realtime"
     assert config["model"] == "gpt-realtime-2.1-mini"
+    assert config["output_modalities"] == ["audio"]
     assert config["audio"]["output"]["voice"] == "marin"
+    assert config["audio"]["output"]["format"] == {"type": "audio/pcm", "rate": 24000}
     assert "AREQA Live Tutor" in config["instructions"]
     assert "ah-ray-kah" in config["instructions"]
     assert "阿瑞卡" in config["instructions"]

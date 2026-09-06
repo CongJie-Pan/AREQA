@@ -272,9 +272,13 @@ def _build_realtime_session_config(payload: RealtimeSessionRequest) -> dict[str,
     return {
         "type": "realtime",
         "model": _normalize_model(payload.model),
+        "output_modalities": ["audio"],
         "instructions": _build_realtime_instructions(payload.interface_language),
         "audio": {
-            "output": {"voice": _normalize_voice(payload.voice)},
+            "output": {
+                "voice": _normalize_voice(payload.voice),
+                "format": {"type": "audio/pcm", "rate": 24000},
+            },
             "input": {
                 "transcription": _build_realtime_transcription_config(payload.interface_language),
                 "turn_detection": {
