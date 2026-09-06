@@ -38,6 +38,25 @@ Deploy to LiveKit Agent Cloud from the repository root:
 scripts/livekit-agent.sh deploy
 ```
 
+Automatic deployment is configured by `.github/workflows/livekit-agent-deploy.yml`.
+Pushes to `main` or `master` deploy only when `livekit_agent/**`,
+`scripts/livekit-agent.sh`, or the workflow itself changes.
+
+Required GitHub Actions secrets:
+
+```text
+LIVEKIT_URL
+LIVEKIT_API_KEY
+LIVEKIT_API_SECRET
+LIVEKIT_AGENT_SECRET_LIST
+```
+
+`LIVEKIT_AGENT_SECRET_LIST` must be a comma-separated secret list:
+
+```text
+OPENAI_API_KEY=...,ANAM_API_KEY=...,ANAM_AVATAR_ID=...
+```
+
 Sync secrets from the repository `.env` to LiveKit Agent Cloud:
 
 ```bash
