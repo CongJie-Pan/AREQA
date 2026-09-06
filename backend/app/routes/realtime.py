@@ -144,6 +144,7 @@ def _build_realtime_instructions(language: str) -> str:
         "When introducing yourself in Mandarin, say only that you are 阿瑞卡, then continue naturally.",
         f"Identity: {style.identity}",
         f"Default to {answer_language}. Match the learner's latest turn.",
+        "If the learner's latest turn contains any Chinese characters, answer in Mandarin Chinese unless they explicitly ask for another language.",
         "When the learner speaks Chinese, answer aloud in Mandarin Chinese and use",
         f"{chinese_script} characters.",
         "Preserve names and technical terms when useful. Switch languages only when the learner clearly asks or speaks another language.",
@@ -456,11 +457,12 @@ async def create_realtime_session(
     session_config = _build_realtime_session_config(payload)
     started_at = time.time()
     logger.info(
-        "realtime.session_create_started conversation_id=%s authenticated=%s model=%s voice=%s",
+        "realtime.session_create_started conversation_id=%s authenticated=%s model=%s voice=%s interface_language=%s",
         payload.conversation_id,
         bool(current_user_id),
         session_config["model"],
         session_config["audio"]["output"]["voice"],
+        payload.interface_language,
     )
     try:
         headers = {
@@ -505,9 +507,10 @@ async def create_realtime_session(
         ) from exc
 
     logger.info(
-        "realtime.session_create_completed conversation_id=%s model=%s elapsed_ms=%s",
+        "realtime.session_create_completed conversation_id=%s model=%s interface_language=%s elapsed_ms=%s",
         payload.conversation_id,
         session_config["model"],
+        payload.interface_language,
         int((time.time() - started_at) * 1000),
     )
     return {

@@ -163,6 +163,48 @@ function liveVoiceTransport(): typeof API_CONFIG.liveVoiceTransport {
     : API_CONFIG.liveVoiceTransport;
 }
 
+/**
+ * Detect whether the current browser looks like a mobile or touch-first client.
+ *
+ * Returns:
+ *   True for common phone/tablet browsers and touch-first iPadOS desktop-mode
+ *   Safari variants.
+ *
+ * Side Effects:
+ *   None.
+ *
+ * Compatibility:
+ *   This is intentionally heuristic. The consequence of a false positive is
+ *   falling back to WebRTC, which OpenAI recommends for browser/mobile clients.
+ */
+function isMobileRealtimeClient(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent || '';
+  const platform = navigator.platform || '';
+  return /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
+    || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * Resolve the live voice transport for the current runtime.
+ *
+ * Returns:
+ *   The transport to use after applying device policy.
+ *
+ * Side Effects:
+ *   None. The caller logs the decision with safe metadata.
+ *
+ * Compatibility:
+ *   WebSocket stays available for desktop experiments, but mobile/touch-first
+ *   clients fall back to WebRTC because the provider recommends WebRTC for
+ *   browser/mobile clients and mobile Web Audio autoplay policies are stricter.
+ */
+function resolvedLiveVoiceTransport(): typeof API_CONFIG.liveVoiceTransport {
+  const configuredTransport = liveVoiceTransport();
+  if (configuredTransport === 'websocket' && isMobileRealtimeClient()) return 'webrtc';
+  return configuredTransport;
+}
+
 /** Maps browser capture failures to stable, localizable error categories. */
 function microphoneAccessError(error: unknown): Error {
   const browserError = error instanceof Error ? error : new Error(String(error));
@@ -530,6 +572,7 @@ interface WebSocketAudioQueue {
 
 function createWebSocketAudioQueue(
   context: AudioContext,
+  conversationId: () => string,
   onPlaybackState?: (state: 'started' | 'stopped' | 'interrupted') => void,
   onLevel?: (level: number) => void,
 ): WebSocketAudioQueue {
@@ -568,7 +611,21 @@ function createWebSocketAudioQueue(
   return {
     enqueue: (base64Pcm16) => {
       if (context.state === 'suspended') {
-        void context.resume().catch(() => undefined);
+        const startedAt = Date.now();
+        void context.resume()
+          .then(() => {
+            logger.info('realtime.websocket_audio_context_resumed', {
+              conversationId: conversationId(),
+              elapsedMs: Date.now() - startedAt,
+              state: context.state,
+            });
+          })
+          .catch((error) => {
+            logger.warn('realtime.websocket_audio_context_resume_failed', {
+              conversationId: conversationId(),
+              errorName: error instanceof Error ? error.name : 'UnknownError',
+            });
+          });
       }
       const samples = decodePcm16Base64(base64Pcm16);
       if (samples.length === 0) return;
@@ -1060,7 +1117,15 @@ async function startRealtimeWebSocketClient(
     }
     inputContext = new AudioContextClass();
     outputContext = new AudioContextClass({ sampleRate: REALTIME_PCM_SAMPLE_RATE });
-    audioQueue = createWebSocketAudioQueue(outputContext, (playbackState) => {
+    logger.info('realtime.websocket_audio_context_created', {
+      conversationId: options.getConversationId?.() || options.conversationId,
+      inputState: inputContext.state,
+      outputState: outputContext.state,
+      outputSampleRate: outputContext.sampleRate,
+    });
+    audioQueue = createWebSocketAudioQueue(outputContext, () => (
+      options.getConversationId?.() || options.conversationId
+    ), (playbackState) => {
       inputStreamer?.setOutputSuppressed(playbackState === 'started');
       options.onPlaybackState?.(playbackState);
     }, options.onOutputAudioLevel);
@@ -1150,16 +1215,21 @@ async function startRealtimeWebSocketClient(
 export async function startRealtimeClient(
   options: StartRealtimeClientOptions,
 ): Promise<RealtimeClientController> {
-  if (liveVoiceTransport() === 'websocket') {
-    logger.info('realtime.transport_selected', {
-      conversationId: options.getConversationId?.() || options.conversationId,
-      transport: 'websocket',
-    });
-    return startRealtimeWebSocketClient(options);
-  }
+  const configuredTransport = liveVoiceTransport();
+  const mobileClient = isMobileRealtimeClient();
+  const selectedTransport = resolvedLiveVoiceTransport();
   logger.info('realtime.transport_selected', {
     conversationId: options.getConversationId?.() || options.conversationId,
-    transport: 'webrtc',
+    interfaceLanguage: options.interfaceLanguage,
+    configuredTransport,
+    selectedTransport,
+    mobileClient,
+    fallbackReason: configuredTransport !== selectedTransport && mobileClient
+      ? 'mobile_prefers_webrtc'
+      : null,
   });
+  if (selectedTransport === 'websocket') {
+    return startRealtimeWebSocketClient(options);
+  }
   return startRealtimeWebRtcClient(options);
 }

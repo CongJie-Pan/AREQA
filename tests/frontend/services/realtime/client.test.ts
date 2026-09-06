@@ -131,7 +131,11 @@ function realtimeOptions(overrides: Partial<Parameters<typeof startRealtimeClien
   };
 }
 
-function installMicrophone(): { stream: MediaStream; stop: ReturnType<typeof vi.fn> } {
+function installMicrophone(options: {
+  userAgent?: string;
+  platform?: string;
+  maxTouchPoints?: number;
+} = {}): { stream: MediaStream; stop: ReturnType<typeof vi.fn> } {
   const stop = vi.fn();
   const track = { stop, enabled: true };
   const stream = {
@@ -141,6 +145,9 @@ function installMicrophone(): { stream: MediaStream; stop: ReturnType<typeof vi.
   Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
     value: {
+      userAgent: options.userAgent ?? 'Mozilla/5.0 (X11; Linux x86_64)',
+      platform: options.platform ?? 'Linux x86_64',
+      maxTouchPoints: options.maxTouchPoints ?? 0,
       mediaDevices: {
         getUserMedia: vi.fn(async () => stream),
       },
@@ -306,6 +313,33 @@ describe('Realtime client lifecycle', () => {
     await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('你好'));
     expect(onPlaybackState).toHaveBeenCalledWith('started');
     expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('你好');
+    controller.disconnect();
+  });
+
+  it('falls back to webrtc on mobile even when websocket transport is flagged', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    installMicrophone({
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148',
+      platform: 'iPhone',
+      maxTouchPoints: 5,
+    });
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+
+    const controller = await startRealtimeClient(realtimeOptions());
+
+    expect(lastWebSocket).toBeNull();
+    expect(lastPeerConnection).not.toBeNull();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
     controller.disconnect();
   });
 

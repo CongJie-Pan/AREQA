@@ -46,6 +46,8 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert "one to three short sentences" in config["instructions"]
     assert "exactly one short open question" in config["instructions"]
     assert "A learning answer should feel unfinished without learner choice" in config["instructions"]
+    assert "latest turn contains any Chinese characters" in config["instructions"]
+    assert "answer in Mandarin Chinese unless they explicitly ask for another language" in config["instructions"]
     assert "AREQA soul" in config["instructions"]
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["audio"]["input"]["turn_detection"] == {
