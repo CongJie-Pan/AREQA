@@ -65,25 +65,16 @@ export const useStyles = createStyles(({ css }) => ({
   avatarStage: css`
     display: grid;
     position: relative;
-    width: clamp(104px, 12vw, 156px);
-    aspect-ratio: 1;
+    width: auto;
     place-items: center;
-    overflow: hidden;
-    border-radius: 50%;
+    overflow: visible;
     background: transparent;
-    transition:
-      width 180ms ease,
-      border-radius 180ms ease,
-      box-shadow 180ms ease;
-
-    @media (max-width: 768px) {
-      width: clamp(108px, 30vw, 148px);
-    }
   `,
 
   avatarStageActive: css`
     width: clamp(156px, 18vw, 220px);
     aspect-ratio: 4 / 5;
+    overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
     border-radius: 8px;
     background: #101010;

@@ -2,7 +2,12 @@ import React from 'react';
 import { act, render, screen, waitFor, type RenderResult } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveTutorPanel } from '@/components/LiveTutor/LiveTutorPanel';
-import { playLiveVoiceCue, startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
+import {
+  playLiveVoiceCue,
+  startLiveKitAvatarClient,
+  startRealtimeClient,
+  type StartRealtimeClientOptions,
+} from '@/services/realtime';
 import { cancelCurrentStream } from '@/services/chat';
 import { useChatStore, type DisplayMessage } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
@@ -19,6 +24,7 @@ vi.mock('@/services/realtime', () => ({
     }
   },
   playLiveVoiceCue: vi.fn(),
+  startLiveKitAvatarClient: vi.fn(),
   startRealtimeClient: vi.fn(),
 }));
 
@@ -62,7 +68,7 @@ function resetStores(): void {
     isOpen: false,
     status: 'idle',
     isMuted: false,
-    avatarEnabled: true,
+    avatarEnabled: false,
     closeRequestId: 0,
     userTranscript: '',
     assistantTranscript: '',
@@ -119,6 +125,11 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     realtimeOptions = null;
     resetStores();
     vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
+      realtimeOptions = options;
+      options.onStatus('listening');
+      return controller;
+    });
+    vi.mocked(startLiveKitAvatarClient).mockImplementation(async (options) => {
       realtimeOptions = options;
       options.onStatus('listening');
       return controller;
@@ -237,9 +248,11 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
   });
 
   it('renders avatar video when a future realtime transport provides a video stream', async () => {
+    useLiveTutorStore.setState({ avatarEnabled: true });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     const view = await renderOpenPanel();
-    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    await waitFor(() => expect(startLiveKitAvatarClient).toHaveBeenCalledOnce());
+    expect(startRealtimeClient).not.toHaveBeenCalled();
     const avatarStream = {
       getVideoTracks: () => [{ readyState: 'live' }],
       getAudioTracks: () => [],
@@ -254,6 +267,15 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     expect(video).toBeInTheDocument();
     expect(video).toHaveAttribute('playsinline');
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    act(() => view.unmount());
+  });
+
+  it('starts voice-only OpenAI Realtime by default before the avatar is requested', async () => {
+    const view = await renderOpenPanel();
+
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    expect(startLiveKitAvatarClient).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[data-avatar-state="fallback"]')).toBeInTheDocument();
     act(() => view.unmount());
   });
 

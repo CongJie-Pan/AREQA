@@ -12,8 +12,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import hashlib
+import uuid
+from datetime import timedelta
 from typing import Any, List, Literal
 
 import httpx
@@ -82,6 +85,31 @@ class RealtimeContextRequest(BaseModel):
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
 
 
+class LiveKitAvatarSessionRequest(BaseModel):
+    """Client request for an optional LiveKit-backed avatar voice session.
+
+    Args:
+        conversation_id: Safe correlation identifier used only to derive an
+            opaque room name and structured logs.
+        interface_language: UI language carried in dispatch metadata for the
+            LiveKit agent.
+    """
+
+    conversation_id: str = ""
+    interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
+
+
+class LiveKitAvatarSessionResponse(BaseModel):
+    """Browser-safe LiveKit connection metadata for avatar mode."""
+
+    livekit_url: str
+    token: str
+    room_name: str
+    participant_identity: str
+    agent_name: str
+    expires_in: int
+
+
 def _normalize_model(model: str) -> str:
     """Return an allowed Realtime model name or raise a validation error.
 
@@ -146,6 +174,60 @@ def _live_tutor_debug_logs_enabled() -> bool:
     """
 
     return bool(settings.enable_live_tutor_debug_logs)
+
+
+def _safe_livekit_fragment(value: str, *, fallback: str) -> str:
+    """Return a short opaque fragment safe for LiveKit room or identity fields.
+
+    Args:
+        value: Untrusted caller-supplied correlation value.
+        fallback: Prefix used when the input does not contain safe characters.
+
+    Returns:
+        A non-PII ASCII fragment. LiveKit records room names and identities in
+        logs, so user-provided text is never copied directly.
+    """
+
+    cleaned = re.sub(r"[^A-Za-z0-9_-]", "", str(value or ""))[:32]
+    if cleaned:
+        return cleaned
+    return f"{fallback}-{uuid.uuid4().hex[:12]}"
+
+
+def _livekit_avatar_room_name(conversation_id: str) -> str:
+    """Build an opaque room name for one Live Tutor avatar session."""
+
+    digest = hashlib.sha256(str(conversation_id or uuid.uuid4().hex).encode("utf-8")).hexdigest()[:16]
+    return f"areqa-live-{digest}-{uuid.uuid4().hex[:8]}"
+
+
+def _livekit_participant_identity(current_user_id: str | None) -> str:
+    """Build a non-PII LiveKit participant identity for the browser user."""
+
+    source = current_user_id or uuid.uuid4().hex
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+    return f"learner-{digest}-{uuid.uuid4().hex[:8]}"
+
+
+def _livekit_avatar_agent_metadata(payload: LiveKitAvatarSessionRequest) -> str:
+    """Return bounded dispatch metadata for the LiveKit avatar agent.
+
+    Args:
+        payload: Client request metadata.
+
+    Returns:
+        JSON metadata containing only non-secret operational values needed by
+        the agent to align language and correlate logs.
+    """
+
+    return json.dumps(
+        {
+            "conversation_id": _safe_livekit_fragment(payload.conversation_id, fallback="conversation"),
+            "interface_language": payload.interface_language,
+            "provider": "livekit_anam",
+        },
+        separators=(",", ":"),
+    )
 
 
 def _build_realtime_instructions(language: str) -> str:
@@ -346,6 +428,170 @@ def _build_realtime_session_config(payload: RealtimeSessionRequest) -> dict[str,
         ],
         "tool_choice": "auto",
     }
+
+
+@router.post("/api/v1/realtime/livekit-avatar-session", response_model=LiveKitAvatarSessionResponse)
+async def create_livekit_avatar_session(
+    payload: LiveKitAvatarSessionRequest,
+    current_user_id: str | None = Depends(get_optional_current_user),
+) -> LiveKitAvatarSessionResponse:
+    """Mint a LiveKit room token for optional Anam avatar mode.
+
+    Args:
+        payload: Language and correlation metadata from the browser.
+        current_user_id: Optional authenticated user from Supabase JWT.
+
+    Returns:
+        LiveKit URL, short-lived participant token, room name, participant
+        identity, target agent name, and token TTL.
+
+    Raises:
+        HTTPException: If avatar mode is disabled, LiveKit credentials are
+            missing, the LiveKit SDK is not installed, or token construction
+            fails.
+
+    Side Effects:
+        Emits safe structured logs with room, auth state, agent name, TTL, and
+        elapsed time. The signed token and provider secrets are never logged.
+
+    Compatibility:
+        The token embeds a room agent dispatch so a deployed LiveKit agent named
+        by ``settings.livekit_agent_name`` can join the room. The existing
+        OpenAI-direct Realtime route remains the fallback when this endpoint is
+        unavailable.
+    """
+
+    started_at = time.time()
+    if not settings.enable_livekit_avatar_mode:
+        logger.info(
+            "livekit.avatar_session_skipped reason=feature_disabled conversation_id=%s authenticated=%s",
+            payload.conversation_id,
+            bool(current_user_id),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "LIVEKIT_AVATAR_DISABLED",
+                "message": "LiveKit avatar mode is disabled.",
+            },
+        )
+
+    livekit_url = settings.livekit_url.strip()
+    api_key = settings.livekit_api_key.strip()
+    api_secret = settings.livekit_api_secret.strip()
+    agent_name = settings.livekit_agent_name.strip() or "areqa-live-tutor"
+    ttl_seconds = max(60, min(int(settings.livekit_avatar_token_ttl_seconds), 3600))
+    missing = [
+        name
+        for name, value in {
+            "LIVEKIT_URL": livekit_url,
+            "LIVEKIT_API_KEY": api_key,
+            "LIVEKIT_API_SECRET": api_secret,
+        }.items()
+        if not value
+    ]
+    if missing:
+        logger.warning(
+            "livekit.avatar_session_config_missing conversation_id=%s authenticated=%s missing=%s",
+            payload.conversation_id,
+            bool(current_user_id),
+            ",".join(missing),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "LIVEKIT_CONFIG_MISSING",
+                "message": "LiveKit avatar mode is not configured.",
+            },
+        )
+
+    try:
+        from livekit import api as livekit_api
+    except ImportError as exc:
+        logger.exception(
+            "livekit.avatar_session_sdk_missing conversation_id=%s",
+            payload.conversation_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "LIVEKIT_SDK_MISSING",
+                "message": "LiveKit server SDK is not installed.",
+            },
+        ) from exc
+
+    room_name = _livekit_avatar_room_name(payload.conversation_id)
+    participant_identity = _livekit_participant_identity(current_user_id)
+    metadata = _livekit_avatar_agent_metadata(payload)
+
+    try:
+        room_config = livekit_api.RoomConfiguration(
+            agents=[
+                livekit_api.RoomAgentDispatch(
+                    agent_name=agent_name,
+                    metadata=metadata,
+                )
+            ]
+        )
+        token = (
+            livekit_api.AccessToken(api_key, api_secret)
+            .with_identity(participant_identity)
+            .with_name("AREQA Learner")
+            .with_ttl(timedelta(seconds=ttl_seconds))
+            .with_grants(
+                livekit_api.VideoGrants(
+                    room_join=True,
+                    room=room_name,
+                    can_publish=True,
+                    can_subscribe=True,
+                    can_publish_data=True,
+                )
+            )
+            .with_room_config(room_config)
+            .to_jwt()
+        )
+    except Exception as exc:
+        logger.exception(
+            "livekit.avatar_session_token_failed conversation_id=%s room_name=%s agent_name=%s reason=%s",
+            payload.conversation_id,
+            room_name,
+            agent_name,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "LIVEKIT_TOKEN_FAILED",
+                "message": "Unable to create LiveKit avatar session.",
+            },
+        ) from exc
+
+    if _live_tutor_debug_logs_enabled():
+        logger.info(
+            "livekit.debug.avatar_session_token_created conversation_id=%s room_name=%s agent_name=%s authenticated=%s ttl_seconds=%s elapsed_ms=%s",
+            payload.conversation_id,
+            room_name,
+            agent_name,
+            bool(current_user_id),
+            ttl_seconds,
+            int((time.time() - started_at) * 1000),
+        )
+    logger.info(
+        "livekit.avatar_session_created conversation_id=%s room_name=%s agent_name=%s authenticated=%s elapsed_ms=%s",
+        payload.conversation_id,
+        room_name,
+        agent_name,
+        bool(current_user_id),
+        int((time.time() - started_at) * 1000),
+    )
+    return LiveKitAvatarSessionResponse(
+        livekit_url=livekit_url,
+        token=token,
+        room_name=room_name,
+        participant_identity=participant_identity,
+        agent_name=agent_name,
+        expires_in=ttl_seconds,
+    )
 
 
 def _client_secret_from_response(payload: dict[str, Any]) -> tuple[str, str | None]:

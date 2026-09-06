@@ -14,10 +14,12 @@ from backend.app.routes.realtime import (
     RealtimeContextMessage,
     RealtimeContextRequest,
     RealtimeSessionRequest,
+    LiveKitAvatarSessionRequest,
     _build_realtime_session_config,
     _client_secret_from_response,
     _normalize_model,
     _safe_realtime_user_identifier,
+    create_livekit_avatar_session,
     create_realtime_session,
     get_realtime_context,
     transcribe_speech,
@@ -111,6 +113,52 @@ def test_safe_realtime_user_identifier_hashes_authenticated_user_id():
     assert identifier != "user_123"
     assert _safe_realtime_user_identifier("user_123") == identifier
     assert _safe_realtime_user_identifier(None) is None
+
+
+@pytest.mark.asyncio
+async def test_create_livekit_avatar_session_fails_when_livekit_config_missing(monkeypatch):
+    monkeypatch.setattr(realtime_routes.settings, "enable_livekit_avatar_mode", True)
+    monkeypatch.setattr(realtime_routes.settings, "livekit_url", "")
+    monkeypatch.setattr(realtime_routes.settings, "livekit_api_key", "")
+    monkeypatch.setattr(realtime_routes.settings, "livekit_api_secret", "")
+
+    with pytest.raises(HTTPException) as error:
+        await create_livekit_avatar_session(
+            LiveKitAvatarSessionRequest(conversation_id="conv_livekit"),
+            current_user_id="user_123",
+        )
+
+    assert error.value.status_code == 503
+    assert error.value.detail["code"] == "LIVEKIT_CONFIG_MISSING"
+
+
+@pytest.mark.asyncio
+async def test_create_livekit_avatar_session_mints_dispatch_token_without_logging_secrets(monkeypatch, caplog):
+    monkeypatch.setattr(realtime_routes.settings, "enable_livekit_avatar_mode", True)
+    monkeypatch.setattr(realtime_routes.settings, "enable_live_tutor_debug_logs", True)
+    monkeypatch.setattr(realtime_routes.settings, "livekit_url", "wss://example.livekit.cloud")
+    monkeypatch.setattr(realtime_routes.settings, "livekit_api_key", "lk_test_key")
+    monkeypatch.setattr(realtime_routes.settings, "livekit_api_secret", "lk_test_secret")
+    monkeypatch.setattr(realtime_routes.settings, "livekit_agent_name", "areqa-live-tutor")
+    monkeypatch.setattr(realtime_routes.settings, "livekit_avatar_token_ttl_seconds", 120)
+
+    with caplog.at_level(logging.INFO):
+        response = await create_livekit_avatar_session(
+            LiveKitAvatarSessionRequest(conversation_id="conv_livekit", interface_language="zh-TW"),
+            current_user_id="user_123",
+        )
+
+    assert response.livekit_url == "wss://example.livekit.cloud"
+    assert response.agent_name == "areqa-live-tutor"
+    assert response.expires_in == 120
+    assert response.room_name.startswith("areqa-live-")
+    assert response.participant_identity.startswith("learner-")
+    assert "user_123" not in response.participant_identity
+    assert response.token
+    assert "livekit.avatar_session_created" in caplog.text
+    assert "livekit.debug.avatar_session_token_created" in caplog.text
+    assert "lk_test_secret" not in caplog.text
+    assert response.token not in caplog.text
 
 
 @pytest.mark.asyncio

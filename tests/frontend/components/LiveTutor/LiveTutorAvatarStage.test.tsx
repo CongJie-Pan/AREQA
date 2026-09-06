@@ -25,11 +25,13 @@ describe('LiveTutorAvatarStage', () => {
       <LiveTutorAvatarStage avatarEnabled={false} avatarStream={avatarStream()} status="listening" />,
     );
 
+    expect(container.firstElementChild).toHaveAttribute('data-avatar-state', 'fallback');
     expect(container.querySelector('img')).toHaveAttribute('src', '/icon/areqa_icon_v4_circle.png');
     expect(document.querySelector('video')).not.toBeInTheDocument();
 
     rerender(<LiveTutorAvatarStage avatarEnabled avatarStream={null} status="listening" />);
 
+    expect(container.firstElementChild).toHaveAttribute('data-avatar-state', 'waiting');
     expect(container.querySelector('img')).toHaveAttribute('src', '/icon/areqa_icon_v4_circle.png');
   });
 

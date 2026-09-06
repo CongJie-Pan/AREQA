@@ -371,7 +371,7 @@ export function ChatInput({
   onOpenLiveTutor,
   isLiveVoiceActive = false,
   isLiveVoiceMuted = false,
-  isLiveVoiceAvatarEnabled = true,
+  isLiveVoiceAvatarEnabled = false,
   onToggleLiveVoiceMute,
   onToggleLiveVoiceAvatar,
   onCloseLiveVoice,

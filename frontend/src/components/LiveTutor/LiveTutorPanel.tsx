@@ -16,6 +16,7 @@ import { LiveTutorAvatarStage } from './LiveTutorAvatarStage';
 import {
   RealtimeClientError,
   playLiveVoiceCue,
+  startLiveKitAvatarClient,
   startRealtimeClient,
   type RealtimeClientController,
 } from '@/services/realtime';
@@ -113,6 +114,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const hasSyncedInitialMuteRef = useRef(false);
   const hasStartedRef = useRef(false);
   const isCancelledRef = useRef(false);
+  const activeProviderRef = useRef<'openai_realtime' | 'livekit_anam' | null>(null);
   const [avatarVideoStream, setAvatarVideoStream] = useState<MediaStream | null>(null);
 
   const isOpen = useLiveTutorStore((state) => state.isOpen);
@@ -295,16 +297,22 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     userTurnIdsRef.current.clear();
     hasPlayedConnectedCueRef.current = false;
     hasSyncedInitialMuteRef.current = false;
+    const selectedProvider = useLiveTutorStore.getState().avatarEnabled ? 'livekit_anam' : 'openai_realtime';
+    activeProviderRef.current = selectedProvider;
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     setError(null);
     const conversationId = prepareSessionConversationId();
     logger.info('realtime.voice_session_bound', {
       component: 'LiveTutorPanel',
       conversationId,
+      provider: selectedProvider,
       contextMessageCount: selectLiveTutorMessages(useChatStore.getState().messages, conversationId).length,
       isPersistedConversation: persistedConversationIdRef.current === conversationId,
     });
-    const controller = await startRealtimeClient({
+    const startProviderClient = selectedProvider === 'livekit_anam'
+      ? startLiveKitAvatarClient
+      : startRealtimeClient;
+    const controller = await startProviderClient({
       conversationId,
       getConversationId: () => persistedConversationIdRef.current || conversationId,
       interfaceLanguage: language,
@@ -325,6 +333,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
         logger.info('realtime.avatar_video_stream_received', {
           component: 'LiveTutorPanel',
           conversationId: persistedConversationIdRef.current || conversationId,
+          provider: selectedProvider,
           videoTrackCount: stream.getVideoTracks().length,
         });
       },
@@ -430,6 +439,16 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       controller.disconnect();
       return;
     }
+    if (selectedProvider === 'livekit_anam' && useLiveTutorStore.getState().error) {
+      controller.disconnect();
+      logger.warn('livekit.avatar_fallback_to_realtime', {
+        component: 'LiveTutorPanel',
+        conversationId: persistedConversationIdRef.current || conversationId,
+      });
+      useLiveTutorStore.getState().setAvatarEnabled(false);
+      setError(null);
+      return;
+    }
     controllerRef.current = controller;
     controller.setMuted(useLiveTutorStore.getState().isMuted);
     hasSyncedInitialMuteRef.current = true;
@@ -461,6 +480,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     controllerRef.current?.disconnect();
     void cancelCurrentStream();
     controllerRef.current = null;
+    activeProviderRef.current = null;
     enqueueTranscriptWork(async () => {
       await finalizeAssistantDraft();
       if (lastVoiceMessageIdRef.current) {
@@ -512,6 +532,20 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     }
     playLiveVoiceCue(isMuted ? 'muted' : 'unmuted');
   }, [isMuted, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !hasStartedRef.current) return;
+    const nextProvider = avatarEnabled ? 'livekit_anam' : 'openai_realtime';
+    if (activeProviderRef.current === nextProvider) return;
+    logger.info('realtime.voice_provider_switch_requested', {
+      component: 'LiveTutorPanel',
+      fromProvider: activeProviderRef.current,
+      toProvider: nextProvider,
+      conversationId: persistedConversationIdRef.current || conversationIdRef.current,
+    });
+    stop();
+    void start();
+  }, [avatarEnabled, isOpen, start, stop]);
 
   useEffect(() => {
     if (!isOpen || closeRequestId === 0) return;

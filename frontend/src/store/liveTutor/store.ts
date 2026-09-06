@@ -13,7 +13,7 @@ const initialState = {
   isOpen: false,
   status: 'idle' as const,
   isMuted: false,
-  avatarEnabled: true,
+  avatarEnabled: false,
   closeRequestId: 0,
   userTranscript: '',
   assistantTranscript: '',

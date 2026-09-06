@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { LiveTutorPanel } from '@/components/LiveTutor/LiveTutorPanel';
-import { startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
+import { startLiveKitAvatarClient, startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
@@ -19,6 +19,7 @@ vi.mock('@/services/realtime', () => ({
     }
   },
   playLiveVoiceCue: vi.fn(),
+  startLiveKitAvatarClient: vi.fn(),
   startRealtimeClient: vi.fn(),
 }));
 
@@ -53,7 +54,7 @@ function resetLiveTutorHarness(): void {
     isOpen: false,
     status: 'idle',
     isMuted: false,
-    avatarEnabled: true,
+    avatarEnabled: false,
     closeRequestId: 0,
     userTranscript: '',
     assistantTranscript: '',
@@ -127,14 +128,28 @@ describe('Live Tutor avatar flow integration', () => {
         disconnect: vi.fn(),
       };
     });
+    vi.mocked(startLiveKitAvatarClient).mockImplementation(async (options) => {
+      realtimeOptions = options;
+      options.onStatus('listening');
+      return {
+        setMuted: vi.fn(),
+        cancelSpeech: vi.fn(),
+        disconnect: vi.fn(),
+      };
+    });
   });
 
-  it('lets the composer avatar button switch the live tutor stage between video and logo fallback', async () => {
+  it('starts voice first, then switches to LiveKit avatar mode when the avatar button is enabled', async () => {
     const { container } = render(<LiveTutorAvatarHarness />);
 
     fireEvent.click(screen.getByLabelText('開啟即時語音'));
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    expect(startLiveKitAvatarClient).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('開啟虛擬角色')).toBeInTheDocument();
+    expect(container.querySelector('[data-avatar-state="fallback"]')).toBeInTheDocument();
 
+    fireEvent.click(screen.getByLabelText('開啟虛擬角色'));
+    await waitFor(() => expect(startLiveKitAvatarClient).toHaveBeenCalledOnce());
     act(() => {
       realtimeOptions?.onRemoteVideoStream?.(avatarStream());
     });

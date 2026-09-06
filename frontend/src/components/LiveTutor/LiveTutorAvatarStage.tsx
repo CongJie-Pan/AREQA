@@ -69,7 +69,7 @@ export function LiveTutorAvatarStage({ avatarEnabled, avatarStream, status }: Li
       className={cx(
         styles.avatarStage,
         showAvatar && styles.avatarStageActive,
-        status === 'speaking' && styles.avatarStageSpeaking,
+        showAvatar && status === 'speaking' && styles.avatarStageSpeaking,
       )}
       data-avatar-state={showAvatar ? 'video' : avatarEnabled ? 'waiting' : 'fallback'}
     >

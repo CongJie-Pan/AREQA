@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     enable_parts_prompt_debug_logs: bool = False
     enable_live_tutor_debug_logs: bool = True
     enable_realtime_debug_logs: bool = True
+    enable_livekit_avatar_mode: bool = True
+    livekit_url: str = ""
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
+    livekit_agent_name: str = "areqa-live-tutor"
+    livekit_avatar_token_ttl_seconds: int = 900
     enable_production_turn_trace_summary: bool = True
     turn_trace_slow_total_threshold_ms: int = 8000
     turn_trace_slow_first_token_threshold_ms: int = 5000

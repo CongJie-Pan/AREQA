@@ -27,6 +27,13 @@ export const API_CONFIG = {
   realtimeContextEndpoint: process.env.NEXT_PUBLIC_REALTIME_CONTEXT_ENDPOINT || '/api/realtime/context',
 
   /**
+   * LiveKit avatar session endpoint.
+   * Default: '/api/realtime/livekit-avatar-session' (proxied through Next.js)
+   */
+  liveKitAvatarSessionEndpoint: process.env.NEXT_PUBLIC_LIVEKIT_AVATAR_SESSION_ENDPOINT
+    || '/api/realtime/livekit-avatar-session',
+
+  /**
    * Live voice transport implementation.
    * Default: 'webrtc'. Set NEXT_PUBLIC_LIVE_VOICE_TRANSPORT=websocket to opt
    * into the lower-level audio queue pipeline while keeping WebRTC as fallback.
