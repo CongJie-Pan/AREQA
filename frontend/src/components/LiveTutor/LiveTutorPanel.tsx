@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { Tooltip } from 'antd';
 import { useStyles } from './styles';
+import { FloatingAvatarWindow } from './FloatingAvatarWindow';
 import { LiveTutorAvatarStage } from './LiveTutorAvatarStage';
 import {
   RealtimeClientError,
@@ -575,8 +576,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   if (!isOpen) return null;
 
   const isAvatarConnecting = avatarEnabled && !avatarVideoStream && !avatarNotice;
+  const isAvatarVideoReady = avatarEnabled && Boolean(avatarVideoStream);
   const shouldShowConnecting = status === 'connecting' || isAvatarConnecting;
-  const shouldShowStage = !shouldShowConnecting && !error;
+  const shouldShowStage = !shouldShowConnecting && !error && !isAvatarVideoReady;
 
   return (
     <section
@@ -605,10 +607,14 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
             {avatarNotice && <div className={styles.avatarNotice}>{avatarNotice}</div>}
             <LiveTutorAvatarStage
               avatarEnabled={avatarEnabled}
-              avatarStream={avatarVideoStream}
+              avatarStream={null}
               status={status}
             />
           </>
+        )}
+
+        {isAvatarVideoReady && avatarVideoStream && !error && (
+          <FloatingAvatarWindow stream={avatarVideoStream} status={status} />
         )}
       </div>
 

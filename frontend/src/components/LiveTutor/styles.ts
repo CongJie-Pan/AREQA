@@ -105,6 +105,80 @@ export const useStyles = createStyles(({ css }) => ({
     opacity: 1;
   `,
 
+  floatingAvatarWindow: css`
+    pointer-events: auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    width: clamp(184px, 17vw, 240px);
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+    border-radius: 8px;
+    background: #101010;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.36);
+    touch-action: none;
+    user-select: none;
+
+    @media (max-width: 768px) {
+      width: clamp(136px, 42vw, 176px);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+    }
+  `,
+
+  floatingAvatarSpeaking: css`
+    box-shadow:
+      0 16px 48px rgba(0, 0, 0, 0.38),
+      0 0 0 1px color-mix(in srgb, #facd8a 36%, transparent);
+
+    @media (max-width: 768px) {
+      box-shadow:
+        0 12px 34px rgba(0, 0, 0, 0.36),
+        0 0 0 1px color-mix(in srgb, #facd8a 36%, transparent);
+    }
+  `,
+
+  floatingAvatarHandle: css`
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    z-index: 2;
+    display: inline-flex;
+    width: 38px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    transform: translateX(-50%);
+    border: 0;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.48);
+    color: rgba(255, 255, 255, 0.82);
+    cursor: grab;
+    opacity: 0.78;
+    touch-action: none;
+    transition: opacity 140ms ease, background 140ms ease;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(0, 0, 0, 0.62);
+      opacity: 1;
+      outline: none;
+    }
+
+    &:active {
+      cursor: grabbing;
+    }
+  `,
+
+  floatingAvatarVideo: css`
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #101010;
+  `,
+
   statusText: css`
     pointer-events: none;
     color: color-mix(in srgb, var(--foreground) 74%, transparent);

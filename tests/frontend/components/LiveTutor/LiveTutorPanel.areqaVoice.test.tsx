@@ -266,6 +266,8 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     const video = view.container.querySelector('video');
     expect(video).toBeInTheDocument();
     expect(video).toHaveAttribute('playsinline');
+    expect(view.container.querySelector('[data-avatar-window="floating"]')).toBeInTheDocument();
+    expect(view.container.querySelector('[data-avatar-state="video"]')).not.toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     act(() => view.unmount());
   });

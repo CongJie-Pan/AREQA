@@ -154,6 +154,8 @@ describe('Live Tutor avatar flow integration', () => {
       realtimeOptions?.onRemoteVideoStream?.(avatarStream());
     });
     expect(document.querySelector('video')).toBeInTheDocument();
+    expect(container.querySelector('[data-avatar-window="floating"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-avatar-state="fallback"]')).not.toBeInTheDocument();
     expect(screen.getByLabelText('關閉虛擬角色')).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('關閉虛擬角色'));
