@@ -15,7 +15,13 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
 }));
 
 describe('MessageItem Quote Alignment Regression', () => {
-  it('renders loose bold markers as strong text and keeps code blocks visually scoped', () => {
+  it('renders loose bold markers as strong text and keeps code blocks visually scoped', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
     const { container } = render(
       <App>
         <MessageItem
@@ -37,11 +43,17 @@ describe('MessageItem Quote Alignment Regression', () => {
 
     const strong = container.querySelector('strong');
     const codeBlock = container.querySelector('pre.areqa-markdown-code-block');
+    const codeFrame = container.querySelector('.areqa-markdown-code-frame');
 
     expect(strong).toHaveTextContent('新經驗');
+    expect(codeFrame).toBeInTheDocument();
+    expect(screen.getByText('text')).toHaveClass('areqa-markdown-code-language');
     expect(codeBlock).toBeInTheDocument();
     expect(codeBlock).toHaveTextContent('literal ** not bold **');
     expect(codeBlock?.querySelector('strong')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '複製 text 文字區塊' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('literal ** not bold **'));
   });
 
   it('renders a copy action for each assistant display-math block', async () => {

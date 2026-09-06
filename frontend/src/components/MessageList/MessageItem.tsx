@@ -278,6 +278,80 @@ function useHasLiveStreamed(isStreaming?: boolean): boolean {
   return hasLiveStreamed;
 }
 
+/**
+ * Extract plain text from markdown-rendered React nodes.
+ *
+ * Args:
+ *   node: React children supplied by a Markdown renderer.
+ *
+ * Returns:
+ *   Concatenated text content suitable for clipboard operations.
+ */
+function reactNodeToPlainText(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(reactNodeToPlainText).join('');
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return reactNodeToPlainText(node.props.children);
+  }
+  return '';
+}
+
+function getCodeBlockLanguage(children: React.ReactNode): string {
+  const candidates = React.Children.toArray(children);
+  for (const candidate of candidates) {
+    if (!React.isValidElement<{ className?: string }>(candidate)) continue;
+    const language = candidate.props.className?.match(/(?:^|\s)language-([^\s]+)/)?.[1];
+    if (language) return language;
+  }
+  return 'text';
+}
+
+function MarkdownCodeBlock({
+  children,
+  className,
+  node,
+  ...props
+}: React.HTMLAttributes<HTMLPreElement> & { node?: unknown }) {
+  void node;
+  const [copied, setCopied] = React.useState(false);
+  const language = getCodeBlockLanguage(children);
+  const codeText = React.useMemo(
+    () => reactNodeToPlainText(children).replace(/\n$/, ''),
+    [children],
+  );
+
+  const copyCode = React.useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(codeText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
+  }, [codeText]);
+
+  return (
+    <div className="areqa-markdown-code-frame">
+      <div className="areqa-markdown-code-header">
+        <span className="areqa-markdown-code-language">{language}</span>
+        <Tooltip title={copied ? '已複製' : '複製'}>
+          <button
+            aria-label={`複製 ${language} 文字區塊`}
+            className="areqa-markdown-code-copy"
+            type="button"
+            onClick={copyCode}
+          >
+            <Copy size={16} aria-hidden="true" />
+          </button>
+        </Tooltip>
+      </div>
+      <pre className={['areqa-markdown-code-block', className].filter(Boolean).join(' ')} {...props}>
+        {children}
+      </pre>
+    </div>
+  );
+}
+
 type MarkdownTableProps = React.TableHTMLAttributes<HTMLTableElement> & {
   enableActions: boolean;
   onCopyTable: (tableText: string) => void;
@@ -450,9 +524,11 @@ const createMarkdownComponents = (
     return <em {...props}>{children}</em>;
   },
   pre: ({ children, className, node, ...props }) => {
-    void node;
-    const preClassName = ['areqa-markdown-code-block', className].filter(Boolean).join(' ');
-    return <pre className={preClassName} {...props}>{children}</pre>;
+    return (
+      <MarkdownCodeBlock className={className} node={node} {...props}>
+        {children}
+      </MarkdownCodeBlock>
+    );
   },
   code: ({ children, className, node, ...props }) => {
     void node;

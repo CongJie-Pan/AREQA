@@ -629,15 +629,69 @@ content: css`
     line-height: 1.65;
   }
 
-  pre {
+  .areqa-markdown-code-frame {
+    width: min(100%, 936px);
     margin: 14px 0;
-    padding: 16px 18px;
     border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
     border-radius: 12px;
     background: color-mix(in srgb, var(--background) 88%, #ffffff 4%);
     box-shadow:
       inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent),
       0 12px 26px rgba(0, 0, 0, 0.16);
+    overflow: hidden;
+  }
+
+  .areqa-markdown-code-header {
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+    background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  }
+
+  .areqa-markdown-code-language {
+    overflow: hidden;
+    color: var(--areqa-message-muted-text);
+    font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", "Menlo", monospace;
+    font-size: 0.82em;
+    font-weight: 600;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .areqa-markdown-code-copy {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--areqa-message-muted-text);
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+
+    &:hover {
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--areqa-message-text);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgba(216, 162, 92, 0.62);
+      outline-offset: 2px;
+    }
+  }
+
+  pre {
+    margin: 0;
+    padding: 16px 18px;
+    background: transparent;
     overflow-x: auto;
     scrollbar-color: color-mix(in srgb, #d8a25c 72%, transparent) transparent;
     scrollbar-width: thin;
@@ -649,10 +703,6 @@ content: css`
       font-size: 0.92em;
       line-height: 1.7;
       white-space: pre;
-    }
-
-    &.areqa-markdown-code-block {
-      width: min(100%, 936px);
     }
 
     &::-webkit-scrollbar {
