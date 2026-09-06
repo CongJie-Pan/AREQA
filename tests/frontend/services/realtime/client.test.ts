@@ -56,6 +56,7 @@ class FakeAudioBufferSource {
 
 class FakeAudioContext {
   static instances: FakeAudioContext[] = [];
+  static suspendOutputContext = false;
   sampleRate = 48000;
   currentTime = 0;
   state: AudioContextState = 'running';
@@ -78,6 +79,9 @@ class FakeAudioContext {
 
   constructor(options?: AudioContextOptions) {
     if (options?.sampleRate) this.sampleRate = options.sampleRate;
+    if (options?.sampleRate === 24000 && FakeAudioContext.suspendOutputContext) {
+      this.state = 'suspended';
+    }
     FakeAudioContext.instances.push(this);
   }
 }
@@ -143,6 +147,13 @@ function installMicrophone(): { stream: MediaStream; stop: ReturnType<typeof vi.
     },
   });
   return { stream, stop };
+}
+
+function emitMicrophoneFrame(samples: Float32Array): void {
+  lastScriptProcessor?.onaudioprocess?.({
+    inputBuffer: { getChannelData: () => samples },
+    outputBuffer: { getChannelData: () => new Float32Array(samples.length) },
+  } as AudioProcessingEvent);
 }
 
 function mockRealtimeSession(): void {
@@ -298,6 +309,33 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
   });
 
+  it('resumes websocket output audio and suppresses microphone echo while assistant audio plays', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    FakeAudioContext.suspendOutputContext = true;
+    installMicrophone();
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+    Object.defineProperty(globalThis, 'AudioContext', {
+      configurable: true,
+      value: FakeAudioContext,
+    });
+
+    const controller = await startRealtimeClient(realtimeOptions());
+    lastWebSocket?.open();
+    lastWebSocket?.send.mockClear();
+
+    lastWebSocket?.receive({ type: 'response.created', response: { id: 'resp_ws' } });
+    lastWebSocket?.receive({ type: 'response.output_audio.delta', delta: 'AAAAAA==' });
+    emitMicrophoneFrame(new Float32Array(8192).fill(0.5));
+
+    expect(FakeAudioContext.instances[1]?.resume).toHaveBeenCalledOnce();
+    expect(lastWebSocket?.send).not.toHaveBeenCalledWith(expect.stringContaining('"input_audio_buffer.append"'));
+    controller.disconnect();
+  });
+
   const originalPeerConnection = globalThis.RTCPeerConnection;
   const originalFetch = globalThis.fetch;
   const originalNavigator = globalThis.navigator;
@@ -310,6 +348,7 @@ describe('Realtime client lifecycle', () => {
     lastWebSocket = null;
     lastScriptProcessor = null;
     FakeAudioContext.instances = [];
+    FakeAudioContext.suspendOutputContext = false;
     vi.unstubAllEnvs();
     Object.defineProperty(globalThis, 'RTCPeerConnection', {
       configurable: true,

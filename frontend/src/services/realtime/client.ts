@@ -21,6 +21,11 @@ const MAX_REALTIME_ERROR_BODY_CHARS = 500;
 const MAX_PROVIDER_ERROR_CODE_CHARS = 80;
 const REALTIME_PCM_SAMPLE_RATE = 24000;
 const REALTIME_INPUT_CHUNK_MAX_BYTES = 12000;
+const REALTIME_MIC_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
 
 export type RealtimeClientErrorCode =
   | 'microphone_denied'
@@ -442,6 +447,7 @@ function resampleLinear(input: ArrayLike<number>, inputRate: number, outputRate:
 
 interface WebSocketInputStreamer {
   setMuted: (muted: boolean) => void;
+  setOutputSuppressed: (suppressed: boolean) => void;
   stop: () => void;
 }
 
@@ -457,10 +463,11 @@ function startWebSocketInputStreamer(
   let pendingInput = queuedInput;
   let closed = false;
   let muted = false;
+  let outputSuppressed = false;
 
   const flushInput = () => {
     const maxSamples = Math.floor(REALTIME_INPUT_CHUNK_MAX_BYTES / 2);
-    while (!muted && pendingInput.length >= maxSamples && socket.readyState === WebSocket.OPEN) {
+    while (!muted && !outputSuppressed && pendingInput.length >= maxSamples && socket.readyState === WebSocket.OPEN) {
       const chunk = pendingInput.slice(0, maxSamples);
       pendingInput = pendingInput.slice(maxSamples);
       socket.send(JSON.stringify({
@@ -477,7 +484,10 @@ function startWebSocketInputStreamer(
     let sumSquares = 0;
     for (const sample of channel) sumSquares += sample * sample;
     onLevel?.(Math.min(1, Math.max(0, Math.sqrt(sumSquares / channel.length) - 0.012) * 8.5));
-    if (muted) return;
+    if (muted || outputSuppressed) {
+      pendingInput = queuedInput;
+      return;
+    }
     const resampled = resampleLinear(channel, context.sampleRate, REALTIME_PCM_SAMPLE_RATE);
     const merged = new Float32Array(pendingInput.length + resampled.length);
     merged.set(pendingInput);
@@ -498,6 +508,10 @@ function startWebSocketInputStreamer(
       stream.getAudioTracks().forEach((track) => {
         track.enabled = !nextMuted;
       });
+    },
+    setOutputSuppressed: (suppressed) => {
+      outputSuppressed = suppressed;
+      if (suppressed) pendingInput = queuedInput;
     },
     stop: () => {
       closed = true;
@@ -553,6 +567,9 @@ function createWebSocketAudioQueue(
 
   return {
     enqueue: (base64Pcm16) => {
+      if (context.state === 'suspended') {
+        void context.resume().catch(() => undefined);
+      }
       const samples = decodePcm16Base64(base64Pcm16);
       if (samples.length === 0) return;
       const buffer = context.createBuffer(1, samples.length, REALTIME_PCM_SAMPLE_RATE);
@@ -667,7 +684,7 @@ async function startRealtimeWebRtcClient(
           'Microphone capture is unavailable in this browser context',
         );
       }
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: REALTIME_MIC_AUDIO_CONSTRAINTS });
     } catch (error) {
       throw error instanceof RealtimeClientError ? error : microphoneAccessError(error);
     }
@@ -860,6 +877,9 @@ async function startRealtimeWebSocketClient(
   let activeResponseInProgress = false;
   let activeResponseId: string | null = null;
   let closedByClient = false;
+  let responseStartedAt = 0;
+  let firstAudioDeltaAt = 0;
+  let firstCaptionDeltaAt = 0;
   const completedToolCalls = new Set<string>();
 
   const cancelActiveResponse = (): boolean => {
@@ -912,6 +932,9 @@ async function startRealtimeWebSocketClient(
         assistantTranscriptFinalized = false;
         activeResponseInProgress = true;
         activeResponseId = event.response?.id || event.response_id || null;
+        responseStartedAt = Date.now();
+        firstAudioDeltaAt = 0;
+        firstCaptionDeltaAt = 0;
         options.onStatus('thinking');
         logger.info('realtime.websocket_response_started', {
           conversationId: options.getConversationId?.() || options.conversationId,
@@ -921,6 +944,14 @@ async function startRealtimeWebSocketClient(
       case 'response.audio.delta':
       case 'response.output_audio.delta':
         if (event.delta) {
+          if (!firstAudioDeltaAt) {
+            firstAudioDeltaAt = Date.now();
+            logger.info('realtime.websocket_first_audio_delta', {
+              conversationId: options.getConversationId?.() || options.conversationId,
+              responseId: activeResponseId,
+              responseStartLagMs: responseStartedAt ? firstAudioDeltaAt - responseStartedAt : null,
+            });
+          }
           audioQueue?.enqueue(event.delta);
           options.onStatus('speaking');
         }
@@ -944,6 +975,15 @@ async function startRealtimeWebSocketClient(
       case 'response.text.delta':
       case 'response.output_text.delta':
         if (event.delta) {
+          if (!firstCaptionDeltaAt) {
+            firstCaptionDeltaAt = Date.now();
+            logger.info('realtime.websocket_first_caption_delta', {
+              conversationId: options.getConversationId?.() || options.conversationId,
+              responseId: activeResponseId,
+              responseStartLagMs: responseStartedAt ? firstCaptionDeltaAt - responseStartedAt : null,
+              audioCaptionLagMs: firstAudioDeltaAt ? firstCaptionDeltaAt - firstAudioDeltaAt : null,
+            });
+          }
           assistantTranscript += event.delta;
           options.onAssistantTranscriptDelta(event.delta);
         }
@@ -963,8 +1003,15 @@ async function startRealtimeWebSocketClient(
         break;
       }
       case 'response.done': {
+        const completedResponseId = activeResponseId;
         activeResponseInProgress = false;
         activeResponseId = null;
+        logger.info('realtime.websocket_response_done', {
+          conversationId: options.getConversationId?.() || options.conversationId,
+          responseId: completedResponseId,
+          responseDurationMs: responseStartedAt ? Date.now() - responseStartedAt : null,
+          audioCaptionLagMs: firstAudioDeltaAt && firstCaptionDeltaAt ? firstCaptionDeltaAt - firstAudioDeltaAt : null,
+        });
         const completedTranscript = completedResponseTranscript(event);
         if (!assistantTranscriptFinalized && (completedTranscript || assistantTranscript.trim())) {
           options.onAssistantTranscriptDone(completedTranscript || assistantTranscript.trim());
@@ -1000,7 +1047,7 @@ async function startRealtimeWebSocketClient(
           'Microphone capture is unavailable in this browser context',
         );
       }
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: REALTIME_MIC_AUDIO_CONSTRAINTS });
     } catch (error) {
       throw error instanceof RealtimeClientError ? error : microphoneAccessError(error);
     }
@@ -1013,7 +1060,10 @@ async function startRealtimeWebSocketClient(
     }
     inputContext = new AudioContextClass();
     outputContext = new AudioContextClass({ sampleRate: REALTIME_PCM_SAMPLE_RATE });
-    audioQueue = createWebSocketAudioQueue(outputContext, options.onPlaybackState, options.onOutputAudioLevel);
+    audioQueue = createWebSocketAudioQueue(outputContext, (playbackState) => {
+      inputStreamer?.setOutputSuppressed(playbackState === 'started');
+      options.onPlaybackState?.(playbackState);
+    }, options.onOutputAudioLevel);
 
     socket = new WebSocket(
       `${OPENAI_REALTIME_WEBSOCKET_URL}?model=${encodeURIComponent(session.model)}`,
