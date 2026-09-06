@@ -149,6 +149,10 @@ body {
   touch-action: manipulation;
 }
 
+html[lang='en'] body {
+  font-family: "Times New Roman", Times, serif;
+}
+
 /*
  * Critical first-paint layout.
  *

@@ -18,6 +18,16 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(chatContainerStyles).toContain('height: var(--areqa-visual-viewport-height, 100dvh);');
   });
 
+  it('uses Times New Roman when the interface language is English', () => {
+    const globalsCss = readFileSync(
+      path.resolve(__dirname, '../../../../frontend/src/app/globals.css'),
+      'utf8',
+    );
+
+    expect(globalsCss).toMatch(/html\[lang='en'\]\s+body\s*{[^}]*font-family:\s*"Times New Roman",\s*Times,\s*serif;/s);
+    expect(globalsCss).toMatch(/body\s*{[^}]*font-family:\s*Arial,\s*Helvetica,\s*sans-serif;/s);
+  });
+
   it('renders Live Tutor inline between messages and the normal input bar', () => {
     const chatContainer = readFileSync(
       path.resolve(__dirname, '../../../../frontend/src/components/ChatContainer/index.tsx'),
