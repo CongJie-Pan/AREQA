@@ -1,128 +1,106 @@
-有，但要接受一個界線：Realtime 可以保留成「語音互動引擎」，但正式答案內容必須被 AREQA 鎖住。兩全之策不是讓 Realtime 自由回答，而是讓 Realtime 讀 AREQA 產生的答案。
+可以，官方目前最直接的做法是：不要把 Anam 當成前端 iframe 疊上去，而是把它接進 LiveKit Agents 的 avatar plugin。Anam avatar 會以「第二個 agent participant / avatar worker」加入同一個 LiveKit room，吃你的
+  agent audio output，然後發布同步的 audio + video track 給前端顯示。LiveKit 官方也說 avatar video 本質上就是一般 LiveKit video track，所以前端照常 render video track 即可。
+  來源：LiveKit avatar overview、frontend avatar docs、Anam LiveKit docs：
+  https://docs.livekit.io/agents/models/avatar/
+  https://docs.livekit.io/frontends/build/virtual-avatars/
+  https://anam.ai/docs/integrations/livekit/overview
 
-  我建議的折衷架構是 Realtime Shell + AREQA Answer Tool：
+  推薦架構
 
-  User voice
-  -> Realtime 收音 / VAD / barge-in
-  -> Realtime 轉出 user transcript
-  -> 前端/後端把 transcript 送進 AREQA /stream
-  -> AREQA 產生 authoritative answer
-  -> 把 answer 回填給 Realtime
-  -> Realtime 只負責 spoken rendering
-  -> 前端顯示同一份 AREQA answer
+  User mic
+    -> LiveKit Room
+    -> 你的 LiveKit Agent / OpenAI Realtime
+    -> agent audio output
+    -> Anam AvatarSession
+    -> Anam avatar worker publishes synced audio + video
+    -> frontend 顯示 avatar video track
 
-  關鍵規則：
+  後端接入方式
 
-  Realtime 不可以自己回答問題。
-  Realtime 只能：
-  1. 收音
-  2. 轉錄
-  3. 中斷處理
-  4. 用語音唸出 AREQA answer
-  5. 做很短的 non-answer filler，例如「我看一下」
+  如果你是 Node.js LiveKit Agent，官方 Anam quickstart 是這個方向：
 
-  這樣你保留 Realtime 的：
+  pnpm add @livekit/agents-plugin-anam
 
-  - 低延遲語音 session
-  - 自然 barge-in
-  - remote audio stream
-  - 麥克風/播放狀態
-  - 比單純 TTS 更像 voice mode 的感覺
+  .env.local：
 
-  同時保留 AREQA 的：
+  ANAM_API_KEY=your_anam_key
+  ANAM_AVATAR_ID=your_avatar_id
 
-  - /stream orchestration
-  - memory
-  - conversation context
-  - attachments
-  - router/prompt policy
-  - PPLX/web search 可開可關
-  - 未來 RAG/citation 一打開就自然接回來
+  agent 裡加：
 
-  但要注意：如果把 AREQA answer 丟給 Realtime 後，讓它「重新組織再回答」，內容還是會漂。比較好的做法是：
+  import * as anam from '@livekit/agents-plugin-anam';
 
-  Speak the following AREQA answer faithfully.
-  Do not add, omit, translate, summarize, or paraphrase.
-  Only make minimal spoken-form adjustments such as punctuation pauses.
+  const avatarSession = new anam.AvatarSession({
+    personaConfig: {
+      name: 'Mia',
+      avatarId: process.env.ANAM_AVATAR_ID!,
+      avatarModel: 'cara-4',
+    },
+  });
 
-  更嚴格的版本是：前端顯示 AREQA 原文，Realtime 只輸出 audio，不採用 Realtime transcript 當正式文字。
-  如果 Realtime transcript 跟 AREQA answer 不一致，以 AREQA answer 為準。
+  await avatarSession.start(session, ctx.room);
 
-  所以我的最平衡建議是：
+  如果你是 Python：
 
-  Voice v2 = Realtime for interaction + AREQA /stream for answer + faithful speech rendering.
+  uv add "livekit-agents[anam]~=1.5"
 
-  不是純 TTS，也不是純 Realtime。
-  Realtime 留著，但降級成「語音介面層」，AREQA 才是大腦。
-  
-   可以確保，但要分清楚「上下文給誰」和「誰產生答案」。
+  from livekit.plugins import anam
 
-  上下文一致性
-  最穩的做法不是把完整上下文全塞給 Realtime，而是：
+  avatar = anam.AvatarSession(
+      persona_config=anam.PersonaConfig(
+          name="Mia",
+          avatarId="your_avatar_id",
+          avatarModel="cara-4",
+      )
+  )
 
-  Realtime 只拿最小語音狀態上下文
-  AREQA /stream 拿完整正式上下文
+  await avatar.start(session, room=ctx.room)
+  await avatar.wait_for_join()
 
-  也就是 Realtime 不需要理解整篇論文、RAG、memory、attachments。它只需要知道：
+  LiveKit 官方建議在 agent 開始講話前讓 avatar join 完成，避免一開始只有聲音沒有畫面。
+  來源：LiveKit Anam plugin docs：
+  https://docs.livekit.io/agents/models/avatar/plugins/anam/
 
-  你是 AREQA 的語音介面。
-  正式答案會由 AREQA answer tool 提供。
-  你不可自行回答。
-  收到 AREQA answer 後，忠實唸出。
+  前端顯示方式
 
-  完整上下文仍然交給 AREQA /stream，因為那本來就是它的工作。這樣反而比「把上下文同步給 Realtime」更穩，因為不用維護兩份 context。
+  如果你用 LiveKit React starter / Agents UI，最簡單是用：
 
-  流程會是：
+  const {
+    agent,
+    audioTrack,
+    videoTrack,
+  } = useVoiceAssistant();
 
-  User speaks
-  -> Realtime 做 STT / VAD
-  -> 得到 user transcript
-  -> AREQA /stream 用 activeConversationId + messages + attachments + memory + search settings 產生答案
-  -> AREQA answer 回填給 Realtime
-  -> Realtime 唸出 AREQA answer
-  -> 前端顯示同一份 AREQA answer
+  然後把 videoTrack render 出來即可。LiveKit 文件說 starter apps 已內建 virtual avatar 支援。
+  來源：
+  https://docs.livekit.io/frontends/start/starter-apps/
+  https://docs.livekit.io/agents/multimodality/vision/video/
 
-  所以「Realtime 是否接受完整上下文」不是核心問題。核心是：Realtime 不該需要完整上下文。
+  如果你用低階 LiveKit SDK，要找 avatar worker participant：
 
-  速度會不會變慢
-  會，正式答案一定會慢一點。因為現在 Realtime 可以邊想邊講；改成 AREQA-first 後要等：
+  const participants = Array.from(room.remoteParticipants.values());
 
-  STT 完成
-  + AREQA /stream 開始產生第一句
-  + 回填給 Realtime / TTS 播放
+  const agent = participants.find(
+    p => p.kind === ParticipantKind.AGENT &&
+         !p.attributes['lk.publish_on_behalf']
+  );
 
-  但可以把體感延遲壓低：
+  const avatarWorker = participants.find(
+    p => p.kind === ParticipantKind.AGENT &&
+         p.attributes['lk.publish_on_behalf'] === agent?.identity
+  );
 
-  1. 逐句 pipeline
-     不等完整答案。AREQA /stream 一產生第一個完整句子，就送去 Realtime/TTS 播放，同時 /stream 繼續產生後面句子。
+  然後 render avatarWorker 的 video track。
 
-  2. 短 filler
-     Realtime 可以先說很短的非答案句：
-      - 「我看一下。」
-      - 「我幫你整理。」
-      - 「等我抓一下上下文。」
+  你現在已有 live realtime 功能時，建議選這條路
 
-     但 filler 不能包含正式內容。
+  如果你的 realtime 已經跑在 LiveKit AgentSession + OpenAI Realtime / Gemini Live / 自己的 LLM 上：
+  直接加 Anam LiveKit plugin，保留現有 realtime 邏輯，只把 agent audio output 轉給 Anam 生成同步 avatar video。
 
-  3. 先文字後語音
-     前端一收到 /stream token 就顯示文字；語音稍微晚半拍播放。使用者會感覺系統已經在回應，而不是空等。
+  如果你的 realtime 是純前端直連 OpenAI Realtime、沒有 LiveKit Agent：
+  你有兩個選擇：
 
-  4. sentence queue
-     建立音訊佇列：
+  1. 重構成 LiveKit Agents，然後用 Anam plugin，這是最乾淨的官方整合。
+  2. 用 Anam JS/Python SDK 自己處理 session 與 media streams，但這會比較像自建影音管線，不如 LiveKit plugin 省事。
 
-     sentence 1 generated -> synthesize/play
-     sentence 2 generated while sentence 1 playing
-     sentence 3 generated while sentence 2 playing
-
-     只要第一句開始播放，後面通常能接上。
-
-  所以答案是：
-
-  - 上下文：不用讓 Realtime 吃完整上下文；讓 AREQA 吃完整上下文，Realtime 只唸 AREQA 的輸出。
-  - 速度：會比純 Realtime 慢，但用逐句 pipeline + filler + 即時文字顯示，可以把體感差距降到可接受。
-
-  我會把這個設計命名為：
-
-  Realtime-controlled, AREQA-authored voice mode
-
-  Realtime 控制語音互動，AREQA 撰寫正式答案。
+  結論：已有 LiveKit realtime 的話，用 Anam LiveKit plugin；前端只要顯示 avatar worker 發出的 video track。
