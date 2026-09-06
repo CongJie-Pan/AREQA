@@ -228,7 +228,8 @@ describe('ChatInput', () => {
     });
     fireEvent(input, pasteEvent);
 
-    expect(await screen.findByAltText('圖片附件預覽')).toBeInTheDocument();
+    expect(await screen.findByTitle(/^pasted-image-.*\.png$/)).toBeInTheDocument();
+    expect(screen.queryByAltText('圖片附件預覽')).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
 
     await waitFor(() => {
@@ -311,7 +312,8 @@ describe('ChatInput', () => {
     render(<ChatInput onSend={mockOnSend} />);
 
     fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
-    expect(await screen.findByAltText('圖片附件預覽')).toBeInTheDocument();
+    expect(await screen.findByTitle('photo.png')).toBeInTheDocument();
+    expect(screen.queryByAltText('圖片附件預覽')).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('刪除 photo.png'));
 
     await waitFor(() => {

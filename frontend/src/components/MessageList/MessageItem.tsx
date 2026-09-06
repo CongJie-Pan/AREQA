@@ -30,7 +30,7 @@ import type {
   MessageFeedbackReason,
 } from '@/database/schema';
 import { useStyles } from './styles';
-import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
+import { normalizeDisplayMathBlocks, normalizeLooseStrongMarkers, rehypeMathSource } from '@/utils/markdownMath';
 import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
@@ -49,6 +49,20 @@ const STREAMDOWN_PLUGINS = {
   },
 };
 const STREAMDOWN_LINK_SAFETY = { enabled: false };
+
+/**
+ * Prepare assistant/user message Markdown for the renderer.
+ *
+ * Args:
+ *   content: Raw Markdown stored in chat state.
+ *
+ * Returns:
+ *   Markdown normalized for tolerant model output while preserving code spans
+ *   and fenced code blocks.
+ */
+function normalizeMessageMarkdown(content: string): string {
+  return normalizeDisplayMathBlocks(normalizeLooseStrongMarkers(content));
+}
 
 /**
  * Safe URL protocols whitelist
@@ -427,6 +441,23 @@ const createMarkdownComponents = (
   formulaCopyLabel: string,
   tableModalRootClassName: string,
 ): Components => ({
+  strong: ({ children, node, ...props }) => {
+    void node;
+    return <strong {...props}>{children}</strong>;
+  },
+  em: ({ children, node, ...props }) => {
+    void node;
+    return <em {...props}>{children}</em>;
+  },
+  pre: ({ children, className, node, ...props }) => {
+    void node;
+    const preClassName = ['areqa-markdown-code-block', className].filter(Boolean).join(' ');
+    return <pre className={preClassName} {...props}>{children}</pre>;
+  },
+  code: ({ children, className, node, ...props }) => {
+    void node;
+    return <code className={className} {...props}>{children}</code>;
+  },
   table: ({ children, className, node, ...props }) => {
     void node;
 
@@ -629,7 +660,7 @@ function StreamingMarkdown({
   const throttledContent = useThrottledValue(visibleContent, STREAMING_MARKDOWN_FLUSH_MS);
   const deferredContent = React.useDeferredValue(isVoicePlayback ? visibleContent : throttledContent);
   const processedContent = React.useMemo(() => {
-    return normalizeDisplayMathBlocks(normalizeCitationMarkers(deferredContent));
+    return normalizeMessageMarkdown(normalizeCitationMarkers(deferredContent));
   }, [deferredContent]);
 
   return (
@@ -1369,7 +1400,7 @@ export const MessageItem = memo(function MessageItem({
                               components={markdownComponents}
                               disallowedElements={['script', 'iframe', 'object', 'embed']}
                             >
-                              {normalizeDisplayMathBlocks(remainingText)}
+                              {normalizeMessageMarkdown(remainingText)}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -1388,7 +1419,7 @@ export const MessageItem = memo(function MessageItem({
                         components={markdownComponents}
                         disallowedElements={['script', 'iframe', 'object', 'embed']}
                       >
-                        {normalizeDisplayMathBlocks(displayContent)}
+                        {normalizeMessageMarkdown(displayContent)}
                       </ReactMarkdown>
                     </div>}
                   </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeDisplayMathBlocks } from '@/utils/markdownMath';
+import { normalizeDisplayMathBlocks, normalizeLooseStrongMarkers } from '@/utils/markdownMath';
 
 describe('normalizeDisplayMathBlocks', () => {
   it('normalizes parenthesized and bracketed TeX delimiters', () => {
@@ -53,5 +53,27 @@ describe('normalizeDisplayMathBlocks', () => {
     expect(normalizeDisplayMathBlocks(String.raw`literal \\(x\\)`)).toBe(
       String.raw`literal \\(x\\)`,
     );
+  });
+});
+
+describe('normalizeLooseStrongMarkers', () => {
+  it('normalizes spaced bold markers outside Markdown code', () => {
+    const markdown = [
+      '用新互動創造**「新經驗」**。',
+      '也支援 ** 新經驗 ** 這種模型輸出。',
+      'Inline code keeps `** literal **` unchanged.',
+      '```markdown',
+      '** code block **',
+      '```',
+    ].join('\n');
+
+    expect(normalizeLooseStrongMarkers(markdown)).toBe([
+      '用新互動創造**「新經驗」**。',
+      '也支援 **新經驗** 這種模型輸出。',
+      'Inline code keeps `** literal **` unchanged.',
+      '```markdown',
+      '** code block **',
+      '```',
+    ].join('\n'));
   });
 });

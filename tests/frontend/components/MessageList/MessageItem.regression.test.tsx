@@ -15,6 +15,35 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
 }));
 
 describe('MessageItem Quote Alignment Regression', () => {
+  it('renders loose bold markers as strong text and keeps code blocks visually scoped', () => {
+    const { container } = render(
+      <App>
+        <MessageItem
+          message={{
+            id: 'msg-markdown-formatting',
+            role: 'assistant',
+            content: [
+              '用新互動創造 ** 新經驗 **。',
+              '',
+              '```text',
+              'literal ** not bold **',
+              '```',
+            ].join('\n'),
+            createdAt: Date.now(),
+          }}
+        />
+      </App>,
+    );
+
+    const strong = container.querySelector('strong');
+    const codeBlock = container.querySelector('pre.areqa-markdown-code-block');
+
+    expect(strong).toHaveTextContent('新經驗');
+    expect(codeBlock).toBeInTheDocument();
+    expect(codeBlock).toHaveTextContent('literal ** not bold **');
+    expect(codeBlock?.querySelector('strong')).not.toBeInTheDocument();
+  });
+
   it('renders a copy action for each assistant display-math block', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {

@@ -167,52 +167,33 @@ export const useStyles = createStyles(({ css, token }) => ({
   attachmentList: css`
     display: flex;
     flex-wrap: nowrap;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
-    margin: 0 0 12px;
+    margin: 0 0 14px;
     overflow-x: auto;
-    padding-bottom: 2px;
+    padding: 0 2px 2px;
 
     @media (max-width: 768px) {
-      margin: 0 0 10px;
+      margin: 0 0 12px;
     }
   `,
 
   attachmentChip: css`
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 10px;
     flex: 0 0 auto;
-    max-width: min(360px, 72vw);
-    min-height: 44px;
-    padding: 7px 10px;
+    width: min(320px, 76vw);
+    min-height: 58px;
+    padding: 9px 10px;
     border-width: 1px;
     border-style: solid;
-    border-color: var(--border);
-    border-radius: 10px;
-    background: var(--muted);
+    border-color: color-mix(in srgb, #d8a25c 22%, var(--border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--muted) 82%, #d8a25c 5%);
     color: var(--foreground);
-    font-size: 13px;
-
-    > span {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      gap: 1px;
-    }
-
-    > span > span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 180px;
-    }
-
-    small {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      line-height: 1.2;
-    }
+    font-size: 14px;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
 
     button {
       display: inline-flex;
@@ -220,9 +201,52 @@ export const useStyles = createStyles(({ css, token }) => ({
       justify-content: center;
       padding: 0;
       border: 0;
+      border-radius: 999px;
       background: transparent;
-      color: inherit;
+      color: var(--muted-foreground);
       cursor: pointer;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 26px;
+
+      &:hover {
+        background: color-mix(in srgb, var(--foreground) 8%, transparent);
+        color: var(--foreground);
+      }
+    }
+  `,
+
+  attachmentIconFrame: css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    border-radius: 9px;
+    background: color-mix(in srgb, #d8a25c 16%, transparent);
+    color: #d8a25c;
+  `,
+
+  attachmentDetails: css`
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+
+    > span {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.25;
+    }
+
+    small {
+      color: var(--muted-foreground);
+      font-size: 11px;
+      line-height: 1.2;
     }
   `,
 

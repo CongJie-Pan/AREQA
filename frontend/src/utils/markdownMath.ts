@@ -40,6 +40,31 @@ export function normalizeDisplayMathBlocks(content: string): string {
   );
 }
 
+/**
+ * Normalize loose bold markers emitted by models while preserving code text.
+ *
+ * Args:
+ *   content: Markdown source that may contain strong-emphasis markers with
+ *     padding spaces, such as `** important **`.
+ *
+ * Returns:
+ *   Markdown with loose asterisk strong markers tightened to CommonMark-friendly
+ *   form outside fenced and inline code.
+ *
+ * Compatibility:
+ *   This intentionally handles only `**...**` strong markers because broad
+ *   emphasis rewrites can change arithmetic, identifiers, and prose that happen
+ *   to contain underscores or single asterisks.
+ */
+export function normalizeLooseStrongMarkers(content: string): string {
+  return transformOutsideMarkdownCode(content, (segment) =>
+    segment.replace(
+      /(^|[^*])\*\*[ \t]+([^*\n][^\n]*?\S)[ \t]+\*\*(?!\*)/g,
+      (_match, prefix: string, text: string) => `${prefix}**${text}**`,
+    ),
+  );
+}
+
 /** Transform plain Markdown segments while preserving inline and fenced code. */
 function transformOutsideMarkdownCode(
   content: string,

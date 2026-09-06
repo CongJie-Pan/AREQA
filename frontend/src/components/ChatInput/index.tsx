@@ -12,6 +12,7 @@ import {
   Check,
   CornerDownRight,
   FileText,
+  FileImage,
   Mic,
   MicOff,
   Plus,
@@ -720,20 +721,14 @@ export function ChatInput({
       {attachmentPreviews.length > 0 && (
         <div className={cx('areqa-chat-input-attachment-list', styles.attachmentList)} aria-label={t('pendingAttachments')}>
           {attachmentPreviews.map((preview) => {
-            const { file: attachment, objectUrl } = preview;
+            const { file: attachment } = preview;
+            const AttachmentIcon = attachment.type.startsWith('image/') ? FileImage : FileText;
             return (
             <div className={cx('areqa-chat-input-attachment-chip', styles.attachmentChip)} key={`${attachment.name}-${attachment.lastModified}`}>
-              {objectUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={objectUrl}
-                  alt={t('attachmentImagePreview')}
-                  className={styles.attachmentThumbnail}
-                />
-              ) : (
-                <FileText size={18} className={styles.attachmentFileIcon} />
-              )}
-              <span title={attachment.name}>
+              <span className={cx('areqa-chat-input-attachment-icon', styles.attachmentIconFrame)} aria-hidden="true">
+                <AttachmentIcon size={20} className={styles.attachmentFileIcon} />
+              </span>
+              <span className={cx('areqa-chat-input-attachment-details', styles.attachmentDetails)} title={attachment.name}>
                 <span>{attachment.name}</span>
                 <small>{formatAttachmentSize(attachment.size)}</small>
               </span>

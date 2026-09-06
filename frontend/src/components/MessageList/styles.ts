@@ -604,29 +604,68 @@ content: css`
     padding: 2px 0 2px 16px;
     border-left: 3px solid rgba(255, 255, 255, 0.25);
     color: var(--areqa-message-muted-text);
-    
+
     p {
       margin-bottom: 0;
     }
   }
 
+  strong {
+    color: var(--areqa-message-text);
+    font-weight: 750;
+  }
+
+  em {
+    color: var(--areqa-message-text);
+  }
+
   code {
-    padding: 2px 6px;
-    background: ${token.colorFillTertiary};
+    padding: 0.14em 0.42em;
     border-radius: ${token.borderRadiusSM}px;
-    font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 13px;
+    background: color-mix(in srgb, var(--foreground) 9%, transparent);
+    color: color-mix(in srgb, var(--areqa-message-text) 88%, #d8a25c);
+    font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", "Menlo", monospace;
+    font-size: 0.88em;
+    line-height: 1.65;
   }
 
   pre {
-    padding: 12px;
-    background: ${token.colorFillQuaternary};
-    border-radius: ${token.borderRadius}px;
+    margin: 14px 0;
+    padding: 16px 18px;
+    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--background) 88%, #ffffff 4%);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent),
+      0 12px 26px rgba(0, 0, 0, 0.16);
     overflow-x: auto;
+    scrollbar-color: color-mix(in srgb, #d8a25c 72%, transparent) transparent;
+    scrollbar-width: thin;
 
     code {
       padding: 0;
       background: transparent;
+      color: var(--areqa-message-text);
+      font-size: 0.92em;
+      line-height: 1.7;
+      white-space: pre;
+    }
+
+    &.areqa-markdown-code-block {
+      width: min(100%, 936px);
+    }
+
+    &::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: color-mix(in srgb, #d8a25c 68%, transparent);
     }
   }
 

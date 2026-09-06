@@ -617,54 +617,73 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
 
 .areqa-chat-input-attachment-list {
   flex-wrap: nowrap;
-  gap: 6px;
-  margin: 0 0 12px;
+  gap: 8px;
+  margin: 0 0 14px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding: 0 2px 2px;
 }
 
 .areqa-chat-input-attachment-chip {
   display: inline-flex;
-  max-width: min(360px, 72vw);
-  min-height: 44px;
+  width: min(320px, 76vw);
+  min-height: 58px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--muted);
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, #d8a25c 22%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--muted) 82%, #d8a25c 5%);
   color: var(--foreground);
-  font-size: 13px;
+  font-size: 14px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
 }
 
-.areqa-chat-input-attachment-chip > span {
+.areqa-chat-input-attachment-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, #d8a25c 16%, transparent);
+  color: #d8a25c;
+}
+
+.areqa-chat-input-attachment-details {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   flex-direction: column;
-  gap: 1px;
+  gap: 3px;
 }
 
-.areqa-chat-input-attachment-chip > span > span {
-  max-width: 180px;
+.areqa-chat-input-attachment-details > span {
+  max-width: 100%;
   overflow: hidden;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.areqa-chat-input-attachment-chip small {
+.areqa-chat-input-attachment-details small {
   color: var(--muted-foreground);
   font-size: 11px;
   line-height: 1.2;
 }
 
-.areqa-chat-input-attachment-chip img {
-  width: 36px;
-  height: 36px;
+.areqa-chat-input-attachment-chip button {
+  width: 26px;
+  height: 26px;
   flex: 0 0 auto;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  object-fit: cover;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+}
+
+.areqa-chat-input-attachment-chip button:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
 }
 
 .areqa-chat-input-math-preview {
