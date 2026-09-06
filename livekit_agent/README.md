@@ -32,16 +32,29 @@ Production start command:
 python agent.py start
 ```
 
-Render should run this as a Background Worker, not as the FastAPI web service:
+Deploy to LiveKit Agent Cloud from the repository root:
 
 ```bash
-cd livekit_agent && pip install -r requirements.txt && python agent.py start
+scripts/livekit-agent.sh deploy
 ```
 
-The included `Dockerfile` uses the same production command. Production
-deployment uses the same environment and agent name. The frontend token endpoint
-embeds a room dispatch for `LIVEKIT_AGENT_NAME`, so the worker must be running
-before users enable avatar mode.
+Sync secrets from the repository `.env` to LiveKit Agent Cloud:
+
+```bash
+scripts/livekit-agent.sh sync-secrets
+```
+
+The helper script never prints secret values and clears its temporary secrets
+file after upload. Set `AREQA_ENV_FILE=/path/to/.env` to sync from a different
+env file.
+
+Render can also run this as a Background Worker, but LiveKit Agent Cloud is the
+preferred deployment target for this integration. The included `Dockerfile` uses
+the same production command and installs Python dependencies with `uv` for
+faster cloud builds. Production deployment uses the same environment and agent
+name. The frontend token endpoint embeds a room dispatch for
+`LIVEKIT_AGENT_NAME`, so the worker must be running before users enable avatar
+mode.
 
 Successful startup logs include:
 
