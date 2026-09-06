@@ -512,6 +512,11 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
+.areqa-chat-input-shell-has-attachments {
+  padding: 12px 16px 10px;
+  border-radius: 34px;
+}
+
 .areqa-chat-input-row {
   display: flex;
   width: 100%;
@@ -621,10 +626,53 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
 
 .areqa-chat-input-attachment-list {
   flex-wrap: nowrap;
-  gap: 8px;
-  margin: 0 0 14px;
+  gap: 10px;
+  margin: 0 0 18px;
   overflow-x: auto;
   padding: 0 2px 2px;
+}
+
+.areqa-chat-input-image-attachment-chip {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  flex: 0 0 68px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--muted) 82%, #ffffff 6%);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+.areqa-chat-input-attachment-thumbnail {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.08);
+  object-fit: cover;
+}
+
+.areqa-chat-input-image-attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(16, 16, 18, 0.76);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.areqa-chat-input-image-attachment-remove:hover {
+  background: rgba(16, 16, 18, 0.92);
+  color: #ffffff;
 }
 
 .areqa-chat-input-attachment-chip {
@@ -955,8 +1003,20 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
     border-radius: 20px;
   }
 
+  .areqa-chat-input-shell-has-attachments {
+    padding: 10px 12px 9px;
+    border-radius: 28px;
+  }
+
   .areqa-chat-input-attachment-list {
-    margin-bottom: 10px;
+    margin-bottom: 16px;
+  }
+
+  .areqa-chat-input-image-attachment-chip {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+    border-radius: 16px;
   }
 }
 

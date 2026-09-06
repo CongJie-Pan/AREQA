@@ -702,7 +702,15 @@ export function ChatInput({
         </div>
       </div>
     )}
-    <div className={cx('areqa-chat-input-shell', styles.container, className)}>
+    <div
+      className={cx(
+        'areqa-chat-input-shell',
+        attachmentPreviews.length > 0 && 'areqa-chat-input-shell-has-attachments',
+        styles.container,
+        attachmentPreviews.length > 0 && styles.containerWithAttachments,
+        className,
+      )}
+    >
       {/* Quote Preview */}
       {quotedText && (
         <div className={cx('areqa-chat-input-quote-preview', styles.quotePreview)}>
@@ -721,8 +729,34 @@ export function ChatInput({
       {attachmentPreviews.length > 0 && (
         <div className={cx('areqa-chat-input-attachment-list', styles.attachmentList)} aria-label={t('pendingAttachments')}>
           {attachmentPreviews.map((preview) => {
-            const { file: attachment } = preview;
+            const { file: attachment, objectUrl } = preview;
+            const isImagePreview = Boolean(objectUrl && attachment.type.startsWith('image/'));
             const AttachmentIcon = attachment.type.startsWith('image/') ? FileImage : FileText;
+            if (isImagePreview) {
+              return (
+                <div
+                  className={cx('areqa-chat-input-image-attachment-chip', styles.imageAttachmentChip)}
+                  key={`${attachment.name}-${attachment.lastModified}`}
+                  title={attachment.name}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={objectUrl ?? ''}
+                    alt={t('attachmentImagePreview')}
+                    className={cx('areqa-chat-input-attachment-thumbnail', styles.attachmentThumbnail)}
+                  />
+                  <button
+                    className={cx('areqa-chat-input-image-attachment-remove', styles.imageAttachmentRemove)}
+                    type="button"
+                    onClick={() => removeAttachment(preview)}
+                    aria-label={`${t('delete')} ${attachment.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            }
+
             return (
             <div className={cx('areqa-chat-input-attachment-chip', styles.attachmentChip)} key={`${attachment.name}-${attachment.lastModified}`}>
               <span className={cx('areqa-chat-input-attachment-icon', styles.attachmentIconFrame)} aria-hidden="true">

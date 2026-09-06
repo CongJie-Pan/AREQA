@@ -43,6 +43,16 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  containerWithAttachments: css`
+    border-radius: 34px;
+    padding: 12px 16px 10px;
+
+    @media (max-width: 768px) {
+      border-radius: 28px;
+      padding: 10px 12px 9px;
+    }
+  `,
+
   quotePreview: css`
     display: flex;
     align-items: center;
@@ -167,14 +177,14 @@ export const useStyles = createStyles(({ css, token }) => ({
   attachmentList: css`
     display: flex;
     flex-wrap: nowrap;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
-    margin: 0 0 14px;
+    margin: 0 0 18px;
     overflow-x: auto;
     padding: 0 2px 2px;
 
     @media (max-width: 768px) {
-      margin: 0 0 12px;
+      margin: 0 0 16px;
     }
   `,
 
@@ -228,6 +238,47 @@ export const useStyles = createStyles(({ css, token }) => ({
     color: #d8a25c;
   `,
 
+  imageAttachmentChip: css`
+    position: relative;
+    width: 68px;
+    height: 68px;
+    flex: 0 0 68px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--muted) 82%, #ffffff 6%);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+
+    @media (max-width: 768px) {
+      width: 58px;
+      height: 58px;
+      flex-basis: 58px;
+      border-radius: 16px;
+    }
+  `,
+
+  imageAttachmentRemove: css`
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(16, 16, 18, 0.76);
+    color: rgba(255, 255, 255, 0.92);
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+
+    &:hover {
+      background: rgba(16, 16, 18, 0.92);
+      color: #ffffff;
+    }
+  `,
+
   attachmentDetails: css`
     display: flex;
     flex: 1 1 auto;
@@ -251,10 +302,10 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   attachmentThumbnail: css`
-    width: 36px;
-    height: 36px;
-    flex: 0 0 auto;
-    border-radius: 8px;
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: inherit;
     object-fit: cover;
     background: rgba(255, 255, 255, 0.08);
   `,

@@ -229,7 +229,8 @@ describe('ChatInput', () => {
     fireEvent(input, pasteEvent);
 
     expect(await screen.findByTitle(/^pasted-image-.*\.png$/)).toBeInTheDocument();
-    expect(screen.queryByAltText('圖片附件預覽')).not.toBeInTheDocument();
+    expect(screen.getByAltText('圖片附件預覽')).toHaveAttribute('src', expect.stringMatching(/^blob:pasted-image-/));
+    expect(screen.getByLabelText('待送附件').closest('.areqa-chat-input-shell-has-attachments')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
 
     await waitFor(() => {
@@ -313,7 +314,7 @@ describe('ChatInput', () => {
 
     fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [attachment] } });
     expect(await screen.findByTitle('photo.png')).toBeInTheDocument();
-    expect(screen.queryByAltText('圖片附件預覽')).not.toBeInTheDocument();
+    expect(screen.getByAltText('圖片附件預覽')).toHaveAttribute('src', 'blob:photo.png');
     fireEvent.click(screen.getByLabelText('刪除 photo.png'));
 
     await waitFor(() => {
