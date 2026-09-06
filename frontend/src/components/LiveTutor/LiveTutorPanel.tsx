@@ -574,6 +574,10 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
 
   if (!isOpen) return null;
 
+  const isAvatarConnecting = avatarEnabled && !avatarVideoStream && !avatarNotice;
+  const shouldShowConnecting = status === 'connecting' || isAvatarConnecting;
+  const shouldShowStage = !shouldShowConnecting && !error;
+
   return (
     <section
       ref={panelRef}
@@ -581,7 +585,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
       aria-label={labels.title}
     >
       <div className={styles.body}>
-        {status === 'connecting' && !error && (
+        {shouldShowConnecting && !error && (
           <div className={styles.statusText}>{labels.connecting}</div>
         )}
 
@@ -596,7 +600,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
           </div>
         )}
 
-        {status !== 'connecting' && !error && (
+        {shouldShowStage && (
           <>
             {avatarNotice && <div className={styles.avatarNotice}>{avatarNotice}</div>}
             <LiveTutorAvatarStage

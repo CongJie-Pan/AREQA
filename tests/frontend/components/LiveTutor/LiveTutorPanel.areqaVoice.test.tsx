@@ -270,6 +270,22 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
+  it('shows Connecting instead of the logo while waiting for avatar video', async () => {
+    useLiveTutorStore.setState({ avatarEnabled: true });
+    vi.mocked(startLiveKitAvatarClient).mockImplementationOnce(async (options) => {
+      realtimeOptions = options;
+      options.onStatus('listening');
+      return controller;
+    });
+
+    const view = await renderOpenPanel();
+
+    await waitFor(() => expect(startLiveKitAvatarClient).toHaveBeenCalledOnce());
+    expect(screen.getByText('Connecting')).toBeInTheDocument();
+    expect(view.container.querySelector('[data-avatar-state="fallback"]')).not.toBeInTheDocument();
+    act(() => view.unmount());
+  });
+
   it('falls back to voice-only realtime when LiveKit avatar startup fails', async () => {
     useLiveTutorStore.setState({ avatarEnabled: true });
     vi.mocked(startLiveKitAvatarClient).mockImplementationOnce(async (options) => {
