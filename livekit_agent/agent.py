@@ -16,15 +16,30 @@ from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, room_io
 from livekit.plugins import anam, openai
 
-logger = logging.getLogger("areqa.livekit_agent")
 load_dotenv(".env.local")
 load_dotenv("../.env")
+logging.basicConfig(
+    level=os.getenv("LIVEKIT_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("areqa.livekit_agent")
 
 AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "areqa-live-tutor")
 OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2.1-mini")
 OPENAI_REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "marin")
 ANAM_AVATAR_NAME = os.getenv("ANAM_AVATAR_NAME", "Mei")
 ANAM_AVATAR_ID = os.getenv("ANAM_AVATAR_ID", "").strip()
+
+logger.info(
+    "livekit_agent.worker_config_ready agent_name=%s livekit_configured=%s openai_configured=%s anam_configured=%s avatar_configured=%s model=%s voice=%s",
+    AGENT_NAME,
+    bool(os.getenv("LIVEKIT_URL") and os.getenv("LIVEKIT_API_KEY") and os.getenv("LIVEKIT_API_SECRET")),
+    bool(os.getenv("OPENAI_API_KEY")),
+    bool(os.getenv("ANAM_API_KEY")),
+    bool(ANAM_AVATAR_ID),
+    OPENAI_REALTIME_MODEL,
+    OPENAI_REALTIME_VOICE,
+)
 
 
 def _instructions(interface_language: str) -> str:

@@ -95,16 +95,37 @@ function mockAvatarSession(): void {
 describe('LiveKit avatar client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     lastRoom = null;
     vi.stubGlobal('MediaStream', FakeMediaStream);
     __setLiveKitClientLoaderForTests(async () => fakeLiveKitModule);
   });
 
+  async function flushAsyncWork(cycles = 6): Promise<void> {
+    for (let index = 0; index < cycles; index += 1) {
+      await Promise.resolve();
+    }
+  }
+
+  async function resolveAvatarVideoTrack(): Promise<void> {
+    await vi.waitFor(() => {
+      expect(lastRoom).not.toBeNull();
+      expect(lastRoom?.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+    });
+    lastRoom?.emit(
+      livekitEvents.TrackSubscribed,
+      { kind: 'video', mediaStreamTrack: {} as MediaStreamTrack },
+      { kind: 'video' },
+    );
+  }
+
   it('fetches a LiveKit avatar session and publishes microphone audio after connect', async () => {
     mockAvatarSession();
     const options = livekitOptions();
 
-    const controller = await startLiveKitAvatarClient(options);
+    const clientPromise = startLiveKitAvatarClient(options);
+    await resolveAvatarVideoTrack();
+    const controller = await clientPromise;
 
     expect(authenticatedFetch).toHaveBeenCalledWith('/api/realtime/livekit-avatar-session', expect.objectContaining({
       method: 'POST',
@@ -120,13 +141,18 @@ describe('LiveKit avatar client', () => {
   it('forwards subscribed LiveKit audio and video tracks to Live Tutor callbacks', async () => {
     mockAvatarSession();
     const options = livekitOptions();
-    await startLiveKitAvatarClient(options);
+    const clientPromise = startLiveKitAvatarClient(options);
+    await vi.waitFor(() => {
+      expect(lastRoom).not.toBeNull();
+      expect(lastRoom?.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+    });
 
     const audioTrack = { kind: 'audio', mediaStreamTrack: {} as MediaStreamTrack };
     const videoTrack = { kind: 'video', mediaStreamTrack: {} as MediaStreamTrack };
     lastRoom?.emit(livekitEvents.Connected);
     lastRoom?.emit(livekitEvents.TrackSubscribed, audioTrack, { kind: 'audio' });
     lastRoom?.emit(livekitEvents.TrackSubscribed, videoTrack, { kind: 'video' });
+    await clientPromise;
 
     expect(options.onStatus).toHaveBeenCalledWith('listening');
     expect(options.onRemoteStream).toHaveBeenCalledWith(expect.any(MediaStream));
@@ -141,6 +167,23 @@ describe('LiveKit avatar client', () => {
     const controller = await startLiveKitAvatarClient(livekitOptions({ onError }));
 
     expect(onError).toHaveBeenCalledWith(expect.any(Error));
+    controller.disconnect();
+  });
+
+  it('reports a setup error when no avatar video track arrives before timeout', async () => {
+    vi.useFakeTimers();
+    mockAvatarSession();
+    const onError = vi.fn();
+    const clientPromise = startLiveKitAvatarClient(livekitOptions({ onError }));
+    await flushAsyncWork();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    const controller = await clientPromise;
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('LiveKit avatar video track was not received'),
+    }));
+    expect(lastRoom?.disconnect).toHaveBeenCalled();
     controller.disconnect();
   });
 });

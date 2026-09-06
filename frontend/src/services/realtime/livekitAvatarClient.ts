@@ -12,6 +12,8 @@ import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { logger } from '@/utils/logger';
 import type { RealtimeClientController, StartRealtimeClientOptions } from './client';
 
+const AVATAR_VIDEO_READY_TIMEOUT_MS = 15_000;
+
 interface LiveKitAvatarSessionResponse {
   livekit_url: string;
   token: string;
@@ -138,7 +140,22 @@ export async function startLiveKitAvatarClient(
 ): Promise<RealtimeClientController> {
   let room: LiveKitRoomLike | null = null;
   let muted = false;
+  let avatarVideoReady = false;
+  let resolveAvatarVideoReady: (() => void) | null = null;
+  let avatarVideoReadyTimeout: number | null = null;
   const conversationId = options.getConversationId?.() || options.conversationId;
+  const avatarVideoReadyPromise = new Promise<void>((resolve, reject) => {
+    resolveAvatarVideoReady = () => {
+      if (avatarVideoReadyTimeout) window.clearTimeout(avatarVideoReadyTimeout);
+      avatarVideoReadyTimeout = null;
+      resolve();
+    };
+    avatarVideoReadyTimeout = window.setTimeout(() => {
+      if (avatarVideoReady) return;
+      avatarVideoReadyTimeout = null;
+      reject(new Error(`LiveKit avatar video track was not received within ${AVATAR_VIDEO_READY_TIMEOUT_MS}ms`));
+    }, AVATAR_VIDEO_READY_TIMEOUT_MS);
+  });
 
   try {
     options.onStatus('connecting');
@@ -174,7 +191,9 @@ export async function startLiveKitAvatarClient(
           options.onStatus('speaking');
         }
         if (isTrackKind(kind, livekit.Track.Kind.Video)) {
+          avatarVideoReady = true;
           options.onRemoteVideoStream?.(stream);
+          resolveAvatarVideoReady?.();
           logger.info('livekit.avatar_video_track_subscribed', {
             conversationId,
             roomName: session.room_name,
@@ -197,6 +216,7 @@ export async function startLiveKitAvatarClient(
       roomName: session.room_name,
       participantIdentity: session.participant_identity,
     });
+    await avatarVideoReadyPromise;
 
     return {
       setMuted: (nextMuted: boolean) => {
@@ -210,6 +230,7 @@ export async function startLiveKitAvatarClient(
       },
     };
   } catch (error) {
+    if (avatarVideoReadyTimeout) window.clearTimeout(avatarVideoReadyTimeout);
     room?.disconnect();
     const nextError = error instanceof Error ? error : new Error(String(error));
     logger.error('livekit.avatar_session_failed', nextError, { conversationId });

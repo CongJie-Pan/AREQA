@@ -113,6 +113,24 @@ export const useStyles = createStyles(({ css }) => ({
     line-height: 1.4;
   `,
 
+  avatarNotice: css`
+    pointer-events: none;
+    position: absolute;
+    bottom: calc(50% + 70px);
+    left: 50%;
+    width: min(520px, calc(100vw - 40px));
+    padding: 7px 10px;
+    transform: translateX(-50%);
+    border: 1px solid color-mix(in srgb, #facd8a 32%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, #1d1b18 88%, transparent);
+    color: color-mix(in srgb, #fff6df 90%, transparent);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: center;
+  `,
+
   logoOrb: css`
     width: clamp(78px, 8vw, 104px);
     aspect-ratio: 1;

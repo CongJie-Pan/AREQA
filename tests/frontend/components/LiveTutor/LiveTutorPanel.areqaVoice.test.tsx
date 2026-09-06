@@ -270,6 +270,23 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
+  it('falls back to voice-only realtime when LiveKit avatar startup fails', async () => {
+    useLiveTutorStore.setState({ avatarEnabled: true });
+    vi.mocked(startLiveKitAvatarClient).mockImplementationOnce(async (options) => {
+      realtimeOptions = options;
+      options.onError(new Error('avatar video timeout'));
+      return controller;
+    });
+
+    const view = await renderOpenPanel();
+
+    await waitFor(() => expect(startLiveKitAvatarClient).toHaveBeenCalledOnce());
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    expect(screen.getByText('虛擬角色啟動失敗，已切回語音模式。')).toBeInTheDocument();
+    expect(useLiveTutorStore.getState().avatarEnabled).toBe(false);
+    act(() => view.unmount());
+  });
+
   it('starts voice-only OpenAI Realtime by default before the avatar is requested', async () => {
     const view = await renderOpenPanel();
 
