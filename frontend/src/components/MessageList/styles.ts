@@ -168,6 +168,14 @@ const tableModalPanelIn = keyframes`
 `;
 
 export const useStyles = createStyles(({ css, token }) => ({
+  viewport: css`
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  `,
+
   voiceSpacer: css`
     height: 168px;
     min-height: 168px;
@@ -1394,7 +1402,7 @@ quoteBlockContent: css`
 
   // Scroll to bottom button
   scrollButton: css`
-    position: sticky;
+    position: absolute;
     bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
@@ -1402,7 +1410,6 @@ quoteBlockContent: css`
     height: 48px;
     min-width: 48px;
     min-height: 48px;
-    flex: 0 0 48px;
     box-sizing: border-box;
     border-radius: 50%;
     background: rgba(18, 18, 20, 0.88);
@@ -1422,7 +1429,15 @@ quoteBlockContent: css`
       color 0.18s ease,
       box-shadow 0.18s ease,
       transform 0.18s ease;
-    z-index: 10;
+    z-index: 30;
+
+    @media (max-width: 768px) {
+      bottom: max(14px, env(safe-area-inset-bottom));
+      width: 52px;
+      height: 52px;
+      min-width: 52px;
+      min-height: 52px;
+    }
 
     &:hover {
       background: rgba(28, 28, 31, 0.94);

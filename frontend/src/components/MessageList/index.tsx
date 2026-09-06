@@ -349,71 +349,73 @@ export function MessageList({ className, liveVoice = false, onRegenerate, onEdit
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={cx(
-        'areqa-message-list',
-        'areqa-message-list-non-empty',
-        styles.container,
-        styles.nonEmpty,
-        liveVoice && styles.containerLiveVoice,
-        className,
-      )}
-    >
-      {messages.map((message, index) => {
-        const isCurrentStreaming = message.id === currentStreamingId;
-        const isLast = index === messages.length - 1;
-        
-        // Detect if this is an assistant message following a user message
-        const isAssistantAfterUser = 
-          message.role === 'assistant' && 
-          index > 0 && 
-          messages[index - 1].role === 'user';
+    <div className={cx('areqa-message-list-viewport', styles.viewport, className)}>
+      <div
+        ref={containerRef}
+        className={cx(
+          'areqa-message-list',
+          'areqa-message-list-non-empty',
+          styles.container,
+          styles.nonEmpty,
+          liveVoice && styles.containerLiveVoice,
+        )}
+      >
+        {messages.map((message, index) => {
+          const isCurrentStreaming = message.id === currentStreamingId;
+          const isLast = index === messages.length - 1;
 
-        return (
-          <MessageItem
-            key={message.id}
-            message={message}
-            isStreaming={Boolean(message.isStreaming || (isCurrentStreaming && isStreaming))}
-            isLast={isLast}
-            className={isAssistantAfterUser ? 'assistant-after-user' : ''}
-            onSelectSuggestion={onSelectSuggestion}
-            thinking={
-              isCurrentStreaming
-                ? {
-                    content: thinkingContent,
-                    isThinking,
-                  }
-                : undefined
-            }
-            ragInfo={
-              isCurrentStreaming && isStreaming
-                ? {
-                    status: ragStatus,
-                    message: ragMessage,
-                    sources: ragSources,
-                  }
-                : undefined
-            }
-            onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
-            onFeedback={
-              message.role === 'assistant' && message.userId !== 'guest'
-                ? handleFeedback
-                : undefined
-            }
-            onEdit={message.role === 'user' ? onEdit : undefined}
-          />
-        );
-      })}
+          // Detect if this is an assistant message following a user message
+          const isAssistantAfterUser =
+            message.role === 'assistant' &&
+            index > 0 &&
+            messages[index - 1].role === 'user';
 
-      {liveVoice && <div className={styles.voiceSpacer} aria-hidden="true" />}
+          return (
+            <MessageItem
+              key={message.id}
+              message={message}
+              isStreaming={Boolean(message.isStreaming || (isCurrentStreaming && isStreaming))}
+              isLast={isLast}
+              className={isAssistantAfterUser ? 'assistant-after-user' : ''}
+              onSelectSuggestion={onSelectSuggestion}
+              thinking={
+                isCurrentStreaming
+                  ? {
+                      content: thinkingContent,
+                      isThinking,
+                    }
+                  : undefined
+              }
+              ragInfo={
+                isCurrentStreaming && isStreaming
+                  ? {
+                      status: ragStatus,
+                      message: ragMessage,
+                      sources: ragSources,
+                    }
+                  : undefined
+              }
+              onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
+              onFeedback={
+                message.role === 'assistant' && message.userId !== 'guest'
+                  ? handleFeedback
+                  : undefined
+              }
+              onEdit={message.role === 'user' ? onEdit : undefined}
+            />
+          );
+        })}
 
-      {/* Scroll to bottom button */}
+        {liveVoice && <div className={styles.voiceSpacer} aria-hidden="true" />}
+      </div>
+
+      {/* Keep this control outside the scrollable content so it remains visible after the user scrolls up. */}
       {showScrollButton && (
         <button
-          className={styles.scrollButton}
+          className={cx('areqa-message-scroll-button', styles.scrollButton)}
           onClick={scrollToBottom}
           aria-label="滑動到底部"
+          type="button"
         >
           <ArrowDown size={20} />
         </button>

@@ -21,6 +21,7 @@ vi.mock('../../../../frontend/src/store/conversation', () => ({
 vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
   useStyles: () => ({
     styles: { 
+      viewport: 'viewport',
       container: 'container',
       nonEmpty: 'nonEmpty',
       empty: 'empty',
@@ -290,6 +291,30 @@ describe('MessageList Scroll Behavior Regression', () => {
     
     // Should NOT trigger scroll to bottom because userScrolledUpRef.current is now true
     expect(mockScrollTo).not.toHaveBeenCalled();
+  });
+
+  it('shows an overlay scroll-to-bottom button after the user scrolls up', async () => {
+    const { container } = render(<MessageList />);
+    const scrollContainer = container.querySelector('.container') as HTMLDivElement;
+
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 500, configurable: true });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 300, configurable: true });
+
+    fireEvent.scroll(scrollContainer);
+
+    const scrollButton = screen.getByRole('button', { name: '滑動到底部' });
+    expect(container.querySelector('.areqa-message-list-viewport')).toBeInTheDocument();
+    expect(scrollButton).toHaveClass('areqa-message-scroll-button');
+
+    mockScrollTo.mockClear();
+    fireEvent.click(scrollButton);
+
+    expect(mockScrollTo).toHaveBeenCalledWith(expect.objectContaining({
+      top: 1000,
+      behavior: 'smooth',
+    }));
+    expect(screen.queryByRole('button', { name: '滑動到底部' })).not.toBeInTheDocument();
   });
 
   it('should resume auto-scroll when user scrolls back to the bottom', async () => {
