@@ -48,14 +48,14 @@ Required GitHub Actions secrets:
 LIVEKIT_URL
 LIVEKIT_API_KEY
 LIVEKIT_API_SECRET
-LIVEKIT_AGENT_SECRET_LIST
+OPENAI_API_KEY
+ANAM_API_KEY
+ANAM_AVATAR_ID
 ```
 
-`LIVEKIT_AGENT_SECRET_LIST` must be a comma-separated secret list:
-
-```text
-OPENAI_API_KEY=...,ANAM_API_KEY=...,ANAM_AVATAR_ID=...
-```
+The workflow composes `OPENAI_API_KEY`, `ANAM_API_KEY`, and `ANAM_AVATAR_ID`
+into the comma-separated `SECRET_LIST` expected by the official LiveKit deploy
+action.
 
 Sync secrets from the repository `.env` to LiveKit Agent Cloud:
 
