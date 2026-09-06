@@ -268,6 +268,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     expect(video).toHaveAttribute('playsinline');
     expect(view.container.querySelector('[data-avatar-window="floating"]')).toBeInTheDocument();
     expect(view.container.querySelector('[data-avatar-state="video"]')).not.toBeInTheDocument();
+    expect(view.container.querySelector('section')).toHaveAttribute('data-avatar-layout', 'floating');
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     act(() => view.unmount());
   });
@@ -311,6 +312,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
     expect(startLiveKitAvatarClient).not.toHaveBeenCalled();
     expect(view.container.querySelector('[data-avatar-state="fallback"]')).toBeInTheDocument();
+    expect(view.container.querySelector('section')).toHaveAttribute('data-avatar-layout', 'inline');
     act(() => view.unmount());
   });
 

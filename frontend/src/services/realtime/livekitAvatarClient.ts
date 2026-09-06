@@ -13,6 +13,7 @@ import { logger } from '@/utils/logger';
 import type { RealtimeClientController, StartRealtimeClientOptions } from './client';
 
 const AVATAR_VIDEO_READY_TIMEOUT_MS = 15_000;
+const LIVEKIT_TRANSCRIPTION_TOPIC = 'lk.transcription';
 
 interface LiveKitAvatarSessionResponse {
   livekit_url: string;
@@ -35,11 +36,26 @@ interface LiveKitTrackPublication {
 interface LiveKitRoomLike {
   connect: (url: string, token: string) => Promise<void>;
   disconnect: () => void;
+  registerTextStreamHandler?: (topic: string, callback: LiveKitTextStreamHandler) => void;
+  unregisterTextStreamHandler?: (topic: string) => void;
   localParticipant: {
     setMicrophoneEnabled: (enabled: boolean) => Promise<unknown>;
   };
   on: (event: string, callback: (...args: unknown[]) => void) => LiveKitRoomLike;
 }
+
+interface LiveKitTextStreamReader {
+  info?: {
+    id?: string;
+    attributes?: Record<string, unknown>;
+  };
+  [Symbol.asyncIterator]: () => AsyncIterator<string>;
+}
+
+type LiveKitTextStreamHandler = (
+  reader: LiveKitTextStreamReader,
+  participantInfo: { identity: string },
+) => void;
 
 interface LiveKitClientModule {
   Room: new () => LiveKitRoomLike;
@@ -116,6 +132,59 @@ function isTrackKind(value: unknown, kind: string): boolean {
   return String(value || '').toLowerCase() === kind.toLowerCase();
 }
 
+function isFinalTranscription(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.toLowerCase() === 'true';
+  return true;
+}
+
+async function handleLiveKitTranscriptionStream(
+  reader: LiveKitTextStreamReader,
+  participantIdentity: string,
+  learnerIdentity: string,
+  options: StartRealtimeClientOptions,
+  conversationId: string,
+): Promise<void> {
+  const isUserTranscript = participantIdentity === learnerIdentity;
+  const final = isFinalTranscription(reader.info?.attributes?.['lk.transcription_final']);
+  let transcript = '';
+  let assistantStarted = false;
+
+  try {
+    for await (const chunk of reader) {
+      if (!chunk) continue;
+      transcript += chunk;
+      if (!isUserTranscript) {
+        if (!assistantStarted) {
+          assistantStarted = true;
+          options.onAssistantResponseStarted?.();
+        }
+        options.onAssistantTranscriptDelta(chunk);
+      }
+    }
+
+    const trimmedTranscript = transcript.trim();
+    if (!trimmedTranscript || !final) return;
+    if (isUserTranscript) {
+      options.onUserTranscript(trimmedTranscript, reader.info?.id);
+    } else {
+      options.onAssistantTranscriptDone(trimmedTranscript);
+    }
+    logger.info('livekit.avatar_transcription_forwarded', {
+      conversationId,
+      source: isUserTranscript ? 'user' : 'assistant',
+      final,
+      transcriptChars: trimmedTranscript.length,
+    });
+  } catch (error) {
+    logger.warn('livekit.avatar_transcription_stream_failed', {
+      conversationId,
+      source: isUserTranscript ? 'user' : 'assistant',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /**
  * Start a LiveKit-backed avatar voice session.
  *
@@ -162,6 +231,20 @@ export async function startLiveKitAvatarClient(
     const session = await createLiveKitAvatarSession(options.conversationId, options.interfaceLanguage);
     const livekit = await liveKitClientLoader();
     room = new livekit.Room();
+    room.registerTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC, (reader, participantInfo) => {
+      void handleLiveKitTranscriptionStream(
+        reader,
+        participantInfo.identity,
+        session.participant_identity,
+        options,
+        conversationId,
+      );
+    });
+    logger.info('livekit.avatar_transcription_handler_registered', {
+      conversationId,
+      roomName: session.room_name,
+      topic: LIVEKIT_TRANSCRIPTION_TOPIC,
+    });
 
     room
       .on(livekit.RoomEvent.Connected, () => {
@@ -225,12 +308,14 @@ export async function startLiveKitAvatarClient(
       },
       cancelSpeech: () => undefined,
       disconnect: () => {
+        room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
         room?.disconnect();
         room = null;
       },
     };
   } catch (error) {
     if (avatarVideoReadyTimeout) window.clearTimeout(avatarVideoReadyTimeout);
+    room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
     room?.disconnect();
     const nextError = error instanceof Error ? error : new Error(String(error));
     logger.error('livekit.avatar_session_failed', nextError, { conversationId });

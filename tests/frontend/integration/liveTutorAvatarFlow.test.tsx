@@ -156,6 +156,7 @@ describe('Live Tutor avatar flow integration', () => {
     expect(document.querySelector('video')).toBeInTheDocument();
     expect(container.querySelector('[data-avatar-window="floating"]')).toBeInTheDocument();
     expect(container.querySelector('[data-avatar-state="fallback"]')).not.toBeInTheDocument();
+    expect(container.querySelector('section[aria-label="AREQA 即時語音"]')).toHaveAttribute('data-avatar-layout', 'floating');
     expect(screen.getByLabelText('關閉虛擬角色')).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('關閉虛擬角色'));

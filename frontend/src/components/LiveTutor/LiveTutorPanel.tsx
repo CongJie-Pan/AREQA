@@ -579,12 +579,18 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const isAvatarVideoReady = avatarEnabled && Boolean(avatarVideoStream);
   const shouldShowConnecting = status === 'connecting' || isAvatarConnecting;
   const shouldShowStage = !shouldShowConnecting && !error && !isAvatarVideoReady;
+  const useFloatingAvatarLayout = isAvatarVideoReady;
 
   return (
     <section
       ref={panelRef}
-      className={cx(styles.panel, hasMessages && styles.panelWithMessages)}
+      className={cx(
+        styles.panel,
+        hasMessages && !useFloatingAvatarLayout && styles.panelWithMessages,
+        useFloatingAvatarLayout && styles.panelWithFloatingAvatar,
+      )}
       aria-label={labels.title}
+      data-avatar-layout={useFloatingAvatarLayout ? 'floating' : 'inline'}
     >
       <div className={styles.body}>
         {shouldShowConnecting && !error && (

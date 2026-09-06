@@ -28,6 +28,9 @@ class FakeMediaStream {
 
 class FakeLiveKitRoom {
   handlers = new Map<string, (...args: unknown[]) => void>();
+  textHandlers = new Map<string, (reader: AsyncIterable<string> & {
+    info: { id: string; attributes: Record<string, unknown> };
+  }, participantInfo: { identity: string }) => void>();
   connect = vi.fn(async () => undefined);
   disconnect = vi.fn();
   localParticipant = {
@@ -43,8 +46,36 @@ class FakeLiveKitRoom {
     return this;
   }
 
+  registerTextStreamHandler(
+    topic: string,
+    callback: (reader: AsyncIterable<string> & {
+      info: { id: string; attributes: Record<string, unknown> };
+    }, participantInfo: { identity: string }) => void,
+  ): void {
+    this.textHandlers.set(topic, callback);
+  }
+
+  unregisterTextStreamHandler(topic: string): void {
+    this.textHandlers.delete(topic);
+  }
+
   emit(event: string, ...args: unknown[]): void {
     this.handlers.get(event)?.(...args);
+  }
+
+  emitTextStream(
+    topic: string,
+    chunks: string[],
+    participantIdentity: string,
+    attributes: Record<string, unknown> = {},
+  ): void {
+    const reader = {
+      info: { id: `${participantIdentity}-segment`, attributes },
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) yield chunk;
+      },
+    };
+    this.textHandlers.get(topic)?.(reader, { identity: participantIdentity });
   }
 }
 
@@ -68,6 +99,7 @@ function livekitOptions(overrides: Partial<Parameters<typeof startLiveKitAvatarC
     onRemoteVideoStream: vi.fn(),
     onStatus: vi.fn(),
     onPlaybackState: vi.fn(),
+    onAssistantResponseStarted: vi.fn(),
     onUserTranscript: vi.fn(),
     onAssistantTranscriptDelta: vi.fn(),
     onAssistantTranscriptDone: vi.fn(),
@@ -158,6 +190,32 @@ describe('LiveKit avatar client', () => {
     expect(options.onRemoteStream).toHaveBeenCalledWith(expect.any(MediaStream));
     expect(options.onPlaybackState).toHaveBeenCalledWith('started');
     expect(options.onRemoteVideoStream).toHaveBeenCalledWith(expect.any(MediaStream));
+  });
+
+  it('forwards LiveKit transcription text streams through realtime callbacks', async () => {
+    mockAvatarSession();
+    const options = livekitOptions();
+    const clientPromise = startLiveKitAvatarClient(options);
+    await vi.waitFor(() => {
+      expect(lastRoom).not.toBeNull();
+      expect(lastRoom?.textHandlers.has('lk.transcription')).toBe(true);
+    });
+
+    lastRoom?.emitTextStream('lk.transcription', ['你好，我想練習口說'], 'learner-abc', {
+      'lk.transcription_final': 'true',
+    });
+    lastRoom?.emitTextStream('lk.transcription', ['可以，', '我們開始。'], 'areqa-live-tutor', {
+      'lk.transcription_final': 'true',
+    });
+    await flushAsyncWork();
+    await resolveAvatarVideoTrack();
+    await clientPromise;
+
+    expect(options.onUserTranscript).toHaveBeenCalledWith('你好，我想練習口說', 'learner-abc-segment');
+    expect(options.onAssistantResponseStarted).toHaveBeenCalledOnce();
+    expect(options.onAssistantTranscriptDelta).toHaveBeenNthCalledWith(1, '可以，');
+    expect(options.onAssistantTranscriptDelta).toHaveBeenNthCalledWith(2, '我們開始。');
+    expect(options.onAssistantTranscriptDone).toHaveBeenCalledWith('可以，我們開始。');
   });
 
   it('reports setup errors through the existing Live Tutor error boundary', async () => {

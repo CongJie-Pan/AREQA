@@ -43,6 +43,19 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
 
+  panelWithFloatingAvatar: css`
+    flex: 0 0 0;
+    height: 0;
+    padding: 0;
+    z-index: 3;
+
+    & > div {
+      position: static;
+      width: 0;
+      height: 0;
+    }
+  `,
+
   body: css`
     display: grid;
     position: relative;
