@@ -62,6 +62,58 @@ export const useStyles = createStyles(({ css }) => ({
     place-items: center;
   `,
 
+  avatarStage: css`
+    display: grid;
+    position: relative;
+    width: clamp(104px, 12vw, 156px);
+    aspect-ratio: 1;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 50%;
+    background: transparent;
+    transition:
+      width 180ms ease,
+      border-radius 180ms ease,
+      box-shadow 180ms ease;
+
+    @media (max-width: 768px) {
+      width: clamp(108px, 30vw, 148px);
+    }
+  `,
+
+  avatarStageActive: css`
+    width: clamp(156px, 18vw, 220px);
+    aspect-ratio: 4 / 5;
+    border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+    border-radius: 8px;
+    background: #101010;
+    box-shadow: 0 14px 42px rgba(0, 0, 0, 0.32);
+
+    @media (max-width: 768px) {
+      width: clamp(148px, 42vw, 190px);
+    }
+  `,
+
+  avatarStageSpeaking: css`
+    box-shadow:
+      0 14px 42px rgba(0, 0, 0, 0.34),
+      0 0 0 1px color-mix(in srgb, #facd8a 34%, transparent);
+  `,
+
+  avatarVideo: css`
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 180ms ease;
+  `,
+
+  avatarVideoReady: css`
+    opacity: 1;
+  `,
+
   statusText: css`
     pointer-events: none;
     color: color-mix(in srgb, var(--foreground) 74%, transparent);

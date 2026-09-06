@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from auth import get_optional_current_user
+from config import settings
 from services.answer_style_service import AREQA_TEACHING_V1
 from services.conversation.parts import PartsContext, PartsContextService
 from services.query_policy_service import default_response_policy
@@ -111,6 +112,40 @@ def _normalize_voice(voice: str) -> str:
 
     normalized = str(voice or "marin").strip().lower()
     return normalized if normalized in REALTIME_ALLOWED_VOICES else "marin"
+
+
+def _realtime_debug_logs_enabled() -> bool:
+    """Return whether detailed OpenAI Realtime diagnostics should be emitted.
+
+    Returns:
+        True when backend settings allow safe Realtime debug logs.
+
+    Side Effects:
+        None.
+
+    Compatibility:
+        This guards only verbose operational diagnostics. Warnings and errors
+        remain unguarded so provider failures are still visible in production.
+    """
+
+    return bool(settings.enable_realtime_debug_logs)
+
+
+def _live_tutor_debug_logs_enabled() -> bool:
+    """Return whether detailed AREQA Live Tutor diagnostics should be emitted.
+
+    Returns:
+        True when backend settings allow safe Live Tutor debug logs.
+
+    Side Effects:
+        None.
+
+    Compatibility:
+        The Live Tutor switch covers AREQA app-side context assembly and
+        tutoring-session metadata, not provider credentials or transcript text.
+    """
+
+    return bool(settings.enable_live_tutor_debug_logs)
 
 
 def _build_realtime_instructions(language: str) -> str:
@@ -456,6 +491,19 @@ async def create_realtime_session(
 
     session_config = _build_realtime_session_config(payload)
     started_at = time.time()
+    if _realtime_debug_logs_enabled():
+        logger.info(
+            "realtime.debug.session_config_built conversation_id=%s model=%s voice=%s interface_language=%s output_modalities=%s input_transcription_model=%s turn_detection_type=%s tool_count=%s tool_names=%s",
+            payload.conversation_id,
+            session_config["model"],
+            session_config["audio"]["output"]["voice"],
+            payload.interface_language,
+            ",".join(session_config.get("output_modalities", [])),
+            session_config["audio"]["input"]["transcription"].get("model"),
+            session_config["audio"]["input"]["turn_detection"].get("type"),
+            len(session_config.get("tools", [])),
+            ",".join(tool.get("name", "") for tool in session_config.get("tools", [])),
+        )
     logger.info(
         "realtime.session_create_started conversation_id=%s authenticated=%s model=%s voice=%s interface_language=%s",
         payload.conversation_id,
@@ -472,11 +520,26 @@ async def create_realtime_session(
         safety_identifier = _safe_realtime_user_identifier(current_user_id)
         if safety_identifier:
             headers["OpenAI-Safety-Identifier"] = safety_identifier
+        if _realtime_debug_logs_enabled():
+            logger.info(
+                "realtime.debug.upstream_request_prepared conversation_id=%s authenticated=%s has_safety_identifier=%s timeout_seconds=%s",
+                payload.conversation_id,
+                bool(current_user_id),
+                bool(safety_identifier),
+                15.0,
+            )
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
                 REALTIME_CLIENT_SECRET_URL,
                 headers=headers,
                 json={"session": session_config},
+            )
+        if _realtime_debug_logs_enabled():
+            logger.info(
+                "realtime.debug.upstream_response_received conversation_id=%s status=%s elapsed_ms=%s",
+                payload.conversation_id,
+                response.status_code,
+                int((time.time() - started_at) * 1000),
             )
         if response.status_code >= 400:
             # Stable event: realtime.session_create_failed. Metadata is limited
@@ -490,6 +553,13 @@ async def create_realtime_session(
             )
             raise _realtime_upstream_error(response.status_code)
         secret_value, expires_at = _client_secret_from_response(response.json())
+        if _realtime_debug_logs_enabled():
+            logger.info(
+                "realtime.debug.client_secret_issued conversation_id=%s expires_at_present=%s client_secret_present=%s",
+                payload.conversation_id,
+                bool(expires_at),
+                bool(secret_value),
+            )
     except HTTPException:
         raise
     except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
@@ -638,6 +708,16 @@ async def get_realtime_context(
         `realtime.context_served` with only counts and safe correlation ids.
     """
 
+    started_at = time.time()
+    if _live_tutor_debug_logs_enabled():
+        logger.info(
+            "live_tutor.debug.context_request_received conversation_id=%s authenticated=%s supplied_message_count=%s interface_language=%s",
+            payload.conversation_id,
+            bool(current_user_id),
+            len(payload.messages),
+            payload.interface_language,
+        )
+
     recent_messages = [
         {"role": item.role, "content": item.content[:MAX_CONTEXT_MESSAGE_CHARS]}
         for item in payload.messages[-MAX_CONTEXT_MESSAGES:]
@@ -654,6 +734,12 @@ async def get_realtime_context(
                 for item in memory_view[:8]
                 if str(item.get("text", "")).strip()
             ]
+            if _live_tutor_debug_logs_enabled():
+                logger.info(
+                    "live_tutor.debug.memory_context_loaded conversation_id=%s memory_count=%s",
+                    payload.conversation_id,
+                    len(memory_items),
+                )
         except Exception as exc:
             logger.warning(
                 "realtime.context_memory_unavailable conversation_id=%s reason=%s",
@@ -669,6 +755,15 @@ async def get_realtime_context(
         len(memory_items),
         True,
     )
+    if _live_tutor_debug_logs_enabled():
+        logger.info(
+            "live_tutor.debug.context_response_built conversation_id=%s recent_message_count=%s memory_count=%s parts_context=%s elapsed_ms=%s",
+            payload.conversation_id,
+            len(recent_messages),
+            len(memory_items),
+            True,
+            int((time.time() - started_at) * 1000),
+        )
     return {
         "conversation_id": payload.conversation_id,
         "recent_messages": recent_messages,

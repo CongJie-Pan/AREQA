@@ -62,6 +62,7 @@ function resetStores(): void {
     isOpen: false,
     status: 'idle',
     isMuted: false,
+    avatarEnabled: true,
     closeRequestId: 0,
     userTranscript: '',
     assistantTranscript: '',
@@ -232,6 +233,27 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     const view = await renderOpenPanel();
 
     await waitFor(() => expect(screen.getByText('Lost Connection')).toBeInTheDocument());
+    act(() => view.unmount());
+  });
+
+  it('renders avatar video when a future realtime transport provides a video stream', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    const avatarStream = {
+      getVideoTracks: () => [{ readyState: 'live' }],
+      getAudioTracks: () => [],
+      getTracks: () => [],
+    } as unknown as MediaStream;
+
+    act(() => {
+      realtimeOptions?.onRemoteVideoStream?.(avatarStream);
+    });
+
+    const video = view.container.querySelector('video');
+    expect(video).toBeInTheDocument();
+    expect(video).toHaveAttribute('playsinline');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
     act(() => view.unmount());
   });
 

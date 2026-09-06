@@ -363,6 +363,7 @@ describe('ChatInput', () => {
 
   it('should replace the voice and send controls while live voice is active', () => {
     const onToggleLiveVoiceMute = vi.fn();
+    const onToggleLiveVoiceAvatar = vi.fn();
     const onCloseLiveVoice = vi.fn();
     render(
       <ChatInput
@@ -370,7 +371,9 @@ describe('ChatInput', () => {
         onOpenLiveTutor={vi.fn()}
         isLiveVoiceActive
         isLiveVoiceMuted
+        isLiveVoiceAvatarEnabled
         onToggleLiveVoiceMute={onToggleLiveVoiceMute}
+        onToggleLiveVoiceAvatar={onToggleLiveVoiceAvatar}
         onCloseLiveVoice={onCloseLiveVoice}
       />,
     );
@@ -378,9 +381,27 @@ describe('ChatInput', () => {
     expect(screen.queryByLabelText('開啟即時語音')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('發送訊息')).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('取消靜音'));
+    fireEvent.click(screen.getByLabelText('關閉虛擬角色'));
     fireEvent.click(screen.getByLabelText('結束語音'));
     expect(onToggleLiveVoiceMute).toHaveBeenCalledOnce();
+    expect(onToggleLiveVoiceAvatar).toHaveBeenCalledOnce();
     expect(onCloseLiveVoice).toHaveBeenCalledOnce();
+  });
+
+  it('should show the avatar toggle off state while live voice avatar is disabled', () => {
+    const onToggleLiveVoiceAvatar = vi.fn();
+    render(
+      <ChatInput
+        onSend={mockOnSend}
+        isLiveVoiceActive
+        isLiveVoiceAvatarEnabled={false}
+        onToggleLiveVoiceAvatar={onToggleLiveVoiceAvatar}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('開啟虛擬角色'));
+
+    expect(onToggleLiveVoiceAvatar).toHaveBeenCalledOnce();
   });
 
   it('should show live voice as the primary action while the composer is empty', () => {

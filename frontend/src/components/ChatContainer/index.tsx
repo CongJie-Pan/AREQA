@@ -107,7 +107,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const openLiveTutor = useLiveTutorStore((state) => state.open);
   const isLiveTutorOpen = useLiveTutorStore((state) => state.isOpen);
   const isLiveTutorMuted = useLiveTutorStore((state) => state.isMuted);
+  const isLiveTutorAvatarEnabled = useLiveTutorStore((state) => state.avatarEnabled);
   const setLiveTutorMuted = useLiveTutorStore((state) => state.setMuted);
+  const setLiveTutorAvatarEnabled = useLiveTutorStore((state) => state.setAvatarEnabled);
   const requestCloseLiveTutor = useLiveTutorStore((state) => state.requestClose);
   const isEmpty = messages.length === 0;
   const isEmptyLiveTutor = isLiveTutorOpen && isEmpty;
@@ -125,6 +127,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const toggleLiveTutorMute = useCallback(() => {
     setLiveTutorMuted(!useLiveTutorStore.getState().isMuted);
   }, [setLiveTutorMuted]);
+
+  const toggleLiveTutorAvatar = useCallback(() => {
+    setLiveTutorAvatarEnabled(!useLiveTutorStore.getState().avatarEnabled);
+  }, [setLiveTutorAvatarEnabled]);
 
   useEffect(() => {
     void fetchFeatures();
@@ -639,7 +645,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   onOpenLiveTutor={openLiveTutor}
                   isLiveVoiceActive={isLiveTutorOpen}
                   isLiveVoiceMuted={isLiveTutorMuted}
+                  isLiveVoiceAvatarEnabled={isLiveTutorAvatarEnabled}
                   onToggleLiveVoiceMute={toggleLiveTutorMute}
+                  onToggleLiveVoiceAvatar={toggleLiveTutorAvatar}
                   onCloseLiveVoice={requestCloseLiveTutor}
                 />
               </div>

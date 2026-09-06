@@ -31,6 +31,8 @@ def test_settings_loads_defaults():
     assert s.enable_parts_llm_rewrite_for_ungrounded_turns is False
     assert s.parts_rewrite_timeout_ms == 2500
     assert s.enable_parts_prompt_debug_logs is False
+    assert s.enable_live_tutor_debug_logs is True
+    assert s.enable_realtime_debug_logs is True
     assert s.enable_production_turn_trace_summary is True
     assert s.turn_trace_slow_total_threshold_ms == 8000
     assert s.turn_trace_slow_first_token_threshold_ms == 5000
@@ -74,6 +76,8 @@ def test_settings_can_be_overridden_by_env():
         'ENABLE_PARTS_LLM_REWRITE_FOR_UNGROUNDED_TURNS': 'true',
         'PARTS_REWRITE_TIMEOUT_MS': '250',
         'ENABLE_PARTS_PROMPT_DEBUG_LOGS': 'true',
+        'ENABLE_LIVE_TUTOR_DEBUG_LOGS': 'false',
+        'ENABLE_REALTIME_DEBUG_LOGS': 'false',
         'TURN_TRACE_SLOW_TOTAL_THRESHOLD_MS': '9000',
         'ENABLE_OPENROUTER_MAIN_SESSION_ID': 'false',
         'ENABLE_OPENROUTER_MAIN_LATENCY_ROUTING': 'false',
@@ -110,6 +114,8 @@ def test_settings_can_be_overridden_by_env():
         assert s.enable_parts_llm_rewrite_for_ungrounded_turns is True
         assert s.parts_rewrite_timeout_ms == 250
         assert s.enable_parts_prompt_debug_logs is True
+        assert s.enable_live_tutor_debug_logs is False
+        assert s.enable_realtime_debug_logs is False
         assert s.turn_trace_slow_total_threshold_ms == 9000
         assert s.enable_openrouter_main_session_id is False
         assert s.enable_openrouter_main_latency_routing is False

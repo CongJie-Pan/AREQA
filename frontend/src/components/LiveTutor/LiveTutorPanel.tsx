@@ -8,11 +8,11 @@
  * so the experience can respond immediately instead of waiting for `/stream`.
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
-import Image from 'next/image';
 import { Tooltip } from 'antd';
 import { useStyles } from './styles';
+import { LiveTutorAvatarStage } from './LiveTutorAvatarStage';
 import {
   RealtimeClientError,
   playLiveVoiceCue,
@@ -113,9 +113,11 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const hasSyncedInitialMuteRef = useRef(false);
   const hasStartedRef = useRef(false);
   const isCancelledRef = useRef(false);
+  const [avatarVideoStream, setAvatarVideoStream] = useState<MediaStream | null>(null);
 
   const isOpen = useLiveTutorStore((state) => state.isOpen);
   const isMuted = useLiveTutorStore((state) => state.isMuted);
+  const avatarEnabled = useLiveTutorStore((state) => state.avatarEnabled);
   const error = useLiveTutorStore((state) => state.error);
   const status = useLiveTutorStore((state) => state.status);
   const closeRequestId = useLiveTutorStore((state) => state.closeRequestId);
@@ -286,6 +288,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     playbackRef.current = 'waiting';
     inputLevelRef.current = 0;
     outputLevelRef.current = 0;
+    setAvatarVideoStream(null);
     assistantMessageIdRef.current = null;
     assistantTranscriptRef.current = '';
     lastVoiceMessageIdRef.current = null;
@@ -315,6 +318,15 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
           audioRef.current.srcObject = stream;
           void audioRef.current.play();
         }
+      },
+      onRemoteVideoStream: (stream) => {
+        if (isCancelledRef.current) return;
+        setAvatarVideoStream(stream);
+        logger.info('realtime.avatar_video_stream_received', {
+          component: 'LiveTutorPanel',
+          conversationId: persistedConversationIdRef.current || conversationId,
+          videoTrackCount: stream.getVideoTracks().length,
+        });
       },
       onInputAudioLevel: (level) => {
         if (isCancelledRef.current) return;
@@ -462,6 +474,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
     assistantMessageIdRef.current = null;
     assistantTranscriptRef.current = '';
     lastVoiceMessageIdRef.current = null;
+    setAvatarVideoStream(null);
     hasPlayedConnectedCueRef.current = false;
     hasSyncedInitialMuteRef.current = false;
     hasStartedRef.current = false;
@@ -540,20 +553,11 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
         )}
 
         {status !== 'connecting' && !error && (
-          <div className={styles.voiceCore} aria-hidden>
-            <div className={styles.logoOrb}>
-              <Image
-                src="/icon/areqa_icon_v4_circle.png"
-                alt=""
-                width={192}
-                height={192}
-                unoptimized
-                className={styles.logoImage}
-                draggable={false}
-                priority
-              />
-            </div>
-          </div>
+          <LiveTutorAvatarStage
+            avatarEnabled={avatarEnabled}
+            avatarStream={avatarVideoStream}
+            status={status}
+          />
         )}
       </div>
 

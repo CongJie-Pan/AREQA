@@ -17,6 +17,8 @@ import {
   MicOff,
   Plus,
   Square,
+  Video,
+  VideoOff,
   X,
 } from 'lucide-react';
 import { message, Tooltip } from 'antd';
@@ -293,16 +295,41 @@ export interface ChatInputProps {
   isLiveVoiceActive?: boolean;
   /** Whether the active live voice microphone is muted. */
   isLiveVoiceMuted?: boolean;
+  /** Whether avatar video is preferred for the active live voice session. */
+  isLiveVoiceAvatarEnabled?: boolean;
   /** Callback that toggles microphone capture for the active voice session. */
   onToggleLiveVoiceMute?: () => void;
+  /** Callback that toggles avatar video rendering for the active voice session. */
+  onToggleLiveVoiceAvatar?: () => void;
   /** Callback that ends the active live voice session. */
   onCloseLiveVoice?: () => void;
 }
 
 const LIVE_VOICE_LABELS = {
-  'zh-TW': { open: '開啟即時語音', mute: '靜音', unmute: '取消靜音', close: '結束語音' },
-  'zh-CN': { open: '开启即时语音', mute: '静音', unmute: '取消静音', close: '结束语音' },
-  en: { open: 'Start live voice', mute: 'Mute', unmute: 'Unmute', close: 'End voice' },
+  'zh-TW': {
+    open: '開啟即時語音',
+    mute: '靜音',
+    unmute: '取消靜音',
+    avatarOn: '開啟虛擬角色',
+    avatarOff: '關閉虛擬角色',
+    close: '結束語音',
+  },
+  'zh-CN': {
+    open: '开启即时语音',
+    mute: '静音',
+    unmute: '取消静音',
+    avatarOn: '开启虚拟角色',
+    avatarOff: '关闭虚拟角色',
+    close: '结束语音',
+  },
+  en: {
+    open: 'Start live voice',
+    mute: 'Mute',
+    unmute: 'Unmute',
+    avatarOn: 'Show avatar',
+    avatarOff: 'Hide avatar',
+    close: 'End voice',
+  },
 } as const;
 
 const DICTATION_LABELS = {
@@ -344,7 +371,9 @@ export function ChatInput({
   onOpenLiveTutor,
   isLiveVoiceActive = false,
   isLiveVoiceMuted = false,
+  isLiveVoiceAvatarEnabled = true,
   onToggleLiveVoiceMute,
+  onToggleLiveVoiceAvatar,
   onCloseLiveVoice,
 }: ChatInputProps) {
   const { styles, cx } = useStyles();
@@ -874,6 +903,27 @@ export function ChatInput({
               aria-label={liveVoiceLabels.open}
             >
               <AudioLines size={20} />
+            </button>
+          </Tooltip>
+        ) : null}
+        {dictationState !== 'idle' ? null : isLiveVoiceActive && onToggleLiveVoiceAvatar ? (
+          <Tooltip
+            title={isLiveVoiceAvatarEnabled ? liveVoiceLabels.avatarOff : liveVoiceLabels.avatarOn}
+            color="#262626"
+            styles={{ container: { color: '#ffffff' } }}
+          >
+            <button
+              type="button"
+              className={cx(
+                'areqa-chat-input-avatar-button',
+                styles.iconButton,
+                styles.avatarButton,
+                !isLiveVoiceAvatarEnabled && styles.avatarButtonInactive,
+              )}
+              onClick={onToggleLiveVoiceAvatar}
+              aria-label={isLiveVoiceAvatarEnabled ? liveVoiceLabels.avatarOff : liveVoiceLabels.avatarOn}
+            >
+              {isLiveVoiceAvatarEnabled ? <Video size={18} /> : <VideoOff size={18} />}
             </button>
           </Tooltip>
         ) : null}

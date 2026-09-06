@@ -62,6 +62,7 @@ export interface StartRealtimeClientOptions {
   interfaceLanguage: 'zh-TW' | 'zh-CN' | 'en';
   recentMessages: () => DisplayMessage[];
   onRemoteStream: (stream: MediaStream) => void;
+  onRemoteVideoStream?: (stream: MediaStream) => void;
   onInputAudioLevel?: (level: number) => void;
   onOutputAudioLevel?: (level: number) => void;
   onUserSpeechStarted?: () => void;
@@ -753,13 +754,18 @@ async function startRealtimeWebRtcClient(
     peerConnection.ontrack = (event) => {
       const [remoteStream] = event.streams;
       if (remoteStream) {
-        options.onRemoteStream(remoteStream);
-        const stopOutputAudioLevelMonitor = startAudioLevelMonitor(remoteStream, options.onOutputAudioLevel);
-        const stopInputAudioLevelMonitor = stopAudioLevelMonitor ?? (() => undefined);
-        stopAudioLevelMonitor = () => {
-          stopInputAudioLevelMonitor();
-          stopOutputAudioLevelMonitor();
-        };
+        if (remoteStream.getAudioTracks().length > 0 || event.track.kind === 'audio') {
+          options.onRemoteStream(remoteStream);
+          const stopOutputAudioLevelMonitor = startAudioLevelMonitor(remoteStream, options.onOutputAudioLevel);
+          const stopInputAudioLevelMonitor = stopAudioLevelMonitor ?? (() => undefined);
+          stopAudioLevelMonitor = () => {
+            stopInputAudioLevelMonitor();
+            stopOutputAudioLevelMonitor();
+          };
+        }
+        if (remoteStream.getVideoTracks().length > 0 || event.track.kind === 'video') {
+          options.onRemoteVideoStream?.(remoteStream);
+        }
       }
     };
     peerConnection.onconnectionstatechange = () => {

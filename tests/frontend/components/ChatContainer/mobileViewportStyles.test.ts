@@ -41,6 +41,10 @@ describe('ChatContainer mobile viewport styles', () => {
       path.resolve(__dirname, '../../../../frontend/src/components/LiveTutor/LiveTutorPanel.tsx'),
       'utf8',
     );
+    const liveTutorAvatarStage = readFileSync(
+      path.resolve(__dirname, '../../../../frontend/src/components/LiveTutor/LiveTutorAvatarStage.tsx'),
+      'utf8',
+    );
     const liveTutorStyles = readFileSync(
       path.resolve(__dirname, '../../../../frontend/src/components/LiveTutor/styles.ts'),
       'utf8',
@@ -55,7 +59,10 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(inputAreaIndex).toBeGreaterThan(liveTutorIndex);
     expect(chatContainer).toContain('shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType');
     expect(liveTutorPanel).not.toContain('className={styles.overlay}');
-    expect(liveTutorPanel).toContain('src="/icon/areqa_icon_v4_circle.png"');
+    expect(liveTutorPanel).toContain('<LiveTutorAvatarStage');
+    expect(liveTutorAvatarStage).toContain('src="/icon/areqa_icon_v4_circle.png"');
+    expect(liveTutorAvatarStage).toContain('avatarEnabled');
+    expect(liveTutorAvatarStage).toContain('<video');
     expect(liveTutorPanel).toContain('onInputAudioLevel');
     expect(liveTutorStyles).not.toMatch(/position:\s*fixed;/);
     expect(chatContainer).toContain('areqa-chat-content-live-tutor');

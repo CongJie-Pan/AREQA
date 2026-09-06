@@ -22,7 +22,7 @@ let lastScriptProcessor: FakeScriptProcessor | null = null;
 
 class FakePeerConnection {
   connectionState = 'new';
-  ontrack: ((event: { streams: MediaStream[] }) => void) | null = null;
+  ontrack: ((event: { streams: MediaStream[]; track: { kind: string } }) => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
   channel = new FakeDataChannel();
   createDataChannel = vi.fn(() => this.channel);
@@ -209,6 +209,24 @@ describe('Realtime client lifecycle', () => {
     expect(onUserTurnCommitted).toHaveBeenCalledWith('turn1');
     send({ type: 'output_audio_buffer.stopped' });
     expect(onPlaybackState).toHaveBeenLastCalledWith('stopped');
+    controller.disconnect();
+  });
+
+  it('routes remote video tracks separately so avatar media can render without replacing audio playback', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onRemoteStream = vi.fn();
+    const onRemoteVideoStream = vi.fn();
+    const avatarStream = {
+      getAudioTracks: () => [],
+      getVideoTracks: () => [{ readyState: 'live' }],
+    } as unknown as MediaStream;
+
+    const controller = await startRealtimeClient(realtimeOptions({ onRemoteStream, onRemoteVideoStream }));
+    lastPeerConnection?.ontrack?.({ streams: [avatarStream], track: { kind: 'video' } });
+
+    expect(onRemoteVideoStream).toHaveBeenCalledWith(avatarStream);
+    expect(onRemoteStream).not.toHaveBeenCalled();
     controller.disconnect();
   });
 

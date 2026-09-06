@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 
 import pytest
 from fastapi import HTTPException
@@ -156,6 +157,79 @@ async def test_create_realtime_session_preserves_openai_rate_limit(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_realtime_debug_logs_emit_safe_session_metadata(monkeypatch, caplog):
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"value": "ek_test_secret", "expires_at": 1788510000}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, _url, *, headers, json):
+            return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(realtime_routes.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(realtime_routes.settings, "enable_realtime_debug_logs", True)
+
+    with caplog.at_level(logging.INFO):
+        response = await create_realtime_session(
+            RealtimeSessionRequest(conversation_id="conv_debug", interface_language="zh-TW"),
+            current_user_id="user_123",
+        )
+
+    assert response["client_secret"] == "ek_test_secret"
+    assert "realtime.debug.session_config_built" in caplog.text
+    assert "realtime.debug.upstream_request_prepared" in caplog.text
+    assert "realtime.debug.upstream_response_received" in caplog.text
+    assert "realtime.debug.client_secret_issued" in caplog.text
+    assert "model=gpt-realtime-2.1-mini" in caplog.text
+    assert "tool_names=get_areqa_context" in caplog.text
+    assert "test-key" not in caplog.text
+    assert "ek_test_secret" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_realtime_debug_logs_respect_config_switch(monkeypatch, caplog):
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"value": "ek_test_secret"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, _url, *, headers, json):
+            return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(realtime_routes.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(realtime_routes.settings, "enable_realtime_debug_logs", False)
+
+    with caplog.at_level(logging.INFO):
+        await create_realtime_session(RealtimeSessionRequest(conversation_id="conv_debug"), current_user_id=None)
+
+    assert "realtime.debug." not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_create_realtime_session_maps_openai_auth_failure_to_service_error(monkeypatch):
     class FakeResponse:
         status_code = 403
@@ -259,3 +333,43 @@ async def test_realtime_context_returns_bounded_recent_messages_for_guest():
     assert response["parts_context"]["persona"]
     assert response["parts_context"]["instruction"]
     assert "parts_context" in response["guidance"]
+
+
+@pytest.mark.asyncio
+async def test_live_tutor_debug_logs_emit_context_counts_without_raw_text(monkeypatch, caplog):
+    monkeypatch.setattr(realtime_routes.settings, "enable_live_tutor_debug_logs", True)
+    payload = RealtimeContextRequest(
+        conversation_id="conv_live_debug",
+        messages=[
+            RealtimeContextMessage(role="user", content="private learner question"),
+            RealtimeContextMessage(role="assistant", content="private assistant answer"),
+        ],
+        interface_language="en",
+    )
+
+    with caplog.at_level(logging.INFO):
+        response = await get_realtime_context(payload, current_user_id=None)
+
+    assert response["recent_messages"]
+    assert "live_tutor.debug.context_request_received" in caplog.text
+    assert "live_tutor.debug.context_response_built" in caplog.text
+    assert "supplied_message_count=2" in caplog.text
+    assert "recent_message_count=2" in caplog.text
+    assert "private learner question" not in caplog.text
+    assert "private assistant answer" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_live_tutor_debug_logs_respect_config_switch(monkeypatch, caplog):
+    monkeypatch.setattr(realtime_routes.settings, "enable_live_tutor_debug_logs", False)
+    payload = RealtimeContextRequest(
+        conversation_id="conv_live_debug",
+        messages=[RealtimeContextMessage(role="user", content="private learner question")],
+        interface_language="en",
+    )
+
+    with caplog.at_level(logging.INFO):
+        await get_realtime_context(payload, current_user_id=None)
+
+    assert "live_tutor.debug." not in caplog.text
+    assert "private learner question" not in caplog.text

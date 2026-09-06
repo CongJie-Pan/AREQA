@@ -458,6 +458,20 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  avatarButton: css`
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.94);
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.16);
+      color: #ffffff;
+    }
+  `,
+
+  avatarButtonInactive: css`
+    color: rgba(255, 255, 255, 0.58);
+  `,
+
   // Circular send button aligned in the toolbar
   sendButton: css`
     background: #facd8a;

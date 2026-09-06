@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     enable_parts_llm_rewrite_for_ungrounded_turns: bool = False
     parts_rewrite_timeout_ms: int = 2500
     enable_parts_prompt_debug_logs: bool = False
+    enable_live_tutor_debug_logs: bool = True
+    enable_realtime_debug_logs: bool = True
     enable_production_turn_trace_summary: bool = True
     turn_trace_slow_total_threshold_ms: int = 8000
     turn_trace_slow_first_token_threshold_ms: int = 5000

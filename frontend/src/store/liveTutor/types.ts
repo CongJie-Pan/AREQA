@@ -20,6 +20,7 @@ export interface LiveTutorState {
   isOpen: boolean;
   status: LiveTutorStatus;
   isMuted: boolean;
+  avatarEnabled: boolean;
   closeRequestId: number;
   userTranscript: string;
   assistantTranscript: string;
@@ -32,6 +33,7 @@ export interface LiveTutorActions {
   requestClose: () => void;
   setStatus: (status: LiveTutorStatus) => void;
   setMuted: (isMuted: boolean) => void;
+  setAvatarEnabled: (enabled: boolean) => void;
   setUserTranscript: (transcript: string) => void;
   setAssistantTranscript: (transcript: string) => void;
   appendAssistantTranscript: (delta: string) => void;
