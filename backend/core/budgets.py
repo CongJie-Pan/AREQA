@@ -28,6 +28,8 @@ class ToolBudgetTracker:
     total_tool_latency_ms: int = 0
 
     def authorize(self, *, external: bool) -> None:
+        if self.total_tool_latency_ms > self.limits.max_total_tool_latency_ms:
+            raise ToolBudgetExceeded("total tool latency budget exhausted")
         if self.tool_calls >= self.limits.max_tool_calls_per_run:
             raise ToolBudgetExceeded("tool call budget exhausted")
         if external and self.external_calls >= self.limits.max_external_calls:
@@ -40,8 +42,6 @@ class ToolBudgetTracker:
         self.external_calls += int(external)
         self.total_tool_latency_ms += max(latency_ms, 0)
         self.consecutive_failures = 0 if succeeded else self.consecutive_failures + 1
-        if self.total_tool_latency_ms > self.limits.max_total_tool_latency_ms:
-            raise ToolBudgetExceeded("total tool latency budget exhausted")
 
 
 class ToolBudgetExceeded(RuntimeError):

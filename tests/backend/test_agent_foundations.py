@@ -83,6 +83,28 @@ async def test_tool_registry_enforces_external_call_budget():
     assert calls == 1
 
 
+@pytest.mark.asyncio
+async def test_tool_registry_returns_successful_slow_tool_before_latency_budget_blocks_next_call():
+    calls = 0
+
+    async def handler(arguments):
+        nonlocal calls
+        calls += 1
+        return ToolResult("web_search", "ok", arguments, latency_ms=9000)
+
+    registry = ToolRegistry()
+    registry.register(ToolDefinition("web_search", True, handler))
+    budget = ToolBudgetTracker(ToolBudget(max_external_calls=2, max_total_tool_latency_ms=8000))
+
+    result = await registry.execute("web_search", {"query": "first"}, budget)
+
+    assert result.status == "ok"
+    assert calls == 1
+    with pytest.raises(ToolBudgetExceeded, match="total tool latency"):
+        await registry.execute("web_search", {"query": "second"}, budget)
+    assert calls == 1
+
+
 def test_tool_budget_rejects_negative_limits():
     with pytest.raises(ValueError, match="max_tool_calls_per_run"):
         ToolBudget(max_tool_calls_per_run=-1)
