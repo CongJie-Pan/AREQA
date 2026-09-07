@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 
 import pytest
@@ -17,6 +18,7 @@ from backend.app.routes.realtime import (
     LiveKitAvatarSessionRequest,
     _build_realtime_session_config,
     _client_secret_from_response,
+    _livekit_avatar_agent_metadata,
     _normalize_model,
     _safe_realtime_user_identifier,
     create_livekit_avatar_session,
@@ -69,6 +71,33 @@ def test_realtime_session_config_preserves_simplified_chinese_preference():
 
     assert "Simplified Chinese" in config["instructions"]
     assert "Simplified Chinese" in config["audio"]["input"]["transcription"]["prompt"]
+
+
+def test_livekit_avatar_metadata_includes_bounded_recent_context():
+    metadata = json.loads(_livekit_avatar_agent_metadata(
+        LiveKitAvatarSessionRequest(
+            conversation_id="conv_livekit",
+            interface_language="en",
+            messages=[
+                RealtimeContextMessage(role="user", content="ignored old message"),
+                *[
+                    RealtimeContextMessage(role="assistant" if index % 2 else "user", content=f"message {index}")
+                    for index in range(9)
+                ],
+                RealtimeContextMessage(role="user", content="x" * 2000),
+            ],
+        ),
+        memory_items=["preferred short explanations", "y" * 800],
+    ))
+
+    assert metadata["conversation_id"] == "conv_livekit"
+    assert metadata["interface_language"] == "en"
+    assert metadata["provider"] == "livekit_anam"
+    assert len(metadata["recent_messages"]) == 8
+    assert metadata["recent_messages"][0]["content"] == "message 2"
+    assert metadata["recent_messages"][-1] == {"role": "user", "content": "x" * 1000}
+    assert metadata["memory_items"] == ["preferred short explanations", "y" * 500]
+    assert metadata["parts_context"]["persona"]
 
 
 def test_realtime_session_rejects_unsupported_models():
@@ -142,6 +171,11 @@ async def test_create_livekit_avatar_session_mints_dispatch_token_without_loggin
     monkeypatch.setattr(realtime_routes.settings, "livekit_agent_name", "areqa-live-tutor")
     monkeypatch.setattr(realtime_routes.settings, "livekit_avatar_token_ttl_seconds", 120)
 
+    async def fake_memory_items(current_user_id: str | None, conversation_id: str) -> list[str]:
+        return ["learner prefers Mandarin explanations"] if current_user_id else []
+
+    monkeypatch.setattr(realtime_routes, "_livekit_avatar_memory_items", fake_memory_items)
+
     with caplog.at_level(logging.INFO):
         response = await create_livekit_avatar_session(
             LiveKitAvatarSessionRequest(conversation_id="conv_livekit", interface_language="zh-TW"),
@@ -157,6 +191,7 @@ async def test_create_livekit_avatar_session_mints_dispatch_token_without_loggin
     assert response.token
     assert "livekit.avatar_session_created" in caplog.text
     assert "livekit.debug.avatar_session_token_created" in caplog.text
+    assert "memory_count=1" in caplog.text
     assert "lk_test_secret" not in caplog.text
     assert response.token not in caplog.text
 

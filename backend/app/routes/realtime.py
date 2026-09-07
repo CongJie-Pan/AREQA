@@ -51,6 +51,11 @@ REALTIME_ALLOWED_VOICES = frozenset({
 })
 MAX_CONTEXT_MESSAGES = 24
 MAX_CONTEXT_MESSAGE_CHARS = 6000
+MAX_LIVEKIT_CONTEXT_MESSAGES = 8
+MAX_LIVEKIT_CONTEXT_MESSAGE_CHARS = 1000
+MAX_LIVEKIT_CONTEXT_TOTAL_CHARS = 6000
+MAX_LIVEKIT_MEMORY_ITEMS = 4
+MAX_LIVEKIT_MEMORY_ITEM_CHARS = 500
 MAX_SPEECH_AUDIO_BYTES = 25 * 1024 * 1024
 
 
@@ -93,10 +98,13 @@ class LiveKitAvatarSessionRequest(BaseModel):
             opaque room name and structured logs.
         interface_language: UI language carried in dispatch metadata for the
             LiveKit agent.
+        messages: Bounded recent chat snapshot used by the LiveKit agent's
+            AREQA context tool.
     """
 
     conversation_id: str = ""
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
+    messages: List[RealtimeContextMessage] = Field(default_factory=list, max_length=MAX_CONTEXT_MESSAGES)
 
 
 class LiveKitAvatarSessionResponse(BaseModel):
@@ -209,7 +217,34 @@ def _livekit_participant_identity(current_user_id: str | None) -> str:
     return f"learner-{digest}-{uuid.uuid4().hex[:8]}"
 
 
-def _livekit_avatar_agent_metadata(payload: LiveKitAvatarSessionRequest) -> str:
+async def _livekit_avatar_memory_items(current_user_id: str | None, conversation_id: str) -> list[str]:
+    """Return bounded memory context for LiveKit agent dispatch metadata."""
+
+    if not current_user_id:
+        return []
+    try:
+        from main import build_memory_view
+
+        memory_view = await build_memory_view(current_user_id)
+        return [
+            str(item.get("text", "")).strip()[:MAX_LIVEKIT_MEMORY_ITEM_CHARS]
+            for item in memory_view[:MAX_LIVEKIT_MEMORY_ITEMS]
+            if str(item.get("text", "")).strip()
+        ]
+    except Exception as exc:
+        logger.warning(
+            "livekit.avatar_memory_context_unavailable conversation_id=%s reason=%s",
+            conversation_id,
+            type(exc).__name__,
+        )
+        return []
+
+
+def _livekit_avatar_agent_metadata(
+    payload: LiveKitAvatarSessionRequest,
+    *,
+    memory_items: list[str] | None = None,
+) -> str:
     """Return bounded dispatch metadata for the LiveKit avatar agent.
 
     Args:
@@ -220,11 +255,28 @@ def _livekit_avatar_agent_metadata(payload: LiveKitAvatarSessionRequest) -> str:
         the agent to align language and correlate logs.
     """
 
+    context_messages: list[dict[str, str]] = []
+    remaining_chars = MAX_LIVEKIT_CONTEXT_TOTAL_CHARS
+    for item in payload.messages[-MAX_LIVEKIT_CONTEXT_MESSAGES:]:
+        content = item.content.strip()
+        if not content or remaining_chars <= 0:
+            continue
+        bounded_content = content[: min(MAX_LIVEKIT_CONTEXT_MESSAGE_CHARS, remaining_chars)]
+        context_messages.append({"role": item.role, "content": bounded_content})
+        remaining_chars -= len(bounded_content)
+
     return json.dumps(
         {
             "conversation_id": _safe_livekit_fragment(payload.conversation_id, fallback="conversation"),
             "interface_language": payload.interface_language,
             "provider": "livekit_anam",
+            "recent_messages": context_messages,
+            "memory_items": [
+                item.strip()[:MAX_LIVEKIT_MEMORY_ITEM_CHARS]
+                for item in (memory_items or [])[:MAX_LIVEKIT_MEMORY_ITEMS]
+                if item.strip()
+            ],
+            "parts_context": _build_realtime_parts_context(),
         },
         separators=(",", ":"),
     )
@@ -522,7 +574,8 @@ async def create_livekit_avatar_session(
 
     room_name = _livekit_avatar_room_name(payload.conversation_id)
     participant_identity = _livekit_participant_identity(current_user_id)
-    metadata = _livekit_avatar_agent_metadata(payload)
+    memory_items = await _livekit_avatar_memory_items(current_user_id, payload.conversation_id)
+    metadata = _livekit_avatar_agent_metadata(payload, memory_items=memory_items)
 
     try:
         room_config = livekit_api.RoomConfiguration(
@@ -568,12 +621,14 @@ async def create_livekit_avatar_session(
 
     if _live_tutor_debug_logs_enabled():
         logger.info(
-            "livekit.debug.avatar_session_token_created conversation_id=%s room_name=%s agent_name=%s authenticated=%s ttl_seconds=%s elapsed_ms=%s",
+            "livekit.debug.avatar_session_token_created conversation_id=%s room_name=%s agent_name=%s authenticated=%s ttl_seconds=%s supplied_message_count=%s memory_count=%s elapsed_ms=%s",
             payload.conversation_id,
             room_name,
             agent_name,
             bool(current_user_id),
             ttl_seconds,
+            len(payload.messages),
+            len(memory_items),
             int((time.time() - started_at) * 1000),
         )
     logger.info(

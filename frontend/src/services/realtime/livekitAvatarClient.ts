@@ -9,8 +9,10 @@
 
 import { API_CONFIG } from '@/config/api';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import type { DisplayMessage } from '@/store/chat';
 import { logger } from '@/utils/logger';
 import type { RealtimeClientController, StartRealtimeClientOptions } from './client';
+import { buildRealtimeContext } from './context';
 
 const AVATAR_VIDEO_READY_TIMEOUT_MS = 15_000;
 const LIVEKIT_TRANSCRIPTION_TOPIC = 'lk.transcription';
@@ -100,6 +102,7 @@ export function __setLiveKitClientLoaderForTests(
 async function createLiveKitAvatarSession(
   conversationId: string,
   interfaceLanguage: StartRealtimeClientOptions['interfaceLanguage'],
+  recentMessages: DisplayMessage[],
 ): Promise<LiveKitAvatarSessionResponse> {
   /** Fetches only browser-safe room metadata; signed tokens are never logged. */
   const response = await authenticatedFetch(API_CONFIG.liveKitAvatarSessionEndpoint, {
@@ -108,6 +111,7 @@ async function createLiveKitAvatarSession(
     body: JSON.stringify({
       conversation_id: conversationId,
       interface_language: interfaceLanguage,
+      messages: buildRealtimeContext(recentMessages).map(({ role, content }) => ({ role, content })),
     }),
   });
   if (!response.ok) {
@@ -228,7 +232,11 @@ export async function startLiveKitAvatarClient(
 
   try {
     options.onStatus('connecting');
-    const session = await createLiveKitAvatarSession(options.conversationId, options.interfaceLanguage);
+    const session = await createLiveKitAvatarSession(
+      options.conversationId,
+      options.interfaceLanguage,
+      options.recentMessages(),
+    );
     const livekit = await liveKitClientLoader();
     room = new livekit.Room();
     room.registerTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC, (reader, participantInfo) => {

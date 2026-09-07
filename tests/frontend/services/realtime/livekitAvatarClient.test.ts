@@ -4,6 +4,7 @@ import {
   __setLiveKitClientLoaderForTests,
   startLiveKitAvatarClient,
 } from '@/services/realtime/livekitAvatarClient';
+import type { DisplayMessage } from '@/store/chat';
 
 vi.mock('@/services/authenticatedFetch', () => ({
   authenticatedFetch: vi.fn(),
@@ -108,6 +109,17 @@ function livekitOptions(overrides: Partial<Parameters<typeof startLiveKitAvatarC
   };
 }
 
+function message(role: 'user' | 'assistant', content: string): DisplayMessage {
+  return {
+    id: `${role}_${content}`,
+    userId: 'user_1',
+    conversationId: 'conv_avatar',
+    role,
+    content,
+    createdAt: new Date('2026-09-07T00:00:00.000Z'),
+  };
+}
+
 function mockAvatarSession(): void {
   vi.mocked(authenticatedFetch).mockResolvedValueOnce(
     new Response(JSON.stringify({
@@ -162,12 +174,38 @@ describe('LiveKit avatar client', () => {
     expect(authenticatedFetch).toHaveBeenCalledWith('/api/realtime/livekit-avatar-session', expect.objectContaining({
       method: 'POST',
     }));
+    expect(JSON.parse(String(vi.mocked(authenticatedFetch).mock.calls[0]?.[1]?.body))).toEqual(expect.objectContaining({
+      conversation_id: 'conv_avatar',
+      interface_language: 'zh-TW',
+      messages: [],
+    }));
     expect(lastRoom?.connect).toHaveBeenCalledWith('wss://example.livekit.cloud', 'lk_join_token');
     expect(lastRoom?.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);
     controller.setMuted(true);
     expect(lastRoom?.localParticipant.setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
     controller.disconnect();
     expect(lastRoom?.disconnect).toHaveBeenCalled();
+  });
+
+  it('sends bounded recent message context when starting an avatar session', async () => {
+    mockAvatarSession();
+    const options = livekitOptions({
+      recentMessages: () => [
+        message('user', '請根據剛剛的討論繼續說明。'),
+        message('assistant', '我們剛剛正在討論傅立葉轉換的直覺。'),
+      ],
+    });
+
+    const clientPromise = startLiveKitAvatarClient(options);
+    await resolveAvatarVideoTrack();
+    await clientPromise;
+
+    expect(JSON.parse(String(vi.mocked(authenticatedFetch).mock.calls[0]?.[1]?.body))).toEqual(expect.objectContaining({
+      messages: [
+        { role: 'user', content: '請根據剛剛的討論繼續說明。' },
+        { role: 'assistant', content: '我們剛剛正在討論傅立葉轉換的直覺。' },
+      ],
+    }));
   });
 
   it('forwards subscribed LiveKit audio and video tracks to Live Tutor callbacks', async () => {
