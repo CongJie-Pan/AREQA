@@ -1,5 +1,7 @@
 from backend.services.answer_style_service import (
     AREQA_TEACHING_PROFILE_VERSION,
+    evidence_mode_overlays,
+    learning_technique_overlays,
     render_base_persona,
     render_learnlm_teaching_rules,
     render_paper_overview_style,
@@ -76,3 +78,26 @@ def test_response_strategy_style_reminder_marks_scaffolded_profile():
 
     assert f"profile: {AREQA_TEACHING_PROFILE_VERSION}" in prompt
     assert "首段用1-2句話直擊問題核心" in prompt
+
+
+def test_learning_technique_overlays_cover_prompt_templates():
+    """Learning overlays should turn reusable prompt techniques into policy snippets."""
+
+    overlays = learning_technique_overlays()
+
+    assert "10 次" in overlays["TWENTY_HOUR_PLAN"]
+    assert "費曼技巧" in overlays["FEYNMAN_LOOP"]
+    assert "5 分鐘" in overlays["ONE_PAGE_NOTE"]
+    assert "逐步提高難度" in overlays["DIAGNOSTIC_QUIZ"]
+    assert "Level 1" in overlays["LEVEL_PATH"]
+    assert "最多列 5 個" in overlays["RESOURCE_CURATOR"]
+
+
+def test_evidence_mode_overlays_cover_authoritative_source_behavior():
+    """Evidence overlays should preserve source strictness outside the base persona."""
+
+    overlays = evidence_mode_overlays()
+
+    assert "最新外部資料" in overlays["CURRENT_REQUIRED"]
+    assert "官方、學術、標準文件或專業機構來源" in overlays["AUTHORITY_REQUIRED"]
+    assert "至少兩個權威來源" in overlays["MULTI_SOURCE_REQUIRED"]

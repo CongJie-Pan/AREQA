@@ -42,7 +42,7 @@ class TutorAgent:
         prompt = f"""Decide whether this query needs external web search before answering.
 Search whenever the user asks a knowledge-based question, including conceptual explanations, definitions, facts, recent information, or reference lookups.
 Do not search ONLY if the user is making casual chat, greetings, or referring strictly to the ongoing conversation.
-Return JSON only: {{"should_search": true|false, "reason_code": "EXTERNAL_SEARCH_REQUIRED"|"INTERNAL_KNOWLEDGE_SUFFICIENT"}}.
+Return JSON only: {{"should_search": true|false, "reason_code": "EXTERNAL_SEARCH_REQUIRED"|"AUTHORITATIVE_SOURCE_REQUIRED"|"INTERNAL_KNOWLEDGE_SUFFICIENT"}}.
 Do not include reasoning or repeat the query.
 
 Query: {query}"""
@@ -64,7 +64,11 @@ Query: {query}"""
             if reason_code == "CURRENT_INFORMATION_REQUIRED":
                 reason_code = SearchReason.EXTERNAL_SEARCH_REQUIRED.value
             reason = SearchReason(reason_code)
-            if should_search != (reason is SearchReason.EXTERNAL_SEARCH_REQUIRED):
+            search_reasons = {
+                SearchReason.EXTERNAL_SEARCH_REQUIRED,
+                SearchReason.AUTHORITATIVE_SOURCE_REQUIRED,
+            }
+            if should_search != (reason in search_reasons):
                 raise ValueError("inconsistent search decision")
             return SearchDecision(should_search, reason)
         except Exception as exc:

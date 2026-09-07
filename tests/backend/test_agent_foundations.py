@@ -22,6 +22,8 @@ from backend.tools import ToolDefinition, ToolRegistry, ToolResult
         ("Who is the current president?", True),
         ("請問 夏目漱石有寫過哪些書 ?", True),
         ("列出村上春樹的代表作品", True),
+        ("高血壓治療指引有哪些重點？", True),
+        ("How should I evaluate medication side effects?", True),
     ],
 )
 def test_auto_search_policy_routes_current_information(query, expected):
@@ -33,6 +35,15 @@ def test_never_search_policy_cannot_be_overridden_by_current_query():
     decision = SearchPolicy().evaluate("今天最新新聞", SearchMode.NEVER)
     assert decision.should_search is False
     assert decision.reason == SearchReason.USER_DISABLED
+
+
+def test_auto_search_policy_marks_professional_domains_as_authoritative():
+    """High-risk professional topics should require external authoritative sources."""
+
+    decision = SearchPolicy().evaluate("請整理糖尿病藥物治療重點", SearchMode.AUTO)
+
+    assert decision.should_search is True
+    assert decision.reason == SearchReason.AUTHORITATIVE_SOURCE_REQUIRED
 
 
 @pytest.mark.asyncio
@@ -100,6 +111,32 @@ async def test_tutor_agent_uses_bounded_model_decision_for_auto_mode():
     assert decision.should_search is True
     assert decision.reason == SearchReason.CURRENT_INFORMATION_REQUIRED
     assert client.chat.completions.create.await_args.kwargs["max_tokens"] == 80
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_accepts_authoritative_source_reason():
+    """Model-assisted routing should accept professional-domain search reasons."""
+
+    session = ConversationRuntime().start_session(
+        user_id="user-1",
+        conversation_id="conversation-1",
+        request_id=None,
+        search_mode=SearchMode.AUTO,
+    )
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = (
+        '{"should_search": true, "reason_code": "AUTHORITATIVE_SOURCE_REQUIRED"}'
+    )
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(return_value=response)
+
+    decision = await TutorAgent().decide_search(
+        "medical treatment guideline", session.context, client=client, model="router-model"
+    )
+
+    assert decision.should_search is True
+    assert decision.reason == SearchReason.AUTHORITATIVE_SOURCE_REQUIRED
 
 
 @pytest.mark.asyncio

@@ -56,6 +56,27 @@ class FollowupMode(str, Enum):
     REQUIRED = "REQUIRED"
 
 
+class LearningTechnique(str, Enum):
+    """Structured learning move selected for the current tutoring turn."""
+
+    NONE = "NONE"
+    TWENTY_HOUR_PLAN = "TWENTY_HOUR_PLAN"
+    FEYNMAN_LOOP = "FEYNMAN_LOOP"
+    ONE_PAGE_NOTE = "ONE_PAGE_NOTE"
+    DIAGNOSTIC_QUIZ = "DIAGNOSTIC_QUIZ"
+    LEVEL_PATH = "LEVEL_PATH"
+    RESOURCE_CURATOR = "RESOURCE_CURATOR"
+
+
+class EvidenceMode(str, Enum):
+    """How strictly the answer should rely on external authority."""
+
+    NONE = "NONE"
+    CURRENT_REQUIRED = "CURRENT_REQUIRED"
+    AUTHORITY_REQUIRED = "AUTHORITY_REQUIRED"
+    MULTI_SOURCE_REQUIRED = "MULTI_SOURCE_REQUIRED"
+
+
 class VisualSupport(str, Enum):
     """Whether the current turn should spend visual enrichment cost."""
 
@@ -112,6 +133,10 @@ class ResponsePolicy:
         visual_support: Whether this turn should spend image retrieval or PDF
             rendering cost.
         visual_reason: Sanitized reason for the visual support decision.
+        learning_technique: Optional learning move that adapts the answer shape
+            without requiring users to paste prompt templates.
+        evidence_mode: Optional grounding requirement for current or
+            high-stakes professional-domain claims.
         attachment_task: Optional PDF-attachment task overlay selected by the
             same model policy call.
         attachment_reason: Sanitized reason for the attachment task decision.
@@ -131,6 +156,8 @@ class ResponsePolicy:
     followup_mode: FollowupMode
     visual_support: VisualSupport = VisualSupport.NONE
     visual_reason: VisualReason = VisualReason.NOT_NEEDED
+    learning_technique: LearningTechnique = LearningTechnique.NONE
+    evidence_mode: EvidenceMode = EvidenceMode.NONE
     attachment_task: AttachmentTask = AttachmentTask.NONE
     attachment_reason: AttachmentReason = AttachmentReason.NO_ATTACHMENT
     legacy_policy: str = "NORMAL"
@@ -146,6 +173,8 @@ class ResponsePolicy:
             "followup_mode": self.followup_mode.value,
             "visual_support": self.visual_support.value,
             "visual_reason": self.visual_reason.value,
+            "learning_technique": self.learning_technique.value,
+            "evidence_mode": self.evidence_mode.value,
             "attachment_task": self.attachment_task.value,
             "attachment_reason": self.attachment_reason.value,
             "legacy_policy": self.legacy_policy,
@@ -167,6 +196,8 @@ def default_response_policy() -> ResponsePolicy:
         followup_mode=FollowupMode.OPTIONAL,
         visual_support=VisualSupport.NONE,
         visual_reason=VisualReason.NOT_NEEDED,
+        learning_technique=LearningTechnique.NONE,
+        evidence_mode=EvidenceMode.NONE,
         attachment_task=AttachmentTask.NONE,
         attachment_reason=AttachmentReason.NO_ATTACHMENT,
         legacy_policy="NORMAL",
@@ -223,6 +254,16 @@ def response_policy_from_dict(payload: Any) -> ResponsePolicy:
             payload.get("visual_reason"),
             fallback.visual_reason,
         ),
+        learning_technique=_coerce_enum(
+            LearningTechnique,
+            payload.get("learning_technique"),
+            fallback.learning_technique,
+        ),
+        evidence_mode=_coerce_enum(
+            EvidenceMode,
+            payload.get("evidence_mode"),
+            fallback.evidence_mode,
+        ),
         attachment_task=_coerce_enum(
             AttachmentTask,
             payload.get("attachment_task"),
@@ -262,6 +303,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             followup_mode=FollowupMode.OPTIONAL,
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
+            learning_technique=LearningTechnique.NONE,
+            evidence_mode=EvidenceMode.NONE,
             attachment_task=AttachmentTask.NONE,
             attachment_reason=AttachmentReason.NO_ATTACHMENT,
             legacy_policy=legacy_policy,
@@ -275,6 +318,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             followup_mode=FollowupMode.OPTIONAL,
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
+            learning_technique=LearningTechnique.NONE,
+            evidence_mode=EvidenceMode.NONE,
             attachment_task=AttachmentTask.NONE,
             attachment_reason=AttachmentReason.NO_ATTACHMENT,
             legacy_policy=legacy_policy,
@@ -288,6 +333,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             followup_mode=FollowupMode.REQUIRED,
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
+            learning_technique=LearningTechnique.NONE,
+            evidence_mode=EvidenceMode.NONE,
             attachment_task=AttachmentTask.NONE,
             attachment_reason=AttachmentReason.NO_ATTACHMENT,
             legacy_policy=legacy_policy,

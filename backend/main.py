@@ -22,6 +22,8 @@ try:
     from app import runtime_state as _runtime_state
     from app.prompts import (
         BASE_PERSONA,
+        EVIDENCE_MODE_OVERLAYS,
+        LEARNING_TECHNIQUE_OVERLAYS,
         RESPONSE_POLICY_OVERLAYS,
         RuntimeFeatureResponse,
         SYSTEM_PROMPT_FORCE_THINK,
@@ -34,6 +36,8 @@ except ModuleNotFoundError:
     from backend.app import runtime_state as _runtime_state
     from backend.app.prompts import (
         BASE_PERSONA,
+        EVIDENCE_MODE_OVERLAYS,
+        LEARNING_TECHNIQUE_OVERLAYS,
         RESPONSE_POLICY_OVERLAYS,
         RuntimeFeatureResponse,
         SYSTEM_PROMPT_FORCE_THINK,

@@ -9,13 +9,16 @@ from backend.services.conversation_context_service import ConversationContextSer
 from backend.services.parts_context_service import PartsContext
 from backend.services.query_policy_service import (
     AnswerDepth,
+    EvidenceMode,
     FollowupMode,
+    LearningTechnique,
     ResponsePolicy,
     ResponseStructure,
     ResponseTone,
     TaskIntent,
     VisualSupport,
 )
+from backend.services.answer_style_service import evidence_mode_overlays, learning_technique_overlays
 from services.explicit_memory_cache import explicit_memory_cache
 
 
@@ -65,6 +68,31 @@ def test_visual_slot_instruction_requires_policy_or_explicit_visual(monkeypatch)
     )
 
     assert instruction == ""
+
+
+def test_response_policy_instruction_includes_learning_and_evidence_overlays():
+    """Final prompt strategy should include selected learning and evidence constraints."""
+
+    instruction = ConversationContextService._response_policy_instruction(
+        ResponsePolicy(
+            task_intent=TaskIntent.GENERAL_QA,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.OPTIONAL,
+            learning_technique=LearningTechnique.TWENTY_HOUR_PLAN,
+            evidence_mode=EvidenceMode.MULTI_SOURCE_REQUIRED,
+            legacy_policy="NORMAL",
+        ),
+        {},
+        learning_technique_overlays(),
+        evidence_mode_overlays(),
+    )
+
+    assert "learning_technique: TWENTY_HOUR_PLAN" in instruction
+    assert "拆成 10 次" in instruction
+    assert "evidence_mode: MULTI_SOURCE_REQUIRED" in instruction
+    assert "至少兩個權威來源" in instruction
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,9 @@ from backend.services.query_policy_service import (
     AnswerDepth,
     AttachmentReason,
     AttachmentTask,
+    EvidenceMode,
     FollowupMode,
+    LearningTechnique,
     ResponseStructure,
     ResponseTone,
     TaskIntent,
@@ -74,6 +76,8 @@ async def test_classify_response_policy_parses_valid_json(caplog):
     assert policy.followup_mode is FollowupMode.OPTIONAL
     assert policy.visual_support is VisualSupport.OPTIONAL
     assert policy.visual_reason is VisualReason.KNOWLEDGE_EXPLANATION
+    assert policy.learning_technique is LearningTechnique.NONE
+    assert policy.evidence_mode is EvidenceMode.NONE
     assert "orchestration.response_policy_selected" in caplog.text
     assert "我聽不懂" not in caplog.text
 
@@ -112,6 +116,8 @@ def test_response_policy_from_dict_sanitizes_unknown_values():
             "followup_mode": "ALWAYS",
             "visual_support": "ALWAYS",
             "visual_reason": "DECORATIVE",
+            "learning_technique": "MAGIC",
+            "evidence_mode": "TRUST_ME",
             "attachment_task": "AUTORUN",
             "attachment_reason": "GUESS",
             "legacy_policy": "BAD",
@@ -119,6 +125,83 @@ def test_response_policy_from_dict_sanitizes_unknown_values():
     )
 
     assert policy == default_response_policy()
+
+
+def test_response_policy_from_dict_accepts_learning_and_evidence_fields():
+    """Learning and evidence fields should be parsed as allowlisted policy metadata."""
+
+    policy = response_policy_from_dict(
+        {
+            "task_intent": "GENERAL_QA",
+            "answer_depth": "SCAFFOLDED",
+            "tone": "TUTORING",
+            "structure": "STEP_BY_STEP",
+            "followup_mode": "OPTIONAL",
+            "learning_technique": "TWENTY_HOUR_PLAN",
+            "evidence_mode": "MULTI_SOURCE_REQUIRED",
+            "legacy_policy": "NORMAL",
+        }
+    )
+
+    assert policy.learning_technique is LearningTechnique.TWENTY_HOUR_PLAN
+    assert policy.evidence_mode is EvidenceMode.MULTI_SOURCE_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_learning_guardrail_detects_short_quiz_request(caplog):
+    """Explicit short learning-technique phrases should not depend on classifier accuracy."""
+
+    caplog.set_level("INFO")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "GENERAL_QA",
+              "answer_depth": "SCAFFOLDED",
+              "tone": "TUTORING",
+              "structure": "STEP_BY_STEP",
+              "followup_mode": "OPTIONAL",
+              "learning_technique": "NONE",
+              "evidence_mode": "NONE",
+              "visual_support": "NONE",
+              "visual_reason": "NOT_NEEDED",
+              "attachment_task": "NONE",
+              "attachment_reason": "NO_ATTACHMENT",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "我剛學完貝葉斯定理，考我 10 題",
+        [],
+    )
+
+    assert policy.learning_technique is LearningTechnique.DIAGNOSTIC_QUIZ
+    assert "orchestration.response_policy_learning_guardrail_applied" in caplog.text
+    assert "貝葉斯" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_evidence_guardrail_requires_multiple_sources_for_medical_topic():
+    """Medical learning requests should carry stricter evidence requirements."""
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=_mock_chat_response("NORMAL"))
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "請幫我用 20 小時快速學會高血壓治療指引",
+        [],
+    )
+
+    assert policy.learning_technique is LearningTechnique.TWENTY_HOUR_PLAN
+    assert policy.evidence_mode is EvidenceMode.MULTI_SOURCE_REQUIRED
 
 
 def test_response_policy_from_legacy_push_limit_allows_reflection():

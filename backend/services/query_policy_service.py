@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import replace
 from typing import Any, Dict, List
 
 
@@ -17,7 +18,9 @@ from services.query_policy.models import (
     AnswerDepth,
     AttachmentReason,
     AttachmentTask,
+    EvidenceMode,
     FollowupMode,
+    LearningTechnique,
     ResponsePolicy,
     ResponseStructure,
     ResponseTone,
@@ -37,6 +40,141 @@ from services.query_policy.pdf_guardrails import (
     count_pdf_attachments,
     paper_auto_explain_instruction,
 )
+
+
+_LEARNING_TECHNIQUE_PATTERNS: tuple[tuple[LearningTechnique, tuple[re.Pattern[str], ...]], ...] = (
+    (
+        LearningTechnique.TWENTY_HOUR_PLAN,
+        tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+            r"20\s*小時|二十\s*小時|快速學會|快速掌握|rapidly learn|20-hour",
+        )),
+    ),
+    (
+        LearningTechnique.FEYNMAN_LOOP,
+        tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+            r"費曼|feynman|用自己的話|重新說明|復述|teach me then quiz",
+        )),
+    ),
+    (
+        LearningTechnique.ONE_PAGE_NOTE,
+        tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+            r"一頁|5\s*分鐘.*複習|重點筆記|cheat\s*sheet|one[- ]page",
+        )),
+    ),
+    (
+        LearningTechnique.DIAGNOSTIC_QUIZ,
+        tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+            r"測驗|考我|出.*題|quiz me|test my understanding|knowledge gap",
+        )),
+    ),
+    (
+        LearningTechnique.LEVEL_PATH,
+        tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+            r"五.*階段|5.*層級|level\s*1|學習路線|路線圖|roadmap",
+        )),
+    ),
+    (
+        LearningTechnique.RESOURCE_CURATOR,
+        tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+            r"學習資源|推薦.*(書|影片|課程|專家|資源)|best resources|recommend.*(book|course|video|expert)",
+        )),
+    ),
+)
+
+_CURRENT_EVIDENCE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"\b(today|latest|current|recent|news|price|weather|schedule|version|guideline)\b",
+    r"今天|目前|最新|近期|新聞|價格|天氣|時程|版本|現任|現在|指引|指南",
+    r"20\d{2}",
+))
+_AUTHORITY_EVIDENCE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"醫學|醫療|臨床|疾病|症狀|診斷|治療|藥物|副作用|疫苗|手術|癌症|感染",
+    r"\b(medical|medicine|clinical|diagnosis|treatment|drug|medication|dose|vaccine|surgery|cancer|infection|guideline)\b",
+    r"法律|法規|判例|合約|稅務|投資|保險|退休金|理財建議",
+    r"\b(legal|law|regulation|contract|tax|investment|insurance|financial advice)\b",
+))
+
+
+def _detect_learning_technique(user_msg: str) -> LearningTechnique:
+    """Return the strongest deterministic learning move implied by the user text."""
+
+    normalized = str(user_msg or "")
+    for technique, patterns in _LEARNING_TECHNIQUE_PATTERNS:
+        if any(pattern.search(normalized) for pattern in patterns):
+            return technique
+    return LearningTechnique.NONE
+
+
+def _detect_evidence_mode(user_msg: str) -> EvidenceMode:
+    """Return the minimum external-grounding level for the user text.
+
+    Args:
+        user_msg: Current user message. It is inspected locally and must not be
+            logged by callers.
+
+    Returns:
+        A conservative evidence mode. Professional domains outrank recency so
+        medical, legal, and financial topics can require multiple authoritative
+        sources even when the wording does not mention "latest".
+
+    Side Effects:
+        None.
+    """
+
+    normalized = str(user_msg or "")
+    if any(pattern.search(normalized) for pattern in _AUTHORITY_EVIDENCE_PATTERNS):
+        return EvidenceMode.MULTI_SOURCE_REQUIRED
+    if any(pattern.search(normalized) for pattern in _CURRENT_EVIDENCE_PATTERNS):
+        return EvidenceMode.CURRENT_REQUIRED
+    return EvidenceMode.NONE
+
+
+def _apply_learning_and_evidence_guardrails(
+    policy: ResponsePolicy,
+    *,
+    user_msg: str,
+) -> ResponsePolicy:
+    """Apply deterministic tutoring-technique and evidence-mode guardrails.
+
+    Args:
+        policy: Sanitized classifier output.
+        user_msg: Current user message. It is never logged.
+
+    Returns:
+        A policy with local deterministic upgrades when the classifier misses an
+        explicit learning technique or high-authority domain.
+
+    Side Effects:
+        Emits ``orchestration.response_policy_learning_guardrail_applied`` with
+        safe enum metadata only when the guardrail changes the policy.
+    """
+
+    detected_technique = _detect_learning_technique(user_msg)
+    detected_evidence = _detect_evidence_mode(user_msg)
+    learning_technique = (
+        detected_technique
+        if policy.learning_technique is LearningTechnique.NONE
+        else policy.learning_technique
+    )
+    evidence_rank = {
+        EvidenceMode.NONE: 0,
+        EvidenceMode.CURRENT_REQUIRED: 1,
+        EvidenceMode.AUTHORITY_REQUIRED: 2,
+        EvidenceMode.MULTI_SOURCE_REQUIRED: 3,
+    }
+    evidence_mode = policy.evidence_mode
+    if evidence_rank[detected_evidence] > evidence_rank[evidence_mode]:
+        evidence_mode = detected_evidence
+    guarded = replace(
+        policy,
+        learning_technique=learning_technique,
+        evidence_mode=evidence_mode,
+    )
+    if guarded != policy:
+        logger.info(
+            "orchestration.response_policy_learning_guardrail_applied metadata=%s",
+            json.dumps(guarded.safe_log_metadata(), ensure_ascii=False, sort_keys=True),
+        )
+    return guarded
 
 
 async def parse_and_decompose_query_impl(
@@ -175,6 +313,8 @@ Return strict JSON only with these fields:
   "tone": "PLAIN" | "TUTORING" | "ANALYTICAL" | "LITERARY",
   "structure": "SHORT" | "STEP_BY_STEP" | "NOTE_DRAFT" | "ARGUMENT",
   "followup_mode": "NONE" | "OPTIONAL" | "REQUIRED",
+  "learning_technique": "NONE" | "TWENTY_HOUR_PLAN" | "FEYNMAN_LOOP" | "ONE_PAGE_NOTE" | "DIAGNOSTIC_QUIZ" | "LEVEL_PATH" | "RESOURCE_CURATOR",
+  "evidence_mode": "NONE" | "CURRENT_REQUIRED" | "AUTHORITY_REQUIRED" | "MULTI_SOURCE_REQUIRED",
   "visual_support": "NONE" | "OPTIONAL" | "REQUIRED",
   "visual_reason": "EXPLICIT_VISUAL_REQUEST" | "KNOWLEDGE_EXPLANATION" | "ANSWER_SEEKING" | "ATTACHMENT_FIGURE_EXPLANATION" | "NOT_NEEDED",
   "attachment_task": "NONE" | "PAPER_AUTO_EXPLAIN" | "PAPER_TARGETED_QA",
@@ -187,6 +327,19 @@ Decision rules:
 - If the user asks for a forced-choice answer, exam answer, or "only choose one", choose ANSWER_EXAM, DIRECT, PLAIN, SHORT, followup NONE.
 - If the user asks to complete, revise, or polish notes, choose WRITE_NOTE, SCAFFOLDED, TUTORING, NOTE_DRAFT.
 - If the user asks for the core, essence, viewpoint, reflection, historical meaning, literary feeling, or "what do you think", choose DISCUSS_IDEA with REFLECTIVE or DEEP_DIVE.
+- Learning technique policy:
+  - Set TWENTY_HOUR_PLAN when the user asks to rapidly learn a skill, especially "20 hours", "快速學會", or a compact practice plan.
+  - Set FEYNMAN_LOOP when the user asks for Feynman technique, simple explanation followed by their own restatement, or iterative correction.
+  - Set ONE_PAGE_NOTE when the user asks for one-page notes, compact review sheets, cheat sheets, or 5-minute review material.
+  - Set DIAGNOSTIC_QUIZ when the user asks to be quizzed, tested, or to find knowledge gaps.
+  - Set LEVEL_PATH when the user asks for levels, staged roadmap, beginner-to-advanced path, or pass criteria.
+  - Set RESOURCE_CURATOR when the user asks for the best books, videos, courses, experts, or learning resources.
+  - Otherwise set NONE.
+- Evidence policy:
+  - Set CURRENT_REQUIRED for latest/current/version/schedule/price/news/guideline requests.
+  - Set MULTI_SOURCE_REQUIRED for medical, clinical, diagnosis, treatment, medication, legal, tax, insurance, or financial-advice topics.
+  - Set AUTHORITY_REQUIRED for professional-domain reference questions that need authoritative sources but not necessarily multiple sources.
+  - Otherwise set NONE.
 - Set visual_support REQUIRED only when the user explicitly asks for a diagram, image, chart, graph, figure, map, or visual explanation.
 - Set visual_support OPTIONAL when the user is asking for knowledge explanation, problem solving, answer seeking, paper/attachment figure interpretation, process/mechanism explanation, chart interpretation, or graph-heavy concepts where an image would materially improve the answer.
 - Set visual_support NONE for casual chat, note writing/polishing, reflective discussion, administrative requests, short factual answers, and any case where an image would be decorative.
@@ -214,7 +367,7 @@ Current user message:
                 {"role": "system", "content": "Return only valid JSON. Do not explain."},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=280,
+            max_tokens=360,
             temperature=0.1,
         )
         content = response.choices[0].message.content.strip()
@@ -228,6 +381,7 @@ Current user message:
                 user_msg=user_msg,
                 has_pdf_attachment=has_pdf_attachment,
             )
+            policy = _apply_learning_and_evidence_guardrails(policy, user_msg=user_msg)
             policy = await _apply_pdf_semantic_auto_explain_fallback(
                 policy,
                 client=client,
@@ -252,6 +406,7 @@ Current user message:
             user_msg=user_msg,
             has_pdf_attachment=has_pdf_attachment,
         )
+        policy = _apply_learning_and_evidence_guardrails(policy, user_msg=user_msg)
         policy = await _apply_pdf_semantic_auto_explain_fallback(
             policy,
             client=client,
@@ -270,6 +425,7 @@ Current user message:
             user_msg=user_msg,
             has_pdf_attachment=has_pdf_attachment,
         )
+        fallback = _apply_learning_and_evidence_guardrails(fallback, user_msg=user_msg)
         fallback = await _apply_pdf_semantic_auto_explain_fallback(
             fallback,
             client=client,

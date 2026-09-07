@@ -251,6 +251,8 @@ class ConversationContextService:
             SYSTEM_PROMPT_NORMAL,
             SYSTEM_PROMPT_WITH_RAG,
             SYSTEM_PROMPT_WITH_RAG_THINK,
+            EVIDENCE_MODE_OVERLAYS,
+            LEARNING_TECHNIQUE_OVERLAYS,
             RESPONSE_POLICY_OVERLAYS,
         )
 
@@ -290,6 +292,8 @@ class ConversationContextService:
         system_prompt += self._response_policy_instruction(
             response_policy or default_response_policy(),
             RESPONSE_POLICY_OVERLAYS,
+            LEARNING_TECHNIQUE_OVERLAYS,
+            EVIDENCE_MODE_OVERLAYS,
         )
         if settings.enable_parts_prompt_context and parts_context is not None:
             system_prompt += format_parts_context(parts_context)
@@ -529,12 +533,18 @@ class ConversationContextService:
     def _response_policy_instruction(
         response_policy: ResponsePolicy,
         overlays: dict[str, str],
+        learning_overlays: dict[str, str] | None = None,
+        evidence_overlays: dict[str, str] | None = None,
     ) -> str:
         """Translate an EDF response policy into final prompt constraints.
 
         Args:
             response_policy: Decision-stage policy selected for this turn.
             overlays: Reusable style snippets owned by ``backend.main``.
+            learning_overlays: Optional learning-technique prompt snippets keyed
+                by the internal learning technique enum value.
+            evidence_overlays: Optional evidence-mode prompt snippets keyed by
+                the internal evidence mode enum value.
 
         Returns:
             A Traditional Chinese prompt block that constrains the Feedback
@@ -568,6 +578,14 @@ class ConversationContextService:
 
         depth_overlay = overlays.get(response_policy.answer_depth.value, "")
         tone_overlay = overlays.get(response_policy.tone.value, "")
+        learning_overlay = (learning_overlays or {}).get(
+            response_policy.learning_technique.value,
+            "",
+        )
+        evidence_overlay = (evidence_overlays or {}).get(
+            response_policy.evidence_mode.value,
+            "",
+        )
         style_reminder = render_response_strategy_style_reminder(
             answer_depth=response_policy.answer_depth,
             tone=response_policy.tone,
@@ -589,6 +607,10 @@ class ConversationContextService:
             f"\n- tone: {response_policy.tone.value}{tone_overlay}"
             f"\n- structure: {response_policy.structure.value}，{structure_rules[response_policy.structure]}"
             f"\n- followup_mode: {response_policy.followup_mode.value}，{followup_rules[response_policy.followup_mode]}"
+            f"\n- learning_technique: {response_policy.learning_technique.value}"
+            f"{('，' + learning_overlay) if learning_overlay else ''}"
+            f"\n- evidence_mode: {response_policy.evidence_mode.value}"
+            f"{('，' + evidence_overlay) if evidence_overlay else ''}"
             f"{style_reminder}"
             f"{guardrail}"
         )

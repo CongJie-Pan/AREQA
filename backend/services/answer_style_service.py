@@ -162,6 +162,76 @@ def response_policy_overlays(contract: AnswerStyleContract = AREQA_TEACHING_V1) 
     }
 
 
+def learning_technique_overlays() -> dict[str, str]:
+    """Render reusable prompt overlays for explicit learning techniques.
+
+    Returns:
+        A dictionary keyed by ``LearningTechnique`` enum values. The overlays
+        constrain answer shape only; search authorization, citations, memory,
+        and safety remain owned by higher-priority orchestration policies.
+
+    Side Effects:
+        None.
+    """
+
+    return {
+        "TWENTY_HOUR_PLAN": (
+            "套用 20 小時技能學習計畫：聚焦能產生 80% 成果的核心概念，"
+            "拆成 10 次、每次 2 小時；每次列出目標、練習任務、輸出成果，"
+            "並保留 15 分鐘複習。資源推薦要少而精。"
+        ),
+        "FEYNMAN_LOOP": (
+            "套用費曼技巧：先用最簡單語言解釋，再請使用者用自己的話復述；"
+            "下一輪應指出錯誤、補教未理解處，並持續迭代直到能清楚說明。"
+        ),
+        "ONE_PAGE_NOTE": (
+            "產出一頁重點筆記：只保留核心概念、關鍵關係、簡單圖解描述與實例；"
+            "目標是讓使用者能在 5 分鐘內複習。"
+        ),
+        "DIAGNOSTIC_QUIZ": (
+            "套用診斷測驗：依序提出問題，不要一次公布全部答案；每次回答後評分，"
+            "指出錯誤、補上正解，並逐步提高難度。"
+        ),
+        "LEVEL_PATH": (
+            "建立五階段學習路線：從 Level 1 初學者到 Level 5 進階者，"
+            "每階段包含學習目標、應會任務、通關標準與下一步。"
+        ),
+        "RESOURCE_CURATOR": (
+            "策展學習資源：最多列 5 個高價值資源，說明各自能教什麼、適合誰、"
+            "為何值得投入時間；若資源可變動或屬專業領域，需以外部來源確認。"
+        ),
+    }
+
+
+def evidence_mode_overlays() -> dict[str, str]:
+    """Render reusable prompt overlays for evidence-grounding strictness.
+
+    Returns:
+        A dictionary keyed by ``EvidenceMode`` enum values. These overlays tell
+        the answer model how conservative to be after orchestration has already
+        decided whether external search context is available.
+
+    Side Effects:
+        None.
+    """
+
+    return {
+        "CURRENT_REQUIRED": (
+            "本題涉及可能變動的資訊；若已有 <context>，必須優先依據最新外部資料回答，"
+            "並清楚標示來源。若沒有 <context>，必須說明資訊可能過期，不要假裝已確認。"
+        ),
+        "AUTHORITY_REQUIRED": (
+            "本題需要權威依據；若已有 <context>，只採用官方、學術、標準文件或專業機構來源。"
+            "若來源不足，請明確說明限制與不確定性。"
+        ),
+        "MULTI_SOURCE_REQUIRED": (
+            "本題屬醫學、法律、金融或其他高風險專業領域；若已有 <context>，"
+            "必須交叉比對至少兩個權威來源，區分共識、差異與不確定處。"
+            "不得提供個人化診斷、治療、法律或投資決策；必要時建議諮詢合格專業人士。"
+        ),
+    }
+
+
 def render_learnlm_teaching_rules(contract: AnswerStyleContract = AREQA_TEACHING_V1) -> str:
     """Render LearnLM-style interaction rules from the shared style contract.
 

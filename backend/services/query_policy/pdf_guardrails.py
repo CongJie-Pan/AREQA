@@ -142,6 +142,8 @@ def _apply_attachment_guardrails(
                 followup_mode=policy.followup_mode,
                 visual_support=VisualSupport.OPTIONAL,
                 visual_reason=VisualReason.ATTACHMENT_FIGURE_EXPLANATION,
+                learning_technique=policy.learning_technique,
+                evidence_mode=policy.evidence_mode,
                 attachment_task=policy.attachment_task,
                 attachment_reason=policy.attachment_reason,
                 legacy_policy=policy.legacy_policy,
@@ -160,6 +162,8 @@ def _apply_attachment_guardrails(
         followup_mode=policy.followup_mode,
         visual_support=policy.visual_support,
         visual_reason=policy.visual_reason,
+        learning_technique=policy.learning_technique,
+        evidence_mode=policy.evidence_mode,
         attachment_task=AttachmentTask.NONE,
         attachment_reason=AttachmentReason.NO_ATTACHMENT,
         legacy_policy=policy.legacy_policy,
@@ -239,6 +243,8 @@ def _apply_pdf_auto_explain_guardrail(
             if policy.visual_support is not VisualSupport.NONE
             else VisualReason.ATTACHMENT_FIGURE_EXPLANATION
         ),
+        learning_technique=policy.learning_technique,
+        evidence_mode=policy.evidence_mode,
         attachment_task=AttachmentTask.PAPER_AUTO_EXPLAIN,
         attachment_reason=AttachmentReason.GENERIC_PAPER_EXPLANATION,
         legacy_policy=policy.legacy_policy,
@@ -285,6 +291,8 @@ def _pdf_auto_explain_policy_from(
             if policy.visual_support is not VisualSupport.NONE
             else VisualReason.ATTACHMENT_FIGURE_EXPLANATION
         ),
+        learning_technique=policy.learning_technique,
+        evidence_mode=policy.evidence_mode,
         attachment_task=AttachmentTask.PAPER_AUTO_EXPLAIN,
         attachment_reason=reason,
         legacy_policy=policy.legacy_policy,

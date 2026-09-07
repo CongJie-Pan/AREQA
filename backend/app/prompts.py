@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from services.answer_style_service import render_base_persona, response_policy_overlays
+from services.answer_style_service import (
+    evidence_mode_overlays,
+    learning_technique_overlays,
+    render_base_persona,
+    response_policy_overlays,
+)
 
 
 class RuntimeFeatureResponse(BaseModel):
@@ -30,6 +35,8 @@ class RuntimeFeatureResponse(BaseModel):
 
 BASE_PERSONA = render_base_persona()
 RESPONSE_POLICY_OVERLAYS = response_policy_overlays()
+LEARNING_TECHNIQUE_OVERLAYS = learning_technique_overlays()
+EVIDENCE_MODE_OVERLAYS = evidence_mode_overlays()
 
 SYSTEM_PROMPT_NORMAL = BASE_PERSONA + (
     "【重要格式限制】\n"
