@@ -231,6 +231,7 @@ describe('LiveKit avatar client', () => {
   });
 
   it('forwards LiveKit transcription text streams through realtime callbacks', async () => {
+    vi.useFakeTimers();
     mockAvatarSession();
     const options = livekitOptions();
     const clientPromise = startLiveKitAvatarClient(options);
@@ -248,12 +249,46 @@ describe('LiveKit avatar client', () => {
     await flushAsyncWork();
     await resolveAvatarVideoTrack();
     await clientPromise;
+    await vi.advanceTimersByTimeAsync(900);
 
     expect(options.onUserTranscript).toHaveBeenCalledWith('你好，我想練習口說', 'learner-abc-segment');
     expect(options.onAssistantResponseStarted).toHaveBeenCalledOnce();
     expect(options.onAssistantTranscriptDelta).toHaveBeenNthCalledWith(1, '可以，');
     expect(options.onAssistantTranscriptDelta).toHaveBeenNthCalledWith(2, '我們開始。');
     expect(options.onAssistantTranscriptDone).toHaveBeenCalledWith('可以，我們開始。');
+  });
+
+  it('merges adjacent assistant transcription streams before finalizing the visible reply', async () => {
+    vi.useFakeTimers();
+    mockAvatarSession();
+    const options = livekitOptions();
+    const clientPromise = startLiveKitAvatarClient(options);
+    await vi.waitFor(() => {
+      expect(lastRoom).not.toBeNull();
+      expect(lastRoom?.textHandlers.has('lk.transcription')).toBe(true);
+    });
+
+    lastRoom?.emitTextStream('lk.transcription', ['好的，我先簡單說明。'], 'areqa-live-tutor', {
+      'lk.transcription_final': 'true',
+    });
+    await flushAsyncWork();
+    await vi.advanceTimersByTimeAsync(450);
+    lastRoom?.emitTextStream('lk.transcription', ['這篇論文是在討論 ICAP。'], 'areqa-live-tutor', {
+      'lk.transcription_final': 'true',
+    });
+    await flushAsyncWork();
+    await resolveAvatarVideoTrack();
+    await clientPromise;
+
+    expect(options.onAssistantResponseStarted).toHaveBeenCalledOnce();
+    expect(options.onAssistantTranscriptDelta).toHaveBeenNthCalledWith(1, '好的，我先簡單說明。');
+    expect(options.onAssistantTranscriptDelta).toHaveBeenNthCalledWith(2, '這篇論文是在討論 ICAP。');
+    expect(options.onAssistantTranscriptDone).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(900);
+
+    expect(options.onAssistantTranscriptDone).toHaveBeenCalledOnce();
+    expect(options.onAssistantTranscriptDone).toHaveBeenCalledWith('好的，我先簡單說明。這篇論文是在討論 ICAP。');
   });
 
   it('reports setup errors through the existing Live Tutor error boundary', async () => {

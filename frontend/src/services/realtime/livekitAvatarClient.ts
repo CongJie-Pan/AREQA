@@ -15,6 +15,7 @@ import type { RealtimeClientController, StartRealtimeClientOptions } from './cli
 import { buildRealtimeContext } from './context';
 
 const AVATAR_VIDEO_READY_TIMEOUT_MS = 15_000;
+const ASSISTANT_TRANSCRIPT_DONE_DEBOUNCE_MS = 900;
 const LIVEKIT_TRANSCRIPTION_TOPIC = 'lk.transcription';
 
 interface LiveKitAvatarSessionResponse {
@@ -58,6 +59,11 @@ type LiveKitTextStreamHandler = (
   reader: LiveKitTextStreamReader,
   participantInfo: { identity: string },
 ) => void;
+
+interface AssistantTranscriptCoordinator {
+  append: (chunk: string) => void;
+  scheduleDone: () => void;
+}
 
 interface LiveKitClientModule {
   Room: new () => LiveKitRoomLike;
@@ -148,22 +154,18 @@ async function handleLiveKitTranscriptionStream(
   learnerIdentity: string,
   options: StartRealtimeClientOptions,
   conversationId: string,
+  assistantTranscript: AssistantTranscriptCoordinator,
 ): Promise<void> {
   const isUserTranscript = participantIdentity === learnerIdentity;
   const final = isFinalTranscription(reader.info?.attributes?.['lk.transcription_final']);
   let transcript = '';
-  let assistantStarted = false;
 
   try {
     for await (const chunk of reader) {
       if (!chunk) continue;
       transcript += chunk;
       if (!isUserTranscript) {
-        if (!assistantStarted) {
-          assistantStarted = true;
-          options.onAssistantResponseStarted?.();
-        }
-        options.onAssistantTranscriptDelta(chunk);
+        assistantTranscript.append(chunk);
       }
     }
 
@@ -172,7 +174,7 @@ async function handleLiveKitTranscriptionStream(
     if (isUserTranscript) {
       options.onUserTranscript(trimmedTranscript, reader.info?.id);
     } else {
-      options.onAssistantTranscriptDone(trimmedTranscript);
+      assistantTranscript.scheduleDone();
     }
     logger.info('livekit.avatar_transcription_forwarded', {
       conversationId,
@@ -216,7 +218,45 @@ export async function startLiveKitAvatarClient(
   let avatarVideoReady = false;
   let resolveAvatarVideoReady: (() => void) | null = null;
   let avatarVideoReadyTimeout: number | null = null;
+  let assistantTranscriptDoneTimeout: number | null = null;
+  let pendingAssistantTranscript = '';
+  let assistantResponseOpen = false;
   const conversationId = options.getConversationId?.() || options.conversationId;
+  const clearAssistantTranscriptDoneTimeout = () => {
+    if (!assistantTranscriptDoneTimeout) return;
+    window.clearTimeout(assistantTranscriptDoneTimeout);
+    assistantTranscriptDoneTimeout = null;
+  };
+  const flushAssistantTranscript = () => {
+    clearAssistantTranscriptDoneTimeout();
+    const transcript = pendingAssistantTranscript.trim();
+    pendingAssistantTranscript = '';
+    assistantResponseOpen = false;
+    if (!transcript) return;
+    options.onAssistantTranscriptDone(transcript);
+    logger.info('livekit.avatar_assistant_transcript_flushed', {
+      conversationId,
+      transcriptChars: transcript.length,
+    });
+  };
+  const assistantTranscript: AssistantTranscriptCoordinator = {
+    append: (chunk: string) => {
+      clearAssistantTranscriptDoneTimeout();
+      if (!assistantResponseOpen) {
+        assistantResponseOpen = true;
+        options.onAssistantResponseStarted?.();
+      }
+      pendingAssistantTranscript += chunk;
+      options.onAssistantTranscriptDelta(chunk);
+    },
+    scheduleDone: () => {
+      clearAssistantTranscriptDoneTimeout();
+      assistantTranscriptDoneTimeout = window.setTimeout(
+        flushAssistantTranscript,
+        ASSISTANT_TRANSCRIPT_DONE_DEBOUNCE_MS,
+      );
+    },
+  };
   const avatarVideoReadyPromise = new Promise<void>((resolve, reject) => {
     resolveAvatarVideoReady = () => {
       if (avatarVideoReadyTimeout) window.clearTimeout(avatarVideoReadyTimeout);
@@ -246,6 +286,7 @@ export async function startLiveKitAvatarClient(
         session.participant_identity,
         options,
         conversationId,
+        assistantTranscript,
       );
     });
     logger.info('livekit.avatar_transcription_handler_registered', {
@@ -316,6 +357,7 @@ export async function startLiveKitAvatarClient(
       },
       cancelSpeech: () => undefined,
       disconnect: () => {
+        flushAssistantTranscript();
         room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
         room?.disconnect();
         room = null;
@@ -323,6 +365,7 @@ export async function startLiveKitAvatarClient(
     };
   } catch (error) {
     if (avatarVideoReadyTimeout) window.clearTimeout(avatarVideoReadyTimeout);
+    flushAssistantTranscript();
     room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
     room?.disconnect();
     const nextError = error instanceof Error ? error : new Error(String(error));

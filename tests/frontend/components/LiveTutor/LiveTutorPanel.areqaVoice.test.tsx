@@ -376,4 +376,36 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     });
     act(() => view.unmount());
   });
+
+  it('preserves interrupted assistant text and clears streaming state when voice mode closes', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    act(() => {
+      realtimeOptions?.onAssistantResponseStarted?.();
+      realtimeOptions?.onAssistantTranscriptDelta('中斷前已經輸出的內容');
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().messages.at(-1)).toEqual(expect.objectContaining({
+        role: 'assistant',
+        content: '中斷前已經輸出的內容',
+        isStreaming: true,
+      }));
+    });
+
+    act(() => {
+      useLiveTutorStore.getState().requestClose();
+    });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().messages.at(-1)).toEqual(expect.objectContaining({
+        role: 'assistant',
+        content: '中斷前已經輸出的內容',
+        isStreaming: false,
+        voicePlayback: 'interrupted',
+      }));
+    });
+    act(() => view.unmount());
+  });
 });

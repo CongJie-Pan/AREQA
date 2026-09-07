@@ -30,18 +30,20 @@ OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2.1-min
 OPENAI_REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "marin")
 ANAM_AVATAR_NAME = os.getenv("ANAM_AVATAR_NAME", "Mei")
 ANAM_AVATAR_ID = os.getenv("ANAM_AVATAR_ID", "").strip()
+LIVEKIT_AGENT_AUTO_GREETING = os.getenv("LIVEKIT_AGENT_AUTO_GREETING", "false").strip().lower() == "true"
 MAX_CONTEXT_MESSAGES = 8
 MAX_CONTEXT_MESSAGE_CHARS = 1000
 MAX_MEMORY_ITEMS = 4
 MAX_MEMORY_ITEM_CHARS = 500
 
 logger.info(
-    "livekit_agent.worker_config_ready agent_name=%s livekit_configured=%s openai_configured=%s anam_configured=%s avatar_configured=%s model=%s voice=%s",
+    "livekit_agent.worker_config_ready agent_name=%s livekit_configured=%s openai_configured=%s anam_configured=%s avatar_configured=%s auto_greeting=%s model=%s voice=%s",
     AGENT_NAME,
     bool(os.getenv("LIVEKIT_URL") and os.getenv("LIVEKIT_API_KEY") and os.getenv("LIVEKIT_API_SECRET")),
     bool(os.getenv("OPENAI_API_KEY")),
     bool(os.getenv("ANAM_API_KEY")),
     bool(ANAM_AVATAR_ID),
+    LIVEKIT_AGENT_AUTO_GREETING,
     OPENAI_REALTIME_MODEL,
     OPENAI_REALTIME_VOICE,
 )
@@ -290,9 +292,21 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
             audio_output=not bool(ANAM_AVATAR_ID),
         ),
     )
-    await session.generate_reply(
-        instructions="Greet the learner briefly and ask what they want to work on."
-    )
+    if LIVEKIT_AGENT_AUTO_GREETING:
+        logger.info(
+            "livekit_agent.auto_greeting_requested room=%s conversation_id=%s",
+            ctx.room.name,
+            metadata["conversation_id"],
+        )
+        await session.generate_reply(
+            instructions="Greet the learner briefly and ask what they want to work on."
+        )
+    else:
+        logger.info(
+            "livekit_agent.auto_greeting_skipped room=%s conversation_id=%s",
+            ctx.room.name,
+            metadata["conversation_id"],
+        )
 
 
 if __name__ == "__main__":
