@@ -2,6 +2,7 @@ import pytest
 import json
 import asyncio
 import httpx
+import os
 import respx
 from unittest.mock import patch
 from backend.services.orchestration_service import OrchestrationService
@@ -17,6 +18,7 @@ def mock_orchestrator():
 async def test_perplexity_search_success(mock_orchestrator):
     import os
     with patch.dict(os.environ, {
+        "WEB_SEARCH_PROVIDER": "perplexity",
         "PERPLEXITY_API_KEY": "dummy_api_key",
         "WEB_SEARCH_MAX_RESULTS": "15",
         "WEB_SEARCH_CONTEXT_SIZE": "high",
@@ -92,6 +94,7 @@ async def test_perplexity_search_success(mock_orchestrator):
 async def test_perplexity_search_omits_sources_without_valid_url(mock_orchestrator):
     import os
     with patch.dict(os.environ, {
+        "WEB_SEARCH_PROVIDER": "perplexity",
         "PERPLEXITY_API_KEY": "dummy_api_key",
         "ENABLE_WEB_QUERY_REWRITE": "",
         "REDIS_URL": "redis://localhost:0",
@@ -146,7 +149,10 @@ async def test_perplexity_search_omits_sources_without_valid_url(mock_orchestrat
 @respx.mock
 async def test_perplexity_search_api_failure(mock_orchestrator):
     import os
-    with patch.dict(os.environ, {"PERPLEXITY_API_KEY": "dummy_api_key"}):
+    with patch.dict(os.environ, {
+        "WEB_SEARCH_PROVIDER": "perplexity",
+        "PERPLEXITY_API_KEY": "dummy_api_key",
+    }):
         # Mock the Perplexity API to return a 500 error
         respx.post("https://api.perplexity.ai/chat/completions").respond(status_code=500)
 
@@ -172,7 +178,10 @@ async def test_perplexity_search_api_failure(mock_orchestrator):
 @pytest.mark.asyncio
 async def test_perplexity_search_no_api_key(mock_orchestrator):
     import os
-    with patch.dict(os.environ, {"PERPLEXITY_API_KEY": ""}):
+    with patch.dict(os.environ, {
+        "WEB_SEARCH_PROVIDER": "perplexity",
+        "PERPLEXITY_API_KEY": "",
+    }):
         events = []
         run_state = ConversationRunState()
         async for event in mock_orchestrator._node_perplexity_search("測試問題", "test_conv_id_no_key", run_state=run_state):
@@ -185,7 +194,73 @@ async def test_perplexity_search_no_api_key(mock_orchestrator):
 
         # Check status error fallback due to missing key
         assert "error" in events[1]
-        assert "未設定 PERPLEXITY_API_KEY" in events[1]
+        assert "未設定網路搜尋服務金鑰" in events[1]
         
         # Check it gracefully fell back
         assert run_state.context_prompt == ""
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openrouter_web_search_success_with_url_citations(mock_orchestrator):
+    with patch.dict(os.environ, {
+        "WEB_SEARCH_PROVIDER": "openrouter",
+        "OPENROUTER_API_KEY": "dummy_api_key",
+        "MODEL_WEB_SEARCH": "google/gemini-3.8-flash",
+        "OPENROUTER_WEB_SEARCH_ENGINE": "auto",
+        "OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS": "2",
+        "WEB_SEARCH_MAX_RESULTS": "3",
+        "WEB_SEARCH_CONTEXT_SIZE": "medium",
+        "ENABLE_WEB_QUERY_REWRITE": "",
+        "REDIS_URL": "redis://localhost:0",
+    }):
+        search_route = respx.post("https://openrouter.ai/api/v1/chat/completions").respond(
+            status_code=200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "OpenRouter search summary.",
+                            "annotations": [
+                                {
+                                    "type": "url_citation",
+                                    "url_citation": {
+                                        "title": "OpenRouter Source",
+                                        "url": "https://example.com/openrouter",
+                                        "content": "OpenRouter citation excerpt.",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+        events = []
+        run_state = ConversationRunState()
+        async for event in mock_orchestrator._node_perplexity_search(
+            "測試問題",
+            "test_conv_id_openrouter",
+            run_state=run_state,
+        ):
+            events.append(event)
+
+        request_payload = json.loads(search_route.calls.last.request.content)
+        assert request_payload["model"] == "google/gemini-3.8-flash"
+        assert request_payload["stream"] is False
+        assert request_payload["tools"][0]["type"] == "openrouter:web_search"
+        assert request_payload["tools"][0]["parameters"]["engine"] == "auto"
+        assert request_payload["tools"][0]["parameters"]["search_context_size"] == "medium"
+
+        sources_event = next(event for event in events if "event: sources" in event)
+        sources_payload = json.loads(sources_event.split("data: ")[1].strip())
+        assert sources_payload == [{
+            "title": "OpenRouter Source",
+            "chunk_id": "https://example.com/openrouter",
+            "url": "https://example.com/openrouter",
+            "snippet": "OpenRouter citation excerpt.",
+            "score": 1.0,
+        }]
+        assert "https://example.com/openrouter" in run_state.context_prompt
+        assert "OpenRouter citation excerpt." in run_state.context_prompt

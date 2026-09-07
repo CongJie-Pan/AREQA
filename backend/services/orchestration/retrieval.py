@@ -150,9 +150,25 @@ class OrchestrationRetrievalMixin:
         yield f"event: status\ndata: {json.dumps({'status': 'searching_dense', 'message': '🌐 網路檢索中...'}, ensure_ascii=False)}\n\n"
 
 
-        api_key = os.environ.get("PERPLEXITY_API_KEY", "")
+        web_search_provider = os.environ.get(
+            "WEB_SEARCH_PROVIDER",
+            settings.web_search_provider,
+        ).strip().lower() or "openrouter"
+        web_search_model = os.environ.get("MODEL_WEB_SEARCH", settings.model_web_search).strip()
+        web_search_engine = os.environ.get(
+            "OPENROUTER_WEB_SEARCH_ENGINE",
+            settings.openrouter_web_search_engine,
+        ).strip().lower() or "auto"
+        web_search_max_tool_calls = int(os.environ.get(
+            "OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS",
+            str(settings.openrouter_web_search_max_tool_calls),
+        ))
+        if web_search_provider == "openrouter":
+            api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        else:
+            api_key = os.environ.get("PERPLEXITY_API_KEY", "")
         if not api_key:
-            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 未設定 PERPLEXITY_API_KEY，改用一般對話...'}, ensure_ascii=False)}\n\n"
+            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 未設定網路搜尋服務金鑰，改用一般對話...'}, ensure_ascii=False)}\n\n"
             run_state.context_prompt = ""
             return
 
@@ -175,7 +191,6 @@ class OrchestrationRetrievalMixin:
 
 對話歷史：
 {history_str}"""
-                from config import settings
                 rewrite_res = await self.client.chat.completions.create(
                     model=settings.model_hyde_decomposer,
                     messages=[{"role": "user", "content": rewrite_prompt}],
@@ -199,8 +214,10 @@ class OrchestrationRetrievalMixin:
                 )
 
         logger.info(
-            "orchestration.web_query_ready conversation_id=%s elapsed_ms=%s max_results=%s context_size=%s rewritten=%s",
+            "orchestration.web_query_ready conversation_id=%s provider=%s model=%s elapsed_ms=%s max_results=%s context_size=%s rewritten=%s",
             conversation_id,
+            web_search_provider,
+            web_search_model if web_search_provider == "openrouter" else "perplexity",
             int((time.time() - rewrite_start) * 1000),
             max_results,
             search_context_size,
@@ -216,6 +233,10 @@ class OrchestrationRetrievalMixin:
                     "user_id": user_id,
                     "conversation_id": conversation_id,
                     "api_key": api_key,
+                    "provider": web_search_provider,
+                    "model": web_search_model,
+                    "engine": web_search_engine,
+                    "max_tool_calls": web_search_max_tool_calls,
                     "max_results": max_results,
                     "search_context_size": search_context_size,
                     "redis_url": os.environ.get("REDIS_URL", "redis://localhost:6379"),

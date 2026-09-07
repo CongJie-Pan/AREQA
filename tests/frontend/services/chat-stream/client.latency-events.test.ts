@@ -112,6 +112,30 @@ describe('chat stream visible latency events', () => {
     expect(payload.response_mode).toBe('voice');
   });
 
+  it('sends web-search routing flags for OpenRouter-backed search', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
+
+    await createChatStream(
+      [{ role: 'user', content: '請搜尋最新資料' }],
+      {
+        onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+        onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(),
+      },
+      undefined,
+      false,
+      false,
+      'always',
+      'conversation-web-search',
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const payload = JSON.parse(String(request.body));
+    expect(payload.conversation_id).toBe('conversation-web-search');
+    expect(payload.search_mode).toBe('always');
+    expect(payload.use_web_search).toBe(true);
+    expect(payload.use_rag).toBe(false);
+  });
+
   it('sends the selected interface language with stream requests', async () => {
     window.localStorage.setItem('areqa:interface-language', 'en');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
@@ -152,6 +176,33 @@ describe('chat stream visible latency events', () => {
     expect((request.body as FormData).getAll('attachments')).toEqual([attachment]);
     expect((request.body as FormData).get('messages')).toContain('請摘要附件');
     expect((request.body as FormData).get('messages')).toContain('"interface_language":"zh-TW"');
+  });
+
+  it('preserves web-search routing flags in multipart attachment requests', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
+    const attachment = new File(['attachment'], 'notes.txt', { type: 'text/plain' });
+
+    await createChatStream(
+      [{ role: 'user', content: '請搜尋並分析附件' }],
+      {
+        onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+        onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(),
+      },
+      undefined,
+      false,
+      false,
+      'always',
+      'conversation-web-search-file',
+      [attachment],
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const formData = request.body as FormData;
+    const payload = JSON.parse(String(formData.get('messages')));
+    expect(formData.getAll('attachments')).toEqual([attachment]);
+    expect(payload.search_mode).toBe('always');
+    expect(payload.use_web_search).toBe(true);
+    expect(payload.use_rag).toBe(false);
   });
 
   it('dispatches structured answer blocks from SSE', async () => {

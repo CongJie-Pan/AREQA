@@ -29,6 +29,14 @@ services:
         sync: false
       - key: PERPLEXITY_API_KEY
         sync: false
+      - key: WEB_SEARCH_PROVIDER
+        value: openrouter
+      - key: MODEL_WEB_SEARCH
+        value: google/gemini-3.8-flash
+      - key: OPENROUTER_WEB_SEARCH_ENGINE
+        value: auto
+      - key: OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS
+        value: "2"
       - key: MODEL_ZPD_QUERY
         value: google/gemini-3.1-flash-lite
       - key: COMPEER_COOLDOWN_OVERRIDE_SECONDS

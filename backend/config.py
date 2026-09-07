@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     model_cold_memory_embedding: str = "openai/text-embedding-3-small"
     model_memory_semantic_analyzer: str = "google/gemini-2.5-flash-lite"
     model_visual_understanding: str = "google/gemini-3.1-flash-lite"
+    model_web_search: str = "google/gemini-3.8-flash"
 
     # RAG Parameters
     rag_max_docs: int = 7
@@ -59,6 +60,10 @@ class Settings(BaseSettings):
     explicit_recall_memory_cache_ttl_seconds: int = 120
     cold_memory_embedding_timeout_ms: int = 1500
     suggestion_generation_timeout_ms: int = 1000
+    web_search_provider: str = "openrouter"
+    openrouter_web_search_engine: str = "auto"
+    openrouter_web_search_max_tool_calls: int = 2
+    openrouter_web_search_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
 
     # Visual answer retrieval. Keep provider debug logs off by default because
     # they are only needed while diagnosing third-party API failures.

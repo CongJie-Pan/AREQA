@@ -16,6 +16,8 @@ backend_dir = Path(__file__).resolve().parents[1]
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
+from config import settings
+
 try:
     from gum_integration import (
         async_evaluate_and_update_state,
@@ -101,7 +103,13 @@ class OrchestrationService(
         self.parts_context_service = PartsContextService()
         self.turn_intake_service = TurnIntakeService(client)
         self.turn_plan_service = TurnPlanService(self.memory_policy)
-        self.web_search_tool = WebSearchTool()
+        self.web_search_tool = WebSearchTool(
+            provider=settings.web_search_provider,
+            openrouter_endpoint=settings.openrouter_web_search_api_url,
+            openrouter_model=settings.model_web_search,
+            openrouter_engine=settings.openrouter_web_search_engine,
+            openrouter_max_tool_calls=settings.openrouter_web_search_max_tool_calls,
+        )
         self.tool_registry = ToolRegistry()
         self.tool_registry.register(ToolDefinition(
             name="web_search",

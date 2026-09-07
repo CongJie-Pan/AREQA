@@ -45,6 +45,7 @@ async def test_web_search_cache_hit_skips_external_request():
         raise AssertionError("HTTP client must not be created on cache hit")
 
     tool = WebSearchTool(
+        provider="perplexity",
         redis_factory=lambda *args, **kwargs: redis,
         http_client_factory=fail_http_factory,
     )
@@ -69,6 +70,7 @@ async def test_web_search_bounds_provider_results_and_caches_response():
         ]
     })
     tool = WebSearchTool(
+        provider="perplexity",
         max_content_chars=25,
         redis_factory=lambda *args, **kwargs: redis,
         http_client_factory=lambda **kwargs: http,
@@ -103,6 +105,7 @@ async def test_web_search_cache_is_scoped_by_user_and_conversation():
     redis_instances = iter([first_redis, second_redis])
     http = FakeHttpClient({"results": []})
     tool = WebSearchTool(
+        provider="perplexity",
         redis_factory=lambda *args, **kwargs: next(redis_instances),
         http_client_factory=lambda **kwargs: http,
     )
@@ -113,6 +116,109 @@ async def test_web_search_cache_is_scoped_by_user_and_conversation():
     }
     await tool.execute({**base, "user_id": "user-1"})
     await tool.execute({**base, "user_id": "user-2"})
+
+    first_key = first_redis.get.await_args.args[0]
+    second_key = second_redis.get.await_args.args[0]
+    assert first_key != second_key
+
+
+@pytest.mark.asyncio
+async def test_web_search_openrouter_normalizes_url_citation_annotations():
+    redis = FakeRedis()
+    http = FakeHttpClient({
+        "choices": [
+            {
+                "message": {
+                    "content": "Summary with citations.",
+                    "annotations": [
+                        {
+                            "type": "url_citation",
+                            "url_citation": {
+                                "url": "https://example.com/source-1",
+                                "title": "Source 1",
+                                "content": "Relevant excerpt 1",
+                            },
+                        },
+                        {
+                            "type": "url_citation",
+                            "url_citation": {
+                                "url": "https://example.com/source-2",
+                                "title": "Source 2",
+                                "content": "Relevant excerpt 2",
+                            },
+                        },
+                    ],
+                }
+            }
+        ],
+        "usage": {"server_tool_use": {"web_search_requests": 1}},
+    })
+    tool = WebSearchTool(
+        provider="openrouter",
+        redis_factory=lambda *args, **kwargs: redis,
+        http_client_factory=lambda **kwargs: http,
+    )
+
+    result = await tool.execute({
+        "query": "latest",
+        "conversation_id": "conversation-1",
+        "api_key": "secret",
+        "max_results": 3,
+        "search_context_size": "medium",
+        "model": "google/gemini-3.8-flash",
+        "engine": "auto",
+        "max_tool_calls": 2,
+    })
+
+    assert result.content["results"] == [
+        {
+            "title": "Source 1",
+            "url": "https://example.com/source-1",
+            "snippet": "Relevant excerpt 1",
+            "score": 1.0,
+        },
+        {
+            "title": "Source 2",
+            "url": "https://example.com/source-2",
+            "snippet": "Relevant excerpt 2",
+            "score": 1.0,
+        },
+    ]
+    request_json = http.post.await_args.kwargs["json"]
+    assert request_json["model"] == "google/gemini-3.8-flash"
+    assert request_json["stream"] is False
+    assert request_json["tools"] == [
+        {
+            "type": "openrouter:web_search",
+            "parameters": {
+                "engine": "auto",
+                "max_results": 3,
+                "max_total_results": 3,
+                "search_context_size": "medium",
+            },
+        }
+    ]
+    assert request_json["max_tool_calls"] == 2
+
+
+@pytest.mark.asyncio
+async def test_web_search_cache_is_scoped_by_provider():
+    first_redis = FakeRedis()
+    second_redis = FakeRedis()
+    redis_instances = iter([first_redis, second_redis])
+    http = FakeHttpClient({"results": []})
+    tool = WebSearchTool(
+        redis_factory=lambda *args, **kwargs: next(redis_instances),
+        http_client_factory=lambda **kwargs: http,
+    )
+    base = {
+        "query": "latest",
+        "conversation_id": "same-conversation",
+        "api_key": "secret",
+        "user_id": "user-1",
+    }
+    await tool.execute({**base, "provider": "perplexity"})
+    await tool.execute({**base, "provider": "openrouter"})
 
     first_key = first_redis.get.await_args.args[0]
     second_key = second_redis.get.await_args.args[0]

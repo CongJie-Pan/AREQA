@@ -15,14 +15,24 @@ class WebSearchTool:
     def __init__(
         self,
         *,
+        provider: str = "perplexity",
         endpoint: str = "https://api.perplexity.ai/search",
+        openrouter_endpoint: str = "https://openrouter.ai/api/v1/chat/completions",
+        openrouter_model: str = "google/gemini-3.8-flash",
+        openrouter_engine: str = "auto",
+        openrouter_max_tool_calls: int = 2,
         timeout_seconds: float = 8.0,
         cache_ttl_seconds: int = 86400,
         max_content_chars: int = 16000,
         redis_factory: Callable[..., Any] = aioredis.from_url,
         http_client_factory: Callable[..., Any] = httpx.AsyncClient,
     ) -> None:
+        self.provider = provider
         self.endpoint = endpoint
+        self.openrouter_endpoint = openrouter_endpoint
+        self.openrouter_model = openrouter_model
+        self.openrouter_engine = openrouter_engine
+        self.openrouter_max_tool_calls = openrouter_max_tool_calls
         self.timeout_seconds = timeout_seconds
         self.cache_ttl_seconds = cache_ttl_seconds
         self.max_content_chars = max_content_chars
@@ -44,8 +54,9 @@ class WebSearchTool:
         if context_size not in {"low", "medium", "high"}:
             context_size = "high"
         redis_url = str(arguments.get("redis_url", "redis://localhost:6379"))
+        provider = str(arguments.get("provider", self.provider)).strip().lower() or self.provider
         cache_key = "websearch:" + hashlib.md5(
-            f"{user_id}_{conversation_id}_{query}".encode("utf-8")
+            f"{provider}_{user_id}_{conversation_id}_{query}".encode("utf-8")
         ).hexdigest()
         started = time.monotonic()
         redis_client = None
@@ -64,20 +75,38 @@ class WebSearchTool:
 
             if data is None:
                 async with self._http_client_factory(timeout=self.timeout_seconds) as client:
-                    response = await client.post(
-                        self.endpoint,
-                        headers={
-                            "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "query": query,
-                            "max_results": max_results,
-                            "search_context_size": context_size,
-                        },
-                    )
+                    if provider == "openrouter":
+                        response = await self._post_openrouter_search(
+                            client,
+                            api_key=api_key,
+                            query=query,
+                            max_results=max_results,
+                            context_size=context_size,
+                            arguments=arguments,
+                        )
+                    else:
+                        response = await client.post(
+                            self.endpoint,
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json={
+                                "query": query,
+                                "max_results": max_results,
+                                "search_context_size": context_size,
+                            },
+                        )
                     response.raise_for_status()
-                    data = response.json()
+                    if provider == "openrouter":
+                        data = {
+                            "results": self._extract_openrouter_results(
+                                response.json(),
+                                max_results,
+                            )
+                        }
+                    else:
+                        data = response.json()
 
                 raw_results = list(data.get("results", []))
                 data["results"] = raw_results[:max_results]
@@ -125,3 +154,116 @@ class WebSearchTool:
                     await redis_client.aclose()
                 except Exception:
                     pass
+
+    async def _post_openrouter_search(
+        self,
+        client: Any,
+        *,
+        api_key: str,
+        query: str,
+        max_results: int,
+        context_size: str,
+        arguments: Mapping[str, Any],
+    ) -> Any:
+        """Run a non-streaming OpenRouter server-tool search request.
+
+        Args:
+            client: Async HTTP client used for the provider call.
+            api_key: Backend-only OpenRouter API key.
+            query: Standalone search query prepared by orchestration.
+            max_results: Maximum normalized citations to return.
+            context_size: Provider context-size preset.
+            arguments: Runtime overrides supplied by orchestration.
+
+        Returns:
+            The HTTP response object returned by the injected client.
+
+        Side Effects:
+            Sends one OpenRouter Chat Completions request with the beta
+            ``openrouter:web_search`` server tool enabled. The request is
+            intentionally non-streaming so provider SSE comments, usage chunks,
+            and mid-stream error frames cannot enter AREQA's public SSE stream.
+        """
+
+        model = str(arguments.get("model") or self.openrouter_model).strip()
+        engine = str(arguments.get("engine") or self.openrouter_engine).strip().lower() or "auto"
+        max_tool_calls = max(int(arguments.get("max_tool_calls", self.openrouter_max_tool_calls)), 1)
+        return await client.post(
+            self.openrouter_endpoint,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://congjie-pan.github.io/",
+                "X-OpenRouter-Title": "AREQA",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Use web search for the user's query and answer briefly. "
+                            "Citations must be exposed through OpenRouter url_citation annotations."
+                        ),
+                    },
+                    {"role": "user", "content": query},
+                ],
+                "tools": [
+                    {
+                        "type": "openrouter:web_search",
+                        "parameters": {
+                            "engine": engine,
+                            "max_results": max_results,
+                            "max_total_results": max_results,
+                            "search_context_size": context_size,
+                        },
+                    }
+                ],
+                "max_tool_calls": max_tool_calls,
+                "temperature": 0.1,
+                "max_tokens": 1200,
+                "stream": False,
+            },
+        )
+
+    @staticmethod
+    def _extract_openrouter_results(payload: Mapping[str, Any], max_results: int) -> list[dict[str, Any]]:
+        """Normalize OpenRouter url citation annotations into search results.
+
+        Args:
+            payload: Non-streaming OpenRouter Chat Completions response body.
+            max_results: Maximum citation records to return.
+
+        Returns:
+            A list of dictionaries matching AREQA's existing web-search result
+            shape: ``title``, ``url``, ``snippet``, and ``score``.
+        """
+
+        choices = payload.get("choices") or []
+        if not choices:
+            return []
+        message = dict((choices[0] or {}).get("message") or {})
+        annotations = message.get("annotations") or []
+        results: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+        for annotation in annotations:
+            if not isinstance(annotation, Mapping):
+                continue
+            citation = annotation.get("url_citation") or {}
+            if not isinstance(citation, Mapping):
+                continue
+            url = str(citation.get("url") or "").strip()
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            results.append(
+                {
+                    "title": str(citation.get("title") or url).strip(),
+                    "url": url,
+                    "snippet": str(citation.get("content") or "").strip(),
+                    "score": 1.0,
+                }
+            )
+            if len(results) >= max_results:
+                break
+        return results
