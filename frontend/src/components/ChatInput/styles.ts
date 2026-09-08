@@ -455,6 +455,26 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  webSearchButton: css`
+    background: transparent;
+    color: rgba(255, 255, 255, 0.72);
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+  `,
+
+  webSearchButtonActive: css`
+    background: #d7f7df;
+    color: #0f5f2a;
+
+    &:hover:not(:disabled) {
+      background: #c2f0cf;
+      color: #0a4c20;
+    }
+  `,
+
   voiceButton: css`
     background: #facd8a;
     color: #111111;

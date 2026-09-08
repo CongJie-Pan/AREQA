@@ -1701,6 +1701,52 @@ async def test_explicit_never_search_mode_overrides_legacy_search_boolean(
 
 
 @pytest.mark.asyncio
+async def test_legacy_auto_search_mode_is_disabled_by_default(
+    mock_router, mock_rag, mock_suggestion, mock_client, monkeypatch, caplog
+):
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_auto_web_search", False)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    request = MagicMock()
+    caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
+
+    async def fail_if_searched(*args, **kwargs):
+        raise AssertionError("auto mode must not run web search by default")
+        yield
+
+    async def llm_stream(*args, **kwargs):
+        yield 'data: {"choices":[{"delta":{"content":"offline"}}]}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"offline"}\n\n'
+
+    service._node_perplexity_search = fail_if_searched
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "今天最新新聞是什麼"}],
+            "auto-disabled-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+            search_mode="auto",
+        )]
+
+    assert "offline" in "".join(events)
+    assert "orchestration.auto_web_search_disabled" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
     mock_router, mock_rag, mock_suggestion, mock_client, caplog
 ):

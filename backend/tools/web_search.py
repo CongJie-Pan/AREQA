@@ -4,11 +4,18 @@ import hashlib
 import json
 import time
 from typing import Any, Callable, Mapping
+from urllib.parse import urlparse
 
 import httpx
 import redis.asyncio as aioredis
 
 from .registry import ToolResult
+
+_BLOCKED_OPENROUTER_CITATION_HOSTS = {
+    "vertexaisearch.cloud.google.com",
+    "rephrase-it.com",
+    "www.rephrase-it.com",
+}
 
 
 class WebSearchTool:
@@ -227,6 +234,22 @@ class WebSearchTool:
         )
 
     @staticmethod
+    def _is_usable_openrouter_citation(url: str, snippet: str) -> bool:
+        """Return whether an OpenRouter citation is useful to show as evidence."""
+
+        if not snippet:
+            return False
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+        host = parsed.netloc.lower()
+        if host in _BLOCKED_OPENROUTER_CITATION_HOSTS:
+            return False
+        if host.endswith(".google.com") and "grounding-api-redirect" in parsed.path:
+            return False
+        return True
+
+    @staticmethod
     def _extract_openrouter_results(payload: Mapping[str, Any], max_results: int) -> list[dict[str, Any]]:
         """Normalize OpenRouter url citation annotations into search results.
 
@@ -253,14 +276,19 @@ class WebSearchTool:
             if not isinstance(citation, Mapping):
                 continue
             url = str(citation.get("url") or "").strip()
-            if not url or url in seen_urls:
+            snippet = str(citation.get("content") or "").strip()
+            if (
+                not url
+                or url in seen_urls
+                or not WebSearchTool._is_usable_openrouter_citation(url, snippet)
+            ):
                 continue
             seen_urls.add(url)
             results.append(
                 {
                     "title": str(citation.get("title") or url).strip(),
                     "url": url,
-                    "snippet": str(citation.get("content") or "").strip(),
+                    "snippet": snippet,
                     "score": 1.0,
                 }
             )

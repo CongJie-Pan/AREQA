@@ -38,15 +38,25 @@ class OrchestrationExecutionMixin:
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
         request_id_header = request.headers.get("x-request-id") if request and request.headers else None
-        effective_search_mode = (
+        requested_search_mode = (
             SearchMode(search_mode)
             if search_mode is not None
             else (SearchMode.ALWAYS if use_web_search else SearchMode.NEVER)
         )
         has_attachments = bool(attachments)
+        effective_search_mode = requested_search_mode
+        if (
+            requested_search_mode == SearchMode.AUTO
+            and not has_attachments
+            and not settings.enable_auto_web_search
+        ):
+            effective_search_mode = SearchMode.NEVER
+            logger.info(
+                "orchestration.auto_web_search_disabled conversation_id=%s",
+                conversation_id,
+            )
         pdf_attachment_count = count_pdf_attachments(attachments)
         has_pdf_attachment = pdf_attachment_count > 0
-        from config import settings
         auto_routing_enabled = CapabilityPolicy.rollout_enabled(
             feature_enabled=settings.enable_agent_search_routing,
             rollout_percentage=settings.agent_search_rollout_percentage,
@@ -290,7 +300,6 @@ class OrchestrationExecutionMixin:
             )
         )
         if should_run_policy_classifier:
-            from config import settings
             trace.mark("policy_classifier_started")
             trace.increment_model_call("policy_classifier")
             policy_task = asyncio.create_task(

@@ -202,6 +202,68 @@ async def test_web_search_openrouter_normalizes_url_citation_annotations():
 
 
 @pytest.mark.asyncio
+async def test_web_search_openrouter_filters_unusable_citations():
+    redis = FakeRedis()
+    http = FakeHttpClient({
+        "choices": [
+            {
+                "message": {
+                    "content": "Summary with citations.",
+                    "annotations": [
+                        {
+                            "type": "url_citation",
+                            "url_citation": {
+                                "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+                                "title": "arxiv.org",
+                                "content": "",
+                            },
+                        },
+                        {
+                            "type": "url_citation",
+                            "url_citation": {
+                                "url": "https://rephrase-it.com/source",
+                                "title": "Low quality",
+                                "content": "Thin rewritten content",
+                            },
+                        },
+                        {
+                            "type": "url_citation",
+                            "url_citation": {
+                                "url": "https://example.edu/paper",
+                                "title": "Paper",
+                                "content": "Useful excerpt",
+                            },
+                        },
+                    ],
+                }
+            }
+        ],
+    })
+    tool = WebSearchTool(
+        provider="openrouter",
+        redis_factory=lambda *args, **kwargs: redis,
+        http_client_factory=lambda **kwargs: http,
+    )
+
+    result = await tool.execute({
+        "query": "latest",
+        "conversation_id": "conversation-1",
+        "api_key": "secret",
+        "max_results": 3,
+        "model": "google/gemini-3.8-flash",
+    })
+
+    assert result.content["results"] == [
+        {
+            "title": "Paper",
+            "url": "https://example.edu/paper",
+            "snippet": "Useful excerpt",
+            "score": 1.0,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_web_search_cache_is_scoped_by_provider():
     first_redis = FakeRedis()
     second_redis = FakeRedis()

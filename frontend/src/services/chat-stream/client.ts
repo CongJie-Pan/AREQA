@@ -71,7 +71,7 @@ export async function createChatStream(
   abortSignal?: AbortSignal,
   useRag: boolean = false,
   forceThink: boolean = false,
-  searchMode: SearchMode = 'auto',
+  searchMode: SearchMode = 'never',
   conversationId: string = "",
   attachments: File[] = [],
   options: ChatStreamOptions = {},

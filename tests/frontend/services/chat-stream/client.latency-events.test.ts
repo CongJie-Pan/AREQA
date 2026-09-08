@@ -81,7 +81,7 @@ describe('chat stream visible latency events', () => {
     expect(onStatus).toHaveBeenLastCalledWith('routing', '正在整理回答脈絡');
     const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
     const payload = JSON.parse(String(request.body));
-    expect(payload.search_mode).toBe('auto');
+    expect(payload.search_mode).toBe('never');
     expect(payload.use_web_search).toBe(false);
     expect(payload.interface_language).toBe('zh-TW');
     expect(payload.response_mode).toBe('text');
@@ -101,7 +101,7 @@ describe('chat stream visible latency events', () => {
       undefined,
       false,
       false,
-      'auto',
+      'never',
       'conversation-voice',
       [],
       { responseMode: 'voice' },
@@ -166,7 +166,7 @@ describe('chat stream visible latency events', () => {
       undefined,
       false,
       false,
-      'auto',
+      'never',
       'conversation-1',
       [attachment],
     );

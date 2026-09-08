@@ -13,6 +13,7 @@ import {
   CornerDownRight,
   FileText,
   FileImage,
+  Globe2,
   Mic,
   MicOff,
   Plus,
@@ -358,6 +359,21 @@ const DICTATION_LABELS = {
   },
 } as const;
 
+const WEB_SEARCH_LABELS = {
+  'zh-TW': {
+    enable: '開啟網路搜尋',
+    disable: '關閉網路搜尋',
+  },
+  'zh-CN': {
+    enable: '开启网络搜索',
+    disable: '关闭网络搜索',
+  },
+  en: {
+    enable: 'Enable web search',
+    disable: 'Disable web search',
+  },
+} as const;
+
 /**
  * ChatInput provides text input for sending messages
  * Supports Enter to send, Shift+Enter for new line
@@ -382,6 +398,7 @@ export function ChatInput({
   const { t, language } = useUserPreferences();
   const liveVoiceLabels = LIVE_VOICE_LABELS[language];
   const dictationLabels = DICTATION_LABELS[language];
+  const webSearchLabels = WEB_SEARCH_LABELS[language];
   const [value, setValue] = useState('');
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -404,6 +421,8 @@ export function ChatInput({
   // Connect to global state for mode togglers
   const quotedText = useChatStore((state) => state.quotedText);
   const setQuotedText = useChatStore((state) => state.setQuotedText);
+  const useWebSearch = useChatStore((state) => state.useWebSearch);
+  const toggleWebSearch = useChatStore((state) => state.toggleWebSearch);
 
   const isOverLimit = value.length > maxLength;
   const hasMath = /(?:\$\$?[\s\S]+?\$\$?|\\\(|\\\[)/.test(value);
@@ -881,6 +900,23 @@ export function ChatInput({
               maxLength={maxLength + 100}
               aria-label={t('messageTextarea')}
             />
+            <Tooltip title={useWebSearch ? webSearchLabels.disable : webSearchLabels.enable} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+              <button
+                type="button"
+                className={cx(
+                  'areqa-chat-input-web-search-button',
+                  styles.iconButton,
+                  styles.webSearchButton,
+                  useWebSearch && styles.webSearchButtonActive,
+                )}
+                onClick={toggleWebSearch}
+                disabled={disabled}
+                aria-label={useWebSearch ? webSearchLabels.disable : webSearchLabels.enable}
+                aria-pressed={useWebSearch}
+              >
+                <Globe2 size={19} />
+              </button>
+            </Tooltip>
             <Tooltip title={dictationLabels.start} color="#262626" styles={{ container: { color: '#ffffff' } }}>
               <button
                 type="button"

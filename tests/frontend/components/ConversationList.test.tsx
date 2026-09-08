@@ -115,7 +115,7 @@ describe('ConversationList title states', () => {
       tokenUsage: null,
       useRag: false,
       useWebSearch: false,
-      searchMode: 'auto',
+      searchMode: 'never',
       forceThink: true,
       ragStatus: 'idle',
       ragMessage: '',

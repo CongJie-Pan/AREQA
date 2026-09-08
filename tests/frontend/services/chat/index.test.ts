@@ -60,7 +60,7 @@ describe('Chat Service', () => {
       messages: [],
       useRag: false,
       useWebSearch: false,
-      searchMode: 'auto',
+      searchMode: 'never',
       forceThink: false,
       addUserMessage: vi.fn(),
       addAssistantMessage: vi.fn().mockReturnValue('assistant-msg-id'),
@@ -443,7 +443,7 @@ describe('Chat Service', () => {
         expect.any(AbortSignal),
         false,
         false,
-        'auto',
+        'never',
         'test-conv-id',
       );
     });
@@ -480,7 +480,7 @@ describe('Chat Service', () => {
         expect.any(AbortSignal),
         false,
         false,
-        'auto',
+        'never',
         'test-conv-id',
       );
     });
@@ -507,7 +507,7 @@ describe('Chat Service', () => {
         expect.any(AbortSignal),
         false,
         false,
-        'auto',
+        'never',
         'guest-conv',
       );
       expect(databaseService.message.delete).not.toHaveBeenCalled();
@@ -548,7 +548,7 @@ describe('Chat Service', () => {
         expect.any(AbortSignal),
         false,
         false,
-        'auto',
+        'never',
         'test-conv-id',
       );
     });

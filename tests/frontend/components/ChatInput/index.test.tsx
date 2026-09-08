@@ -37,6 +37,7 @@ class FakeMediaRecorder {
 describe('ChatInput', () => {
   const mockOnSend = vi.fn();
   const mockSetQuotedText = vi.fn();
+  const mockToggleWebSearch = vi.fn();
   const createObjectUrlMock = vi.fn((file: File) => `blob:${file.name}`);
   const revokeObjectUrlMock = vi.fn();
   const stopTrackMock = vi.fn();
@@ -71,9 +72,11 @@ describe('ChatInput', () => {
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {
         useRag: false,
+        useWebSearch: false,
         forceThink: false,
         quotedText: null,
         toggleRag: vi.fn(),
+        toggleWebSearch: mockToggleWebSearch,
         toggleThink: vi.fn(),
         setQuotedText: mockSetQuotedText,
       };
@@ -89,13 +92,27 @@ describe('ChatInput', () => {
     expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
     const input = screen.getByLabelText('訊息輸入框');
     const attachmentButton = screen.getByLabelText('加入圖片或文件');
+    const webSearchButton = screen.getByLabelText('開啟網路搜尋');
     const inputRow = screen.getByRole('group', { name: '訊息輸入列' });
     const sendButton = screen.getByLabelText('發送訊息');
     expect(inputRow).toContainElement(attachmentButton);
     expect(inputRow).toContainElement(input);
+    expect(inputRow).toContainElement(webSearchButton);
     expect(inputRow).toContainElement(sendButton);
     expect(attachmentButton.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(input.compareDocumentPosition(webSearchButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(input.compareDocumentPosition(sendButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('should toggle explicit web search from the globe button', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+
+    const webSearchButton = screen.getByLabelText('開啟網路搜尋');
+    expect(webSearchButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(webSearchButton);
+
+    expect(mockToggleWebSearch).toHaveBeenCalledOnce();
   });
 
   it('should keep the send control visibly disabled until there is content', () => {

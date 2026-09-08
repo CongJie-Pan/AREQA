@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # Agent rollout flags
     enable_tutor_shadow_routing: bool = False
     enable_agent_search_routing: bool = True
+    enable_auto_web_search: bool = False
     agent_search_rollout_percentage: float = 100.0
     enable_turn_plan_runtime: bool = True
     foreground_model_call_budget_general: int = 2

@@ -131,6 +131,10 @@ def resolve_answer_language(interface_language: str, latest_user_message: str) -
     if explicit_language:
         return ANSWER_LANGUAGE_RULES[explicit_language]
     query_language = _detect_query_language(latest_user_message)
+    if query_language in {"zh-TW", "zh-CN"}:
+        return ANSWER_LANGUAGE_RULES[query_language]
+    if interface_language in {"zh-TW", "zh-CN"}:
+        return ANSWER_LANGUAGE_RULES[interface_language]
     if query_language:
         return ANSWER_LANGUAGE_RULES[query_language]
     return ANSWER_LANGUAGE_RULES.get(interface_language, ANSWER_LANGUAGE_RULES["zh-TW"])
@@ -140,7 +144,7 @@ def _answer_language_instruction(interface_language: str, latest_user_message: s
     answer_language = resolve_answer_language(interface_language, latest_user_message)
     return (
         f"\n\n【回答語言規則】本回合正式回答必須使用{answer_language}。"
-        "語言判斷優先序為：使用者最新訊息的明確語言要求 > 最新訊息主要語言 > 介面語言。"
+        "語言判斷優先序為：使用者最新訊息的明確語言要求 > 最新訊息中的中文語系訊號 > 介面語言 > 最新訊息主要語言。"
         "圖片導讀、表格說明、清單標題與結尾建議都必須使用同一種回答語言。"
     )
 

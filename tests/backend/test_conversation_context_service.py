@@ -131,10 +131,12 @@ async def test_context_prompt_forbids_unsupported_learner_state_claims():
         ("en", "請解釋貝氏定理", "繁體中文"),
         ("zh-CN", "請解釋貝氏定理", "繁體中文"),
         ("zh-TW", "請解釋貝氏定理", "繁體中文"),
-        ("zh-TW", "Explain Bayes theorem with a simple example", "English"),
-        ("zh-TW", "What is AI?", "English"),
+        ("zh-TW", "Explain Bayes theorem with a simple example", "繁體中文"),
+        ("zh-TW", "What is AI?", "繁體中文"),
         ("en", "请解释贝叶斯定理", "簡體中文"),
         ("en", "請用繁體中文解釋 Bayes theorem", "繁體中文"),
+        ("zh-TW", "Please answer in English: explain Bayes theorem", "English"),
+        ("zh-TW", "請分析這段 prompt:\n```text\nExplain retrieval augmented generation.\n```", "繁體中文"),
     ],
 )
 async def test_context_prompt_resolves_answer_language(interface_language, user_message, expected_language):

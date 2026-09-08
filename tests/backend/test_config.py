@@ -23,6 +23,7 @@ def test_settings_loads_defaults():
     assert s.memory_semantic_match_min_confidence == 0.85
     assert s.memory_semantic_external_processing_acknowledged is False
     assert s.enable_turn_plan_runtime is True
+    assert s.enable_auto_web_search is False
     assert s.foreground_model_call_budget_general == 2
     assert s.foreground_model_call_budget_learning == 3
     assert s.enable_policy_classifier_for_general_chat is True
@@ -82,6 +83,7 @@ def test_settings_can_be_overridden_by_env():
         'MODEL_WEB_SEARCH': 'google/gemini-3.1-flash-lite',
         'MEMORY_SEMANTIC_ANALYSIS_ENABLED': 'true',
         'ENABLE_TURN_PLAN_RUNTIME': 'true',
+        'ENABLE_AUTO_WEB_SEARCH': 'true',
         'FOREGROUND_MODEL_CALL_BUDGET_GENERAL': '4',
         'POLICY_CLASSIFIER_TIMEOUT_MS': '450',
         'ENABLE_PARTS_PROMPT_CONTEXT': 'false',
@@ -131,6 +133,7 @@ def test_settings_can_be_overridden_by_env():
         assert s.model_web_search == 'google/gemini-3.1-flash-lite'
         assert s.memory_semantic_analysis_enabled is True
         assert s.enable_turn_plan_runtime is True
+        assert s.enable_auto_web_search is True
         assert s.foreground_model_call_budget_general == 4
         assert s.policy_classifier_timeout_ms == 450
         assert s.enable_parts_prompt_context is False
