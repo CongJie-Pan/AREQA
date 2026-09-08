@@ -106,6 +106,28 @@ describe('ChatInput', () => {
     expect(sendButton.className).toBeTruthy();
   });
 
+  it('should keep the compact pill shell for short single-line text', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const input = screen.getByLabelText('訊息輸入框');
+
+    fireEvent.change(input, { target: { value: 'short question' } });
+
+    expect(input.closest('.areqa-chat-input-shell-expanded')).not.toBeInTheDocument();
+  });
+
+  it('should use the attachment-like rounded rectangle shell for long or multiline text', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const input = screen.getByLabelText('訊息輸入框');
+
+    fireEvent.change(input, {
+      target: {
+        value: 'prompt: combine conversational AI avatars with Socratic tutoring and pedagogical instruction following.',
+      },
+    });
+
+    expect(input.closest('.areqa-chat-input-shell-expanded')).toBeInTheDocument();
+  });
+
   it('should render a LaTeX preview without changing the submitted source', async () => {
     render(<ChatInput onSend={mockOnSend} />);
     const input = screen.getByPlaceholderText(/提問AREQA/i);

@@ -40,6 +40,8 @@ const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const DICTATION_WAVE_BAR_COUNT = 34;
 const IDLE_DICTATION_WAVE_LEVEL = 0.1;
+const EXPANDED_COMPOSER_MIN_SCROLL_HEIGHT = 34;
+const EXPANDED_COMPOSER_MIN_CHARS = 96;
 const SUPPORTED_ATTACHMENT_TYPES = new Set([
   'image/png', 'image/jpeg', 'image/webp', 'image/gif',
   'application/pdf', 'text/plain', 'text/markdown',
@@ -383,6 +385,7 @@ export function ChatInput({
   const [value, setValue] = useState('');
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [isTextareaMultiline, setIsTextareaMultiline] = useState(false);
   const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
   const [dictationLevels, setDictationLevels] = useState<number[]>(
     () => Array.from({ length: DICTATION_WAVE_BAR_COUNT }, () => IDLE_DICTATION_WAVE_LEVEL),
@@ -404,6 +407,11 @@ export function ChatInput({
 
   const isOverLimit = value.length > maxLength;
   const hasMath = /(?:\$\$?[\s\S]+?\$\$?|\\\(|\\\[)/.test(value);
+  const shouldUseExpandedShape = attachmentPreviews.length > 0
+    || Boolean(quotedText)
+    || isTextareaMultiline
+    || value.includes('\n')
+    || value.length > EXPANDED_COMPOSER_MIN_CHARS;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -411,6 +419,7 @@ export function ChatInput({
     if (textarea) {
       textarea.style.height = 'auto';
       textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+      setIsTextareaMultiline(textarea.scrollHeight > EXPANDED_COMPOSER_MIN_SCROLL_HEIGHT);
     }
   }, [value]);
 
@@ -565,6 +574,7 @@ export function ChatInput({
     }
 
     setValue('');
+    setIsTextareaMultiline(false);
     setAttachmentPreviews([]);
     setQuotedText(null);
     if (textareaRef.current) {
@@ -735,7 +745,9 @@ export function ChatInput({
       className={cx(
         'areqa-chat-input-shell',
         attachmentPreviews.length > 0 && 'areqa-chat-input-shell-has-attachments',
+        shouldUseExpandedShape && 'areqa-chat-input-shell-expanded',
         styles.container,
+        shouldUseExpandedShape && styles.containerExpanded,
         attachmentPreviews.length > 0 && styles.containerWithAttachments,
         className,
       )}

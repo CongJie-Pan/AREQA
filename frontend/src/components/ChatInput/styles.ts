@@ -53,6 +53,16 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  containerExpanded: css`
+    border-radius: 34px;
+    padding: 12px 16px 10px;
+
+    @media (max-width: 768px) {
+      border-radius: 28px;
+      padding: 10px 12px 9px;
+    }
+  `,
+
   quotePreview: css`
     display: flex;
     align-items: center;
