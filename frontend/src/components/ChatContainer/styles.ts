@@ -84,6 +84,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     pointer-events: none;
   `,
 
+  floatingActionsAvatarSplit: css`
+    right: calc(var(--areqa-avatar-pane-width, 360px) + 30px);
+
+    @media (max-width: 900px) {
+      right: max(16px, env(safe-area-inset-right));
+    }
+  `,
+
   sidebarFloatingAction: css`
     position: fixed;
     top: max(14px, env(safe-area-inset-top));
@@ -203,6 +211,100 @@ export const useStyles = createStyles(({ css, token }) => ({
       max-width: none;
       width: 100%;
       align-self: stretch;
+    }
+  `,
+
+  contentAvatarSplit: css`
+    --areqa-avatar-pane-width: 360px;
+  `,
+
+  liveTutorWorkspace: css`
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+  `,
+
+  liveTutorWorkspaceSplit: css`
+    flex-direction: row;
+
+    @media (max-width: 900px) {
+      flex-direction: column;
+    }
+  `,
+
+  responsePane: css`
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+  `,
+
+  responsePaneSplit: css`
+    flex-basis: 0;
+    border-right: 1px solid var(--areqa-subtle-border);
+
+    @media (max-width: 900px) {
+      flex-basis: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--areqa-subtle-border);
+    }
+  `,
+
+  avatarResizeHandle: css`
+    position: relative;
+    z-index: 4;
+    width: 9px;
+    flex: 0 0 9px;
+    margin-left: -5px;
+    cursor: col-resize;
+    touch-action: none;
+    background: transparent;
+
+    &::before {
+      position: absolute;
+      top: 0;
+      right: 4px;
+      bottom: 0;
+      width: 1px;
+      background: var(--areqa-subtle-border);
+      content: '';
+      transition: background 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    &:hover::before,
+    &:focus-visible::before {
+      background: color-mix(in srgb, #d8a25c 72%, var(--areqa-subtle-border));
+      box-shadow: 0 0 0 1px color-mix(in srgb, #d8a25c 28%, transparent);
+    }
+
+    &:focus-visible {
+      outline: none;
+    }
+
+    @media (max-width: 900px) {
+      display: none;
+    }
+  `,
+
+  avatarPane: css`
+    display: flex;
+    width: var(--areqa-avatar-pane-width, 360px);
+    min-width: 280px;
+    max-width: min(620px, 48vw);
+    min-height: 0;
+    flex: 0 0 var(--areqa-avatar-pane-width, 360px);
+    overflow: hidden;
+    background: #101010;
+
+    @media (max-width: 900px) {
+      width: 100%;
+      max-width: none;
+      min-height: 280px;
+      flex: 0 0 min(42vh, 360px);
     }
   `,
 

@@ -28,6 +28,14 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
 
+  panelSidePane: css`
+    height: 100%;
+    flex: 1 1 auto;
+    padding: 0;
+    overflow: hidden;
+    pointer-events: auto;
+  `,
+
   panelWithMessages: css`
     flex: 0 0 0;
     height: 0;
@@ -69,6 +77,12 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
 
+  bodySidePane: css`
+    width: 100%;
+    height: 100%;
+    padding: 0;
+  `,
+
   voiceCore: css`
     display: grid;
     min-height: 0;
@@ -84,6 +98,14 @@ export const useStyles = createStyles(({ css }) => ({
     background: transparent;
   `,
 
+  avatarStageSidePane: css`
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: #101010;
+  `,
+
   avatarStageActive: css`
     width: clamp(156px, 18vw, 220px);
     aspect-ratio: 4 / 5;
@@ -95,6 +117,19 @@ export const useStyles = createStyles(({ css }) => ({
 
     @media (max-width: 768px) {
       width: clamp(148px, 42vw, 190px);
+    }
+  `,
+
+  avatarStageActiveSidePane: css`
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+
+    @media (max-width: 768px) {
+      width: 100%;
     }
   `,
 

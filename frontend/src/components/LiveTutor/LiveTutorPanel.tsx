@@ -83,6 +83,7 @@ function conversationPreview(content: string): string {
 export interface LiveTutorPanelProps {
   activeConversationId?: string | null;
   hasMessages?: boolean;
+  layout?: 'inline' | 'side-pane';
 }
 
 /**
@@ -96,7 +97,7 @@ export interface LiveTutorPanelProps {
  * @param props - Active conversation and whether normal messages are visible.
  * @returns The inline voice panel, or `null` while voice mode is closed.
  */
-export function LiveTutorPanel({ activeConversationId, hasMessages = false }: LiveTutorPanelProps) {
+export function LiveTutorPanel({ activeConversationId, hasMessages = false, layout = 'inline' }: LiveTutorPanelProps) {
   const { styles, cx } = useStyles();
   const { language } = useUserPreferences();
   const labels = COPY[language];
@@ -626,21 +627,22 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
   const isAvatarConnecting = avatarEnabled && !avatarVideoStream && !avatarNotice;
   const isAvatarVideoReady = avatarEnabled && Boolean(avatarVideoStream);
   const shouldShowConnecting = status === 'connecting' || isAvatarConnecting;
-  const shouldShowStage = !shouldShowConnecting && !error && !isAvatarVideoReady;
-  const useFloatingAvatarLayout = isAvatarVideoReady;
+  const shouldShowStage = !shouldShowConnecting && !error && (layout === 'side-pane' || !isAvatarVideoReady);
+  const useFloatingAvatarLayout = layout === 'inline' && isAvatarVideoReady;
 
   return (
     <section
       ref={panelRef}
       className={cx(
         styles.panel,
-        hasMessages && !useFloatingAvatarLayout && styles.panelWithMessages,
+        layout === 'side-pane' && styles.panelSidePane,
+        layout === 'inline' && hasMessages && !useFloatingAvatarLayout && styles.panelWithMessages,
         useFloatingAvatarLayout && styles.panelWithFloatingAvatar,
       )}
       aria-label={labels.title}
-      data-avatar-layout={useFloatingAvatarLayout ? 'floating' : 'inline'}
+      data-avatar-layout={layout === 'side-pane' ? 'side-pane' : useFloatingAvatarLayout ? 'floating' : 'inline'}
     >
-      <div className={styles.body}>
+      <div className={cx(styles.body, layout === 'side-pane' && styles.bodySidePane)}>
         {shouldShowConnecting && !error && (
           <div className={styles.statusText}>{labels.connecting}</div>
         )}
@@ -661,8 +663,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false }: Li
             {avatarNotice && <div className={styles.avatarNotice}>{avatarNotice}</div>}
             <LiveTutorAvatarStage
               avatarEnabled={avatarEnabled}
-              avatarStream={null}
+              avatarStream={layout === 'side-pane' ? avatarVideoStream : null}
               status={status}
+              layout={layout === 'side-pane' ? 'side-pane' : 'inline'}
             />
           </>
         )}

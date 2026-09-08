@@ -21,6 +21,8 @@ export interface LiveTutorAvatarStageProps {
   avatarStream: MediaStream | null;
   /** Current live tutor lifecycle state used for nonverbal visual state. */
   status: LiveTutorStatus;
+  /** Presentation boundary for inline voice mode or the fixed avatar pane. */
+  layout?: 'inline' | 'side-pane';
 }
 
 /**
@@ -40,7 +42,12 @@ export interface LiveTutorAvatarStageProps {
  *   fallback is the default today. Future LiveKit/Anam integration can pass
  *   the avatar participant stream without changing the panel layout.
  */
-export function LiveTutorAvatarStage({ avatarEnabled, avatarStream, status }: LiveTutorAvatarStageProps) {
+export function LiveTutorAvatarStage({
+  avatarEnabled,
+  avatarStream,
+  status,
+  layout = 'inline',
+}: LiveTutorAvatarStageProps) {
   const { styles, cx } = useStyles();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [readyStream, setReadyStream] = useState<MediaStream | null>(null);
@@ -68,7 +75,9 @@ export function LiveTutorAvatarStage({ avatarEnabled, avatarStream, status }: Li
     <div
       className={cx(
         styles.avatarStage,
+        layout === 'side-pane' && styles.avatarStageSidePane,
         showAvatar && styles.avatarStageActive,
+        showAvatar && layout === 'side-pane' && styles.avatarStageActiveSidePane,
         showAvatar && status === 'speaking' && styles.avatarStageSpeaking,
       )}
       data-avatar-state={showAvatar ? 'video' : avatarEnabled ? 'waiting' : 'fallback'}

@@ -92,6 +92,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [isChatReady, setIsChatReady] = useState(false);
+  const [avatarPaneWidth, setAvatarPaneWidth] = useState(360);
+  const avatarResizeStateRef = useRef<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   const mailboxEnabled = useFeatureStore((state) => state.mailbox);
   const compeerEnabled = useFeatureStore((state) => state.compeer);
   const fetchFeatures = useFeatureStore((state) => state.fetchFeatures);
@@ -113,6 +118,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const requestCloseLiveTutor = useLiveTutorStore((state) => state.requestClose);
   const isEmpty = messages.length === 0;
   const isEmptyLiveTutor = isLiveTutorOpen && isEmpty;
+  const useAvatarSplitLayout = isLiveTutorOpen && isLiveTutorAvatarEnabled && !gumPanelType;
+  const hideLiveTutorMessages = isEmptyLiveTutor && !useAvatarSplitLayout;
 
   const activeConversation = useConversationStore((state) =>
     conversationSelectors.activeConversation(state)
@@ -390,6 +397,51 @@ export function ChatContainer({ className }: ChatContainerProps) {
     setSidebarOpen(false);
   }, []);
 
+  const resizeAvatarPane = useCallback((event: PointerEvent) => {
+    const resizeState = avatarResizeStateRef.current;
+    if (!resizeState) return;
+
+    const sidebarWidth = sidebarOpen ? 0 : 280;
+    const availableWidth = Math.max(window.innerWidth - sidebarWidth, 0);
+    const minAvatarWidth = 280;
+    const maxAvatarWidth = Math.max(minAvatarWidth, Math.min(620, availableWidth - 360));
+    const nextWidth = resizeState.startWidth + resizeState.startX - event.clientX;
+    setAvatarPaneWidth(Math.min(Math.max(nextWidth, minAvatarWidth), maxAvatarWidth));
+  }, [sidebarOpen]);
+
+  const stopAvatarPaneResize = useCallback(() => {
+    avatarResizeStateRef.current = null;
+    document.body.style.removeProperty('cursor');
+    document.body.style.removeProperty('user-select');
+    window.removeEventListener('pointermove', resizeAvatarPane);
+    window.removeEventListener('pointerup', stopAvatarPaneResize);
+    window.removeEventListener('pointercancel', stopAvatarPaneResize);
+  }, [resizeAvatarPane]);
+
+  const startAvatarPaneResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    avatarResizeStateRef.current = {
+      startX: event.clientX,
+      startWidth: avatarPaneWidth,
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', resizeAvatarPane);
+    window.addEventListener('pointerup', stopAvatarPaneResize);
+    window.addEventListener('pointercancel', stopAvatarPaneResize);
+  }, [avatarPaneWidth, resizeAvatarPane, stopAvatarPaneResize]);
+
+  const handleAvatarResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    setAvatarPaneWidth((currentWidth) => {
+      const delta = event.key === 'ArrowLeft' ? 24 : -24;
+      return Math.min(Math.max(currentWidth + delta, 280), 620);
+    });
+  }, []);
+
+  useEffect(() => stopAvatarPaneResize, [stopAvatarPaneResize]);
+
   // Dismiss error
   const dismissError = useCallback(() => {
     setError(null);
@@ -518,7 +570,13 @@ export function ChatContainer({ className }: ChatContainerProps) {
           </button>
         </div>
 
-        <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
+        <div
+          className={cx(
+            'areqa-chat-floating-actions',
+            styles.floatingActions,
+            useAvatarSplitLayout && styles.floatingActionsAvatarSplit,
+          )}
+        >
           {!gumPanelType && !isEmpty && (
             <>
               <button
@@ -591,10 +649,15 @@ export function ChatContainer({ className }: ChatContainerProps) {
             'areqa-chat-content',
             shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && 'areqa-chat-content-empty',
             isLiveTutorOpen && !gumPanelType && 'areqa-chat-content-live-tutor',
+            useAvatarSplitLayout && 'areqa-chat-content-avatar-split',
             styles.content,
             shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && styles.contentEmpty,
             isLiveTutorOpen && !gumPanelType && styles.contentLiveTutor,
+            useAvatarSplitLayout && styles.contentAvatarSplit,
           )}
+          style={useAvatarSplitLayout
+            ? ({ '--areqa-avatar-pane-width': `${avatarPaneWidth}px` } as React.CSSProperties)
+            : undefined}
         >
           {mailboxEnabled && gumPanelType === 'mailbox' ? (
             <MailboxPanel onClose={() => setGumPanelType(null)} />
@@ -605,53 +668,81 @@ export function ChatContainer({ className }: ChatContainerProps) {
               onClose={() => setGumPanelType(null)}
             />
           ) : (
-            <>
-              {/* Message List */}
-              <div
-                id="export-chat-container"
-                className={cx(
-                  'areqa-chat-message-area',
-                  isLiveTutorOpen && 'areqa-chat-message-area-live-tutor',
-                  styles.messageArea,
-                  isLiveTutorOpen && styles.messageAreaLiveTutor,
-                  isEmptyLiveTutor && styles.messageAreaLiveTutorEmpty,
+            <div className={cx(styles.liveTutorWorkspace, useAvatarSplitLayout && styles.liveTutorWorkspaceSplit)}>
+              <div className={cx(styles.responsePane, useAvatarSplitLayout && styles.responsePaneSplit)}>
+                {/* Message List */}
+                <div
+                  id="export-chat-container"
+                  className={cx(
+                    'areqa-chat-message-area',
+                    isLiveTutorOpen && 'areqa-chat-message-area-live-tutor',
+                    styles.messageArea,
+                    isLiveTutorOpen && styles.messageAreaLiveTutor,
+                    hideLiveTutorMessages && styles.messageAreaLiveTutorEmpty,
+                  )}
+                >
+                  {!isEmptyLiveTutor && (
+                    <MessageList
+                      liveVoice={isLiveTutorOpen}
+                      onRegenerate={handleRegenerate}
+                      onEdit={handleEdit}
+                      onSelectSuggestion={handleSend}
+                    />
+                  )}
+                </div>
+
+                {!useAvatarSplitLayout && (
+                  <LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />
                 )}
-              >
-                {!isEmptyLiveTutor && (
-                  <MessageList
-                    liveVoice={isLiveTutorOpen}
-                    onRegenerate={handleRegenerate}
-                    onEdit={handleEdit}
-                    onSelectSuggestion={handleSend}
+
+                {/* Chat Input */}
+                <div className={cx('areqa-chat-input-area', styles.inputArea)}>
+                  <ChatInput
+                    key={activeConversationId ?? 'new'}
+                    onSend={handleSend}
+                    disabled={isStreaming}
+                    placeholder={
+                      isStreaming
+                        ? t('thinkingPlaceholder')
+                        : t('askPlaceholder')
+                    }
+                    isStreaming={isStreaming}
+                    onStop={handleStop}
+                    onOpenLiveTutor={openLiveTutor}
+                    isLiveVoiceActive={isLiveTutorOpen}
+                    isLiveVoiceMuted={isLiveTutorMuted}
+                    isLiveVoiceAvatarEnabled={isLiveTutorAvatarEnabled}
+                    onToggleLiveVoiceMute={toggleLiveTutorMute}
+                    onToggleLiveVoiceAvatar={toggleLiveTutorAvatar}
+                    onCloseLiveVoice={requestCloseLiveTutor}
                   />
-                )}
+                </div>
               </div>
 
-              <LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />
-
-              {/* Chat Input */}
-              <div className={cx('areqa-chat-input-area', styles.inputArea)}>
-                <ChatInput
-                  key={activeConversationId ?? 'new'}
-                  onSend={handleSend}
-                  disabled={isStreaming}
-                  placeholder={
-                    isStreaming
-                      ? t('thinkingPlaceholder')
-                      : t('askPlaceholder')
-                  }
-                  isStreaming={isStreaming}
-                  onStop={handleStop}
-                  onOpenLiveTutor={openLiveTutor}
-                  isLiveVoiceActive={isLiveTutorOpen}
-                  isLiveVoiceMuted={isLiveTutorMuted}
-                  isLiveVoiceAvatarEnabled={isLiveTutorAvatarEnabled}
-                  onToggleLiveVoiceMute={toggleLiveTutorMute}
-                  onToggleLiveVoiceAvatar={toggleLiveTutorAvatar}
-                  onCloseLiveVoice={requestCloseLiveTutor}
-                />
-              </div>
-            </>
+              {useAvatarSplitLayout && (
+                <>
+                  <div
+                    className={styles.avatarResizeHandle}
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize avatar panel"
+                    aria-valuemin={280}
+                    aria-valuemax={620}
+                    aria-valuenow={Math.round(avatarPaneWidth)}
+                    tabIndex={0}
+                    onPointerDown={startAvatarPaneResize}
+                    onKeyDown={handleAvatarResizeKeyDown}
+                  />
+                  <aside className={styles.avatarPane} aria-label="Live Tutor avatar">
+                    <LiveTutorPanel
+                      activeConversationId={activeConversationId}
+                      hasMessages={!isEmpty}
+                      layout="side-pane"
+                    />
+                  </aside>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
