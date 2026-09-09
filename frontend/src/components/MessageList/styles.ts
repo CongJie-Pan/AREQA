@@ -207,10 +207,11 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
+    flex: 0 1 auto;
+    min-height: 0;
     text-align: center;
-    padding: 30px 24px 18px;
-    gap: 14px;
+    padding: clamp(16px, 4vh, 30px) 24px clamp(10px, 2vh, 18px);
+    gap: clamp(8px, 2vh, 14px);
   `,
 
   emptyLogoStage: css`
@@ -218,7 +219,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding-bottom: 12px;
+    flex: 0 0 auto;
+    padding-bottom: clamp(8px, 1.8vh, 12px);
     animation: ${emptyLogoFloat} 3.6s ease-in-out infinite;
 
     &::after {
@@ -265,12 +267,12 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   emptyLogo: css`
-    width: 128px;
+    width: clamp(88px, 14vh, 128px);
     height: auto;
     object-fit: contain;
 
     @media (max-width: 768px) {
-      width: 96px;
+      width: clamp(76px, 13vh, 96px);
     }
   `,
 
@@ -280,7 +282,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     justify-content: center;
     max-width: min(760px, 92vw);
-    min-height: 4.2em;
+    min-height: 3.8em;
   `,
 
   emptySubtitle: css`
