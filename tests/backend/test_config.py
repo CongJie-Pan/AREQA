@@ -54,7 +54,8 @@ def test_settings_loads_defaults():
     assert s.explicit_recall_memory_cache_ttl_seconds == 120
     assert s.cold_memory_embedding_timeout_ms == 1500
     assert s.suggestion_generation_timeout_ms == 1000
-    assert s.web_search_provider == "openrouter"
+    assert s.web_search_provider == "tavily"
+    assert s.tavily_web_search_depth == "basic"
     assert s.openrouter_web_search_engine == "exa"
     assert s.openrouter_web_search_max_tool_calls == 2
     assert s.openrouter_web_search_api_url == "https://openrouter.ai/api/v1/chat/completions"
@@ -108,6 +109,7 @@ def test_settings_can_be_overridden_by_env():
         'COLD_MEMORY_EMBEDDING_TIMEOUT_MS': '900',
         'SUGGESTION_GENERATION_TIMEOUT_MS': '750',
         'WEB_SEARCH_PROVIDER': 'perplexity',
+        'TAVILY_WEB_SEARCH_DEPTH': 'advanced',
         'OPENROUTER_WEB_SEARCH_ENGINE': 'native',
         'OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS': '1',
         'OPENROUTER_WEB_SEARCH_API_URL': 'https://openrouter.example.test/chat/completions',
@@ -158,6 +160,7 @@ def test_settings_can_be_overridden_by_env():
         assert s.cold_memory_embedding_timeout_ms == 900
         assert s.suggestion_generation_timeout_ms == 750
         assert s.web_search_provider == 'perplexity'
+        assert s.tavily_web_search_depth == 'advanced'
         assert s.openrouter_web_search_engine == 'native'
         assert s.openrouter_web_search_max_tool_calls == 1
         assert s.openrouter_web_search_api_url == 'https://openrouter.example.test/chat/completions'

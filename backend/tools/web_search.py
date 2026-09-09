@@ -27,6 +27,7 @@ class WebSearchTool:
         *,
         provider: str = "perplexity",
         endpoint: str = "https://api.perplexity.ai/search",
+        tavily_endpoint: str = "https://api.tavily.com/search",
         openrouter_endpoint: str = "https://openrouter.ai/api/v1/chat/completions",
         openrouter_model: str = "google/gemini-3.8-flash",
         openrouter_engine: str = "exa",
@@ -39,6 +40,7 @@ class WebSearchTool:
     ) -> None:
         self.provider = provider
         self.endpoint = endpoint
+        self.tavily_endpoint = tavily_endpoint
         self.openrouter_endpoint = openrouter_endpoint
         self.openrouter_model = openrouter_model
         self.openrouter_engine = openrouter_engine
@@ -95,6 +97,14 @@ class WebSearchTool:
                             context_size=context_size,
                             arguments=arguments,
                         )
+                    elif provider == "tavily":
+                        response = await self._post_tavily_search(
+                            client,
+                            api_key=api_key,
+                            query=query,
+                            max_results=max_results,
+                            arguments=arguments,
+                        )
                     else:
                         response = await client.post(
                             self.endpoint,
@@ -136,6 +146,13 @@ class WebSearchTool:
                                 max_results,
                             ),
                             "summary": self._extract_openrouter_summary(payload),
+                        }
+                    elif provider == "tavily":
+                        data = {
+                            "results": self._extract_tavily_results(
+                                response.json(),
+                                max_results,
+                            ),
                         }
                     else:
                         data = response.json()
@@ -261,6 +278,36 @@ class WebSearchTool:
             },
         )
 
+    async def _post_tavily_search(
+        self,
+        client: Any,
+        *,
+        api_key: str,
+        query: str,
+        max_results: int,
+        arguments: Mapping[str, Any],
+    ) -> Any:
+        """Run a Tavily Search API request for structured web results."""
+
+        search_depth = str(arguments.get("tavily_search_depth") or "basic").strip().lower()
+        if search_depth not in {"basic", "advanced"}:
+            search_depth = "basic"
+        return await client.post(
+            self.tavily_endpoint,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "query": query,
+                "search_depth": search_depth,
+                "max_results": max_results,
+                "include_answer": False,
+                "include_raw_content": False,
+                "include_images": False,
+            },
+        )
+
     def _cache_variant(
         self,
         provider: str,
@@ -275,6 +322,9 @@ class WebSearchTool:
             engine = str(arguments.get("engine") or self.openrouter_engine).strip().lower() or "exa"
             max_tool_calls = max(int(arguments.get("max_tool_calls", self.openrouter_max_tool_calls)), 1)
             return f"model={model}|engine={engine}|context={context_size}|max={max_results}|tools={max_tool_calls}"
+        if provider == "tavily":
+            search_depth = str(arguments.get("tavily_search_depth") or "basic").strip().lower()
+            return f"endpoint={self.tavily_endpoint}|depth={search_depth}|max={max_results}"
         return f"endpoint={self.endpoint}|context={context_size}|max={max_results}"
 
     @staticmethod
@@ -392,6 +442,32 @@ class WebSearchTool:
                     "url": url,
                     "snippet": snippet,
                     "score": 1.0,
+                }
+            )
+            if len(results) >= max_results:
+                break
+        return results
+
+    @staticmethod
+    def _extract_tavily_results(payload: Mapping[str, Any], max_results: int) -> list[dict[str, Any]]:
+        """Normalize Tavily ``results`` into AREQA's web-search result shape."""
+
+        raw_results = payload.get("results") or []
+        results: list[dict[str, Any]] = []
+        for item in raw_results:
+            if not isinstance(item, Mapping):
+                continue
+            url = str(item.get("url") or "").strip()
+            title = str(item.get("title") or url).strip()
+            snippet = str(item.get("content") or item.get("snippet") or "").strip()
+            if not url:
+                continue
+            results.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "snippet": snippet,
+                    "score": float(item.get("score", 1.0) or 1.0),
                 }
             )
             if len(results) >= max_results:

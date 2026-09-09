@@ -61,7 +61,8 @@ class Settings(BaseSettings):
     explicit_recall_memory_cache_ttl_seconds: int = 120
     cold_memory_embedding_timeout_ms: int = 1500
     suggestion_generation_timeout_ms: int = 1000
-    web_search_provider: str = "openrouter"
+    web_search_provider: str = "tavily"
+    tavily_web_search_depth: str = "basic"
     openrouter_web_search_engine: str = "exa"
     openrouter_web_search_max_tool_calls: int = 2
     openrouter_web_search_api_url: str = "https://openrouter.ai/api/v1/chat/completions"

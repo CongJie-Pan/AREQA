@@ -105,6 +105,7 @@ class OrchestrationService(
         self.turn_plan_service = TurnPlanService(self.memory_policy)
         self.web_search_tool = WebSearchTool(
             provider=settings.web_search_provider,
+            tavily_endpoint=settings.tavily_search_api_url,
             openrouter_endpoint=settings.openrouter_web_search_api_url,
             openrouter_model=settings.model_web_search,
             openrouter_engine=settings.openrouter_web_search_engine,

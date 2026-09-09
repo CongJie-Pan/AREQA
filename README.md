@@ -128,14 +128,14 @@ npm run test:smoke --prefix frontend
 
 完整聊天與記憶功能通常需要：
 
-- `OPENROUTER_API_KEY`: 主 LLM、標題生成、GUM、記憶總結、建議問題、embedding / retrieval，以及預設 OpenRouter web search 相關流程。
+- `OPENROUTER_API_KEY`: 主 LLM、標題生成、GUM、記憶總結、建議問題、embedding / retrieval，以及選配 OpenRouter web search fallback 相關流程。
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 前端 Supabase client 與後端 JWKS 驗證來源。
 - `SUPABASE_SERVICE_ROLE_KEY`: 後端專用，用於把 PDF 附件渲染出的圖上傳到 private Supabase Storage bucket 並產生 signed URL；不可暴露到前端。
 - `JWT_SECRET`: Supabase HS 系列 JWT 驗證；若 JWT 演算法不是 HS 系列，後端會改走 Supabase JWKS。
 - `REDIS_URL`: hot memory、user profile、working memory、mailbox cache、RAG cache、visual answer cache 與 WS ticket。預設為 `redis://localhost:6379`，但目前 Codespace 沒有可用的本機 Redis service。
 - `DATABASE_URL`: PostgreSQL / pgvector，供 GUM、cold memory、agent jobs 使用。
 - `PERPLEXITY_API_KEY`: 選配 Perplexity web search fallback 與 visual image search；未設定時相關 provider 會 fail-soft，不阻斷主回答。
-- `TAVILY_API_KEY`: 選配 visual image provider；未設定時 Tavily 圖片查詢會 fail-soft 並交給下一個 provider。
+- `TAVILY_API_KEY`: 預設一般 web search provider 與選配 visual image provider；未設定時相關 Tavily 查詢會 fail-soft。
 - `SERPAPI_API_KEY`: 選配 SerpAPI Google Images provider；未設定時 SerpAPI 圖片查詢會 fail-soft，不阻斷主回答。
 - `HF_TOKEN`: Hugging Face 相關整合使用的 token（目前可選）。
 
@@ -161,7 +161,7 @@ npm run test:smoke --prefix frontend
 - `ENABLE_SHARE_LINK_DEBUG_LOGS`: 控制分享連結診斷 log，預設開啟；log 僅接受白名單欄位。
 - `NEXT_PUBLIC_CHAT_API_ENDPOINT`: 前端聊天代理端點，預設 `/api/chat`。
 - `NEXT_PUBLIC_API_TIMEOUT` / `NEXT_PUBLIC_MAX_MESSAGE_LENGTH` / `NEXT_PUBLIC_PARSER_MAX_BUFFER`: 前端請求 timeout、訊息長度與串流 parser buffer 上限，預設分別為 `30000`、`10000`、`102400`。
-- `WEB_SEARCH_PROVIDER` / `MODEL_WEB_SEARCH` / `OPENROUTER_WEB_SEARCH_ENGINE` / `OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS`: 一般網路搜尋 provider、OpenRouter 搜尋模型、搜尋引擎與 server-tool 呼叫上限；預設分別為 `openrouter`、`google/gemini-3.8-flash`、`exa`、`2`。
+- `WEB_SEARCH_PROVIDER` / `TAVILY_WEB_SEARCH_DEPTH` / `MODEL_WEB_SEARCH` / `OPENROUTER_WEB_SEARCH_ENGINE` / `OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS`: 一般網路搜尋 provider、Tavily 搜尋深度、OpenRouter 搜尋模型、搜尋引擎與 server-tool 呼叫上限；預設分別為 `tavily`、`basic`、`google/gemini-3.8-flash`、`exa`、`2`。
 - `WEB_SEARCH_MAX_RESULTS` / `WEB_SEARCH_CONTEXT_SIZE` / `ENABLE_WEB_QUERY_REWRITE`: 網路搜尋結果數、上下文大小與 query rewrite 控制；預設為 `15`、`high`、開啟。
 - `FOREGROUND_MODEL_CALL_BUDGET_GENERAL` / `FOREGROUND_MODEL_CALL_BUDGET_LEARNING`: 一般聊天與學習路徑的前景模型呼叫預算，預設為 `2` / `3`。
 - `COMPEER_DELIVERY_DELAY_SECONDS` / `COMPEER_COOLDOWN_OVERRIDE_SECONDS` / `COMPEER_PROACTIVE_MAIL_MIN_INTERVAL_SECONDS` / `COMPEER_DAILY_PROACTIVE_LIMIT`: ComPeer 投遞延遲、開發冷卻覆寫、主動信最短間隔與每日上限。

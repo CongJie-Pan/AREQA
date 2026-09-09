@@ -267,6 +267,61 @@ async def test_openrouter_web_search_success_with_url_citations(mock_orchestrato
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_tavily_web_search_success_with_structured_sources(mock_orchestrator):
+    with patch.dict(os.environ, {
+        "WEB_SEARCH_PROVIDER": "tavily",
+        "TAVILY_API_KEY": "dummy_api_key",
+        "TAVILY_WEB_SEARCH_DEPTH": "basic",
+        "WEB_SEARCH_MAX_RESULTS": "3",
+        "WEB_SEARCH_CONTEXT_SIZE": "medium",
+        "ENABLE_WEB_QUERY_REWRITE": "",
+        "REDIS_URL": "redis://localhost:0",
+    }):
+        search_route = respx.post("https://api.tavily.com/search").respond(
+            status_code=200,
+            json={
+                "query": "測試問題",
+                "results": [
+                    {
+                        "title": "Tavily Source",
+                        "url": "https://example.com/tavily",
+                        "content": "Tavily citation excerpt.",
+                        "score": 0.94,
+                    }
+                ],
+            },
+        )
+
+        events = []
+        run_state = ConversationRunState()
+        async for event in mock_orchestrator._node_perplexity_search(
+            "測試問題",
+            "test_conv_id_tavily",
+            run_state=run_state,
+        ):
+            events.append(event)
+
+        request_payload = json.loads(search_route.calls.last.request.content)
+        assert request_payload["query"] == "測試問題"
+        assert request_payload["search_depth"] == "basic"
+        assert request_payload["max_results"] == 3
+        assert request_payload["include_raw_content"] is False
+
+        sources_event = next(event for event in events if "event: sources" in event)
+        sources_payload = json.loads(sources_event.split("data: ")[1].strip())
+        assert sources_payload == [{
+            "title": "Tavily Source",
+            "chunk_id": "https://example.com/tavily",
+            "url": "https://example.com/tavily",
+            "snippet": "Tavily citation excerpt.",
+            "score": 0.94,
+        }]
+        assert any("已取得 1 筆網路文獻" in event for event in events)
+        assert "https://example.com/tavily" in run_state.context_prompt
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_openrouter_search_node_uses_summary_when_citations_are_filtered(mock_orchestrator):
     with patch.dict(os.environ, {
         "WEB_SEARCH_PROVIDER": "openrouter",

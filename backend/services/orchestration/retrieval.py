@@ -165,6 +165,8 @@ class OrchestrationRetrievalMixin:
         ))
         if web_search_provider == "openrouter":
             api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        elif web_search_provider == "tavily":
+            api_key = os.environ.get("TAVILY_API_KEY", "")
         else:
             api_key = os.environ.get("PERPLEXITY_API_KEY", "")
         if not api_key:
@@ -217,7 +219,7 @@ class OrchestrationRetrievalMixin:
             "orchestration.web_query_ready conversation_id=%s provider=%s model=%s elapsed_ms=%s max_results=%s context_size=%s rewritten=%s",
             conversation_id,
             web_search_provider,
-            web_search_model if web_search_provider == "openrouter" else "perplexity",
+            web_search_model if web_search_provider == "openrouter" else web_search_provider,
             int((time.time() - rewrite_start) * 1000),
             max_results,
             search_context_size,
@@ -239,6 +241,10 @@ class OrchestrationRetrievalMixin:
                     "max_tool_calls": web_search_max_tool_calls,
                     "max_results": max_results,
                     "search_context_size": search_context_size,
+                    "tavily_search_depth": os.environ.get(
+                        "TAVILY_WEB_SEARCH_DEPTH",
+                        settings.tavily_web_search_depth,
+                    ),
                     "redis_url": os.environ.get("REDIS_URL", "redis://localhost:6379"),
                 },
                 run_state.tool_budget,

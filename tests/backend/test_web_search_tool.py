@@ -201,6 +201,69 @@ async def test_web_search_openrouter_normalizes_url_citation_annotations():
 
 
 @pytest.mark.asyncio
+async def test_web_search_tavily_normalizes_results_and_request_shape():
+    redis = FakeRedis()
+    http = FakeHttpClient({
+        "query": "latest German politics",
+        "results": [
+            {
+                "title": "German Politics Update",
+                "url": "https://example.com/germany-politics",
+                "content": "A current German politics excerpt.",
+                "score": 0.91,
+            },
+            {
+                "title": "Second Result",
+                "url": "https://example.org/second",
+                "content": "Another relevant excerpt.",
+                "score": 0.82,
+            },
+        ],
+    })
+    tool = WebSearchTool(
+        provider="tavily",
+        redis_factory=lambda *args, **kwargs: redis,
+        http_client_factory=lambda **kwargs: http,
+    )
+
+    result = await tool.execute({
+        "query": "latest German politics",
+        "conversation_id": "conversation-1",
+        "api_key": "secret",
+        "max_results": 3,
+        "tavily_search_depth": "basic",
+    })
+
+    assert result.content["results"] == [
+        {
+            "title": "German Politics Update",
+            "url": "https://example.com/germany-politics",
+            "snippet": "A current German politics excerpt.",
+            "score": 0.91,
+        },
+        {
+            "title": "Second Result",
+            "url": "https://example.org/second",
+            "snippet": "Another relevant excerpt.",
+            "score": 0.82,
+        },
+    ]
+    assert result.provenance == (
+        "https://example.com/germany-politics",
+        "https://example.org/second",
+    )
+    request_json = http.post.await_args.kwargs["json"]
+    assert request_json == {
+        "query": "latest German politics",
+        "search_depth": "basic",
+        "max_results": 3,
+        "include_answer": False,
+        "include_raw_content": False,
+        "include_images": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_web_search_openrouter_filters_unusable_citations():
     redis = FakeRedis()
     http = FakeHttpClient({
@@ -338,7 +401,34 @@ async def test_web_search_cache_is_scoped_by_provider():
         "user_id": "user-1",
     }
     await tool.execute({**base, "provider": "perplexity"})
-    await tool.execute({**base, "provider": "openrouter"})
+    await tool.execute({**base, "provider": "tavily"})
+
+    first_key = first_redis.get.await_args.args[0]
+    second_key = second_redis.get.await_args.args[0]
+    assert first_key != second_key
+
+
+@pytest.mark.asyncio
+async def test_web_search_cache_is_scoped_by_tavily_depth():
+    first_redis = FakeRedis()
+    second_redis = FakeRedis()
+    redis_instances = iter([first_redis, second_redis])
+    http = FakeHttpClient({"results": []})
+    tool = WebSearchTool(
+        provider="tavily",
+        redis_factory=lambda *args, **kwargs: next(redis_instances),
+        http_client_factory=lambda **kwargs: http,
+    )
+    base = {
+        "query": "latest",
+        "conversation_id": "same-conversation",
+        "api_key": "secret",
+        "user_id": "user-1",
+        "provider": "tavily",
+    }
+
+    await tool.execute({**base, "tavily_search_depth": "basic"})
+    await tool.execute({**base, "tavily_search_depth": "advanced"})
 
     first_key = first_redis.get.await_args.args[0]
     second_key = second_redis.get.await_args.args[0]
