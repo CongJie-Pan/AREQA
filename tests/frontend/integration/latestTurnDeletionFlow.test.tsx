@@ -47,6 +47,12 @@ vi.mock('@/services/database', () => ({
       clearGuestData: vi.fn().mockResolvedValue(undefined),
       getAll: vi.fn().mockResolvedValue([]),
     },
+    note: {
+      clearGuestData: vi.fn().mockResolvedValue(undefined),
+      getAll: vi.fn().mockResolvedValue([]),
+      addFromMessage: vi.fn(),
+      delete: vi.fn(),
+    },
     message: {
       deleteManyByConversationId: vi.fn().mockResolvedValue(undefined),
       updateFeedback: vi.fn().mockResolvedValue(undefined),

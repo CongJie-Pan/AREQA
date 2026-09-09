@@ -1,1 +1,1 @@
-export type SidePanelType = 'memory' | 'suggestions' | 'mailbox' | null;
+export type SidePanelType = 'memory' | 'suggestions' | 'mailbox' | 'notes' | null;

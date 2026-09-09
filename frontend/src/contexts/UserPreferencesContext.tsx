@@ -23,6 +23,7 @@ export type TranslationKey =
   | 'language.zhCN'
   | 'language.en'
   | 'browseMemory'
+  | 'browseNotes'
   | 'closePanel'
   | 'memoryDeleteSelectedSuccess'
   | 'memoryDeleteFailed'
@@ -151,6 +152,19 @@ export type TranslationKey =
   | 'feedbackSafety'
   | 'feedbackOther'
   | 'copyMessage'
+  | 'addToNotes'
+  | 'savedToNotes'
+  | 'addedToNotes'
+  | 'addNoteFailed'
+  | 'notesTitle'
+  | 'notesSearchPlaceholder'
+  | 'notesEmpty'
+  | 'notesUntitledConversation'
+  | 'openSourceConversation'
+  | 'notesOpenSourceFailed'
+  | 'deleteNoteConfirm'
+  | 'noteDeleted'
+  | 'noteDeleteFailed'
   | 'expandImage'
   | 'editMessage'
   | 'helpfulReply'
@@ -237,6 +251,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'language.zhCN': '簡體中文',
     'language.en': 'English',
     browseMemory: '瀏覽記憶',
+    browseNotes: '瀏覽筆記',
     closePanel: '關閉面板',
     memoryDeleteSelectedSuccess: '成功刪除 {count} 筆記憶',
     memoryDeleteFailed: '刪除記憶失敗',
@@ -365,6 +380,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: '安全性或法律疑慮',
     feedbackOther: '其他',
     copyMessage: '複製訊息',
+    addToNotes: '加入筆記',
+    savedToNotes: '已在筆記中',
+    addedToNotes: '已加入筆記',
+    addNoteFailed: '加入筆記失敗，請稍後再試',
+    notesTitle: '筆記',
+    notesSearchPlaceholder: '搜尋筆記',
+    notesEmpty: '目前還沒有筆記',
+    notesUntitledConversation: '未命名對話',
+    openSourceConversation: '開啟來源對話',
+    notesOpenSourceFailed: '無法開啟來源對話',
+    deleteNoteConfirm: '確定要刪除此筆記嗎？',
+    noteDeleted: '已刪除筆記',
+    noteDeleteFailed: '刪除筆記失敗',
     expandImage: '放大檢視圖片：{caption}',
     editMessage: '編輯訊息',
     helpfulReply: '這則回覆有幫助',
@@ -421,6 +449,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'language.zhCN': '简体中文',
     'language.en': 'English',
     browseMemory: '浏览记忆',
+    browseNotes: '浏览笔记',
     closePanel: '关闭面板',
     memoryDeleteSelectedSuccess: '成功删除 {count} 笔记忆',
     memoryDeleteFailed: '删除记忆失败',
@@ -549,6 +578,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: '安全性或法律疑虑',
     feedbackOther: '其他',
     copyMessage: '复制讯息',
+    addToNotes: '加入笔记',
+    savedToNotes: '已在笔记中',
+    addedToNotes: '已加入笔记',
+    addNoteFailed: '加入笔记失败，请稍后再试',
+    notesTitle: '笔记',
+    notesSearchPlaceholder: '搜索笔记',
+    notesEmpty: '目前还没有笔记',
+    notesUntitledConversation: '未命名对话',
+    openSourceConversation: '打开来源对话',
+    notesOpenSourceFailed: '无法打开来源对话',
+    deleteNoteConfirm: '确定要删除此笔记吗？',
+    noteDeleted: '已删除笔记',
+    noteDeleteFailed: '删除笔记失败',
     expandImage: '放大查看图片：{caption}',
     editMessage: '编辑讯息',
     helpfulReply: '这则回复有帮助',
@@ -605,6 +647,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'language.zhCN': 'Simplified Chinese',
     'language.en': 'English',
     browseMemory: 'Memory',
+    browseNotes: 'Notes',
     closePanel: 'Close panel',
     memoryDeleteSelectedSuccess: 'Deleted {count} memories',
     memoryDeleteFailed: 'Failed to delete memory',
@@ -733,6 +776,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: 'Safety or legal concern',
     feedbackOther: 'Other',
     copyMessage: 'Copy message',
+    addToNotes: 'Add to notes',
+    savedToNotes: 'Saved to notes',
+    addedToNotes: 'Added to notes',
+    addNoteFailed: 'Could not add this note. Please try again later.',
+    notesTitle: 'Notes',
+    notesSearchPlaceholder: 'Search notes',
+    notesEmpty: 'No notes yet',
+    notesUntitledConversation: 'Untitled conversation',
+    openSourceConversation: 'Open source chat',
+    notesOpenSourceFailed: 'Could not open the source chat',
+    deleteNoteConfirm: 'Delete this note?',
+    noteDeleted: 'Note deleted',
+    noteDeleteFailed: 'Could not delete this note',
     expandImage: 'Open image preview: {caption}',
     editMessage: 'Edit message',
     helpfulReply: 'This reply was helpful',

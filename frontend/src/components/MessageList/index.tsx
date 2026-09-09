@@ -11,6 +11,7 @@ import Image from 'next/image';
 import { ArrowDown } from 'lucide-react';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
+import { useNotesStore } from '@/store/notes';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { MessageItem } from './MessageItem';
 import { useStyles } from './styles';
@@ -35,6 +36,8 @@ export interface MessageListProps {
   onEdit?: (messageId: string, newContent: string) => void;
   /** Callback when the bottom assistant turn should be deleted */
   onDeleteLatestTurn?: (assistantMessageId: string) => void;
+  /** Callback when an assistant response should be saved as a note */
+  onAddNote?: (assistantMessageId: string) => void;
   /** Callback when a suggested question is selected */
   onSelectSuggestion?: (question: string) => void;
 }
@@ -182,6 +185,7 @@ export function MessageList({
   onRegenerate,
   onEdit,
   onDeleteLatestTurn,
+  onAddNote,
   onSelectSuggestion,
 }: MessageListProps) {
   const { styles, cx } = useStyles();
@@ -202,7 +206,12 @@ export function MessageList({
   const ragMessage = useChatStore((state) => state.ragMessage);
   const ragSources = useChatStore((state) => state.ragSources);
   const setMessageFeedback = useChatStore((state) => state.setMessageFeedback);
+  const savedNotes = useNotesStore((state) => state.notes);
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
+  const savedMessageIds = React.useMemo(
+    () => new Set(savedNotes.map((note) => note.messageId).filter(Boolean)),
+    [savedNotes],
+  );
 
   const handleFeedback = useCallback(async (
     messageId: string,
@@ -405,6 +414,8 @@ export function MessageList({
                   : undefined
               }
               onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
+              onAddNote={message.role === 'assistant' && !isStreaming ? onAddNote : undefined}
+              isSavedNote={message.role === 'assistant' ? savedMessageIds.has(message.id) : false}
               onDeleteLatestTurn={
                 message.role === 'assistant' && isLast && !isStreaming
                   ? onDeleteLatestTurn

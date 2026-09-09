@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Monitor,
   Moon,
+  NotebookText,
   Sun,
   User,
 } from 'lucide-react';
@@ -29,6 +30,8 @@ import {
 export interface UserAuthUIProps {
   /** Opens the learner memory panel from the authenticated avatar menu. */
   onOpenMemory?: () => void;
+  /** Opens the saved notes panel from the authenticated avatar menu. */
+  onOpenNotes?: () => void;
 }
 
 const THEME_OPTIONS: Array<{
@@ -50,7 +53,7 @@ const LANGUAGE_OPTIONS: Array<{
   { value: 'en', label: '英文' },
 ];
 
-export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
+export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
   const user = useAuthStore((state) => state.user);
   const {
     theme: interfaceTheme,
@@ -133,6 +136,16 @@ export function UserAuthUI({ onOpenMemory }: UserAuthUIProps) {
             icon: <BrainCircuit size={16} />,
             label: t('browseMemory'),
             onClick: onOpenMemory,
+          },
+        ]
+      : []),
+    ...(onOpenNotes
+      ? [
+          {
+            key: 'notes',
+            icon: <NotebookText size={16} />,
+            label: t('browseNotes'),
+            onClick: onOpenNotes,
           },
         ]
       : []),

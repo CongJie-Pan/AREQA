@@ -56,6 +56,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       content: 'content',
       streamingDots: 'streamingDots',
       streamingDot: 'streamingDot',
+      actionButtonActive: 'actionButtonActive',
     },
     cx: (...args: any[]) => args.filter(Boolean).join(' '),
   }),
@@ -127,6 +128,40 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '刪除對話' }));
 
     expect(onDeleteLatestTurn).toHaveBeenCalledWith('msg-1');
+  });
+
+  it('calls the add-note callback from the assistant action row', () => {
+    const onAddNote = vi.fn();
+
+    render(
+      <MessageItem
+        message={baseMessage}
+        onAddNote={onAddNote}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '加入筆記' }));
+
+    expect(onAddNote).toHaveBeenCalledWith('msg-1');
+  });
+
+  it('shows an inactive saved-note action when the assistant reply is already saved', () => {
+    const onAddNote = vi.fn();
+
+    render(
+      <MessageItem
+        message={baseMessage}
+        isSavedNote
+        onAddNote={onAddNote}
+      />
+    );
+
+    const button = screen.getByRole('button', { name: '已在筆記中' });
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+
+    expect(onAddNote).not.toHaveBeenCalled();
   });
 
   it('renders persisted user attachment metadata below the message text', () => {

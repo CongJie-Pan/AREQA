@@ -1,6 +1,6 @@
 import { db, getCurrentUserId } from '@/database/db';
 import { supabase } from '@/lib/supabase';
-import type { AnswerBlock, Conversation, Message } from '@/database/schema';
+import type { AnswerBlock, Conversation, Message, Note } from '@/database/schema';
 import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
@@ -88,6 +88,17 @@ export const syncService = {
         throw msgError;
       }
 
+      // Pull notes after messages so local references are available when they exist.
+      const { data: cloudNotes, error: noteError } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (noteError) {
+        handleAuthError(noteError);
+        throw noteError;
+      }
+
       let dataChanged = false;
 
       // Group messages by conversation ID to calculate message count
@@ -96,6 +107,56 @@ export const syncService = {
         cloudMsgs.forEach(m => {
           msgCountByConv[m.conversation_id] = (msgCountByConv[m.conversation_id] || 0) + 1;
         });
+      }
+
+      if (cloudNotes && cloudNotes.length > 0) {
+        const localNotes = await db.notes.toArray();
+        const localNoteMap = new Map(localNotes.map((note) => [note.id, note]));
+
+        const notesToUpsert = [];
+        for (const note of cloudNotes) {
+          const cloudUpdatedAt = new Date(note.updated_at);
+          const localNote = localNoteMap.get(note.id);
+          const cloudAnswerBlocks = normalizeJsonArray<AnswerBlock>(
+            note.answer_blocks_snapshot,
+            localNote?.answerBlocksSnapshot,
+          );
+          const cloudCitations = normalizeJsonArray<string>(
+            note.citations_snapshot,
+            localNote?.citationsSnapshot,
+          );
+          const cloudSources = normalizeJsonArray<MessageSource>(
+            note.sources_snapshot,
+            localNote?.sourcesSnapshot,
+          );
+
+          if (
+            !localNote ||
+            localNote.updatedAt.getTime() < cloudUpdatedAt.getTime() ||
+            !jsonEqual(localNote.answerBlocksSnapshot, cloudAnswerBlocks) ||
+            !jsonEqual(localNote.citationsSnapshot, cloudCitations) ||
+            !jsonEqual(localNote.sourcesSnapshot, cloudSources)
+          ) {
+            notesToUpsert.push({
+              id: note.id,
+              userId: note.user_id,
+              conversationId: note.conversation_id,
+              messageId: note.message_id,
+              conversationTitle: note.conversation_title ?? null,
+              contentSnapshot: note.content_snapshot,
+              answerBlocksSnapshot: cloudAnswerBlocks,
+              citationsSnapshot: cloudCitations,
+              sourcesSnapshot: cloudSources,
+              createdAt: new Date(note.created_at),
+              updatedAt: cloudUpdatedAt,
+            } as Note);
+          }
+        }
+
+        if (notesToUpsert.length > 0) {
+          await db.notes.bulkPut(notesToUpsert);
+          dataChanged = true;
+        }
       }
 
       if (cloudConvs && cloudConvs.length > 0) {
@@ -265,6 +326,51 @@ export const syncService = {
   },
 
   /**
+   * Pushes a note to Supabase.
+   *
+   * The payload intentionally includes source identifiers and safe display
+   * snapshots, but does not emit the note content to logs.
+   */
+  async pushNote(note: Note) {
+    const userId = getCurrentUserId();
+    if (!userId || userId === 'default_user') return;
+
+    try {
+      const { error } = await supabase.from('notes').upsert({
+        id: note.id,
+        user_id: note.userId,
+        conversation_id: note.conversationId,
+        message_id: note.messageId,
+        conversation_title: note.conversationTitle ?? null,
+        content_snapshot: note.contentSnapshot,
+        answer_blocks_snapshot: persistentAnswerBlocks(note.answerBlocksSnapshot) ?? null,
+        citations_snapshot: note.citationsSnapshot ?? null,
+        sources_snapshot: note.sourcesSnapshot ?? null,
+        created_at: note.createdAt.toISOString(),
+        updated_at: note.updatedAt.toISOString(),
+      });
+
+      if (error) {
+        handleAuthError(error);
+        throw error;
+      }
+
+      logger.info('note_synced_to_cloud', {
+        component: 'syncService',
+        noteId: note.id,
+        conversationId: note.conversationId ?? null,
+        messageId: note.messageId ?? null,
+      });
+    } catch (e) {
+      handleAuthError(e);
+      logger.error('Push note error', e instanceof Error ? e : new Error(String(e)), {
+        component: 'syncService',
+        noteId: note.id,
+      });
+    }
+  },
+
+  /**
    * Updates only the assistant-feedback fields for an existing cloud message.
    */
   async updateMessageFeedback(
@@ -324,6 +430,33 @@ export const syncService = {
     } catch (e) {
       handleAuthError(e);
       logger.error('Delete message error', e instanceof Error ? e : new Error(String(e)));
+    }
+  },
+
+  /**
+   * Deletes one note from Supabase for the current user.
+   */
+  async deleteNote(id: string) {
+    const userId = getCurrentUserId();
+    if (!userId || userId === 'default_user') return;
+
+    try {
+      const { error } = await supabase
+        .from('notes')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
+
+      if (error) {
+        handleAuthError(error);
+        throw error;
+      }
+    } catch (e) {
+      handleAuthError(e);
+      logger.error('Delete note error', e instanceof Error ? e : new Error(String(e)), {
+        component: 'syncService',
+        noteId: id,
+      });
     }
   },
 

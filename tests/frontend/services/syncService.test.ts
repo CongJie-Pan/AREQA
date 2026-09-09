@@ -34,13 +34,17 @@ vi.mock('@/database/db', async (importOriginal) => {
 // Create a variable to control what supabase returns
 let mockSupabaseResponse: any = { data: [], error: null };
 let mockSupabaseMsgResponse: any = { data: [], error: null };
-const { mockConversationUpsert, mockMessageUpsert } = vi.hoisted(() => ({
+let mockSupabaseNoteResponse: any = { data: [], error: null };
+const { mockConversationUpsert, mockMessageUpsert, mockNoteUpsert } = vi.hoisted(() => ({
   mockConversationUpsert: vi.fn(),
   mockMessageUpsert: vi.fn(),
+  mockNoteUpsert: vi.fn(),
 }));
-const { mockMessageDelete, mockMessageDeleteEq } = vi.hoisted(() => ({
+const { mockMessageDelete, mockMessageDeleteEq, mockNoteDelete, mockNoteDeleteEq } = vi.hoisted(() => ({
   mockMessageDelete: vi.fn(),
   mockMessageDeleteEq: vi.fn(),
+  mockNoteDelete: vi.fn(),
+  mockNoteDeleteEq: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -62,6 +66,14 @@ vi.mock('@/lib/supabase', () => ({
           delete: mockMessageDelete
         };
       }
+      if (table === 'notes') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockResolvedValue(mockSupabaseNoteResponse),
+          upsert: mockNoteUpsert.mockResolvedValue({ error: null }),
+          delete: mockNoteDelete
+        };
+      }
       return {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockResolvedValue({ data: [], error: null })
@@ -75,24 +87,32 @@ describe('syncService - pullFromCloud', () => {
     mockReload.mockClear();
     mockConversationUpsert.mockClear();
     mockMessageUpsert.mockClear();
+    mockNoteUpsert.mockClear();
     mockMessageDelete.mockClear();
     mockMessageDeleteEq.mockClear();
+    mockNoteDelete.mockClear();
+    mockNoteDeleteEq.mockClear();
     mockMessageDelete.mockReturnValue({ eq: mockMessageDeleteEq });
     mockMessageDeleteEq.mockReturnValue({ eq: mockMessageDeleteEq });
+    mockNoteDelete.mockReturnValue({ eq: mockNoteDeleteEq });
+    mockNoteDeleteEq.mockReturnValue({ eq: mockNoteDeleteEq });
     await db.open();
     await db.conversations.clear();
     await db.messages.clear();
+    await db.notes.clear();
   });
 
   afterEach(async () => {
     vi.clearAllMocks();
     await db.conversations.clear();
     await db.messages.clear();
+    await db.notes.clear();
   });
 
   it('should not reload if cloud returns empty array', async () => {
     mockSupabaseResponse = { data: [], error: null };
     mockSupabaseMsgResponse = { data: [], error: null };
+    mockSupabaseNoteResponse = { data: [], error: null };
 
     await syncService.pullFromCloud();
 
@@ -167,6 +187,28 @@ describe('syncService - pullFromCloud', () => {
         }],
         error: null
       };
+      mockSupabaseNoteResponse = {
+        data: [{
+          id: 'note_1',
+          user_id: 'user_123',
+          conversation_id: 'conv_1',
+          message_id: 'msg_2',
+          conversation_title: 'Test',
+          content_snapshot: 'Hello',
+          citations_snapshot: ['https://example.com/source'],
+          sources_snapshot: [{
+            title: 'Structured Source',
+            snippet: 'Structured source snippet.',
+            score: 0.97,
+            chunk_id: 'https://example.com/source',
+            url: 'https://example.com/source',
+          }],
+          answer_blocks_snapshot: [{ type: 'paragraph', text: 'Hello' }],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }],
+        error: null,
+      };
 
       await syncService.pullFromCloud();
 
@@ -212,6 +254,15 @@ describe('syncService - pullFromCloud', () => {
       ]);
       expect(assistantMessage?.suggestions).toEqual(['請再解釋一次']);
       expect(assistantMessage?.reasoning).toEqual({ content: 'Reasoning trace', duration: 120 });
+
+      const notes = await db.notes.toArray();
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toEqual(expect.objectContaining({
+        id: 'note_1',
+        conversationId: 'conv_1',
+        messageId: 'msg_2',
+        contentSnapshot: 'Hello',
+      }));
     } finally {
       setTimeoutSpy.mockRestore();
     }
@@ -270,6 +321,36 @@ describe('syncService - pullFromCloud', () => {
     expect(mockMessageDelete).toHaveBeenCalledOnce();
     expect(mockMessageDeleteEq).toHaveBeenNthCalledWith(1, 'id', 'assistant_old');
     expect(mockMessageDeleteEq).toHaveBeenNthCalledWith(2, 'user_id', 'user_123');
+  });
+
+  it('should push and delete notes scoped to the current user', async () => {
+    await syncService.pushNote({
+      id: 'note_cloud',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      messageId: 'assistant_1',
+      conversationTitle: 'Notes chat',
+      contentSnapshot: 'Saved assistant response',
+      citationsSnapshot: ['https://example.com/source'],
+      answerBlocksSnapshot: [{ type: 'paragraph', text: 'Saved assistant response' }],
+      createdAt: new Date('2026-09-09T00:00:00.000Z'),
+      updatedAt: new Date('2026-09-09T00:00:01.000Z'),
+    });
+
+    expect(supabase.from).toHaveBeenCalledWith('notes');
+    expect(mockNoteUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'note_cloud',
+      user_id: 'user_123',
+      conversation_id: 'conv_1',
+      message_id: 'assistant_1',
+      content_snapshot: 'Saved assistant response',
+    }));
+
+    await syncService.deleteNote('note_cloud');
+
+    expect(mockNoteDelete).toHaveBeenCalledOnce();
+    expect(mockNoteDeleteEq).toHaveBeenNthCalledWith(1, 'id', 'note_cloud');
+    expect(mockNoteDeleteEq).toHaveBeenNthCalledWith(2, 'user_id', 'user_123');
   });
 
   it('should preserve local reference metadata when legacy cloud rows omit it', async () => {

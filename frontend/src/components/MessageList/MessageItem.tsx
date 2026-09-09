@@ -14,7 +14,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -682,6 +682,10 @@ export interface MessageItemProps {
   onRegenerate?: (messageId: string) => void;
   /** Callback when deleting the latest assistant turn is requested */
   onDeleteLatestTurn?: (assistantMessageId: string) => void;
+  /** Callback when this assistant response should be saved as a note */
+  onAddNote?: (assistantMessageId: string) => void;
+  /** Whether this assistant response is already saved as a note */
+  isSavedNote?: boolean;
   /** Callback when edit is submitted (user messages only) */
   onEdit?: (messageId: string, newContent: string) => void;
   /** Callback when assistant feedback is changed */
@@ -1129,6 +1133,8 @@ export const MessageItem = memo(function MessageItem({
   ragInfo,
   onRegenerate,
   onDeleteLatestTurn,
+  onAddNote,
+  isSavedNote = false,
   onEdit,
   onFeedback,
   isLast = false,
@@ -1319,6 +1325,11 @@ export const MessageItem = memo(function MessageItem({
   const handleDeleteLatestTurn = useCallback(() => {
     onDeleteLatestTurn?.(message.id);
   }, [message.id, onDeleteLatestTurn]);
+
+  const handleAddNote = useCallback(() => {
+    if (isSavedNote) return;
+    onAddNote?.(message.id);
+  }, [isSavedNote, message.id, onAddNote]);
 
   const handleFeedback = useCallback(async (
     feedback: MessageFeedback,
@@ -1652,6 +1663,18 @@ export const MessageItem = memo(function MessageItem({
                   <Copy size={16} />
                 </button>
               </Tooltip>
+              {(onAddNote || isSavedNote) && !isStreaming && (
+                <Tooltip title={isSavedNote ? t('savedToNotes') : t('addToNotes')}>
+                  <button
+                    className={cx(styles.actionButton, isSavedNote && styles.actionButtonActive)}
+                    disabled={isSavedNote}
+                    onClick={handleAddNote}
+                    aria-label={isSavedNote ? t('savedToNotes') : t('addToNotes')}
+                  >
+                    <NotebookPen size={16} />
+                  </button>
+                </Tooltip>
+              )}
               {!isStreaming && onFeedback && (
                 <>
                   <span

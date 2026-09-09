@@ -19,6 +19,10 @@ vi.mock('@/store/auth', () => ({
 vi.mock('@/services/database', () => ({
   databaseService: {
     conversation: { clearGuestData: vi.fn().mockResolvedValue(undefined) },
+    note: {
+      clearGuestData: vi.fn().mockResolvedValue(undefined),
+      getAll: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 

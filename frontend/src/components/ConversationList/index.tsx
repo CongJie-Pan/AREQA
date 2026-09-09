@@ -448,7 +448,10 @@ export function ConversationList({
       </div>
 
       {/* User Auth UI Area */}
-      <UserAuthUI onOpenMemory={() => onSelectGumPanel?.('memory')} />
+      <UserAuthUI
+        onOpenMemory={() => onSelectGumPanel?.('memory')}
+        onOpenNotes={() => onSelectGumPanel?.('notes')}
+      />
       <Modal
         confirmLoading={isRenaming}
         okButtonProps={{ disabled: !renameValue.trim() }}

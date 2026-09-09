@@ -169,6 +169,39 @@ export interface Message {
 }
 
 /**
+ * User-saved note linked to an assistant response.
+ *
+ * Compatibility:
+ * - Notes keep a message/conversation reference for navigation and sync.
+ * - A content snapshot is retained so the note remains readable if the source
+ *   conversation is deleted locally or is unavailable offline.
+ */
+export interface Note {
+  /** UUID v4 - Primary key */
+  id: string;
+  /** User ID - Multi-tenant support */
+  userId: string;
+  /** Source conversation ID */
+  conversationId: string | null;
+  /** Source assistant message ID */
+  messageId: string | null;
+  /** Conversation title captured when the note was created or synced. */
+  conversationTitle?: string | null;
+  /** Assistant response snapshot used for offline and deleted-source fallback. */
+  contentSnapshot: string;
+  /** Structured paragraph and image blocks captured from the assistant response. */
+  answerBlocksSnapshot?: AnswerBlock[];
+  /** Citation URLs captured from the assistant response. */
+  citationsSnapshot?: string[];
+  /** Structured RAG sources captured from the assistant response. */
+  sourcesSnapshot?: Message['sources'];
+  /** Creation timestamp */
+  createdAt: Date;
+  /** Last update timestamp */
+  updatedAt: Date;
+}
+
+/**
  * Setting entity
  * Stores application settings as key-value pairs
  */

@@ -136,6 +136,10 @@ vi.mock('@/services/database', () => ({
     conversation: {
       clearGuestData: vi.fn(),
     },
+    note: {
+      clearGuestData: vi.fn(),
+      getAll: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 

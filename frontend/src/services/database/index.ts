@@ -6,8 +6,9 @@
 
 import { conversationRepo } from '@/database/repositories/conversationRepo';
 import { messageRepo } from '@/database/repositories/messageRepo';
+import { noteRepo } from '@/database/repositories/noteRepo';
 import { db } from '@/database/db';
-import type { Conversation, Message, Setting } from '@/database/schema';
+import type { Conversation, Message, Note, Setting } from '@/database/schema';
 import { logger } from '@/utils/logger';
 
 /** Current export format version */
@@ -19,11 +20,12 @@ const EXPORT_VERSION = 1;
 interface ExportedData {
   version: number;
   exportedAt: string;
-  data: {
-    conversations: Conversation[];
-    messages: Message[];
-    settings: Setting[];
-  };
+    data: {
+      conversations: Conversation[];
+      messages: Message[];
+      notes?: Note[];
+      settings: Setting[];
+    };
 }
 
 /**
@@ -107,6 +109,43 @@ function validateMessage(msg: unknown): ValidationResult {
 
   if (!isValidDate(m.createdAt)) {
     return { valid: false, error: 'Message must have a valid createdAt date' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validates a note object.
+ */
+function validateNote(note: unknown): ValidationResult {
+  if (!note || typeof note !== 'object') {
+    return { valid: false, error: 'Note must be an object' };
+  }
+
+  const n = note as Record<string, unknown>;
+
+  if (typeof n.id !== 'string' || n.id.length === 0) {
+    return { valid: false, error: 'Note must have a valid id' };
+  }
+
+  if (typeof n.conversationId !== 'string' || n.conversationId.length === 0) {
+    return { valid: false, error: 'Note must have a valid conversationId' };
+  }
+
+  if (typeof n.messageId !== 'string' || n.messageId.length === 0) {
+    return { valid: false, error: 'Note must have a valid messageId' };
+  }
+
+  if (typeof n.contentSnapshot !== 'string') {
+    return { valid: false, error: 'Note must have contentSnapshot' };
+  }
+
+  if (!isValidDate(n.createdAt)) {
+    return { valid: false, error: 'Note must have a valid createdAt date' };
+  }
+
+  if (!isValidDate(n.updatedAt)) {
+    return { valid: false, error: 'Note must have a valid updatedAt date' };
   }
 
   return { valid: true };
@@ -201,6 +240,20 @@ function validateExportedData(data: unknown): ValidationResult {
   }
 
   // Validate settings array
+  if (dataSection.notes !== undefined) {
+    if (!Array.isArray(dataSection.notes)) {
+      return { valid: false, error: 'Notes must be an array' };
+    }
+
+    for (let i = 0; i < dataSection.notes.length; i++) {
+      const result = validateNote(dataSection.notes[i]);
+      if (!result.valid) {
+        return { valid: false, error: `Note at index ${i}: ${result.error}` };
+      }
+    }
+  }
+
+  // Validate settings array
   if (dataSection.settings !== undefined) {
     if (!Array.isArray(dataSection.settings)) {
       return { valid: false, error: 'Settings must be an array' };
@@ -240,6 +293,8 @@ export const databaseService = {
   conversation: conversationRepo,
   /** Message repository for CRUD operations */
   message: messageRepo,
+  /** Note repository for CRUD operations */
+  note: noteRepo,
 
   /**
    * Settings management
@@ -311,12 +366,13 @@ export const databaseService = {
   async exportData(): Promise<string> {
     const conversations = await db.conversations.toArray();
     const messages = await db.messages.toArray();
+    const notes = await db.notes.toArray();
     const settings = await db.settings.toArray();
 
     const exportedData: ExportedData = {
       version: EXPORT_VERSION,
       exportedAt: new Date().toISOString(),
-      data: { conversations, messages, settings },
+      data: { conversations, messages, notes, settings },
     };
 
     return JSON.stringify(exportedData, null, 2);
@@ -350,7 +406,7 @@ export const databaseService = {
 
     // Perform import in a transaction with rollback on error
     try {
-      await db.transaction('rw', [db.conversations, db.messages, db.settings], async () => {
+      await db.transaction('rw', [db.conversations, db.messages, db.notes, db.settings], async () => {
         if (data.conversations && data.conversations.length > 0) {
           const conversations = convertDates(data.conversations, ['createdAt', 'updatedAt']);
           await db.conversations.bulkPut(conversations);
@@ -361,6 +417,12 @@ export const databaseService = {
           const messages = convertDates(data.messages, ['createdAt']);
           await db.messages.bulkPut(messages);
           logger.info('Imported messages', { count: messages.length });
+        }
+
+        if (data.notes && data.notes.length > 0) {
+          const notes = convertDates(data.notes, ['createdAt', 'updatedAt']);
+          await db.notes.bulkPut(notes);
+          logger.info('Imported notes', { count: notes.length });
         }
 
         if (data.settings && data.settings.length > 0) {

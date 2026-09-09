@@ -16,7 +16,15 @@ vi.mock('next/image', () => ({
 }));
 
 vi.mock('@/components/Auth', () => ({
-  UserAuthUI: () => <div data-testid="auth-ui" />,
+  UserAuthUI: ({ onOpenNotes }: { onOpenNotes?: () => void }) => (
+    <div data-testid="auth-ui">
+      {onOpenNotes && (
+        <button type="button" onClick={onOpenNotes}>
+          Mock Notes
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 vi.mock('@/services/chat', () => ({
@@ -83,10 +91,10 @@ function conversation(overrides: Partial<Conversation>): Conversation {
   };
 }
 
-function renderConversationList() {
+function renderConversationList(props: Partial<React.ComponentProps<typeof ConversationList>> = {}) {
   return render(
     <App>
-      <ConversationList />
+      <ConversationList {...props} />
     </App>,
   );
 }
@@ -182,6 +190,16 @@ describe('ConversationList title states', () => {
 
     expect(screen.getByRole('status', { name: 'New chat' })).toBeInTheDocument();
     expect(screen.queryByText('新對話')).not.toBeInTheDocument();
+  });
+
+  it('opens the notes panel from the account area', () => {
+    const onSelectGumPanel = vi.fn();
+
+    renderConversationList({ onSelectGumPanel });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Notes' }));
+
+    expect(onSelectGumPanel).toHaveBeenCalledWith('notes');
   });
 
   it('enables title marquee only when the rendered title overflows on hover', () => {

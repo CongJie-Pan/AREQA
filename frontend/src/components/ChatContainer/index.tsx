@@ -18,6 +18,7 @@ import { ChatInput } from '@/components/ChatInput';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
 import { MailboxPanel } from '@/components/MailboxPanel';
+import { NotesPanel } from '@/components/NotesPanel';
 import { ProactiveManager } from '@/components/ProactiveManager';
 import { AuthPrompt } from '@/components/Auth';
 import { LiveTutorPanel } from '@/components/LiveTutor';
@@ -25,6 +26,7 @@ import { supabase } from '@/lib/supabase';
 import { initializeAuth, useAuthStore } from '@/store/auth';
 import { useFeatureStore } from '@/store/features';
 import { useLiveTutorStore } from '@/store/liveTutor';
+import { useNotesStore } from '@/store/notes';
 import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
@@ -108,6 +110,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const user = useAuthStore((state) => state.user);
   const isAuthInitialized = useAuthStore((state) => state.isInitialized);
   const validateSession = useAuthStore((state) => state.validateSession);
+  const addNoteFromMessage = useNotesStore((state) => state.addNoteFromMessage);
+  const loadNotes = useNotesStore((state) => state.loadNotes);
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
@@ -234,9 +238,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
         useConversationStore.getState().clearState();
         useChatStore.getState().clearMessages();
         useChatStore.getState().resetStreamingState();
+        useNotesStore.setState({ notes: [], loading: false, error: null });
         if (typeof indexedDB !== 'undefined') {
           try {
             await databaseService.conversation.clearGuestData();
+            await databaseService.note.clearGuestData();
           } catch (error) {
             console.error('Failed to clear legacy guest history:', error);
           }
@@ -249,6 +255,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
         if (user) setShowAuthPrompt(false);
         const localLoadStartedAt = performance.now();
         await initializeChatService(user.id);
+        await loadNotes(user.id);
         logger.info('chat_history_local_cache_loaded', {
           component: 'ChatContainer',
           durationMs: Math.round(performance.now() - localLoadStartedAt),
@@ -494,6 +501,22 @@ export function ChatContainer({ className }: ChatContainerProps) {
     }
   }, [antMessageApi, t]);
 
+  const handleAddNote = useCallback(async (messageId: string) => {
+    const sourceMessage = useChatStore.getState().messages.find((message) => message.id === messageId);
+    if (!sourceMessage || sourceMessage.role !== 'assistant') {
+      antMessageApi.error(t('addNoteFailed'));
+      return;
+    }
+
+    try {
+      await addNoteFromMessage(sourceMessage, activeConversation?.title ?? null);
+      antMessageApi.success(t('addedToNotes'));
+    } catch (err) {
+      console.error('Failed to add note:', err);
+      antMessageApi.error(t('addNoteFailed'));
+    }
+  }, [activeConversation?.title, addNoteFromMessage, antMessageApi, t]);
+
   const handleShareConversation = useCallback(async () => {
     if (!user) {
       antMessageApi.warning(t('shareLoginRequired'));
@@ -619,6 +642,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
         >
           {mailboxEnabled && gumPanelType === 'mailbox' ? (
             <MailboxPanel onClose={() => setGumPanelType(null)} />
+          ) : gumPanelType === 'notes' ? (
+            <NotesPanel onClose={() => setGumPanelType(null)} />
           ) : gumPanelType === 'memory' ? (
             <GumPanel
               open={true}
@@ -699,6 +724,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                       onRegenerate={handleRegenerate}
                       onEdit={handleEdit}
                       onDeleteLatestTurn={handleDeleteLatestTurn}
+                      onAddNote={handleAddNote}
                       onSelectSuggestion={handleSend}
                     />
                   )}

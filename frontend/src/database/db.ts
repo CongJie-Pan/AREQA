@@ -4,7 +4,7 @@
  */
 
 import Dexie, { type EntityTable } from 'dexie';
-import type { Conversation, Message, Setting } from './schema';
+import type { Conversation, Message, Note, Setting } from './schema';
 
 /**
  * PerplexityQA Database class
@@ -59,6 +59,8 @@ class PerplexityQADatabase extends Dexie {
   messages!: EntityTable<Message, 'id'>;
   /** Settings table */
   settings!: EntityTable<Setting, 'key'>;
+  /** Notes table */
+  notes!: EntityTable<Note, 'id'>;
 
   constructor() {
     super('PerplexityQA');
@@ -97,6 +99,14 @@ class PerplexityQADatabase extends Dexie {
       conversations: 'id, userId, createdAt, updatedAt',
       messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
       settings: 'key',
+    });
+
+    // Version 5: User-saved notes linked to assistant messages.
+    this.version(5).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
+      settings: 'key',
+      notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, [userId+createdAt], [userId+messageId]',
     });
 
     // Handle multi-tab upgrades
