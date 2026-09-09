@@ -163,6 +163,55 @@ export const messageRepo = {
   },
 
   /**
+   * Delete a bounded set of messages from one conversation and sync each
+   * message tombstone to cloud.
+   *
+   * @param conversationId - Conversation that owns all target messages.
+   * @param ids - Message IDs to delete. Unknown IDs are ignored.
+   */
+  async deleteManyByConversationId(conversationId: string, ids: string[]): Promise<void> {
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    if (uniqueIds.length === 0) return;
+
+    let deletedIds: string[] = [];
+    await db.transaction('rw', [db.messages, db.conversations], async () => {
+      const existingMessages = await db.messages
+        .where('id')
+        .anyOf(uniqueIds)
+        .filter((message) => message.conversationId === conversationId)
+        .toArray();
+      deletedIds = existingMessages.map((message) => message.id);
+      if (deletedIds.length === 0) return;
+
+      await db.messages.bulkDelete(deletedIds);
+
+      const remainingMessages = await db.messages
+        .where('conversationId')
+        .equals(conversationId)
+        .sortBy('createdAt');
+      const latestRemainingMessage = remainingMessages.at(-1);
+
+      await db.conversations
+        .where('id')
+        .equals(conversationId)
+        .modify((conv) => {
+          conv.messageCount = Math.max(0, (conv.messageCount || 0) - deletedIds.length);
+          conv.lastMessagePreview = latestRemainingMessage?.content.slice(0, 100) ?? '';
+          conv.updatedAt = new Date();
+        });
+    });
+
+    for (const id of deletedIds) {
+      syncService.deleteMessage(id);
+    }
+
+    const conversation = await db.conversations.get(conversationId);
+    if (conversation) {
+      syncService.pushConversation(conversation);
+    }
+  },
+
+  /**
    * Delete all messages for a conversation
    * Updates conversation statistics atomically
    * @param conversationId - The conversation ID

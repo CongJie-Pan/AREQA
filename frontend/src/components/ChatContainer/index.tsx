@@ -11,7 +11,7 @@ import { App, Dropdown } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
-import { sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage } from '@/services/chat';
+import { sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage, deleteLatestConversationTurn } from '@/services/chat';
 import { ConversationList } from '@/components/ConversationList';
 import { MessageList } from '@/components/MessageList';
 import { ChatInput } from '@/components/ChatInput';
@@ -476,6 +476,16 @@ export function ChatContainer({ className }: ChatContainerProps) {
     }
   }, [antMessageApi]);
 
+  const handleDeleteLatestTurn = useCallback(async (assistantMessageId: string) => {
+    try {
+      await deleteLatestConversationTurn(assistantMessageId);
+      antMessageApi.success(t('deleteLatestConversationTurnSuccess'));
+    } catch (err) {
+      console.error('Failed to delete latest conversation turn:', err);
+      antMessageApi.error(t('deleteLatestConversationTurnFailed'));
+    }
+  }, [antMessageApi, t]);
+
   const handleShareConversation = useCallback(async () => {
     if (!user) {
       antMessageApi.warning(t('shareLoginRequired'));
@@ -686,6 +696,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                       liveVoice={isLiveTutorOpen}
                       onRegenerate={handleRegenerate}
                       onEdit={handleEdit}
+                      onDeleteLatestTurn={handleDeleteLatestTurn}
                       onSelectSuggestion={handleSend}
                     />
                   )}

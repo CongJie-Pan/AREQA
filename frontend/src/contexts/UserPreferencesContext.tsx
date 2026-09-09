@@ -157,6 +157,9 @@ export type TranslationKey =
   | 'notHelpfulReply'
   | 'regenerate'
   | 'regenerateMessage'
+  | 'deleteLatestConversationTurn'
+  | 'deleteLatestConversationTurnSuccess'
+  | 'deleteLatestConversationTurnFailed'
   | 'feedbackTitleShort'
   | 'feedbackIssue'
   | 'selectIssue'
@@ -368,6 +371,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     notHelpfulReply: '這則回覆沒有幫助',
     regenerate: '重新生成',
     regenerateMessage: '重新生成訊息',
+    deleteLatestConversationTurn: '刪除對話',
+    deleteLatestConversationTurnSuccess: '已刪除這輪對話',
+    deleteLatestConversationTurnFailed: '刪除對話失敗，請稍後再試',
     feedbackTitleShort: '分享回饋',
     feedbackIssue: '問題',
     selectIssue: '選取問題',
@@ -549,6 +555,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     notHelpfulReply: '这则回复没有帮助',
     regenerate: '重新生成',
     regenerateMessage: '重新生成讯息',
+    deleteLatestConversationTurn: '删除对话',
+    deleteLatestConversationTurnSuccess: '已删除这轮对话',
+    deleteLatestConversationTurnFailed: '删除对话失败，请稍后再试',
     feedbackTitleShort: '分享反馈',
     feedbackIssue: '问题',
     selectIssue: '选取问题',
@@ -730,6 +739,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     notHelpfulReply: 'This reply was not helpful',
     regenerate: 'Regenerate',
     regenerateMessage: 'Regenerate message',
+    deleteLatestConversationTurn: 'Delete conversation',
+    deleteLatestConversationTurnSuccess: 'Conversation turn deleted',
+    deleteLatestConversationTurnFailed: 'Could not delete this conversation turn. Please try again later.',
     feedbackTitleShort: 'Share feedback',
     feedbackIssue: 'Issue',
     selectIssue: 'Select an issue',

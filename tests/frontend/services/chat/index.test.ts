@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendMessage, regenerateMessage, editUserMessage, switchConversation, cancelCurrentStream } from '@/services/chat';
+import { sendMessage, regenerateMessage, editUserMessage, switchConversation, cancelCurrentStream, deleteLatestConversationTurn } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -27,6 +27,7 @@ vi.mock('@/services/database', () => ({
     message: {
       add: vi.fn(),
       delete: vi.fn(),
+      deleteManyByConversationId: vi.fn(),
       getByConversationId: vi.fn(),
       update: vi.fn(),
     },
@@ -551,6 +552,50 @@ describe('Chat Service', () => {
         'never',
         'test-conv-id',
       );
+    });
+  });
+
+  describe('deleteLatestConversationTurn', () => {
+    it('deletes the bottom assistant reply and paired user query from store and persistence', async () => {
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
+        { id: 'assistant-1', role: 'assistant', content: 'first answer', conversationId: 'test-conv-id' },
+        { id: 'user-2', role: 'user', content: 'latest question', conversationId: 'test-conv-id' },
+        { id: 'assistant-2', role: 'assistant', content: 'latest answer', conversationId: 'test-conv-id' },
+      ];
+
+      await deleteLatestConversationTurn('assistant-2');
+
+      expect(databaseService.message.deleteManyByConversationId).toHaveBeenCalledWith(
+        'test-conv-id',
+        ['user-2', 'assistant-2'],
+      );
+      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(1, 'user-2');
+      expect(mockChatStore.removeMessage).toHaveBeenNthCalledWith(2, 'assistant-2');
+      expect(mockChatStore.resetStreamingState).toHaveBeenCalled();
+      expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({
+          lastMessagePreview: 'first answer',
+          messageCount: 2,
+        }),
+      );
+    });
+
+    it('rejects deleting a non-latest assistant reply', async () => {
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
+        { id: 'assistant-1', role: 'assistant', content: 'first answer', conversationId: 'test-conv-id' },
+        { id: 'user-2', role: 'user', content: 'latest question', conversationId: 'test-conv-id' },
+        { id: 'assistant-2', role: 'assistant', content: 'latest answer', conversationId: 'test-conv-id' },
+      ];
+
+      await expect(deleteLatestConversationTurn('assistant-1')).rejects.toThrow(
+        'Only the latest completed assistant reply can be deleted',
+      );
+
+      expect(databaseService.message.deleteManyByConversationId).not.toHaveBeenCalled();
+      expect(mockChatStore.removeMessage).not.toHaveBeenCalled();
     });
   });
 });

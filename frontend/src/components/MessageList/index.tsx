@@ -33,6 +33,8 @@ export interface MessageListProps {
   onRegenerate?: (messageId: string) => void;
   /** Callback when edit is submitted for user messages */
   onEdit?: (messageId: string, newContent: string) => void;
+  /** Callback when the bottom assistant turn should be deleted */
+  onDeleteLatestTurn?: (assistantMessageId: string) => void;
   /** Callback when a suggested question is selected */
   onSelectSuggestion?: (question: string) => void;
 }
@@ -174,7 +176,14 @@ function RotatingTypewriterLine({
 /**
  * MessageList displays all messages in the current conversation
  */
-export function MessageList({ className, liveVoice = false, onRegenerate, onEdit, onSelectSuggestion }: MessageListProps) {
+export function MessageList({
+  className,
+  liveVoice = false,
+  onRegenerate,
+  onEdit,
+  onDeleteLatestTurn,
+  onSelectSuggestion,
+}: MessageListProps) {
   const { styles, cx } = useStyles();
   const { t } = useUserPreferences();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -396,6 +405,11 @@ export function MessageList({ className, liveVoice = false, onRegenerate, onEdit
                   : undefined
               }
               onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
+              onDeleteLatestTurn={
+                message.role === 'assistant' && isLast && !isStreaming
+                  ? onDeleteLatestTurn
+                  : undefined
+              }
               onFeedback={
                 message.role === 'assistant' && message.userId !== 'guest'
                   ? handleFeedback

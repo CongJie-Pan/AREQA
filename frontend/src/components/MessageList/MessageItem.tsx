@@ -14,7 +14,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, X } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -680,6 +680,8 @@ export interface MessageItemProps {
   };
   /** Callback when regenerate button is clicked (AI messages only) */
   onRegenerate?: (messageId: string) => void;
+  /** Callback when deleting the latest assistant turn is requested */
+  onDeleteLatestTurn?: (assistantMessageId: string) => void;
   /** Callback when edit is submitted (user messages only) */
   onEdit?: (messageId: string, newContent: string) => void;
   /** Callback when assistant feedback is changed */
@@ -1126,6 +1128,7 @@ export const MessageItem = memo(function MessageItem({
   thinking,
   ragInfo,
   onRegenerate,
+  onDeleteLatestTurn,
   onEdit,
   onFeedback,
   isLast = false,
@@ -1312,6 +1315,10 @@ export const MessageItem = memo(function MessageItem({
       onRegenerate(message.id);
     }
   }, [onRegenerate, message.id]);
+
+  const handleDeleteLatestTurn = useCallback(() => {
+    onDeleteLatestTurn?.(message.id);
+  }, [message.id, onDeleteLatestTurn]);
 
   const handleFeedback = useCallback(async (
     feedback: MessageFeedback,
@@ -1703,6 +1710,17 @@ export const MessageItem = memo(function MessageItem({
                     aria-label={t('regenerateMessage')}
                   >
                     <RefreshCw size={16} />
+                  </button>
+                </Tooltip>
+              )}
+              {onDeleteLatestTurn && !isStreaming && (
+                <Tooltip title={t('deleteLatestConversationTurn')}>
+                  <button
+                    className={styles.actionButton}
+                    onClick={handleDeleteLatestTurn}
+                    aria-label={t('deleteLatestConversationTurn')}
+                  >
+                    <Trash2 size={16} />
                   </button>
                 </Tooltip>
               )}

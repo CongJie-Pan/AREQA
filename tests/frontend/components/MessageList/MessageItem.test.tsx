@@ -16,6 +16,9 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
     styles: { 
       assistantMessageWrapper: 'assistantMessageWrapper', 
       assistantBubble: 'assistantBubble',
+      assistantBubbleReveal: 'assistantBubbleReveal',
+      actionButtons: 'actionButtons',
+      actionButton: 'actionButton',
       bubble: 'bubble',
       userBubble: 'userBubble',
       bubbleWrapper: 'bubbleWrapper',
@@ -108,6 +111,22 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
     
     expect(screen.queryByTestId('rag-status-panel')).not.toBeInTheDocument();
+  });
+
+  it('calls the latest-turn delete callback from the assistant action row', () => {
+    const onDeleteLatestTurn = vi.fn();
+
+    render(
+      <MessageItem
+        message={baseMessage}
+        isLast
+        onDeleteLatestTurn={onDeleteLatestTurn}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '刪除對話' }));
+
+    expect(onDeleteLatestTurn).toHaveBeenCalledWith('msg-1');
   });
 
   it('renders persisted user attachment metadata below the message text', () => {
@@ -311,9 +330,9 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(screen.getByText('串流動畫測試')).toBeInTheDocument();
+    expect(container).toHaveTextContent('串流動畫測試');
     expect(container.querySelector('[data-streaming-content="true"]')).toBeInTheDocument();
-    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
     expect(container.querySelector('.streamingDots')).toBeInTheDocument();
     expect(container.querySelectorAll('.streamingDot')).toHaveLength(3);
     expect(container.querySelector('.streamingCursor')).not.toBeInTheDocument();
@@ -420,7 +439,6 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
 
     expect(container.querySelector('[data-streaming-content="true"]')).toBeInTheDocument();
-    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
 
     rerender(
       <MessageItem
@@ -433,7 +451,6 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
 
     expect(container.querySelector('[data-streaming-content="true"]')).not.toBeInTheDocument();
-    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
     expect(container.querySelector('.streamingDots')).not.toBeInTheDocument();
   });
 

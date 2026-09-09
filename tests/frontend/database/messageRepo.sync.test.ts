@@ -69,4 +69,69 @@ describe('messageRepo - sync integration', () => {
     expect(syncService.deleteMessage).toHaveBeenCalledWith('assistant_old');
     expect(syncService.pushMessage).not.toHaveBeenCalled();
   });
+
+  it('deleteManyByConversationId should delete a paired turn, update preview, and sync tombstones', async () => {
+    const createdAt = new Date('2026-08-08T00:00:00.000Z');
+    await db.conversations.add({
+      id: 'conv_1',
+      userId: 'user_123',
+      title: 'Latest turn',
+      createdAt,
+      updatedAt: createdAt,
+      messageCount: 4,
+      lastMessagePreview: 'Latest answer',
+    });
+    await db.messages.bulkAdd([
+      {
+        id: 'user_previous',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'user',
+        content: 'Previous question',
+        createdAt: new Date('2026-08-08T00:00:00.000Z'),
+      },
+      {
+        id: 'assistant_previous',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'assistant',
+        content: 'Previous answer',
+        createdAt: new Date('2026-08-08T00:00:01.000Z'),
+      },
+      {
+        id: 'user_latest',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'user',
+        content: 'Latest question',
+        createdAt: new Date('2026-08-08T00:00:02.000Z'),
+      },
+      {
+        id: 'assistant_latest',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'assistant',
+        content: 'Latest answer',
+        createdAt: new Date('2026-08-08T00:00:03.000Z'),
+      },
+    ]);
+
+    await messageRepo.deleteManyByConversationId('conv_1', ['user_latest', 'assistant_latest']);
+
+    expect(await db.messages.get('user_latest')).toBeUndefined();
+    expect(await db.messages.get('assistant_latest')).toBeUndefined();
+    expect((await db.messages.where('conversationId').equals('conv_1').count())).toBe(2);
+    const conversation = await db.conversations.get('conv_1');
+    expect(conversation?.messageCount).toBe(2);
+    expect(conversation?.lastMessagePreview).toBe('Previous answer');
+    expect(syncService.deleteMessage).toHaveBeenCalledWith('user_latest');
+    expect(syncService.deleteMessage).toHaveBeenCalledWith('assistant_latest');
+    expect(syncService.pushConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'conv_1',
+        messageCount: 2,
+        lastMessagePreview: 'Previous answer',
+      }),
+    );
+  });
 });

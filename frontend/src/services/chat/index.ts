@@ -24,6 +24,7 @@ import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
 import { persistentAnswerBlocks } from '@/utils/answerBlocks';
+import { logger } from '@/utils/logger';
 
 /**
  * Active abort controller for the current stream
@@ -82,6 +83,17 @@ function updateConversationPreviewInStore(
     ...(current
       ? { messageCount: Math.max(0, current.messageCount + messageCountDelta) }
       : {}),
+  });
+}
+
+function patchConversationAfterTurnDeletion(conversationId: string, remainingMessages: DisplayMessage[]): void {
+  const conversationMessages = remainingMessages.filter((message) => message.conversationId === conversationId);
+  const latestMessage = conversationMessages.at(-1);
+
+  useConversationStore.getState().updateConversation(conversationId, {
+    lastMessagePreview: latestMessage?.content.slice(0, CONVERSATION_PREVIEW_MAX_LENGTH) ?? '',
+    updatedAt: new Date(),
+    messageCount: conversationMessages.length,
   });
 }
 
@@ -708,6 +720,66 @@ export async function deleteConversation(conversationId: string): Promise<void> 
     chatStore.clearMessages();
     chatStore.resetStreamingState();
   }
+}
+
+/**
+ * Delete the latest completed assistant turn and the user query immediately
+ * before it.
+ *
+ * @param assistantMessageId - The bottom assistant message selected by the user.
+ * @throws Error when the target is not the latest completed assistant message
+ * or does not have an immediately preceding user query in the same conversation.
+ */
+export async function deleteLatestConversationTurn(assistantMessageId: string): Promise<void> {
+  const chatStore = useChatStore.getState();
+  const conversationStore = useConversationStore.getState();
+  const messages = chatStore.messages;
+  const targetIndex = messages.findIndex((message) => message.id === assistantMessageId);
+
+  if (targetIndex === -1) throw new Error('Message not found');
+
+  const assistantMessage = messages[targetIndex];
+  const conversationId = conversationStore.activeConversationId ?? assistantMessage.conversationId;
+  const conversationMessages = messages.filter((message) => message.conversationId === conversationId);
+  const latestConversationMessage = conversationMessages.at(-1);
+
+  if (
+    assistantMessage.role !== 'assistant' ||
+    assistantMessage.isStreaming ||
+    chatStore.currentStreamingId === assistantMessage.id ||
+    latestConversationMessage?.id !== assistantMessage.id
+  ) {
+    throw new Error('Only the latest completed assistant reply can be deleted');
+  }
+
+  const previousMessage = messages[targetIndex - 1];
+  if (
+    !previousMessage ||
+    previousMessage.role !== 'user' ||
+    previousMessage.conversationId !== conversationId
+  ) {
+    throw new Error('Latest assistant reply does not have a paired user query');
+  }
+
+  const idsToDelete = [previousMessage.id, assistantMessage.id];
+  if (canPersistHistory()) {
+    await databaseService.message.deleteManyByConversationId(conversationId, idsToDelete);
+  }
+
+  for (const id of idsToDelete) {
+    chatStore.removeMessage(id);
+  }
+  chatStore.resetStreamingState();
+  patchConversationAfterTurnDeletion(conversationId, useChatStore.getState().messages);
+
+  logger.info('chat_latest_turn_deleted', {
+    component: 'chatService',
+    conversationId,
+    assistantMessageId: assistantMessage.id,
+    userMessageId: previousMessage.id,
+    deletedCount: idsToDelete.length,
+    persisted: canPersistHistory(),
+  });
 }
 
 /**
