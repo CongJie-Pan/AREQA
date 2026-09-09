@@ -142,7 +142,7 @@ async def test_sse_streaming_sequence_with_web_search():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_sse_streaming_sequence_with_openrouter_web_search():
+async def test_sse_streaming_sequence_with_explicit_openrouter_web_search():
     with patch('backend.main.rag_service') as mock_rag, \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service') as mock_suggestion, \
@@ -154,7 +154,6 @@ async def test_sse_streaming_sequence_with_openrouter_web_search():
              "WEB_SEARCH_PROVIDER": "openrouter",
              "OPENROUTER_API_KEY": "dummy_api_key",
              "MODEL_WEB_SEARCH": "google/gemini-3.8-flash",
-             "OPENROUTER_WEB_SEARCH_ENGINE": "auto",
              "OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS": "2",
              "WEB_SEARCH_MAX_RESULTS": "3",
              "WEB_SEARCH_CONTEXT_SIZE": "medium",
@@ -230,6 +229,7 @@ async def test_sse_streaming_sequence_with_openrouter_web_search():
                         "messages": [{"role": "user", "content": "測試最新資料"}],
                         "use_rag": False,
                         "use_web_search": True,
+                        "search_mode": "always",
                         "force_think": False,
                     },
                 )
@@ -240,7 +240,10 @@ async def test_sse_streaming_sequence_with_openrouter_web_search():
         assert request_payload["model"] == "google/gemini-3.8-flash"
         assert request_payload["stream"] is False
         assert request_payload["tools"][0]["type"] == "openrouter:web_search"
+        assert request_payload["tools"][0]["parameters"]["engine"] == "exa"
+        assert request_payload["tools"][0]["parameters"]["search_context_size"] == "medium"
         assert "🌐 網路檢索中..." in text_content
+        assert "已取得 1 筆網路文獻" in text_content
         assert "event: sources" in text_content
         assert "https://example.com/openrouter-result" in text_content
         assert "Citation excerpt" in text_content
