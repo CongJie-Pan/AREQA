@@ -597,5 +597,29 @@ describe('Chat Service', () => {
       expect(databaseService.message.deleteManyByConversationId).not.toHaveBeenCalled();
       expect(mockChatStore.removeMessage).not.toHaveBeenCalled();
     });
+
+    it('uses the clicked assistant message conversation when active conversation state is stale', async () => {
+      mockConversationStore.activeConversationId = 'stale-conv-id';
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
+        { id: 'assistant-1', role: 'assistant', content: 'first answer', conversationId: 'test-conv-id' },
+        { id: 'user-2', role: 'user', content: 'latest question', conversationId: 'test-conv-id' },
+        { id: 'assistant-2', role: 'assistant', content: 'latest answer', conversationId: 'test-conv-id' },
+      ];
+
+      await deleteLatestConversationTurn('assistant-2');
+
+      expect(databaseService.message.deleteManyByConversationId).toHaveBeenCalledWith(
+        'test-conv-id',
+        ['user-2', 'assistant-2'],
+      );
+      expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({
+          lastMessagePreview: 'first answer',
+          messageCount: 2,
+        }),
+      );
+    });
   });
 });

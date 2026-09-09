@@ -739,9 +739,12 @@ export async function deleteLatestConversationTurn(assistantMessageId: string): 
   if (targetIndex === -1) throw new Error('Message not found');
 
   const assistantMessage = messages[targetIndex];
-  const conversationId = conversationStore.activeConversationId ?? assistantMessage.conversationId;
+  const conversationId = assistantMessage.conversationId ?? conversationStore.activeConversationId;
+  if (!conversationId) throw new Error('No conversation found for the assistant reply');
+
   const conversationMessages = messages.filter((message) => message.conversationId === conversationId);
   const latestConversationMessage = conversationMessages.at(-1);
+  const targetConversationIndex = conversationMessages.findIndex((message) => message.id === assistantMessage.id);
 
   if (
     assistantMessage.role !== 'assistant' ||
@@ -752,7 +755,7 @@ export async function deleteLatestConversationTurn(assistantMessageId: string): 
     throw new Error('Only the latest completed assistant reply can be deleted');
   }
 
-  const previousMessage = messages[targetIndex - 1];
+  const previousMessage = conversationMessages[targetConversationIndex - 1];
   if (
     !previousMessage ||
     previousMessage.role !== 'user' ||
