@@ -1030,6 +1030,12 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
   background: var(--areqa-scrollbar-track);
 }
 
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 ::-webkit-scrollbar-thumb {
   background-color: #d8a25c !important; /* Force color to stay consistent */
   border-radius: 10px;

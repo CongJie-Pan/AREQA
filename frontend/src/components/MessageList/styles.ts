@@ -188,7 +188,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     gap: 0;
     padding: 0;
-    overflow-y: scroll; /* Force scrollbar to be always visible */
+    overflow-y: auto;
     flex: 1;
   `,
 

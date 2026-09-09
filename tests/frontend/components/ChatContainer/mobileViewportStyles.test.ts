@@ -28,6 +28,21 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(globalsCss).toMatch(/body\s*{[^}]*font-family:\s*Arial,\s*Helvetica,\s*sans-serif;/s);
   });
 
+  it('hides native WebKit scrollbar arrow buttons and only shows message overflow when needed', () => {
+    const globalsCss = readFileSync(
+      path.resolve(__dirname, '../../../../frontend/src/app/globals.css'),
+      'utf8',
+    );
+    const messageListStyles = readFileSync(
+      path.resolve(__dirname, '../../../../frontend/src/components/MessageList/styles.ts'),
+      'utf8',
+    );
+
+    expect(globalsCss).toMatch(/::-webkit-scrollbar-button\s*{[^}]*display:\s*none;[^}]*width:\s*0;[^}]*height:\s*0;/s);
+    expect(messageListStyles).toMatch(/container:\s*css`[^`]*overflow-y:\s*auto;/s);
+    expect(messageListStyles).not.toContain('overflow-y: scroll;');
+  });
+
   it('renders Live Tutor inline between messages and the normal input bar', () => {
     const chatContainer = readFileSync(
       path.resolve(__dirname, '../../../../frontend/src/components/ChatContainer/index.tsx'),
@@ -64,7 +79,7 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(liveTutorAvatarStage).toContain('avatarEnabled');
     expect(liveTutorAvatarStage).toContain('<video');
     expect(liveTutorPanel).toContain('onInputAudioLevel');
-    expect(liveTutorStyles).not.toMatch(/position:\s*fixed;/);
+    expect(liveTutorPanel).toContain("layout === 'inline' && isAvatarVideoReady && avatarVideoStream && !error");
     expect(chatContainer).toContain('areqa-chat-content-live-tutor');
     expect(chatContainer).toContain('areqa-chat-message-area-live-tutor');
     expect(chatContainerStyles).toContain('contentLiveTutor');
@@ -75,6 +90,10 @@ describe('ChatContainer mobile viewport styles', () => {
     expect(liveTutorPanel).not.toContain('secondaryTranscript');
     expect(liveTutorStyles).toContain('flex: 1 1 auto;');
     expect(liveTutorStyles).toContain('background: transparent;');
+    expect(liveTutorStyles).toContain('align-items: center;');
+    expect(liveTutorStyles).toContain('justify-content: center;');
+    expect(liveTutorStyles).toContain('width: min(100%, 292px);');
+    expect(liveTutorStyles).toContain('height: min(calc(100% - 28px), 560px);');
     expect(liveTutorStyles).toContain('width: clamp(78px, 8vw, 104px);');
     expect(liveTutorStyles).not.toContain('logoOrbActive');
     expect(liveTutorPanel).not.toContain('statusLabels');

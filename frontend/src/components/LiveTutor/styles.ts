@@ -29,8 +29,11 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   panelSidePane: css`
+    display: flex;
     height: 100%;
     flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
     padding: 0;
     overflow: hidden;
     pointer-events: auto;
@@ -78,8 +81,11 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   bodySidePane: css`
+    display: flex;
     width: 100%;
     height: 100%;
+    align-items: center;
+    justify-content: center;
     padding: 0;
   `,
 
@@ -99,8 +105,8 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   avatarStageSidePane: css`
-    width: 100%;
-    height: 100%;
+    width: min(100%, 292px);
+    height: min(calc(100% - 28px), 560px);
     min-height: 0;
     overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
@@ -124,12 +130,12 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   avatarStageActiveSidePane: css`
-    width: 100%;
-    height: 100%;
+    width: min(100%, 292px);
+    height: min(calc(100% - 28px), 560px);
     aspect-ratio: auto;
 
     @media (max-width: 768px) {
-      width: 100%;
+      width: min(100%, 292px);
     }
   `,
 
