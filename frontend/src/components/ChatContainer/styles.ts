@@ -84,14 +84,6 @@ export const useStyles = createStyles(({ css, token }) => ({
     pointer-events: none;
   `,
 
-  floatingActionsAvatarSplit: css`
-    right: calc(var(--areqa-avatar-pane-width, 360px) + 30px);
-
-    @media (max-width: 900px) {
-      right: max(16px, env(safe-area-inset-right));
-    }
-  `,
-
   sidebarFloatingAction: css`
     position: fixed;
     top: max(14px, env(safe-area-inset-top));
@@ -235,6 +227,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   responsePane: css`
+    position: relative;
     display: flex;
     min-width: 0;
     min-height: 0;

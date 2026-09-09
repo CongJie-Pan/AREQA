@@ -166,7 +166,7 @@ vi.mock('@/utils/logger', () => ({
 
 describe('ChatContainer avatar split layout', () => {
   it('renders the Live Tutor avatar in a resizable side pane when avatar mode is active', () => {
-    render(<ChatContainer />);
+    const { container } = render(<ChatContainer />);
 
     expect(screen.getByText('System response')).toBeInTheDocument();
     expect(screen.getByRole('separator', { name: 'Resize avatar panel' })).toHaveAttribute(
@@ -175,6 +175,7 @@ describe('ChatContainer avatar split layout', () => {
     );
     expect(screen.getByLabelText('Live Tutor avatar')).toBeInTheDocument();
     expect(screen.getByTestId('live-tutor-panel')).toHaveAttribute('data-layout', 'side-pane');
+    expect(container.querySelector('.areqa-chat-response-pane .areqa-chat-floating-actions')).toBeInTheDocument();
   });
 
   it('updates the avatar pane width from the separator keyboard control', () => {
