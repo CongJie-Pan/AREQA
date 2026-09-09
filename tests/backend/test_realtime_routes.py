@@ -19,6 +19,8 @@ from backend.app.routes.realtime import (
     _build_realtime_session_config,
     _client_secret_from_response,
     _livekit_avatar_agent_metadata,
+    _livekit_avatar_room_name,
+    _livekit_participant_identity,
     _normalize_model,
     _safe_realtime_user_identifier,
     create_livekit_avatar_session,
@@ -98,6 +100,27 @@ def test_livekit_avatar_metadata_includes_bounded_recent_context():
     assert metadata["recent_messages"][-1] == {"role": "user", "content": "x" * 1000}
     assert metadata["memory_items"] == ["preferred short explanations", "y" * 500]
     assert metadata["parts_context"]["persona"]
+
+
+def test_livekit_avatar_room_and_identity_are_stable_per_conversation():
+    first_room = _livekit_avatar_room_name("conv_livekit")
+    second_room = _livekit_avatar_room_name("conv_livekit")
+    other_room = _livekit_avatar_room_name("conv_other")
+
+    assert first_room == second_room
+    assert first_room != other_room
+    assert first_room.startswith("areqa-live-")
+    assert "conv_livekit" not in first_room
+
+    first_identity = _livekit_participant_identity("user_123", "conv_livekit")
+    second_identity = _livekit_participant_identity("user_123", "conv_livekit")
+    other_identity = _livekit_participant_identity("user_123", "conv_other")
+
+    assert first_identity == second_identity
+    assert first_identity != other_identity
+    assert first_identity.startswith("learner-")
+    assert "user_123" not in first_identity
+    assert "conv_livekit" not in first_identity
 
 
 def test_realtime_session_rejects_unsupported_models():

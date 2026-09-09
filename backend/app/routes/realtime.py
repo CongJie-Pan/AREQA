@@ -203,18 +203,18 @@ def _safe_livekit_fragment(value: str, *, fallback: str) -> str:
 
 
 def _livekit_avatar_room_name(conversation_id: str) -> str:
-    """Build an opaque room name for one Live Tutor avatar session."""
+    """Build a stable opaque room name for one Live Tutor conversation."""
 
     digest = hashlib.sha256(str(conversation_id or uuid.uuid4().hex).encode("utf-8")).hexdigest()[:16]
-    return f"areqa-live-{digest}-{uuid.uuid4().hex[:8]}"
+    return f"areqa-live-{digest}"
 
 
-def _livekit_participant_identity(current_user_id: str | None) -> str:
-    """Build a non-PII LiveKit participant identity for the browser user."""
+def _livekit_participant_identity(current_user_id: str | None, conversation_id: str) -> str:
+    """Build a non-PII LiveKit participant identity for one browser session."""
 
     source = current_user_id or uuid.uuid4().hex
-    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
-    return f"learner-{digest}-{uuid.uuid4().hex[:8]}"
+    digest = hashlib.sha256(f"{source}:{conversation_id}".encode("utf-8")).hexdigest()[:16]
+    return f"learner-{digest}"
 
 
 async def _livekit_avatar_memory_items(current_user_id: str | None, conversation_id: str) -> list[str]:
@@ -573,7 +573,7 @@ async def create_livekit_avatar_session(
         ) from exc
 
     room_name = _livekit_avatar_room_name(payload.conversation_id)
-    participant_identity = _livekit_participant_identity(current_user_id)
+    participant_identity = _livekit_participant_identity(current_user_id, payload.conversation_id)
     memory_items = await _livekit_avatar_memory_items(current_user_id, payload.conversation_id)
     metadata = _livekit_avatar_agent_metadata(payload, memory_items=memory_items)
 
