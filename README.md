@@ -161,7 +161,7 @@ npm run test:smoke --prefix frontend
 - `ENABLE_SHARE_LINK_DEBUG_LOGS`: 控制分享連結診斷 log，預設開啟；log 僅接受白名單欄位。
 - `NEXT_PUBLIC_CHAT_API_ENDPOINT`: 前端聊天代理端點，預設 `/api/chat`。
 - `NEXT_PUBLIC_API_TIMEOUT` / `NEXT_PUBLIC_MAX_MESSAGE_LENGTH` / `NEXT_PUBLIC_PARSER_MAX_BUFFER`: 前端請求 timeout、訊息長度與串流 parser buffer 上限，預設分別為 `30000`、`10000`、`102400`。
-- `WEB_SEARCH_PROVIDER` / `MODEL_WEB_SEARCH` / `OPENROUTER_WEB_SEARCH_ENGINE` / `OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS`: 一般網路搜尋 provider、OpenRouter 搜尋模型、搜尋引擎與 server-tool 呼叫上限；預設分別為 `openrouter`、`google/gemini-3.8-flash`、`auto`、`2`。
+- `WEB_SEARCH_PROVIDER` / `MODEL_WEB_SEARCH` / `OPENROUTER_WEB_SEARCH_ENGINE` / `OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS`: 一般網路搜尋 provider、OpenRouter 搜尋模型、搜尋引擎與 server-tool 呼叫上限；預設分別為 `openrouter`、`google/gemini-3.8-flash`、`exa`、`2`。
 - `WEB_SEARCH_MAX_RESULTS` / `WEB_SEARCH_CONTEXT_SIZE` / `ENABLE_WEB_QUERY_REWRITE`: 網路搜尋結果數、上下文大小與 query rewrite 控制；預設為 `15`、`high`、開啟。
 - `FOREGROUND_MODEL_CALL_BUDGET_GENERAL` / `FOREGROUND_MODEL_CALL_BUDGET_LEARNING`: 一般聊天與學習路徑的前景模型呼叫預算，預設為 `2` / `3`。
 - `COMPEER_DELIVERY_DELAY_SECONDS` / `COMPEER_COOLDOWN_OVERRIDE_SECONDS` / `COMPEER_PROACTIVE_MAIL_MIN_INTERVAL_SECONDS` / `COMPEER_DAILY_PROACTIVE_LIMIT`: ComPeer 投遞延遲、開發冷卻覆寫、主動信最短間隔與每日上限。

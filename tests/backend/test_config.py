@@ -55,7 +55,7 @@ def test_settings_loads_defaults():
     assert s.cold_memory_embedding_timeout_ms == 1500
     assert s.suggestion_generation_timeout_ms == 1000
     assert s.web_search_provider == "openrouter"
-    assert s.openrouter_web_search_engine == "auto"
+    assert s.openrouter_web_search_engine == "exa"
     assert s.openrouter_web_search_max_tool_calls == 2
     assert s.openrouter_web_search_api_url == "https://openrouter.ai/api/v1/chat/completions"
     assert s.compeer_delivery_delay_seconds == 120

@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     cold_memory_embedding_timeout_ms: int = 1500
     suggestion_generation_timeout_ms: int = 1000
     web_search_provider: str = "openrouter"
-    openrouter_web_search_engine: str = "auto"
+    openrouter_web_search_engine: str = "exa"
     openrouter_web_search_max_tool_calls: int = 2
     openrouter_web_search_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
 

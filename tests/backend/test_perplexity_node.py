@@ -207,7 +207,6 @@ async def test_openrouter_web_search_success_with_url_citations(mock_orchestrato
         "WEB_SEARCH_PROVIDER": "openrouter",
         "OPENROUTER_API_KEY": "dummy_api_key",
         "MODEL_WEB_SEARCH": "google/gemini-3.8-flash",
-        "OPENROUTER_WEB_SEARCH_ENGINE": "auto",
         "OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS": "2",
         "WEB_SEARCH_MAX_RESULTS": "3",
         "WEB_SEARCH_CONTEXT_SIZE": "medium",
@@ -250,7 +249,7 @@ async def test_openrouter_web_search_success_with_url_citations(mock_orchestrato
         assert request_payload["model"] == "google/gemini-3.8-flash"
         assert request_payload["stream"] is False
         assert request_payload["tools"][0]["type"] == "openrouter:web_search"
-        assert request_payload["tools"][0]["parameters"]["engine"] == "auto"
+        assert request_payload["tools"][0]["parameters"]["engine"] == "exa"
         assert request_payload["tools"][0]["parameters"]["search_context_size"] == "medium"
 
         sources_event = next(event for event in events if "event: sources" in event)

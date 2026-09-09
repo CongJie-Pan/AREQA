@@ -166,7 +166,6 @@ async def test_web_search_openrouter_normalizes_url_citation_annotations():
         "max_results": 3,
         "search_context_size": "medium",
         "model": "google/gemini-3.8-flash",
-        "engine": "auto",
         "max_tool_calls": 2,
     })
 
@@ -191,7 +190,7 @@ async def test_web_search_openrouter_normalizes_url_citation_annotations():
         {
             "type": "openrouter:web_search",
             "parameters": {
-                "engine": "auto",
+                "engine": "exa",
                 "max_results": 3,
                 "max_total_results": 3,
                 "search_context_size": "medium",
@@ -265,7 +264,8 @@ async def test_web_search_openrouter_filters_unusable_citations():
 
 
 @pytest.mark.asyncio
-async def test_web_search_openrouter_preserves_summary_when_citations_are_filtered():
+async def test_web_search_openrouter_logs_safe_citation_stats_when_citations_are_filtered(caplog):
+    caplog.set_level("INFO", logger="backend.tools.web_search")
     redis = FakeRedis()
     http = FakeHttpClient({
         "choices": [
@@ -278,6 +278,14 @@ async def test_web_search_openrouter_preserves_summary_when_citations_are_filter
                             "url_citation": {
                                 "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
                                 "title": "Blocked redirect",
+                                "content": "",
+                            },
+                        },
+                        {
+                            "type": "url_citation",
+                            "url_citation": {
+                                "url": "https://example.com/empty",
+                                "title": "Empty content",
                                 "content": "",
                             },
                         }
@@ -302,6 +310,15 @@ async def test_web_search_openrouter_preserves_summary_when_citations_are_filter
 
     assert result.content["results"] == []
     assert result.content["summary"] == "Recent German political news summary from web search."
+    assert "web_search.openrouter_citation_summary" in caplog.text
+    assert "engine=exa" in caplog.text
+    assert "annotation_count=2" in caplog.text
+    assert "usable_count=0" in caplog.text
+    assert "missing_content_count=1" in caplog.text
+    assert "blocked_host_count=1" in caplog.text
+    assert "grounding-api-redirect" not in caplog.text
+    assert "example.com/empty" not in caplog.text
+    assert "Recent German political news summary" not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -322,6 +339,33 @@ async def test_web_search_cache_is_scoped_by_provider():
     }
     await tool.execute({**base, "provider": "perplexity"})
     await tool.execute({**base, "provider": "openrouter"})
+
+    first_key = first_redis.get.await_args.args[0]
+    second_key = second_redis.get.await_args.args[0]
+    assert first_key != second_key
+
+
+@pytest.mark.asyncio
+async def test_web_search_cache_is_scoped_by_openrouter_engine():
+    first_redis = FakeRedis()
+    second_redis = FakeRedis()
+    redis_instances = iter([first_redis, second_redis])
+    http = FakeHttpClient({"choices": [{"message": {"content": "", "annotations": []}}]})
+    tool = WebSearchTool(
+        provider="openrouter",
+        redis_factory=lambda *args, **kwargs: next(redis_instances),
+        http_client_factory=lambda **kwargs: http,
+    )
+    base = {
+        "query": "latest",
+        "conversation_id": "same-conversation",
+        "api_key": "secret",
+        "user_id": "user-1",
+        "provider": "openrouter",
+    }
+
+    await tool.execute({**base, "engine": "auto"})
+    await tool.execute({**base, "engine": "exa"})
 
     first_key = first_redis.get.await_args.args[0]
     second_key = second_redis.get.await_args.args[0]
