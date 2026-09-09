@@ -308,11 +308,17 @@ describe('LiveKit avatar client', () => {
     const clientPromise = startLiveKitAvatarClient(livekitOptions({ onError }));
     await flushAsyncWork();
 
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(44_999);
+    expect(onError).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
     const controller = await clientPromise;
 
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining('LiveKit avatar video track was not received'),
+    }));
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('room=areqa-live-room, agent=areqa-live-tutor'),
     }));
     expect(lastRoom?.disconnect).toHaveBeenCalled();
     controller.disconnect();

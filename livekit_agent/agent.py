@@ -262,21 +262,33 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
         )
     )
 
+    avatar_started = False
     if ANAM_AVATAR_ID:
-        avatar = anam.AvatarSession(
-            persona_config=anam.PersonaConfig(
-                name=ANAM_AVATAR_NAME,
-                avatarId=ANAM_AVATAR_ID,
+        try:
+            avatar = anam.AvatarSession(
+                persona_config=anam.PersonaConfig(
+                    name=ANAM_AVATAR_NAME,
+                    avatarId=ANAM_AVATAR_ID,
+                )
             )
-        )
-        await avatar.start(session, room=ctx.room)
-        await avatar.wait_for_join()
-        logger.info(
-            "livekit_agent.avatar_joined room=%s agent_name=%s avatar_name=%s",
-            ctx.room.name,
-            AGENT_NAME,
-            ANAM_AVATAR_NAME,
-        )
+            await avatar.start(session, room=ctx.room)
+            await avatar.wait_for_join()
+            avatar_started = True
+            logger.info(
+                "livekit_agent.avatar_joined room=%s agent_name=%s avatar_name=%s",
+                ctx.room.name,
+                AGENT_NAME,
+                ANAM_AVATAR_NAME,
+            )
+        except Exception as exc:
+            logger.warning(
+                "livekit_agent.avatar_start_failed room=%s agent_name=%s reason=%s status_code=%s fallback=voice_only",
+                ctx.room.name,
+                AGENT_NAME,
+                type(exc).__name__,
+                getattr(exc, "status_code", None),
+                exc_info=True,
+            )
     else:
         logger.warning("livekit_agent.avatar_skipped room=%s reason=missing_anam_avatar_id", ctx.room.name)
 
@@ -289,7 +301,7 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
             parts_context=metadata["parts_context"],
         ),
         room_options=room_io.RoomOptions(
-            audio_output=not bool(ANAM_AVATAR_ID),
+            audio_output=not avatar_started,
         ),
     )
     if LIVEKIT_AGENT_AUTO_GREETING:

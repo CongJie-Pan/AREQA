@@ -14,7 +14,7 @@ import { logger } from '@/utils/logger';
 import type { RealtimeClientController, StartRealtimeClientOptions } from './client';
 import { buildRealtimeContext } from './context';
 
-const AVATAR_VIDEO_READY_TIMEOUT_MS = 15_000;
+const AVATAR_VIDEO_READY_TIMEOUT_MS = 45_000;
 const ASSISTANT_TRANSCRIPT_DONE_DEBOUNCE_MS = 900;
 const LIVEKIT_TRANSCRIPTION_TOPIC = 'lk.transcription';
 
@@ -221,6 +221,8 @@ export async function startLiveKitAvatarClient(
   let assistantTranscriptDoneTimeout: number | null = null;
   let pendingAssistantTranscript = '';
   let assistantResponseOpen = false;
+  let roomNameForDiagnostics = 'unknown';
+  let agentNameForDiagnostics = 'unknown';
   const conversationId = options.getConversationId?.() || options.conversationId;
   const clearAssistantTranscriptDoneTimeout = () => {
     if (!assistantTranscriptDoneTimeout) return;
@@ -266,7 +268,10 @@ export async function startLiveKitAvatarClient(
     avatarVideoReadyTimeout = window.setTimeout(() => {
       if (avatarVideoReady) return;
       avatarVideoReadyTimeout = null;
-      reject(new Error(`LiveKit avatar video track was not received within ${AVATAR_VIDEO_READY_TIMEOUT_MS}ms`));
+      reject(new Error(
+        `LiveKit avatar video track was not received within ${AVATAR_VIDEO_READY_TIMEOUT_MS}ms `
+        + `(room=${roomNameForDiagnostics}, agent=${agentNameForDiagnostics})`,
+      ));
     }, AVATAR_VIDEO_READY_TIMEOUT_MS);
   });
 
@@ -277,6 +282,8 @@ export async function startLiveKitAvatarClient(
       options.interfaceLanguage,
       options.recentMessages(),
     );
+    roomNameForDiagnostics = session.room_name;
+    agentNameForDiagnostics = session.agent_name;
     const livekit = await liveKitClientLoader();
     room = new livekit.Room();
     room.registerTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC, (reader, participantInfo) => {
