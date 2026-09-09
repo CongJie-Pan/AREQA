@@ -264,3 +264,52 @@ async def test_openrouter_web_search_success_with_url_citations(mock_orchestrato
         }]
         assert "https://example.com/openrouter" in run_state.context_prompt
         assert "OpenRouter citation excerpt." in run_state.context_prompt
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openrouter_search_node_uses_summary_when_citations_are_filtered(mock_orchestrator):
+    with patch.dict(os.environ, {
+        "WEB_SEARCH_PROVIDER": "openrouter",
+        "OPENROUTER_API_KEY": "dummy_api_key",
+        "MODEL_WEB_SEARCH": "google/gemini-3.8-flash",
+        "WEB_SEARCH_CONTEXT_SIZE": "high",
+        "ENABLE_WEB_QUERY_REWRITE": "",
+        "REDIS_URL": "redis://localhost:0",
+    }):
+        respx.post("https://openrouter.ai/api/v1/chat/completions").respond(
+            status_code=200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "German coalition negotiations shifted after recent regional results.",
+                            "annotations": [
+                                {
+                                    "type": "url_citation",
+                                    "url_citation": {
+                                        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+                                        "title": "Blocked redirect",
+                                        "content": "",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+            },
+        )
+
+        events = []
+        run_state = ConversationRunState()
+        async for event in mock_orchestrator._node_perplexity_search(
+            "最近德國政壇新聞",
+            "test_conv_id_openrouter_summary",
+            run_state=run_state,
+        ):
+            events.append(event)
+
+        assert any("event: tool_completed" in event for event in events)
+        assert not any("event: sources" in event for event in events)
+        assert "[網路搜尋摘要]" in run_state.context_prompt
+        assert "German coalition negotiations shifted" in run_state.context_prompt

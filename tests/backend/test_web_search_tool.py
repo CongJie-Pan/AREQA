@@ -261,6 +261,47 @@ async def test_web_search_openrouter_filters_unusable_citations():
             "score": 1.0,
         }
     ]
+    assert result.content["summary"] == "Summary with citations."
+
+
+@pytest.mark.asyncio
+async def test_web_search_openrouter_preserves_summary_when_citations_are_filtered():
+    redis = FakeRedis()
+    http = FakeHttpClient({
+        "choices": [
+            {
+                "message": {
+                    "content": "Recent German political news summary from web search.",
+                    "annotations": [
+                        {
+                            "type": "url_citation",
+                            "url_citation": {
+                                "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+                                "title": "Blocked redirect",
+                                "content": "",
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+    })
+    tool = WebSearchTool(
+        provider="openrouter",
+        redis_factory=lambda *args, **kwargs: redis,
+        http_client_factory=lambda **kwargs: http,
+    )
+
+    result = await tool.execute({
+        "query": "recent German political news",
+        "conversation_id": "conversation-1",
+        "api_key": "secret",
+        "max_results": 3,
+        "model": "google/gemini-3.8-flash",
+    })
+
+    assert result.content["results"] == []
+    assert result.content["summary"] == "Recent German political news summary from web search."
 
 
 @pytest.mark.asyncio

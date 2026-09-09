@@ -256,6 +256,7 @@ class OrchestrationRetrievalMixin:
             return
 
         results = tool_result.content["results"]
+        openrouter_summary = str(tool_result.content.get("summary") or "").strip()
         run_state.web_search_results = list(results)
         yield f"event: tool_completed\ndata: {json.dumps({'tool_name': 'web_search', 'display_message': '已完成資料查找', 'result_count': len(results), 'latency_ms': tool_result.latency_ms, 'cache_status': tool_result.cache_status}, ensure_ascii=False)}\n\n"
 
@@ -268,6 +269,13 @@ class OrchestrationRetrievalMixin:
         yield f"event: status\ndata: {json.dumps({'status': 'reranking', 'message': '⚡ 篩選與統整網路資訊...'}, ensure_ascii=False)}\n\n"
 
         context_texts, sources_payload = _build_valid_web_sources(results)
+        if not context_texts and openrouter_summary:
+            context_texts = [f"[網路搜尋摘要]\n{openrouter_summary}"]
+            logger.info(
+                "orchestration.web_search_summary_used conversation_id=%s provider=%s",
+                conversation_id,
+                web_search_provider,
+            )
         if sources_payload:
             yield f"event: sources\ndata: {json.dumps(sources_payload, ensure_ascii=False)}\n\n"
             yield f"event: status\ndata: {json.dumps({'status': 'sources_ready', 'message': f'已取得 {len(sources_payload)} 筆網路文獻'}, ensure_ascii=False)}\n\n"

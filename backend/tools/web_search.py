@@ -106,11 +106,13 @@ class WebSearchTool:
                         )
                     response.raise_for_status()
                     if provider == "openrouter":
+                        payload = response.json()
                         data = {
                             "results": self._extract_openrouter_results(
-                                response.json(),
+                                payload,
                                 max_results,
-                            )
+                            ),
+                            "summary": self._extract_openrouter_summary(payload),
                         }
                     else:
                         data = response.json()
@@ -149,7 +151,10 @@ class WebSearchTool:
             return ToolResult(
                 tool_name="web_search",
                 status="ok",
-                content={"results": results},
+                content={
+                    "results": results,
+                    **({"summary": data["summary"]} if data.get("summary") else {}),
+                },
                 provenance=provenance,
                 truncated=content_truncated,
                 latency_ms=int((time.monotonic() - started) * 1000),
@@ -232,6 +237,16 @@ class WebSearchTool:
                 "stream": False,
             },
         )
+
+    @staticmethod
+    def _extract_openrouter_summary(payload: Mapping[str, Any]) -> str:
+        """Extract the assistant summary returned with OpenRouter web search."""
+
+        choices = payload.get("choices") or []
+        if not choices:
+            return ""
+        message = dict((choices[0] or {}).get("message") or {})
+        return str(message.get("content") or "").strip()
 
     @staticmethod
     def _is_usable_openrouter_citation(url: str, snippet: str) -> bool:
