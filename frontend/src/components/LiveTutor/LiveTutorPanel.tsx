@@ -670,7 +670,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           </>
         )}
 
-        {isAvatarVideoReady && avatarVideoStream && !error && (
+        {layout === 'inline' && isAvatarVideoReady && avatarVideoStream && !error && (
           <FloatingAvatarWindow stream={avatarVideoStream} status={status} />
         )}
       </div>

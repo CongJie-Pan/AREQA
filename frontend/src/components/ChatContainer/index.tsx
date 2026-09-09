@@ -79,6 +79,11 @@ export interface ChatContainerProps {
 }
 import { SidePanelType } from '@/types/panel';
 
+const AVATAR_PANE_DEFAULT_WIDTH = 320;
+const AVATAR_PANE_MIN_WIDTH = 260;
+const AVATAR_PANE_MAX_WIDTH = 420;
+const RESPONSE_PANE_MIN_WIDTH = 420;
+
 
 /**
  * ChatContainer is the main component that assembles the chat interface
@@ -92,7 +97,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [isChatReady, setIsChatReady] = useState(false);
-  const [avatarPaneWidth, setAvatarPaneWidth] = useState(360);
+  const [avatarPaneWidth, setAvatarPaneWidth] = useState(AVATAR_PANE_DEFAULT_WIDTH);
   const avatarResizeStateRef = useRef<{
     startX: number;
     startWidth: number;
@@ -403,8 +408,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
     const sidebarWidth = sidebarOpen ? 0 : 280;
     const availableWidth = Math.max(window.innerWidth - sidebarWidth, 0);
-    const minAvatarWidth = 280;
-    const maxAvatarWidth = Math.max(minAvatarWidth, Math.min(620, availableWidth - 360));
+    const minAvatarWidth = AVATAR_PANE_MIN_WIDTH;
+    const maxAvatarWidth = Math.max(
+      minAvatarWidth,
+      Math.min(AVATAR_PANE_MAX_WIDTH, availableWidth - RESPONSE_PANE_MIN_WIDTH),
+    );
     const nextWidth = resizeState.startWidth + resizeState.startX - event.clientX;
     setAvatarPaneWidth(Math.min(Math.max(nextWidth, minAvatarWidth), maxAvatarWidth));
   }, [sidebarOpen]);
@@ -436,7 +444,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     event.preventDefault();
     setAvatarPaneWidth((currentWidth) => {
       const delta = event.key === 'ArrowLeft' ? 24 : -24;
-      return Math.min(Math.max(currentWidth + delta, 280), 620);
+      return Math.min(Math.max(currentWidth + delta, AVATAR_PANE_MIN_WIDTH), AVATAR_PANE_MAX_WIDTH);
     });
   }, []);
 
@@ -731,8 +739,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     role="separator"
                     aria-orientation="vertical"
                     aria-label="Resize avatar panel"
-                    aria-valuemin={280}
-                    aria-valuemax={620}
+                    aria-valuemin={AVATAR_PANE_MIN_WIDTH}
+                    aria-valuemax={AVATAR_PANE_MAX_WIDTH}
                     aria-valuenow={Math.round(avatarPaneWidth)}
                     tabIndex={0}
                     onPointerDown={startAvatarPaneResize}

@@ -171,7 +171,7 @@ describe('ChatContainer avatar split layout', () => {
     expect(screen.getByText('System response')).toBeInTheDocument();
     expect(screen.getByRole('separator', { name: 'Resize avatar panel' })).toHaveAttribute(
       'aria-valuenow',
-      '360',
+      '320',
     );
     expect(screen.getByLabelText('Live Tutor avatar')).toBeInTheDocument();
     expect(screen.getByTestId('live-tutor-panel')).toHaveAttribute('data-layout', 'side-pane');
@@ -184,6 +184,6 @@ describe('ChatContainer avatar split layout', () => {
     const separator = screen.getByRole('separator', { name: 'Resize avatar panel' });
     fireEvent.keyDown(separator, { key: 'ArrowLeft' });
 
-    expect(separator).toHaveAttribute('aria-valuenow', '384');
+    expect(separator).toHaveAttribute('aria-valuenow', '344');
   });
 });

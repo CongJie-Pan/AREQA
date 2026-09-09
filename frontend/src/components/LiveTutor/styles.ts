@@ -103,7 +103,10 @@ export const useStyles = createStyles(({ css }) => ({
     height: 100%;
     min-height: 0;
     overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+    border-radius: 8px;
     background: #101010;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.26);
   `,
 
   avatarStageActive: css`
@@ -124,9 +127,6 @@ export const useStyles = createStyles(({ css }) => ({
     width: 100%;
     height: 100%;
     aspect-ratio: auto;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
 
     @media (max-width: 768px) {
       width: 100%;

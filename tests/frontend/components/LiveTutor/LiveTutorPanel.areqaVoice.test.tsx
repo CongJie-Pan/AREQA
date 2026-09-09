@@ -102,7 +102,7 @@ function resetStores(): void {
 }
 
 async function renderOpenPanel(
-  props: { activeConversationId?: string | null; hasMessages?: boolean } = {},
+  props: { activeConversationId?: string | null; hasMessages?: boolean; layout?: 'inline' | 'side-pane' } = {},
 ): Promise<RenderResult> {
   act(() => {
     useLiveTutorStore.getState().open();
@@ -113,6 +113,7 @@ async function renderOpenPanel(
       <LiveTutorPanel
         activeConversationId={props.activeConversationId ?? 'conv_paper'}
         hasMessages={props.hasMessages ?? true}
+        layout={props.layout}
       />,
     );
   });
@@ -270,6 +271,28 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     expect(view.container.querySelector('[data-avatar-state="video"]')).not.toBeInTheDocument();
     expect(view.container.querySelector('section')).toHaveAttribute('data-avatar-layout', 'floating');
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    act(() => view.unmount());
+  });
+
+  it('renders side-pane avatar video without creating a floating avatar window', async () => {
+    useLiveTutorStore.setState({ avatarEnabled: true });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const view = await renderOpenPanel({ layout: 'side-pane' });
+    await waitFor(() => expect(startLiveKitAvatarClient).toHaveBeenCalledOnce());
+    const avatarStream = {
+      getVideoTracks: () => [{ readyState: 'live' }],
+      getAudioTracks: () => [],
+      getTracks: () => [],
+    } as unknown as MediaStream;
+
+    act(() => {
+      realtimeOptions?.onRemoteVideoStream?.(avatarStream);
+    });
+
+    expect(view.container.querySelector('video')).toBeInTheDocument();
+    expect(view.container.querySelector('[data-avatar-state="video"]')).toBeInTheDocument();
+    expect(view.container.querySelector('[data-avatar-window="floating"]')).not.toBeInTheDocument();
+    expect(view.container.querySelector('section')).toHaveAttribute('data-avatar-layout', 'side-pane');
     act(() => view.unmount());
   });
 

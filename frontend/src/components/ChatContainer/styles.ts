@@ -207,7 +207,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   contentAvatarSplit: css`
-    --areqa-avatar-pane-width: 360px;
+    --areqa-avatar-pane-width: 320px;
   `,
 
   liveTutorWorkspace: css`
@@ -285,19 +285,21 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   avatarPane: css`
     display: flex;
-    width: var(--areqa-avatar-pane-width, 360px);
-    min-width: 280px;
-    max-width: min(620px, 48vw);
+    width: var(--areqa-avatar-pane-width, 320px);
+    min-width: 260px;
+    max-width: min(420px, 34vw);
     min-height: 0;
-    flex: 0 0 var(--areqa-avatar-pane-width, 360px);
+    flex: 0 0 var(--areqa-avatar-pane-width, 320px);
     overflow: hidden;
-    background: #101010;
+    padding: 16px 16px 16px 12px;
+    background: var(--background);
 
     @media (max-width: 900px) {
       width: 100%;
       max-width: none;
       min-height: 280px;
-      flex: 0 0 min(42vh, 360px);
+      flex: 0 0 min(42vh, 340px);
+      padding: 12px 16px 16px;
     }
   `,
 
