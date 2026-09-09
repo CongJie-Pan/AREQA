@@ -212,11 +212,10 @@ describe('Latest turn deletion integration flow', () => {
     expect(screen.getAllByRole('button', { name: '刪除對話' })).toHaveLength(1);
   }, 15000);
 
-  it('keeps the latest turn visible when persistence deletion fails', async () => {
+  it('removes the latest turn from the UI even when persistence deletion fails', async () => {
     vi.mocked(databaseService.message.deleteManyByConversationId).mockRejectedValueOnce(
       new Error('IndexedDB unavailable'),
     );
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await renderChatContainer();
 
@@ -224,9 +223,10 @@ describe('Latest turn deletion integration flow', () => {
       fireEvent.click(screen.getByRole('button', { name: '刪除對話' }));
     });
 
-    expect(await screen.findByText('刪除對話失敗，請稍後再試')).toBeInTheDocument();
-    expect(screen.getByText(LATEST_USER_MESSAGE)).toBeInTheDocument();
-    expect(screen.getByText(LATEST_ASSISTANT_MESSAGE)).toBeInTheDocument();
-    consoleError.mockRestore();
+    await waitFor(() => {
+      expect(screen.queryByText(LATEST_USER_MESSAGE)).not.toBeInTheDocument();
+      expect(screen.queryByText(LATEST_ASSISTANT_MESSAGE)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('已刪除這輪對話')).toBeInTheDocument();
   }, 15000);
 });

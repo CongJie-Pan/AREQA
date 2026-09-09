@@ -621,5 +621,46 @@ describe('Chat Service', () => {
         }),
       );
     });
+
+    it('deletes every assistant fragment after the latest paired user query', async () => {
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
+        { id: 'assistant-1', role: 'assistant', content: 'first answer', conversationId: 'test-conv-id' },
+        { id: 'user-2', role: 'user', content: 'latest question', conversationId: 'test-conv-id' },
+        { id: 'assistant-2a', role: 'assistant', content: 'latest answer part 1', conversationId: 'test-conv-id' },
+        { id: 'assistant-2b', role: 'assistant', content: 'latest answer part 2', conversationId: 'test-conv-id' },
+      ];
+
+      await deleteLatestConversationTurn('assistant-2b');
+
+      expect(databaseService.message.deleteManyByConversationId).toHaveBeenCalledWith(
+        'test-conv-id',
+        ['user-2', 'assistant-2a', 'assistant-2b'],
+      );
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('user-2');
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('assistant-2a');
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('assistant-2b');
+    });
+
+    it('still removes the visible turn when persistence deletion fails', async () => {
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
+        { id: 'assistant-1', role: 'assistant', content: 'first answer', conversationId: 'test-conv-id' },
+        { id: 'user-2', role: 'user', content: 'latest question', conversationId: 'test-conv-id' },
+        { id: 'assistant-2', role: 'assistant', content: 'latest answer', conversationId: 'test-conv-id' },
+      ];
+      vi.mocked(databaseService.message.deleteManyByConversationId).mockRejectedValueOnce(
+        new Error('IndexedDB unavailable'),
+      );
+
+      await deleteLatestConversationTurn('assistant-2');
+
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('user-2');
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('assistant-2');
+      expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({ lastMessagePreview: 'first answer', messageCount: 2 }),
+      );
+    });
   });
 });

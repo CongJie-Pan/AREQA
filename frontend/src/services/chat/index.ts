@@ -755,19 +755,21 @@ export async function deleteLatestConversationTurn(assistantMessageId: string): 
     throw new Error('Only the latest completed assistant reply can be deleted');
   }
 
-  const previousMessage = conversationMessages[targetConversationIndex - 1];
-  if (
-    !previousMessage ||
-    previousMessage.role !== 'user' ||
-    previousMessage.conversationId !== conversationId
-  ) {
+  let pairedUserIndex = -1;
+  for (let index = targetConversationIndex - 1; index >= 0; index -= 1) {
+    if (conversationMessages[index].role === 'user') {
+      pairedUserIndex = index;
+      break;
+    }
+  }
+  const pairedUserMessage = pairedUserIndex >= 0 ? conversationMessages[pairedUserIndex] : undefined;
+  if (!pairedUserMessage) {
     throw new Error('Latest assistant reply does not have a paired user query');
   }
 
-  const idsToDelete = [previousMessage.id, assistantMessage.id];
-  if (canPersistHistory()) {
-    await databaseService.message.deleteManyByConversationId(conversationId, idsToDelete);
-  }
+  const idsToDelete = conversationMessages
+    .slice(pairedUserIndex, targetConversationIndex + 1)
+    .map((message) => message.id);
 
   for (const id of idsToDelete) {
     chatStore.removeMessage(id);
@@ -775,11 +777,26 @@ export async function deleteLatestConversationTurn(assistantMessageId: string): 
   chatStore.resetStreamingState();
   patchConversationAfterTurnDeletion(conversationId, useChatStore.getState().messages);
 
+  if (canPersistHistory()) {
+    try {
+      await databaseService.message.deleteManyByConversationId(conversationId, idsToDelete);
+    } catch (error) {
+      logger.warn('chat_latest_turn_delete_sync_failed', {
+        component: 'chatService',
+        conversationId,
+        assistantMessageId: assistantMessage.id,
+        userMessageId: pairedUserMessage.id,
+        deletedCount: idsToDelete.length,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   logger.info('chat_latest_turn_deleted', {
     component: 'chatService',
     conversationId,
     assistantMessageId: assistantMessage.id,
-    userMessageId: previousMessage.id,
+    userMessageId: pairedUserMessage.id,
     deletedCount: idsToDelete.length,
     persisted: canPersistHistory(),
   });
