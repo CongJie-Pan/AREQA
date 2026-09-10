@@ -196,16 +196,16 @@ export const useStyles = createStyles(({ css, token }) => ({
   list: css`
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   `,
   noteCard: css`
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     border: 1px solid var(--areqa-subtle-border);
     border-radius: 8px;
     background: color-mix(in srgb, var(--foreground) 4%, transparent);
-    padding: 16px;
+    padding: 12px 14px;
   `,
   noteMeta: css`
     display: flex;
@@ -225,12 +225,11 @@ export const useStyles = createStyles(({ css, token }) => ({
   noteBody: css`
     color: var(--areqa-message-text);
     font-size: 15px;
-    line-height: 1.75;
+    line-height: 1.6;
     white-space: pre-wrap;
   `,
   latinText: css`
     font-family: "Times New Roman", Times, serif;
-    font-weight: 700;
   `,
   inlineButton: css`
     width: fit-content;
@@ -251,7 +250,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   `,
   tagChip: css`
     display: inline-flex;
@@ -283,7 +282,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 6px;
   `,
   iconActionButton: css`
     display: inline-flex;
