@@ -23,9 +23,10 @@ describe('ChatContainer mobile viewport styles', () => {
       path.resolve(__dirname, '../../../../frontend/src/app/globals.css'),
       'utf8',
     );
+    const englishBodyRule = globalsCss.match(/html\[lang='en'\]\s+body\s*{(?<body>[^}]*)}/s);
 
     expect(globalsCss).toMatch(/html\[lang='en'\]\s+body\s*{[^}]*font-family:\s*"Times New Roman",\s*Times,\s*serif;/s);
-    expect(globalsCss).toMatch(/html\[lang='en'\]\s+body\s*{[^}]*font-weight:\s*700;/s);
+    expect(englishBodyRule?.groups?.body ?? '').not.toContain('font-weight');
     expect(globalsCss).toMatch(/body\s*{[^}]*font-family:\s*Arial,\s*Helvetica,\s*sans-serif;/s);
   });
 
