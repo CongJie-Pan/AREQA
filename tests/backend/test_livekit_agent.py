@@ -62,6 +62,9 @@ def test_livekit_agent_instructions_use_task_adaptive_depth():
     assert "DEEP is for detailed paper walkthroughs" in instructions
     assert "do not apply the one-to-three-sentence limit" in instructions
     assert "Do not ask a follow-up question until the learner's current request has been substantively answered" in instructions
+    assert "asks whether you remember something" in instructions
+    assert "call get_areqa_context before answering" in instructions
+    assert "Never say you cannot remember" in instructions
 
 
 @pytest.mark.asyncio

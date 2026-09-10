@@ -37,6 +37,7 @@ async def test_reflection_compression(mock_get_gum, mock_gum_instance):
     
     # Verify LLM was called
     mock_gum_instance.client.chat.completions.create.assert_called_once()
+    assert mock_gum_instance.client.chat.completions.create.call_args.kwargs["max_tokens"] == 700
     
     # Verify the new insight was inserted (via TextObserver queue or batcher)
     # We mock _process_batch or batcher

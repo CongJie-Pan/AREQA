@@ -36,6 +36,38 @@ from .schemas import (
 from gum.prompts.gum import AUDIT_PROMPT, PROPOSE_PROMPT, REVISE_PROMPT, SIMILAR_PROMPT
 from .batcher import ObservationBatcher
 
+
+NON_RETRYABLE_PROVIDER_STATUS_CODES = frozenset({400, 401, 402, 403, 404, 413, 422, 429})
+NON_RETRYABLE_PROVIDER_ERROR_MARKERS = (
+    "payment required",
+    "requires more credits",
+    "openrouter_credits",
+    "insufficient credits",
+    "quota",
+    "rate limit",
+    "rate_limit",
+    "context length",
+    "maximum context",
+    "max_tokens",
+)
+
+
+def _is_non_retryable_provider_error(exc: Exception) -> bool:
+    """Return True when retrying the same background batch will loop."""
+
+    status_code = getattr(exc, "status_code", None)
+    if status_code in NON_RETRYABLE_PROVIDER_STATUS_CODES:
+        return True
+
+    response = getattr(exc, "response", None)
+    response_status = getattr(response, "status_code", None)
+    if response_status in NON_RETRYABLE_PROVIDER_STATUS_CODES:
+        return True
+
+    message = str(exc).lower()
+    return any(marker in message for marker in NON_RETRYABLE_PROVIDER_ERROR_MARKERS)
+
+
 class gum:
     """A class for managing general user models.
 
@@ -306,6 +338,10 @@ class gum:
             err_msg_lower = str(e).lower()
             if isinstance(e, openai.AuthenticationError):
                 self.logger.error("Authentication Error encountered! Discarding batch to prevent infinite loop.")
+            elif _is_non_retryable_provider_error(e):
+                self.logger.error(
+                    "Non-retryable provider error encountered. Discarding batch to prevent infinite loop."
+                )
             elif isinstance(e, (sqlite3.OperationalError, sqlalchemy.exc.OperationalError)) and ("disk i/o error" in err_msg_lower or "i/o error" in err_msg_lower):
                 self.logger.error("Caught Disk I/O Error in background loop. Disposing engine and DROPPING batch to prevent infinite loop...")
                 try:
@@ -317,7 +353,12 @@ class gum:
             else:
                 # Put failed items back in queue for retry
                 for obs in batched_observations:
-                    self.batcher.push(obs['observer_name'], obs['content'], obs['content_type'])
+                    self.batcher.push(
+                        obs['observer_name'],
+                        obs['content'],
+                        obs['content_type'],
+                        user_id=obs.get('user_id', 'default_user'),
+                    )
 
     async def _construct_propositions(self, batched_observations: list[dict]) -> list[PropositionItem]:
         """Generate propositions from batched observations, supporting multimodal inputs.
@@ -367,6 +408,7 @@ class gum:
             model=self.model,
             messages=[{"role": "user", "content": message_content}],
             response_format=get_schema(schema),
+            max_tokens=1200,
         )
 
         try:
@@ -425,6 +467,7 @@ class gum:
             model=self.model,
             messages=[{"role": "user", "content": prompt_text}],
             response_format=get_schema(RelationSchema.model_json_schema()),
+            max_tokens=600,
         )
 
         data = RelationSchema.model_validate_json(rsp.choices[0].message.content)
@@ -495,6 +538,7 @@ class gum:
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             response_format=get_schema(PropositionSchema.model_json_schema()), 
+            max_tokens=1200,
         )
         try:
             return json.loads(rsp.choices[0].message.content)["propositions"]
@@ -684,6 +728,7 @@ class gum:
             messages=[{"role": "user", "content": prompt}],
             response_format=get_schema(AuditSchema.model_json_schema()),
             temperature=0.0,
+            max_tokens=300,
         )
         decision = json.loads(rsp.choices[0].message.content)
 
@@ -854,6 +899,7 @@ class gum:
                         model=self.model,
                         messages=[{"role": "user", "content": prompt}],
                         response_format=get_schema(IntentPredictionSchema.model_json_schema()),
+                        max_tokens=300,
                     )
                     selected_labels = json.loads(rsp.choices[0].message.content)
                     self._intent_cache.put(user_query, selected_labels)

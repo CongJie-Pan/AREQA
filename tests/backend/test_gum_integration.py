@@ -245,6 +245,7 @@ async def test_push_observation_with_evolution():
         mock_gum.query.assert_called_once_with("User loves apples now", user_id="test_user", limit=20)
         # Should call LLM for evolution
         mock_gum.client.chat.completions.create.assert_called_once()
+        assert mock_gum.client.chat.completions.create.call_args.kwargs["max_tokens"] == 500
         # Should update status of ID 1 to superseded
         mock_gum.update_status.assert_called_once_with(1, "superseded")
         # Should push the new text
@@ -278,6 +279,7 @@ async def test_push_observation_with_evolution_no_prune():
         mock_gum.query.assert_called_once_with("User asks about the weather", user_id="test_user", limit=20)
         # Should call LLM for evolution
         mock_gum.client.chat.completions.create.assert_called_once()
+        assert mock_gum.client.chat.completions.create.call_args.kwargs["max_tokens"] == 500
         # Should NOT update status since should_evolve is false
         mock_gum.update_status.assert_not_called()
         # Should push the new text
@@ -486,6 +488,8 @@ async def test_push_observation_stitch_metadata_preserved(real_gum_instance):
         }]
         
         await real_gum_instance._process_batch(batch)
+
+        assert mock_llm.call_args.kwargs["max_tokens"] == 1200
         
         async with real_gum_instance._session() as session:
             result = await session.execute(select(Proposition))
@@ -497,3 +501,47 @@ async def test_push_observation_stitch_metadata_preserved(real_gum_instance):
             assert prop.target == "STITCH"
             assert "Validation" in prop.event_types
             assert "Testing action" in prop.functional_type_seeds
+
+
+@pytest.mark.asyncio
+async def test_process_batch_drops_non_retryable_provider_errors(real_gum_instance):
+    class FakeProviderError(Exception):
+        status_code = 402
+
+    real_gum_instance._generate_and_search = AsyncMock(
+        side_effect=FakeProviderError("This request requires more credits")
+    )
+    real_gum_instance.batcher = MagicMock()
+
+    await real_gum_instance._process_batch([
+        {
+            "observer_name": "TestObserver",
+            "content": "User asked a question",
+            "content_type": "input_text",
+            "user_id": "user_123",
+        }
+    ])
+
+    real_gum_instance.batcher.push.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_batch_requeues_retryable_errors_with_user_id(real_gum_instance):
+    real_gum_instance._generate_and_search = AsyncMock(side_effect=RuntimeError("temporary database outage"))
+    real_gum_instance.batcher = MagicMock()
+
+    await real_gum_instance._process_batch([
+        {
+            "observer_name": "TestObserver",
+            "content": "User asked a question",
+            "content_type": "input_text",
+            "user_id": "user_123",
+        }
+    ])
+
+    real_gum_instance.batcher.push.assert_called_once_with(
+        "TestObserver",
+        "User asked a question",
+        "input_text",
+        user_id="user_123",
+    )

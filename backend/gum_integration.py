@@ -228,6 +228,7 @@ async def _run_reflection_unlocked(user_id: str, conversation_id: str = "") -> l
             model=gum_instance.model,
             messages=[{"role": "user", "content": prompt}],
             response_format=get_schema(ReflectionSchema.model_json_schema()),
+            max_tokens=700,
         )
         import json
         data = json.loads(rsp.choices[0].message.content)
@@ -367,6 +368,7 @@ async def batch_process_observations(
                     model=gum_instance.model,
                     messages=[{"role": "user", "content": prompt}],
                     response_format=get_schema(EvolutionSchema.model_json_schema()),
+                    max_tokens=500,
                 )
                 import json
                 import re

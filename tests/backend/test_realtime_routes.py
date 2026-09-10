@@ -57,6 +57,9 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert "Do not ask a follow-up question until the learner's current request has been substantively answered" in config["instructions"]
     assert "latest turn contains any Chinese characters" in config["instructions"]
     assert "answer in Mandarin Chinese unless they explicitly ask for another language" in config["instructions"]
+    assert "asks whether you remember something" in config["instructions"]
+    assert "call get_areqa_context before answering" in config["instructions"]
+    assert "Never say you cannot remember" in config["instructions"]
     assert "AREQA soul" in config["instructions"]
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["audio"]["input"]["turn_detection"] == {
@@ -443,6 +446,7 @@ async def test_realtime_context_returns_bounded_recent_messages_for_guest():
     assert "parts_context" in response["guidance"]
     assert "answer the requested content before asking a follow-up" in response["guidance"]
     assert "do not omit key ideas merely to be brief" in response["guidance"]
+    assert "use memory_items and recent_messages before saying you do not know" in response["guidance"]
 
 
 @pytest.mark.asyncio
