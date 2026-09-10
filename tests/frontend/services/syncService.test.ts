@@ -204,6 +204,8 @@ describe('syncService - pullFromCloud', () => {
             url: 'https://example.com/source',
           }],
           answer_blocks_snapshot: [{ type: 'paragraph', text: 'Hello' }],
+          tags: ['biology', 'exam'],
+          is_pinned: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }],
@@ -262,6 +264,8 @@ describe('syncService - pullFromCloud', () => {
         conversationId: 'conv_1',
         messageId: 'msg_2',
         contentSnapshot: 'Hello',
+        tags: ['biology', 'exam'],
+        isPinned: true,
       }));
     } finally {
       setTimeoutSpy.mockRestore();
@@ -333,6 +337,8 @@ describe('syncService - pullFromCloud', () => {
       contentSnapshot: 'Saved assistant response',
       citationsSnapshot: ['https://example.com/source'],
       answerBlocksSnapshot: [{ type: 'paragraph', text: 'Saved assistant response' }],
+      tags: ['biology', 'exam'],
+      isPinned: true,
       createdAt: new Date('2026-09-09T00:00:00.000Z'),
       updatedAt: new Date('2026-09-09T00:00:01.000Z'),
     });
@@ -344,6 +350,8 @@ describe('syncService - pullFromCloud', () => {
       conversation_id: 'conv_1',
       message_id: 'assistant_1',
       content_snapshot: 'Saved assistant response',
+      tags: ['biology', 'exam'],
+      is_pinned: true,
     }));
 
     await syncService.deleteNote('note_cloud');

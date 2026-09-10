@@ -19,7 +19,7 @@ const {
   TEST_USER_ID: 'notes-user',
   TEST_CONVERSATION_ID: 'notes-conversation',
   TEST_ASSISTANT_ID: 'notes-assistant',
-  TEST_ASSISTANT_CONTENT: 'This response should become a saved note.',
+  TEST_ASSISTANT_CONTENT: 'This response should become a saved note with enough detail to require a collapsed preview. '.repeat(8),
 }));
 
 let storedNotes: Note[] = [];
@@ -62,11 +62,24 @@ vi.mock('@/services/database', () => ({
           messageId: message.id,
           conversationTitle,
           contentSnapshot: message.content,
+          tags: [],
+          isPinned: false,
           createdAt: new Date('2026-09-09T00:00:03.000Z'),
           updatedAt: new Date('2026-09-09T00:00:03.000Z'),
         };
         storedNotes = [note];
         return note;
+      }),
+      updateMetadata: vi.fn(async (id, updates) => {
+        const existing = storedNotes.find((note) => note.id === id);
+        if (!existing) throw new Error('Note not found');
+        const updated = {
+          ...existing,
+          ...updates,
+          updatedAt: new Date('2026-09-09T00:00:04.000Z'),
+        };
+        storedNotes = storedNotes.map((note) => (note.id === id ? updated : note));
+        return updated;
       }),
       delete: vi.fn().mockResolvedValue(undefined),
     },
@@ -203,8 +216,39 @@ describe('Notes e2e integration flow', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '筆記' })).toBeInTheDocument();
-      expect(screen.getByText(TEST_ASSISTANT_CONTENT)).toBeInTheDocument();
+      expect(screen.getByText(/This response should become a saved note/)).toBeInTheDocument();
     });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展開' }));
+    });
+
+    expect(screen.getByText(TEST_ASSISTANT_CONTENT.trim())).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText('新增標籤'), { target: { value: 'biology' } });
+      fireEvent.keyDown(screen.getByPlaceholderText('新增標籤'), { key: 'Enter' });
+    });
+
+    await waitFor(() => {
+      expect(databaseService.note.updateMetadata).toHaveBeenCalledWith('note-created', { tags: ['biology'] });
+      expect(screen.getAllByRole('button', { name: /biology/ }).length).toBeGreaterThanOrEqual(1);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '釘選筆記' }));
+    });
+
+    await waitFor(() => {
+      expect(databaseService.note.updateMetadata).toHaveBeenCalledWith('note-created', { isPinned: true });
+      expect(screen.getByText('釘選筆記')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'biology' })[0]);
+    });
+
+    expect(screen.getByText(TEST_ASSISTANT_CONTENT.trim())).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '開啟來源位置' }));

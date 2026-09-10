@@ -109,6 +109,19 @@ class PerplexityQADatabase extends Dexie {
       notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, [userId+createdAt], [userId+messageId]',
     });
 
+    // Version 6: Note organization metadata for pinned notes and manual tags.
+    this.version(6).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
+      settings: 'key',
+      notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
+    }).upgrade(async tx => {
+      await tx.table('notes').toCollection().modify(note => {
+        note.tags = Array.isArray(note.tags) ? note.tags : [];
+        note.isPinned = Boolean(note.isPinned);
+      });
+    });
+
     // Handle multi-tab upgrades
     this.on('versionchange', () => {
       window.location.reload();

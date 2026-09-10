@@ -162,6 +162,16 @@ export type TranslationKey =
   | 'notesUntitledConversation'
   | 'openSourceConversation'
   | 'notesOpenSourceFailed'
+  | 'notesAllSources'
+  | 'notesAllTags'
+  | 'notesPinnedGroup'
+  | 'notesAddTagPlaceholder'
+  | 'notesExpand'
+  | 'notesCollapse'
+  | 'notesPin'
+  | 'notesUnpin'
+  | 'notesTagLabel'
+  | 'notesUpdateFailed'
   | 'deleteNoteConfirm'
   | 'noteDeleted'
   | 'noteDeleteFailed'
@@ -390,6 +400,16 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     notesUntitledConversation: '未命名對話',
     openSourceConversation: '開啟來源位置',
     notesOpenSourceFailed: '無法開啟來源位置',
+    notesAllSources: '所有來源',
+    notesAllTags: '所有標籤',
+    notesPinnedGroup: '釘選筆記',
+    notesAddTagPlaceholder: '新增標籤',
+    notesExpand: '展開',
+    notesCollapse: '收合',
+    notesPin: '釘選筆記',
+    notesUnpin: '取消釘選',
+    notesTagLabel: '標籤',
+    notesUpdateFailed: '更新筆記失敗，請稍後再試',
     deleteNoteConfirm: '確定要刪除此筆記嗎？',
     noteDeleted: '已刪除筆記',
     noteDeleteFailed: '刪除筆記失敗',
@@ -588,6 +608,16 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     notesUntitledConversation: '未命名对话',
     openSourceConversation: '打开来源位置',
     notesOpenSourceFailed: '无法打开来源位置',
+    notesAllSources: '所有来源',
+    notesAllTags: '所有标签',
+    notesPinnedGroup: '置顶笔记',
+    notesAddTagPlaceholder: '新增标签',
+    notesExpand: '展开',
+    notesCollapse: '收合',
+    notesPin: '置顶笔记',
+    notesUnpin: '取消置顶',
+    notesTagLabel: '标签',
+    notesUpdateFailed: '更新笔记失败，请稍后再试',
     deleteNoteConfirm: '确定要删除此笔记吗？',
     noteDeleted: '已删除笔记',
     noteDeleteFailed: '删除笔记失败',
@@ -786,6 +816,16 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     notesUntitledConversation: 'Untitled conversation',
     openSourceConversation: 'Open source location',
     notesOpenSourceFailed: 'Could not open the source location',
+    notesAllSources: 'All sources',
+    notesAllTags: 'All tags',
+    notesPinnedGroup: 'Pinned notes',
+    notesAddTagPlaceholder: 'Add tag',
+    notesExpand: 'Expand',
+    notesCollapse: 'Collapse',
+    notesPin: 'Pin note',
+    notesUnpin: 'Unpin note',
+    notesTagLabel: 'Tags',
+    notesUpdateFailed: 'Could not update this note. Please try again later.',
     deleteNoteConfirm: 'Delete this note?',
     noteDeleted: 'Note deleted',
     noteDeleteFailed: 'Could not delete this note',

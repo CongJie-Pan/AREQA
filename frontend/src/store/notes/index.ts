@@ -15,6 +15,7 @@ interface NotesState {
   error: string | null;
   loadNotes: (userId?: string) => Promise<void>;
   addNoteFromMessage: (message: Message, conversationTitle?: string | null) => Promise<Note>;
+  updateNoteMetadata: (id: string, updates: { tags?: string[]; isPinned?: boolean }) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
   isMessageSaved: (messageId: string) => boolean;
 }
@@ -61,6 +62,20 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         error: null,
       };
     });
+    return note;
+  },
+
+  /**
+   * Updates note organization metadata without changing the source snapshot.
+   */
+  updateNoteMetadata: async (id: string, updates: { tags?: string[]; isPinned?: boolean }) => {
+    const note = await databaseService.note.updateMetadata(id, updates);
+    set((state) => ({
+      notes: state.notes
+        .map((item) => (item.id === note.id ? note : item))
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+      error: null,
+    }));
     return note;
   },
 

@@ -140,6 +140,14 @@ function validateNote(note: unknown): ValidationResult {
     return { valid: false, error: 'Note must have contentSnapshot' };
   }
 
+  if (n.tags !== undefined && (!Array.isArray(n.tags) || n.tags.some((tag) => typeof tag !== 'string'))) {
+    return { valid: false, error: 'Note tags must be an array of strings' };
+  }
+
+  if (n.isPinned !== undefined && typeof n.isPinned !== 'boolean') {
+    return { valid: false, error: 'Note isPinned must be a boolean' };
+  }
+
   if (!isValidDate(n.createdAt)) {
     return { valid: false, error: 'Note must have a valid createdAt date' };
   }

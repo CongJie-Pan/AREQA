@@ -129,13 +129,17 @@ export const syncService = {
             note.sources_snapshot,
             localNote?.sourcesSnapshot,
           );
+          const cloudTags = normalizeJsonArray<string>(note.tags, localNote?.tags ?? []) ?? [];
+          const cloudIsPinned = Boolean(note.is_pinned);
 
           if (
             !localNote ||
             localNote.updatedAt.getTime() < cloudUpdatedAt.getTime() ||
             !jsonEqual(localNote.answerBlocksSnapshot, cloudAnswerBlocks) ||
             !jsonEqual(localNote.citationsSnapshot, cloudCitations) ||
-            !jsonEqual(localNote.sourcesSnapshot, cloudSources)
+            !jsonEqual(localNote.sourcesSnapshot, cloudSources) ||
+            !jsonEqual(localNote.tags ?? [], cloudTags) ||
+            Boolean(localNote.isPinned) !== cloudIsPinned
           ) {
             notesToUpsert.push({
               id: note.id,
@@ -147,6 +151,8 @@ export const syncService = {
               answerBlocksSnapshot: cloudAnswerBlocks,
               citationsSnapshot: cloudCitations,
               sourcesSnapshot: cloudSources,
+              tags: cloudTags,
+              isPinned: cloudIsPinned,
               createdAt: new Date(note.created_at),
               updatedAt: cloudUpdatedAt,
             } as Note);
@@ -346,6 +352,8 @@ export const syncService = {
         answer_blocks_snapshot: persistentAnswerBlocks(note.answerBlocksSnapshot) ?? null,
         citations_snapshot: note.citationsSnapshot ?? null,
         sources_snapshot: note.sourcesSnapshot ?? null,
+        tags: note.tags ?? [],
+        is_pinned: Boolean(note.isPinned),
         created_at: note.createdAt.toISOString(),
         updated_at: note.updatedAt.toISOString(),
       });

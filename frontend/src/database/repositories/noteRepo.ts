@@ -16,6 +16,27 @@ export type AddNoteData = Omit<Note, 'id' | 'userId' | 'createdAt' | 'updatedAt'
   messageId: string;
 };
 
+export interface UpdateNoteMetadataData {
+  tags?: string[];
+  isPinned?: boolean;
+}
+
+function normalizeTags(tags: string[] | undefined): string[] {
+  if (!tags) return [];
+
+  const seen = new Set<string>();
+  return tags
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0)
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
 /**
  * Builds a persisted note from an assistant response.
  *
@@ -46,6 +67,8 @@ function buildNoteFromMessage(message: Message, conversationTitle?: string | nul
     answerBlocksSnapshot: message.answerBlocks,
     citationsSnapshot: message.citations,
     sourcesSnapshot: message.sources,
+    tags: [],
+    isPinned: false,
   };
 }
 
@@ -84,6 +107,8 @@ export const noteRepo = {
       answerBlocksSnapshot: noteData.answerBlocksSnapshot,
       citationsSnapshot: noteData.citationsSnapshot,
       sourcesSnapshot: noteData.sourcesSnapshot,
+      tags: normalizeTags(noteData.tags),
+      isPinned: Boolean(noteData.isPinned),
       createdAt: noteData.createdAt ?? now,
       updatedAt: noteData.updatedAt ?? now,
     };
@@ -124,6 +149,25 @@ export const noteRepo = {
       .equals([userId, messageId])
       .first();
     return Boolean(existing);
+  },
+
+  /**
+   * Updates user-owned note organization metadata and syncs it to Supabase.
+   */
+  async updateMetadata(id: string, updates: UpdateNoteMetadataData): Promise<Note> {
+    const existing = await db.notes.get(id);
+    if (!existing) throw new Error('Note not found');
+
+    const updatedNote: Note = {
+      ...existing,
+      tags: updates.tags ? normalizeTags(updates.tags) : normalizeTags(existing.tags),
+      isPinned: updates.isPinned ?? Boolean(existing.isPinned),
+      updatedAt: new Date(),
+    };
+
+    await db.notes.put(updatedNote);
+    syncService.pushNote(updatedNote);
+    return updatedNote;
   },
 
   /**

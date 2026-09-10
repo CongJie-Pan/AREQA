@@ -96,6 +96,60 @@ export const useStyles = createStyles(({ css, token }) => ({
   searchInput: css`
     max-width: 520px;
   `,
+  filters: css`
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  `,
+  filterGroup: css`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  `,
+  filterChip: css`
+    display: inline-flex;
+    min-height: 30px;
+    max-width: 220px;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    border: 1px solid var(--areqa-subtle-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    padding: 0 11px;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    span {
+      color: ${token.colorTextTertiary};
+      font-size: 12px;
+    }
+
+    &:hover {
+      background: ${token.colorFillTertiary};
+      color: var(--foreground);
+    }
+  `,
+  filterChipActive: css`
+    display: inline-flex;
+    min-height: 30px;
+    max-width: 220px;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, #d8a25c 68%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, #d8a25c 14%, transparent);
+    color: var(--foreground);
+    cursor: pointer;
+    padding: 0 11px;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `,
   empty: css`
     display: flex;
     min-height: 220px;
@@ -103,6 +157,41 @@ export const useStyles = createStyles(({ css, token }) => ({
     justify-content: center;
     color: var(--muted-foreground);
     text-align: center;
+  `,
+  groupList: css`
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  `,
+  group: css`
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  `,
+  groupHeader: css`
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    border-bottom: 1px solid var(--areqa-subtle-border);
+    background: transparent;
+    color: var(--foreground);
+    cursor: pointer;
+    padding: 0 2px 8px;
+    text-align: left;
+
+    span {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    strong {
+      color: var(--muted-foreground);
+      font-size: 13px;
+      font-weight: 600;
+    }
   `,
   list: css`
     display: flex;
@@ -139,9 +228,73 @@ export const useStyles = createStyles(({ css, token }) => ({
     line-height: 1.75;
     white-space: pre-wrap;
   `,
+  inlineButton: css`
+    width: fit-content;
+    border: 0;
+    background: transparent;
+    color: #b7793a;
+    cursor: pointer;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 600;
+
+    &:hover {
+      color: #d8a25c;
+      text-decoration: underline;
+    }
+  `,
+  tagEditor: css`
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  `,
+  tagChip: css`
+    display: inline-flex;
+    min-height: 28px;
+    max-width: 180px;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, #d8a25c 46%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, #d8a25c 10%, transparent);
+    color: var(--foreground);
+    cursor: pointer;
+    padding: 0 9px;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover {
+      border-color: color-mix(in srgb, #d8a25c 74%, transparent);
+      background: color-mix(in srgb, #d8a25c 16%, transparent);
+    }
+  `,
+  tagInput: css`
+    width: 128px;
+    min-width: 104px;
+  `,
   noteTools: css`
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
+  `,
+  iconActionButton: css`
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--areqa-subtle-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--foreground);
+    cursor: pointer;
+
+    &:hover {
+      background: ${token.colorFillTertiary};
+    }
   `,
 }));

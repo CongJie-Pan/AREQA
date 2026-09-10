@@ -195,6 +195,10 @@ export interface Note {
   citationsSnapshot?: string[];
   /** Structured RAG sources captured from the assistant response. */
   sourcesSnapshot?: Message['sources'];
+  /** User-authored lightweight organization labels. */
+  tags?: string[];
+  /** Whether the note should stay in the pinned group. */
+  isPinned?: boolean;
   /** Creation timestamp */
   createdAt: Date;
   /** Last update timestamp */

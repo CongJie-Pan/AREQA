@@ -51,6 +51,8 @@ describe('noteRepo sync integration', () => {
     expect(note.conversationId).toBe('conversation-note-source');
     expect(note.conversationTitle).toBe('Learning chat');
     expect(note.contentSnapshot).toBe('A useful explanation worth saving.');
+    expect(note.tags).toEqual([]);
+    expect(note.isPinned).toBe(false);
     expect(note.citationsSnapshot).toEqual(['https://example.com/source']);
     expect(syncService.pushNote).toHaveBeenCalledWith(expect.objectContaining({
       id: note.id,
@@ -78,5 +80,27 @@ describe('noteRepo sync integration', () => {
 
     expect(await db.notes.get(note.id)).toBeUndefined();
     expect(syncService.deleteNote).toHaveBeenCalledWith(note.id);
+  });
+
+  it('updates note tags and pinned metadata with sync-safe normalized values', async () => {
+    const note = await noteRepo.addFromMessage(assistantMessage, 'Learning chat');
+    vi.clearAllMocks();
+
+    const updated = await noteRepo.updateMetadata(note.id, {
+      tags: ['biology', ' Biology ', '', 'exam'],
+      isPinned: true,
+    });
+
+    expect(updated.tags).toEqual(['biology', 'exam']);
+    expect(updated.isPinned).toBe(true);
+    expect(syncService.pushNote).toHaveBeenCalledWith(expect.objectContaining({
+      id: note.id,
+      tags: ['biology', 'exam'],
+      isPinned: true,
+    }));
+
+    const stored = await db.notes.get(note.id);
+    expect(stored?.tags).toEqual(['biology', 'exam']);
+    expect(stored?.isPinned).toBe(true);
   });
 });
