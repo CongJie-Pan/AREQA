@@ -1,10 +1,11 @@
 import React from 'react';
 import { App } from 'antd';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
+import { useLiveTutorStore } from '@/store/liveTutor';
 import { databaseService } from '@/services/database';
 
 const {
@@ -122,10 +123,28 @@ vi.mock('@/utils/exportChat', () => ({
 }));
 
 describe('Latest turn deletion integration flow', () => {
+  const mockScrollTo = vi.fn();
+
   beforeEach(() => {
     vi.clearAllMocks();
+    Element.prototype.scrollTo = mockScrollTo;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
     authState.user = { id: TEST_USER_ID };
     authState.isInitialized = true;
+    useLiveTutorStore.setState({
+      isOpen: false,
+      status: 'idle',
+      isMuted: false,
+      avatarEnabled: false,
+      closeRequestId: 0,
+      userTranscript: '',
+      assistantTranscript: '',
+      error: null,
+    });
     useConversationStore.setState({
       conversations: [{
         id: TEST_CONVERSATION_ID,
@@ -181,6 +200,10 @@ describe('Latest turn deletion integration flow', () => {
     });
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   async function renderChatContainer() {
     let result: ReturnType<typeof render> | undefined;
     await act(async () => {
@@ -216,6 +239,32 @@ describe('Latest turn deletion integration flow', () => {
     await renderChatContainer();
 
     expect(screen.getAllByRole('button', { name: '刪除對話' })).toHaveLength(1);
+  }, 15000);
+
+  it('shows the scroll-to-bottom button after scrolling up in normal chat mode', async () => {
+    const view = await renderChatContainer();
+    const messageArea = view?.container.querySelector('.areqa-chat-message-area') as HTMLDivElement;
+    const scrollContainer = view?.container.querySelector('.areqa-message-list') as HTMLDivElement;
+
+    expect(messageArea).not.toHaveClass('areqa-chat-message-area-live-tutor');
+    expect(useLiveTutorStore.getState().isOpen).toBe(false);
+
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 1600, configurable: true });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 420, configurable: true });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 600, configurable: true });
+
+    fireEvent.scroll(scrollContainer);
+
+    const scrollButton = screen.getByRole('button', { name: '滑動到底部' });
+    expect(scrollButton).toHaveClass('areqa-message-scroll-button');
+
+    mockScrollTo.mockClear();
+    fireEvent.click(scrollButton);
+
+    expect(mockScrollTo).toHaveBeenCalledWith(expect.objectContaining({
+      top: 1600,
+      behavior: 'smooth',
+    }));
   }, 15000);
 
   it('removes the latest turn from the UI even when persistence deletion fails', async () => {

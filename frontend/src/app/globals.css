@@ -240,9 +240,10 @@ html[lang='en'] body {
 }
 
 .areqa-chat-message-area {
+  display: flex;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }

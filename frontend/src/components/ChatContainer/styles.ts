@@ -304,8 +304,9 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   messageArea: css`
-    flex: 1;
-    overflow-y: auto;
+    display: flex;
+    flex: 1 1 auto;
+    overflow: hidden;
     min-height: 0;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
