@@ -49,6 +49,21 @@ const cursorBlink = keyframes`
   }
 `;
 
+const sourceFocusPulse = keyframes`
+  0% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0);
+    background: rgba(217, 119, 6, 0);
+  }
+  18% {
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.52);
+    background: rgba(217, 119, 6, 0.1);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0);
+    background: rgba(217, 119, 6, 0);
+  }
+`;
+
 const streamingDotCycleStart = keyframes`
   0%, 6%, 18%, 30%, 42%, 54%, 66%, 72%, 100% {
     opacity: 0.35;
@@ -332,6 +347,11 @@ export const useStyles = createStyles(({ css, token }) => ({
     &.assistant-after-user {
       padding-top: 4px;
     }
+  `,
+
+  sourceFocusedMessage: css`
+    border-radius: 12px;
+    animation: ${sourceFocusPulse} 2.6s ease-out both;
   `,
 
   userMessage: css`

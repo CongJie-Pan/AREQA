@@ -179,7 +179,9 @@ describe('Notes e2e integration flow', () => {
     });
   });
 
-  it('saves an assistant response, browses notes from the sidebar, and opens the source chat', async () => {
+  it('saves an assistant response, browses notes from the sidebar, and opens the exact source message', async () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
+
     render(
       <App>
         <ChatContainer />
@@ -205,9 +207,12 @@ describe('Notes e2e integration flow', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '開啟來源對話' }));
+      fireEvent.click(screen.getByRole('button', { name: '開啟來源位置' }));
     });
 
     expect(switchConversation).toHaveBeenCalledWith(TEST_CONVERSATION_ID);
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+    });
   }, 15000);
 });

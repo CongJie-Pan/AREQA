@@ -13,7 +13,9 @@ import { useAuthStore } from '@/store/auth';
 import { switchConversation } from '@/services/chat';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { formatUserDate } from '@/utils/dateTime';
+import { requestSourceMessageFocus } from '@/utils/messageFocus';
 import { useStyles } from './styles';
+import type { Note } from '@/database/schema';
 
 interface NotesPanelProps {
   onClose: () => void;
@@ -40,14 +42,17 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
     });
   }, [notes, query]);
 
-  const handleOpenSource = async (conversationId: string | null) => {
-    if (!conversationId) {
+  const handleOpenSource = async (note: Note) => {
+    if (!note.conversationId) {
       message.error(t('notesOpenSourceFailed'));
       return;
     }
 
     try {
-      await switchConversation(conversationId);
+      if (note.messageId) {
+        requestSourceMessageFocus(note.conversationId, note.messageId);
+      }
+      await switchConversation(note.conversationId);
       onClose();
     } catch {
       message.error(t('notesOpenSourceFailed'));
@@ -117,7 +122,7 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
                   <button
                     className={styles.actionButton}
                     disabled={!note.conversationId}
-                    onClick={() => handleOpenSource(note.conversationId)}
+                    onClick={() => handleOpenSource(note)}
                     type="button"
                   >
                     <MessageSquare size={15} />

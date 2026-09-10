@@ -16,6 +16,7 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { MessageItem } from './MessageItem';
 import { useStyles } from './styles';
 import { databaseService } from '@/services/database';
+import { consumeSourceMessageFocus } from '@/utils/messageFocus';
 import type { MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 
 /** Scroll threshold in pixels from bottom to trigger auto-scroll */
@@ -193,6 +194,7 @@ export function MessageList({
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const [showScrollButton, setShowScrollButton] = React.useState(false);
+  const [focusedSourceMessageId, setFocusedSourceMessageId] = React.useState<string | null>(null);
 
   // Get state from store
   const messages = useChatStore(chatSelectors.displayMessages);
@@ -207,6 +209,7 @@ export function MessageList({
   const ragSources = useChatStore((state) => state.ragSources);
   const setMessageFeedback = useChatStore((state) => state.setMessageFeedback);
   const savedNotes = useNotesStore((state) => state.notes);
+  const activeConversationId = useConversationStore((state) => state.activeConversationId);
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
   const savedMessageIds = React.useMemo(
     () => new Set(savedNotes.map((note) => note.messageId).filter(Boolean)),
@@ -320,6 +323,43 @@ export function MessageList({
     }
   }, []);
 
+  useEffect(() => {
+    if (!activeConversationId || messages.length === 0) return;
+
+    const sourceMessageId = consumeSourceMessageFocus(activeConversationId);
+    if (!sourceMessageId) return;
+
+    let clearHighlightTimer: number | null = null;
+    const frameId = requestAnimationFrame(() => {
+      const container = containerRef.current;
+      const sourceElement = Array.from(
+        container?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [],
+      ).find((element) => element.dataset.messageId === sourceMessageId);
+
+      if (!sourceElement) return;
+
+      userScrolledUpRef.current = true;
+      sourceElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setFocusedSourceMessageId(sourceMessageId);
+
+      if (container) {
+        const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        setShowScrollButton(distanceToBottom >= 10);
+      }
+
+      clearHighlightTimer = window.setTimeout(() => {
+        setFocusedSourceMessageId((currentMessageId) => (
+          currentMessageId === sourceMessageId ? null : currentMessageId
+        ));
+      }, 2800);
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (clearHighlightTimer) window.clearTimeout(clearHighlightTimer);
+    };
+  }, [activeConversationId, messages]);
+
   if (messages.length === 0 && isMessageHandoffLoading) {
     // Keep the transcript quiet while a saved conversation is loading. Rendering
     // the empty-state hero here causes a visible new-chat flash during switches.
@@ -394,7 +434,10 @@ export function MessageList({
               message={message}
               isStreaming={Boolean(message.isStreaming || (isCurrentStreaming && isStreaming))}
               isLast={isLast}
-              className={isAssistantAfterUser ? 'assistant-after-user' : ''}
+              className={cx(
+                isAssistantAfterUser && 'assistant-after-user',
+                message.id === focusedSourceMessageId && styles.sourceFocusedMessage,
+              )}
               onSelectSuggestion={onSelectSuggestion}
               thinking={
                 isCurrentStreaming

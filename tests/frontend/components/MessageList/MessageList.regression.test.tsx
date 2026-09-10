@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MessageList } from '../../../../frontend/src/components/MessageList';
 import { useChatStore } from '../../../../frontend/src/store/chat';
 import { useConversationStore } from '../../../../frontend/src/store/conversation';
+import { requestSourceMessageFocus } from '../../../../frontend/src/utils/messageFocus';
 
 // Mock store
 vi.mock('../../../../frontend/src/store/chat', () => ({
@@ -29,7 +30,8 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       emptyLogo: 'emptyLogo',
       emptyCopy: 'emptyCopy',
       emptySubtitle: 'emptySubtitle',
-      scrollButton: 'scrollButton'
+      scrollButton: 'scrollButton',
+      sourceFocusedMessage: 'sourceFocusedMessage'
     },
     cx: (...args: any[]) => args.filter(Boolean).join(' '),
   }),
@@ -37,7 +39,11 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
 
 // Mock MessageItem
 vi.mock('../../../../frontend/src/components/MessageList/MessageItem', () => ({
-  MessageItem: () => <div data-testid="message-item" />
+  MessageItem: ({ message, className }: any) => (
+    <div data-testid="message-item" data-message-id={message.id} className={className}>
+      {message.content}
+    </div>
+  )
 }));
 
 describe('MessageList Scroll Behavior Regression', () => {
@@ -54,6 +60,7 @@ describe('MessageList Scroll Behavior Regression', () => {
       callback(0);
       return 0;
     });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
 
     // Default mock state
     (useChatStore as any).mockImplementation((selector: any) => {
@@ -71,13 +78,14 @@ describe('MessageList Scroll Behavior Regression', () => {
     });
 
     (useConversationStore as any).mockImplementation((selector: any) => {
-      const state = { isLoading: false, isMessageHandoffLoading: false };
+      const state = { activeConversationId: 'conversation-1', isLoading: false, isMessageHandoffLoading: false };
       return typeof selector === 'function' ? selector(state) : state;
     });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    window.sessionStorage.clear();
   });
 
   it('renders the reduced-motion empty state with the circular AREQA icon', () => {
@@ -315,6 +323,49 @@ describe('MessageList Scroll Behavior Regression', () => {
       behavior: 'smooth',
     }));
     expect(screen.queryByRole('button', { name: '滑動到底部' })).not.toBeInTheDocument();
+  });
+
+  it('opens a pending note source at the exact message and leaves a bottom button available', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const animationFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    });
+
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        messages: [
+          { id: 'message-user', role: 'user', content: 'question' },
+          { id: 'message-source', role: 'assistant', content: 'saved answer' },
+          { id: 'message-latest', role: 'assistant', content: 'latest answer' },
+        ],
+        isStreaming: false,
+        currentStreamingId: null,
+        thinkingContent: '',
+        isThinking: false,
+        ragStatus: 'idle',
+        ragMessage: '',
+        ragSources: [],
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    requestSourceMessageFocus('conversation-1', 'message-source');
+
+    const { container } = render(<MessageList />);
+    const scrollContainer = container.querySelector('.container') as HTMLDivElement;
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 1400, configurable: true });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 200, configurable: true });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 500, configurable: true });
+
+    act(() => {
+      animationFrames.forEach((callback) => callback(0));
+    });
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+    expect(container.querySelector('[data-message-id="message-source"]')).toHaveClass('sourceFocusedMessage');
+    expect(screen.getByRole('button', { name: '滑動到底部' })).toBeInTheDocument();
   });
 
   it('should resume auto-scroll when user scrolls back to the bottom', async () => {
