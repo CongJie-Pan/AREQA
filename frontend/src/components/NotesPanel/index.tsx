@@ -34,6 +34,7 @@ interface NotesPanelProps {
 }
 
 const NOTE_SUMMARY_LIMIT = 260;
+const LATIN_TEXT_PATTERN = /([A-Za-z][A-Za-z0-9'_-]*)/;
 
 function normalizeTagInput(value: string) {
   return value.trim().replace(/\s+/g, ' ').slice(0, 32);
@@ -62,6 +63,18 @@ function buildNoteSummary(content: string) {
     text: `${normalizedContent.slice(0, NOTE_SUMMARY_LIMIT).trimEnd()}...`,
     isTruncated: true,
   };
+}
+
+function renderTextWithLatinTypography(text: string, latinClassName: string) {
+  return text.split(LATIN_TEXT_PATTERN).map((part, index) => (
+    LATIN_TEXT_PATTERN.test(part)
+      ? (
+        <span className={latinClassName} key={`${part}-${index}`}>
+          {part}
+        </span>
+      )
+      : part
+  ));
 }
 
 export function NotesPanel({ onClose }: NotesPanelProps) {
@@ -324,7 +337,9 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
                               })}
                             </time>
                           </div>
-                          <div className={styles.noteBody}>{displayedContent}</div>
+                          <div className={styles.noteBody}>
+                            {renderTextWithLatinTypography(displayedContent, styles.latinText)}
+                          </div>
                           {summary.isTruncated && (
                             <button
                               className={styles.inlineButton}

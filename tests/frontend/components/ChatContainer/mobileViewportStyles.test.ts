@@ -25,6 +25,7 @@ describe('ChatContainer mobile viewport styles', () => {
     );
 
     expect(globalsCss).toMatch(/html\[lang='en'\]\s+body\s*{[^}]*font-family:\s*"Times New Roman",\s*Times,\s*serif;/s);
+    expect(globalsCss).toMatch(/html\[lang='en'\]\s+body\s*{[^}]*font-weight:\s*700;/s);
     expect(globalsCss).toMatch(/body\s*{[^}]*font-family:\s*Arial,\s*Helvetica,\s*sans-serif;/s);
   });
 

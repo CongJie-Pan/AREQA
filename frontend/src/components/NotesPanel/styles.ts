@@ -228,6 +228,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     line-height: 1.75;
     white-space: pre-wrap;
   `,
+  latinText: css`
+    font-family: "Times New Roman", Times, serif;
+    font-weight: 700;
+  `,
   inlineButton: css`
     width: fit-content;
     border: 0;

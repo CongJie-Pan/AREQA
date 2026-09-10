@@ -216,14 +216,15 @@ describe('Notes e2e integration flow', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '筆記' })).toBeInTheDocument();
-      expect(screen.getByText(/This response should become a saved note/)).toBeInTheDocument();
+      expect(document.body).toHaveTextContent('This response should become a saved note');
+      expect(screen.getAllByText('This')[0].tagName).toBe('SPAN');
     });
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '展開' }));
     });
 
-    expect(screen.getByText(TEST_ASSISTANT_CONTENT.trim())).toBeInTheDocument();
+    expect(document.body).toHaveTextContent(TEST_ASSISTANT_CONTENT.trim());
 
     await act(async () => {
       fireEvent.change(screen.getByPlaceholderText('新增標籤'), { target: { value: 'biology' } });
@@ -248,7 +249,7 @@ describe('Notes e2e integration flow', () => {
       fireEvent.click(screen.getAllByRole('button', { name: 'biology' })[0]);
     });
 
-    expect(screen.getByText(TEST_ASSISTANT_CONTENT.trim())).toBeInTheDocument();
+    expect(document.body).toHaveTextContent(TEST_ASSISTANT_CONTENT.trim());
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '開啟來源位置' }));
