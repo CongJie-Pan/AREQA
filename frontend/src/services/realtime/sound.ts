@@ -15,8 +15,8 @@ interface ToneStep {
   gain: number;
 }
 
-const LIVE_VOICE_CUE_GAIN_MULTIPLIER = 1.85;
-const MAX_LIVE_VOICE_CUE_GAIN = 0.12;
+const LIVE_VOICE_CUE_GAIN_MULTIPLIER = 3.2;
+const MAX_LIVE_VOICE_CUE_GAIN = 0.16;
 
 const SOUND_STEPS: Record<LiveVoiceSound, ToneStep[]> = {
   connected: [
