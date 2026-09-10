@@ -54,6 +54,31 @@ def fake_job_context() -> SimpleNamespace:
     )
 
 
+def test_livekit_agent_instructions_use_task_adaptive_depth():
+    instructions = agent_module._instructions("zh-TW")
+
+    assert "Choose spoken depth from the learner's intent: BRIEF, EXPLAIN, or DEEP" in instructions
+    assert "BRIEF is for greetings" in instructions
+    assert "DEEP is for detailed paper walkthroughs" in instructions
+    assert "do not apply the one-to-three-sentence limit" in instructions
+    assert "Do not ask a follow-up question until the learner's current request has been substantively answered" in instructions
+
+
+@pytest.mark.asyncio
+async def test_livekit_agent_context_guidance_preserves_deep_explanations():
+    tutor = agent_module.AreqaLiveTutor(
+        interface_language="zh-TW",
+        recent_messages=[],
+        memory_items=[],
+        parts_context={},
+    )
+
+    context = await tutor.get_areqa_context("paper_explanation")
+
+    assert "answer the requested content before asking a follow-up" in context["guidance"]
+    assert "do not omit key ideas merely to be brief" in context["guidance"]
+
+
 @pytest.mark.asyncio
 async def test_livekit_agent_falls_back_to_voice_only_when_anam_start_fails(monkeypatch):
     monkeypatch.setattr(agent_module, "ANAM_AVATAR_ID", "avatar_test")

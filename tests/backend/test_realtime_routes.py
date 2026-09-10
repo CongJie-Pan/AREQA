@@ -50,9 +50,11 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert "阿瑞卡" in config["instructions"]
     assert "write the speakable form" in config["instructions"]
     assert "internal: never explain, spell out, or describe the pronunciation guide" in config["instructions"]
-    assert "one to three short sentences" in config["instructions"]
-    assert "exactly one short open question" in config["instructions"]
-    assert "A learning answer should feel unfinished without learner choice" in config["instructions"]
+    assert "Choose spoken depth from the learner's intent: BRIEF, EXPLAIN, or DEEP" in config["instructions"]
+    assert "BRIEF is for greetings" in config["instructions"]
+    assert "DEEP is for detailed paper walkthroughs" in config["instructions"]
+    assert "do not apply the one-to-three-sentence limit" in config["instructions"]
+    assert "Do not ask a follow-up question until the learner's current request has been substantively answered" in config["instructions"]
     assert "latest turn contains any Chinese characters" in config["instructions"]
     assert "answer in Mandarin Chinese unless they explicitly ask for another language" in config["instructions"]
     assert "AREQA soul" in config["instructions"]
@@ -439,6 +441,8 @@ async def test_realtime_context_returns_bounded_recent_messages_for_guest():
     assert response["parts_context"]["persona"]
     assert response["parts_context"]["instruction"]
     assert "parts_context" in response["guidance"]
+    assert "answer the requested content before asking a follow-up" in response["guidance"]
+    assert "do not omit key ideas merely to be brief" in response["guidance"]
 
 
 @pytest.mark.asyncio
