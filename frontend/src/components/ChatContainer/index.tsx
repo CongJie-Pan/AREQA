@@ -268,10 +268,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
           .then(async () => {
             if (cancelled) return;
             await initializeChatService(user.id);
+            await loadNotes(user.id);
             logger.info('chat_history_cloud_sync_finished', {
               component: 'ChatContainer',
               durationMs: Math.round(performance.now() - cloudSyncStartedAt),
               refreshedConversationStore: true,
+              refreshedNotesStore: true,
             });
           })
           .catch((syncError) => {
@@ -293,7 +295,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthInitialized, user]);
+  }, [isAuthInitialized, loadNotes, user]);
 
   // Load messages when conversation changes
   useEffect(() => {

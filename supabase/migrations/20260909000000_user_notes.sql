@@ -2,8 +2,8 @@
 create table if not exists public.notes (
   id uuid primary key,
   user_id uuid not null,
-  conversation_id uuid not null,
-  message_id uuid not null,
+  conversation_id uuid,
+  message_id uuid,
   conversation_title text,
   content_snapshot text not null,
   answer_blocks_snapshot jsonb,
@@ -27,10 +27,6 @@ create table if not exists public.notes (
   constraint notes_message_fk
     foreign key (message_id) references public.messages(id) on delete set null
 );
-
-alter table public.notes
-  alter column conversation_id drop not null,
-  alter column message_id drop not null;
 
 create index if not exists idx_notes_user_created_at
   on public.notes(user_id, created_at desc);
