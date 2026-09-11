@@ -302,6 +302,39 @@ describe('MessageList Scroll Behavior Regression', () => {
     expect(mockScrollTo).not.toHaveBeenCalled();
   });
 
+  it('should not snap back during streaming after a small manual drag near the bottom', async () => {
+    const { container, rerender } = render(<MessageList />);
+    const scrollContainer = container.querySelector('.container') as HTMLDivElement;
+
+    // distance=20 is near enough that the previous auto-scroll heuristic
+    // treated it as bottom-following, even though the user had manually moved.
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 680, configurable: true });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 300, configurable: true });
+
+    fireEvent.scroll(scrollContainer);
+    mockScrollTo.mockClear();
+
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        messages: [{ id: '1', role: 'assistant', content: 'streaming answer update' }],
+        isStreaming: true,
+        currentStreamingId: '1',
+        thinkingContent: 'new token',
+        isThinking: false,
+        ragStatus: 'done',
+        ragMessage: '',
+        ragSources: [],
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    rerender(<MessageList />);
+
+    expect(mockScrollTo).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '滑動到底部' })).toBeInTheDocument();
+  });
+
   it('shows an overlay scroll-to-bottom button after the user scrolls up', async () => {
     const { container } = render(<MessageList />);
     const scrollContainer = container.querySelector('.container') as HTMLDivElement;

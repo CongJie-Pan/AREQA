@@ -275,11 +275,12 @@ export function MessageList({
     if (isStreaming) {
       const container = containerRef.current;
       if (container) {
-        // Use a stricter check when streaming starts to decide if we should follow
+        // Only resume bottom-following when the user has not already expressed
+        // manual scroll intent during the same turn.
         const isAtBottom =
           container.scrollHeight - container.scrollTop - container.clientHeight < SCROLL_THRESHOLD;
         
-        if (isAtBottom) {
+        if (isAtBottom && !userScrolledUpRef.current) {
           userScrolledUpRef.current = false;
           setTimeout(() => setShowScrollButton(false), 0);
         }
@@ -293,13 +294,10 @@ export function MessageList({
       const container = containerRef.current;
 
       requestAnimationFrame(() => {
-        const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        const isNearBottom = distanceToBottom < SCROLL_THRESHOLD;
-
-        // Auto-scroll logic:
-        // 1. If we are already near the bottom, always follow the new content
-        // 2. If user hasn't manually scrolled up (userScrolledUpRef is false), follow content
-        const shouldAutoScroll = isNearBottom || !userScrolledUpRef.current;
+        // Manual scroll intent wins over the near-bottom heuristic. This keeps
+        // streaming answers draggable instead of snapping back to the bottom
+        // while the user is trying to inspect earlier text.
+        const shouldAutoScroll = !userScrolledUpRef.current;
 
         if (shouldAutoScroll) {
           container.scrollTo({
