@@ -223,6 +223,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     justify-content: center;
     flex: 0 1 auto;
+    width: 100%;
+    align-self: stretch;
+    box-sizing: border-box;
     min-height: 0;
     text-align: center;
     padding: clamp(16px, 4vh, 30px) 24px clamp(10px, 2vh, 18px);
@@ -231,9 +234,10 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   emptyLogoStage: css`
     position: relative;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
     flex: 0 0 auto;
     padding-bottom: clamp(8px, 1.8vh, 12px);
     animation: ${emptyLogoFloat} 3.6s ease-in-out infinite;
@@ -243,7 +247,7 @@ export const useStyles = createStyles(({ css, token }) => ({
       position: absolute;
       left: 50%;
       bottom: -2px;
-      width: 74%;
+      width: clamp(66px, 10vh, 96px);
       height: 16px;
       border-radius: 999px;
       background: var(--areqa-empty-logo-shadow);
