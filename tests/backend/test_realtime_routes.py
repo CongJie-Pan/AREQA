@@ -17,6 +17,7 @@ from backend.app.routes.realtime import (
     RealtimeSessionRequest,
     LiveKitAvatarSessionRequest,
     _build_realtime_session_config,
+    _build_speech_transcription_prompt,
     _client_secret_from_response,
     _livekit_avatar_agent_metadata,
     _livekit_avatar_room_name,
@@ -408,6 +409,14 @@ async def test_transcribe_speech_uses_mini_transcribe_model(monkeypatch):
     assert "Traditional Chinese" in captured["data"]["prompt"]
     assert captured["files"]["file"][0] == "speech.webm"
     assert captured["headers"]["Authorization"] == "Bearer test-key"
+
+
+def test_speech_transcription_prompt_defaults_english_ui_chinese_to_traditional():
+    prompt = _build_speech_transcription_prompt("en")
+
+    assert "language spoken" in prompt
+    assert "Taiwan Traditional Chinese" in prompt
+    assert "Simplified Chinese" not in prompt
 
 
 @pytest.mark.asyncio

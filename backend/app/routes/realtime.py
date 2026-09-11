@@ -402,11 +402,10 @@ def _build_speech_transcription_prompt(language: str) -> str:
             "Transcribe the user's speech. When the user speaks Chinese, use "
             "Simplified Chinese characters. Preserve technical terms and names."
         )
-    if language == "en":
-        return "Transcribe the user's speech in the language spoken. Preserve technical terms and names."
     return (
-        "Transcribe the user's speech. When the user speaks Chinese, use Taiwan "
-        "Traditional Chinese characters. Preserve technical terms and names. "
+        "Transcribe the user's speech in the language spoken. When the user "
+        "speaks Chinese, use Taiwan Traditional Chinese characters. Preserve "
+        "technical terms and names. "
         "例如：請幫我整理這篇論文的重點。"
     )
 

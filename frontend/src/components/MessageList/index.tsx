@@ -474,7 +474,11 @@ export function MessageList({
           );
         })}
 
-        {liveVoice && <div className={styles.voiceSpacer} aria-hidden="true" />}
+        {liveVoice ? (
+          <div className={styles.voiceSpacer} aria-hidden="true" />
+        ) : (
+          <div className={cx('areqa-message-scroll-spacer', styles.scrollButtonSpacer)} aria-hidden="true" />
+        )}
       </div>
 
       {/* Keep this control outside the scrollable content so it remains visible after the user scrolls up. */}

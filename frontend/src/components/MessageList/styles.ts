@@ -197,6 +197,13 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex: 0 0 168px;
     pointer-events: none;
   `,
+
+  scrollButtonSpacer: css`
+    height: 88px;
+    min-height: 88px;
+    flex: 0 0 88px;
+    pointer-events: none;
+  `,
   // MessageList styles
   container: css`
     display: flex;
@@ -1518,7 +1525,7 @@ quoteBlockContent: css`
   // Scroll to bottom button
   scrollButton: css`
     position: absolute;
-    bottom: 16px;
+    bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
     width: 48px;
@@ -1547,7 +1554,7 @@ quoteBlockContent: css`
     z-index: 30;
 
     @media (max-width: 768px) {
-      bottom: max(14px, env(safe-area-inset-bottom));
+      bottom: max(16px, env(safe-area-inset-bottom));
       width: 52px;
       height: 52px;
       min-width: 52px;

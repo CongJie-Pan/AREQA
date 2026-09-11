@@ -1,9 +1,10 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { useChatStore } from '@/store/chat';
 import { transcribeSpeech } from '@/services/speech/transcription';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 
 // Mock Zustand store
 vi.mock('@/store/chat', () => ({
@@ -44,6 +45,7 @@ describe('ChatInput', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: createObjectUrlMock,
@@ -82,6 +84,10 @@ describe('ChatInput', () => {
       };
       return typeof selector === 'function' ? selector(state) : state;
     });
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
   });
 
   it('should render correctly', () => {
@@ -479,5 +485,24 @@ describe('ChatInput', () => {
       expect(screen.getByLabelText('訊息輸入框')).toHaveValue('語音輸入完成');
     });
     expect(stopTrackMock).toHaveBeenCalled();
+  });
+
+  it('should normalize Chinese dictation to Traditional Chinese when English UI is selected', async () => {
+    window.localStorage.setItem('areqa:interface-language', 'en');
+    vi.mocked(transcribeSpeech).mockResolvedValue('请解释这篇论文');
+    render(
+      <UserPreferencesProvider>
+        <ChatInput onSend={mockOnSend} onOpenLiveTutor={vi.fn()} />
+      </UserPreferencesProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText('Voice dictation'));
+    expect(await screen.findByLabelText('Confirm dictation')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Confirm dictation'));
+
+    await waitFor(() => {
+      expect(transcribeSpeech).toHaveBeenCalledWith(expect.any(Blob), 'en');
+      expect(screen.getByLabelText('Message input')).toHaveValue('請解釋這篇論文');
+    });
   });
 });

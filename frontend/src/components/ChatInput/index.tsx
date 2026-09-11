@@ -32,6 +32,7 @@ import { useStyles } from './styles';
 import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { transcribeSpeech } from '@/services/speech/transcription';
+import { normalizeVoiceTranscript } from '@/services/realtime/language';
 
 /** Maximum allowed message length */
 const MAX_MESSAGE_LENGTH = 4000;
@@ -715,10 +716,11 @@ export function ChatInput({
         setDictationState('transcribing');
         void transcribeSpeech(new Blob(chunks, { type: mimeType }), language)
           .then((transcript) => {
-            if (!transcript) return;
+            const normalizedTranscript = normalizeVoiceTranscript(transcript, language).trim();
+            if (!normalizedTranscript) return;
             setValue((current) => (current.trim()
-              ? `${current.trimEnd()} ${transcript}`
-              : transcript));
+              ? `${current.trimEnd()} ${normalizedTranscript}`
+              : normalizedTranscript));
             requestAnimationFrame(() => textareaRef.current?.focus());
           })
           .catch(() => {

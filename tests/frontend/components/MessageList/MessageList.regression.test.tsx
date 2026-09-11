@@ -30,6 +30,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       emptyLogo: 'emptyLogo',
       emptyCopy: 'emptyCopy',
       emptySubtitle: 'emptySubtitle',
+      scrollButtonSpacer: 'scrollButtonSpacer',
       scrollButton: 'scrollButton',
       sourceFocusedMessage: 'sourceFocusedMessage'
     },
@@ -323,6 +324,19 @@ describe('MessageList Scroll Behavior Regression', () => {
       behavior: 'smooth',
     }));
     expect(screen.queryByRole('button', { name: '滑動到底部' })).not.toBeInTheDocument();
+  });
+
+  it('reserves non-live bottom space so the scroll button remains above the composer', () => {
+    const { container } = render(<MessageList />);
+
+    expect(container.querySelector('.areqa-message-scroll-spacer')).toHaveClass('scrollButtonSpacer');
+  });
+
+  it('keeps the larger live voice spacer when live voice is active', () => {
+    const { container } = render(<MessageList liveVoice />);
+
+    expect(container.querySelector('.areqa-message-scroll-spacer')).not.toBeInTheDocument();
+    expect(container.querySelector('.scrollButtonSpacer')).not.toBeInTheDocument();
   });
 
   it('opens a pending note source at the exact message and leaves a bottom button available', () => {
