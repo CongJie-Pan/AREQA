@@ -33,6 +33,7 @@ import { logger } from '@/utils/logger';
 import { selectLiveTutorConversationId, selectLiveTutorMessages } from './session';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
 import { shouldDelegateVoiceTurnToDeepAnswer } from '@/services/realtime/deepDelegation';
+import { normalizeReadbackText } from '@/services/realtime/readbackText';
 
 const COPY = {
   'zh-TW': {
@@ -46,6 +47,7 @@ const COPY = {
     microphoneBusy: '麥克風目前無法使用，請關閉其他錄音程式後重試。',
     setupFailed: '無法啟動即時語音，請確認麥克風權限、OpenAI Realtime 權限或稍後再試。',
     avatarFallback: '虛擬角色啟動失敗，已切回語音模式。',
+    deepAnswerHold: '我先整理一下重點，等我一下。',
   },
   'zh-CN': {
     title: 'AREQA 即时语音',
@@ -58,6 +60,7 @@ const COPY = {
     microphoneBusy: '麦克风目前无法使用，请关闭其他录音程序后重试。',
     setupFailed: '无法启动即时语音，请确认麦克风权限、OpenAI Realtime 权限或稍后再试。',
     avatarFallback: '虚拟角色启动失败，已切回语音模式。',
+    deepAnswerHold: '我先整理一下重点，等我一下。',
   },
   en: {
     title: 'AREQA Live Voice',
@@ -70,6 +73,7 @@ const COPY = {
     microphoneBusy: 'The microphone is unavailable. Close other recording apps and retry.',
     setupFailed: 'Unable to start live voice. Check microphone permission, OpenAI Realtime access, or try again later.',
     avatarFallback: 'Avatar could not start. Switched back to voice mode.',
+    deepAnswerHold: 'I will organize the key points first. Give me a moment.',
   },
 } as const;
 
@@ -464,31 +468,31 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
             }
             const persistedConversationId = await ensurePersistedConversationId();
             delegatedDeepAnswerActiveRef.current = true;
+            lastVoiceMessageIdRef.current = null;
             controllerRef.current?.cancelSpeech();
+            backendReadbackActiveRef.current = controllerRef.current?.speakText(labels.deepAnswerHold) ?? false;
             logger.info('realtime.deep_answer_started', {
               component: 'LiveTutorPanel',
               conversationId: persistedConversationId,
               provider: selectedProvider,
               transcriptChars: normalized.length,
+              holdSpeechStarted: backendReadbackActiveRef.current,
             });
             try {
               const result = await sendMessage(normalized, persistedConversationId, [], {
                 responseMode: 'voice',
                 useRag: true,
                 searchMode: 'auto',
-                onVoiceContentChunk: (chunk) => {
-                  if (isCancelledRef.current || !chunk) return;
-                  useChatStore.getState().appendContent(chunk);
-                },
               });
               if (!isCancelledRef.current) {
-                await result.finalizeVoiceResponse?.(result.answerContent);
+                const readbackText = normalizeReadbackText(result.answerContent ?? '');
+                await result.finalizeVoiceResponse?.(readbackText);
               }
-              const answerText = result.answerContent?.trim() ?? '';
-              if (!isCancelledRef.current && answerText && result.assistantMessageId) {
+              const readbackText = normalizeReadbackText(result.answerContent ?? '');
+              if (!isCancelledRef.current && readbackText && result.assistantMessageId) {
                 lastVoiceMessageIdRef.current = result.assistantMessageId;
                 updateAssistantMessage(result.assistantMessageId, { voicePlayback: 'waiting' });
-                const speechStarted = controllerRef.current?.speakText(answerText) ?? false;
+                const speechStarted = controllerRef.current?.speakText(readbackText) ?? false;
                 backendReadbackActiveRef.current = speechStarted;
                 if (!speechStarted) {
                   updateAssistantMessage(result.assistantMessageId, { voicePlayback: 'finished' });
@@ -498,7 +502,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                   conversationId: persistedConversationId,
                   provider: selectedProvider,
                   speechStarted,
-                  answerChars: answerText.length,
+                  answerChars: readbackText.length,
                 });
               }
               logger.info('realtime.deep_answer_completed', {
@@ -576,6 +580,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     labels.permissionDenied,
     labels.setupFailed,
     labels.avatarFallback,
+    labels.deepAnswerHold,
     language,
     prepareSessionConversationId,
     persistUserTranscript,

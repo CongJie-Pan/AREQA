@@ -184,14 +184,15 @@ describe('Live Tutor avatar flow integration', () => {
       chatStore.addUserMessage(content, conversationId ?? 'conv_avatar');
       const assistantMessageId = chatStore.addAssistantMessage(conversationId ?? 'conv_avatar');
       chatStore.startStreaming(assistantMessageId);
-      options?.onVoiceContentChunk?.('完整深度答案');
       chatStore.endStreaming();
       return {
         completed: true,
         conversationId: 'conv_avatar',
         assistantMessageId,
-        answerContent: '完整深度答案',
-        finalizeVoiceResponse: vi.fn().mockResolvedValue(undefined),
+        answerContent: '### 完整深度答案\n\n**第一點** 🎯',
+        finalizeVoiceResponse: vi.fn(async (displayContent?: string) => {
+          if (displayContent !== undefined) chatStore.updateMessageContent(assistantMessageId, displayContent);
+        }),
       };
     });
     render(<LiveTutorAvatarHarness />);
@@ -213,9 +214,10 @@ describe('Live Tutor avatar flow integration', () => {
         searchMode: 'auto',
       }),
     ));
-    expect(realtimeController.speakText).toHaveBeenCalledWith('完整深度答案');
+    expect(realtimeController.speakText).toHaveBeenNthCalledWith(1, '我先整理一下重點，等我一下。');
+    expect(realtimeController.speakText).toHaveBeenNthCalledWith(2, '完整深度答案\n\n第一點');
     expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ role: 'assistant', content: '完整深度答案' }),
+      expect.objectContaining({ role: 'assistant', content: '完整深度答案\n\n第一點' }),
     ]));
     expect(cancelCurrentStream).not.toHaveBeenCalled();
   });

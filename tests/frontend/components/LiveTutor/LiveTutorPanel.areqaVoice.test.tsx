@@ -171,15 +171,14 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
-  it('delegates deep paper voice turns to the AREQA backend voice stream', async () => {
+  it('delegates deep paper voice turns to the AREQA backend voice stream with one plain readback text', async () => {
     const finalizeVoiceResponse = vi.fn().mockResolvedValue(undefined);
-    vi.mocked(sendMessage).mockImplementation(async (_content, _conversationId, _attachments, options) => {
-      options?.onVoiceContentChunk?.('深度回答');
+    vi.mocked(sendMessage).mockImplementation(async (_content, _conversationId, _attachments, _options) => {
       return {
         completed: true,
         conversationId: 'conv_paper',
         assistantMessageId: 'assistant-deep',
-        answerContent: '深度回答',
+        answerContent: '**深度回答** 🎯',
         finalizeVoiceResponse,
       };
     });
@@ -207,11 +206,11 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
         responseMode: 'voice',
         useRag: true,
         searchMode: 'auto',
-        onVoiceContentChunk: expect.any(Function),
       }),
     ));
     expect(finalizeVoiceResponse).toHaveBeenCalledWith('深度回答');
-    expect(controller.speakText).toHaveBeenCalledWith('深度回答');
+    expect(controller.speakText).toHaveBeenNthCalledWith(1, '我先整理一下重點，等我一下。');
+    expect(controller.speakText).toHaveBeenNthCalledWith(2, '深度回答');
     expect(controller.cancelSpeech).toHaveBeenCalled();
     expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: '' }),

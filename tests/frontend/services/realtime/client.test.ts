@@ -293,6 +293,8 @@ describe('Realtime client lifecycle', () => {
         instructions: expect.stringContaining('這是 AREQA backend 的深度回答。'),
       }),
     }));
+    expect(event.response.instructions).toContain('Do not paraphrase');
+    expect(event.response.instructions).not.toContain('Use natural spoken wording');
     controller.disconnect();
   });
 

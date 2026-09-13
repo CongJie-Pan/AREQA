@@ -348,8 +348,8 @@ const MAX_BACKEND_SPEECH_CHARS = 6000;
  * Compatibility:
  *   This keeps provider access inside the Realtime client. The text is sent as
  *   response instructions because current callers need speech output without
- *   creating a new user turn. The instruction asks the voice model to preserve
- *   the answer and adapt only the spoken form.
+ *   creating a new user turn. Callers pass already-normalized readback text so
+ *   the visible answer and spoken answer stay aligned.
  */
 function backendSpeechResponse(text: string): object | null {
   const speakableText = text.trim().slice(0, MAX_BACKEND_SPEECH_CHARS);
@@ -358,9 +358,9 @@ function backendSpeechResponse(text: string): object | null {
     type: 'response.create',
     response: {
       instructions: [
-        'Speak the following AREQA backend answer aloud to the learner.',
-        'Preserve the content and do not add new facts.',
-        'Use natural spoken wording, no markdown, no citations markup, and no extra follow-up question.',
+        'Read the following AREQA text aloud to the learner.',
+        'Do not paraphrase, summarize, translate, add facts, add markdown, or add a follow-up question.',
+        'Keep the spoken content aligned with the provided text.',
         speakableText,
       ].join('\n\n'),
       tool_choice: 'none',
