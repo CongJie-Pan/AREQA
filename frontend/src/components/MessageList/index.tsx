@@ -216,6 +216,17 @@ export function MessageList({
     [savedNotes],
   );
 
+  const pauseAutoScrollForManualIntent = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const canScroll = container.scrollHeight > container.clientHeight;
+    if (!canScroll) return;
+
+    userScrolledUpRef.current = true;
+    setShowScrollButton(true);
+  }, []);
+
   const handleFeedback = useCallback(async (
     messageId: string,
     feedback: MessageFeedback | null,
@@ -408,6 +419,8 @@ export function MessageList({
     <div className={cx('areqa-message-list-viewport', styles.viewport, className)}>
       <div
         ref={containerRef}
+        onWheel={pauseAutoScrollForManualIntent}
+        onTouchMove={pauseAutoScrollForManualIntent}
         className={cx(
           'areqa-message-list',
           'areqa-message-list-non-empty',

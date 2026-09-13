@@ -335,6 +335,37 @@ describe('MessageList Scroll Behavior Regression', () => {
     expect(screen.getByRole('button', { name: '滑動到底部' })).toBeInTheDocument();
   });
 
+  it('should pause auto-scroll as soon as the user starts wheel scrolling during streaming', async () => {
+    const { container, rerender } = render(<MessageList />);
+    const scrollContainer = container.querySelector('.container') as HTMLDivElement;
+
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 700, configurable: true });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 300, configurable: true });
+
+    fireEvent.wheel(scrollContainer);
+    mockScrollTo.mockClear();
+
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        messages: [{ id: '1', role: 'assistant', content: 'streaming answer update' }],
+        isStreaming: true,
+        currentStreamingId: '1',
+        thinkingContent: 'new token while the user is scrolling',
+        isThinking: false,
+        ragStatus: 'done',
+        ragMessage: '',
+        ragSources: [],
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    rerender(<MessageList />);
+
+    expect(mockScrollTo).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '滑動到底部' })).toBeInTheDocument();
+  });
+
   it('shows an overlay scroll-to-bottom button after the user scrolls up', async () => {
     const { container } = render(<MessageList />);
     const scrollContainer = container.querySelector('.container') as HTMLDivElement;
