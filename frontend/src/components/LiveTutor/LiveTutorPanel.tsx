@@ -26,12 +26,13 @@ import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
 import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
-import { cancelCurrentStream } from '@/services/chat';
+import { cancelCurrentStream, sendMessage } from '@/services/chat';
 import { generateUUID } from '@/utils/id';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 import { selectLiveTutorConversationId, selectLiveTutorMessages } from './session';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
+import { shouldDelegateVoiceTurnToDeepAnswer } from '@/services/realtime/deepDelegation';
 
 const COPY = {
   'zh-TW': {
@@ -90,9 +91,10 @@ export interface LiveTutorPanelProps {
  * Renders and owns one conversation-bound browser Realtime voice session.
  *
  * Finalized user transcripts and assistant audio transcripts are mirrored into
- * the normal chat store. The panel deliberately avoids `/stream` for live
- * turns; Realtime owns immediate speech, and its context tool supplies compact
- * AREQA grounding when needed.
+ * the normal chat store. Deep document or learning requests also run through
+ * the established AREQA chat stream in voice mode so the visible answer can use
+ * the same grounded backend pipeline as text chat while Realtime keeps owning
+ * immediate speech and interruptions.
  *
  * @param props - Active conversation and whether normal messages are visible.
  * @returns The inline voice panel, or `null` while voice mode is closed.
@@ -112,6 +114,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const assistantTranscriptRef = useRef('');
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const userTurnIdsRef = useRef(new Map<string, string>());
+  const delegatedDeepAnswerActiveRef = useRef(false);
   const playbackRef = useRef<'waiting' | 'playing' | 'finished' | 'interrupted'>('waiting');
   const inputLevelRef = useRef(0);
   const outputLevelRef = useRef(0);
@@ -315,6 +318,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     assistantTranscriptRef.current = '';
     lastVoiceMessageIdRef.current = null;
     userTurnIdsRef.current.clear();
+    delegatedDeepAnswerActiveRef.current = false;
     hasPlayedConnectedCueRef.current = false;
     hasSyncedInitialMuteRef.current = false;
     const selectedProvider = useLiveTutorStore.getState().avatarEnabled ? 'livekit_anam' : 'openai_realtime';
@@ -379,6 +383,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           return;
         }
         playbackRef.current = 'interrupted';
+        delegatedDeepAnswerActiveRef.current = false;
         controllerRef.current?.cancelSpeech();
         void cancelCurrentStream();
       },
@@ -392,6 +397,15 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       },
       onAssistantResponseStarted: () => {
         if (isCancelledRef.current) return;
+        if (delegatedDeepAnswerActiveRef.current) {
+          controllerRef.current?.cancelSpeech();
+          logger.info('realtime.deep_answer_suppressed_realtime_reply', {
+            component: 'LiveTutorPanel',
+            conversationId: persistedConversationIdRef.current || conversationId,
+            provider: selectedProvider,
+          });
+          return;
+        }
         playbackRef.current = 'waiting';
         enqueueTranscriptWork(async () => {
           await finalizeAssistantDraft();
@@ -429,15 +443,67 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           return;
         }
         enqueueTranscriptWork(async () => {
-          await persistUserTranscript(transcript, itemId);
+          const normalized = normalizeVoiceTranscript(transcript, language).trim();
+          if (!normalized) return;
+
+          if (shouldDelegateVoiceTurnToDeepAnswer(normalized)) {
+            const pendingId = itemId ? userTurnIdsRef.current.get(itemId) : undefined;
+            if (pendingId && itemId) {
+              useChatStore.getState().removeMessage(pendingId);
+              userTurnIdsRef.current.delete(itemId);
+            }
+            const persistedConversationId = await ensurePersistedConversationId();
+            delegatedDeepAnswerActiveRef.current = true;
+            controllerRef.current?.cancelSpeech();
+            logger.info('realtime.deep_answer_started', {
+              component: 'LiveTutorPanel',
+              conversationId: persistedConversationId,
+              provider: selectedProvider,
+              transcriptChars: normalized.length,
+            });
+            try {
+              const result = await sendMessage(normalized, persistedConversationId, [], {
+                responseMode: 'voice',
+                useRag: true,
+                searchMode: 'auto',
+                onVoiceContentChunk: (chunk) => {
+                  if (isCancelledRef.current || !chunk) return;
+                  useChatStore.getState().appendContent(chunk);
+                },
+              });
+              if (!isCancelledRef.current) {
+                await result.finalizeVoiceResponse?.(result.answerContent);
+              }
+              logger.info('realtime.deep_answer_completed', {
+                component: 'LiveTutorPanel',
+                conversationId: persistedConversationId,
+                completed: result.completed,
+                answerChars: result.answerContent?.length ?? 0,
+              });
+            } catch (error) {
+              if (!isCancelledRef.current) {
+                setError(error instanceof Error ? error.message : labels.setupFailed);
+              }
+              logger.warn('realtime.deep_answer_failed', {
+                component: 'LiveTutorPanel',
+                conversationId: persistedConversationId,
+                errorName: error instanceof Error ? error.name : 'UnknownError',
+              });
+            } finally {
+              delegatedDeepAnswerActiveRef.current = false;
+            }
+            return;
+          }
+
+          await persistUserTranscript(normalized, itemId);
         });
       },
       onAssistantTranscriptDelta: (delta) => {
-        if (isCancelledRef.current || !delta) return;
+        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || !delta) return;
         enqueueTranscriptWork(() => appendAssistantTranscript(delta));
       },
       onAssistantTranscriptDone: (transcript) => {
-        if (isCancelledRef.current) return;
+        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current) return;
         enqueueTranscriptWork(() => finalizeAssistantDraft(transcript));
       },
       onError: (nextError) => {
@@ -497,6 +563,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
 
   const stop = useCallback(async (): Promise<void> => {
     isCancelledRef.current = true;
+    delegatedDeepAnswerActiveRef.current = false;
     playbackRef.current = 'interrupted';
     controllerRef.current?.cancelSpeech();
     controllerRef.current?.disconnect();

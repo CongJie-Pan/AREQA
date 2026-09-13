@@ -323,6 +323,37 @@ describe('Chat Service', () => {
       }));
     });
 
+    it('applies per-turn retrieval overrides without mutating chat toggles', async () => {
+      mockChatStore.messages = [];
+      mockChatStore.useRag = false;
+      mockChatStore.searchMode = 'never';
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('深度回答');
+        await callbacks.onDone();
+      });
+
+      await sendMessage('請深入解釋這篇論文', 'test-conv-id', [], {
+        responseMode: 'voice',
+        useRag: true,
+        searchMode: 'auto',
+      });
+
+      expect(createChatStream).toHaveBeenCalledWith(
+        [{ role: 'user', content: '請深入解釋這篇論文' }],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        true,
+        false,
+        'auto',
+        'test-conv-id',
+        [],
+        { responseMode: 'voice' },
+      );
+      expect(mockChatStore.useRag).toBe(false);
+      expect(mockChatStore.searchMode).toBe('never');
+    });
+
     it('removes an empty streaming assistant placeholder when cancellation happens before content', async () => {
       mockChatStore.currentStreamingId = 'assistant-empty';
       mockChatStore.currentContent = '';

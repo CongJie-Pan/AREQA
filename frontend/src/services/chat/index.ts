@@ -11,7 +11,7 @@
 
 import { API_CONFIG } from '@/config/api';
 import { useChatStore } from '@/store/chat';
-import type { DisplayMessage, StreamingImageSlot } from '@/store/chat';
+import type { DisplayMessage, SearchMode, StreamingImageSlot } from '@/store/chat';
 import type { CitationSource } from '@/components/Citations';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -40,6 +40,12 @@ export interface SendMessageOptions {
   responseMode?: SendMessageResponseMode;
   /** Called with speech-safe AREQA text chunks before the visible voice subtitle is revealed. */
   onVoiceContentChunk?: (chunk: string) => void;
+  /** Optional per-turn RAG override for delegated surfaces such as Live Tutor. */
+  useRag?: boolean;
+  /** Optional per-turn search routing override without mutating the chat store. */
+  searchMode?: SearchMode;
+  /** Optional per-turn thinking override; voice responses still suppress hidden thinking. */
+  forceThink?: boolean;
 }
 
 export interface SendMessageResult {
@@ -294,7 +300,9 @@ export async function sendMessage(
   let suggestionsList: string[] = [];
   let completed = false;
   let hasFinalizedAssistant = false;
-  const effectiveForceThink = isVoiceResponse ? false : chatStore.forceThink;
+  const effectiveUseRag = options.useRag ?? chatStore.useRag;
+  const effectiveSearchMode = options.searchMode ?? chatStore.searchMode;
+  const effectiveForceThink = isVoiceResponse ? false : (options.forceThink ?? chatStore.forceThink);
 
   // Capture conversation ID for async callback (prevents closure issues)
   const conversationIdForSave = activeConversationId;
@@ -439,9 +447,9 @@ export async function sendMessage(
         messages,
         callbacks,
         abortSignal,
-        chatStore.useRag,
+        effectiveUseRag,
         effectiveForceThink,
-        chatStore.searchMode,
+        effectiveSearchMode,
         activeConversationId,
         attachments,
         { responseMode },
@@ -451,9 +459,9 @@ export async function sendMessage(
         messages,
         callbacks,
         abortSignal,
-        chatStore.useRag,
+        effectiveUseRag,
         effectiveForceThink,
-        chatStore.searchMode,
+        effectiveSearchMode,
         activeConversationId,
         [],
         { responseMode },

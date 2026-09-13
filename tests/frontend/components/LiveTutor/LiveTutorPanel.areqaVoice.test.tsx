@@ -8,7 +8,7 @@ import {
   startRealtimeClient,
   type StartRealtimeClientOptions,
 } from '@/services/realtime';
-import { cancelCurrentStream } from '@/services/chat';
+import { cancelCurrentStream, sendMessage } from '@/services/chat';
 import { useChatStore, type DisplayMessage } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
@@ -30,6 +30,7 @@ vi.mock('@/services/realtime', () => ({
 
 vi.mock('@/services/chat', () => ({
   cancelCurrentStream: vi.fn(),
+  sendMessage: vi.fn(),
 }));
 
 vi.mock('@/database/db', () => ({
@@ -136,18 +137,19 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
       return controller;
     });
     vi.mocked(cancelCurrentStream).mockResolvedValue(undefined);
+    vi.mocked(sendMessage).mockResolvedValue({ completed: true });
   });
 
   afterEach(() => {
     resetStores();
   });
 
-  it('mirrors realtime user and assistant transcripts into the chat without AREQA stream', async () => {
+  it('mirrors short realtime user and assistant transcripts into the chat without AREQA stream', async () => {
     const view = await renderOpenPanel();
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
 
     await act(async () => {
-      realtimeOptions?.onUserTranscript('请解释这篇论文');
+      realtimeOptions?.onUserTranscript('你好');
     });
     act(() => {
       realtimeOptions?.onAssistantResponseStarted?.();
@@ -158,11 +160,59 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     await waitFor(() => {
       const messages = useChatStore.getState().messages;
       expect(messages).toEqual(expect.arrayContaining([
-        expect.objectContaining({ role: 'user', content: '請解釋這篇論文' }),
+        expect.objectContaining({ role: 'user', content: '你好' }),
         expect.objectContaining({ role: 'assistant', content: '可以，我先簡短說。', isStreaming: false }),
       ]));
     });
+    expect(sendMessage).not.toHaveBeenCalled();
     expect(realtimeOptions?.conversationId).toBe('conv_paper');
+    act(() => view.unmount());
+  });
+
+  it('delegates deep paper voice turns to the AREQA backend voice stream', async () => {
+    const finalizeVoiceResponse = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(sendMessage).mockImplementation(async (_content, _conversationId, _attachments, options) => {
+      options?.onVoiceContentChunk?.('深度回答');
+      return {
+        completed: true,
+        conversationId: 'conv_paper',
+        assistantMessageId: 'assistant-deep',
+        answerContent: '深度回答',
+        finalizeVoiceResponse,
+      };
+    });
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTurnCommitted?.('turn-deep');
+    });
+    await waitFor(() => {
+      expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: '' }),
+      ]));
+    });
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請詳細解釋這篇論文的方法', 'turn-deep');
+    });
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(
+      '請詳細解釋這篇論文的方法',
+      'conv_paper',
+      [],
+      expect.objectContaining({
+        responseMode: 'voice',
+        useRag: true,
+        searchMode: 'auto',
+        onVoiceContentChunk: expect.any(Function),
+      }),
+    ));
+    expect(finalizeVoiceResponse).toHaveBeenCalledWith('深度回答');
+    expect(controller.cancelSpeech).toHaveBeenCalled();
+    expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: '' }),
+    ]));
     act(() => view.unmount());
   });
 
