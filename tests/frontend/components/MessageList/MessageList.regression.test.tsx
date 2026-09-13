@@ -366,6 +366,20 @@ describe('MessageList Scroll Behavior Regression', () => {
     expect(screen.getByRole('button', { name: '滑動到底部' })).toBeInTheDocument();
   });
 
+  it('keeps the scroll-to-bottom button visible when the first scroll event still reports bottom', () => {
+    const { container } = render(<MessageList />);
+    const scrollContainer = container.querySelector('.container') as HTMLDivElement;
+
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 700, configurable: true });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 300, configurable: true });
+
+    fireEvent.wheel(scrollContainer);
+    fireEvent.scroll(scrollContainer);
+
+    expect(screen.getByRole('button', { name: '滑動到底部' })).toBeInTheDocument();
+  });
+
   it('shows an overlay scroll-to-bottom button after the user scrolls up', async () => {
     const { container } = render(<MessageList />);
     const scrollContainer = container.querySelector('.container') as HTMLDivElement;

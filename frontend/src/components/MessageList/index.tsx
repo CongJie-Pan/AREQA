@@ -193,6 +193,7 @@ export function MessageList({
   const { t } = useUserPreferences();
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
   const [showScrollButton, setShowScrollButton] = React.useState(false);
   const [focusedSourceMessageId, setFocusedSourceMessageId] = React.useState<string | null>(null);
 
@@ -223,6 +224,7 @@ export function MessageList({
     const canScroll = container.scrollHeight > container.clientHeight;
     if (!canScroll) return;
 
+    lastScrollTopRef.current = container.scrollTop;
     userScrolledUpRef.current = true;
     setShowScrollButton(true);
   }, []);
@@ -257,11 +259,16 @@ export function MessageList({
     const container = containerRef.current;
     if (!container) return;
 
+    const previousScrollTop = lastScrollTopRef.current;
+    const currentScrollTop = container.scrollTop;
+    const isScrollingDown = currentScrollTop > previousScrollTop + 1;
+    lastScrollTopRef.current = currentScrollTop;
+
     // Detect if we are at the bottom with a small buffer
     const isAtBottom = 
-      container.scrollHeight - container.scrollTop - container.clientHeight < 10;
+      container.scrollHeight - currentScrollTop - container.clientHeight < 10;
 
-    if (isAtBottom) {
+    if (isAtBottom && (!userScrolledUpRef.current || isScrollingDown)) {
       // User is at bottom - allow auto-scroll
       userScrolledUpRef.current = false;
       setShowScrollButton(false);
