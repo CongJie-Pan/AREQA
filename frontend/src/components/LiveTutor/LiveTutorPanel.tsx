@@ -115,6 +115,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const userTurnIdsRef = useRef(new Map<string, string>());
   const delegatedDeepAnswerActiveRef = useRef(false);
+  const backendReadbackActiveRef = useRef(false);
   const playbackRef = useRef<'waiting' | 'playing' | 'finished' | 'interrupted'>('waiting');
   const inputLevelRef = useRef(0);
   const outputLevelRef = useRef(0);
@@ -319,6 +320,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     lastVoiceMessageIdRef.current = null;
     userTurnIdsRef.current.clear();
     delegatedDeepAnswerActiveRef.current = false;
+    backendReadbackActiveRef.current = false;
     hasPlayedConnectedCueRef.current = false;
     hasSyncedInitialMuteRef.current = false;
     const selectedProvider = useLiveTutorStore.getState().avatarEnabled ? 'livekit_anam' : 'openai_realtime';
@@ -384,6 +386,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         }
         playbackRef.current = 'interrupted';
         delegatedDeepAnswerActiveRef.current = false;
+        backendReadbackActiveRef.current = false;
         controllerRef.current?.cancelSpeech();
         void cancelCurrentStream();
       },
@@ -397,6 +400,10 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       },
       onAssistantResponseStarted: () => {
         if (isCancelledRef.current) return;
+        if (backendReadbackActiveRef.current) {
+          playbackRef.current = 'waiting';
+          return;
+        }
         if (delegatedDeepAnswerActiveRef.current) {
           controllerRef.current?.cancelSpeech();
           logger.info('realtime.deep_answer_suppressed_realtime_reply', {
@@ -415,6 +422,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       onPlaybackState: (state) => {
         if (isCancelledRef.current) return;
         playbackRef.current = state === 'started' ? 'playing' : state === 'stopped' ? 'finished' : 'interrupted';
+        if (state === 'stopped' || state === 'interrupted') {
+          backendReadbackActiveRef.current = false;
+        }
         const playback = playbackRef.current;
         enqueueTranscriptWork(async () => {
           if (lastVoiceMessageIdRef.current) {
@@ -474,6 +484,23 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               if (!isCancelledRef.current) {
                 await result.finalizeVoiceResponse?.(result.answerContent);
               }
+              const answerText = result.answerContent?.trim() ?? '';
+              if (!isCancelledRef.current && answerText && result.assistantMessageId) {
+                lastVoiceMessageIdRef.current = result.assistantMessageId;
+                updateAssistantMessage(result.assistantMessageId, { voicePlayback: 'waiting' });
+                const speechStarted = controllerRef.current?.speakText(answerText) ?? false;
+                backendReadbackActiveRef.current = speechStarted;
+                if (!speechStarted) {
+                  updateAssistantMessage(result.assistantMessageId, { voicePlayback: 'finished' });
+                }
+                logger.info('realtime.deep_answer_readback_requested', {
+                  component: 'LiveTutorPanel',
+                  conversationId: persistedConversationId,
+                  provider: selectedProvider,
+                  speechStarted,
+                  answerChars: answerText.length,
+                });
+              }
               logger.info('realtime.deep_answer_completed', {
                 component: 'LiveTutorPanel',
                 conversationId: persistedConversationId,
@@ -499,11 +526,11 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onAssistantTranscriptDelta: (delta) => {
-        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || !delta) return;
+        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current || !delta) return;
         enqueueTranscriptWork(() => appendAssistantTranscript(delta));
       },
       onAssistantTranscriptDone: (transcript) => {
-        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current) return;
+        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current) return;
         enqueueTranscriptWork(() => finalizeAssistantDraft(transcript));
       },
       onError: (nextError) => {
@@ -564,6 +591,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const stop = useCallback(async (): Promise<void> => {
     isCancelledRef.current = true;
     delegatedDeepAnswerActiveRef.current = false;
+    backendReadbackActiveRef.current = false;
     playbackRef.current = 'interrupted';
     controllerRef.current?.cancelSpeech();
     controllerRef.current?.disconnect();

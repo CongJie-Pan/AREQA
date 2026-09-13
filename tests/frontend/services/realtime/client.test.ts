@@ -274,6 +274,42 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
   });
 
+  it('asks WebRTC Realtime to speak backend-authored answers without creating a user turn', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+    lastPeerConnection?.channel.onopen?.();
+    lastPeerConnection?.channel.send.mockClear();
+
+    const started = controller.speakText('這是 AREQA backend 的深度回答。');
+
+    expect(started).toBe(true);
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(expect.stringContaining('"response.create"'));
+    const event = JSON.parse(String(lastPeerConnection?.channel.send.mock.calls.at(-1)?.[0]));
+    expect(event).toEqual(expect.objectContaining({
+      type: 'response.create',
+      response: expect.objectContaining({
+        tool_choice: 'none',
+        instructions: expect.stringContaining('這是 AREQA backend 的深度回答。'),
+      }),
+    }));
+    controller.disconnect();
+  });
+
+  it('does not request backend speech when the WebRTC channel has no speakable text', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+    lastPeerConnection?.channel.onopen?.();
+    lastPeerConnection?.channel.send.mockClear();
+
+    const started = controller.speakText('   ');
+
+    expect(started).toBe(false);
+    expect(lastPeerConnection?.channel.send).not.toHaveBeenCalled();
+    controller.disconnect();
+  });
+
   it('clears active output audio during cancellation without requiring an active response', async () => {
     installMicrophone();
     mockRealtimeSession();
@@ -331,6 +367,31 @@ describe('Realtime client lifecycle', () => {
     await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('你好'));
     expect(onPlaybackState).toHaveBeenCalledWith('started');
     expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('你好');
+    controller.disconnect();
+  });
+
+  it('asks WebSocket Realtime to speak backend-authored answers', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    installMicrophone();
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+    Object.defineProperty(globalThis, 'AudioContext', {
+      configurable: true,
+      value: FakeAudioContext,
+    });
+    const controller = await startRealtimeClient(realtimeOptions());
+    lastWebSocket?.open();
+    lastWebSocket?.send.mockClear();
+
+    const started = controller.speakText('Backend answer for readback.');
+
+    expect(started).toBe(true);
+    expect(lastWebSocket?.send).toHaveBeenCalledWith(expect.stringContaining('"response.create"'));
+    const event = JSON.parse(String(lastWebSocket?.send.mock.calls.at(-1)?.[0]));
+    expect(event.response.instructions).toContain('Backend answer for readback.');
     controller.disconnect();
   });
 

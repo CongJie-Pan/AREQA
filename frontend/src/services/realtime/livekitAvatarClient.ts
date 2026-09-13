@@ -363,6 +363,7 @@ export async function startLiveKitAvatarClient(
         void room?.localParticipant.setMicrophoneEnabled(!nextMuted);
       },
       cancelSpeech: () => undefined,
+      speakText: () => false,
       disconnect: () => {
         flushAssistantTranscript();
         room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
@@ -381,6 +382,7 @@ export async function startLiveKitAvatarClient(
     return {
       setMuted: () => undefined,
       cancelSpeech: () => undefined,
+      speakText: () => false,
       disconnect: () => undefined,
     };
   }

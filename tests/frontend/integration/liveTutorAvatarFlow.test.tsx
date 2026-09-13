@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { LiveTutorPanel } from '@/components/LiveTutor/LiveTutorPanel';
 import { startLiveKitAvatarClient, startRealtimeClient, type StartRealtimeClientOptions } from '@/services/realtime';
+import { cancelCurrentStream, sendMessage } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
@@ -25,6 +26,7 @@ vi.mock('@/services/realtime', () => ({
 
 vi.mock('@/services/chat', () => ({
   cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
+  sendMessage: vi.fn(),
 }));
 
 vi.mock('@/database/db', () => ({
@@ -40,6 +42,12 @@ vi.mock('@/services/database', () => ({
 }));
 
 let realtimeOptions: StartRealtimeClientOptions | null = null;
+let realtimeController: {
+  setMuted: ReturnType<typeof vi.fn>;
+  cancelSpeech: ReturnType<typeof vi.fn>;
+  speakText: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+};
 
 function avatarStream(): MediaStream {
   return {
@@ -117,16 +125,19 @@ describe('Live Tutor avatar flow integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     realtimeOptions = null;
+    realtimeController = {
+      setMuted: vi.fn(),
+      cancelSpeech: vi.fn(),
+      speakText: vi.fn(() => true),
+      disconnect: vi.fn(),
+    };
     resetLiveTutorHarness();
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    vi.mocked(sendMessage).mockResolvedValue({ completed: true });
     vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
       realtimeOptions = options;
       options.onStatus('listening');
-      return {
-        setMuted: vi.fn(),
-        cancelSpeech: vi.fn(),
-        disconnect: vi.fn(),
-      };
+      return realtimeController;
     });
     vi.mocked(startLiveKitAvatarClient).mockImplementation(async (options) => {
       realtimeOptions = options;
@@ -134,6 +145,7 @@ describe('Live Tutor avatar flow integration', () => {
       return {
         setMuted: vi.fn(),
         cancelSpeech: vi.fn(),
+        speakText: vi.fn(() => false),
         disconnect: vi.fn(),
       };
     });
@@ -164,5 +176,47 @@ describe('Live Tutor avatar flow integration', () => {
     expect(document.querySelector('video')).not.toBeInTheDocument();
     expect(container.querySelector('img')).toHaveAttribute('src', '/icon/areqa_icon_v4_circle.png');
     expect(screen.getByLabelText('開啟虛擬角色')).toBeInTheDocument();
+  });
+
+  it('runs an end-to-end deep voice flow from live transcript to backend readback', async () => {
+    vi.mocked(sendMessage).mockImplementation(async (content, conversationId, _attachments, options) => {
+      const chatStore = useChatStore.getState();
+      chatStore.addUserMessage(content, conversationId ?? 'conv_avatar');
+      const assistantMessageId = chatStore.addAssistantMessage(conversationId ?? 'conv_avatar');
+      chatStore.startStreaming(assistantMessageId);
+      options?.onVoiceContentChunk?.('完整深度答案');
+      chatStore.endStreaming();
+      return {
+        completed: true,
+        conversationId: 'conv_avatar',
+        assistantMessageId,
+        answerContent: '完整深度答案',
+        finalizeVoiceResponse: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+    render(<LiveTutorAvatarHarness />);
+
+    fireEvent.click(screen.getByLabelText('開啟即時語音'));
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請詳細解釋這篇論文的方法');
+    });
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(
+      '請詳細解釋這篇論文的方法',
+      'conv_avatar',
+      [],
+      expect.objectContaining({
+        responseMode: 'voice',
+        useRag: true,
+        searchMode: 'auto',
+      }),
+    ));
+    expect(realtimeController.speakText).toHaveBeenCalledWith('完整深度答案');
+    expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content: '完整深度答案' }),
+    ]));
+    expect(cancelCurrentStream).not.toHaveBeenCalled();
   });
 });

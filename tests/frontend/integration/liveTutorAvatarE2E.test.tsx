@@ -215,6 +215,7 @@ describe('Live Tutor avatar E2E integration', () => {
       return {
         setMuted: vi.fn(),
         cancelSpeech: vi.fn(),
+        speakText: vi.fn(() => true),
         disconnect: vi.fn(),
       };
     });

@@ -48,6 +48,7 @@ vi.mock('@/services/database', () => ({
 const controller = {
   setMuted: vi.fn(),
   cancelSpeech: vi.fn(),
+  speakText: vi.fn(() => true),
   disconnect: vi.fn(),
 };
 
@@ -124,6 +125,7 @@ async function renderOpenPanel(
 describe('LiveTutorPanel realtime-primary voice integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    controller.speakText.mockReturnValue(true);
     realtimeOptions = null;
     resetStores();
     vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
@@ -209,9 +211,73 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
       }),
     ));
     expect(finalizeVoiceResponse).toHaveBeenCalledWith('深度回答');
+    expect(controller.speakText).toHaveBeenCalledWith('深度回答');
     expect(controller.cancelSpeech).toHaveBeenCalled();
     expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: '' }),
+    ]));
+    act(() => view.unmount());
+  });
+
+  it('suppresses realtime readback transcripts after backend deep answer speech starts', async () => {
+    const finalizeVoiceResponse = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(sendMessage).mockResolvedValue({
+      completed: true,
+      conversationId: 'conv_paper',
+      assistantMessageId: 'assistant-deep',
+      answerContent: '深度回答',
+      finalizeVoiceResponse,
+    });
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請詳細解釋這篇論文的方法');
+    });
+    act(() => {
+      realtimeOptions?.onAssistantResponseStarted?.();
+      realtimeOptions?.onAssistantTranscriptDelta('朗讀字幕');
+      realtimeOptions?.onAssistantTranscriptDone('朗讀字幕');
+      realtimeOptions?.onPlaybackState?.('stopped');
+    });
+
+    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith('深度回答'));
+    expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content: '朗讀字幕' }),
+    ]));
+    act(() => view.unmount());
+  });
+
+  it('finalizes playback state when backend readback is unavailable', async () => {
+    controller.speakText.mockReturnValue(false);
+    vi.mocked(sendMessage).mockResolvedValue({
+      completed: true,
+      conversationId: 'conv_paper',
+      assistantMessageId: 'assistant-deep',
+      answerContent: '深度回答',
+      finalizeVoiceResponse: vi.fn().mockResolvedValue(undefined),
+    });
+    useChatStore.setState({
+      messages: [{
+        id: 'assistant-deep',
+        userId: 'user_1',
+        conversationId: 'conv_paper',
+        role: 'assistant',
+        content: '深度回答',
+        createdAt: new Date('2026-09-05T00:00:00.000Z'),
+        isStreaming: false,
+      }],
+    });
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請詳細解釋這篇論文的方法');
+    });
+
+    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith('深度回答'));
+    expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'assistant-deep', voicePlayback: 'finished' }),
     ]));
     act(() => view.unmount());
   });
