@@ -117,6 +117,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantTranscriptRef = useRef('');
   const assistantTurnGenerationRef = useRef(0);
+  const learnerTurnGenerationRef = useRef(0);
   const activeAssistantResponseIdRef = useRef<string | null>(null);
   const staleAssistantResponseIdsRef = useRef(new Set<string>());
   const lastVoiceMessageIdRef = useRef<string | null>(null);
@@ -198,6 +199,15 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     if (staleAssistantResponseIdsRef.current.has(responseId)) return false;
     return Boolean(activeAssistantResponseIdRef.current && responseId === activeAssistantResponseIdRef.current);
   }, []);
+
+  const invalidateLearnerTurn = useCallback((): number => {
+    learnerTurnGenerationRef.current += 1;
+    return learnerTurnGenerationRef.current;
+  }, []);
+
+  const isCurrentLearnerTurn = useCallback((generation: number): boolean => (
+    generation === learnerTurnGenerationRef.current
+  ), []);
 
   const ensurePersistedConversationId = useCallback(async (): Promise<string> => {
     if (persistedConversationIdRef.current) return persistedConversationIdRef.current;
@@ -381,6 +391,14 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       onRemoteVideoStream: (stream) => {
         if (isCancelledRef.current) return;
         setAvatarVideoStream(stream);
+        if (!stream) {
+          logger.warn('realtime.avatar_video_stream_cleared', {
+            component: 'LiveTutorPanel',
+            conversationId: persistedConversationIdRef.current || conversationId,
+            provider: selectedProvider,
+          });
+          return;
+        }
         logger.info('realtime.avatar_video_stream_received', {
           component: 'LiveTutorPanel',
           conversationId: persistedConversationIdRef.current || conversationId,
@@ -410,6 +428,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           return;
         }
         playbackRef.current = 'interrupted';
+        invalidateLearnerTurn();
         invalidateAssistantTurn();
         delegatedDeepAnswerActiveRef.current = false;
         backendReadbackActiveRef.current = false;
@@ -494,7 +513,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               userTurnIdsRef.current.delete(itemId);
             }
             const persistedConversationId = await ensurePersistedConversationId();
-            const deepGeneration = assistantTurnGenerationRef.current;
+            const deepGeneration = invalidateLearnerTurn();
             delegatedDeepAnswerActiveRef.current = true;
             lastVoiceMessageIdRef.current = null;
             controllerRef.current?.cancelSpeech();
@@ -512,12 +531,12 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                 useRag: true,
                 searchMode: 'auto',
               });
-              if (!isCancelledRef.current && isCurrentAssistantTurn(deepGeneration)) {
+              if (!isCancelledRef.current && isCurrentLearnerTurn(deepGeneration)) {
                 const readbackText = normalizeReadbackText(result.answerContent ?? '');
                 await result.finalizeVoiceResponse?.(readbackText);
               }
               const readbackText = normalizeReadbackText(result.answerContent ?? '');
-              if (!isCancelledRef.current && isCurrentAssistantTurn(deepGeneration) && readbackText && result.assistantMessageId) {
+              if (!isCancelledRef.current && isCurrentLearnerTurn(deepGeneration) && readbackText && result.assistantMessageId) {
                 lastVoiceMessageIdRef.current = result.assistantMessageId;
                 updateAssistantMessage(result.assistantMessageId, { voicePlayback: 'waiting' });
                 const speechStarted = controllerRef.current?.speakText(readbackText) ?? false;
@@ -536,12 +555,12 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               logger.info('realtime.deep_answer_completed', {
                 component: 'LiveTutorPanel',
                 conversationId: persistedConversationId,
-                stale: !isCurrentAssistantTurn(deepGeneration),
+                stale: !isCurrentLearnerTurn(deepGeneration),
                 completed: result.completed,
                 answerChars: result.answerContent?.length ?? 0,
               });
             } catch (error) {
-              if (!isCancelledRef.current && isCurrentAssistantTurn(deepGeneration)) {
+              if (!isCancelledRef.current && isCurrentLearnerTurn(deepGeneration)) {
                 setError(error instanceof Error ? error.message : labels.setupFailed);
               }
               logger.warn('realtime.deep_answer_failed', {
@@ -550,7 +569,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                 errorName: error instanceof Error ? error.name : 'UnknownError',
               });
             } finally {
-              if (isCurrentAssistantTurn(deepGeneration)) {
+              if (isCurrentLearnerTurn(deepGeneration)) {
                 delegatedDeepAnswerActiveRef.current = false;
               }
             }
@@ -595,6 +614,17 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       },
       onError: (nextError) => {
         if (isCancelledRef.current) return;
+        if (selectedProvider === 'livekit_anam' && controllerRef.current) {
+          logger.warn('livekit.avatar_runtime_fallback_to_realtime', {
+            component: 'LiveTutorPanel',
+            conversationId: persistedConversationIdRef.current || conversationId,
+            errorName: nextError instanceof Error ? nextError.name : 'UnknownError',
+          });
+          pendingAvatarNoticeRef.current = labels.avatarFallback;
+          setAvatarVideoStream(null);
+          useLiveTutorStore.getState().setAvatarEnabled(false);
+          return;
+        }
         const localizedErrors = {
           microphone_denied: labels.permissionDenied,
           microphone_insecure_context: labels.insecureContext,
@@ -631,7 +661,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     appendAssistantTranscript,
     finalizeAssistantDraft,
     invalidateAssistantTurn,
+    invalidateLearnerTurn,
     isCurrentAssistantTurn,
+    isCurrentLearnerTurn,
     labels.insecureContext,
     labels.microphoneBusy,
     labels.microphoneUnavailable,
@@ -656,6 +688,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     delegatedDeepAnswerActiveRef.current = false;
     backendReadbackActiveRef.current = false;
     playbackRef.current = 'interrupted';
+    invalidateLearnerTurn();
     invalidateAssistantTurn();
     controllerRef.current?.cancelSpeech();
     controllerRef.current?.disconnect();
@@ -700,7 +733,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       });
     transcriptQueueRef.current = finalization;
     await finalization;
-  }, [finalizeAssistantDraft, invalidateAssistantTurn, updateAssistantMessage]);
+  }, [finalizeAssistantDraft, invalidateAssistantTurn, invalidateLearnerTurn, updateAssistantMessage]);
 
   const finishVisualStop = useCallback(() => {
     setAvatarVideoStream(null);
@@ -825,12 +858,13 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               avatarStream={layout === 'side-pane' ? avatarVideoStream : null}
               status={status}
               layout={layout === 'side-pane' ? 'side-pane' : 'inline'}
+              onStreamUnhealthy={() => setAvatarVideoStream(null)}
             />
           </>
         )}
 
         {layout === 'inline' && isAvatarVideoReady && avatarVideoStream && !error && (
-          <FloatingAvatarWindow stream={avatarVideoStream} status={status} />
+          <FloatingAvatarWindow stream={avatarVideoStream} status={status} onStreamUnhealthy={() => setAvatarVideoStream(null)} />
         )}
       </div>
 

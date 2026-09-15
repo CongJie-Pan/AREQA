@@ -6,6 +6,7 @@ import { FloatingAvatarWindow } from '@/components/LiveTutor/FloatingAvatarWindo
 vi.mock('@/utils/logger', () => ({
   logger: {
     info: vi.fn(),
+    warn: vi.fn(),
   },
 }));
 
@@ -96,5 +97,18 @@ describe('FloatingAvatarWindow', () => {
     await waitFor(() => {
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null')).toEqual({ x: 290, y: 308 });
     });
+  });
+
+  it('reports an unhealthy floating avatar stream when video stalls', async () => {
+    vi.useFakeTimers();
+    const onStreamUnhealthy = vi.fn();
+    render(<FloatingAvatarWindow stream={avatarStream()} status="speaking" onStreamUnhealthy={onStreamUnhealthy} />);
+    const video = screen.getByLabelText('AREQA avatar video') as HTMLVideoElement;
+
+    fireEvent.stalled(video);
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(onStreamUnhealthy).toHaveBeenCalledOnce();
+    vi.useRealTimers();
   });
 });

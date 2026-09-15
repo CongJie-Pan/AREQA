@@ -246,6 +246,37 @@ describe('LiveKit avatar client', () => {
     expect(options.onRemoteVideoStream).toHaveBeenCalledWith(expect.any(MediaStream));
   });
 
+  it('reports runtime disconnects as errors so the panel can fall back to direct voice', async () => {
+    mockAvatarSession();
+    const options = livekitOptions();
+    const clientPromise = startLiveKitAvatarClient(options);
+    await resolveAvatarVideoTrack();
+    const controller = await clientPromise;
+
+    lastRoom?.emit(livekitEvents.Disconnected);
+
+    expect(options.onRemoteVideoStream).toHaveBeenCalledWith(null);
+    expect(options.onPlaybackState).toHaveBeenCalledWith('interrupted');
+    expect(options.onStatus).toHaveBeenCalledWith('error');
+    expect(options.onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'LiveKit avatar room disconnected',
+    }));
+    controller.disconnect();
+  });
+
+  it('clears avatar video when the LiveKit video track is unsubscribed', async () => {
+    mockAvatarSession();
+    const options = livekitOptions();
+    const clientPromise = startLiveKitAvatarClient(options);
+    await resolveAvatarVideoTrack();
+    const controller = await clientPromise;
+
+    lastRoom?.emit(livekitEvents.TrackUnsubscribed, { kind: 'video' }, { kind: 'video' });
+
+    expect(options.onRemoteVideoStream).toHaveBeenCalledWith(null);
+    controller.disconnect();
+  });
+
   it('forwards LiveKit transcription text streams through realtime callbacks', async () => {
     vi.useFakeTimers();
     mockAvatarSession();

@@ -9,10 +9,13 @@
  * and provider startup gaps.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { LiveTutorStatus } from '@/store/liveTutor/types';
+import { logger } from '@/utils/logger';
 import { useStyles } from './styles';
+
+const AVATAR_VIDEO_STALL_TIMEOUT_MS = 3_000;
 
 export interface LiveTutorAvatarStageProps {
   /** Whether the user wants the avatar face enabled for the active session. */
@@ -23,6 +26,8 @@ export interface LiveTutorAvatarStageProps {
   status: LiveTutorStatus;
   /** Presentation boundary for inline voice mode or the fixed avatar pane. */
   layout?: 'inline' | 'side-pane';
+  /** Called when the attached avatar stream stops rendering usable video. */
+  onStreamUnhealthy?: () => void;
 }
 
 /**
@@ -47,17 +52,45 @@ export function LiveTutorAvatarStage({
   avatarStream,
   status,
   layout = 'inline',
+  onStreamUnhealthy,
 }: LiveTutorAvatarStageProps) {
   const { styles, cx } = useStyles();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const stallTimerRef = useRef<number | null>(null);
   const [readyStream, setReadyStream] = useState<MediaStream | null>(null);
+  const [unhealthyStream, setUnhealthyStream] = useState<MediaStream | null>(null);
 
   const hasVideoTrack = useMemo(
     () => Boolean(avatarStream?.getVideoTracks().some((track) => track.readyState === 'live')),
     [avatarStream],
   );
-  const showAvatar = avatarEnabled && hasVideoTrack;
+  const showAvatar = avatarEnabled && hasVideoTrack && avatarStream !== unhealthyStream;
   const videoReady = showAvatar && readyStream === avatarStream;
+
+  const clearStallTimer = useCallback(() => {
+    if (!stallTimerRef.current) return;
+    window.clearTimeout(stallTimerRef.current);
+    stallTimerRef.current = null;
+  }, []);
+
+  const markUnhealthy = useCallback((reason: string) => {
+    clearStallTimer();
+    setUnhealthyStream(avatarStream);
+    setReadyStream(null);
+    logger.warn('realtime.avatar_video_unhealthy', {
+      component: 'LiveTutorAvatarStage',
+      layout,
+      reason,
+    });
+    onStreamUnhealthy?.();
+  }, [avatarStream, clearStallTimer, layout, onStreamUnhealthy]);
+
+  const scheduleStallFallback = useCallback((reason: string) => {
+    clearStallTimer();
+    stallTimerRef.current = window.setTimeout(() => {
+      markUnhealthy(reason);
+    }, AVATAR_VIDEO_STALL_TIMEOUT_MS);
+  }, [clearStallTimer, markUnhealthy]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -67,9 +100,34 @@ export function LiveTutorAvatarStage({
       void video.play().catch(() => undefined);
     }
     return () => {
+      clearStallTimer();
       video.srcObject = null;
     };
-  }, [avatarStream, showAvatar]);
+  }, [avatarStream, clearStallTimer, showAvatar]);
+
+  useEffect(() => {
+    if (!avatarStream) return;
+    const tracks = avatarStream.getVideoTracks();
+    const handleEnded = () => markUnhealthy('track_ended');
+    const handleMuted = () => scheduleStallFallback('track_muted');
+    const handleUnmuted = () => {
+      clearStallTimer();
+      setUnhealthyStream(null);
+    };
+    for (const track of tracks) {
+      track.addEventListener?.('ended', handleEnded);
+      track.addEventListener?.('mute', handleMuted);
+      track.addEventListener?.('unmute', handleUnmuted);
+    }
+    return () => {
+      clearStallTimer();
+      for (const track of tracks) {
+        track.removeEventListener?.('ended', handleEnded);
+        track.removeEventListener?.('mute', handleMuted);
+        track.removeEventListener?.('unmute', handleUnmuted);
+      }
+    };
+  }, [avatarStream, clearStallTimer, markUnhealthy, scheduleStallFallback]);
 
   return (
     <div
@@ -89,7 +147,19 @@ export function LiveTutorAvatarStage({
           autoPlay
           muted
           playsInline
-          onLoadedData={() => setReadyStream(avatarStream)}
+          onLoadedData={() => {
+            clearStallTimer();
+            setUnhealthyStream(null);
+            setReadyStream(avatarStream);
+          }}
+          onPlaying={() => {
+            clearStallTimer();
+            setUnhealthyStream(null);
+          }}
+          onTimeUpdate={clearStallTimer}
+          onWaiting={() => scheduleStallFallback('video_waiting')}
+          onStalled={() => scheduleStallFallback('video_stalled')}
+          onError={() => markUnhealthy('video_error')}
           aria-hidden
         />
       )}

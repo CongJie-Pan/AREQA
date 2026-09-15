@@ -62,7 +62,7 @@ export interface StartRealtimeClientOptions {
   interfaceLanguage: 'zh-TW' | 'zh-CN' | 'en';
   recentMessages: () => DisplayMessage[];
   onRemoteStream: (stream: MediaStream) => void;
-  onRemoteVideoStream?: (stream: MediaStream) => void;
+  onRemoteVideoStream?: (stream: MediaStream | null) => void;
   onInputAudioLevel?: (level: number) => void;
   onOutputAudioLevel?: (level: number) => void;
   onUserSpeechStarted?: () => void;
@@ -410,6 +410,7 @@ async function handleToolCall(
   channel: Pick<RTCDataChannel | WebSocket, 'readyState' | 'send'>,
   options: StartRealtimeClientOptions,
   completedToolCalls: Set<string>,
+  shouldContinue: () => boolean,
 ): Promise<void> {
   const callId = event.call_id || event.item?.call_id;
   const name = event.name || event.item?.name;
@@ -428,6 +429,13 @@ async function handleToolCall(
     options.interfaceLanguage,
     options.recentMessages(),
   );
+  if (!shouldContinue()) {
+    logger.info('realtime.context_tool_stale_result_ignored', {
+      conversationId: options.getConversationId?.() || options.conversationId,
+      callId,
+    });
+    return;
+  }
   sendRealtimeEvent(channel, {
     type: 'conversation.item.create',
     item: {
@@ -760,6 +768,7 @@ async function startRealtimeWebRtcClient(
   let outputAudioBufferActive = false;
   const completedToolCalls = new Set<string>();
   const canceledResponseIds = new Set<string>();
+  let sessionGeneration = 0;
 
   const isCurrentResponseEvent = (event: RealtimeEvent): boolean => {
     const responseId = eventResponseId(event);
@@ -780,6 +789,7 @@ async function startRealtimeWebRtcClient(
 
   const cancelActiveResponse = (): boolean => {
     if (dataChannel?.readyState !== 'open') return false;
+    sessionGeneration += 1;
     let sentControlEvent = false;
     if (activeResponseInProgress) {
       if (activeResponseId) canceledResponseIds.add(activeResponseId);
@@ -804,6 +814,7 @@ async function startRealtimeWebRtcClient(
   };
 
   const cleanup = (options: { cancelResponse?: boolean } = {}) => {
+    sessionGeneration += 1;
     if (options.cancelResponse) cancelActiveResponse();
     stopAudioLevelMonitor?.();
     dataChannel?.close();
@@ -974,7 +985,16 @@ async function startRealtimeWebRtcClient(
           }
           case 'response.function_call_arguments.done':
           case 'response.output_item.done':
-            await handleToolCall(event, dataChannel as RTCDataChannel, options, completedToolCalls);
+            {
+              const toolGeneration = sessionGeneration;
+              const toolResponseId = eventResponseId(event) || activeResponseId;
+              await handleToolCall(event, dataChannel as RTCDataChannel, options, completedToolCalls, () => {
+                if (toolGeneration !== sessionGeneration) return false;
+                if (toolResponseId && canceledResponseIds.has(toolResponseId)) return false;
+                if (toolResponseId) return activeResponseInProgress && activeResponseId === toolResponseId;
+                return activeResponseInProgress;
+              });
+            }
             break;
           case 'error':
             if (isNonFatalCancelError(event)) {
@@ -1060,6 +1080,7 @@ async function startRealtimeWebSocketClient(
   let firstCaptionDeltaAt = 0;
   const completedToolCalls = new Set<string>();
   const canceledResponseIds = new Set<string>();
+  let sessionGeneration = 0;
 
   const isCurrentResponseEvent = (event: RealtimeEvent): boolean => {
     const responseId = eventResponseId(event);
@@ -1080,6 +1101,7 @@ async function startRealtimeWebSocketClient(
 
   const cancelActiveResponse = (): boolean => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    sessionGeneration += 1;
     let sentControlEvent = false;
     if (activeResponseInProgress) {
       if (activeResponseId) canceledResponseIds.add(activeResponseId);
@@ -1097,6 +1119,7 @@ async function startRealtimeWebSocketClient(
   };
 
   const cleanup = (cleanupOptions: { cancelResponse?: boolean } = {}) => {
+    sessionGeneration += 1;
     closedByClient = true;
     if (cleanupOptions.cancelResponse) cancelActiveResponse();
     inputStreamer?.stop();
@@ -1235,7 +1258,16 @@ async function startRealtimeWebSocketClient(
       }
       case 'response.function_call_arguments.done':
       case 'response.output_item.done':
-        if (socket) await handleToolCall(event, socket, options, completedToolCalls);
+        if (socket) {
+          const toolGeneration = sessionGeneration;
+          const toolResponseId = eventResponseId(event) || activeResponseId;
+          await handleToolCall(event, socket, options, completedToolCalls, () => {
+            if (toolGeneration !== sessionGeneration) return false;
+            if (toolResponseId && canceledResponseIds.has(toolResponseId)) return false;
+            if (toolResponseId) return activeResponseInProgress && activeResponseId === toolResponseId;
+            return activeResponseInProgress;
+          });
+        }
         break;
       case 'error':
         if (isNonFatalCancelError(event)) {

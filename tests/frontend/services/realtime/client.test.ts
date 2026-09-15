@@ -727,6 +727,9 @@ describe('Realtime client lifecycle', () => {
     }];
 
     await startRealtimeClient(realtimeOptions({ recentMessages }));
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.created', response: { id: 'resp_tool' } }),
+    });
     const functionCall = {
       call_id: 'call_123',
       name: 'get_areqa_context',
@@ -743,6 +746,46 @@ describe('Realtime client lifecycle', () => {
     const contextRequest = vi.mocked(authenticatedFetch).mock.calls[1]?.[1];
     expect(String(contextRequest?.body)).toContain('paper.pdf');
     expect(lastPeerConnection?.channel.send).toHaveBeenLastCalledWith(expect.stringContaining('"tool_choice":"none"'));
+  });
+
+  it('does not resume a WebRTC tool response after the active response is canceled', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    let resolveContext: (response: Response) => void = () => undefined;
+    vi.mocked(authenticatedFetch).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveContext = resolve;
+    }));
+    const controller = await startRealtimeClient(realtimeOptions());
+
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.created', response: { id: 'resp_tool_cancel' } }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({
+        type: 'response.function_call_arguments.done',
+        call_id: 'call_cancel',
+        name: 'get_areqa_context',
+        response_id: 'resp_tool_cancel',
+      }),
+    });
+    controller.cancelSpeech();
+    resolveContext(new Response(JSON.stringify({ recent_messages: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    await vi.waitFor(() => expect(authenticatedFetch).toHaveBeenCalledTimes(2));
+    const sentEvents = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
+    expect(sentEvents).toEqual(expect.arrayContaining([
+      { type: 'response.cancel', response_id: 'resp_tool_cancel' },
+    ]));
+    expect(sentEvents).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'response.create',
+        response: { tool_choice: 'none' },
+      }),
+    ]));
+    controller.disconnect();
   });
 
   it('surfaces a stable provider error code without exposing the provider message', async () => {

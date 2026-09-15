@@ -351,12 +351,15 @@ export async function startLiveKitAvatarClient(
         options.onStatus('listening');
       })
       .on(livekit.RoomEvent.Disconnected, () => {
-        logger.info('livekit.avatar_room_disconnected', {
+        logger.warn('livekit.avatar_room_disconnected', {
           conversationId,
           roomName: session.room_name,
           sessionId: session.session_id || 'unknown',
         });
-        options.onStatus('connected');
+        options.onRemoteVideoStream?.(null);
+        options.onPlaybackState?.('interrupted');
+        options.onStatus('error');
+        options.onError(new Error('LiveKit avatar room disconnected'));
       })
       .on(livekit.RoomEvent.TrackSubscribed, (trackArg, publicationArg) => {
         const track = trackArg as LiveKitTrack;
@@ -381,10 +384,21 @@ export async function startLiveKitAvatarClient(
         }
       })
       .on(livekit.RoomEvent.TrackUnsubscribed, (_trackArg, publicationArg) => {
+        const track = _trackArg as LiveKitTrack | undefined;
         const publication = publicationArg as LiveKitTrackPublication | undefined;
-        if (isTrackKind(publication?.kind, livekit.Track.Kind.Audio)) {
+        const kind = track?.kind || publication?.kind;
+        if (isTrackKind(kind, livekit.Track.Kind.Audio)) {
           options.onPlaybackState?.('stopped');
           options.onStatus('listening');
+        }
+        if (isTrackKind(kind, livekit.Track.Kind.Video)) {
+          avatarVideoReady = false;
+          options.onRemoteVideoStream?.(null);
+          logger.warn('livekit.avatar_video_track_unsubscribed', {
+            conversationId,
+            roomName: session.room_name,
+            sessionId: session.session_id || 'unknown',
+          });
         }
       });
 
@@ -413,6 +427,7 @@ export async function startLiveKitAvatarClient(
       disconnect: () => {
         flushAssistantTranscript();
         clearAssistantTranscript('disconnect');
+        options.onRemoteVideoStream?.(null);
         room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
         room?.disconnect();
         room = null;

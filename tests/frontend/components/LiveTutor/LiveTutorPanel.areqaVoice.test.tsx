@@ -247,6 +247,46 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
+  it('keeps a delegated deep answer current while its hold speech opens a realtime response', async () => {
+    const finalizeVoiceResponse = vi.fn().mockResolvedValue(undefined);
+    let resolveDeepAnswer: (value: Awaited<ReturnType<typeof sendMessage>>) => void = () => undefined;
+    vi.mocked(sendMessage).mockImplementation(() => new Promise((resolve) => {
+      resolveDeepAnswer = resolve;
+    }));
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    act(() => {
+      realtimeOptions?.onUserTranscript('請詳細解釋這篇論文的方法');
+    });
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledOnce());
+
+    act(() => {
+      realtimeOptions?.onAssistantResponseStarted?.('resp-hold');
+      realtimeOptions?.onAssistantTranscriptDelta('等待朗讀字幕', 'resp-hold');
+      realtimeOptions?.onAssistantTranscriptDone('等待朗讀字幕', 'resp-hold');
+    });
+    await act(async () => {
+      resolveDeepAnswer({
+        completed: true,
+        conversationId: 'conv_paper',
+        assistantMessageId: 'assistant-deep',
+        answerContent: '深度回答',
+        finalizeVoiceResponse,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(finalizeVoiceResponse).toHaveBeenCalledWith('深度回答'));
+    expect(controller.speakText).toHaveBeenNthCalledWith(1, '我先整理一下重點，等我一下。');
+    expect(controller.speakText).toHaveBeenNthCalledWith(2, '深度回答');
+    expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content: '等待朗讀字幕' }),
+    ]));
+    act(() => view.unmount());
+  });
+
   it('finalizes playback state when backend readback is unavailable', async () => {
     controller.speakText.mockReturnValue(false);
     vi.mocked(sendMessage).mockResolvedValue({

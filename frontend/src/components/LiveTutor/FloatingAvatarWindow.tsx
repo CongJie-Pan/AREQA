@@ -19,6 +19,7 @@ const STORAGE_KEY = 'areqa:live-tutor-avatar-window-position';
 const DESKTOP_DEFAULT_OFFSET = { right: 32, bottom: 104 };
 const MOBILE_DEFAULT_OFFSET = { right: 16, bottom: 112 };
 const VIEWPORT_MARGIN = 12;
+const AVATAR_VIDEO_STALL_TIMEOUT_MS = 3_000;
 
 interface AvatarPosition {
   x: number;
@@ -30,6 +31,8 @@ export interface FloatingAvatarWindowProps {
   stream: MediaStream;
   /** Current Live Tutor lifecycle state for visual emphasis. */
   status: LiveTutorStatus;
+  /** Called when the remote stream stops rendering usable video. */
+  onStreamUnhealthy?: () => void;
 }
 
 function isMobileViewport(): boolean {
@@ -87,10 +90,11 @@ function persistDesktopPosition(position: AvatarPosition): void {
  *   Attaches the remote MediaStream to a video element and persists desktop
  *   drag coordinates to localStorage.
  */
-export function FloatingAvatarWindow({ stream, status }: FloatingAvatarWindowProps) {
+export function FloatingAvatarWindow({ stream, status, onStreamUnhealthy }: FloatingAvatarWindowProps) {
   const { styles, cx } = useStyles();
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const stallTimerRef = useRef<number | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     offsetX: number;
@@ -108,6 +112,29 @@ export function FloatingAvatarWindow({ stream, status }: FloatingAvatarWindowPro
     const initialPosition = mobile ? null : storedDesktopPosition();
     return clampPosition(initialPosition ?? defaultPosition(size, mobile), size);
   });
+
+  const clearStallTimer = useCallback(() => {
+    if (!stallTimerRef.current) return;
+    window.clearTimeout(stallTimerRef.current);
+    stallTimerRef.current = null;
+  }, []);
+
+  const markUnhealthy = useCallback((reason: string) => {
+    clearStallTimer();
+    logger.warn('realtime.avatar_window_video_unhealthy', {
+      component: 'FloatingAvatarWindow',
+      mobile,
+      reason,
+    });
+    onStreamUnhealthy?.();
+  }, [clearStallTimer, mobile, onStreamUnhealthy]);
+
+  const scheduleStallFallback = useCallback((reason: string) => {
+    clearStallTimer();
+    stallTimerRef.current = window.setTimeout(() => {
+      markUnhealthy(reason);
+    }, AVATAR_VIDEO_STALL_TIMEOUT_MS);
+  }, [clearStallTimer, markUnhealthy]);
 
   const resolveDefaultPosition = useCallback((): AvatarPosition => {
     const rect = rootRef.current?.getBoundingClientRect();
@@ -128,9 +155,30 @@ export function FloatingAvatarWindow({ stream, status }: FloatingAvatarWindowPro
     video.srcObject = stream;
     void video.play().catch(() => undefined);
     return () => {
+      clearStallTimer();
       video.srcObject = null;
     };
-  }, [stream]);
+  }, [clearStallTimer, stream]);
+
+  useEffect(() => {
+    const tracks = stream.getVideoTracks();
+    const handleEnded = () => markUnhealthy('track_ended');
+    const handleMuted = () => scheduleStallFallback('track_muted');
+    const handleUnmuted = () => clearStallTimer();
+    for (const track of tracks) {
+      track.addEventListener?.('ended', handleEnded);
+      track.addEventListener?.('mute', handleMuted);
+      track.addEventListener?.('unmute', handleUnmuted);
+    }
+    return () => {
+      clearStallTimer();
+      for (const track of tracks) {
+        track.removeEventListener?.('ended', handleEnded);
+        track.removeEventListener?.('mute', handleMuted);
+        track.removeEventListener?.('unmute', handleUnmuted);
+      }
+    };
+  }, [clearStallTimer, markUnhealthy, scheduleStallFallback, stream]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -213,6 +261,12 @@ export function FloatingAvatarWindow({ stream, status }: FloatingAvatarWindowPro
         autoPlay
         muted
         playsInline
+        onLoadedData={clearStallTimer}
+        onPlaying={clearStallTimer}
+        onTimeUpdate={clearStallTimer}
+        onWaiting={() => scheduleStallFallback('video_waiting')}
+        onStalled={() => scheduleStallFallback('video_stalled')}
+        onError={() => markUnhealthy('video_error')}
         aria-label="AREQA avatar video"
       />
     </div>
