@@ -94,19 +94,6 @@ _AUTHORITY_EVIDENCE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for patt
     r"法律|法規|判例|合約|稅務|投資|保險|退休金|理財建議",
     r"\b(legal|law|regulation|contract|tax|investment|insurance|financial advice)\b",
 ))
-_PRACTICE_CONTEXT_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
-    r"作業|功課|考試|測驗|題目|選項|申論|作文|essay|homework|quiz|exam|test|assignment",
-    r"只能選一個|only choose one|choose one|標準答案|model answer",
-    r"thesis|論點|中心思想|root cause|actual root cause|真正原因",
-))
-_PRESSURE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
-    r"直接告訴|直接給|告訴我答案|給我答案|標準答案|just tell me|give me the answer",
-    r"我真的不會|我不會|看不懂|聽不懂|不懂|brain fried|due in|快截止|趕時間",
-    r"一句話|one sentence|short answer|只要答案|結果就好",
-))
-_REFERENCE_SWITCH_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
-    r"reference mode|self[- ]study|自學模式|參考模式|不是作業|不是考試|not homework|not an exam",
-))
 
 
 def _detect_learning_technique(user_msg: str) -> LearningTechnique:
@@ -143,15 +130,27 @@ def _detect_evidence_mode(user_msg: str) -> EvidenceMode:
     return EvidenceMode.NONE
 
 
-def _should_keep_learner_practice_ownership(user_msg: str) -> bool:
-    """Return whether pressure appears inside a learner-owned practice context."""
+def _normalize_learning_ownership(policy: ResponsePolicy) -> ResponsePolicy:
+    """Resolve internally inconsistent EDF ownership choices without reading text."""
 
-    normalized = str(user_msg or "")
-    if any(pattern.search(normalized) for pattern in _REFERENCE_SWITCH_PATTERNS):
-        return False
-    has_practice_context = any(pattern.search(normalized) for pattern in _PRACTICE_CONTEXT_PATTERNS)
-    has_pressure = any(pattern.search(normalized) for pattern in _PRESSURE_PATTERNS)
-    return has_practice_context and has_pressure
+    if policy.task_intent is not TaskIntent.ANSWER_EXAM:
+        return policy
+    if (
+        policy.learning_mode is LearningMode.PRACTICE
+        and policy.pedagogical_action is not PedagogicalAction.ANSWER
+        and policy.answer_depth is not AnswerDepth.DIRECT
+    ):
+        return policy
+    return replace(
+        policy,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.REQUIRED,
+        learning_mode=LearningMode.PRACTICE,
+        pedagogical_action=PedagogicalAction.HINT,
+        legacy_policy="PROBE_UNDERSTANDING",
+    )
 
 
 def _apply_learning_and_evidence_guardrails(
@@ -195,18 +194,7 @@ def _apply_learning_and_evidence_guardrails(
         learning_technique=learning_technique,
         evidence_mode=evidence_mode,
     )
-    if _should_keep_learner_practice_ownership(user_msg):
-        guarded = replace(
-            guarded,
-            task_intent=TaskIntent.ANSWER_EXAM,
-            answer_depth=AnswerDepth.SCAFFOLDED,
-            tone=ResponseTone.TUTORING,
-            structure=ResponseStructure.STEP_BY_STEP,
-            followup_mode=FollowupMode.REQUIRED,
-            learning_mode=LearningMode.PRACTICE,
-            pedagogical_action=PedagogicalAction.HINT,
-            legacy_policy="PROBE_UNDERSTANDING",
-        )
+    guarded = _normalize_learning_ownership(guarded)
     if guarded != policy:
         logger.info(
             "orchestration.response_policy_learning_guardrail_applied metadata=%s",

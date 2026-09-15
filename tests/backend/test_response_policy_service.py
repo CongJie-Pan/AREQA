@@ -206,8 +206,8 @@ async def test_practice_pressure_keeps_learner_owned_step(caplog):
 
 
 @pytest.mark.asyncio
-async def test_reference_mode_allows_direct_answer_request():
-    """Explicit reference/self-study mode should still allow direct answers."""
+async def test_answer_exam_policy_normalizes_to_practice_ownership():
+    """Assessment intent should be structurally incompatible with direct answer ownership."""
 
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -234,11 +234,53 @@ async def test_reference_mode_allows_direct_answer_request():
     policy = await classify_response_policy_impl(
         mock_client,
         "test-model",
+        "This is for a quiz. Which is the best answer, A or B? Please only choose one.",
+        [],
+    )
+
+    assert policy.task_intent is TaskIntent.ANSWER_EXAM
+    assert policy.answer_depth is AnswerDepth.SCAFFOLDED
+    assert policy.followup_mode is FollowupMode.REQUIRED
+    assert policy.learning_mode is LearningMode.PRACTICE
+    assert policy.pedagogical_action is PedagogicalAction.HINT
+    assert policy.legacy_policy == "PROBE_UNDERSTANDING"
+
+
+@pytest.mark.asyncio
+async def test_reference_mode_allows_direct_answer_request():
+    """Explicit reference/self-study mode should still allow direct answers."""
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "GENERAL_QA",
+              "answer_depth": "DIRECT",
+              "tone": "PLAIN",
+              "structure": "SHORT",
+              "followup_mode": "NONE",
+              "learning_mode": "REFERENCE",
+              "pedagogical_action": "ANSWER",
+              "visual_support": "NONE",
+              "visual_reason": "NOT_NEEDED",
+              "attachment_task": "NONE",
+              "attachment_reason": "NO_ATTACHMENT",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
         "Reference mode, not homework: just tell me which option is correct.",
         [],
     )
 
     assert policy.answer_depth is AnswerDepth.DIRECT
+    assert policy.task_intent is TaskIntent.GENERAL_QA
     assert policy.learning_mode is LearningMode.REFERENCE
     assert policy.pedagogical_action is PedagogicalAction.ANSWER
 
