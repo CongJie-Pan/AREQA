@@ -99,6 +99,7 @@ def test_livekit_avatar_metadata_includes_bounded_recent_context():
     ))
 
     assert metadata["conversation_id"] == "conv_livekit"
+    assert metadata["session_id"]
     assert metadata["interface_language"] == "en"
     assert metadata["provider"] == "livekit_anam"
     assert len(metadata["recent_messages"]) == 8
@@ -108,15 +109,16 @@ def test_livekit_avatar_metadata_includes_bounded_recent_context():
     assert metadata["parts_context"]["persona"]
 
 
-def test_livekit_avatar_room_and_identity_are_stable_per_conversation():
-    first_room = _livekit_avatar_room_name("conv_livekit")
-    second_room = _livekit_avatar_room_name("conv_livekit")
-    other_room = _livekit_avatar_room_name("conv_other")
+def test_livekit_avatar_room_isolated_by_session_without_exposing_conversation():
+    first_room = _livekit_avatar_room_name("conv_livekit", "session_one")
+    second_room = _livekit_avatar_room_name("conv_livekit", "session_two")
+    repeated_room = _livekit_avatar_room_name("conv_livekit", "session_one")
 
-    assert first_room == second_room
-    assert first_room != other_room
+    assert first_room == repeated_room
+    assert first_room != second_room
     assert first_room.startswith("areqa-live-")
     assert "conv_livekit" not in first_room
+    assert "session_one" in first_room
 
     first_identity = _livekit_participant_identity("user_123", "conv_livekit")
     second_identity = _livekit_participant_identity("user_123", "conv_livekit")
@@ -215,6 +217,8 @@ async def test_create_livekit_avatar_session_mints_dispatch_token_without_loggin
     assert response.agent_name == "areqa-live-tutor"
     assert response.expires_in == 120
     assert response.room_name.startswith("areqa-live-")
+    assert response.session_id
+    assert response.session_id in response.room_name
     assert response.participant_identity.startswith("learner-")
     assert "user_123" not in response.participant_identity
     assert response.token

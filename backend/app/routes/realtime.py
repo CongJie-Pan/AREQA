@@ -115,6 +115,7 @@ class LiveKitAvatarSessionResponse(BaseModel):
     room_name: str
     participant_identity: str
     agent_name: str
+    session_id: str
     expires_in: int
 
 
@@ -202,11 +203,43 @@ def _safe_livekit_fragment(value: str, *, fallback: str) -> str:
     return f"{fallback}-{uuid.uuid4().hex[:12]}"
 
 
-def _livekit_avatar_room_name(conversation_id: str) -> str:
-    """Build a stable opaque room name for one Live Tutor conversation."""
+def _livekit_avatar_session_id() -> str:
+    """Return a short opaque id for one LiveKit avatar call lifecycle.
 
-    digest = hashlib.sha256(str(conversation_id or uuid.uuid4().hex).encode("utf-8")).hexdigest()[:16]
-    return f"areqa-live-{digest}"
+    Returns:
+        A random non-PII identifier safe for LiveKit room names and logs.
+
+    Side Effects:
+        None.
+
+    Compatibility:
+        The id is intentionally not derived from the learner or conversation so
+        one browser reconnect cannot inherit stale tracks or agent state from a
+        previous room using the same conversation.
+    """
+
+    return uuid.uuid4().hex[:16]
+
+
+def _livekit_avatar_room_name(conversation_id: str, session_id: str | None = None) -> str:
+    """Build an opaque room name for one Live Tutor avatar session.
+
+    Args:
+        conversation_id: Browser-supplied correlation id. It is hashed before
+            it appears in LiveKit metadata.
+        session_id: Per-call random id. Supplying it isolates reconnects and
+            provider switches that occur inside the same AREQA conversation.
+
+    Returns:
+        A non-PII room name safe for LiveKit and logs.
+
+    Side Effects:
+        None.
+    """
+
+    conversation_digest = hashlib.sha256(str(conversation_id or uuid.uuid4().hex).encode("utf-8")).hexdigest()[:12]
+    session_fragment = _safe_livekit_fragment(session_id or _livekit_avatar_session_id(), fallback="session")[:16]
+    return f"areqa-live-{conversation_digest}-{session_fragment}"
 
 
 def _livekit_participant_identity(current_user_id: str | None, conversation_id: str) -> str:
@@ -243,6 +276,7 @@ async def _livekit_avatar_memory_items(current_user_id: str | None, conversation
 def _livekit_avatar_agent_metadata(
     payload: LiveKitAvatarSessionRequest,
     *,
+    session_id: str | None = None,
     memory_items: list[str] | None = None,
 ) -> str:
     """Return bounded dispatch metadata for the LiveKit avatar agent.
@@ -268,6 +302,7 @@ def _livekit_avatar_agent_metadata(
     return json.dumps(
         {
             "conversation_id": _safe_livekit_fragment(payload.conversation_id, fallback="conversation"),
+            "session_id": _safe_livekit_fragment(session_id or _livekit_avatar_session_id(), fallback="session"),
             "interface_language": payload.interface_language,
             "provider": "livekit_anam",
             "recent_messages": context_messages,
@@ -577,10 +612,11 @@ async def create_livekit_avatar_session(
             },
         ) from exc
 
-    room_name = _livekit_avatar_room_name(payload.conversation_id)
+    session_id = _livekit_avatar_session_id()
+    room_name = _livekit_avatar_room_name(payload.conversation_id, session_id)
     participant_identity = _livekit_participant_identity(current_user_id, payload.conversation_id)
     memory_items = await _livekit_avatar_memory_items(current_user_id, payload.conversation_id)
-    metadata = _livekit_avatar_agent_metadata(payload, memory_items=memory_items)
+    metadata = _livekit_avatar_agent_metadata(payload, session_id=session_id, memory_items=memory_items)
 
     try:
         room_config = livekit_api.RoomConfiguration(
@@ -626,8 +662,9 @@ async def create_livekit_avatar_session(
 
     if _live_tutor_debug_logs_enabled():
         logger.info(
-            "livekit.debug.avatar_session_token_created conversation_id=%s room_name=%s agent_name=%s authenticated=%s ttl_seconds=%s supplied_message_count=%s memory_count=%s elapsed_ms=%s",
+            "livekit.debug.avatar_session_token_created conversation_id=%s session_id=%s room_name=%s agent_name=%s authenticated=%s ttl_seconds=%s supplied_message_count=%s memory_count=%s elapsed_ms=%s",
             payload.conversation_id,
+            session_id,
             room_name,
             agent_name,
             bool(current_user_id),
@@ -637,8 +674,9 @@ async def create_livekit_avatar_session(
             int((time.time() - started_at) * 1000),
         )
     logger.info(
-        "livekit.avatar_session_created conversation_id=%s room_name=%s agent_name=%s authenticated=%s elapsed_ms=%s",
+        "livekit.avatar_session_created conversation_id=%s session_id=%s room_name=%s agent_name=%s authenticated=%s elapsed_ms=%s",
         payload.conversation_id,
+        session_id,
         room_name,
         agent_name,
         bool(current_user_id),
@@ -650,6 +688,7 @@ async def create_livekit_avatar_session(
         room_name=room_name,
         participant_identity=participant_identity,
         agent_name=agent_name,
+        session_id=session_id,
         expires_in=ttl_seconds,
     )
 

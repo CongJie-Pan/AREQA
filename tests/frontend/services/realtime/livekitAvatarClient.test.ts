@@ -78,6 +78,21 @@ class FakeLiveKitRoom {
     };
     this.textHandlers.get(topic)?.(reader, { identity: participantIdentity });
   }
+
+  emitAsyncTextStream(
+    topic: string,
+    chunks: AsyncIterable<string>,
+    participantIdentity: string,
+    attributes: Record<string, unknown> = {},
+  ): void {
+    const reader = {
+      info: { id: `${participantIdentity}-segment`, attributes },
+      [Symbol.asyncIterator]() {
+        return chunks[Symbol.asyncIterator]();
+      },
+    };
+    this.textHandlers.get(topic)?.(reader, { identity: participantIdentity });
+  }
 }
 
 const fakeLiveKitModule = {
@@ -128,6 +143,7 @@ function mockAvatarSession(): void {
       room_name: 'areqa-live-room',
       participant_identity: 'learner-abc',
       agent_name: 'areqa-live-tutor',
+      session_id: 'session-abc',
       expires_in: 120,
     }), {
       status: 200,
@@ -289,6 +305,52 @@ describe('LiveKit avatar client', () => {
 
     expect(options.onAssistantTranscriptDone).toHaveBeenCalledOnce();
     expect(options.onAssistantTranscriptDone).toHaveBeenCalledWith('好的，我先簡單說明。這篇論文是在討論 ICAP。');
+  });
+
+  it('drops stale assistant transcription after canceling speech and accepts the next assistant stream', async () => {
+    vi.useFakeTimers();
+    mockAvatarSession();
+    let releaseOldStream: (() => void) | null = null;
+    const options = livekitOptions();
+    const clientPromise = startLiveKitAvatarClient(options);
+    await vi.waitFor(() => {
+      expect(lastRoom).not.toBeNull();
+      expect(lastRoom?.textHandlers.has('lk.transcription')).toBe(true);
+    });
+
+    lastRoom?.emitAsyncTextStream('lk.transcription', (async function* oldAssistantStream() {
+      yield '舊回答第一段';
+      await new Promise<void>((resolve) => {
+        releaseOldStream = resolve;
+      });
+      yield '舊回答第二段';
+    })(), 'areqa-live-tutor', {
+      'lk.transcription_final': 'true',
+    });
+    await flushAsyncWork();
+
+    const controller = await (async () => {
+      await resolveAvatarVideoTrack();
+      return clientPromise;
+    })();
+    expect(options.onAssistantTranscriptDelta).toHaveBeenCalledWith('舊回答第一段');
+
+    controller.cancelSpeech();
+    releaseOldStream?.();
+    await flushAsyncWork();
+    await vi.advanceTimersByTimeAsync(900);
+
+    lastRoom?.emitTextStream('lk.transcription', ['新回答'], 'areqa-live-tutor', {
+      'lk.transcription_final': 'true',
+    });
+    await flushAsyncWork();
+    await vi.advanceTimersByTimeAsync(900);
+
+    expect(options.onPlaybackState).toHaveBeenCalledWith('interrupted');
+    expect(options.onAssistantTranscriptDelta).not.toHaveBeenCalledWith('舊回答第二段');
+    expect(options.onAssistantTranscriptDone).toHaveBeenCalledTimes(1);
+    expect(options.onAssistantTranscriptDone).toHaveBeenCalledWith('新回答');
+    controller.disconnect();
   });
 
   it('reports setup errors through the existing Live Tutor error boundary', async () => {

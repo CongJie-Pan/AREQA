@@ -154,6 +154,7 @@ def _dispatch_metadata(ctx: agents.JobContext) -> dict[str, Any]:
         return {
             "interface_language": "zh-TW",
             "conversation_id": "",
+            "session_id": "",
             "recent_messages": [],
             "memory_items": [],
             "parts_context": {},
@@ -161,6 +162,7 @@ def _dispatch_metadata(ctx: agents.JobContext) -> dict[str, Any]:
     return {
         "interface_language": str(payload.get("interface_language") or "zh-TW"),
         "conversation_id": str(payload.get("conversation_id") or ""),
+        "session_id": str(payload.get("session_id") or ""),
         "recent_messages": _bounded_recent_messages(payload.get("recent_messages")),
         "memory_items": _bounded_memory_items(payload.get("memory_items")),
         "parts_context": _bounded_parts_context(payload.get("parts_context")),
@@ -251,16 +253,18 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
 
     metadata = _dispatch_metadata(ctx)
     logger.info(
-        "livekit_agent.session_starting room=%s agent_name=%s avatar_configured=%s conversation_id=%s",
+        "livekit_agent.session_starting room=%s agent_name=%s avatar_configured=%s conversation_id=%s session_id=%s",
         ctx.room.name,
         AGENT_NAME,
         bool(ANAM_AVATAR_ID),
         metadata["conversation_id"],
+        metadata["session_id"],
     )
     logger.info(
-        "livekit_agent.context_seed_ready room=%s conversation_id=%s message_count=%s memory_count=%s parts_context=%s",
+        "livekit_agent.context_seed_ready room=%s conversation_id=%s session_id=%s message_count=%s memory_count=%s parts_context=%s",
         ctx.room.name,
         metadata["conversation_id"],
+        metadata["session_id"],
         len(metadata["recent_messages"]),
         len(metadata["memory_items"]),
         bool(metadata["parts_context"]),
