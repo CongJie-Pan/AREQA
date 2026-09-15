@@ -152,6 +152,10 @@ export type TranslationKey =
   | 'feedbackSafety'
   | 'feedbackOther'
   | 'copyMessage'
+  | 'readAloud'
+  | 'stopReadAloud'
+  | 'readAloudStarted'
+  | 'readAloudFailed'
   | 'addToNotes'
   | 'savedToNotes'
   | 'addedToNotes'
@@ -390,6 +394,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: '安全性或法律疑慮',
     feedbackOther: '其他',
     copyMessage: '複製訊息',
+    readAloud: '朗讀回覆',
+    stopReadAloud: '停止朗讀',
+    readAloudStarted: '正在朗讀。此聲音為 AI 生成。',
+    readAloudFailed: '朗讀失敗，請稍後再試',
     addToNotes: '加入筆記',
     savedToNotes: '已在筆記中',
     addedToNotes: '已加入筆記',
@@ -598,6 +606,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: '安全性或法律疑虑',
     feedbackOther: '其他',
     copyMessage: '复制讯息',
+    readAloud: '朗读回复',
+    stopReadAloud: '停止朗读',
+    readAloudStarted: '正在朗读。此声音为 AI 生成。',
+    readAloudFailed: '朗读失败，请稍后再试',
     addToNotes: '加入笔记',
     savedToNotes: '已在笔记中',
     addedToNotes: '已加入笔记',
@@ -806,6 +818,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     feedbackSafety: 'Safety or legal concern',
     feedbackOther: 'Other',
     copyMessage: 'Copy message',
+    readAloud: 'Read aloud',
+    stopReadAloud: 'Stop reading',
+    readAloudStarted: 'Reading aloud. This voice is AI-generated.',
+    readAloudFailed: 'Read aloud failed. Please try again later.',
     addToNotes: 'Add to notes',
     savedToNotes: 'Saved to notes',
     addedToNotes: 'Added to notes',

@@ -49,6 +49,12 @@ export const API_CONFIG = {
   speechTranscriptionEndpoint: process.env.NEXT_PUBLIC_SPEECH_TRANSCRIPTION_ENDPOINT || '/api/speech/transcribe',
 
   /**
+   * Text-to-speech endpoint for reading assistant replies aloud.
+   * Default: '/api/speech/read' (proxied through Next.js)
+   */
+  speechReadAloudEndpoint: process.env.NEXT_PUBLIC_SPEECH_READ_ALOUD_ENDPOINT || '/api/speech/read',
+
+  /**
    * Request timeout in milliseconds
    * Default: 30 seconds
    */

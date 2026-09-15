@@ -14,7 +14,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -35,6 +35,7 @@ import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
+import { createReadAloudAudio, prepareReadAloudText } from '@/services/speech/readAloud';
 
 const { TextArea } = Input;
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
@@ -1177,6 +1178,11 @@ export const MessageItem = memo(function MessageItem({
   const [isFeedbackSubmitting, setIsFeedbackSubmitting] = useState(false);
   const [bubbleEl, setBubbleEl] = useState<HTMLDivElement | null>(null);
   const [areAttachmentsExpanded, setAreAttachmentsExpanded] = useState(false);
+  const [isReadAloudLoading, setIsReadAloudLoading] = useState(false);
+  const [isReadAloudPlaying, setIsReadAloudPlaying] = useState(false);
+  const readAloudAudioRef = React.useRef<HTMLAudioElement | null>(null);
+  const readAloudObjectUrlRef = React.useRef<string | null>(null);
+  const readAloudAbortRef = React.useRef<AbortController | null>(null);
   const setBubbleRef = useCallback((node: HTMLDivElement | null) => {
     setBubbleEl(node);
   }, []);
@@ -1185,6 +1191,16 @@ export const MessageItem = memo(function MessageItem({
     setFeedbackReason(message.feedbackReason ?? null);
     setFeedbackComment(message.feedbackComment ?? '');
   }, [message.feedbackComment, message.feedbackReason]);
+
+  React.useEffect(() => {
+    return () => {
+      readAloudAbortRef.current?.abort();
+      readAloudAudioRef.current?.pause();
+      if (readAloudObjectUrlRef.current) {
+        URL.revokeObjectURL(readAloudObjectUrlRef.current);
+      }
+    };
+  }, []);
 
   // Handle clicking on a quote bubble to highlight text in the original message
   const handleQuoteClick = useCallback((quoteText: string) => {
@@ -1314,6 +1330,63 @@ export const MessageItem = memo(function MessageItem({
       antMessageApi.error(t('copyMessageFailed'));
     }
   }, [displayContent, antMessageApi, t]);
+
+  const stopReadAloud = useCallback(() => {
+    readAloudAbortRef.current?.abort();
+    readAloudAbortRef.current = null;
+    readAloudAudioRef.current?.pause();
+    readAloudAudioRef.current = null;
+    if (readAloudObjectUrlRef.current) {
+      URL.revokeObjectURL(readAloudObjectUrlRef.current);
+      readAloudObjectUrlRef.current = null;
+    }
+    setIsReadAloudPlaying(false);
+    setIsReadAloudLoading(false);
+  }, []);
+
+  const handleReadAloud = useCallback(async () => {
+    if (isReadAloudPlaying || isReadAloudLoading) {
+      stopReadAloud();
+      return;
+    }
+
+    const readableText = prepareReadAloudText(message.content);
+    if (!readableText) {
+      antMessageApi.error(t('readAloudFailed'));
+      return;
+    }
+
+    setIsReadAloudLoading(true);
+    const abortController = new AbortController();
+    readAloudAbortRef.current = abortController;
+    try {
+      const audioBlob = await createReadAloudAudio(readableText, abortController.signal);
+      if (abortController.signal.aborted || readAloudAbortRef.current !== abortController) {
+        return;
+      }
+      const objectUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(objectUrl);
+      readAloudAudioRef.current = audio;
+      readAloudObjectUrlRef.current = objectUrl;
+
+      audio.addEventListener('ended', stopReadAloud, { once: true });
+      audio.addEventListener('error', stopReadAloud, { once: true });
+      await audio.play();
+      setIsReadAloudPlaying(true);
+      antMessageApi.info(t('readAloudStarted'));
+    } catch {
+      if (abortController.signal.aborted) {
+        return;
+      }
+      stopReadAloud();
+      antMessageApi.error(t('readAloudFailed'));
+    } finally {
+      if (readAloudAbortRef.current === abortController) {
+        readAloudAbortRef.current = null;
+        setIsReadAloudLoading(false);
+      }
+    }
+  }, [antMessageApi, isReadAloudLoading, isReadAloudPlaying, message.content, stopReadAloud, t]);
 
   // Handle regenerate
   const handleRegenerate = useCallback(() => {
@@ -1663,6 +1736,25 @@ export const MessageItem = memo(function MessageItem({
                   <Copy size={16} />
                 </button>
               </Tooltip>
+              {!isStreaming && (
+                <Tooltip title={isReadAloudPlaying || isReadAloudLoading ? t('stopReadAloud') : t('readAloud')}>
+                  <button
+                    className={cx(
+                      styles.actionButton,
+                      (isReadAloudPlaying || isReadAloudLoading) && styles.actionButtonActive,
+                    )}
+                    onClick={handleReadAloud}
+                    aria-label={isReadAloudPlaying || isReadAloudLoading ? t('stopReadAloud') : t('readAloud')}
+                    aria-pressed={isReadAloudPlaying || isReadAloudLoading}
+                  >
+                    {isReadAloudPlaying || isReadAloudLoading ? (
+                      <VolumeX size={16} />
+                    ) : (
+                      <Volume2 size={16} />
+                    )}
+                  </button>
+                </Tooltip>
+              )}
               {(onAddNote || isSavedNote) && !isStreaming && (
                 <Tooltip title={isSavedNote ? t('savedToNotes') : t('addToNotes')}>
                   <button

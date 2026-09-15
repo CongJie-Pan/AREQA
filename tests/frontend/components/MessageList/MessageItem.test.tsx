@@ -1,8 +1,10 @@
 import React from 'react';
+import { App } from 'antd';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
+import { createReadAloudAudio } from '../../../../frontend/src/services/speech/readAloud';
 
 // Mock child components to isolate tests
 vi.mock('../../../../frontend/src/components/RAGStatusPanel', () => ({
@@ -57,6 +59,8 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       streamingDots: 'streamingDots',
       streamingDot: 'streamingDot',
       actionButtonActive: 'actionButtonActive',
+      feedbackActionSlot: 'feedbackActionSlot',
+      feedbackActionSlotCollapsed: 'feedbackActionSlotCollapsed',
     },
     cx: (...args: any[]) => args.filter(Boolean).join(' '),
   }),
@@ -67,6 +71,33 @@ vi.mock('react-markdown', () => ({
   default: ({ children }: any) => <div>{children}</div>
 }));
 
+vi.mock('../../../../frontend/src/services/speech/readAloud', async () => {
+  const actual = await vi.importActual<typeof import('../../../../frontend/src/services/speech/readAloud')>(
+    '../../../../frontend/src/services/speech/readAloud',
+  );
+  return {
+    ...actual,
+    createReadAloudAudio: vi.fn(),
+  };
+});
+
+class MockAudio {
+  static instances: MockAudio[] = [];
+  src: string;
+  listeners: Record<string, EventListenerOrEventListenerObject[]> = {};
+  play = vi.fn().mockResolvedValue(undefined);
+  pause = vi.fn();
+
+  constructor(src: string) {
+    this.src = src;
+    MockAudio.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    this.listeners[type] = [...(this.listeners[type] ?? []), listener];
+  }
+}
+
 describe('MessageItem Integration with RAGStatusPanel', () => {
   const baseMessage = {
     id: 'msg-1',
@@ -74,6 +105,19 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     content: '這是測試訊息',
     createdAt: Date.now(),
   };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    MockAudio.instances = [];
+    vi.stubGlobal('Audio', MockAudio as any);
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      value: MockAudio,
+    });
+    global.URL.createObjectURL = vi.fn(() => 'blob:read-aloud');
+    global.URL.revokeObjectURL = vi.fn();
+    vi.mocked(createReadAloudAudio).mockResolvedValue(new Blob(['audio'], { type: 'audio/mpeg' }));
+  });
 
   it('Scenario 1: Render RAGStatusPanel when active', () => {
     const emptyMessage = { ...baseMessage, content: '' };
@@ -162,6 +206,23 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     fireEvent.click(button);
 
     expect(onAddNote).not.toHaveBeenCalled();
+  });
+
+  it('reads an assistant reply aloud from the action row', async () => {
+    render(
+      <UserPreferencesProvider>
+        <App>
+          <MessageItem message={{ ...baseMessage, content: '**重點**：請慢慢讀。' }} />
+        </App>
+      </UserPreferencesProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '朗讀回覆' }));
+
+    expect(createReadAloudAudio).toHaveBeenCalledWith('重點：請慢慢讀。', expect.any(AbortSignal));
+    expect(await screen.findByRole('button', { name: '停止朗讀' })).toHaveAttribute('aria-pressed', 'true');
+    expect(MockAudio.instances[0]?.src).toBe('blob:read-aloud');
+    expect(MockAudio.instances[0]?.play).toHaveBeenCalled();
   });
 
   it('renders persisted user attachment metadata below the message text', () => {
