@@ -176,6 +176,20 @@ function mockRealtimeSession(): void {
   );
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+} {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (reason?: unknown) => void = () => undefined;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('Realtime client lifecycle', () => {
   it('seeds role-preserving history when the channel opens, before speech responses', async () => {
     installMicrophone();
@@ -209,6 +223,35 @@ describe('Realtime client lifecycle', () => {
     expect(onUserTurnCommitted).toHaveBeenCalledWith('turn1');
     send({ type: 'output_audio_buffer.stopped' });
     expect(onPlaybackState).toHaveBeenLastCalledWith('stopped');
+    controller.disconnect();
+  });
+
+  it('starts WebRTC microphone capture and session creation in parallel', async () => {
+    const mic = installMicrophone();
+    const microphone = deferred<MediaStream>();
+    const session = deferred<Response>();
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValueOnce(microphone.promise);
+    vi.mocked(authenticatedFetch).mockReturnValueOnce(session.promise);
+
+    const startPromise = startRealtimeClient(realtimeOptions());
+
+    await vi.waitFor(() => {
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
+      expect(authenticatedFetch).toHaveBeenCalledWith('/api/realtime/session', expect.anything());
+    });
+
+    microphone.resolve(mic.stream);
+    session.resolve(new Response(JSON.stringify({
+      client_secret: 'ek_test',
+      model: 'gpt-realtime-2.1-mini',
+      voice: 'marin',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    const controller = await startPromise;
+    expect(lastPeerConnection).not.toBeNull();
     controller.disconnect();
   });
 
@@ -563,9 +606,10 @@ describe('Realtime client lifecycle', () => {
     vi.unstubAllEnvs();
   });
 
-  it('does not create a provider session when microphone permission is denied', async () => {
+  it('keeps microphone permission errors stable when parallel session startup is in flight', async () => {
     const permissionError = new DOMException('Permission denied', 'NotAllowedError');
     const options = realtimeOptions();
+    mockRealtimeSession();
     Object.defineProperty(globalThis, 'navigator', {
       configurable: true,
       value: {
@@ -579,7 +623,7 @@ describe('Realtime client lifecycle', () => {
 
     await startRealtimeClient(options);
 
-    expect(authenticatedFetch).not.toHaveBeenCalled();
+    expect(authenticatedFetch).toHaveBeenCalledWith('/api/realtime/session', expect.anything());
     expect(options.onError).toHaveBeenCalledWith(expect.objectContaining({
       code: 'microphone_denied',
       message: 'Microphone permission denied',
@@ -660,6 +704,35 @@ describe('Realtime client lifecycle', () => {
     await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledOnce());
     expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('這是回答');
     expect(onAssistantTranscriptDone).toHaveBeenCalledWith('這是回答');
+  });
+
+  it('logs WebRTC audio-to-caption lag without transcript content', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    await startRealtimeClient(realtimeOptions());
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.created', response: { id: 'resp_latency' } }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({ type: 'response.audio.delta', response_id: 'resp_latency' }),
+    });
+    lastPeerConnection?.channel.onmessage?.({
+      data: JSON.stringify({
+        type: 'response.output_audio_transcript.delta',
+        response_id: 'resp_latency',
+        delta: '不要出現在 log',
+      }),
+    });
+
+    const renderedLogs = infoSpy.mock.calls.map(([entry]) => String(entry));
+    expect(renderedLogs.some((entry) => (
+      entry.includes('realtime.webrtc_first_caption_delta')
+      && entry.includes('audioCaptionLagMs')
+    ))).toBe(true);
+    expect(renderedLogs.join('\n')).not.toContain('不要出現在 log');
+    infoSpy.mockRestore();
   });
 
   it('recovers assistant text from response.done when no transcript deltas arrive', async () => {

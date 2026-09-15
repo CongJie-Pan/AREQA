@@ -766,6 +766,9 @@ async function startRealtimeWebRtcClient(
   let activeResponseInProgress = false;
   let activeResponseId: string | null = null;
   let outputAudioBufferActive = false;
+  let responseStartedAt = 0;
+  let firstAudioDeltaAt = 0;
+  let firstCaptionDeltaAt = 0;
   const completedToolCalls = new Set<string>();
   const canceledResponseIds = new Set<string>();
   let sessionGeneration = 0;
@@ -828,6 +831,14 @@ async function startRealtimeWebRtcClient(
 
   try {
     options.onStatus('connecting');
+    const connectionStartedAt = Date.now();
+    logger.info('realtime.webrtc_startup_started', {
+      conversationId: options.getConversationId?.() || options.conversationId,
+      interfaceLanguage: options.interfaceLanguage,
+    });
+    let session: RealtimeSessionResponse;
+    let sessionPromise: Promise<RealtimeSessionResponse>;
+    let microphonePromise: Promise<MediaStream>;
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new RealtimeClientError(
@@ -837,11 +848,39 @@ async function startRealtimeWebRtcClient(
           'Microphone capture is unavailable in this browser context',
         );
       }
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: REALTIME_MIC_AUDIO_CONSTRAINTS });
+      microphonePromise = navigator.mediaDevices
+        .getUserMedia({ audio: REALTIME_MIC_AUDIO_CONSTRAINTS })
+        .then((stream) => {
+          logger.info('realtime.webrtc_microphone_ready', {
+            conversationId: options.getConversationId?.() || options.conversationId,
+            elapsedMs: Date.now() - connectionStartedAt,
+            audioTrackCount: stream.getAudioTracks().length,
+          });
+          return stream;
+        });
+      sessionPromise = createRealtimeSession(options.conversationId, options.interfaceLanguage)
+        .then((session) => {
+          logger.info('realtime.webrtc_session_ready', {
+            conversationId: options.getConversationId?.() || options.conversationId,
+            elapsedMs: Date.now() - connectionStartedAt,
+            model: session.model,
+            voice: session.voice,
+          });
+          return session;
+        });
+      try {
+        [localStream, session] = await Promise.all([microphonePromise, sessionPromise]);
+      } catch (startupError) {
+        void microphonePromise
+          .then((stream) => {
+            stream.getTracks().forEach((track) => track.stop());
+          })
+          .catch(() => undefined);
+        throw startupError;
+      }
     } catch (error) {
       throw error instanceof RealtimeClientError ? error : microphoneAccessError(error);
     }
-    const session = await createRealtimeSession(options.conversationId, options.interfaceLanguage);
     stopAudioLevelMonitor = startAudioLevelMonitor(localStream, options.onInputAudioLevel);
     peerConnection = new RTCPeerConnection();
     dataChannel = peerConnection.createDataChannel('oai-events');
@@ -865,8 +904,14 @@ async function startRealtimeWebRtcClient(
     };
     peerConnection.onconnectionstatechange = () => {
       if (!peerConnection) return;
+      logger.info('realtime.webrtc_connection_state_changed', {
+        conversationId: options.getConversationId?.() || options.conversationId,
+        state: peerConnection.connectionState,
+        elapsedMs: Date.now() - connectionStartedAt,
+      });
       if (peerConnection.connectionState === 'connected') options.onStatus('connected');
       if (peerConnection.connectionState === 'failed') {
+        options.onStatus('error');
         options.onError(new Error('Realtime WebRTC connection failed'));
       }
     };
@@ -909,13 +954,29 @@ async function startRealtimeWebRtcClient(
             assistantTranscriptFinalized = false;
             activeResponseInProgress = true;
             activeResponseId = event.response?.id || event.response_id || null;
+            responseStartedAt = Date.now();
+            firstAudioDeltaAt = 0;
+            firstCaptionDeltaAt = 0;
             options.onAssistantResponseStarted?.(activeResponseId || undefined);
             options.onStatus('thinking');
+            logger.info('realtime.webrtc_response_started', {
+              conversationId: options.getConversationId?.() || options.conversationId,
+              responseId: activeResponseId,
+            });
             break;
           case 'response.audio.delta':
+          case 'response.output_audio.delta':
             if (!isCurrentResponseEvent(event)) {
               ignoreStaleResponseEvent(event);
               break;
+            }
+            if (!firstAudioDeltaAt) {
+              firstAudioDeltaAt = Date.now();
+              logger.info('realtime.webrtc_first_audio_delta', {
+                conversationId: options.getConversationId?.() || options.conversationId,
+                responseId: activeResponseId,
+                responseStartLagMs: responseStartedAt ? firstAudioDeltaAt - responseStartedAt : null,
+              });
             }
             options.onStatus('speaking');
             break;
@@ -944,6 +1005,15 @@ async function startRealtimeWebRtcClient(
               if (!isCurrentResponseEvent(event)) {
                 ignoreStaleResponseEvent(event);
                 break;
+              }
+              if (!firstCaptionDeltaAt) {
+                firstCaptionDeltaAt = Date.now();
+                logger.info('realtime.webrtc_first_caption_delta', {
+                  conversationId: options.getConversationId?.() || options.conversationId,
+                  responseId: activeResponseId,
+                  responseStartLagMs: responseStartedAt ? firstCaptionDeltaAt - responseStartedAt : null,
+                  audioCaptionLagMs: firstAudioDeltaAt ? firstCaptionDeltaAt - firstAudioDeltaAt : null,
+                });
               }
               assistantTranscript += event.delta;
               forwardAssistantTranscriptDelta(options, event.delta, eventResponseId(event));
@@ -975,6 +1045,12 @@ async function startRealtimeWebRtcClient(
             const completedResponseId = eventResponseId(event) || activeResponseId;
             activeResponseInProgress = false;
             activeResponseId = null;
+            logger.info('realtime.webrtc_response_done', {
+              conversationId: options.getConversationId?.() || options.conversationId,
+              responseId: completedResponseId,
+              responseDurationMs: responseStartedAt ? Date.now() - responseStartedAt : null,
+              audioCaptionLagMs: firstAudioDeltaAt && firstCaptionDeltaAt ? firstCaptionDeltaAt - firstAudioDeltaAt : null,
+            });
             const completedTranscript = completedResponseTranscript(event);
             if (!assistantTranscriptFinalized && (completedTranscript || assistantTranscript.trim())) {
               forwardAssistantTranscriptDone(options, completedTranscript || assistantTranscript.trim(), completedResponseId);

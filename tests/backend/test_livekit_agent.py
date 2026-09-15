@@ -69,6 +69,9 @@ def test_livekit_agent_instructions_use_task_adaptive_depth():
     assert "asks whether you remember something" in instructions
     assert "call get_areqa_context before answering" in instructions
     assert "Never say you cannot remember" in instructions
+    assert "Choose response language by priority" in instructions
+    assert "language the learner is speaking now" in instructions
+    assert "Do not switch to English merely because the interface" in instructions
 
 
 @pytest.mark.asyncio
@@ -84,6 +87,7 @@ async def test_livekit_agent_context_guidance_preserves_deep_explanations():
 
     assert "preserve the learner-owned core step" in context["guidance"]
     assert "do not omit key ideas merely to be brief" in context["guidance"]
+    assert "Use the current spoken language first" in context["guidance"]
 
 
 @pytest.mark.asyncio
