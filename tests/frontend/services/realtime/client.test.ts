@@ -274,6 +274,33 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
   });
 
+  it('ignores stale WebRTC transcript events from a canceled response after the next response starts', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onAssistantTranscriptDelta = vi.fn();
+    const onAssistantTranscriptDone = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({
+      onAssistantTranscriptDelta,
+      onAssistantTranscriptDone,
+    }));
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+
+    send({ type: 'response.created', response: { id: 'resp_old' } });
+    send({ type: 'response.output_audio_transcript.delta', response_id: 'resp_old', delta: '舊一' });
+    controller.cancelSpeech();
+    send({ type: 'response.created', response: { id: 'resp_new' } });
+    send({ type: 'response.output_audio_transcript.delta', response_id: 'resp_old', delta: '舊二' });
+    send({ type: 'response.output_audio_transcript.done', response_id: 'resp_old', transcript: '舊一舊二' });
+    send({ type: 'response.output_audio_transcript.delta', response_id: 'resp_new', delta: '新回答' });
+    send({ type: 'response.output_audio_transcript.done', response_id: 'resp_new', transcript: '新回答' });
+
+    await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('新回答', 'resp_new'));
+    expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('舊一', 'resp_old');
+    expect(onAssistantTranscriptDelta).not.toHaveBeenCalledWith('舊二', expect.anything());
+    expect(onAssistantTranscriptDone).not.toHaveBeenCalledWith('舊一舊二', expect.anything());
+    controller.disconnect();
+  });
+
   it('asks WebRTC Realtime to speak backend-authored answers without creating a user turn', async () => {
     installMicrophone();
     mockRealtimeSession();
@@ -369,6 +396,43 @@ describe('Realtime client lifecycle', () => {
     await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('你好'));
     expect(onPlaybackState).toHaveBeenCalledWith('started');
     expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('你好');
+    controller.disconnect();
+  });
+
+  it('ignores stale WebSocket transcript and audio events from a canceled response', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    installMicrophone();
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+    Object.defineProperty(globalThis, 'AudioContext', {
+      configurable: true,
+      value: FakeAudioContext,
+    });
+    const onAssistantTranscriptDelta = vi.fn();
+    const onAssistantTranscriptDone = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({
+      onAssistantTranscriptDelta,
+      onAssistantTranscriptDone,
+    }));
+
+    lastWebSocket?.open();
+    lastWebSocket?.receive({ type: 'response.created', response: { id: 'resp_ws_old' } });
+    lastWebSocket?.receive({ type: 'response.output_audio_transcript.delta', response_id: 'resp_ws_old', delta: '舊一' });
+    controller.cancelSpeech();
+    lastWebSocket?.receive({ type: 'response.created', response: { id: 'resp_ws_new' } });
+    lastWebSocket?.receive({ type: 'response.output_audio.delta', response_id: 'resp_ws_old', delta: 'AAAAAA==' });
+    lastWebSocket?.receive({ type: 'response.output_audio_transcript.delta', response_id: 'resp_ws_old', delta: '舊二' });
+    lastWebSocket?.receive({ type: 'response.output_audio_transcript.done', response_id: 'resp_ws_old', transcript: '舊一舊二' });
+    lastWebSocket?.receive({ type: 'response.output_audio_transcript.delta', response_id: 'resp_ws_new', delta: '新回答' });
+    lastWebSocket?.receive({ type: 'response.output_audio_transcript.done', response_id: 'resp_ws_new', transcript: '新回答' });
+
+    await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('新回答', 'resp_ws_new'));
+    expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('舊一', 'resp_ws_old');
+    expect(onAssistantTranscriptDelta).not.toHaveBeenCalledWith('舊二', expect.anything());
+    expect(onAssistantTranscriptDone).not.toHaveBeenCalledWith('舊一舊二', expect.anything());
     controller.disconnect();
   });
 

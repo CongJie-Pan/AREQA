@@ -21,13 +21,18 @@ export function useVoiceReveal(content: string, playback: DisplayMessage['voiceP
   useEffect(() => { targetRef.current = characters; }, [characters]);
   useEffect(() => {
     if (!playback || playback === 'interrupted') return;
-    let elapsed = playback === 'waiting' ? -700 : 0;
+    if (playback === 'finished') {
+      lengthRef.current = targetRef.current.length;
+      setLength(lengthRef.current);
+      return;
+    }
+    let elapsed = playback === 'waiting' ? -220 : 0;
     // Incoming deltas update the target without restarting the playback clock.
     const timer = window.setInterval(() => {
       const target = targetRef.current;
       if (lengthRef.current >= target.length) { elapsed = Math.min(elapsed, 0); return; }
       elapsed += 10;
-      const delay = /[\u3400-\u9fff]/u.test(target[lengthRef.current] || '') ? 118 : 58;
+      const delay = /[\u3400-\u9fff]/u.test(target[lengthRef.current] || '') ? 64 : 34;
       if (elapsed < delay) return;
       elapsed -= delay;
       lengthRef.current = Math.min(target.length, lengthRef.current + 1);

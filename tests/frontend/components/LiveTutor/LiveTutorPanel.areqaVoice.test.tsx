@@ -499,6 +499,33 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
+  it('does not append stale assistant transcript work after the learner interrupts', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    act(() => {
+      realtimeOptions?.onAssistantResponseStarted?.('resp-old');
+      realtimeOptions?.onAssistantTranscriptDelta('中斷前內容', 'resp-old');
+      realtimeOptions?.onUserSpeechStarted?.();
+      realtimeOptions?.onAssistantTranscriptDelta('中斷後舊內容', 'resp-old');
+      realtimeOptions?.onAssistantTranscriptDone('中斷前內容中斷後舊內容', 'resp-old');
+    });
+
+    await waitFor(() => expect(controller.cancelSpeech).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content: '中斷前內容' }),
+    ]));
+    expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content: '中斷前內容中斷後舊內容' }),
+    ]));
+    act(() => view.unmount());
+  });
+
   it('cancels text streaming and realtime speech when voice mode closes', async () => {
     const view = await renderOpenPanel();
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());

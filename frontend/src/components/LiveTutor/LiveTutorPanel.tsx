@@ -116,6 +116,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const transcriptQueueRef = useRef<Promise<void>>(Promise.resolve());
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantTranscriptRef = useRef('');
+  const assistantTurnGenerationRef = useRef(0);
+  const activeAssistantResponseIdRef = useRef<string | null>(null);
+  const staleAssistantResponseIdsRef = useRef(new Set<string>());
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const userTurnIdsRef = useRef(new Map<string, string>());
   const delegatedDeepAnswerActiveRef = useRef(false);
@@ -178,6 +181,22 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           { component: 'LiveTutorPanel' },
         );
       });
+  }, []);
+
+  const invalidateAssistantTurn = useCallback((): number => {
+    assistantTurnGenerationRef.current += 1;
+    if (activeAssistantResponseIdRef.current) {
+      staleAssistantResponseIdsRef.current.add(activeAssistantResponseIdRef.current);
+    }
+    activeAssistantResponseIdRef.current = null;
+    return assistantTurnGenerationRef.current;
+  }, []);
+
+  const isCurrentAssistantTurn = useCallback((generation: number, responseId?: string): boolean => {
+    if (generation !== assistantTurnGenerationRef.current) return false;
+    if (!responseId) return true;
+    if (staleAssistantResponseIdsRef.current.has(responseId)) return false;
+    return Boolean(activeAssistantResponseIdRef.current && responseId === activeAssistantResponseIdRef.current);
   }, []);
 
   const ensurePersistedConversationId = useCallback(async (): Promise<string> => {
@@ -321,6 +340,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     pendingAvatarNoticeRef.current = null;
     assistantMessageIdRef.current = null;
     assistantTranscriptRef.current = '';
+    staleAssistantResponseIdsRef.current.clear();
+    invalidateAssistantTurn();
     lastVoiceMessageIdRef.current = null;
     userTurnIdsRef.current.clear();
     delegatedDeepAnswerActiveRef.current = false;
@@ -389,6 +410,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           return;
         }
         playbackRef.current = 'interrupted';
+        invalidateAssistantTurn();
         delegatedDeepAnswerActiveRef.current = false;
         backendReadbackActiveRef.current = false;
         controllerRef.current?.cancelSpeech();
@@ -402,8 +424,12 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           playLiveVoiceCue('connected');
         }
       },
-      onAssistantResponseStarted: () => {
+      onAssistantResponseStarted: (responseId) => {
         if (isCancelledRef.current) return;
+        assistantTurnGenerationRef.current += 1;
+        activeAssistantResponseIdRef.current = responseId || null;
+        if (responseId) staleAssistantResponseIdsRef.current.delete(responseId);
+        const responseGeneration = assistantTurnGenerationRef.current;
         if (backendReadbackActiveRef.current) {
           playbackRef.current = 'waiting';
           return;
@@ -419,6 +445,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         }
         playbackRef.current = 'waiting';
         enqueueTranscriptWork(async () => {
+          if (!isCurrentAssistantTurn(responseGeneration, responseId)) return;
           await finalizeAssistantDraft();
           lastVoiceMessageIdRef.current = null;
         });
@@ -467,6 +494,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               userTurnIdsRef.current.delete(itemId);
             }
             const persistedConversationId = await ensurePersistedConversationId();
+            const deepGeneration = assistantTurnGenerationRef.current;
             delegatedDeepAnswerActiveRef.current = true;
             lastVoiceMessageIdRef.current = null;
             controllerRef.current?.cancelSpeech();
@@ -484,12 +512,12 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                 useRag: true,
                 searchMode: 'auto',
               });
-              if (!isCancelledRef.current) {
+              if (!isCancelledRef.current && isCurrentAssistantTurn(deepGeneration)) {
                 const readbackText = normalizeReadbackText(result.answerContent ?? '');
                 await result.finalizeVoiceResponse?.(readbackText);
               }
               const readbackText = normalizeReadbackText(result.answerContent ?? '');
-              if (!isCancelledRef.current && readbackText && result.assistantMessageId) {
+              if (!isCancelledRef.current && isCurrentAssistantTurn(deepGeneration) && readbackText && result.assistantMessageId) {
                 lastVoiceMessageIdRef.current = result.assistantMessageId;
                 updateAssistantMessage(result.assistantMessageId, { voicePlayback: 'waiting' });
                 const speechStarted = controllerRef.current?.speakText(readbackText) ?? false;
@@ -508,11 +536,12 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               logger.info('realtime.deep_answer_completed', {
                 component: 'LiveTutorPanel',
                 conversationId: persistedConversationId,
+                stale: !isCurrentAssistantTurn(deepGeneration),
                 completed: result.completed,
                 answerChars: result.answerContent?.length ?? 0,
               });
             } catch (error) {
-              if (!isCancelledRef.current) {
+              if (!isCancelledRef.current && isCurrentAssistantTurn(deepGeneration)) {
                 setError(error instanceof Error ? error.message : labels.setupFailed);
               }
               logger.warn('realtime.deep_answer_failed', {
@@ -521,7 +550,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                 errorName: error instanceof Error ? error.name : 'UnknownError',
               });
             } finally {
-              delegatedDeepAnswerActiveRef.current = false;
+              if (isCurrentAssistantTurn(deepGeneration)) {
+                delegatedDeepAnswerActiveRef.current = false;
+              }
             }
             return;
           }
@@ -529,13 +560,38 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           await persistUserTranscript(normalized, itemId);
         });
       },
-      onAssistantTranscriptDelta: (delta) => {
+      onAssistantTranscriptDelta: (delta, responseId) => {
         if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current || !delta) return;
-        enqueueTranscriptWork(() => appendAssistantTranscript(delta));
+        const responseGeneration = assistantTurnGenerationRef.current;
+        enqueueTranscriptWork(async () => {
+          if (!isCurrentAssistantTurn(responseGeneration, responseId)) {
+            logger.info('realtime.voice_stale_delta_ignored', {
+              component: 'LiveTutorPanel',
+              conversationId: persistedConversationIdRef.current || conversationId,
+              provider: selectedProvider,
+              responseId: responseId || null,
+            });
+            return;
+          }
+          await appendAssistantTranscript(delta);
+        });
       },
-      onAssistantTranscriptDone: (transcript) => {
+      onAssistantTranscriptDone: (transcript, responseId) => {
         if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current) return;
-        enqueueTranscriptWork(() => finalizeAssistantDraft(transcript));
+        const responseGeneration = assistantTurnGenerationRef.current;
+        enqueueTranscriptWork(async () => {
+          if (!isCurrentAssistantTurn(responseGeneration, responseId)) {
+            logger.info('realtime.voice_stale_done_ignored', {
+              component: 'LiveTutorPanel',
+              conversationId: persistedConversationIdRef.current || conversationId,
+              provider: selectedProvider,
+              responseId: responseId || null,
+              transcriptChars: transcript.trim().length,
+            });
+            return;
+          }
+          await finalizeAssistantDraft(transcript);
+        });
       },
       onError: (nextError) => {
         if (isCancelledRef.current) return;
@@ -574,6 +630,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     enqueueTranscriptWork,
     appendAssistantTranscript,
     finalizeAssistantDraft,
+    invalidateAssistantTurn,
+    isCurrentAssistantTurn,
     labels.insecureContext,
     labels.microphoneBusy,
     labels.microphoneUnavailable,
@@ -598,6 +656,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     delegatedDeepAnswerActiveRef.current = false;
     backendReadbackActiveRef.current = false;
     playbackRef.current = 'interrupted';
+    invalidateAssistantTurn();
     controllerRef.current?.cancelSpeech();
     controllerRef.current?.disconnect();
     void cancelCurrentStream();
@@ -641,7 +700,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       });
     transcriptQueueRef.current = finalization;
     await finalization;
-  }, [finalizeAssistantDraft, updateAssistantMessage]);
+  }, [finalizeAssistantDraft, invalidateAssistantTurn, updateAssistantMessage]);
 
   const finishVisualStop = useCallback(() => {
     setAvatarVideoStream(null);

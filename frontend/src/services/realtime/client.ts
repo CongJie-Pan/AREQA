@@ -68,11 +68,11 @@ export interface StartRealtimeClientOptions {
   onUserSpeechStarted?: () => void;
   onPlaybackState?: (state: 'started' | 'stopped' | 'interrupted') => void;
   onStatus: (status: RealtimeStatus) => void;
-  onAssistantResponseStarted?: () => void;
+  onAssistantResponseStarted?: (responseId?: string) => void;
   onUserTurnCommitted?: (itemId: string) => void;
   onUserTranscript: (transcript: string, itemId?: string) => void;
-  onAssistantTranscriptDelta: (delta: string) => void;
-  onAssistantTranscriptDone: (transcript: string) => void;
+  onAssistantTranscriptDelta: (delta: string, responseId?: string) => void;
+  onAssistantTranscriptDone: (transcript: string, responseId?: string) => void;
   onError: (error: Error) => void;
 }
 
@@ -256,6 +256,34 @@ function safeProviderError(event: RealtimeEvent): RealtimeClientError {
 
 function isNonFatalCancelError(event: RealtimeEvent): boolean {
   return event.error?.code === 'response_cancel_not_active';
+}
+
+function eventResponseId(event: RealtimeEvent): string | null {
+  return event.response?.id || event.response_id || null;
+}
+
+function forwardAssistantTranscriptDelta(
+  options: StartRealtimeClientOptions,
+  delta: string,
+  responseId: string | null,
+): void {
+  if (responseId) {
+    options.onAssistantTranscriptDelta(delta, responseId);
+    return;
+  }
+  options.onAssistantTranscriptDelta(delta);
+}
+
+function forwardAssistantTranscriptDone(
+  options: StartRealtimeClientOptions,
+  transcript: string,
+  responseId: string | null,
+): void {
+  if (responseId) {
+    options.onAssistantTranscriptDone(transcript, responseId);
+    return;
+  }
+  options.onAssistantTranscriptDone(transcript);
 }
 
 async function readSafeErrorBody(response: Response): Promise<string> {
@@ -731,11 +759,30 @@ async function startRealtimeWebRtcClient(
   let activeResponseId: string | null = null;
   let outputAudioBufferActive = false;
   const completedToolCalls = new Set<string>();
+  const canceledResponseIds = new Set<string>();
+
+  const isCurrentResponseEvent = (event: RealtimeEvent): boolean => {
+    const responseId = eventResponseId(event);
+    if (responseId && canceledResponseIds.has(responseId)) return false;
+    if (responseId) return activeResponseInProgress && responseId === activeResponseId;
+    return activeResponseInProgress;
+  };
+
+  const ignoreStaleResponseEvent = (event: RealtimeEvent): void => {
+    logger.info('realtime.stale_response_event_ignored', {
+      conversationId: options.getConversationId?.() || options.conversationId,
+      transport: 'webrtc',
+      eventType: event.type || 'unknown',
+      responseId: eventResponseId(event),
+      activeResponseId,
+    });
+  };
 
   const cancelActiveResponse = (): boolean => {
     if (dataChannel?.readyState !== 'open') return false;
     let sentControlEvent = false;
     if (activeResponseInProgress) {
+      if (activeResponseId) canceledResponseIds.add(activeResponseId);
       sendRealtimeEvent(dataChannel, activeResponseId
         ? { type: 'response.cancel', response_id: activeResponseId }
         : { type: 'response.cancel' });
@@ -847,14 +894,18 @@ async function startRealtimeWebRtcClient(
             if (event.item_id) options.onUserTurnCommitted?.(event.item_id);
             break;
           case 'response.created':
-            options.onAssistantResponseStarted?.();
             assistantTranscript = '';
             assistantTranscriptFinalized = false;
             activeResponseInProgress = true;
             activeResponseId = event.response?.id || event.response_id || null;
+            options.onAssistantResponseStarted?.(activeResponseId || undefined);
             options.onStatus('thinking');
             break;
           case 'response.audio.delta':
+            if (!isCurrentResponseEvent(event)) {
+              ignoreStaleResponseEvent(event);
+              break;
+            }
             options.onStatus('speaking');
             break;
           case 'output_audio_buffer.started':
@@ -879,30 +930,43 @@ async function startRealtimeWebRtcClient(
           case 'response.text.delta':
           case 'response.output_text.delta':
             if (event.delta) {
+              if (!isCurrentResponseEvent(event)) {
+                ignoreStaleResponseEvent(event);
+                break;
+              }
               assistantTranscript += event.delta;
-              options.onAssistantTranscriptDelta(event.delta);
+              forwardAssistantTranscriptDelta(options, event.delta, eventResponseId(event));
             }
             break;
           case 'response.audio_transcript.done':
           case 'response.output_audio_transcript.done':
           case 'response.text.done':
           case 'response.output_text.done': {
+            if (!isCurrentResponseEvent(event)) {
+              ignoreStaleResponseEvent(event);
+              break;
+            }
             const finalizedTranscript = event.transcript?.trim()
               || event.text?.trim()
               || assistantTranscript.trim();
             if (!assistantTranscriptFinalized && finalizedTranscript) {
-              options.onAssistantTranscriptDone(finalizedTranscript);
+              forwardAssistantTranscriptDone(options, finalizedTranscript, eventResponseId(event));
               assistantTranscript = '';
               assistantTranscriptFinalized = true;
             }
             break;
           }
           case 'response.done': {
+            if (!isCurrentResponseEvent(event)) {
+              ignoreStaleResponseEvent(event);
+              break;
+            }
+            const completedResponseId = eventResponseId(event) || activeResponseId;
             activeResponseInProgress = false;
             activeResponseId = null;
             const completedTranscript = completedResponseTranscript(event);
             if (!assistantTranscriptFinalized && (completedTranscript || assistantTranscript.trim())) {
-              options.onAssistantTranscriptDone(completedTranscript || assistantTranscript.trim());
+              forwardAssistantTranscriptDone(options, completedTranscript || assistantTranscript.trim(), completedResponseId);
               assistantTranscript = '';
               assistantTranscriptFinalized = true;
             }
@@ -995,11 +1059,30 @@ async function startRealtimeWebSocketClient(
   let firstAudioDeltaAt = 0;
   let firstCaptionDeltaAt = 0;
   const completedToolCalls = new Set<string>();
+  const canceledResponseIds = new Set<string>();
+
+  const isCurrentResponseEvent = (event: RealtimeEvent): boolean => {
+    const responseId = eventResponseId(event);
+    if (responseId && canceledResponseIds.has(responseId)) return false;
+    if (responseId) return activeResponseInProgress && responseId === activeResponseId;
+    return activeResponseInProgress;
+  };
+
+  const ignoreStaleResponseEvent = (event: RealtimeEvent): void => {
+    logger.info('realtime.stale_response_event_ignored', {
+      conversationId: options.getConversationId?.() || options.conversationId,
+      transport: 'websocket',
+      eventType: event.type || 'unknown',
+      responseId: eventResponseId(event),
+      activeResponseId,
+    });
+  };
 
   const cancelActiveResponse = (): boolean => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     let sentControlEvent = false;
     if (activeResponseInProgress) {
+      if (activeResponseId) canceledResponseIds.add(activeResponseId);
       sendRealtimeEvent(socket, activeResponseId
         ? { type: 'response.cancel', response_id: activeResponseId }
         : { type: 'response.cancel' });
@@ -1041,11 +1124,11 @@ async function startRealtimeWebSocketClient(
         if (event.item_id) options.onUserTurnCommitted?.(event.item_id);
         break;
       case 'response.created':
-        options.onAssistantResponseStarted?.();
         assistantTranscript = '';
         assistantTranscriptFinalized = false;
         activeResponseInProgress = true;
         activeResponseId = event.response?.id || event.response_id || null;
+        options.onAssistantResponseStarted?.(activeResponseId || undefined);
         responseStartedAt = Date.now();
         firstAudioDeltaAt = 0;
         firstCaptionDeltaAt = 0;
@@ -1058,6 +1141,10 @@ async function startRealtimeWebSocketClient(
       case 'response.audio.delta':
       case 'response.output_audio.delta':
         if (event.delta) {
+          if (!isCurrentResponseEvent(event)) {
+            ignoreStaleResponseEvent(event);
+            break;
+          }
           if (!firstAudioDeltaAt) {
             firstAudioDeltaAt = Date.now();
             logger.info('realtime.websocket_first_audio_delta', {
@@ -1089,6 +1176,10 @@ async function startRealtimeWebSocketClient(
       case 'response.text.delta':
       case 'response.output_text.delta':
         if (event.delta) {
+          if (!isCurrentResponseEvent(event)) {
+            ignoreStaleResponseEvent(event);
+            break;
+          }
           if (!firstCaptionDeltaAt) {
             firstCaptionDeltaAt = Date.now();
             logger.info('realtime.websocket_first_caption_delta', {
@@ -1099,25 +1190,33 @@ async function startRealtimeWebSocketClient(
             });
           }
           assistantTranscript += event.delta;
-          options.onAssistantTranscriptDelta(event.delta);
+          forwardAssistantTranscriptDelta(options, event.delta, eventResponseId(event));
         }
         break;
       case 'response.audio_transcript.done':
       case 'response.output_audio_transcript.done':
       case 'response.text.done':
       case 'response.output_text.done': {
+        if (!isCurrentResponseEvent(event)) {
+          ignoreStaleResponseEvent(event);
+          break;
+        }
         const finalizedTranscript = event.transcript?.trim()
           || event.text?.trim()
           || assistantTranscript.trim();
         if (!assistantTranscriptFinalized && finalizedTranscript) {
-          options.onAssistantTranscriptDone(finalizedTranscript);
+          forwardAssistantTranscriptDone(options, finalizedTranscript, eventResponseId(event));
           assistantTranscript = '';
           assistantTranscriptFinalized = true;
         }
         break;
       }
       case 'response.done': {
-        const completedResponseId = activeResponseId;
+        if (!isCurrentResponseEvent(event)) {
+          ignoreStaleResponseEvent(event);
+          break;
+        }
+        const completedResponseId = eventResponseId(event) || activeResponseId;
         activeResponseInProgress = false;
         activeResponseId = null;
         logger.info('realtime.websocket_response_done', {
@@ -1128,7 +1227,7 @@ async function startRealtimeWebSocketClient(
         });
         const completedTranscript = completedResponseTranscript(event);
         if (!assistantTranscriptFinalized && (completedTranscript || assistantTranscript.trim())) {
-          options.onAssistantTranscriptDone(completedTranscript || assistantTranscript.trim());
+          forwardAssistantTranscriptDone(options, completedTranscript || assistantTranscript.trim(), completedResponseId);
           assistantTranscript = '';
           assistantTranscriptFinalized = true;
         }
