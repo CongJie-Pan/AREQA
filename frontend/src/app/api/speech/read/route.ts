@@ -1,8 +1,8 @@
 /**
  * Text-to-speech BFF route.
  *
- * Generates speech from assistant-authored text through OpenAI while keeping
- * OPENAI_API_KEY server-side.
+ * Proxies assistant read-out text to FastAPI so the OpenAI API key stays on
+ * the backend service.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,9 +11,6 @@ import { checkRateLimit, getClientIdentifier, logger } from '@/utils';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const OPENAI_SPEECH_URL = 'https://api.openai.com/v1/audio/speech';
-const TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
-const TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'cedar';
 const MAX_TTS_INPUT_CHARS = 4096;
 
 interface ErrorResponse {
@@ -31,10 +28,20 @@ function createErrorResponse(message: string, code: string, status: number): Nex
 async function readUpstreamError(response: Response): Promise<{ message: string; code: string } | null> {
   try {
     const payload = await response.json() as {
+      detail?: string | { message?: string; code?: string };
       error?: { message?: string; code?: string };
     };
     if (payload.error?.message) {
-      return { message: payload.error.message, code: payload.error.code || 'OPENAI_TTS_ERROR' };
+      return { message: payload.error.message, code: payload.error.code || 'TTS_GENERATION_FAILED' };
+    }
+    if (typeof payload.detail === 'string') {
+      return { message: payload.detail, code: 'UPSTREAM_VALIDATION_ERROR' };
+    }
+    if (payload.detail?.message) {
+      return {
+        message: payload.detail.message,
+        code: payload.detail.code || 'UPSTREAM_VALIDATION_ERROR',
+      };
     }
   } catch {
     // Fall through to a generic upstream message.
@@ -47,12 +54,6 @@ export async function POST(request: NextRequest) {
   const rateLimit = checkRateLimit(clientId, { maxRequests: 20, windowMs: 60_000 });
   if (!rateLimit.allowed) {
     return createErrorResponse('Rate limit exceeded. Please try again later.', 'RATE_LIMITED', 429);
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    logger.warn('Speech read aloud unavailable: missing OpenAI API key', { clientId });
-    return createErrorResponse('Read aloud is not configured.', 'TTS_NOT_CONFIGURED', 503);
   }
 
   let text = '';
@@ -68,29 +69,23 @@ export async function POST(request: NextRequest) {
   }
 
   const input = text.slice(0, MAX_TTS_INPUT_CHARS);
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+  const authHeader = request.headers.get('authorization');
 
   try {
     logger.info('Speech read aloud requested', {
       clientId,
-      model: TTS_MODEL,
-      voice: TTS_VOICE,
       inputChars: input.length,
       wasTruncated: text.length > input.length,
     });
 
-    const upstream = await fetch(OPENAI_SPEECH_URL, {
+    const upstream = await fetch(`${backendUrl}/api/v1/speech/read`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        ...(authHeader ? { Authorization: authHeader } : {}),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: TTS_MODEL,
-        voice: TTS_VOICE,
-        input,
-        response_format: 'mp3',
-        instructions: 'Read clearly in a warm, natural tutoring tone.',
-      }),
+      body: JSON.stringify({ text: input }),
       signal: request.signal,
     });
 

@@ -21,6 +21,7 @@ from typing import Any, List, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from auth import get_optional_current_user
@@ -34,8 +35,12 @@ logger = logging.getLogger("backend.main")
 
 REALTIME_CLIENT_SECRET_URL = "https://api.openai.com/v1/realtime/client_secrets"
 OPENAI_AUDIO_TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions"
+OPENAI_AUDIO_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
 REALTIME_DEFAULT_MODEL = "gpt-realtime-2.1-mini"
 SPEECH_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+SPEECH_READ_MODEL = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+SPEECH_READ_VOICE = os.environ.get("OPENAI_TTS_VOICE", "cedar")
+MAX_SPEECH_READ_CHARS = 4096
 REALTIME_ALLOWED_MODELS = frozenset({"gpt-realtime-2.1-mini", "gpt-realtime-2.1"})
 REALTIME_ALLOWED_VOICES = frozenset({
     "alloy",
@@ -88,6 +93,17 @@ class RealtimeContextRequest(BaseModel):
     conversation_id: str = ""
     messages: List[RealtimeContextMessage] = Field(default_factory=list, max_length=MAX_CONTEXT_MESSAGES)
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
+
+
+class SpeechReadRequest(BaseModel):
+    """Assistant text to render as spoken audio.
+
+    Args:
+        text: Already-normalized readback text from the browser. The backend
+            bounds it before sending to OpenAI and never logs the raw content.
+    """
+
+    text: str = Field(default="", max_length=MAX_SPEECH_READ_CHARS)
 
 
 class LiveKitAvatarSessionRequest(BaseModel):
@@ -1032,6 +1048,113 @@ async def transcribe_speech(
         int((time.time() - started_at) * 1000),
     )
     return {"text": text}
+
+
+@router.post("/api/v1/speech/read")
+async def read_speech(
+    payload: SpeechReadRequest,
+    current_user_id: str | None = Depends(get_optional_current_user),
+) -> Response:
+    """Generate an MP3 read-out for assistant-authored text.
+
+    Args:
+        payload: Bounded speakable text prepared by the frontend.
+        current_user_id: Optional authenticated user from Supabase JWT.
+
+    Returns:
+        MP3 audio bytes suitable for direct browser playback.
+
+    Raises:
+        HTTPException: For missing OpenAI configuration, empty text, or
+            upstream provider failures.
+    """
+
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        logger.warning("speech.read_config_missing authenticated=%s", bool(current_user_id))
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPENAI_API_KEY_MISSING",
+                "message": "OpenAI speech generation is not configured.",
+            },
+        )
+
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SPEECH_READ_TEXT_REQUIRED",
+                "message": "Text is required.",
+            },
+        )
+
+    started_at = time.time()
+    logger.info(
+        "speech.read_started authenticated=%s model=%s voice=%s chars=%s",
+        bool(current_user_id),
+        SPEECH_READ_MODEL,
+        SPEECH_READ_VOICE,
+        len(text),
+    )
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        safety_identifier = _safe_realtime_user_identifier(current_user_id)
+        if safety_identifier:
+            headers["OpenAI-Safety-Identifier"] = safety_identifier
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                OPENAI_AUDIO_SPEECH_URL,
+                headers=headers,
+                json={
+                    "model": SPEECH_READ_MODEL,
+                    "voice": SPEECH_READ_VOICE,
+                    "input": text,
+                    "response_format": "mp3",
+                    "instructions": "Read clearly in a warm, natural tutoring tone.",
+                },
+            )
+        if response.status_code >= 400:
+            logger.warning(
+                "speech.read_failed status=%s elapsed_ms=%s",
+                response.status_code,
+                int((time.time() - started_at) * 1000),
+            )
+            raise HTTPException(
+                status_code=429 if response.status_code == 429 else 503,
+                detail={
+                    "code": "OPENAI_SPEECH_READ_FAILED",
+                    "message": "Unable to generate speech.",
+                },
+            )
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        logger.exception("speech.read_unavailable reason=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "OPENAI_SPEECH_READ_UNAVAILABLE",
+                "message": "OpenAI speech generation is temporarily unavailable.",
+            },
+        ) from exc
+
+    logger.info(
+        "speech.read_completed authenticated=%s bytes=%s elapsed_ms=%s",
+        bool(current_user_id),
+        len(response.content),
+        int((time.time() - started_at) * 1000),
+    )
+    return Response(
+        content=response.content,
+        media_type=response.headers.get("content-type", "audio/mpeg"),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/api/v1/realtime/context")

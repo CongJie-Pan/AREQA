@@ -27,15 +27,11 @@ function jsonRequest(body: unknown) {
 }
 
 describe('speech read aloud API route', () => {
-  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
-  const originalOpenAiTtsModel = process.env.OPENAI_TTS_MODEL;
-  const originalOpenAiTtsVoice = process.env.OPENAI_TTS_VOICE;
+  const originalBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.OPENAI_API_KEY = 'test-openai-key';
-    delete process.env.OPENAI_TTS_MODEL;
-    delete process.env.OPENAI_TTS_VOICE;
+    process.env.NEXT_PUBLIC_BACKEND_URL = 'https://backend.example';
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -48,46 +44,57 @@ describe('speech read aloud API route', () => {
   });
 
   afterEach(() => {
-    process.env.OPENAI_API_KEY = originalOpenAiApiKey;
-    process.env.OPENAI_TTS_MODEL = originalOpenAiTtsModel;
-    process.env.OPENAI_TTS_VOICE = originalOpenAiTtsVoice;
+    process.env.NEXT_PUBLIC_BACKEND_URL = originalBackendUrl;
     vi.unstubAllGlobals();
   });
 
-  it('generates assistant read-out audio through OpenAI TTS', async () => {
-    const response = await POST(jsonRequest({ text: '請朗讀這段回覆' }) as any);
+  it('proxies assistant read-out text to the FastAPI backend', async () => {
+    const response = await POST({
+      ...jsonRequest({ text: '請朗讀這段回覆' }),
+      headers: new Headers({ authorization: 'Bearer user-token' }),
+    } as any);
     const requestInit = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
     const body = JSON.parse(String(requestInit.body));
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('audio/mpeg');
     expect(fetch).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/audio/speech',
+      'https://backend.example/api/v1/speech/read',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          Authorization: 'Bearer test-openai-key',
+        headers: {
+          Authorization: 'Bearer user-token',
           'Content-Type': 'application/json',
-        }),
+        },
       }),
     );
-    expect(body).toMatchObject({
-      model: 'gpt-4o-mini-tts',
-      voice: 'cedar',
-      input: '請朗讀這段回覆',
-      response_format: 'mp3',
-    });
+    expect(body).toEqual({ text: '請朗讀這段回覆' });
   });
 
-  it('fails softly when OpenAI TTS is not configured', async () => {
-    delete process.env.OPENAI_API_KEY;
+  it('preserves backend speech generation errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: {
+              code: 'OPENAI_API_KEY_MISSING',
+              message: 'OpenAI speech generation is not configured.',
+            },
+          }),
+          { status: 503, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
 
-    const response = await POST(jsonRequest({ text: 'hello' }) as any);
+    const response = await POST({
+      ...jsonRequest({ text: 'hello' }),
+      headers: new Headers(),
+    } as any);
     const payload = await response.json();
 
     expect(response.status).toBe(503);
-    expect(payload.error.code).toBe('TTS_NOT_CONFIGURED');
-    expect(fetch).not.toHaveBeenCalled();
+    expect(payload.error.code).toBe('OPENAI_API_KEY_MISSING');
   });
 
   it('rate limits read-out generation', async () => {

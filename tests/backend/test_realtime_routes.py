@@ -27,6 +27,8 @@ from backend.app.routes.realtime import (
     create_livekit_avatar_session,
     create_realtime_session,
     get_realtime_context,
+    read_speech,
+    SpeechReadRequest,
     transcribe_speech,
 )
 
@@ -413,6 +415,69 @@ async def test_transcribe_speech_uses_mini_transcribe_model(monkeypatch):
     assert "Traditional Chinese" in captured["data"]["prompt"]
     assert captured["files"]["file"][0] == "speech.webm"
     assert captured["headers"]["Authorization"] == "Bearer test-key"
+
+
+@pytest.mark.asyncio
+async def test_read_speech_uses_mini_tts_model_without_logging_text(monkeypatch, caplog):
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b"mp3-bytes"
+        headers = {"content-type": "audio/mpeg"}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, *, headers, json):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(realtime_routes.httpx, "AsyncClient", FakeAsyncClient)
+
+    with caplog.at_level(logging.INFO):
+        response = await read_speech(
+            SpeechReadRequest(text="請朗讀這段私人回覆"),
+            current_user_id="user_123",
+        )
+
+    assert response.status_code == 200
+    assert response.body == b"mp3-bytes"
+    assert captured["url"] == "https://api.openai.com/v1/audio/speech"
+    assert captured["json"] == {
+        "model": "gpt-4o-mini-tts",
+        "voice": "cedar",
+        "input": "請朗讀這段私人回覆",
+        "response_format": "mp3",
+        "instructions": "Read clearly in a warm, natural tutoring tone.",
+    }
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["headers"]["OpenAI-Safety-Identifier"] != "user_123"
+    assert "speech.read_started" in caplog.text
+    assert "speech.read_completed" in caplog.text
+    assert "請朗讀這段私人回覆" not in caplog.text
+    assert "test-key" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_read_speech_fails_when_openai_key_missing(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(HTTPException) as error:
+        await read_speech(SpeechReadRequest(text="hello"), current_user_id=None)
+
+    assert error.value.status_code == 503
+    assert error.value.detail["code"] == "OPENAI_API_KEY_MISSING"
 
 
 def test_speech_transcription_prompt_defaults_english_ui_chinese_to_traditional():
