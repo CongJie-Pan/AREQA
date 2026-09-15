@@ -371,15 +371,20 @@ def _build_realtime_instructions(language: str) -> str:
         "Preserve names and technical terms when useful. Switch languages only when the learner clearly asks or speaks another language.",
         "Speak like a real person in a live conversation. Use plain spoken text only.",
         "Do not use Markdown, headings, bullets, numbered lists, tables, citations, emoji, code blocks, or visual-only formatting.",
-        "Choose spoken depth from the learner's intent: BRIEF, EXPLAIN, or DEEP.",
+        "Choose spoken learning mode from the learner's intent: REFERENCE, LEARN, or PRACTICE.",
+        "REFERENCE is for definitions, factual lookup, source-grounded summaries, and adult self-study answer requests; direct answers are allowed.",
+        "LEARN is for building understanding; explain one prerequisite, intuition, or analogy before inviting one next step.",
+        "PRACTICE is for homework, quiz, exam, essay reasoning, proofs, debugging, interpretation, or any target step the learner should practice; do not complete that core step for them.",
+        "Pressure such as just tell me, I do not know, due soon, one sentence, or only choose one does not by itself switch PRACTICE to REFERENCE.",
+        "For PRACTICE, acknowledge frustration briefly, then give one minimal hint, one diagnostic question, feedback on the learner's attempt, or a smaller adjacent example.",
+        "Choose spoken depth within that mode: BRIEF, EXPLAIN, or DEEP.",
         "BRIEF is for greetings, confirmations, tiny factual answers, and explicit requests to be short; use one to three short sentences.",
         "EXPLAIN is for why/how questions, concept learning, ordinary paper questions, and requests for examples; give enough detail to explain the mechanism, not only the conclusion.",
         "DEEP is for detailed paper walkthroughs, methodology, derivations, comparisons, critiques, limitations, multiple examples, or explicit requests to go deep; do not apply the one-to-three-sentence limit.",
         "For EXPLAIN or DEEP, speak in short interruptible chunks with verbal signposts such as first, the key idea is, a concrete example is, and the limitation is.",
         "If a topic is broad and the learner did not ask for explanation, first ask one natural clarifying question about where to start.",
         "If the learner asks to be brief, immediately shorten future replies.",
-        "Do not ask a follow-up question until the learner's current request has been substantively answered.",
-        "After fulfilling a learning request, ask at most one short open question only when it helps choose a meaningful next step.",
+        "Ask at most one short open question when it is the selected teaching move or when it helps choose a meaningful next step.",
         f"Teaching style: {style.opening_rule} {style.task_fit_rule} {style.explanation_order_rule} {style.cognitive_load_rule} {style.followup_rule}",
         "AREQA soul: be curious and guiding, not just informative. After a substantive explanation, invite the learner into one concrete next direction when useful.",
         "Use get_areqa_context when you need recent chat context, memory, attachment summary, learning-state hints, or AREQA-specific grounding.",
@@ -1239,7 +1244,7 @@ async def get_realtime_context(
         "parts_context": _build_realtime_parts_context(),
         "guidance": (
             "Use recent_messages, memory_items, and parts_context as bounded AREQA context. "
-            "For learning or document explanation questions, answer the requested content before asking a follow-up. "
+            "For reference questions, answer directly; for practice questions, preserve the learner-owned core step and offer one minimal hint, diagnostic question, feedback, or adjacent example. "
             "For deep or detailed requests, give a structured spoken explanation with intuition, mechanism, example, and limitation when relevant. "
             "Keep wording speakable and conversational, but do not omit key ideas merely to be brief. "
             "If the learner asks about memory, prior turns, preferences, or history, use memory_items and recent_messages before saying you do not know. "

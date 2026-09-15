@@ -57,11 +57,15 @@ def fake_job_context() -> SimpleNamespace:
 def test_livekit_agent_instructions_use_task_adaptive_depth():
     instructions = agent_module._instructions("zh-TW")
 
-    assert "Choose spoken depth from the learner's intent: BRIEF, EXPLAIN, or DEEP" in instructions
+    assert "Choose spoken learning mode from the learner's intent: REFERENCE, LEARN, or PRACTICE" in instructions
+    assert "REFERENCE is for definitions" in instructions
+    assert "PRACTICE is for homework" in instructions
+    assert "does not by itself switch PRACTICE to REFERENCE" in instructions
+    assert "Choose spoken depth within that mode: BRIEF, EXPLAIN, or DEEP" in instructions
     assert "BRIEF is for greetings" in instructions
     assert "DEEP is for detailed paper walkthroughs" in instructions
     assert "do not apply the one-to-three-sentence limit" in instructions
-    assert "Do not ask a follow-up question until the learner's current request has been substantively answered" in instructions
+    assert "substantively answered" not in instructions
     assert "asks whether you remember something" in instructions
     assert "call get_areqa_context before answering" in instructions
     assert "Never say you cannot remember" in instructions
@@ -78,7 +82,7 @@ async def test_livekit_agent_context_guidance_preserves_deep_explanations():
 
     context = await tutor.get_areqa_context("paper_explanation")
 
-    assert "answer the requested content before asking a follow-up" in context["guidance"]
+    assert "preserve the learner-owned core step" in context["guidance"]
     assert "do not omit key ideas merely to be brief" in context["guidance"]
 
 

@@ -13,6 +13,8 @@ from backend.services.parts_context_service import (
 from backend.services.query_policy_service import (
     AnswerDepth,
     FollowupMode,
+    LearningMode,
+    PedagogicalAction,
     ResponsePolicy,
     ResponseStructure,
     ResponseTone,
@@ -26,6 +28,8 @@ def _policy(
     answer_depth=AnswerDepth.SCAFFOLDED,
     structure=ResponseStructure.STEP_BY_STEP,
     followup_mode=FollowupMode.OPTIONAL,
+    learning_mode=LearningMode.LEARN,
+    pedagogical_action=PedagogicalAction.EXPLAIN_PREREQ,
 ):
     return ResponsePolicy(
         task_intent=task_intent,
@@ -33,6 +37,8 @@ def _policy(
         tone=ResponseTone.TUTORING,
         structure=structure,
         followup_mode=followup_mode,
+        learning_mode=learning_mode,
+        pedagogical_action=pedagogical_action,
         legacy_policy="NORMAL",
     )
 
@@ -336,22 +342,44 @@ async def test_parts_context_rewrite_timeout_falls_back():
     assert context.theme == "使用者當前問題中的核心概念"
 
 
-def test_parts_context_fallback_preserves_direct_answer_mode():
-    """Direct exam turns should avoid forced tutoring in deterministic PARTS."""
+def test_parts_context_fallback_preserves_reference_answer_mode():
+    """Reference answer turns should avoid forced tutoring in deterministic PARTS."""
+
+    context = PartsContextService().fallback(
+        response_policy=_policy(
+            task_intent=TaskIntent.GENERAL_QA,
+            answer_depth=AnswerDepth.DIRECT,
+            structure=ResponseStructure.SHORT,
+            followup_mode=FollowupMode.NONE,
+            learning_mode=LearningMode.REFERENCE,
+            pedagogical_action=PedagogicalAction.ANSWER,
+        )
+    )
+
+    assert context.persona == "AREQA 引導型學習助手"
+    assert context.act == "回答使用者當前問題"
+    assert "不加引導問題" in context.structure
+    assert "AREQA 引導型學習助手" in context.composed_instruction
+    assert context.missing_fields == ("recipient_level",)
+
+
+def test_parts_context_fallback_keeps_practice_as_guidance():
+    """Practice turns should become hint-oriented PARTS guidance."""
 
     context = PartsContextService().fallback(
         response_policy=_policy(
             task_intent=TaskIntent.ANSWER_EXAM,
-            answer_depth=AnswerDepth.DIRECT,
-            structure=ResponseStructure.SHORT,
-            followup_mode=FollowupMode.NONE,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            followup_mode=FollowupMode.REQUIRED,
+            learning_mode=LearningMode.PRACTICE,
+            pedagogical_action=PedagogicalAction.HINT,
         )
     )
 
-    assert context.persona == "精簡解題助手"
-    assert context.act == "直接回答題目並提供必要理由"
-    assert "不加引導問題" in context.structure
-    assert "精簡解題助手" in context.composed_instruction
+    assert context.persona == "練習引導教練"
+    assert "練習模式下只給最小提示或診斷問題" in context.act
+    assert "一個最小提示或診斷問題" in context.structure
+    assert "練習引導教練" in context.composed_instruction
     assert context.missing_fields == ()
 
 

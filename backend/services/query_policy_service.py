@@ -21,6 +21,8 @@ from services.query_policy.models import (
     EvidenceMode,
     FollowupMode,
     LearningTechnique,
+    LearningMode,
+    PedagogicalAction,
     ResponsePolicy,
     ResponseStructure,
     ResponseTone,
@@ -92,6 +94,19 @@ _AUTHORITY_EVIDENCE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for patt
     r"法律|法規|判例|合約|稅務|投資|保險|退休金|理財建議",
     r"\b(legal|law|regulation|contract|tax|investment|insurance|financial advice)\b",
 ))
+_PRACTICE_CONTEXT_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"作業|功課|考試|測驗|題目|選項|申論|作文|essay|homework|quiz|exam|test|assignment",
+    r"只能選一個|only choose one|choose one|標準答案|model answer",
+    r"thesis|論點|中心思想|root cause|actual root cause|真正原因",
+))
+_PRESSURE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"直接告訴|直接給|告訴我答案|給我答案|標準答案|just tell me|give me the answer",
+    r"我真的不會|我不會|看不懂|聽不懂|不懂|brain fried|due in|快截止|趕時間",
+    r"一句話|one sentence|short answer|只要答案|結果就好",
+))
+_REFERENCE_SWITCH_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"reference mode|self[- ]study|自學模式|參考模式|不是作業|不是考試|not homework|not an exam",
+))
 
 
 def _detect_learning_technique(user_msg: str) -> LearningTechnique:
@@ -126,6 +141,17 @@ def _detect_evidence_mode(user_msg: str) -> EvidenceMode:
     if any(pattern.search(normalized) for pattern in _CURRENT_EVIDENCE_PATTERNS):
         return EvidenceMode.CURRENT_REQUIRED
     return EvidenceMode.NONE
+
+
+def _should_keep_learner_practice_ownership(user_msg: str) -> bool:
+    """Return whether pressure appears inside a learner-owned practice context."""
+
+    normalized = str(user_msg or "")
+    if any(pattern.search(normalized) for pattern in _REFERENCE_SWITCH_PATTERNS):
+        return False
+    has_practice_context = any(pattern.search(normalized) for pattern in _PRACTICE_CONTEXT_PATTERNS)
+    has_pressure = any(pattern.search(normalized) for pattern in _PRESSURE_PATTERNS)
+    return has_practice_context and has_pressure
 
 
 def _apply_learning_and_evidence_guardrails(
@@ -169,6 +195,18 @@ def _apply_learning_and_evidence_guardrails(
         learning_technique=learning_technique,
         evidence_mode=evidence_mode,
     )
+    if _should_keep_learner_practice_ownership(user_msg):
+        guarded = replace(
+            guarded,
+            task_intent=TaskIntent.ANSWER_EXAM,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.REQUIRED,
+            learning_mode=LearningMode.PRACTICE,
+            pedagogical_action=PedagogicalAction.HINT,
+            legacy_policy="PROBE_UNDERSTANDING",
+        )
     if guarded != policy:
         logger.info(
             "orchestration.response_policy_learning_guardrail_applied metadata=%s",
@@ -314,6 +352,8 @@ Return strict JSON only with these fields:
   "structure": "SHORT" | "STEP_BY_STEP" | "NOTE_DRAFT" | "ARGUMENT",
   "followup_mode": "NONE" | "OPTIONAL" | "REQUIRED",
   "learning_technique": "NONE" | "TWENTY_HOUR_PLAN" | "FEYNMAN_LOOP" | "ONE_PAGE_NOTE" | "DIAGNOSTIC_QUIZ" | "LEVEL_PATH" | "RESOURCE_CURATOR",
+  "learning_mode": "REFERENCE" | "LEARN" | "PRACTICE",
+  "pedagogical_action": "ANSWER" | "EXPLAIN_PREREQ" | "MODEL_ANALOGY" | "DIAGNOSTIC_QUESTION" | "HINT" | "FEEDBACK" | "TRANSFER",
   "evidence_mode": "NONE" | "CURRENT_REQUIRED" | "AUTHORITY_REQUIRED" | "MULTI_SOURCE_REQUIRED",
   "visual_support": "NONE" | "OPTIONAL" | "REQUIRED",
   "visual_reason": "EXPLICIT_VISUAL_REQUEST" | "KNOWLEDGE_EXPLANATION" | "ANSWER_SEEKING" | "ATTACHMENT_FIGURE_EXPLANATION" | "NOT_NEEDED",
@@ -323,8 +363,16 @@ Return strict JSON only with these fields:
 }}
 
 Decision rules:
+- EDF learning boundary:
+  - REFERENCE means the learner is asking for information, definitions, factual lookup, summaries, source-grounded explanation, or a reusable note. The assistant may answer directly because the cognitive target is access to information.
+  - LEARN means the learner is building understanding. The assistant may explain prerequisites, give a brief worked analogy, or model a smaller adjacent example, then invite the learner into one next step.
+  - PRACTICE means the learner is practicing a target cognitive step such as solving, choosing, proving, debugging, interpreting evidence, writing a thesis, or justifying an answer for homework, quiz, exam, or essay. Do not select direct answer ownership merely because the learner says "just tell me", "I do not know", "due soon", "one sentence", or "only choose one"; lower the scaffold instead.
+  - Use PRACTICE with HINT, DIAGNOSTIC_QUESTION, or FEEDBACK when the latest turn asks AREQA to complete the reasoning step the learner is supposed to practice.
+  - Use LEARN with EXPLAIN_PREREQ or MODEL_ANALOGY when missing background knowledge blocks the learner before the target reasoning step.
+  - Use REFERENCE with ANSWER for explicit reference mode, general factual questions, definitions, adult self-study answer requests, or non-assessment professional lookup.
 - If the user asks "I do not understand", "what does this mean", or asks for a plain explanation, choose EXPLAIN_TEXT, SCAFFOLDED, PLAIN, STEP_BY_STEP.
-- If the user asks for a forced-choice answer, exam answer, or "only choose one", choose ANSWER_EXAM, DIRECT, PLAIN, SHORT, followup NONE.
+- If the user asks for a forced-choice answer, exam answer, or "only choose one" inside homework, quiz, essay, or practice context, choose ANSWER_EXAM, SCAFFOLDED, TUTORING, STEP_BY_STEP, PRACTICE, HINT or DIAGNOSTIC_QUESTION, followup REQUIRED.
+- If the user explicitly switches to reference/self-study mode and is not asking AREQA to complete an assessment step, forced-choice or short-answer requests may use REFERENCE, DIRECT, PLAIN, SHORT, ANSWER, followup NONE.
 - If the user asks to complete, revise, or polish notes, choose WRITE_NOTE, SCAFFOLDED, TUTORING, NOTE_DRAFT.
 - If the user asks for the core, essence, viewpoint, reflection, historical meaning, literary feeling, or "what do you think", choose DISCUSS_IDEA with REFLECTIVE or DEEP_DIVE.
 - Learning technique policy:

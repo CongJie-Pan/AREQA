@@ -69,7 +69,7 @@ def test_paper_auto_explain_instruction_adds_default_paper_structure():
     system_prompt = result[0]["content"]
     assert "PDF 論文自動解說任務" in system_prompt
     assert "profile: AREQA_TEACHING_V1" in system_prompt
-    assert "首段用1-2句話直擊問題核心" in system_prompt
+    assert "首段先貼合本回合學習模式" in system_prompt
     assert "研究動機與目的" in system_prompt
     assert "研究方法與模型架構" in system_prompt
     assert "實驗設計與資料集" in system_prompt

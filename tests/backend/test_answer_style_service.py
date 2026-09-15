@@ -18,7 +18,8 @@ def test_base_persona_exposes_versioned_style_contract():
 
     assert f"profile: {AREQA_TEACHING_PROFILE_VERSION}" in prompt
     assert "【回答結構與風格】" in prompt
-    assert "首段用1-2句話直擊問題核心" in prompt
+    assert "首段先貼合本回合學習模式" in prompt
+    assert "PRACTICE 先回應卡點但不代做" in prompt
     assert "不主動把答覆深度改過深" in prompt
     assert "可以適當用一些Emoji表情符號" in prompt
     assert "先講白話直覺，再補必要術語" in prompt
@@ -41,7 +42,7 @@ def test_paper_overview_adapter_uses_same_profile_marker():
 
     assert f"profile: {AREQA_TEACHING_PROFILE_VERSION}" in prompt
     assert "不要把回答寫成僵硬的摘要模板" in prompt
-    assert "首段用1-2句話直擊問題核心" in prompt
+    assert "首段先貼合本回合學習模式" in prompt
     assert "先講白話直覺，再補必要術語" in prompt
 
 
@@ -77,7 +78,7 @@ def test_response_strategy_style_reminder_marks_scaffolded_profile():
     )
 
     assert f"profile: {AREQA_TEACHING_PROFILE_VERSION}" in prompt
-    assert "首段用1-2句話直擊問題核心" in prompt
+    assert "首段先貼合本回合學習模式" in prompt
 
 
 def test_learning_technique_overlays_cover_prompt_templates():

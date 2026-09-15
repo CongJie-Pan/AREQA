@@ -64,6 +64,8 @@ class VisualTeachingContext:
         tone: EDF response tone selected for this turn.
         structure: EDF answer structure selected for this turn.
         followup_mode: EDF follow-up policy selected for this turn.
+        learning_mode: EDF learning ownership mode selected for this turn.
+        pedagogical_action: EDF feedback action selected for this turn.
         legacy_policy: Compatibility policy label used by orchestration.
         turn_route: Deterministic turn-plan route when available.
         turn_reason: Deterministic turn-plan reason code when available.
@@ -74,6 +76,8 @@ class VisualTeachingContext:
     tone: str = "unknown"
     structure: str = "unknown"
     followup_mode: str = "unknown"
+    learning_mode: str = "unknown"
+    pedagogical_action: str = "unknown"
     legacy_policy: str = "unknown"
     turn_route: str = "unknown"
     turn_reason: str = "unknown"
@@ -87,6 +91,8 @@ class VisualTeachingContext:
             "tone": self.tone,
             "structure": self.structure,
             "followup_mode": self.followup_mode,
+            "learning_mode": self.learning_mode,
+            "pedagogical_action": self.pedagogical_action,
             "legacy_policy": self.legacy_policy,
             "turn_route": self.turn_route,
             "turn_reason": self.turn_reason,
@@ -514,6 +520,8 @@ class VisualGroundingAgent:
             tone=cls._safe_enum_value(getattr(response_policy, "tone", None)),
             structure=cls._safe_enum_value(getattr(response_policy, "structure", None)),
             followup_mode=cls._safe_enum_value(getattr(response_policy, "followup_mode", None)),
+            learning_mode=cls._safe_enum_value(getattr(response_policy, "learning_mode", None)),
+            pedagogical_action=cls._safe_enum_value(getattr(response_policy, "pedagogical_action", None)),
             legacy_policy=cls._safe_label(getattr(response_policy, "legacy_policy", None)),
             turn_route=cls._safe_enum_value(route),
             turn_reason=cls._safe_label(getattr(turn_plan, "reason_code", None)),

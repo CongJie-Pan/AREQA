@@ -12,6 +12,8 @@ from backend.services.query_policy_service import (
     EvidenceMode,
     FollowupMode,
     LearningTechnique,
+    LearningMode,
+    PedagogicalAction,
     ResponsePolicy,
     ResponseStructure,
     ResponseTone,
@@ -81,6 +83,8 @@ def test_response_policy_instruction_includes_learning_and_evidence_overlays():
             structure=ResponseStructure.STEP_BY_STEP,
             followup_mode=FollowupMode.OPTIONAL,
             learning_technique=LearningTechnique.TWENTY_HOUR_PLAN,
+            learning_mode=LearningMode.REFERENCE,
+            pedagogical_action=PedagogicalAction.ANSWER,
             evidence_mode=EvidenceMode.MULTI_SOURCE_REQUIRED,
             legacy_policy="NORMAL",
         ),
@@ -91,6 +95,8 @@ def test_response_policy_instruction_includes_learning_and_evidence_overlays():
 
     assert "learning_technique: TWENTY_HOUR_PLAN" in instruction
     assert "拆成 10 次" in instruction
+    assert "learning_mode: REFERENCE" in instruction
+    assert "pedagogical_action: ANSWER" in instruction
     assert "evidence_mode: MULTI_SOURCE_REQUIRED" in instruction
     assert "至少兩個權威來源" in instruction
 
@@ -491,8 +497,8 @@ async def test_sensitive_recent_question_keeps_cross_conversation_hot_focus_clos
 
 
 @pytest.mark.asyncio
-async def test_direct_response_policy_adds_answer_first_constraints():
-    """DIRECT policy should suppress broad analytical expansion."""
+async def test_practice_response_policy_preserves_learner_owned_step():
+    """PRACTICE policy should block answer-first homework completion."""
 
     memory_policy = AsyncMock()
     memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
@@ -500,33 +506,37 @@ async def test_direct_response_policy_adds_answer_first_constraints():
 
     result = await service.build_conversation_context(
         user_id="user-1",
-        conversation_id="conversation-direct",
-        messages=[{"role": "user", "content": "但是只能選一個"}],
+        conversation_id="conversation-practice",
+        messages=[{"role": "user", "content": "作業快截止了，直接告訴我真正原因"}],
         use_rag=False,
         use_web_search=False,
         force_think=False,
         context_results_obj=None,
-        last_user_msg="但是只能選一個",
+        last_user_msg="作業快截止了，直接告訴我真正原因",
         context_prompt="",
         client=None,
         snapshot_loader=AsyncMock(return_value=""),
         store=None,
-        chat_avatar_key="chat_avatar:conversation-direct",
+        chat_avatar_key="chat_avatar:conversation-practice",
         response_policy=ResponsePolicy(
             task_intent=TaskIntent.ANSWER_EXAM,
-            answer_depth=AnswerDepth.DIRECT,
-            tone=ResponseTone.PLAIN,
-            structure=ResponseStructure.SHORT,
-            followup_mode=FollowupMode.NONE,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.STEP_BY_STEP,
+            followup_mode=FollowupMode.REQUIRED,
+            learning_mode=LearningMode.PRACTICE,
+            pedagogical_action=PedagogicalAction.HINT,
             legacy_policy="NORMAL",
         ),
     )
 
     system_prompt = result.messages[0]["content"]
     assert "task_intent: ANSWER_EXAM" in system_prompt
-    assert "先給答案，再給簡短判斷理由" in system_prompt
-    assert "深度控制：DIRECT" in system_prompt
-    assert "結尾不要加引導問題" in system_prompt
+    assert "依 learning_mode 決定由誰完成核心推理" in system_prompt
+    assert "learning_mode: PRACTICE" in system_prompt
+    assert "pedagogical_action: HINT" in system_prompt
+    assert "PRACTICE 防代做邊界" in system_prompt
+    assert "直接公布題目答案" in system_prompt
     assert "過度深度防護" in system_prompt
 
 

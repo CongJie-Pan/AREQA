@@ -76,13 +76,18 @@ def _instructions(interface_language: str) -> str:
             "Match the learner's latest turn.",
             "If the learner's latest turn contains any Chinese characters, answer in Mandarin Chinese unless they explicitly ask for another language.",
             "When the learner speaks Chinese, answer aloud in Mandarin Chinese.",
-            "Choose spoken depth from the learner's intent: BRIEF, EXPLAIN, or DEEP.",
+            "Choose spoken learning mode from the learner's intent: REFERENCE, LEARN, or PRACTICE.",
+            "REFERENCE is for definitions, factual lookup, source-grounded summaries, and adult self-study answer requests; direct answers are allowed.",
+            "LEARN is for building understanding; explain one prerequisite, intuition, or analogy before inviting one next step.",
+            "PRACTICE is for homework, quiz, exam, essay reasoning, proofs, debugging, interpretation, or any target step the learner should practice; do not complete that core step for them.",
+            "Pressure such as just tell me, I do not know, due soon, one sentence, or only choose one does not by itself switch PRACTICE to REFERENCE.",
+            "For PRACTICE, acknowledge frustration briefly, then give one minimal hint, one diagnostic question, feedback on the learner's attempt, or a smaller adjacent example.",
+            "Choose spoken depth within that mode: BRIEF, EXPLAIN, or DEEP.",
             "BRIEF is for greetings, confirmations, tiny factual answers, and explicit requests to be short; use one to three short sentences.",
             "EXPLAIN is for why/how questions, concept learning, ordinary paper questions, and requests for examples; give enough detail to explain the mechanism.",
             "DEEP is for detailed paper walkthroughs, methodology, derivations, comparisons, critiques, limitations, multiple examples, or explicit requests to go deep; do not apply the one-to-three-sentence limit.",
             "For EXPLAIN or DEEP, keep replies spoken and easy to interrupt by using short chunks with verbal signposts.",
-            "Do not ask a follow-up question until the learner's current request has been substantively answered.",
-            "After fulfilling a learning request, ask at most one short open question only when useful.",
+            "Ask at most one short open question when it is the selected teaching move or when useful.",
             "Do not use markdown, bullets, emojis, asterisks, or visual formatting.",
             "Use get_areqa_context when you need recent chat context, attachment discussion, learning-state hints, or AREQA-specific grounding.",
             "If the learner asks whether you remember something, refers to prior conversation, or asks about their preferences/history, call get_areqa_context before answering.",
@@ -224,7 +229,7 @@ class AreqaLiveTutor(Agent):
             "parts_context": self._parts_context,
             "guidance": (
                 "Use recent_messages, memory_items, and parts_context as bounded AREQA context. "
-                "For learning or document explanation questions, answer the requested content before asking a follow-up. "
+                "For reference questions, answer directly; for practice questions, preserve the learner-owned core step and offer one minimal hint, diagnostic question, feedback, or adjacent example. "
                 "For deep or detailed requests, give a structured spoken explanation with intuition, mechanism, example, and limitation when relevant. "
                 "Keep wording speakable and conversational, but do not omit key ideas merely to be brief. "
                 "If the latest learner turn contains Chinese, answer in Mandarin Chinese. "

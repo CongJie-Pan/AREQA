@@ -10,6 +10,8 @@ from backend.services.query_policy_service import (
     EvidenceMode,
     FollowupMode,
     LearningTechnique,
+    LearningMode,
+    PedagogicalAction,
     ResponseStructure,
     ResponseTone,
     TaskIntent,
@@ -52,6 +54,8 @@ async def test_classify_response_policy_parses_valid_json(caplog):
               "tone": "PLAIN",
               "structure": "STEP_BY_STEP",
               "followup_mode": "OPTIONAL",
+              "learning_mode": "LEARN",
+              "pedagogical_action": "EXPLAIN_PREREQ",
               "visual_support": "OPTIONAL",
               "visual_reason": "KNOWLEDGE_EXPLANATION",
               "attachment_task": "NONE",
@@ -77,6 +81,8 @@ async def test_classify_response_policy_parses_valid_json(caplog):
     assert policy.visual_support is VisualSupport.OPTIONAL
     assert policy.visual_reason is VisualReason.KNOWLEDGE_EXPLANATION
     assert policy.learning_technique is LearningTechnique.NONE
+    assert policy.learning_mode is LearningMode.LEARN
+    assert policy.pedagogical_action is PedagogicalAction.EXPLAIN_PREREQ
     assert policy.evidence_mode is EvidenceMode.NONE
     assert "orchestration.response_policy_selected" in caplog.text
     assert "我聽不懂" not in caplog.text
@@ -117,6 +123,8 @@ def test_response_policy_from_dict_sanitizes_unknown_values():
             "visual_support": "ALWAYS",
             "visual_reason": "DECORATIVE",
             "learning_technique": "MAGIC",
+            "learning_mode": "SPOONFEED",
+            "pedagogical_action": "DO_HOMEWORK",
             "evidence_mode": "TRUST_ME",
             "attachment_task": "AUTORUN",
             "attachment_reason": "GUESS",
@@ -138,13 +146,101 @@ def test_response_policy_from_dict_accepts_learning_and_evidence_fields():
             "structure": "STEP_BY_STEP",
             "followup_mode": "OPTIONAL",
             "learning_technique": "TWENTY_HOUR_PLAN",
+            "learning_mode": "REFERENCE",
+            "pedagogical_action": "ANSWER",
             "evidence_mode": "MULTI_SOURCE_REQUIRED",
             "legacy_policy": "NORMAL",
         }
     )
 
     assert policy.learning_technique is LearningTechnique.TWENTY_HOUR_PLAN
+    assert policy.learning_mode is LearningMode.REFERENCE
+    assert policy.pedagogical_action is PedagogicalAction.ANSWER
     assert policy.evidence_mode is EvidenceMode.MULTI_SOURCE_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_practice_pressure_keeps_learner_owned_step(caplog):
+    """Answer pressure inside homework-like practice should become EDF scaffolding."""
+
+    caplog.set_level("INFO")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "ANSWER_EXAM",
+              "answer_depth": "DIRECT",
+              "tone": "PLAIN",
+              "structure": "SHORT",
+              "followup_mode": "NONE",
+              "learning_mode": "REFERENCE",
+              "pedagogical_action": "ANSWER",
+              "visual_support": "NONE",
+              "visual_reason": "NOT_NEEDED",
+              "attachment_task": "NONE",
+              "attachment_reason": "NO_ATTACHMENT",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "My essay is due in one hour. Please just tell me the actual root cause.",
+        [],
+    )
+
+    assert policy.task_intent is TaskIntent.ANSWER_EXAM
+    assert policy.answer_depth is AnswerDepth.SCAFFOLDED
+    assert policy.tone is ResponseTone.TUTORING
+    assert policy.structure is ResponseStructure.STEP_BY_STEP
+    assert policy.followup_mode is FollowupMode.REQUIRED
+    assert policy.learning_mode is LearningMode.PRACTICE
+    assert policy.pedagogical_action is PedagogicalAction.HINT
+    assert policy.legacy_policy == "PROBE_UNDERSTANDING"
+    assert "orchestration.response_policy_learning_guardrail_applied" in caplog.text
+    assert "actual root cause" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_reference_mode_allows_direct_answer_request():
+    """Explicit reference/self-study mode should still allow direct answers."""
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "ANSWER_EXAM",
+              "answer_depth": "DIRECT",
+              "tone": "PLAIN",
+              "structure": "SHORT",
+              "followup_mode": "NONE",
+              "learning_mode": "REFERENCE",
+              "pedagogical_action": "ANSWER",
+              "visual_support": "NONE",
+              "visual_reason": "NOT_NEEDED",
+              "attachment_task": "NONE",
+              "attachment_reason": "NO_ATTACHMENT",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "Reference mode, not homework: just tell me which option is correct.",
+        [],
+    )
+
+    assert policy.answer_depth is AnswerDepth.DIRECT
+    assert policy.learning_mode is LearningMode.REFERENCE
+    assert policy.pedagogical_action is PedagogicalAction.ANSWER
 
 
 @pytest.mark.asyncio
@@ -580,7 +676,7 @@ def test_paper_auto_explain_instruction_contains_required_sections():
     instruction = paper_auto_explain_instruction()
 
     assert "profile: AREQA_TEACHING_V1" in instruction
-    assert "首段用1-2句話直擊問題核心" in instruction
+    assert "首段先貼合本回合學習模式" in instruction
     assert "分步方式降低理解負擔" in instruction
     assert "先講白話直覺" in instruction
     assert "研究動機與目的" in instruction

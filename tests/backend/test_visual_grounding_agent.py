@@ -7,6 +7,8 @@ from backend.services.visual_answer_service import ImageCandidate
 from backend.services.query_policy_service import (
     AnswerDepth,
     FollowupMode,
+    LearningMode,
+    PedagogicalAction,
     ResponsePolicy,
     ResponseStructure,
     ResponseTone,
@@ -156,6 +158,8 @@ async def test_visual_grounding_agent_plans_with_edf_teaching_context():
         tone=ResponseTone.TUTORING,
         structure=ResponseStructure.STEP_BY_STEP,
         followup_mode=FollowupMode.OPTIONAL,
+        learning_mode=LearningMode.PRACTICE,
+        pedagogical_action=PedagogicalAction.HINT,
     )
     turn_plan = SimpleNamespace(route=SimpleNamespace(value="LEARNING_HELP"), reason_code="LEARNING_HELP")
 
@@ -173,9 +177,13 @@ async def test_visual_grounding_agent_plans_with_edf_teaching_context():
     assert '"task_intent": "explain_text"' in user_message
     assert '"answer_depth": "scaffolded"' in user_message
     assert '"structure": "step_by_step"' in user_message
+    assert '"learning_mode": "practice"' in user_message
+    assert '"pedagogical_action": "hint"' in user_message
     assert '"turn_route": "learning_help"' in user_message
     assert brief.teaching_context is not None
     assert brief.teaching_context.task_intent == "explain_text"
+    assert brief.teaching_context.learning_mode == "practice"
+    assert brief.teaching_context.pedagogical_action == "hint"
 
 
 @pytest.mark.asyncio

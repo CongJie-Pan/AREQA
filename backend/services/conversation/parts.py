@@ -261,7 +261,7 @@ class PartsContextService:
         elif grounded_web:
             persona = "資訊整合教練"
         elif policy.task_intent == TaskIntent.ANSWER_EXAM:
-            persona = "精簡解題助手"
+            persona = "練習引導教練"
         elif policy.task_intent == TaskIntent.WRITE_NOTE:
             persona = "筆記整理助教"
         elif policy.task_intent == TaskIntent.DISCUSS_IDEA:
@@ -273,7 +273,7 @@ class PartsContextService:
 
         act = {
             TaskIntent.EXPLAIN_TEXT: "解釋使用者當前問題中的核心概念",
-            TaskIntent.ANSWER_EXAM: "直接回答題目並提供必要理由",
+            TaskIntent.ANSWER_EXAM: "依本回合學習模式處理題目；練習模式下只給最小提示或診斷問題",
             TaskIntent.DISCUSS_IDEA: "整理觀點、脈絡與可比較視角",
             TaskIntent.WRITE_NOTE: "產出可整理保存的筆記內容",
             TaskIntent.GENERAL_QA: "回答使用者當前問題",
@@ -510,6 +510,9 @@ Latest user request:
     def _structure_for_policy(policy: ResponsePolicy) -> str:
         """Map current EDF structure and follow-up policy into compact wording."""
 
+        learning_mode = getattr(getattr(policy, "learning_mode", None), "value", "")
+        if learning_mode == "PRACTICE":
+            return "短回應 + 一個最小提示或診斷問題"
         if policy.answer_depth == AnswerDepth.DIRECT or policy.followup_mode == FollowupMode.NONE:
             return "短回答 + 必要理由，不加引導問題"
         if policy.structure == ResponseStructure.SHORT:

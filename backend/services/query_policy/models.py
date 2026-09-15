@@ -68,6 +68,26 @@ class LearningTechnique(str, Enum):
     RESOURCE_CURATOR = "RESOURCE_CURATOR"
 
 
+class LearningMode(str, Enum):
+    """Who should own the cognitive work in the current learning turn."""
+
+    REFERENCE = "REFERENCE"
+    LEARN = "LEARN"
+    PRACTICE = "PRACTICE"
+
+
+class PedagogicalAction(str, Enum):
+    """Single feedback move selected by the EDF decision stage."""
+
+    ANSWER = "ANSWER"
+    EXPLAIN_PREREQ = "EXPLAIN_PREREQ"
+    MODEL_ANALOGY = "MODEL_ANALOGY"
+    DIAGNOSTIC_QUESTION = "DIAGNOSTIC_QUESTION"
+    HINT = "HINT"
+    FEEDBACK = "FEEDBACK"
+    TRANSFER = "TRANSFER"
+
+
 class EvidenceMode(str, Enum):
     """How strictly the answer should rely on external authority."""
 
@@ -135,6 +155,10 @@ class ResponsePolicy:
         visual_reason: Sanitized reason for the visual support decision.
         learning_technique: Optional learning move that adapts the answer shape
             without requiring users to paste prompt templates.
+        learning_mode: Whether this turn is reference lookup, learning support,
+            or learner-owned practice.
+        pedagogical_action: The one feedback move the answer model should
+            express for this turn.
         evidence_mode: Optional grounding requirement for current or
             high-stakes professional-domain claims.
         attachment_task: Optional PDF-attachment task overlay selected by the
@@ -157,6 +181,8 @@ class ResponsePolicy:
     visual_support: VisualSupport = VisualSupport.NONE
     visual_reason: VisualReason = VisualReason.NOT_NEEDED
     learning_technique: LearningTechnique = LearningTechnique.NONE
+    learning_mode: LearningMode = LearningMode.LEARN
+    pedagogical_action: PedagogicalAction = PedagogicalAction.EXPLAIN_PREREQ
     evidence_mode: EvidenceMode = EvidenceMode.NONE
     attachment_task: AttachmentTask = AttachmentTask.NONE
     attachment_reason: AttachmentReason = AttachmentReason.NO_ATTACHMENT
@@ -174,6 +200,8 @@ class ResponsePolicy:
             "visual_support": self.visual_support.value,
             "visual_reason": self.visual_reason.value,
             "learning_technique": self.learning_technique.value,
+            "learning_mode": self.learning_mode.value,
+            "pedagogical_action": self.pedagogical_action.value,
             "evidence_mode": self.evidence_mode.value,
             "attachment_task": self.attachment_task.value,
             "attachment_reason": self.attachment_reason.value,
@@ -197,6 +225,8 @@ def default_response_policy() -> ResponsePolicy:
         visual_support=VisualSupport.NONE,
         visual_reason=VisualReason.NOT_NEEDED,
         learning_technique=LearningTechnique.NONE,
+        learning_mode=LearningMode.LEARN,
+        pedagogical_action=PedagogicalAction.EXPLAIN_PREREQ,
         evidence_mode=EvidenceMode.NONE,
         attachment_task=AttachmentTask.NONE,
         attachment_reason=AttachmentReason.NO_ATTACHMENT,
@@ -230,9 +260,25 @@ def response_policy_from_dict(payload: Any) -> ResponsePolicy:
     legacy_policy = str(payload.get("legacy_policy") or fallback.legacy_policy).strip()
     if legacy_policy not in ALLOWED_LEGACY_POLICIES:
         legacy_policy = fallback.legacy_policy
+    answer_depth = _coerce_enum(AnswerDepth, payload.get("answer_depth"), fallback.answer_depth)
+    learning_mode = _coerce_enum(
+        LearningMode,
+        payload.get("learning_mode"),
+        fallback.learning_mode,
+    )
+    pedagogical_action = _coerce_enum(
+        PedagogicalAction,
+        payload.get("pedagogical_action"),
+        fallback.pedagogical_action,
+    )
+    if answer_depth is AnswerDepth.DIRECT:
+        if "learning_mode" not in payload:
+            learning_mode = LearningMode.REFERENCE
+        if "pedagogical_action" not in payload:
+            pedagogical_action = PedagogicalAction.ANSWER
     return ResponsePolicy(
         task_intent=_coerce_enum(TaskIntent, payload.get("task_intent"), fallback.task_intent),
-        answer_depth=_coerce_enum(AnswerDepth, payload.get("answer_depth"), fallback.answer_depth),
+        answer_depth=answer_depth,
         tone=_coerce_enum(ResponseTone, payload.get("tone"), fallback.tone),
         structure=_coerce_enum(
             ResponseStructure,
@@ -259,6 +305,8 @@ def response_policy_from_dict(payload: Any) -> ResponsePolicy:
             payload.get("learning_technique"),
             fallback.learning_technique,
         ),
+        learning_mode=learning_mode,
+        pedagogical_action=pedagogical_action,
         evidence_mode=_coerce_enum(
             EvidenceMode,
             payload.get("evidence_mode"),
@@ -304,6 +352,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
             learning_technique=LearningTechnique.NONE,
+            learning_mode=LearningMode.LEARN,
+            pedagogical_action=PedagogicalAction.TRANSFER,
             evidence_mode=EvidenceMode.NONE,
             attachment_task=AttachmentTask.NONE,
             attachment_reason=AttachmentReason.NO_ATTACHMENT,
@@ -319,6 +369,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
             learning_technique=LearningTechnique.NONE,
+            learning_mode=LearningMode.LEARN,
+            pedagogical_action=PedagogicalAction.HINT,
             evidence_mode=EvidenceMode.NONE,
             attachment_task=AttachmentTask.NONE,
             attachment_reason=AttachmentReason.NO_ATTACHMENT,
@@ -334,6 +386,8 @@ def response_policy_from_legacy(policy: Any) -> ResponsePolicy:
             visual_support=VisualSupport.NONE,
             visual_reason=VisualReason.NOT_NEEDED,
             learning_technique=LearningTechnique.NONE,
+            learning_mode=LearningMode.PRACTICE,
+            pedagogical_action=PedagogicalAction.DIAGNOSTIC_QUESTION,
             evidence_mode=EvidenceMode.NONE,
             attachment_task=AttachmentTask.NONE,
             attachment_reason=AttachmentReason.NO_ATTACHMENT,
