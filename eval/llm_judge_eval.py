@@ -135,6 +135,8 @@ def parse_sse_text(body: str) -> str:
             event = json.loads(data)
         except json.JSONDecodeError:
             continue
+        if not isinstance(event, dict):
+            continue
         if isinstance(event, dict) and event.get("error"):
             chunks.append(f"[ERROR] {event['error']}")
             continue

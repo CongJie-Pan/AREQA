@@ -66,6 +66,19 @@ def test_unit_parse_sse_text_collects_streaming_delta_content() -> None:
     assert llm_judge_eval.parse_sse_text(body) == "Hello world"
 
 
+def test_unit_parse_sse_text_ignores_non_delta_json_events() -> None:
+    body = "\n".join(
+        [
+            'data: {"choices":[{"delta":{"content":"Answer"}}]}',
+            'data: [{"type":"suggestions","items":["next question"]}]',
+            'data: {"event":"metadata","value":true}',
+            "data: [DONE]",
+        ]
+    )
+
+    assert llm_judge_eval.parse_sse_text(body) == "Answer"
+
+
 def test_unit_extract_json_object_accepts_markdown_wrapped_json() -> None:
     parsed = llm_judge_eval.extract_json_object(
         '```json\n{"winner":"candidate","pairwise_preferences":{"better_pedagogy":2}}\n```'
