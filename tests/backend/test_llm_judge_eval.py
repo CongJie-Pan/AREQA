@@ -44,7 +44,9 @@ def _judge_payload(winner: str = "candidate") -> dict[str, object]:
             "better_supported_learning_goal": 2,
         },
         "winner": winner,
-        "critical_failures": [],
+        "candidate_critical_failures": [],
+        "baseline_critical_failures": [],
+        "shared_critical_failures": [],
         "summary": "Candidate gives more useful tutoring guidance.",
     }
 
@@ -107,7 +109,9 @@ def test_unit_normalize_judge_result_clamps_scores_and_fills_dimensions() -> Non
             "more_like_good_human_tutor": -5,
         },
         "winner": "unexpected",
-        "critical_failures": "gave full essay",
+        "candidate_critical_failures": "gave full essay",
+        "baseline_critical_failures": ["truncated"],
+        "shared_critical_failures": ["missed practice prompt"],
     }
 
     normalized = llm_judge_eval.normalize_judge_result(raw)
@@ -118,7 +122,18 @@ def test_unit_normalize_judge_result_clamps_scores_and_fills_dimensions() -> Non
     assert normalized["pairwise_preferences"]["better_pedagogy"] == 3
     assert normalized["pairwise_preferences"]["more_like_good_human_tutor"] == -3
     assert normalized["winner"] in {"candidate", "baseline", "tie"}
-    assert normalized["critical_failures"] == ["gave full essay"]
+    assert normalized["candidate_critical_failures"] == ["gave full essay"]
+    assert normalized["baseline_critical_failures"] == ["truncated"]
+    assert normalized["shared_critical_failures"] == ["missed practice prompt"]
+    assert normalized["critical_failures"] == ["gave full essay", "truncated", "missed practice prompt"]
+
+
+def test_unit_normalize_judge_result_maps_legacy_failures_to_shared() -> None:
+    normalized = llm_judge_eval.normalize_judge_result({"critical_failures": "legacy failure"})
+
+    assert normalized["candidate_critical_failures"] == []
+    assert normalized["baseline_critical_failures"] == []
+    assert normalized["shared_critical_failures"] == ["legacy failure"]
 
 
 def _score_block(score: int) -> dict[str, dict[str, object]]:
@@ -134,7 +149,9 @@ def test_unit_aggregate_results_reports_win_rate_and_group_metrics() -> None:
             "case": {"category": "Essay Writing", "learning_goal": "Homework Help"},
             "judge": {
                 "winner": "candidate",
-                "critical_failures": [],
+                "candidate_critical_failures": [],
+                "baseline_critical_failures": [],
+                "shared_critical_failures": [],
                 "candidate_single_scores": _score_block(6),
                 "baseline_single_scores": _score_block(4),
             },
@@ -148,7 +165,9 @@ def test_unit_aggregate_results_reports_win_rate_and_group_metrics() -> None:
             "case": {"category": "Essay Writing", "learning_goal": "Homework Help"},
             "judge": {
                 "winner": "tie",
-                "critical_failures": ["minor"],
+                "candidate_critical_failures": ["candidate minor"],
+                "baseline_critical_failures": ["baseline minor"],
+                "shared_critical_failures": ["shared minor"],
                 "candidate_single_scores": _score_block(5),
                 "baseline_single_scores": _score_block(5),
             },
@@ -166,7 +185,10 @@ def test_unit_aggregate_results_reports_win_rate_and_group_metrics() -> None:
     assert summary["overall"]["candidate_mean_score"] == 5.5
     assert summary["overall"]["baseline_mean_score"] == 4.5
     assert summary["overall"]["candidate_win_rate"] == 0.5
-    assert summary["overall"]["critical_failures"] == 1
+    assert summary["overall"]["critical_failures"] == 3
+    assert summary["overall"]["candidate_critical_failures"] == 1
+    assert summary["overall"]["baseline_critical_failures"] == 1
+    assert summary["overall"]["shared_critical_failures"] == 1
     assert summary["by_category"]["Essay Writing"]["count"] == 2
     assert summary["rubric_means"]["instruction_following"]["delta"] == 1.0
 
@@ -182,6 +204,9 @@ def test_unit_write_charts_and_report_create_files(tmp_path: Path) -> None:
             "candidate_win_rate": 1.0,
             "baseline_win_rate": 0.0,
             "critical_failures": 0,
+            "candidate_critical_failures": 0,
+            "baseline_critical_failures": 0,
+            "shared_critical_failures": 0,
         },
         "by_category": {
             "Reading Comprehension": {

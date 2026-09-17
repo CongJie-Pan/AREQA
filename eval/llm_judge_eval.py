@@ -304,7 +304,9 @@ Return JSON only, with this exact shape:
     "better_supported_learning_goal": 0
   }},
   "winner": "candidate|baseline|tie",
-  "critical_failures": [],
+  "candidate_critical_failures": [],
+  "baseline_critical_failures": [],
+  "shared_critical_failures": [],
   "summary": "short comparison"
 }}
 
@@ -370,6 +372,14 @@ def normalize_score_block(block: Any) -> dict[str, dict[str, Any]]:
     return normalized
 
 
+def normalize_failure_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        value = []
+    return [str(item)[:500] for item in value]
+
+
 def normalize_judge_result(raw: dict[str, Any]) -> dict[str, Any]:
     pairwise = raw.get("pairwise_preferences", {})
     pairwise = pairwise if isinstance(pairwise, dict) else {}
@@ -377,11 +387,12 @@ def normalize_judge_result(raw: dict[str, Any]) -> dict[str, Any]:
         dimension: clamp_int(pairwise.get(dimension), -3, 3)
         for dimension in PAIRWISE_DIMENSIONS
     }
-    failures = raw.get("critical_failures", [])
-    if isinstance(failures, str):
-        failures = [failures]
-    if not isinstance(failures, list):
-        failures = []
+    candidate_failures = normalize_failure_list(raw.get("candidate_critical_failures"))
+    baseline_failures = normalize_failure_list(raw.get("baseline_critical_failures"))
+    shared_failures = normalize_failure_list(raw.get("shared_critical_failures"))
+    legacy_failures = normalize_failure_list(raw.get("critical_failures"))
+    if legacy_failures and not any((candidate_failures, baseline_failures, shared_failures)):
+        shared_failures = legacy_failures
     winner = str(raw.get("winner", "tie")).lower()
     if winner not in {"candidate", "baseline", "tie"}:
         mean_pref = statistics.fmean(normalized_pairwise.values())
@@ -391,7 +402,10 @@ def normalize_judge_result(raw: dict[str, Any]) -> dict[str, Any]:
         "baseline_single_scores": normalize_score_block(raw.get("baseline_single_scores")),
         "pairwise_preferences": normalized_pairwise,
         "winner": winner,
-        "critical_failures": [str(item)[:500] for item in failures],
+        "candidate_critical_failures": candidate_failures,
+        "baseline_critical_failures": baseline_failures,
+        "shared_critical_failures": shared_failures,
+        "critical_failures": candidate_failures + baseline_failures + shared_failures,
         "summary": str(raw.get("summary", ""))[:2000],
     }
 
@@ -416,7 +430,16 @@ def aggregate_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     candidate_wins = sum(1 for row in results if row["judge"]["winner"] == "candidate")
     baseline_wins = sum(1 for row in results if row["judge"]["winner"] == "baseline")
     ties = len(results) - candidate_wins - baseline_wins
-    critical_failures = sum(len(row["judge"]["critical_failures"]) for row in results)
+    candidate_critical_failures = sum(
+        len(row["judge"].get("candidate_critical_failures", [])) for row in results
+    )
+    baseline_critical_failures = sum(
+        len(row["judge"].get("baseline_critical_failures", [])) for row in results
+    )
+    shared_critical_failures = sum(
+        len(row["judge"].get("shared_critical_failures", [])) for row in results
+    )
+    critical_failures = candidate_critical_failures + baseline_critical_failures + shared_critical_failures
 
     summary = {
         "cases": len(results),
@@ -429,6 +452,9 @@ def aggregate_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_win_rate": round(baseline_wins / len(results), 3),
             "tie_rate": round(ties / len(results), 3),
             "critical_failures": critical_failures,
+            "candidate_critical_failures": candidate_critical_failures,
+            "baseline_critical_failures": baseline_critical_failures,
+            "shared_critical_failures": shared_critical_failures,
         },
         "by_category": aggregate_group(results, "category"),
         "by_learning_goal": aggregate_group(results, "learning_goal"),
@@ -555,6 +581,9 @@ def write_report(summary: dict[str, Any], output_dir: Path, args: argparse.Names
         f"- Candidate win rate: `{overall.get('candidate_win_rate', 0)}`",
         f"- Baseline win rate: `{overall.get('baseline_win_rate', 0)}`",
         f"- Critical failures: `{overall.get('critical_failures', 0)}`",
+        f"- Candidate critical failures: `{overall.get('candidate_critical_failures', 0)}`",
+        f"- Baseline critical failures: `{overall.get('baseline_critical_failures', 0)}`",
+        f"- Shared critical failures: `{overall.get('shared_critical_failures', 0)}`",
         "",
         "## Charts",
         "",
