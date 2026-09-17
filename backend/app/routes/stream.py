@@ -17,6 +17,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from auth import get_optional_current_user
+from services.tutor_profile_service import normalize_tutor_profile
 
 router = APIRouter()
 logger = logging.getLogger("backend.main")
@@ -36,6 +37,7 @@ class ChatRequest(BaseModel):
     use_web_search: bool = False
     search_mode: Literal["auto", "always", "never"] | None = None
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
+    tutor_profile: str = "general"
     response_mode: Literal["text", "voice"] = "text"
     force_think: bool = False
     temperature: float = 0.7
@@ -79,6 +81,7 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
             "use_web_search": payload.get("use_web_search", _parse_bool(form.get("use_web_search"))),
             "search_mode": payload.get("search_mode", form.get("search_mode") or None),
             "interface_language": payload.get("interface_language", form.get("interface_language", "zh-TW")),
+            "tutor_profile": normalize_tutor_profile(payload.get("tutor_profile", form.get("tutor_profile", "general"))),
             "response_mode": payload.get("response_mode", form.get("response_mode", "text")),
             "force_think": payload.get("force_think", _parse_bool(form.get("force_think"))),
             "temperature": payload.get("temperature", form.get("temperature", 0.7)),
@@ -104,10 +107,12 @@ async def stream_endpoint(
     chat_req, uploads = await parse_stream_request(request)
     if not chat_req.messages:
         raise HTTPException(status_code=422, detail="At least one message is required")
+    tutor_profile = normalize_tutor_profile(chat_req.tutor_profile)
     logger.info(
-        "stream.request_accepted conversation_id=%s response_mode=%s message_count=%s",
+        "stream.request_accepted conversation_id=%s response_mode=%s tutor_profile=%s message_count=%s",
         chat_req.conversation_id,
         chat_req.response_mode,
+        tutor_profile,
         len(chat_req.messages),
     )
 
@@ -188,6 +193,7 @@ async def stream_endpoint(
             user_id=effective_user_id,
             search_mode=chat_req.search_mode,
             interface_language=chat_req.interface_language,
+            tutor_profile=tutor_profile,
             response_mode=chat_req.response_mode,
             attachments=[attachment.content_part for attachment in processed_attachments],
             attachment_visual_sources=attachment_visual_sources,

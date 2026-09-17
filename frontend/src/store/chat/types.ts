@@ -7,6 +7,7 @@ import type { AnswerBlock, AttachmentMetadata, Message, MessageFeedback, Message
 import type { CitationSource } from '@/components/Citations';
 
 export type SearchMode = 'auto' | 'always' | 'never';
+export type TutorProfile = 'general' | 'english';
 
 /** Privacy-safe location of an image marker in the live public answer. */
 export interface StreamingImageSlot {
@@ -98,6 +99,8 @@ export interface ChatState {
   searchMode: SearchMode;
   /** Whether explicitly forcing the model to wrap reasoning in <think> */
   forceThink: boolean;
+  /** Optional subject tutor profile selected for new outgoing turns. */
+  tutorProfile: TutorProfile;
 
   // RAG Visualization State
   /** Current phase of the RAG retrieval pipeline */
@@ -178,6 +181,8 @@ export interface ChatActions {
   toggleWebSearch: () => void;
   /** Toggle Think mode */
   toggleThink: () => void;
+  /** Select the subject tutor profile for new outgoing turns. */
+  setTutorProfile: (profile: TutorProfile) => void;
 
   // RAG Visualization
   /** Set the RAG retrieval status and message */

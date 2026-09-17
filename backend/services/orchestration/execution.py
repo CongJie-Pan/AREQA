@@ -32,6 +32,7 @@ class OrchestrationExecutionMixin:
                       force_think: bool, max_tokens: int, temperature: float, top_p: float,
                       repetition_penalty: float, request: Request, user_id: str, search_mode: Optional[str] = None,
                       interface_language: InterfaceLanguage = "zh-TW",
+                      tutor_profile: str = "general",
                       response_mode: str = "text",
                       attachments: Optional[List[Dict[str, Any]]] = None,
                       attachment_visual_sources: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
@@ -443,6 +444,7 @@ class OrchestrationExecutionMixin:
             turn_plan=turn_plan if turn_plan_enabled else None,
             response_policy=response_policy,
             interface_language=interface_language,
+            tutor_profile=tutor_profile,
             response_mode=response_mode,
             has_attachments=has_attachments,
         )

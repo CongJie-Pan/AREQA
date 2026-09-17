@@ -84,6 +84,7 @@ describe('chat stream visible latency events', () => {
     expect(payload.search_mode).toBe('never');
     expect(payload.use_web_search).toBe(false);
     expect(payload.interface_language).toBe('zh-TW');
+    expect(payload.tutor_profile).toBe('general');
     expect(payload.response_mode).toBe('text');
     expect(onStatus).toHaveBeenCalledWith('retrieving', '正在整理相關脈絡');
     expect(onContent).toHaveBeenCalledWith('回答內容');
@@ -110,6 +111,29 @@ describe('chat stream visible latency events', () => {
     const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
     const payload = JSON.parse(String(request.body));
     expect(payload.response_mode).toBe('voice');
+  });
+
+  it('sends the selected tutor profile with stream requests', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
+
+    await createChatStream(
+      [{ role: 'user', content: 'Help me analyze Macbeth' }],
+      {
+        onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+        onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(),
+      },
+      undefined,
+      false,
+      false,
+      'never',
+      'conversation-english-tutor',
+      [],
+      { tutorProfile: 'english' },
+    );
+
+    const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const payload = JSON.parse(String(request.body));
+    expect(payload.tutor_profile).toBe('english');
   });
 
   it('sends web-search routing flags for OpenRouter-backed search', async () => {
@@ -176,6 +200,7 @@ describe('chat stream visible latency events', () => {
     expect((request.body as FormData).getAll('attachments')).toEqual([attachment]);
     expect((request.body as FormData).get('messages')).toContain('請摘要附件');
     expect((request.body as FormData).get('messages')).toContain('"interface_language":"zh-TW"');
+    expect((request.body as FormData).get('messages')).toContain('"tutor_profile":"general"');
   });
 
   it('preserves web-search routing flags in multipart attachment requests', async () => {
@@ -194,6 +219,7 @@ describe('chat stream visible latency events', () => {
       'always',
       'conversation-web-search-file',
       [attachment],
+      { tutorProfile: 'english' },
     );
 
     const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
@@ -201,6 +227,7 @@ describe('chat stream visible latency events', () => {
     const payload = JSON.parse(String(formData.get('messages')));
     expect(formData.getAll('attachments')).toEqual([attachment]);
     expect(payload.search_mode).toBe('always');
+    expect(payload.tutor_profile).toBe('english');
     expect(payload.use_web_search).toBe(true);
     expect(payload.use_rag).toBe(false);
   });

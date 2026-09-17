@@ -72,6 +72,7 @@ def test_unit_parse_args_uses_non_truncating_default_answer_budget() -> None:
     args = llm_judge_eval.parse_args([])
 
     assert args.max_tokens == 2400
+    assert args.tutor_profile == "english"
 
 
 def test_unit_parse_sse_text_ignores_non_delta_json_events() -> None:
@@ -270,12 +271,14 @@ def test_regression_candidate_request_sends_only_user_query_not_scenario_metadat
         use_web_search=False,
         max_tokens=200,
         temperature=0.2,
+        tutor_profile="english",
     )
 
     sent_payload = captured_payloads[0]
     sent_messages = sent_payload["messages"]
     serialized_payload = json.dumps(sent_payload, ensure_ascii=False)
     assert answer == "Candidate answer"
+    assert sent_payload["tutor_profile"] == "english"
     assert sent_messages == [{"role": "user", "content": "Can you make my thesis about social media better?"}]
     assert "Do not write the full essay" not in serialized_payload
     assert sent_payload["use_rag"] is False

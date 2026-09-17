@@ -50,7 +50,7 @@ def _orchestration_facade():
 
 
 class OrchestrationPromptingMixin:
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", response_mode: str = "text", has_attachments: bool = False) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", tutor_profile: str = "general", response_mode: str = "text", has_attachments: bool = False) -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -68,6 +68,9 @@ class OrchestrationPromptingMixin:
                 depth, tone, structure, and follow-up behavior. Accepts ``None``
                 for legacy call sites, which lets context assembly use its
                 conservative default.
+            tutor_profile: Optional subject tutor overlay selected by the
+                client. The context service validates and renders it as a
+                prompt-only specialization.
 
         Returns:
             List[Dict[str, str]]: The finalized list of messages ready to be sent to the LLM.
@@ -150,6 +153,7 @@ class OrchestrationPromptingMixin:
             response_policy=response_policy,
             parts_context=parts_context,
             interface_language=interface_language,
+            tutor_profile=tutor_profile,
         )
         final_messages = context.messages
         if response_mode == "voice":
@@ -160,10 +164,11 @@ class OrchestrationPromptingMixin:
             )
 
         logger.info(
-            "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s",
+            "orchestration.context_prepared conversation_id=%s learner_understanding=%s retrieved_memory=%s tutor_profile=%s",
             conversation_id,
             context.learner_understanding,
             context.retrieved_memory,
+            tutor_profile,
         )
         return final_messages
 

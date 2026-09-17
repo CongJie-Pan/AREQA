@@ -120,11 +120,13 @@ export async function createChatStream(
       use_web_search: searchMode === 'always',
       search_mode: searchMode,
       interface_language: readInterfaceLanguage(),
+      tutor_profile: options.tutorProfile ?? 'general',
       response_mode: options.responseMode ?? 'text',
     };
     logger.info('chat.stream_request_started', {
       conversationId,
       responseMode: requestPayload.response_mode,
+      tutorProfile: requestPayload.tutor_profile,
       messageCount: messages.length,
       hasAttachments: attachments.length > 0,
     });

@@ -157,6 +157,7 @@ def call_areqa_stream(
     use_web_search: bool,
     max_tokens: int,
     temperature: float,
+    tutor_profile: str,
 ) -> str:
     payload = {
         "messages": [{"role": "user", "content": case.initial_query}],
@@ -165,6 +166,7 @@ def call_areqa_stream(
         "use_web_search": use_web_search,
         "search_mode": "never",
         "interface_language": "en",
+        "tutor_profile": tutor_profile,
         "response_mode": "text",
         "force_think": False,
         "temperature": temperature,
@@ -568,6 +570,7 @@ def write_report(summary: dict[str, Any], output_dir: Path, args: argparse.Names
         "",
         f"- Dataset: `{args.dataset}`",
         f"- Candidate source: `{args.candidate_url}`",
+        f"- Tutor profile: `{args.tutor_profile}`",
         f"- Baseline model: `{args.baseline_model}`",
         f"- Judge model: `{args.judge_model}`",
         f"- Cases: `{summary.get('cases', 0)}`",
@@ -632,6 +635,7 @@ def run_case(
         args.no_rag,
         args.max_tokens,
         args.temperature,
+        args.tutor_profile,
         case.case_id,
         case.initial_query,
     )
@@ -644,6 +648,7 @@ def run_case(
             use_web_search=False,
             max_tokens=args.max_tokens,
             temperature=args.temperature,
+            tutor_profile=args.tutor_profile,
         )
     candidate_answer = str(cache[candidate_key])
 
@@ -725,6 +730,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--candidate-url", default="http://127.0.0.1:8000/api/v1/stream")
     parser.add_argument("--baseline-model", default="google/gemini-3.8-flash")
     parser.add_argument("--judge-model", default="openai/gpt-5.6-luna")
+    parser.add_argument(
+        "--tutor-profile",
+        choices=["general", "english"],
+        default="english",
+        help="AREQA tutor profile to apply to candidate answers.",
+    )
     parser.add_argument(
         "--case-id",
         action="append",

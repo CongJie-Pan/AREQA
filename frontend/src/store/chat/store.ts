@@ -49,6 +49,7 @@ const initialState = {
   useWebSearch: false,
   searchMode: 'never' as const,
   forceThink: true,
+  tutorProfile: 'general' as const,
   ragStatus: 'idle' as 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done',
   ragMessage: '',
   ragSources: [] as CitationSource[],
@@ -460,6 +461,9 @@ export const useChatStore = create<ChatStore>((set) => ({
     };
   }),
   toggleThink: () => set((state) => ({ forceThink: !state.forceThink })),
+  setTutorProfile: (profile) => set({
+    tutorProfile: profile === 'english' ? 'english' : 'general',
+  }),
 
   // RAG Visualization
   setRagStatus: (status, message) => set((state) => {

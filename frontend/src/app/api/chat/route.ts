@@ -37,6 +37,7 @@ interface ChatRequestBody {
   use_web_search?: boolean;
   search_mode?: 'auto' | 'always' | 'never';
   interface_language?: 'zh-TW' | 'zh-CN' | 'en';
+  tutor_profile?: 'general' | 'english';
   force_think?: boolean;
   temperature?: number;
   top_p?: number;
@@ -270,6 +271,7 @@ export async function POST(request: NextRequest) {
           use_web_search: body.use_web_search || false,
           search_mode: body.search_mode,
           interface_language: body.interface_language,
+          tutor_profile: body.tutor_profile === 'english' ? 'english' : 'general',
           force_think: body.force_think || false,
           temperature: body.temperature ?? 0.0,
           top_p: body.top_p ?? 0.9,

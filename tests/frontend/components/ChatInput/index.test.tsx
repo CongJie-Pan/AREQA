@@ -39,6 +39,7 @@ describe('ChatInput', () => {
   const mockOnSend = vi.fn();
   const mockSetQuotedText = vi.fn();
   const mockToggleWebSearch = vi.fn();
+  const mockSetTutorProfile = vi.fn();
   const createObjectUrlMock = vi.fn((file: File) => `blob:${file.name}`);
   const revokeObjectUrlMock = vi.fn();
   const stopTrackMock = vi.fn();
@@ -76,10 +77,12 @@ describe('ChatInput', () => {
         useRag: false,
         useWebSearch: false,
         forceThink: false,
+        tutorProfile: 'general',
         quotedText: null,
         toggleRag: vi.fn(),
         toggleWebSearch: mockToggleWebSearch,
         toggleThink: vi.fn(),
+        setTutorProfile: mockSetTutorProfile,
         setQuotedText: mockSetQuotedText,
       };
       return typeof selector === 'function' ? selector(state) : state;
@@ -93,11 +96,11 @@ describe('ChatInput', () => {
   it('should render correctly', () => {
     render(<ChatInput onSend={mockOnSend} />);
     expect(screen.getByPlaceholderText(/提問AREQA/i)).toBeDefined();
-    expect(screen.getByLabelText('加入圖片或文件')).toBeInTheDocument();
+    expect(screen.getByLabelText('新增')).toBeInTheDocument();
     expect(screen.queryByText('5.5 Medium')).not.toBeInTheDocument();
     expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
     const input = screen.getByLabelText('訊息輸入框');
-    const attachmentButton = screen.getByLabelText('加入圖片或文件');
+    const attachmentButton = screen.getByLabelText('新增');
     const webSearchButton = screen.getByLabelText('開啟網路搜尋');
     const inputRow = screen.getByRole('group', { name: '訊息輸入列' });
     const sendButton = screen.getByLabelText('發送訊息');
@@ -119,6 +122,40 @@ describe('ChatInput', () => {
     fireEvent.click(webSearchButton);
 
     expect(mockToggleWebSearch).toHaveBeenCalledOnce();
+  });
+
+  it('should select the English Tutor profile from the add menu', async () => {
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.click(screen.getByLabelText('新增'));
+    fireEvent.click(await screen.findByText('English Tutor'));
+
+    expect(mockSetTutorProfile).toHaveBeenCalledWith('english');
+  });
+
+  it('should show and clear the active English Tutor profile chip', () => {
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        useRag: false,
+        useWebSearch: false,
+        forceThink: false,
+        tutorProfile: 'english',
+        quotedText: null,
+        toggleRag: vi.fn(),
+        toggleWebSearch: mockToggleWebSearch,
+        toggleThink: vi.fn(),
+        setTutorProfile: mockSetTutorProfile,
+        setQuotedText: mockSetQuotedText,
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    render(<ChatInput onSend={mockOnSend} />);
+
+    expect(screen.getByText('English Tutor')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('刪除 English Tutor'));
+
+    expect(mockSetTutorProfile).toHaveBeenCalledWith('general');
   });
 
   it('should keep the send control visibly disabled until there is content', () => {

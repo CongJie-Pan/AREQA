@@ -411,6 +411,62 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  attachmentButtonActive: css`
+    background: color-mix(in srgb, #d8a25c 18%, transparent);
+    color: #f4c47a;
+  `,
+
+  addMenuTutorItem: css`
+    display: flex;
+    min-width: 190px;
+    flex-direction: column;
+    gap: 2px;
+
+    small {
+      color: rgba(255, 255, 255, 0.58);
+      font-size: 11px;
+      line-height: 14px;
+    }
+  `,
+
+  tutorProfileBar: css`
+    display: flex;
+    width: 100%;
+    margin: 0 0 8px;
+  `,
+
+  tutorProfileChip: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    padding: 4px 7px 4px 9px;
+    border: 1px solid color-mix(in srgb, #d8a25c 28%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, #d8a25c 16%, transparent);
+    color: #f2d19d;
+    font-size: 12px;
+    line-height: 16px;
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: currentColor;
+      cursor: pointer;
+
+      &:hover {
+        background: color-mix(in srgb, #ffffff 12%, transparent);
+      }
+    }
+  `,
+
   recordingInactiveControl: css`
     color: rgba(255, 255, 255, 0.28);
 

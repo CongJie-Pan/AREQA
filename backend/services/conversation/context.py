@@ -29,6 +29,7 @@ from services.query_policy_service import (
     default_response_policy,
 )
 from services.parts_context_service import PartsContext, format_parts_context
+from services.tutor_profile_service import render_tutor_profile_prompt
 
 
 logger = logging.getLogger(__name__)
@@ -41,8 +42,8 @@ ANSWER_LANGUAGE_RULES = {
 }
 
 LANGUAGE_REQUEST_PATTERNS = (
-    ("zh-TW", re.compile(r"(繁體中文|繁中|traditional chinese|zh-tw)", re.IGNORECASE)),
     ("zh-CN", re.compile(r"(簡體中文|简体中文|簡中|简中|simplified chinese|zh-cn)", re.IGNORECASE)),
+    ("zh-TW", re.compile(r"(繁體中文|繁中|用中文|中文回答|以中文|in chinese|chinese|traditional chinese|zh-tw)", re.IGNORECASE)),
     ("en", re.compile(r"(english|英文|英語|英语|in english)", re.IGNORECASE)),
 )
 
@@ -214,6 +215,7 @@ class ConversationContextService:
         response_policy: ResponsePolicy | None = None,
         parts_context: PartsContext | None = None,
         interface_language: str = "zh-TW",
+        tutor_profile: str = "general",
     ) -> ConversationContext:
         """Build the final prompt from independently policy-checked sources.
 
@@ -245,6 +247,10 @@ class ConversationContextService:
                 orchestration. This block controls only role, task, audience,
                 topic, and format; it does not authorize citations, memory,
                 grounding, tools, or learner-state claims.
+            interface_language: Persisted UI language used only as fallback
+                when the latest user turn has no supported language signal.
+            tutor_profile: Optional subject tutor overlay. It must not override
+                language, grounding, memory, safety, citations, or tools.
 
         Returns:
             Finalized messages plus explicit learner-understanding metadata.
@@ -285,6 +291,7 @@ class ConversationContextService:
             system_prompt += "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
 
         system_prompt += _answer_language_instruction(interface_language, last_user_msg)
+        system_prompt += render_tutor_profile_prompt(tutor_profile)
         system_prompt += _example_instruction(interface_language, last_user_msg)
         system_prompt += "\n【工具使用規則】你必須先完整回答使用者的問題，再選擇性提出已授權的工具請求。嚴禁只呼叫工具而不輸出任何文字回應。"
         system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"

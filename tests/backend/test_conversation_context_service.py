@@ -172,6 +172,65 @@ async def test_context_prompt_resolves_answer_language(interface_language, user_
     assert "請一律使用繁體中文" not in system_prompt
 
 
+@pytest.mark.asyncio
+async def test_english_tutor_profile_adds_overlay_without_overriding_chinese_language():
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-1",
+        messages=[{"role": "user", "content": "請用中文教我怎麼分析 Macbeth 的 darkness symbolism"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="請用中文教我怎麼分析 Macbeth 的 darkness symbolism",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-1",
+        interface_language="en",
+        tutor_profile="english",
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "本回合正式回答必須使用繁體中文" in system_prompt
+    assert "Tutor Profile：English Tutor" in system_prompt
+    assert "must not force English output" in system_prompt
+    assert "Anti-ghostwriting rule" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_general_tutor_profile_keeps_english_overlay_out_of_base_prompt():
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(allow_long_term_query=False)
+    service = ConversationContextService(memory_policy=memory_policy, memory_query_tool=AsyncMock())
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="conversation-1",
+        messages=[{"role": "user", "content": "請解釋象徵"}],
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg="請解釋象徵",
+        context_prompt="",
+        client=None,
+        snapshot_loader=AsyncMock(return_value=""),
+        store=None,
+        chat_avatar_key="chat_avatar:conversation-1",
+        tutor_profile="general",
+    )
+
+    system_prompt = result.messages[0]["content"]
+    assert "Tutor Profile：English Tutor" not in system_prompt
+    assert "Anti-ghostwriting rule" not in system_prompt
+
+
 @pytest.mark.parametrize(
     ("interface_language", "user_message", "expected_instruction"),
     [

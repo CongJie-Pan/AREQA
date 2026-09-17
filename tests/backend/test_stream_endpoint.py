@@ -125,6 +125,62 @@ async def test_stream_endpoint_forwards_voice_response_mode_to_orchestrator():
     assert captured["response_mode"] == "voice"
 
 
+@pytest.mark.asyncio
+async def test_stream_endpoint_forwards_english_tutor_profile_to_orchestrator():
+    captured = {}
+
+    class TutorProfileOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=TutorProfileOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                json={
+                    "messages": [{"role": "user", "content": "Help me analyze Macbeth"}],
+                    "tutor_profile": "english",
+                },
+            )
+
+    assert response.status_code == 200
+    assert captured["tutor_profile"] == "english"
+
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_falls_back_for_unknown_tutor_profile_json_payload():
+    captured = {}
+
+    class TutorProfileFallbackOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=TutorProfileFallbackOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                json={
+                    "messages": [{"role": "user", "content": "Help"}],
+                    "tutor_profile": "history",
+                },
+            )
+
+    assert response.status_code == 200
+    assert captured["tutor_profile"] == "general"
+
+
 def test_voice_response_instruction_forces_speech_safe_plain_text():
     messages = [{"role": "system", "content": "base prompt"}]
 
@@ -274,6 +330,7 @@ async def test_stream_endpoint_accepts_complete_multipart_chat_payload():
         "conversation_id": "complete-payload-conversation",
         "use_rag": True,
         "search_mode": "always",
+        "tutor_profile": "english",
     }
     files = {
         "attachments": ("notes.txt", b"attachment content", "text/plain"),
@@ -292,6 +349,7 @@ async def test_stream_endpoint_accepts_complete_multipart_chat_payload():
     assert captured["conversation_id"] == "complete-payload-conversation"
     assert captured["use_rag"] is True
     assert captured["search_mode"] == "always"
+    assert captured["tutor_profile"] == "english"
     assert captured["attachments"][0]["type"] == "text"
 
 

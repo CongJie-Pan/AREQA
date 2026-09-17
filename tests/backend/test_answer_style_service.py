@@ -54,9 +54,8 @@ def test_learnlm_rules_render_from_shared_contract():
     assert "啟發主動學習" in prompt
     assert "深層元認知與反思" in prompt
     assert "支持與引導" in prompt
-    assert "learner action" in prompt
-    assert "practice prompt" in prompt
-    assert "Author/Source、Audience、Purpose、Context、Evidence、Limitation" in prompt
+    assert "learner action" not in prompt
+    assert "Author/Source、Audience、Purpose、Context、Evidence、Limitation" not in prompt
     assert "圖文並茂" in prompt
 
 

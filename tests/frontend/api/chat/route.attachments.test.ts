@@ -30,6 +30,14 @@ function multipartRequest(formData: FormData, authorization?: string) {
   };
 }
 
+function jsonRequest(body: unknown) {
+  return {
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => body,
+    signal: new AbortController().signal,
+  };
+}
+
 describe('chat attachment BFF route', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -49,6 +57,37 @@ describe('chat attachment BFF route', () => {
     expect(upstreamRequest.body).toBeInstanceOf(FormData);
     expect(new Headers(upstreamRequest.headers).get('Content-Type')).toBeNull();
     expect(new Headers(upstreamRequest.headers).get('Authorization')).toBe('Bearer test-token');
+  });
+
+  it('forwards tutor profile in JSON chat requests', async () => {
+    const request = jsonRequest({
+      messages: [{ role: 'user', content: 'Help me analyze a poem' }],
+      tutor_profile: 'english',
+    });
+
+    const response = await POST(request as any);
+    const upstreamRequest = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const payload = JSON.parse(String(upstreamRequest.body));
+
+    expect(response.status).toBe(200);
+    expect(payload.tutor_profile).toBe('english');
+  });
+
+  it('preserves tutor profile in multipart chat requests', async () => {
+    const formData = new FormData();
+    formData.append('messages', JSON.stringify({
+      messages: [{ role: 'user', content: '請閱讀英文講義' }],
+      tutor_profile: 'english',
+    }));
+    formData.append('attachments', new File(['notes'], 'notes.txt', { type: 'text/plain' }));
+    const request = multipartRequest(formData);
+
+    const response = await POST(request as any);
+    const upstreamRequest = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const payload = JSON.parse(String((upstreamRequest.body as FormData).get('messages')));
+
+    expect(response.status).toBe(200);
+    expect(payload.tutor_profile).toBe('english');
   });
 
   it('forwards txt attachments even when the browser reports a generic MIME type', async () => {

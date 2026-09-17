@@ -7,7 +7,7 @@
  */
 import type { CitationSource } from '@/components/Citations';
 import type { AnswerBlock } from '@/database/schema';
-import type { StreamingImageSlot } from '@/store/chat/types';
+import type { StreamingImageSlot, TutorProfile } from '@/store/chat/types';
 export type MessageRole = 'user' | 'assistant' | 'system';
 
 /**
@@ -190,4 +190,6 @@ export interface StreamCallbacks {
 export interface ChatStreamOptions {
   /** Surface that will render the final answer. */
   responseMode?: 'text' | 'voice';
+  /** Optional subject tutor prompt overlay. */
+  tutorProfile?: TutorProfile;
 }

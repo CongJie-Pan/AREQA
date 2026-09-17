@@ -9,6 +9,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   ArrowUp,
   AudioLines,
+  BookOpen,
   Check,
   CornerDownRight,
   FileText,
@@ -18,11 +19,13 @@ import {
   MicOff,
   Plus,
   Square,
+  Upload,
   Video,
   VideoOff,
   X,
 } from 'lucide-react';
-import { message, Tooltip } from 'antd';
+import { Dropdown, message, Tooltip } from 'antd';
+import type { MenuProps } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -375,6 +378,27 @@ const WEB_SEARCH_LABELS = {
   },
 } as const;
 
+const ADD_MENU_LABELS = {
+  'zh-TW': {
+    open: '新增',
+    upload: '上傳檔案',
+    englishTutor: 'English Tutor',
+    englishTutorDescription: '英文閱讀、寫作與文學分析',
+  },
+  'zh-CN': {
+    open: '新增',
+    upload: '上传文件',
+    englishTutor: 'English Tutor',
+    englishTutorDescription: '英文阅读、写作与文学分析',
+  },
+  en: {
+    open: 'Add',
+    upload: 'Upload file',
+    englishTutor: 'English Tutor',
+    englishTutorDescription: 'Reading, writing, and literary analysis',
+  },
+} as const;
+
 /**
  * ChatInput provides text input for sending messages
  * Supports Enter to send, Shift+Enter for new line
@@ -400,6 +424,7 @@ export function ChatInput({
   const liveVoiceLabels = LIVE_VOICE_LABELS[language];
   const dictationLabels = DICTATION_LABELS[language];
   const webSearchLabels = WEB_SEARCH_LABELS[language];
+  const addMenuLabels = ADD_MENU_LABELS[language];
   const [value, setValue] = useState('');
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -424,6 +449,8 @@ export function ChatInput({
   const setQuotedText = useChatStore((state) => state.setQuotedText);
   const useWebSearch = useChatStore((state) => state.useWebSearch);
   const toggleWebSearch = useChatStore((state) => state.toggleWebSearch);
+  const tutorProfile = useChatStore((state) => state.tutorProfile);
+  const setTutorProfile = useChatStore((state) => state.setTutorProfile);
 
   const isOverLimit = value.length > maxLength;
   const hasMath = /(?:\$\$?[\s\S]+?\$\$?|\\\(|\\\[)/.test(value);
@@ -673,6 +700,34 @@ export function ChatInput({
 
   const canSend = (value.trim().length > 0 || attachmentPreviews.length > 0) && !disabled && !isOverLimit;
   const hasComposerContent = value.trim().length > 0 || attachmentPreviews.length > 0 || Boolean(quotedText);
+  const addMenuItems: MenuProps['items'] = [
+    {
+      key: 'upload',
+      icon: <Upload size={15} />,
+      label: addMenuLabels.upload,
+    },
+    {
+      key: 'english',
+      icon: <BookOpen size={15} />,
+      label: (
+        <span className={styles.addMenuTutorItem}>
+          <span>{addMenuLabels.englishTutor}</span>
+          <small>{addMenuLabels.englishTutorDescription}</small>
+        </span>
+      ),
+    },
+  ];
+
+  const handleAddMenuClick: MenuProps['onClick'] = ({ key }) => {
+    if (disabled || dictationState !== 'idle') return;
+    if (key === 'upload') {
+      fileInputRef.current?.click();
+      return;
+    }
+    if (key === 'english') {
+      setTutorProfile(tutorProfile === 'english' ? 'general' : 'english');
+    }
+  };
 
   const stopDictationTracks = useCallback(() => {
     stopDictationLevelMonitorRef.current?.();
@@ -837,6 +892,22 @@ export function ChatInput({
         </div>
       )}
 
+      {tutorProfile === 'english' && (
+        <div className={styles.tutorProfileBar}>
+          <span className={styles.tutorProfileChip}>
+            <BookOpen size={14} />
+            <span>{addMenuLabels.englishTutor}</span>
+            <button
+              type="button"
+              onClick={() => setTutorProfile('general')}
+              aria-label={`${t('delete')} ${addMenuLabels.englishTutor}`}
+            >
+              <X size={12} />
+            </button>
+          </span>
+        </div>
+      )}
+
       <div
         className={cx(
           'areqa-chat-input-row',
@@ -846,21 +917,35 @@ export function ChatInput({
         role="group"
         aria-label={t('messageInputRow')}
       >
-        <Tooltip title={t('addAttachment')} color="#262626" styles={{ container: { color: '#ffffff' } }}>
-          <button
-            type="button"
-            className={cx(
-              'areqa-chat-input-attachment-button',
-              styles.attachmentButton,
-              dictationState !== 'idle' && styles.recordingInactiveControl,
-            )}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || dictationState !== 'idle'}
-            aria-label={t('addAttachment')}
-          >
-            <Plus size={18} />
-          </button>
-        </Tooltip>
+        <Dropdown
+          menu={{
+            items: addMenuItems,
+            onClick: handleAddMenuClick,
+            selectable: true,
+            selectedKeys: tutorProfile === 'english' ? ['english'] : [],
+          }}
+          trigger={['click']}
+          disabled={disabled || dictationState !== 'idle'}
+          placement="topLeft"
+        >
+          <Tooltip title={addMenuLabels.open} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+            <button
+              type="button"
+              className={cx(
+                'areqa-chat-input-attachment-button',
+                styles.attachmentButton,
+                tutorProfile === 'english' && styles.attachmentButtonActive,
+                dictationState !== 'idle' && styles.recordingInactiveControl,
+              )}
+              disabled={disabled || dictationState !== 'idle'}
+              aria-label={addMenuLabels.open}
+              aria-haspopup="menu"
+              aria-pressed={tutorProfile === 'english'}
+            >
+              <Plus size={18} />
+            </button>
+          </Tooltip>
+        </Dropdown>
         {dictationState !== 'idle' ? (
           <>
             <div className={styles.dictationWave} aria-hidden>

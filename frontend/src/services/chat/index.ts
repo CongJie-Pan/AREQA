@@ -303,6 +303,7 @@ export async function sendMessage(
   const effectiveUseRag = options.useRag ?? chatStore.useRag;
   const effectiveSearchMode = options.searchMode ?? chatStore.searchMode;
   const effectiveForceThink = isVoiceResponse ? false : (options.forceThink ?? chatStore.forceThink);
+  const effectiveTutorProfile = chatStore.tutorProfile;
 
   // Capture conversation ID for async callback (prevents closure issues)
   const conversationIdForSave = activeConversationId;
@@ -452,7 +453,7 @@ export async function sendMessage(
         effectiveSearchMode,
         activeConversationId,
         attachments,
-        { responseMode },
+        { responseMode, tutorProfile: effectiveTutorProfile },
       );
     } else {
       await createChatStream(
@@ -464,7 +465,7 @@ export async function sendMessage(
         effectiveSearchMode,
         activeConversationId,
         [],
-        { responseMode },
+        { responseMode, tutorProfile: effectiveTutorProfile },
       );
     }
 
@@ -1033,7 +1034,9 @@ export async function regenerateMessage(messageId: string): Promise<void> {
       chatStore.useRag,
       chatStore.forceThink,
       chatStore.searchMode,
-      activeConversationId
+      activeConversationId,
+      [],
+      { tutorProfile: latestState.tutorProfile },
     );
   } catch (error) {
     currentAbortController = null;
@@ -1281,7 +1284,9 @@ export async function editUserMessage(
       chatStore.useRag,
       chatStore.forceThink,
       chatStore.searchMode,
-      activeConversationId
+      activeConversationId,
+      [],
+      { tutorProfile: latestState.tutorProfile },
     );
   } catch (error) {
     currentAbortController = null;
