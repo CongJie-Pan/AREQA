@@ -26,6 +26,10 @@ python eval/llm_judge_eval.py \
   --no-rag
 ```
 
+The default answer budget is `--max-tokens 2400`. A smaller budget caused
+truncated tutor answers in early validation runs, while larger budgets increase
+cost without consistently reducing judge-reported failures.
+
 The script writes a timestamped run folder under `eval/outputs/` with:
 
 - `raw_results.jsonl`: one full result per case.

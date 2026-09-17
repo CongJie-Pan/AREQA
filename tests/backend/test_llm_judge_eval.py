@@ -66,6 +66,12 @@ def test_unit_parse_sse_text_collects_streaming_delta_content() -> None:
     assert llm_judge_eval.parse_sse_text(body) == "Hello world"
 
 
+def test_unit_parse_args_uses_non_truncating_default_answer_budget() -> None:
+    args = llm_judge_eval.parse_args([])
+
+    assert args.max_tokens == 2400
+
+
 def test_unit_parse_sse_text_ignores_non_delta_json_events() -> None:
     body = "\n".join(
         [

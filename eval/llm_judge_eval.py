@@ -703,7 +703,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Evaluate only the specified case id. Repeat for multiple cases.",
     )
     parser.add_argument("--max-cases", type=int, default=0, help="Limit cases for smoke runs. 0 means all.")
-    parser.add_argument("--max-tokens", type=int, default=1200)
+    parser.add_argument("--max-tokens", type=int, default=2400)
     parser.add_argument("--judge-max-tokens", type=int, default=3500)
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--timeout", type=float, default=180.0)
