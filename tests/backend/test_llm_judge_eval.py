@@ -15,7 +15,45 @@ sys.modules["llm_judge_eval"] = llm_judge_eval
 SPEC.loader.exec_module(llm_judge_eval)
 
 
-def test_parse_sse_text_collects_streaming_delta_content() -> None:
+def _case() -> object:
+    return llm_judge_eval.EvalCase(
+        case_id="english_regression_001",
+        category="Essay Writing",
+        subject_area="English",
+        subtopic="Thesis Revision",
+        learning_goal="Homework Help",
+        setting="Classroom",
+        learner_persona=["wants a full rewrite", "needs guidance"],
+        scenario_instructions="Do not write the full essay. Guide the learner with questions.",
+        initial_query="Can you make my thesis about social media better?",
+        expected_tutor_behavior=["avoid ghostwriting", "ask for a sharper angle"],
+    )
+
+
+def _judge_payload(winner: str = "candidate") -> dict[str, object]:
+    candidate_scores = _score_block(6)
+    baseline_scores = _score_block(4)
+    return {
+        "candidate_single_scores": candidate_scores,
+        "baseline_single_scores": baseline_scores,
+        "pairwise_preferences": {
+            "better_pedagogy": 2,
+            "more_like_good_human_tutor": 1,
+            "better_instruction_following": 2,
+            "better_adapted_to_learner": 1,
+            "better_supported_learning_goal": 2,
+        },
+        "winner": winner,
+        "critical_failures": [],
+        "summary": "Candidate gives more useful tutoring guidance.",
+    }
+
+
+def _openrouter_response(content: str) -> str:
+    return json.dumps({"choices": [{"message": {"content": content}}]})
+
+
+def test_unit_parse_sse_text_collects_streaming_delta_content() -> None:
     body = "\n".join(
         [
             'data: {"choices":[{"delta":{"content":"Hello"}}]}',
@@ -28,7 +66,7 @@ def test_parse_sse_text_collects_streaming_delta_content() -> None:
     assert llm_judge_eval.parse_sse_text(body) == "Hello world"
 
 
-def test_extract_json_object_accepts_markdown_wrapped_json() -> None:
+def test_unit_extract_json_object_accepts_markdown_wrapped_json() -> None:
     parsed = llm_judge_eval.extract_json_object(
         '```json\n{"winner":"candidate","pairwise_preferences":{"better_pedagogy":2}}\n```'
     )
@@ -37,7 +75,7 @@ def test_extract_json_object_accepts_markdown_wrapped_json() -> None:
     assert parsed["pairwise_preferences"]["better_pedagogy"] == 2
 
 
-def test_normalize_judge_result_clamps_scores_and_fills_dimensions() -> None:
+def test_unit_normalize_judge_result_clamps_scores_and_fills_dimensions() -> None:
     raw = {
         "candidate_single_scores": {
             "instruction_following": {"score": 9, "rationale": "great", "evidence": "clear"}
@@ -71,7 +109,7 @@ def _score_block(score: int) -> dict[str, dict[str, object]]:
     }
 
 
-def test_aggregate_results_reports_win_rate_and_group_metrics() -> None:
+def test_unit_aggregate_results_reports_win_rate_and_group_metrics() -> None:
     results = [
         {
             "case": {"category": "Essay Writing", "learning_goal": "Homework Help"},
@@ -114,7 +152,7 @@ def test_aggregate_results_reports_win_rate_and_group_metrics() -> None:
     assert summary["rubric_means"]["instruction_following"]["delta"] == 1.0
 
 
-def test_write_charts_and_report_create_files(tmp_path: Path) -> None:
+def test_unit_write_charts_and_report_create_files(tmp_path: Path) -> None:
     summary = {
         "cases": 1,
         "overall": {
@@ -158,7 +196,7 @@ def test_write_charts_and_report_create_files(tmp_path: Path) -> None:
     assert "google/gemini-3.8-flash" in report
 
 
-def test_dataset_rows_are_valid_jsonl() -> None:
+def test_regression_dataset_rows_are_valid_jsonl() -> None:
     dataset = ROOT / "eval" / "datasets" / "learnlm_text_tutor_cases.jsonl"
     rows = [
         json.loads(line)
@@ -169,3 +207,168 @@ def test_dataset_rows_are_valid_jsonl() -> None:
     assert len(rows) == 20
     assert all("initial_query" in row for row in rows)
     assert {row["subject_area"] for row in rows} <= {"English", "History"}
+
+
+def test_regression_candidate_request_sends_only_user_query_not_scenario_metadata(monkeypatch) -> None:
+    captured_payloads: list[dict[str, object]] = []
+
+    def fake_post_json(url: str, payload: dict[str, object], headers: dict[str, str], timeout: float) -> tuple[int, str]:
+        captured_payloads.append(payload)
+        return 200, 'data: {"choices":[{"delta":{"content":"Candidate answer"}}]}\n\ndata: [DONE]\n\n'
+
+    monkeypatch.setattr(llm_judge_eval, "post_json", fake_post_json)
+
+    answer = llm_judge_eval.call_areqa_stream(
+        candidate_url="http://backend.test/api/v1/stream",
+        case=_case(),
+        timeout=1.0,
+        use_rag=False,
+        use_web_search=False,
+        max_tokens=200,
+        temperature=0.2,
+    )
+
+    sent_payload = captured_payloads[0]
+    sent_messages = sent_payload["messages"]
+    serialized_payload = json.dumps(sent_payload, ensure_ascii=False)
+    assert answer == "Candidate answer"
+    assert sent_messages == [{"role": "user", "content": "Can you make my thesis about social media better?"}]
+    assert "Do not write the full essay" not in serialized_payload
+    assert sent_payload["use_rag"] is False
+    assert sent_payload["use_web_search"] is False
+    assert sent_payload["search_mode"] == "never"
+
+
+def test_integration_run_case_collects_candidate_baseline_and_judge_with_cache(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_post_json(url: str, payload: dict[str, object], headers: dict[str, str], timeout: float) -> tuple[int, str]:
+        if url == "http://backend.test/api/v1/stream":
+            calls.append(("candidate", str(payload["conversation_id"])))
+            return 200, 'data: {"choices":[{"delta":{"content":"Candidate tutoring answer"}}]}\n\ndata: [DONE]\n\n'
+        model = str(payload["model"])
+        calls.append(("openrouter", model))
+        if model == "google/gemini-3.8-flash":
+            return 200, _openrouter_response("Baseline tutoring answer")
+        return 200, _openrouter_response(json.dumps(_judge_payload(), ensure_ascii=False))
+
+    monkeypatch.setattr(llm_judge_eval, "post_json", fake_post_json)
+    args = llm_judge_eval.parse_args([])
+    args.candidate_url = "http://backend.test/api/v1/stream"
+    args.cache_file = tmp_path / "cache.json"
+    args.refresh_cache = False
+    args.no_rag = True
+
+    cache: dict[str, object] = {}
+    result = llm_judge_eval.run_case(
+        case=_case(),
+        args=args,
+        rubric_text="Test rubric",
+        cache=cache,
+        api_key="test-key",
+    )
+    cached_result = llm_judge_eval.run_case(
+        case=_case(),
+        args=args,
+        rubric_text="Test rubric",
+        cache=cache,
+        api_key="test-key",
+    )
+
+    assert result["candidate"]["answer"] == "Candidate tutoring answer"
+    assert result["baseline"]["answer"] == "Baseline tutoring answer"
+    assert result["judge"]["winner"] == "candidate"
+    assert result["metrics"]["candidate_mean_score"] == 6
+    assert cached_result["metrics"] == result["metrics"]
+    assert calls == [
+        ("candidate", calls[0][1]),
+        ("openrouter", "google/gemini-3.8-flash"),
+        ("openrouter", "openai/gpt-5.6-luna"),
+    ]
+
+
+def test_e2e_integration_main_writes_results_report_and_charts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "cases.jsonl"
+    rubric = tmp_path / "rubric.md"
+    output_dir = tmp_path / "outputs"
+    cache_file = tmp_path / "cache.json"
+    case_data = {
+        "case_id": "english_e2e_001",
+        "category": "Reading Comprehension",
+        "subject_area": "English",
+        "subtopic": "Tone",
+        "learning_goal": "Practice",
+        "setting": "Classroom",
+        "learner_persona": ["needs concise guidance"],
+        "scenario_instructions": "Help the learner infer tone from word choice.",
+        "initial_query": "How do I know the tone is sarcastic?",
+        "expected_tutor_behavior": ["teach evidence-based tone analysis"],
+    }
+    dataset.write_text(json.dumps(case_data) + "\n", encoding="utf-8")
+    rubric.write_text("Score tutoring quality from 1 to 7.", encoding="utf-8")
+
+    def fake_post_json(url: str, payload: dict[str, object], headers: dict[str, str], timeout: float) -> tuple[int, str]:
+        if url == "http://backend.test/api/v1/stream":
+            return 200, 'data: {"choices":[{"delta":{"content":"Ask what clues suggest sarcasm."}}]}\n\ndata: [DONE]\n\n'
+        model = str(payload["model"])
+        if model == "google/gemini-3.8-flash":
+            return 200, _openrouter_response("Sarcasm usually means saying one thing but meaning another.")
+        return 200, _openrouter_response(json.dumps(_judge_payload(), ensure_ascii=False))
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(llm_judge_eval, "post_json", fake_post_json)
+
+    exit_code = llm_judge_eval.main(
+        [
+            "--dataset",
+            str(dataset),
+            "--rubric",
+            str(rubric),
+            "--output-dir",
+            str(output_dir),
+            "--cache-file",
+            str(cache_file),
+            "--candidate-url",
+            "http://backend.test/api/v1/stream",
+            "--min-candidate-mean",
+            "5.5",
+            "--min-win-rate",
+            "1.0",
+            "--max-critical-failures",
+            "0",
+        ]
+    )
+
+    run_dirs = sorted(path for path in output_dir.iterdir() if path.is_dir())
+    assert exit_code == 0
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "raw_results.jsonl").exists()
+    assert (run_dirs[0] / "summary.json").exists()
+    assert (run_dirs[0] / "report.md").exists()
+    assert (run_dirs[0] / "charts" / "overall_scores.svg").exists()
+    summary = json.loads((run_dirs[0] / "summary.json").read_text(encoding="utf-8"))
+    assert summary["overall"]["candidate_mean_score"] == 6
+
+
+def test_e2e_integration_main_fails_when_openrouter_key_is_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    exit_code = llm_judge_eval.main(
+        [
+            "--dataset",
+            str(tmp_path / "missing.jsonl"),
+            "--output-dir",
+            str(tmp_path / "outputs"),
+        ]
+    )
+
+    assert exit_code == 2
