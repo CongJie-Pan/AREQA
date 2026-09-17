@@ -597,7 +597,15 @@ def run_case(
     cache: dict[str, Any],
     api_key: str,
 ) -> dict[str, Any]:
-    candidate_key = cache_key("candidate", args.candidate_url, args.no_rag, case.case_id, case.initial_query)
+    candidate_key = cache_key(
+        "candidate",
+        args.candidate_url,
+        args.no_rag,
+        args.max_tokens,
+        args.temperature,
+        case.case_id,
+        case.initial_query,
+    )
     if args.refresh_cache or candidate_key not in cache:
         cache[candidate_key] = call_areqa_stream(
             candidate_url=args.candidate_url,
@@ -610,7 +618,14 @@ def run_case(
         )
     candidate_answer = str(cache[candidate_key])
 
-    baseline_key = cache_key("baseline", args.baseline_model, case.case_id, case.initial_query)
+    baseline_key = cache_key(
+        "baseline",
+        args.baseline_model,
+        args.max_tokens,
+        args.temperature,
+        case.case_id,
+        case.initial_query,
+    )
     if args.refresh_cache or baseline_key not in cache:
         cache[baseline_key] = call_openrouter_chat(
             model=args.baseline_model,
@@ -681,6 +696,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--candidate-url", default="http://127.0.0.1:8000/api/v1/stream")
     parser.add_argument("--baseline-model", default="google/gemini-3.8-flash")
     parser.add_argument("--judge-model", default="openai/gpt-5.6-luna")
+    parser.add_argument(
+        "--case-id",
+        action="append",
+        default=[],
+        help="Evaluate only the specified case id. Repeat for multiple cases.",
+    )
     parser.add_argument("--max-cases", type=int, default=0, help="Limit cases for smoke runs. 0 means all.")
     parser.add_argument("--max-tokens", type=int, default=1200)
     parser.add_argument("--judge-max-tokens", type=int, default=3500)
@@ -702,6 +723,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     cases = load_cases(args.dataset)
+    if args.case_id:
+        requested = set(args.case_id)
+        cases = [case for case in cases if case.case_id in requested]
+        missing = sorted(requested - {case.case_id for case in cases})
+        if missing:
+            print(f"Requested case ids not found: {', '.join(missing)}", file=sys.stderr)
+            return 2
     if args.max_cases > 0:
         cases = cases[: args.max_cases]
     rubric_text = args.rubric.read_text(encoding="utf-8")

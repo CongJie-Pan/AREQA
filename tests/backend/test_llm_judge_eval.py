@@ -303,6 +303,40 @@ def test_integration_run_case_collects_candidate_baseline_and_judge_with_cache(
     ]
 
 
+def test_regression_run_case_cache_key_includes_generation_budget(monkeypatch) -> None:
+    calls: list[tuple[str, int]] = []
+
+    def fake_post_json(url: str, payload: dict[str, object], headers: dict[str, str], timeout: float) -> tuple[int, str]:
+        max_tokens = int(payload["max_tokens"])
+        if url == "http://backend.test/api/v1/stream":
+            calls.append(("candidate", max_tokens))
+            return 200, f'data: {{"choices":[{{"delta":{{"content":"Candidate {max_tokens}"}}}}]}}\n\ndata: [DONE]\n\n'
+        model = str(payload["model"])
+        calls.append((model, max_tokens))
+        if model == "google/gemini-3.8-flash":
+            return 200, _openrouter_response(f"Baseline {max_tokens}")
+        return 200, _openrouter_response(json.dumps(_judge_payload(), ensure_ascii=False))
+
+    monkeypatch.setattr(llm_judge_eval, "post_json", fake_post_json)
+    args = llm_judge_eval.parse_args([])
+    args.candidate_url = "http://backend.test/api/v1/stream"
+    args.refresh_cache = False
+    args.no_rag = True
+    cache: dict[str, object] = {}
+
+    args.max_tokens = 1200
+    first = llm_judge_eval.run_case(case=_case(), args=args, rubric_text="Test rubric", cache=cache, api_key="test-key")
+    args.max_tokens = 2400
+    second = llm_judge_eval.run_case(case=_case(), args=args, rubric_text="Test rubric", cache=cache, api_key="test-key")
+
+    assert first["candidate"]["answer"] == "Candidate 1200"
+    assert second["candidate"]["answer"] == "Candidate 2400"
+    assert ("candidate", 1200) in calls
+    assert ("candidate", 2400) in calls
+    assert ("google/gemini-3.8-flash", 1200) in calls
+    assert ("google/gemini-3.8-flash", 2400) in calls
+
+
 def test_e2e_integration_main_writes_results_report_and_charts(
     monkeypatch,
     tmp_path: Path,
@@ -367,6 +401,77 @@ def test_e2e_integration_main_writes_results_report_and_charts(
     assert (run_dirs[0] / "charts" / "overall_scores.svg").exists()
     summary = json.loads((run_dirs[0] / "summary.json").read_text(encoding="utf-8"))
     assert summary["overall"]["candidate_mean_score"] == 6
+
+
+def test_e2e_integration_main_filters_requested_case_ids(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "cases.jsonl"
+    rubric = tmp_path / "rubric.md"
+    output_dir = tmp_path / "outputs"
+    rows = [
+        {
+            "case_id": "keep_me",
+            "category": "Reading Comprehension",
+            "subject_area": "English",
+            "subtopic": "Tone",
+            "learning_goal": "Practice",
+            "setting": "Classroom",
+            "learner_persona": ["needs concise guidance"],
+            "scenario_instructions": "Help the learner infer tone from word choice.",
+            "initial_query": "How do I know the tone is sarcastic?",
+            "expected_tutor_behavior": ["teach evidence-based tone analysis"],
+        },
+        {
+            "case_id": "skip_me",
+            "category": "Essay Writing",
+            "subject_area": "English",
+            "subtopic": "Thesis",
+            "learning_goal": "Homework Help",
+            "setting": "Classroom",
+            "learner_persona": ["needs guidance"],
+            "scenario_instructions": "Help revise without ghostwriting.",
+            "initial_query": "Can you fix my thesis?",
+            "expected_tutor_behavior": ["avoid ghostwriting"],
+        },
+    ]
+    dataset.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    rubric.write_text("Score tutoring quality from 1 to 7.", encoding="utf-8")
+
+    def fake_post_json(url: str, payload: dict[str, object], headers: dict[str, str], timeout: float) -> tuple[int, str]:
+        if url == "http://backend.test/api/v1/stream":
+            messages = payload["messages"]
+            assert messages == [{"role": "user", "content": "How do I know the tone is sarcastic?"}]
+            return 200, 'data: {"choices":[{"delta":{"content":"Filtered candidate"}}]}\n\ndata: [DONE]\n\n'
+        if payload["model"] == "google/gemini-3.8-flash":
+            return 200, _openrouter_response("Filtered baseline")
+        return 200, _openrouter_response(json.dumps(_judge_payload(), ensure_ascii=False))
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(llm_judge_eval, "post_json", fake_post_json)
+
+    exit_code = llm_judge_eval.main(
+        [
+            "--dataset",
+            str(dataset),
+            "--rubric",
+            str(rubric),
+            "--output-dir",
+            str(output_dir),
+            "--cache-file",
+            str(tmp_path / "cache.json"),
+            "--candidate-url",
+            "http://backend.test/api/v1/stream",
+            "--case-id",
+            "keep_me",
+        ]
+    )
+
+    run_dir = next(path for path in output_dir.iterdir() if path.is_dir())
+    raw_rows = [json.loads(line) for line in (run_dir / "raw_results.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert exit_code == 0
+    assert [row["case"]["case_id"] for row in raw_rows] == ["keep_me"]
 
 
 def test_e2e_integration_main_fails_when_openrouter_key_is_missing(
