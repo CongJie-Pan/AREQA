@@ -399,6 +399,8 @@ def test_format_parts_context_includes_priority_boundary():
     assert "啟發主動學習" in prompt
     assert "深層元認知與反思" in prompt
     assert "支持與引導" in prompt
+    assert "learner action" in prompt
+    assert "Author/Source、Audience、Purpose、Context、Evidence、Limitation" in prompt
     assert "圖文並茂" in prompt
     assert "不要輸出 P/A/R/T/S 標籤" in prompt
 
