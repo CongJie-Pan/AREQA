@@ -81,6 +81,28 @@ vi.mock('@/services/database', () => ({
         storedNotes = storedNotes.map((note) => (note.id === id ? updated : note));
         return updated;
       }),
+      updateContentAndSourceMessage: vi.fn(async (id, content) => {
+        const existing = storedNotes.find((note) => note.id === id);
+        if (!existing) throw new Error('Note not found');
+        const updated = {
+          ...existing,
+          contentSnapshot: content.trim(),
+          answerBlocksSnapshot: undefined,
+          updatedAt: new Date('2026-09-09T00:00:05.000Z'),
+        };
+        storedNotes = storedNotes.map((note) => (note.id === id ? updated : note));
+        return {
+          note: updated,
+          sourceMessage: {
+            id: TEST_ASSISTANT_ID,
+            userId: TEST_USER_ID,
+            conversationId: TEST_CONVERSATION_ID,
+            role: 'assistant',
+            content: content.trim(),
+            createdAt: new Date('2026-09-09T00:00:02.000Z'),
+          },
+        };
+      }),
       delete: vi.fn().mockResolvedValue(undefined),
     },
   },
@@ -92,6 +114,7 @@ vi.mock('@/services/chat', () => ({
   cancelCurrentStream: vi.fn().mockResolvedValue(undefined),
   regenerateMessage: vi.fn().mockResolvedValue(undefined),
   editUserMessage: vi.fn().mockResolvedValue(undefined),
+  editAssistantMessage: vi.fn().mockResolvedValue(undefined),
   deleteLatestConversationTurn: vi.fn().mockResolvedValue(undefined),
   switchConversation: vi.fn().mockResolvedValue(undefined),
 }));
@@ -246,10 +269,32 @@ describe('Notes e2e integration flow', () => {
     });
 
     await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    });
+
+    await act(async () => {
+      fireEvent.change(screen.getByRole('textbox', { name: '編輯訊息' }), {
+        target: { value: 'Edited note body from notes panel.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+    });
+
+    await waitFor(() => {
+      expect(databaseService.note.updateContentAndSourceMessage).toHaveBeenCalledWith(
+        'note-created',
+        'Edited note body from notes panel.',
+      );
+      expect(document.body).toHaveTextContent('Edited note body from notes panel.');
+      expect(useChatStore.getState().messages.find((item) => item.id === TEST_ASSISTANT_ID)?.content).toBe(
+        'Edited note body from notes panel.',
+      );
+    });
+
+    await act(async () => {
       fireEvent.click(screen.getAllByRole('button', { name: 'biology' })[0]);
     });
 
-    expect(document.body).toHaveTextContent(TEST_ASSISTANT_CONTENT.trim());
+    expect(document.body).toHaveTextContent('Edited note body from notes panel.');
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '開啟來源位置' }));

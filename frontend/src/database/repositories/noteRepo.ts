@@ -21,6 +21,11 @@ export interface UpdateNoteMetadataData {
   isPinned?: boolean;
 }
 
+export interface UpdateNoteContentResult {
+  note: Note;
+  sourceMessage?: Message;
+}
+
 function normalizeTags(tags: string[] | undefined): string[] {
   if (!tags) return [];
 
@@ -168,6 +173,96 @@ export const noteRepo = {
     await db.notes.put(updatedNote);
     syncService.pushNote(updatedNote);
     return updatedNote;
+  },
+
+  /**
+   * Mirrors the latest source assistant message into its linked note.
+   *
+   * Args:
+   *   message: Updated assistant message that may already be saved as a note.
+   *
+   * Returns:
+   *   The updated note, or null when no note is linked to the message.
+   */
+  async syncFromMessage(message: Message): Promise<Note | null> {
+    const userId = getCurrentUserId();
+    if (!userId) return null;
+    if (message.role !== 'assistant') {
+      throw new Error('Only assistant replies can sync note content');
+    }
+
+    const existing = await db.notes
+      .where('[userId+messageId]')
+      .equals([userId, message.id])
+      .first();
+    if (!existing) return null;
+
+    const updatedNote: Note = {
+      ...existing,
+      contentSnapshot: message.content,
+      answerBlocksSnapshot: message.answerBlocks,
+      citationsSnapshot: message.citations,
+      sourcesSnapshot: message.sources,
+      updatedAt: new Date(),
+    };
+
+    await db.notes.put(updatedNote);
+    syncService.pushNote(updatedNote);
+    return updatedNote;
+  },
+
+  /**
+   * Updates a note body and mirrors the edited Markdown back to the source
+   * assistant message when that message still exists locally.
+   *
+   * Args:
+   *   id: Note ID to update.
+   *   content: User-authored Markdown body.
+   *
+   * Returns:
+   *   The updated note and, when found, the updated source assistant message.
+   *
+   * Raises:
+   *   Error: If the note does not exist or the content is empty.
+   */
+  async updateContentAndSourceMessage(id: string, content: string): Promise<UpdateNoteContentResult> {
+    const existing = await db.notes.get(id);
+    if (!existing) throw new Error('Note not found');
+
+    const normalizedContent = content.trim();
+    if (!normalizedContent) throw new Error('Note content cannot be empty');
+
+    const now = new Date();
+    let updatedSourceMessage: Message | undefined;
+    const updatedNote: Note = {
+      ...existing,
+      contentSnapshot: normalizedContent,
+      answerBlocksSnapshot: undefined,
+      updatedAt: now,
+    };
+
+    await db.transaction('rw', [db.notes, db.messages], async () => {
+      if (existing.messageId) {
+        const sourceMessage = await db.messages.get(existing.messageId);
+        if (sourceMessage?.role === 'assistant') {
+          updatedSourceMessage = {
+            ...sourceMessage,
+            content: normalizedContent,
+            answerBlocks: undefined,
+          };
+          await db.messages.put(updatedSourceMessage);
+        }
+      }
+
+      await db.notes.put(updatedNote);
+    });
+
+    syncService.pushNote(updatedNote);
+    if (updatedSourceMessage) {
+      syncService.pushMessage(updatedSourceMessage);
+    }
+
+    return { note: updatedNote, sourceMessage: updatedSourceMessage };
   },
 
   /**

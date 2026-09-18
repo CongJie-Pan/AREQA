@@ -10,6 +10,7 @@ import { App, Input, Popconfirm, Spin } from 'antd';
 import {
   ChevronDown,
   ChevronRight,
+  Edit,
   MessageSquare,
   NotebookText,
   Pin,
@@ -82,13 +83,15 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
   const { message } = App.useApp();
   const { t } = useUserPreferences();
   const user = useAuthStore((state) => state.user);
-  const { notes, loading, loadNotes, updateNoteMetadata, deleteNote } = useNotesStore();
+  const { notes, loading, loadNotes, updateNoteMetadata, updateNoteContent, deleteNote } = useNotesStore();
   const [query, setQuery] = useState('');
   const [selectedConversationId, setSelectedConversationId] = useState('all');
   const [selectedTag, setSelectedTag] = useState('all');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(() => new Set());
   const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [contentDraft, setContentDraft] = useState('');
 
   useEffect(() => {
     void loadNotes(user?.id);
@@ -208,6 +211,32 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
     }
   };
 
+  const startContentEdit = (note: Note) => {
+    setEditingNoteId(note.id);
+    setContentDraft(note.contentSnapshot);
+  };
+
+  const cancelContentEdit = () => {
+    setEditingNoteId(null);
+    setContentDraft('');
+  };
+
+  const saveContentEdit = async (note: Note) => {
+    const nextContent = contentDraft.trim();
+    if (!nextContent || nextContent === note.contentSnapshot.trim()) {
+      cancelContentEdit();
+      return;
+    }
+
+    try {
+      await updateNoteContent(note.id, nextContent);
+      setExpandedNoteIds((current) => new Set(current).add(note.id));
+      cancelContentEdit();
+    } catch {
+      message.error(t('notesUpdateFailed'));
+    }
+  };
+
   const addTag = async (note: Note, rawTag: string) => {
     const tag = normalizeTagInput(rawTag);
     if (!tag) return;
@@ -319,6 +348,7 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
                   <div className={styles.list}>
                     {group.notes.map((note) => {
                       const isExpanded = expandedNoteIds.has(note.id);
+                      const isEditingContent = editingNoteId === note.id;
                       const summary = buildNoteSummary(note.contentSnapshot);
                       const displayedContent = isExpanded ? note.contentSnapshot.trim() : summary.text;
                       return (
@@ -337,10 +367,46 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
                               })}
                             </time>
                           </div>
-                          <div className={styles.noteBody}>
-                            {renderTextWithLatinTypography(displayedContent, styles.latinText)}
-                          </div>
-                          {summary.isTruncated && (
+                          {isEditingContent ? (
+                            <div className={styles.noteContentEditor}>
+                              <textarea
+                                aria-label={t('editMessage')}
+                                autoFocus
+                                className={styles.noteContentTextarea}
+                                onChange={(event) => setContentDraft(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Escape') {
+                                    cancelContentEdit();
+                                  } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                                    void saveContentEdit(note);
+                                  }
+                                }}
+                                value={contentDraft}
+                              />
+                              <div className={styles.noteContentEditorActions}>
+                                <button
+                                  className={styles.actionButton}
+                                  onClick={cancelContentEdit}
+                                  type="button"
+                                >
+                                  {t('cancel')}
+                                </button>
+                                <button
+                                  className={styles.actionButton}
+                                  disabled={!contentDraft.trim() || contentDraft.trim() === note.contentSnapshot.trim()}
+                                  onClick={() => saveContentEdit(note)}
+                                  type="button"
+                                >
+                                  {t('save')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className={styles.noteBody}>
+                              {renderTextWithLatinTypography(displayedContent, styles.latinText)}
+                            </div>
+                          )}
+                          {summary.isTruncated && !isEditingContent && (
                             <button
                               className={styles.inlineButton}
                               onClick={() => toggleNoteExpansion(note.id)}
@@ -380,6 +446,15 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
                             />
                           </div>
                           <div className={styles.noteTools}>
+                            <button
+                              className={styles.iconActionButton}
+                              aria-label={t('editMessage')}
+                              onClick={() => startContentEdit(note)}
+                              title={t('editMessage')}
+                              type="button"
+                            >
+                              <Edit size={15} />
+                            </button>
                             <button
                               className={styles.iconActionButton}
                               aria-label={note.isPinned ? t('notesUnpin') : t('notesPin')}

@@ -225,6 +225,7 @@ export const syncService = {
 
           if (
             !localMsg ||
+            localMsg.content !== m.content ||
             (localMsg.feedback ?? null) !== cloudFeedback ||
             (localMsg.feedbackReason ?? null) !== cloudFeedbackReason ||
             (localMsg.feedbackComment ?? null) !== cloudFeedbackComment ||

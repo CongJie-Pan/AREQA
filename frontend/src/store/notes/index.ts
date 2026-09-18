@@ -8,6 +8,7 @@ import { getCurrentUserId } from '@/database/db';
 import type { Message, Note } from '@/database/schema';
 import { databaseService } from '@/services/database';
 import { logger } from '@/utils/logger';
+import { useChatStore } from '@/store/chat';
 
 interface NotesState {
   notes: Note[];
@@ -16,6 +17,8 @@ interface NotesState {
   loadNotes: (userId?: string) => Promise<void>;
   addNoteFromMessage: (message: Message, conversationTitle?: string | null) => Promise<Note>;
   updateNoteMetadata: (id: string, updates: { tags?: string[]; isPinned?: boolean }) => Promise<Note>;
+  updateNoteContent: (id: string, content: string) => Promise<Note>;
+  syncNoteFromMessage: (message: Message) => Promise<Note | null>;
   deleteNote: (id: string) => Promise<void>;
   isMessageSaved: (messageId: string) => boolean;
 }
@@ -76,6 +79,61 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
       error: null,
     }));
+    return note;
+  },
+
+  /**
+   * Updates a note body and mirrors the edit to the linked assistant message.
+   */
+  updateNoteContent: async (id: string, content: string) => {
+    const { note, sourceMessage } = await databaseService.note.updateContentAndSourceMessage(id, content);
+    set((state) => ({
+      notes: state.notes
+        .map((item) => (item.id === note.id ? note : item))
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+      error: null,
+    }));
+
+    if (sourceMessage) {
+      useChatStore.getState().updateAssistantMessage(sourceMessage.id, {
+        content: sourceMessage.content,
+        answerBlocks: undefined,
+        streamImageSlots: undefined,
+      });
+    }
+
+    logger.info('note_content_synced_to_message', {
+      component: 'useNotesStore',
+      noteId: note.id,
+      conversationId: note.conversationId,
+      messageId: note.messageId,
+      syncedSourceMessage: Boolean(sourceMessage),
+    });
+
+    return note;
+  },
+
+  /**
+   * Mirrors an edited assistant response into its linked note, if one exists.
+   */
+  syncNoteFromMessage: async (message: Message) => {
+    const note = await databaseService.note.syncFromMessage(message);
+    if (!note) return null;
+
+    set((state) => ({
+      notes: state.notes
+        .map((item) => (item.id === note.id ? note : item))
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+      error: null,
+    }));
+
+    logger.info('note_content_synced_from_message', {
+      component: 'useNotesStore',
+      noteId: note.id,
+      conversationId: note.conversationId,
+      messageId: note.messageId,
+    });
+
     return note;
   },
 

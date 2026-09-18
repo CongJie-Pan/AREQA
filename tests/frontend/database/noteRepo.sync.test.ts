@@ -8,6 +8,7 @@ import type { Message } from '@/database/schema';
 vi.mock('@/services/syncService', () => ({
   syncService: {
     pushNote: vi.fn(),
+    pushMessage: vi.fn(),
     deleteNote: vi.fn(),
   },
 }));
@@ -42,6 +43,7 @@ describe('noteRepo sync integration', () => {
     vi.clearAllMocks();
     await db.open();
     await db.notes.clear();
+    await db.messages.clear();
   });
 
   it('saves an assistant response as one linked note and syncs it', async () => {
@@ -102,5 +104,49 @@ describe('noteRepo sync integration', () => {
     const stored = await db.notes.get(note.id);
     expect(stored?.tags).toEqual(['biology', 'exam']);
     expect(stored?.isPinned).toBe(true);
+  });
+
+  it('syncs an edited source assistant message into its linked note', async () => {
+    const note = await noteRepo.addFromMessage(assistantMessage, 'Learning chat');
+    vi.clearAllMocks();
+
+    const synced = await noteRepo.syncFromMessage({
+      ...assistantMessage,
+      content: 'Edited answer from chat.',
+      answerBlocks: undefined,
+      citations: ['https://example.com/updated'],
+    });
+
+    expect(synced?.id).toBe(note.id);
+    expect(synced?.contentSnapshot).toBe('Edited answer from chat.');
+    expect(synced?.answerBlocksSnapshot).toBeUndefined();
+    expect(synced?.citationsSnapshot).toEqual(['https://example.com/updated']);
+    expect(syncService.pushNote).toHaveBeenCalledWith(expect.objectContaining({
+      id: note.id,
+      contentSnapshot: 'Edited answer from chat.',
+    }));
+  });
+
+  it('updates note content and mirrors it to the linked assistant message', async () => {
+    await db.messages.add(assistantMessage);
+    const note = await noteRepo.addFromMessage(assistantMessage, 'Learning chat');
+    vi.clearAllMocks();
+
+    const result = await noteRepo.updateContentAndSourceMessage(note.id, 'Edited from notes.');
+
+    expect(result.note.contentSnapshot).toBe('Edited from notes.');
+    expect(result.note.answerBlocksSnapshot).toBeUndefined();
+    expect(result.sourceMessage?.content).toBe('Edited from notes.');
+    expect(result.sourceMessage?.answerBlocks).toBeUndefined();
+    expect((await db.messages.get(assistantMessage.id))?.content).toBe('Edited from notes.');
+    expect(syncService.pushNote).toHaveBeenCalledWith(expect.objectContaining({
+      id: note.id,
+      contentSnapshot: 'Edited from notes.',
+    }));
+    expect(syncService.pushMessage).toHaveBeenCalledWith(expect.objectContaining({
+      id: assistantMessage.id,
+      content: 'Edited from notes.',
+      answerBlocks: undefined,
+    }));
   });
 });

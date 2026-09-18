@@ -228,6 +228,36 @@ export const useStyles = createStyles(({ css, token }) => ({
     line-height: 1.6;
     white-space: pre-wrap;
   `,
+  noteContentEditor: css`
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  `,
+  noteContentTextarea: css`
+    width: 100%;
+    min-height: 132px;
+    resize: vertical;
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--areqa-subtle-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--background) 92%, transparent);
+    color: var(--foreground);
+    padding: 10px 12px;
+    font: inherit;
+    line-height: 1.6;
+    outline: none;
+
+    &:focus {
+      border-color: color-mix(in srgb, #d8a25c 72%, transparent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, #d8a25c 18%, transparent);
+    }
+  `,
+  noteContentEditorActions: css`
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  `,
   latinText: css`
     font-family: "Times New Roman", Times, serif;
   `,

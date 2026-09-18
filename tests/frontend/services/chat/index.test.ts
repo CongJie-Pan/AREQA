@@ -31,6 +31,9 @@ vi.mock('@/services/database', () => ({
       getByConversationId: vi.fn(),
       update: vi.fn(),
     },
+    note: {
+      syncFromMessage: vi.fn().mockResolvedValue(null),
+    },
   },
 }));
 
@@ -623,6 +626,11 @@ describe('Chat Service', () => {
         content: '**edited** answer',
         answerBlocks: undefined,
       });
+      expect(databaseService.note.syncFromMessage).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'assistant-1',
+        content: '**edited** answer',
+        answerBlocks: undefined,
+      }));
       expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
         'test-conv-id',
         expect.objectContaining({

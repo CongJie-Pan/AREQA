@@ -14,6 +14,7 @@ import { useChatStore } from '@/store/chat';
 import type { DisplayMessage, SearchMode, StreamingImageSlot } from '@/store/chat';
 import type { CitationSource } from '@/components/Citations';
 import { useConversationStore } from '@/store/conversation';
+import { useNotesStore } from '@/store/notes';
 import { createChatStream } from '@/services/chat-stream';
 import { databaseService } from '@/services/database';
 import { ValidationError, normalizeError } from '@/utils/error';
@@ -1356,12 +1357,18 @@ export async function editAssistantMessage(
     isStreaming: false,
   });
   patchConversationPreviewIfLatest(message, sanitizedContent);
+  const updatedMessage: Message = {
+    ...message,
+    content: sanitizedContent,
+    answerBlocks: undefined,
+  };
 
   if (canPersistHistory()) {
     await databaseService.message.update(messageId, {
       content: sanitizedContent,
       answerBlocks: undefined,
     });
+    await useNotesStore.getState().syncNoteFromMessage(updatedMessage);
   }
 
   logger.info('chat_assistant_message_edited', {
