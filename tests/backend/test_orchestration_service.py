@@ -1025,6 +1025,58 @@ async def test_execute_passes_structured_response_policy_to_prompt_assembly(
 
 
 @pytest.mark.asyncio
+async def test_execute_injects_missing_visual_attachment_guard_before_main_model(
+    mock_router, mock_rag, mock_suggestion, mock_client, caplog
+):
+    """The live execute path should not let text-only image references be guessed."""
+
+    caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+    request = MagicMock()
+    captured_messages = []
+    response_policy = ResponsePolicy(
+        task_intent=TaskIntent.GENERAL_QA,
+        answer_depth=AnswerDepth.SCAFFOLDED,
+        tone=ResponseTone.TUTORING,
+        structure=ResponseStructure.STEP_BY_STEP,
+        followup_mode=FollowupMode.OPTIONAL,
+    )
+
+    async def llm_stream(*args, **kwargs):
+        captured_messages.extend(args[3])
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
+             {"role": "system", "content": "base prompt"},
+             {"role": "user", "content": "所以這兩張圖是什麼意思"},
+         ]):
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": "所以這兩張圖是什麼意思"}],
+            "missing-visual-attachment-conv",
+            False,
+            False,
+            False,
+            100,
+            0.7,
+            0.9,
+            1.0,
+            request,
+            "u1",
+        )]
+
+    assert "不得假裝看過圖片" in captured_messages[0]["content"]
+    assert "不得推測左圖、右圖" in captured_messages[0]["content"]
+    assert "orchestration.missing_visual_attachment_guard_applied" in caplog.text
+    assert "這兩張圖" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_execute_passes_accumulated_answer_to_suggestions(
     mock_router, mock_rag, mock_suggestion, mock_client
 ):
