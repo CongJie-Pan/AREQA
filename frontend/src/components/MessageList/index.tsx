@@ -33,7 +33,7 @@ export interface MessageListProps {
   className?: string;
   /** Callback when regenerate button is clicked */
   onRegenerate?: (messageId: string) => void;
-  /** Callback when edit is submitted for user messages */
+  /** Callback when edit is submitted for user or assistant messages */
   onEdit?: (messageId: string, newContent: string) => void;
   /** Callback when the bottom assistant turn should be deleted */
   onDeleteLatestTurn?: (assistantMessageId: string) => void;
@@ -487,7 +487,11 @@ export function MessageList({
                   ? handleFeedback
                   : undefined
               }
-              onEdit={message.role === 'user' ? onEdit : undefined}
+              onEdit={
+                message.role === 'user' || (message.role === 'assistant' && !isStreaming)
+                  ? onEdit
+                  : undefined
+              }
             />
           );
         })}

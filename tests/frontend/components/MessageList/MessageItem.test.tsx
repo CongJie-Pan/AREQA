@@ -61,6 +61,12 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       actionButtonActive: 'actionButtonActive',
       feedbackActionSlot: 'feedbackActionSlot',
       feedbackActionSlotCollapsed: 'feedbackActionSlotCollapsed',
+      editModeContainer: 'editModeContainer',
+      editTextarea: 'editTextarea',
+      editButtons: 'editButtons',
+      editButton: 'editButton',
+      editCancelButton: 'editCancelButton',
+      editSaveButton: 'editSaveButton',
     },
     cx: (...args: any[]) => args.filter(Boolean).join(' '),
   }),
@@ -206,6 +212,46 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     fireEvent.click(button);
 
     expect(onAddNote).not.toHaveBeenCalled();
+  });
+
+  it('lets completed assistant replies be edited as markdown', () => {
+    const onEdit = vi.fn();
+
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: 'old **answer**' }}
+        onEdit={onEdit}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    expect(editor).toHaveValue('old **answer**');
+
+    fireEvent.change(editor, { target: { value: 'new ![圖](https://example.com/image.png)' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+
+    expect(onEdit).toHaveBeenCalledWith('msg-1', 'new ![圖](https://example.com/image.png)');
+  });
+
+  it('cancels assistant reply editing without saving changes', () => {
+    const onEdit = vi.fn();
+
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: 'stable answer' }}
+        onEdit={onEdit}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '編輯訊息' }), {
+      target: { value: 'discarded answer' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: '編輯訊息' })).not.toBeInTheDocument();
   });
 
   it('reads an assistant reply aloud from the action row', async () => {

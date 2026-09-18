@@ -11,7 +11,7 @@ import { App, Dropdown } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
-import { sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage, deleteLatestConversationTurn } from '@/services/chat';
+import { sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage, editAssistantMessage, deleteLatestConversationTurn } from '@/services/chat';
 import { ConversationList } from '@/components/ConversationList';
 import { MessageList } from '@/components/MessageList';
 import { ChatInput } from '@/components/ChatInput';
@@ -483,10 +483,15 @@ export function ChatContainer({ className }: ChatContainerProps) {
     }
   }, [antMessageApi]);
 
-  // Handle edit user message
+  // Handle edit message
   const handleEdit = useCallback(async (messageId: string, newContent: string) => {
+    const targetMessage = useChatStore.getState().messages.find((message) => message.id === messageId);
     try {
-      await editUserMessage(messageId, newContent);
+      if (targetMessage?.role === 'assistant') {
+        await editAssistantMessage(messageId, newContent);
+      } else {
+        await editUserMessage(messageId, newContent);
+      }
     } catch (err) {
       console.error('Failed to edit message:', err);
       antMessageApi.error('編輯訊息失敗，請稍後再試');

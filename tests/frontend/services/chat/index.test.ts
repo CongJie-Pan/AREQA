@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendMessage, regenerateMessage, editUserMessage, switchConversation, cancelCurrentStream, deleteLatestConversationTurn } from '@/services/chat';
+import { sendMessage, regenerateMessage, editUserMessage, editAssistantMessage, switchConversation, cancelCurrentStream, deleteLatestConversationTurn } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -66,7 +66,11 @@ describe('Chat Service', () => {
       addUserMessage: vi.fn(),
       addAssistantMessage: vi.fn().mockReturnValue('assistant-msg-id'),
       addAssistantMessageAt: vi.fn().mockReturnValue('assistant-msg-id'),
-      updateAssistantMessage: vi.fn(),
+      updateAssistantMessage: vi.fn((id, updates) => {
+        mockChatStore.messages = mockChatStore.messages.map((message) =>
+          message.id === id ? { ...message, ...updates } : message
+        );
+      }),
       updateMessageContent: vi.fn((id, content) => {
         mockChatStore.messages = mockChatStore.messages.map((message) =>
           message.id === id ? { ...message, content } : message
@@ -477,6 +481,8 @@ describe('Chat Service', () => {
         false,
         'never',
         'test-conv-id',
+        [],
+        expect.objectContaining({ tutorProfile: undefined }),
       );
     });
 
@@ -514,6 +520,8 @@ describe('Chat Service', () => {
         false,
         'never',
         'test-conv-id',
+        [],
+        expect.objectContaining({ tutorProfile: undefined }),
       );
     });
 
@@ -541,6 +549,8 @@ describe('Chat Service', () => {
         false,
         'never',
         'guest-conv',
+        [],
+        expect.objectContaining({ tutorProfile: undefined }),
       );
       expect(databaseService.message.delete).not.toHaveBeenCalled();
       expect(databaseService.message.update).not.toHaveBeenCalled();
@@ -582,7 +592,63 @@ describe('Chat Service', () => {
         false,
         'never',
         'test-conv-id',
+        [],
+        expect.objectContaining({ tutorProfile: undefined }),
       );
+    });
+  });
+
+  describe('editAssistantMessage', () => {
+    it('updates a completed assistant reply and clears stale answer blocks', async () => {
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'question', conversationId: 'test-conv-id' },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'old answer',
+          conversationId: 'test-conv-id',
+          answerBlocks: [{ type: 'paragraph', text: 'old answer' }],
+        },
+      ];
+
+      await editAssistantMessage('assistant-1', ' **edited** answer ');
+
+      expect(mockChatStore.updateAssistantMessage).toHaveBeenCalledWith('assistant-1', {
+        content: '**edited** answer',
+        answerBlocks: undefined,
+        streamImageSlots: undefined,
+        isStreaming: false,
+      });
+      expect(databaseService.message.update).toHaveBeenCalledWith('assistant-1', {
+        content: '**edited** answer',
+        answerBlocks: undefined,
+      });
+      expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({
+          lastMessagePreview: '**edited** answer',
+        }),
+      );
+    });
+
+    it('rejects editing a streaming assistant reply', async () => {
+      mockChatStore.currentStreamingId = 'assistant-1';
+      mockChatStore.messages = [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'partial',
+          conversationId: 'test-conv-id',
+          isStreaming: true,
+        },
+      ];
+
+      await expect(editAssistantMessage('assistant-1', 'edited')).rejects.toThrow(
+        'Cannot edit a streaming assistant message',
+      );
+
+      expect(mockChatStore.updateAssistantMessage).not.toHaveBeenCalled();
+      expect(databaseService.message.update).not.toHaveBeenCalled();
     });
   });
 

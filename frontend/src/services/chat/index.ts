@@ -103,6 +103,18 @@ function patchConversationAfterTurnDeletion(conversationId: string, remainingMes
   });
 }
 
+function patchConversationPreviewIfLatest(message: DisplayMessage, content: string): void {
+  const conversationMessages = useChatStore
+    .getState()
+    .messages
+    .filter((item) => item.conversationId === message.conversationId);
+  const latestMessage = conversationMessages.at(-1);
+
+  if (latestMessage?.id !== message.id) return;
+
+  updateConversationPreviewInStore(message.conversationId, content);
+}
+
 /**
  * Prepare messages for API by filtering out invalid messages
  * Filters out:
@@ -1295,6 +1307,70 @@ export async function editUserMessage(
     chatStore.endStreaming();
     throw err;
   }
+}
+
+/**
+ * Edit a completed assistant response without regenerating the turn.
+ *
+ * Args:
+ *   messageId: Assistant message to update.
+ *   newContent: User-authored Markdown that should replace the assistant text.
+ *
+ * Side Effects:
+ *   Updates the in-memory chat transcript, clears backend-owned answer blocks
+ *   that no longer match the edited Markdown, updates the active conversation
+ *   preview when this is the latest message, and persists the edited response
+ *   for authenticated users. Logs only safe metadata, never message text.
+ *
+ * @throws ValidationError if the edited content is empty or too long.
+ * @throws Error when the target message is missing, not an assistant reply, or
+ * currently streaming.
+ */
+export async function editAssistantMessage(
+  messageId: string,
+  newContent: string
+): Promise<void> {
+  validateMessageContent(newContent);
+  const sanitizedContent = newContent.trim();
+
+  const chatStore = useChatStore.getState();
+  const message = chatStore.messages.find((item) => item.id === messageId);
+  if (!message) {
+    throw new Error('Message not found');
+  }
+  if (message.role !== 'assistant') {
+    throw new Error('Can only edit assistant messages');
+  }
+  if (message.isStreaming || chatStore.currentStreamingId === message.id) {
+    throw new Error('Cannot edit a streaming assistant message');
+  }
+
+  if (message.content === sanitizedContent && !message.answerBlocks?.length && !message.streamImageSlots?.length) {
+    return;
+  }
+
+  chatStore.updateAssistantMessage(messageId, {
+    content: sanitizedContent,
+    answerBlocks: undefined,
+    streamImageSlots: undefined,
+    isStreaming: false,
+  });
+  patchConversationPreviewIfLatest(message, sanitizedContent);
+
+  if (canPersistHistory()) {
+    await databaseService.message.update(messageId, {
+      content: sanitizedContent,
+      answerBlocks: undefined,
+    });
+  }
+
+  logger.info('chat_assistant_message_edited', {
+    component: 'chatService',
+    conversationId: message.conversationId,
+    messageId,
+    persisted: canPersistHistory(),
+    clearedAnswerBlocks: Boolean(message.answerBlocks?.length),
+  });
 }
 
 /**

@@ -687,7 +687,7 @@ export interface MessageItemProps {
   onAddNote?: (assistantMessageId: string) => void;
   /** Whether this assistant response is already saved as a note */
   isSavedNote?: boolean;
-  /** Callback when edit is submitted (user messages only) */
+  /** Callback when edit is submitted */
   onEdit?: (messageId: string, newContent: string) => void;
   /** Callback when assistant feedback is changed */
   onFeedback?: (
@@ -1321,6 +1321,12 @@ export const MessageItem = memo(function MessageItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(displayContent);
 
+  React.useEffect(() => {
+    if (!isEditing) {
+      setEditContent(displayContent);
+    }
+  }, [displayContent, isEditing]);
+
   // Handle copy message content
   const handleCopy = useCallback(async () => {
     try {
@@ -1658,63 +1664,94 @@ export const MessageItem = memo(function MessageItem({
               </div>
             )}
 
-            {/* Message Bubble */}
-            <div 
-              ref={setBubbleRef}
-              className={cx(styles.bubble, styles.assistantBubble, styles.assistantBubbleReveal)}
-              data-role="assistant-bubble"
-            >
-              {/* Message Content */}
-              <div
-                className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}
-                data-streaming-content={isStreaming && !thinking?.isThinking ? 'true' : undefined}
-              >
-                {shouldUseLiveOrderedAnswer ? (
-                  <LiveOrderedAnswerRenderer
-                    content={message.content}
-                    slots={liveImageSlots}
-                    blocks={message.answerBlocks ?? []}
-                    markdownComponents={markdownComponents}
-                    styles={styles}
-                    isStreaming={isStreaming && !thinking?.isThinking}
-                  />
-                ) : shouldUseStructuredAnswerBlocks ? (
-                  <AnswerBlocksRenderer
-                    blocks={message.answerBlocks ?? []}
-                    markdownComponents={markdownComponents}
-                    styles={styles}
-                  />
-                ) : (
-                  <StreamingMarkdown
-                    content={message.content}
-                    animate={hasLiveStreamed || Boolean(message.voicePlayback)}
-                    voicePlayback={message.voicePlayback}
-                    markdownComponents={markdownComponents}
-                  />
-                )}
-                {isStreaming && !thinking?.isThinking && (
-                  <span className={styles.streamingDots} aria-hidden="true">
-                    <span className={styles.streamingDot} />
-                    <span className={styles.streamingDot} />
-                    <span className={styles.streamingDot} />
-                  </span>
-                )}
-              </div>
-
-              {/* Citations / Sources Panel */}
-              {((message.sources && message.sources.length > 0) || 
-                (ragInfo?.sources && ragInfo.sources.length > 0) || 
-                (message.citations && message.citations.length > 0)) && (
-                <div className={cx(styles.citationsWrapper, styles.citationsReveal)}>
-                  <Citations 
-                    messageId={message.id}
-                    citations={message.citations || []} 
-                    sources={message.sources || ragInfo?.sources}
-                  />
+            {isEditing ? (
+              <div className={styles.editModeContainer}>
+                <textarea
+                  aria-label={t('editMessage')}
+                  autoFocus
+                  className={styles.editTextarea}
+                  onChange={(event) => setEditContent(event.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="Markdown..."
+                  value={editContent}
+                />
+                <div className={styles.editButtons}>
+                  <button
+                    className={cx(styles.editButton, styles.editCancelButton)}
+                    onClick={handleCancelEdit}
+                    type="button"
+                  >
+                    {t('cancel')}
+                  </button>
+                  <button
+                    className={cx(styles.editButton, styles.editSaveButton)}
+                    disabled={!editContent.trim() || editContent.trim() === displayContent}
+                    onClick={handleSaveEdit}
+                    type="button"
+                  >
+                    {t('save')}
+                  </button>
                 </div>
-              )}
+              </div>
+            ) : (
+              /* Message Bubble */
+              <div 
+                ref={setBubbleRef}
+                className={cx(styles.bubble, styles.assistantBubble, styles.assistantBubbleReveal)}
+                data-role="assistant-bubble"
+              >
+                {/* Message Content */}
+                <div
+                  className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}
+                  data-streaming-content={isStreaming && !thinking?.isThinking ? 'true' : undefined}
+                >
+                  {shouldUseLiveOrderedAnswer ? (
+                    <LiveOrderedAnswerRenderer
+                      content={message.content}
+                      slots={liveImageSlots}
+                      blocks={message.answerBlocks ?? []}
+                      markdownComponents={markdownComponents}
+                      styles={styles}
+                      isStreaming={isStreaming && !thinking?.isThinking}
+                    />
+                  ) : shouldUseStructuredAnswerBlocks ? (
+                    <AnswerBlocksRenderer
+                      blocks={message.answerBlocks ?? []}
+                      markdownComponents={markdownComponents}
+                      styles={styles}
+                    />
+                  ) : (
+                    <StreamingMarkdown
+                      content={message.content}
+                      animate={hasLiveStreamed || Boolean(message.voicePlayback)}
+                      voicePlayback={message.voicePlayback}
+                      markdownComponents={markdownComponents}
+                    />
+                  )}
+                  {isStreaming && !thinking?.isThinking && (
+                    <span className={styles.streamingDots} aria-hidden="true">
+                      <span className={styles.streamingDot} />
+                      <span className={styles.streamingDot} />
+                      <span className={styles.streamingDot} />
+                    </span>
+                  )}
+                </div>
 
-            </div>
+                {/* Citations / Sources Panel */}
+                {((message.sources && message.sources.length > 0) || 
+                  (ragInfo?.sources && ragInfo.sources.length > 0) || 
+                  (message.citations && message.citations.length > 0)) && (
+                  <div className={cx(styles.citationsWrapper, styles.citationsReveal)}>
+                    <Citations 
+                      messageId={message.id}
+                      citations={message.citations || []} 
+                      sources={message.sources || ragInfo?.sources}
+                    />
+                  </div>
+                )}
+
+              </div>
+            )}
 
             {/* Suggested Questions - Only for last assistant message */}
             {isLast && !isUser && message.suggestions && message.suggestions.length > 0 && !isStreaming && (
@@ -1764,6 +1801,18 @@ export const MessageItem = memo(function MessageItem({
                     aria-label={isSavedNote ? t('savedToNotes') : t('addToNotes')}
                   >
                     <NotebookPen size={16} />
+                  </button>
+                </Tooltip>
+              )}
+              {onEdit && !isStreaming && (
+                <Tooltip title={t('editMessage')}>
+                  <button
+                    aria-label={t('editMessage')}
+                    className={styles.actionButton}
+                    onClick={handleEditClick}
+                    type="button"
+                  >
+                    <Edit size={16} />
                   </button>
                 </Tooltip>
               )}
