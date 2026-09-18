@@ -56,6 +56,40 @@ def test_attachment_grounding_instruction_forbids_metadata_guessing():
     assert "解析失敗" in result[0]["content"]
 
 
+def test_missing_visual_attachment_instruction_blocks_image_guessing():
+    """Text-only image references should not invite visual hallucination."""
+
+    messages = [
+        {"role": "system", "content": "base prompt"},
+        {"role": "user", "content": "請說明這兩張圖是什麼意思"},
+    ]
+
+    result, applied = OrchestrationService._add_missing_visual_attachment_instruction(
+        messages,
+        "請說明這兩張圖是什麼意思",
+    )
+
+    assert applied is True
+    system_prompt = result[0]["content"]
+    assert "後端沒有收到任何可讀取的圖片" in system_prompt
+    assert "不得假裝看過圖片" in system_prompt
+    assert "不得推測左圖、右圖" in system_prompt
+
+
+def test_missing_visual_attachment_instruction_ignores_plain_text_questions():
+    """Ordinary text-only turns should keep the prompt unchanged."""
+
+    messages = [{"role": "system", "content": "base prompt"}]
+
+    result, applied = OrchestrationService._add_missing_visual_attachment_instruction(
+        messages,
+        "請用資訊工程語言解釋中介與調節",
+    )
+
+    assert applied is False
+    assert result[0]["content"] == "base prompt"
+
+
 def test_paper_auto_explain_instruction_adds_default_paper_structure():
     """Automatic PDF paper overview should be appended as a system constraint."""
 

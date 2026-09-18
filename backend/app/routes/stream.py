@@ -109,11 +109,12 @@ async def stream_endpoint(
         raise HTTPException(status_code=422, detail="At least one message is required")
     tutor_profile = normalize_tutor_profile(chat_req.tutor_profile)
     logger.info(
-        "stream.request_accepted conversation_id=%s response_mode=%s tutor_profile=%s message_count=%s",
+        "stream.request_accepted conversation_id=%s response_mode=%s tutor_profile=%s message_count=%s upload_count=%s",
         chat_req.conversation_id,
         chat_req.response_mode,
         tutor_profile,
         len(chat_req.messages),
+        len(uploads),
     )
 
     processed_attachments = []

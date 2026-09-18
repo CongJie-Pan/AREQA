@@ -39,6 +39,74 @@ logger = logging.getLogger(__name__)
 InterfaceLanguage = str
 
 class OrchestrationVisualMixin:
+    _MISSING_VISUAL_ATTACHMENT_PATTERN = re.compile(
+        r"(?:"
+        r"這(?:張|兩張|幾張)?圖|"
+        r"这些?图|這個圖片|这个图片|"
+        r"附(?:上|的).{0,8}(?:圖|图片|image)|"
+        r"貼(?:上|的).{0,8}(?:圖|图片|image)|"
+        r"uploaded image|attached image|this image|these images|the image above"
+        r")",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _mentions_missing_visual_attachment(cls, user_msg: str) -> bool:
+        """Return whether a text-only turn appears to ask about an attached image.
+
+        Args:
+            user_msg: Latest user text. The caller must not log this value.
+
+        Returns:
+            True when the wording references user-provided images strongly
+            enough that answering without attachments would invite visual
+            hallucination.
+
+        Side Effects:
+            None.
+        """
+
+        return bool(cls._MISSING_VISUAL_ATTACHMENT_PATTERN.search(user_msg or ""))
+
+    @classmethod
+    def _add_missing_visual_attachment_instruction(
+        cls,
+        messages: List[Dict[str, Any]],
+        user_msg: str,
+    ) -> tuple[List[Dict[str, Any]], bool]:
+        """Prevent visual guessing when the turn references absent attachments.
+
+        Args:
+            messages: Prompt messages prepared for the main answer model.
+            user_msg: Latest user text used only for bounded intent detection.
+
+        Returns:
+            A tuple of updated messages and whether the guard was applied.
+
+        Side Effects:
+            Mutates the first system message in ``messages`` or inserts one if
+            none exists. The instruction contains no raw user text, prompts,
+            model output, credentials, or file metadata.
+        """
+
+        if not cls._mentions_missing_visual_attachment(user_msg):
+            return messages, False
+
+        instruction = (
+            "【缺少圖片附件邊界】使用者的文字似乎要求解讀已貼上或附上的圖片，"
+            "但本回合後端沒有收到任何可讀取的圖片、PDF 或附件內容。"
+            "不得假裝看過圖片，不得推測左圖、右圖、上圖、下圖或圖片細節。"
+            "請先用一句簡短文字說明目前沒有收到可查看的圖片，"
+            "再請使用者重新上傳或貼上圖片；若仍可根據純文字問題提供一般概念說明，"
+            "必須明確標示那只是一般說明，不是對圖片內容的解讀。"
+        )
+        for message in messages:
+            if message.get("role") == "system" and isinstance(message.get("content"), str):
+                message["content"] = f'{message["content"]}\n\n{instruction}'
+                return messages, True
+        messages.insert(0, {"role": "system", "content": instruction})
+        return messages, True
+
     async def _node_intent_routing(self, query: str) -> AsyncGenerator[str, None]:
         """
         Perform fast intent checking to reject harmful or out-of-scope queries (Currently Disabled).

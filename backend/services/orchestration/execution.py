@@ -452,6 +452,16 @@ class OrchestrationExecutionMixin:
         final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
         if has_attachments:
             final_messages = self._add_attachment_grounding_instruction(final_messages)
+        else:
+            final_messages, missing_visual_guard_applied = self._add_missing_visual_attachment_instruction(
+                final_messages,
+                last_user_msg,
+            )
+            if missing_visual_guard_applied:
+                logger.info(
+                    "orchestration.missing_visual_attachment_guard_applied conversation_id=%s",
+                    conversation_id,
+                )
         should_auto_explain_paper = (
             settings.enable_pdf_paper_auto_explain
             and getattr(response_policy.attachment_task, "value", response_policy.attachment_task)
