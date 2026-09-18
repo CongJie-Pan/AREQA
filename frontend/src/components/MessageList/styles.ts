@@ -2000,25 +2000,23 @@ quoteBlockContent: css`
   // Edit textarea
   editTextarea: css`
     width: 100%;
-    min-height: 80px;
-    padding: 12px 16px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    font-size: 14px;
-    line-height: 1.6;
-    resize: vertical;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    font-size: 16px;
+    line-height: 1.8;
+    resize: none;
     outline: none;
-    transition: border-color 0.2s;
     font-family: inherit;
-    background: #1e1e1e;
-    color: #ffffff;
-
-    &:focus {
-      border-color: #d8a25c;
-    }
+    background: transparent;
+    color: var(--areqa-message-text);
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 
     &::placeholder {
-      color: rgba(255, 255, 255, 0.3);
+      color: var(--areqa-message-muted-text);
     }
   `,
 

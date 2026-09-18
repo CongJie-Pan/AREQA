@@ -20,7 +20,7 @@ import { databaseService } from '@/services/database';
 import { ValidationError, normalizeError } from '@/utils/error';
 import { sanitizeMessagesForAPI } from '@/utils/sanitizer';
 import type { ChatMessage } from '@/services/chat-stream/types';
-import type { AnswerBlock, Message } from '@/database/schema';
+import type { AnswerBlock, AttachmentMetadata, Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
@@ -127,6 +127,23 @@ function patchConversationPreviewIfLatest(message: DisplayMessage, content: stri
  * @param excludeMessageId - Optional message ID to exclude
  * @returns Filtered messages ready for API
  */
+function formatAttachmentContext(attachments: AttachmentMetadata[] | undefined): string {
+  if (!attachments || attachments.length === 0) return '';
+  const lines = attachments.slice(0, 5).map((attachment, index) => {
+    const sizeKb = Math.max(1, Math.ceil(attachment.sizeBytes / 1024));
+    return `${index + 1}. ${attachment.name} (${attachment.mediaType}, ${sizeKb} KB)`;
+  });
+  return [
+    '',
+    '[Original attachments retained for context; binary file bytes are not resent on edit]',
+    ...lines,
+  ].join('\n');
+}
+
+function messageContentForAPI(message: DisplayMessage): string {
+  return `${message.content}${formatAttachmentContext(message.attachments)}`;
+}
+
 function prepareMessagesForAPI(
   messages: DisplayMessage[],
   excludeMessageId?: string,
@@ -138,7 +155,7 @@ function prepareMessagesForAPI(
     .filter((msg) => !(msg.role === 'assistant' && msg.content.trim() === ''))
     .map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
-      content: msg.content,
+      content: messageContentForAPI(msg),
     })) as ChatMessage[];
     
   return sanitizeMessagesForAPI(mappedMessages) as ChatMessage[];
@@ -1143,7 +1160,7 @@ export async function editUserMessage(
   // Step 2: Always include the edited user message at the end
   const apiMessages: ChatMessage[] = [
     ...historyMessages,
-    { role: 'user', content: sanitizedContent },
+    { role: 'user', content: `${sanitizedContent}${formatAttachmentContext(targetMessage.attachments)}` },
   ];
 
   // Now perform store and database updates

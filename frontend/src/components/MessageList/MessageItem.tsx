@@ -703,6 +703,10 @@ export interface MessageItemProps {
   className?: string;
 }
 
+function editingTextareaRows(content: string): number {
+  return Math.max(3, Math.min(18, content.split(/\r?\n/).length + 1));
+}
+
 // New Sub-Component for handling streaming markdown parsing safely
 export function normalizeCitationMarkers(content: string): string {
   let text = content;
@@ -1491,14 +1495,24 @@ export const MessageItem = memo(function MessageItem({
 
     setIsEditSaving(true);
     try {
-      await onEdit(message.id, trimmedContent);
-      setIsEditing(false);
+      const editPromise = Promise.resolve(onEdit(message.id, trimmedContent));
+      if (isUser) {
+        setIsEditing(false);
+        setEditContent(trimmedContent);
+        await editPromise;
+      } else {
+        await editPromise;
+        setIsEditing(false);
+      }
     } catch {
-      // Keep the draft open so the user can retry without losing edits.
+      // Keep assistant drafts open; user edits close optimistically so the new
+      // stream can render in the normal message layout while errors surface via
+      // the parent toast.
+      if (!isUser) setIsEditing(true);
     } finally {
       setIsEditSaving(false);
     }
-  }, [displayContent, editContent, isEditSaving, message.id, onEdit]);
+  }, [displayContent, editContent, isEditSaving, isUser, message.id, onEdit]);
 
   // Handle keyboard shortcuts in edit mode
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1520,15 +1534,36 @@ export const MessageItem = memo(function MessageItem({
           {isEditing ? (
             /* Edit Mode */
             <div className={styles.editModeContainer}>
-              <textarea
-                className={styles.editTextarea}
-                disabled={isEditSaving}
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                onKeyDown={handleEditKeyDown}
-                autoFocus
-                placeholder="輸入訊息..."
-              />
+              <div className={cx(styles.bubble, styles.userBubble)}>
+                <textarea
+                  aria-label={t('editMessage')}
+                  autoFocus
+                  className={styles.editTextarea}
+                  disabled={isEditSaving}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="輸入訊息..."
+                  rows={editingTextareaRows(editContent)}
+                  value={editContent}
+                />
+              </div>
+              {displayAttachments.length > 0 && (
+                <div
+                  className={styles.messageAttachmentList}
+                  aria-label={t('messageAttachments', { count: displayAttachments.length })}
+                >
+                  {displayAttachments.length === 1 ? (
+                    <AttachmentCard attachment={displayAttachments[0]} />
+                  ) : (
+                    <AttachmentToggleList
+                      attachments={displayAttachments}
+                      expanded={areAttachmentsExpanded}
+                      listId={`message-attachments-edit-${message.id}`}
+                      onExpandedChange={setAreAttachmentsExpanded}
+                    />
+                  )}
+                </div>
+              )}
               <div className={styles.editButtons}>
                 <button
                   className={cx(styles.editButton, styles.editCancelButton)}
@@ -1681,16 +1716,19 @@ export const MessageItem = memo(function MessageItem({
 
             {isEditing ? (
               <div className={styles.editModeContainer}>
-                <textarea
-                  aria-label={t('editMessage')}
-                  autoFocus
-                  className={styles.editTextarea}
-                  disabled={isEditSaving}
-                  onChange={(event) => setEditContent(event.target.value)}
-                  onKeyDown={handleEditKeyDown}
-                  placeholder="Markdown..."
-                  value={editContent}
-                />
+                <div className={cx(styles.bubble, styles.assistantBubble)}>
+                  <textarea
+                    aria-label={t('editMessage')}
+                    autoFocus
+                    className={styles.editTextarea}
+                    disabled={isEditSaving}
+                    onChange={(event) => setEditContent(event.target.value)}
+                    onKeyDown={handleEditKeyDown}
+                    placeholder="Markdown..."
+                    rows={editingTextareaRows(editContent)}
+                    value={editContent}
+                  />
+                </div>
                 <div className={styles.editButtons}>
                   <button
                     className={cx(styles.editButton, styles.editCancelButton)}

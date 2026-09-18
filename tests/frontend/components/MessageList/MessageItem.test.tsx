@@ -1,6 +1,6 @@
 import React from 'react';
 import { App } from 'antd';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
@@ -227,6 +227,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     expect(editor).toHaveValue('old **answer**');
+    expect(editor.closest('.assistantBubble')).not.toBeNull();
 
     fireEvent.change(editor, { target: { value: 'new ![圖](https://example.com/image.png)' } });
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
@@ -255,6 +256,42 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       expect(onEdit).toHaveBeenCalledWith('msg-1', 'draft answer');
     });
     expect(screen.getByRole('textbox', { name: '編輯訊息' })).toHaveValue('draft answer');
+  });
+
+  it('keeps user attachments visible while editing and exits edit mode immediately on submit', async () => {
+    let resolveEdit: (() => void) | undefined;
+    const onEdit = vi.fn(() => new Promise<void>((resolve) => {
+      resolveEdit = resolve;
+    }));
+
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          role: 'user',
+          content: 'old question',
+          attachments: [{ name: 'diagram.png', mediaType: 'image/png', sizeBytes: 2048 }],
+        }}
+        onEdit={onEdit}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    expect(editor.closest('.userBubble')).not.toBeNull();
+    expect(screen.getByLabelText('附件 diagram.png')).toBeInTheDocument();
+
+    fireEvent.change(editor, { target: { value: 'edited question' } });
+    fireEvent.click(screen.getByRole('button', { name: '送出' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('textbox', { name: '編輯訊息' })).not.toBeInTheDocument();
+    });
+    expect(onEdit).toHaveBeenCalledWith('msg-1', 'edited question');
+
+    await act(async () => {
+      resolveEdit?.();
+    });
   });
 
   it('cancels assistant reply editing without saving changes', () => {

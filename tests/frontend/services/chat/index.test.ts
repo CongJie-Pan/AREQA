@@ -644,6 +644,44 @@ describe('Chat Service', () => {
         expect.objectContaining({ tutorProfile: undefined }),
       );
     });
+
+    it('keeps original attachment context when regenerating from an edited user query', async () => {
+      mockChatStore.messages = [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'old question',
+          conversationId: 'test-conv-id',
+          attachments: [{ name: 'diagram.png', mediaType: 'image/png', sizeBytes: 2048 }],
+        },
+        { id: 'assistant-old', role: 'assistant', content: 'old answer', conversationId: 'test-conv-id' },
+      ];
+
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('new answer');
+        await callbacks.onDone();
+      });
+
+      await editUserMessage('user-1', 'edited question');
+
+      expect(createChatStream).toHaveBeenCalledWith(
+        [
+          {
+            role: 'user',
+            content: expect.stringContaining('edited question\n[Original attachments retained for context; binary file bytes are not resent on edit]\n1. diagram.png (image/png, 2 KB)'),
+          },
+        ],
+        expect.any(Object),
+        expect.any(AbortSignal),
+        false,
+        false,
+        'never',
+        'test-conv-id',
+        [],
+        expect.objectContaining({ tutorProfile: undefined }),
+      );
+      expect(databaseService.message.update).toHaveBeenCalledWith('user-1', { content: 'edited question' });
+    });
   });
 
   describe('editAssistantMessage', () => {
