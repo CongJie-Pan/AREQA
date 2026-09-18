@@ -48,8 +48,6 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-// Characterization experiments: these assertions demonstrate current defects,
-// not the desired contract. Replace them with recovery assertions when fixed.
 describe('deletion research: local/cloud consistency', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -66,6 +64,7 @@ describe('deletion research: local/cloud consistency', () => {
     }));
     await db.open();
     await db.messages.clear();
+    await db.messageDeletions.clear();
     await db.conversations.clear();
     await db.notes.clear();
     await syncService.pullFromCloud();
@@ -73,24 +72,36 @@ describe('deletion research: local/cloud consistency', () => {
 
   afterEach(async () => {
     await db.messages.clear();
+    await db.messageDeletions.clear();
     await db.conversations.clear();
     await db.notes.clear();
   });
 
-  it('silently restores only the user query after one cloud delete returns an error', async () => {
+  it('keeps a locally deleted query hidden when one cloud delete returns an error', async () => {
     cloud.failId = 'research-user';
     await messageRepo.deleteManyByConversationId(
       'research-conversation', ['research-user', 'research-assistant'],
     );
     expect(await db.messages.count()).toBe(0);
     expect([...cloud.deletes].sort()).toEqual(['research-assistant', 'research-user']);
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Delete message error',
+      expect.any(Error),
+      expect.objectContaining({
+        component: 'syncService',
+        messageId: 'research-user',
+      }),
+    );
 
     await syncService.pullFromCloud();
-    expect((await db.messages.toArray()).map((row) => row.id)).toEqual(['research-user']);
+    expect(await db.messages.count()).toBe(0);
+    expect((await db.messageDeletions.toArray()).map((row) => row.id).sort()).toEqual([
+      'research-assistant',
+      'research-user',
+    ]);
   });
 
-  it('restores deleted messages from an in-flight snapshot even when cloud deletes succeed', async () => {
+  it('does not restore deleted messages from an in-flight cloud snapshot', async () => {
     let releaseRead!: () => void;
     let markRead!: () => void;
     const readStarted = new Promise<void>((resolve) => { markRead = resolve; });
@@ -111,10 +122,10 @@ describe('deletion research: local/cloud consistency', () => {
       releaseRead();
       await pull;
     }
-    expect(await db.messages.count()).toBe(2);
+    expect(await db.messages.count()).toBe(0);
     cloud.beforeMessageRead = undefined;
     await syncService.pullFromCloud();
-    expect(await db.messages.count()).toBe(2);
+    expect(await db.messages.count()).toBe(0);
   });
 
   it('retains local messages deleted by another device', async () => {

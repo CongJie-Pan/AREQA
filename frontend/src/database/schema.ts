@@ -169,6 +169,29 @@ export interface Message {
 }
 
 /**
+ * Local-only delete marker for a message.
+ *
+ * Compatibility:
+ * - Supabase currently has no durable message tombstone table.
+ * - The browser keeps this marker past the matching cloud delete so stale
+ *   pull snapshots cannot recreate a user-deleted turn.
+ */
+export interface MessageDeletion {
+  /** Message ID being deleted. */
+  id: string;
+  /** User ID that owns the deleted message. */
+  userId: string;
+  /** Conversation that owned the deleted message, if known. */
+  conversationId: string | null;
+  /** Local deletion timestamp. */
+  deletedAt: Date;
+  /** Number of attempted cloud delete calls. */
+  retryCount: number;
+  /** Last safe error summary from cloud delete, if any. */
+  lastError?: string | null;
+}
+
+/**
  * User-saved note linked to an assistant response.
  *
  * Compatibility:

@@ -102,6 +102,7 @@ describe('syncService - pullFromCloud', () => {
     await db.open();
     await db.conversations.clear();
     await db.messages.clear();
+    await db.messageDeletions.clear();
     await db.notes.clear();
   });
 
@@ -109,6 +110,7 @@ describe('syncService - pullFromCloud', () => {
     vi.clearAllMocks();
     await db.conversations.clear();
     await db.messages.clear();
+    await db.messageDeletions.clear();
     await db.notes.clear();
   });
 
@@ -394,12 +396,59 @@ describe('syncService - pullFromCloud', () => {
   });
 
   it('should delete one cloud message scoped to the current user', async () => {
+    await db.messageDeletions.add({
+      id: 'assistant_old',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      deletedAt: new Date('2026-09-18T00:00:00.000Z'),
+      retryCount: 0,
+      lastError: 'previous failure',
+    });
+
     await syncService.deleteMessage('assistant_old');
 
     expect(supabase.from).toHaveBeenCalledWith('messages');
     expect(mockMessageDelete).toHaveBeenCalledOnce();
     expect(mockMessageDeleteEq).toHaveBeenNthCalledWith(1, 'id', 'assistant_old');
     expect(mockMessageDeleteEq).toHaveBeenNthCalledWith(2, 'user_id', 'user_123');
+    expect(await db.messageDeletions.get('assistant_old')).toEqual(expect.objectContaining({
+      id: 'assistant_old',
+      retryCount: 1,
+      lastError: null,
+    }));
+  });
+
+  it('records returned Supabase delete errors without clearing the tombstone', async () => {
+    const { logger } = await import('@/utils/logger');
+    const deleteError = { message: 'delete failed', status: 503 };
+    mockMessageDeleteEq.mockImplementation((column: string) => {
+      if (column === 'id') return { eq: mockMessageDeleteEq };
+      return Promise.resolve({ error: deleteError });
+    });
+    await db.messageDeletions.add({
+      id: 'assistant_error',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      deletedAt: new Date('2026-09-18T00:00:00.000Z'),
+      retryCount: 0,
+      lastError: null,
+    });
+
+    await expect(syncService.deleteMessage('assistant_error')).resolves.toBe(false);
+
+    expect(await db.messageDeletions.get('assistant_error')).toEqual(expect.objectContaining({
+      id: 'assistant_error',
+      retryCount: 1,
+      lastError: 'delete failed',
+    }));
+    expect(logger.error).toHaveBeenCalledWith(
+      'Delete message error',
+      expect.any(Error),
+      expect.objectContaining({
+        component: 'syncService',
+        messageId: 'assistant_error',
+      }),
+    );
   });
 
   it('should push and delete notes scoped to the current user', async () => {

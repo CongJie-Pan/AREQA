@@ -9,6 +9,7 @@ import type { MessageFeedback, MessageFeedbackDetails, MessageFeedbackReason } f
 
 type MessageSearchResult = NonNullable<Message['searchResults']>[number];
 type MessageSource = NonNullable<Message['sources']>[number];
+const MESSAGE_DELETION_TOMBSTONE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function normalizeJsonArray<T>(value: unknown, fallback?: T[]): T[] | undefined {
   if (Array.isArray(value)) return value as T[];
@@ -40,6 +41,23 @@ function handleAuthError(error: unknown): void {
   if ((error as { status?: number } | null)?.status === 401) {
     void useAuthStore.getState().invalidateSession();
   }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return String(error);
+}
+
+async function pruneExpiredMessageDeletionTombstones(userId: string): Promise<void> {
+  const expiresBefore = new Date(Date.now() - MESSAGE_DELETION_TOMBSTONE_RETENTION_MS);
+  await db.messageDeletions
+    .where('[userId+deletedAt]')
+    .below([userId, expiresBefore])
+    .delete();
 }
 
 function normalizeMessageFeedback(value: unknown): MessageFeedback | null {
@@ -196,9 +214,21 @@ export const syncService = {
       if (cloudMsgs && cloudMsgs.length > 0) {
         const localMsgs = await db.messages.toArray();
         const localMsgMap = new Map(localMsgs.map(m => [m.id, m]));
+        const deletedMessageIds = new Set(
+          (await db.messageDeletions.where('userId').equals(userId).toArray())
+            .map((deletion) => deletion.id),
+        );
         
         const msgsToUpsert = [];
         for (const m of cloudMsgs) {
+          if (deletedMessageIds.has(m.id)) {
+            logger.info('sync_message_pull_tombstone_skipped', {
+              component: 'syncService',
+              messageId: m.id,
+              conversationId: m.conversation_id,
+            });
+            continue;
+          }
           const cloudFeedback = normalizeMessageFeedback(m.feedback);
           const cloudFeedbackReason = normalizeMessageFeedbackReason(m.feedback_reason);
           const cloudFeedbackComment = typeof m.feedback_comment === 'string'
@@ -273,6 +303,7 @@ export const syncService = {
       if (dataChanged) {
         logger.info('Pulled updated cloud data into local database');
       }
+      await pruneExpiredMessageDeletionTombstones(userId);
     } catch (e) {
       handleAuthError(e);
       logger.error('Failed to sync from cloud', e instanceof Error ? e : new Error(String(e)));
@@ -308,6 +339,16 @@ export const syncService = {
     if (!userId || userId === 'default_user') return;
 
     try {
+      const pendingDeletion = await db.messageDeletions.get(msg.id);
+      if (pendingDeletion?.userId === userId) {
+        logger.warn('sync_message_push_skipped_for_tombstone', {
+          component: 'syncService',
+          messageId: msg.id,
+          conversationId: msg.conversationId,
+        });
+        return;
+      }
+
       const { error } = await supabase.from('messages').upsert({
         id: msg.id,
         user_id: msg.userId,
@@ -436,19 +477,48 @@ export const syncService = {
    * superseded assistant replies. The cloud delete keeps reload-time sync from
    * reintroducing those stale replies into IndexedDB.
    */
-  async deleteMessage(id: string) {
+  async deleteMessage(id: string): Promise<boolean> {
     const userId = getCurrentUserId();
-    if (!userId || userId === 'default_user') return;
+    if (!userId || userId === 'default_user') return false;
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('messages')
         .delete()
         .eq('id', id)
         .eq('user_id', userId);
+
+      if (error) {
+        handleAuthError(error);
+        throw error;
+      }
+
+      await db.messageDeletions
+        .where('id')
+        .equals(id)
+        .modify((deletion) => {
+          deletion.retryCount = (deletion.retryCount || 0) + 1;
+          deletion.lastError = null;
+        });
+      logger.info('sync_message_deleted_from_cloud', {
+        component: 'syncService',
+        messageId: id,
+      });
+      return true;
     } catch (e) {
       handleAuthError(e);
-      logger.error('Delete message error', e instanceof Error ? e : new Error(String(e)));
+      await db.messageDeletions
+        .where('id')
+        .equals(id)
+        .modify((deletion) => {
+          deletion.retryCount = (deletion.retryCount || 0) + 1;
+          deletion.lastError = errorMessage(e);
+        });
+      logger.error('Delete message error', e instanceof Error ? e : new Error(errorMessage(e)), {
+        component: 'syncService',
+        messageId: id,
+      });
+      return false;
     }
   },
 

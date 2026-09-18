@@ -33,6 +33,7 @@ import { logger } from '@/utils/logger';
  */
 let currentAbortController: AbortController | null = null;
 const CONVERSATION_PREVIEW_MAX_LENGTH = 100;
+let historyLoadGeneration = 0;
 
 export type SendMessageResponseMode = 'text' | 'voice';
 
@@ -641,7 +642,7 @@ export function isStreamActive(): boolean {
  */
 export async function loadMessages(
   conversationId: string,
-  options: { clearBeforeLoad?: boolean } = {},
+  options: { clearBeforeLoad?: boolean; isStale?: () => boolean } = {},
 ): Promise<void> {
   const chatStore = useChatStore.getState();
   const shouldClearBeforeLoad = options.clearBeforeLoad ?? true;
@@ -656,6 +657,14 @@ export async function loadMessages(
 
   try {
     const messages = await databaseService.message.getByConversationId(conversationId, userId);
+
+    if (options.isStale?.()) {
+      logger.info('chat_history_load_stale_ignored', {
+        component: 'chatService',
+        conversationId,
+      });
+      return;
+    }
 
     if (!shouldClearBeforeLoad) {
       chatStore.resetStreamingState();
@@ -676,6 +685,7 @@ export async function loadMessages(
 export async function startNewConversation(): Promise<string> {
   // Cancel any ongoing stream
   await cancelCurrentStream();
+  historyLoadGeneration += 1;
 
   const chatStore = useChatStore.getState();
   const conversationStore = useConversationStore.getState();
@@ -705,16 +715,27 @@ export async function switchConversation(conversationId: string): Promise<void> 
   const conversationStore = useConversationStore.getState();
 
   if (!canPersistHistory()) return;
+  const requestGeneration = ++historyLoadGeneration;
+  const isStale = () => requestGeneration !== historyLoadGeneration;
 
   // Keep the currently rendered messages until the target conversation is
   // ready. Clearing first makes MessageList briefly render the new-chat empty
   // state during IndexedDB reads.
   conversationStore.setMessageHandoffLoading(true);
   try {
-    await loadMessages(conversationId, { clearBeforeLoad: false });
+    await loadMessages(conversationId, { clearBeforeLoad: false, isStale });
+    if (isStale()) {
+      logger.info('chat_history_switch_stale_ignored', {
+        component: 'chatService',
+        conversationId,
+      });
+      return;
+    }
     conversationStore.selectConversation(conversationId);
   } finally {
-    useConversationStore.getState().setMessageHandoffLoading(false);
+    if (!isStale()) {
+      useConversationStore.getState().setMessageHandoffLoading(false);
+    }
   }
 }
 
@@ -789,8 +810,14 @@ export async function deleteLatestConversationTurn(assistantMessageId: string): 
     throw new Error('Latest assistant reply does not have a paired user query');
   }
 
+  let deletionStartIndex = pairedUserIndex;
+  for (let index = pairedUserIndex - 1; index >= 0; index -= 1) {
+    if (conversationMessages[index].role === 'assistant') break;
+    deletionStartIndex = index;
+  }
+
   const idsToDelete = conversationMessages
-    .slice(pairedUserIndex, targetConversationIndex + 1)
+    .slice(deletionStartIndex, targetConversationIndex + 1)
     .map((message) => message.id);
 
   for (const id of idsToDelete) {

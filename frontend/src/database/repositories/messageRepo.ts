@@ -144,9 +144,19 @@ export const messageRepo = {
     const message = await db.messages.get(id);
     if (!message) return;
 
-    await db.transaction('rw', [db.messages, db.conversations], async () => {
+    const deletion = {
+      id: message.id,
+      userId: message.userId,
+      conversationId: message.conversationId,
+      deletedAt: new Date(),
+      retryCount: 0,
+      lastError: null,
+    };
+
+    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions], async () => {
       // Delete the message first
       await db.messages.delete(id);
+      await db.messageDeletions.put(deletion);
 
       // Use atomic modify to decrement message count
       // This prevents race conditions when multiple messages are deleted concurrently
@@ -159,7 +169,7 @@ export const messageRepo = {
         });
     });
 
-    syncService.deleteMessage(id);
+    await syncService.deleteMessage(id);
   },
 
   /**
@@ -174,7 +184,8 @@ export const messageRepo = {
     if (uniqueIds.length === 0) return;
 
     let deletedIds: string[] = [];
-    await db.transaction('rw', [db.messages, db.conversations], async () => {
+    const deletedAt = new Date();
+    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions], async () => {
       const existingMessages = await db.messages
         .where('id')
         .anyOf(uniqueIds)
@@ -184,6 +195,14 @@ export const messageRepo = {
       if (deletedIds.length === 0) return;
 
       await db.messages.bulkDelete(deletedIds);
+      await db.messageDeletions.bulkPut(existingMessages.map((message) => ({
+        id: message.id,
+        userId: message.userId,
+        conversationId: message.conversationId,
+        deletedAt,
+        retryCount: 0,
+        lastError: null,
+      })));
 
       const remainingMessages = await db.messages
         .where('conversationId')
@@ -201,9 +220,7 @@ export const messageRepo = {
         });
     });
 
-    for (const id of deletedIds) {
-      syncService.deleteMessage(id);
-    }
+    await Promise.allSettled(deletedIds.map((id) => syncService.deleteMessage(id)));
 
     const conversation = await db.conversations.get(conversationId);
     if (conversation) {

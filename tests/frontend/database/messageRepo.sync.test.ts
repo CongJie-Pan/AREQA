@@ -36,10 +36,12 @@ describe('messageRepo - sync integration', () => {
     await db.open();
     await db.conversations.clear();
     await db.messages.clear();
+    await db.messageDeletions.clear();
   });
 
   afterEach(async () => {
     await db.messages.clear();
+    await db.messageDeletions.clear();
     await db.conversations.clear();
   });
 
@@ -66,6 +68,11 @@ describe('messageRepo - sync integration', () => {
     await messageRepo.delete('assistant_old');
 
     expect(await db.messages.get('assistant_old')).toBeUndefined();
+    expect(await db.messageDeletions.get('assistant_old')).toEqual(expect.objectContaining({
+      id: 'assistant_old',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+    }));
     expect(syncService.deleteMessage).toHaveBeenCalledWith('assistant_old');
     expect(syncService.pushMessage).not.toHaveBeenCalled();
   });
@@ -120,6 +127,10 @@ describe('messageRepo - sync integration', () => {
 
     expect(await db.messages.get('user_latest')).toBeUndefined();
     expect(await db.messages.get('assistant_latest')).toBeUndefined();
+    expect((await db.messageDeletions.toArray()).map((row) => row.id).sort()).toEqual([
+      'assistant_latest',
+      'user_latest',
+    ]);
     expect((await db.messages.where('conversationId').equals('conv_1').count())).toBe(2);
     const conversation = await db.conversations.get('conv_1');
     expect(conversation?.messageCount).toBe(2);

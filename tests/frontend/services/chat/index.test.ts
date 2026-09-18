@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendMessage, regenerateMessage, editUserMessage, editAssistantMessage, switchConversation, cancelCurrentStream, deleteLatestConversationTurn } from '@/services/chat';
+import { sendMessage, regenerateMessage, editUserMessage, editAssistantMessage, switchConversation, startNewConversation, cancelCurrentStream, deleteLatestConversationTurn } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
@@ -131,7 +131,7 @@ describe('Chat Service', () => {
   });
 
   describe('switchConversation', () => {
-    it('characterizes an older slow history load overriding a newer selection', async () => {
+    it('ignores an older slow history load after a newer selection wins', async () => {
       let resolveOlder!: (messages: never[]) => void;
       let markStarted!: () => void;
       const started = new Promise<void>((resolve) => { markStarted = resolve; });
@@ -152,7 +152,7 @@ describe('Chat Service', () => {
         resolveOlder([]);
         await olderSwitch;
       }
-      expect(mockConversationStore.selectConversation).toHaveBeenLastCalledWith('older-conversation');
+      expect(mockConversationStore.selectConversation).toHaveBeenLastCalledWith('newer-conversation');
     });
 
     it('keeps the current messages visible until the target conversation messages are loaded', async () => {
@@ -178,6 +178,27 @@ describe('Chat Service', () => {
       expect(mockConversationStore.setLoading).not.toHaveBeenCalled();
       expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenNthCalledWith(1, true);
       expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenLastCalledWith(false);
+    });
+
+    it('does not let a stale history load override starting a new conversation', async () => {
+      let resolveOlder!: (messages: never[]) => void;
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => { markStarted = resolve; });
+      const olderRead = new Promise<never[]>((resolve) => { resolveOlder = resolve; });
+      vi.mocked(databaseService.message.getByConversationId).mockImplementationOnce(() => {
+        markStarted();
+        return olderRead;
+      });
+
+      const olderSwitch = switchConversation('older-conversation');
+      await started;
+      await startNewConversation();
+      resolveOlder([]);
+      await olderSwitch;
+
+      expect(mockChatStore.clearMessages).toHaveBeenCalled();
+      expect(mockConversationStore.createConversation).toHaveBeenCalled();
+      expect(mockConversationStore.selectConversation).not.toHaveBeenCalledWith('older-conversation');
     });
   });
 
@@ -697,7 +718,7 @@ describe('Chat Service', () => {
   });
 
   describe('deleteLatestConversationTurn', () => {
-    it('characterizes an orphan user query that blocks further turn deletion', async () => {
+    it('deletes unpaired user queries that belong to the latest assistant turn block', async () => {
       mockChatStore.messages = [
         { id: 'orphan-user', role: 'user', content: 'unanswered', conversationId: 'test-conv-id' },
         { id: 'user-2', role: 'user', content: 'retry', conversationId: 'test-conv-id' },
@@ -706,9 +727,10 @@ describe('Chat Service', () => {
 
       await deleteLatestConversationTurn('assistant-2');
 
-      expect(mockChatStore.messages.map((message: { id: string }) => message.id)).toEqual(['orphan-user']);
-      await expect(deleteLatestConversationTurn('orphan-user')).rejects.toThrow(
-        'Only the latest completed assistant reply can be deleted',
+      expect(mockChatStore.messages).toEqual([]);
+      expect(databaseService.message.deleteManyByConversationId).toHaveBeenCalledWith(
+        'test-conv-id',
+        ['orphan-user', 'user-2', 'assistant-2'],
       );
     });
 

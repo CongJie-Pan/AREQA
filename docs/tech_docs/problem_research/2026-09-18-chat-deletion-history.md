@@ -2,6 +2,18 @@
 
 日期：2026-09-18。研究基準：`2c39462`。
 
+## Implementation Update
+
+後續修復提交已把 E1、E2、E4、E5 改為 regression expectations：
+
+- 本地 IndexedDB 新增 `messageDeletions` tombstone 表。刪除訊息時，訊息刪除與 tombstone 寫入在同一個 Dexie transaction 內完成。
+- `syncService.deleteMessage` 會檢查 Supabase 回傳的 `error`，記錄安全結構化錯誤，並保留 tombstone 防止舊 cloud snapshot 復活已刪內容。
+- `pullFromCloud` 在 bulkPut cloud messages 前會跳過同一 user 的 tombstoned message id；tombstone 保留 30 天後由同步流程清除。
+- 刪除最新 assistant turn 時，會一併清除前一個 assistant 之後累積的未配對 user query，避免只剩 user query 而無法再用單輪刪除入口清理。
+- 歷史對話切換加入 generation guard；較慢的舊 load 完成時不再覆蓋較新的選取，新對話入口也會使既有 history load 過期。
+
+仍未處理的範圍：正式瀏覽器效能追蹤、長對話分頁/虛擬化、跨裝置「其他裝置刪除」的全量 reconciliation、正式雲端資料驗證。
+
 ## Research Question
 
 為何刪除聊天中的一輪問答會殘留無法繼續刪除的用戶 query？開啟或切換歷史對話的卡頓發生在哪一層？

@@ -4,7 +4,7 @@
  */
 
 import Dexie, { type EntityTable } from 'dexie';
-import type { Conversation, Message, Note, Setting } from './schema';
+import type { Conversation, Message, MessageDeletion, Note, Setting } from './schema';
 
 /**
  * PerplexityQA Database class
@@ -57,6 +57,8 @@ class PerplexityQADatabase extends Dexie {
   conversations!: EntityTable<Conversation, 'id'>;
   /** Messages table */
   messages!: EntityTable<Message, 'id'>;
+  /** Local-only message delete markers used to prevent stale sync resurrection. */
+  messageDeletions!: EntityTable<MessageDeletion, 'id'>;
   /** Settings table */
   settings!: EntityTable<Setting, 'key'>;
   /** Notes table */
@@ -120,6 +122,16 @@ class PerplexityQADatabase extends Dexie {
         note.tags = Array.isArray(note.tags) ? note.tags : [];
         note.isPinned = Boolean(note.isPinned);
       });
+    });
+
+    // Version 7: Local message tombstones prevent stale cloud pull snapshots
+    // from resurrecting user-deleted turns before Supabase delete settles.
+    this.version(7).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, [conversationId+createdAt]',
+      messageDeletions: 'id, userId, conversationId, deletedAt, [userId+deletedAt]',
+      settings: 'key',
+      notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
     });
 
     // Handle multi-tab upgrades
