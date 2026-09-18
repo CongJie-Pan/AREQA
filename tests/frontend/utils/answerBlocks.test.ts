@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerBlock } from '@/database/schema';
-import { persistentAnswerBlocks } from '@/utils/answerBlocks';
+import { answerBlocksForEditedContent, persistentAnswerBlocks } from '@/utils/answerBlocks';
 
 const baseImageBlock = {
   type: 'image_block' as const,
@@ -47,5 +47,23 @@ describe('persistentAnswerBlocks', () => {
     ];
 
     expect(persistentAnswerBlocks(blocks)).toEqual([{ type: 'paragraph', text: 'Explanation' }]);
+  });
+});
+
+describe('answerBlocksForEditedContent', () => {
+  it('replaces stale text blocks with edited Markdown and preserves image blocks', () => {
+    const blocks: AnswerBlock[] = [
+      { type: 'paragraph', text: 'Old explanation' },
+      baseImageBlock,
+    ];
+
+    expect(answerBlocksForEditedContent('Edited **Markdown**', blocks)).toEqual([
+      { type: 'paragraph', text: 'Edited **Markdown**' },
+      baseImageBlock,
+    ]);
+  });
+
+  it('returns undefined when there are no images to preserve', () => {
+    expect(answerBlocksForEditedContent('Edited text', [{ type: 'paragraph', text: 'Old text' }])).toBeUndefined();
   });
 });

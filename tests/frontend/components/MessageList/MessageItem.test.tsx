@@ -1,6 +1,6 @@
 import React from 'react';
 import { App } from 'antd';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
@@ -214,7 +214,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(onAddNote).not.toHaveBeenCalled();
   });
 
-  it('lets completed assistant replies be edited as markdown', () => {
+  it('lets completed assistant replies be edited as markdown', async () => {
     const onEdit = vi.fn();
 
     render(
@@ -231,7 +231,30 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     fireEvent.change(editor, { target: { value: 'new ![圖](https://example.com/image.png)' } });
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
 
-    expect(onEdit).toHaveBeenCalledWith('msg-1', 'new ![圖](https://example.com/image.png)');
+    await waitFor(() => {
+      expect(onEdit).toHaveBeenCalledWith('msg-1', 'new ![圖](https://example.com/image.png)');
+    });
+  });
+
+  it('keeps the assistant edit draft open when saving fails', async () => {
+    const onEdit = vi.fn().mockRejectedValue(new Error('save failed'));
+
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: 'old answer' }}
+        onEdit={onEdit}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    fireEvent.change(editor, { target: { value: 'draft answer' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+
+    await waitFor(() => {
+      expect(onEdit).toHaveBeenCalledWith('msg-1', 'draft answer');
+    });
+    expect(screen.getByRole('textbox', { name: '編輯訊息' })).toHaveValue('draft answer');
   });
 
   it('cancels assistant reply editing without saving changes', () => {

@@ -21,6 +21,19 @@ vi.mock('@/database/db', async (importOriginal) => {
   };
 });
 
+const imageBlock = {
+  type: 'image_block' as const,
+  slotId: 'visual-1',
+  topic: 'Forest plot',
+  purpose: 'diagram',
+  imageUrl: 'https://example.com/forest.png',
+  sourceUrl: 'https://example.com/source',
+  sourceDomain: 'example.com',
+  caption: 'Forest plot example',
+  safetyStatus: 'pass' as const,
+  matchConfidence: 0.6,
+};
+
 const assistantMessage: Message = {
   id: 'assistant-note-source',
   userId: 'user_123',
@@ -34,7 +47,7 @@ const assistantMessage: Message = {
     chunk_id: 'chunk-1',
     url: 'https://example.com/source',
   }],
-  answerBlocks: [{ type: 'paragraph', text: 'A useful explanation worth saving.' }],
+  answerBlocks: [{ type: 'paragraph', text: 'A useful explanation worth saving.' }, imageBlock],
   createdAt: new Date('2026-09-09T00:00:00.000Z'),
 };
 
@@ -135,9 +148,9 @@ describe('noteRepo sync integration', () => {
     const result = await noteRepo.updateContentAndSourceMessage(note.id, 'Edited from notes.');
 
     expect(result.note.contentSnapshot).toBe('Edited from notes.');
-    expect(result.note.answerBlocksSnapshot).toBeUndefined();
+    expect(result.note.answerBlocksSnapshot).toEqual([{ type: 'paragraph', text: 'Edited from notes.' }, imageBlock]);
     expect(result.sourceMessage?.content).toBe('Edited from notes.');
-    expect(result.sourceMessage?.answerBlocks).toBeUndefined();
+    expect(result.sourceMessage?.answerBlocks).toEqual([{ type: 'paragraph', text: 'Edited from notes.' }, imageBlock]);
     expect((await db.messages.get(assistantMessage.id))?.content).toBe('Edited from notes.');
     expect(syncService.pushNote).toHaveBeenCalledWith(expect.objectContaining({
       id: note.id,
@@ -146,7 +159,7 @@ describe('noteRepo sync integration', () => {
     expect(syncService.pushMessage).toHaveBeenCalledWith(expect.objectContaining({
       id: assistantMessage.id,
       content: 'Edited from notes.',
-      answerBlocks: undefined,
+      answerBlocks: [{ type: 'paragraph', text: 'Edited from notes.' }, imageBlock],
     }));
   });
 });

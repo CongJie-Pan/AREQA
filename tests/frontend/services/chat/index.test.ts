@@ -602,7 +602,19 @@ describe('Chat Service', () => {
   });
 
   describe('editAssistantMessage', () => {
-    it('updates a completed assistant reply and clears stale answer blocks', async () => {
+    it('updates a completed assistant reply and preserves image answer blocks', async () => {
+      const imageBlock = {
+        type: 'image_block' as const,
+        slotId: 'visual-1',
+        topic: 'Forest plot',
+        purpose: 'diagram',
+        imageUrl: 'https://example.com/forest.png',
+        sourceUrl: 'https://example.com/source',
+        sourceDomain: 'example.com',
+        caption: 'Forest plot example',
+        safetyStatus: 'pass' as const,
+        matchConfidence: 0.6,
+      };
       mockChatStore.messages = [
         { id: 'user-1', role: 'user', content: 'question', conversationId: 'test-conv-id' },
         {
@@ -610,7 +622,7 @@ describe('Chat Service', () => {
           role: 'assistant',
           content: 'old answer',
           conversationId: 'test-conv-id',
-          answerBlocks: [{ type: 'paragraph', text: 'old answer' }],
+          answerBlocks: [{ type: 'paragraph', text: 'old answer' }, imageBlock],
         },
       ];
 
@@ -618,18 +630,18 @@ describe('Chat Service', () => {
 
       expect(mockChatStore.updateAssistantMessage).toHaveBeenCalledWith('assistant-1', {
         content: '**edited** answer',
-        answerBlocks: undefined,
+        answerBlocks: [{ type: 'paragraph', text: '**edited** answer' }, imageBlock],
         streamImageSlots: undefined,
         isStreaming: false,
       });
       expect(databaseService.message.update).toHaveBeenCalledWith('assistant-1', {
         content: '**edited** answer',
-        answerBlocks: undefined,
+        answerBlocks: [{ type: 'paragraph', text: '**edited** answer' }, imageBlock],
       });
       expect(databaseService.note.syncFromMessage).toHaveBeenCalledWith(expect.objectContaining({
         id: 'assistant-1',
         content: '**edited** answer',
-        answerBlocks: undefined,
+        answerBlocks: [{ type: 'paragraph', text: '**edited** answer' }, imageBlock],
       }));
       expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
         'test-conv-id',

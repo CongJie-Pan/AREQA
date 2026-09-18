@@ -84,6 +84,9 @@ vi.mock('@/lib/supabase', () => ({
 
 describe('syncService - pullFromCloud', () => {
   beforeEach(async () => {
+    mockSupabaseResponse = { data: [], error: null };
+    mockSupabaseMsgResponse = { data: [], error: null };
+    mockSupabaseNoteResponse = { data: [], error: null };
     mockReload.mockClear();
     mockConversationUpsert.mockClear();
     mockMessageUpsert.mockClear();
@@ -272,6 +275,55 @@ describe('syncService - pullFromCloud', () => {
     }
   });
 
+  it('clears local answer blocks when the cloud row explicitly stores null', async () => {
+    const createdAt = new Date('2026-08-03T00:00:00.000Z');
+    await db.conversations.add({
+      id: 'conv_clear_blocks',
+      userId: 'user_123',
+      title: 'Editable answer',
+      createdAt,
+      updatedAt: createdAt,
+      messageCount: 1,
+      lastMessagePreview: 'Edited answer',
+    });
+    await db.messages.add({
+      id: 'msg_clear_blocks',
+      userId: 'user_123',
+      conversationId: 'conv_clear_blocks',
+      role: 'assistant',
+      content: 'Edited answer',
+      answerBlocks: [{ type: 'paragraph', text: 'Old structured answer' }],
+      createdAt,
+    });
+
+    mockSupabaseResponse = {
+      data: [{
+        id: 'conv_clear_blocks',
+        user_id: 'user_123',
+        title: 'Editable answer',
+        created_at: createdAt.toISOString(),
+        updated_at: createdAt.toISOString(),
+      }],
+      error: null,
+    };
+    mockSupabaseMsgResponse = {
+      data: [{
+        id: 'msg_clear_blocks',
+        user_id: 'user_123',
+        conversation_id: 'conv_clear_blocks',
+        role: 'assistant',
+        content: 'Edited answer',
+        answer_blocks: null,
+        created_at: createdAt.toISOString(),
+      }],
+      error: null,
+    };
+
+    await syncService.pullFromCloud();
+
+    expect((await db.messages.get('msg_clear_blocks'))?.answerBlocks).toBeUndefined();
+  });
+
   it('should push reference metadata to cloud messages', async () => {
     const message: Message = {
       id: 'msg_reference',
@@ -316,6 +368,29 @@ describe('syncService - pullFromCloud', () => {
       suggestions: ['請再解釋一次'],
       reasoning: { content: 'Reasoning trace', duration: 120 },
     }));
+  });
+
+  it('logs message upsert errors returned by Supabase', async () => {
+    const { logger } = await import('@/utils/logger');
+    mockMessageUpsert.mockResolvedValueOnce({ error: new Error('upsert failed') });
+
+    await syncService.pushMessage({
+      id: 'msg_upsert_error',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      role: 'assistant',
+      content: 'Answer',
+      createdAt: new Date('2026-08-03T00:00:00.000Z'),
+    });
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Push message error',
+      expect.any(Error),
+      expect.objectContaining({
+        component: 'syncService',
+        messageId: 'msg_upsert_error',
+      }),
+    );
   });
 
   it('should delete one cloud message scoped to the current user', async () => {

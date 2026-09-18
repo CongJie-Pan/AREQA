@@ -688,7 +688,7 @@ export interface MessageItemProps {
   /** Whether this assistant response is already saved as a note */
   isSavedNote?: boolean;
   /** Callback when edit is submitted */
-  onEdit?: (messageId: string, newContent: string) => void;
+  onEdit?: (messageId: string, newContent: string) => Promise<void> | void;
   /** Callback when assistant feedback is changed */
   onFeedback?: (
     messageId: string,
@@ -1320,6 +1320,7 @@ export const MessageItem = memo(function MessageItem({
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(displayContent);
+  const [isEditSaving, setIsEditSaving] = useState(false);
 
   React.useEffect(() => {
     if (!isEditing) {
@@ -1474,18 +1475,30 @@ export const MessageItem = memo(function MessageItem({
 
   // Handle canceling edit
   const handleCancelEdit = useCallback(() => {
+    if (isEditSaving) return;
     setIsEditing(false);
     setEditContent(displayContent);
-  }, [displayContent]);
+  }, [displayContent, isEditSaving]);
 
   // Handle saving edit
-  const handleSaveEdit = useCallback(() => {
+  const handleSaveEdit = useCallback(async () => {
     const trimmedContent = editContent.trim();
-    if (trimmedContent && trimmedContent !== displayContent && onEdit) {
-      onEdit(message.id, trimmedContent);
+    if (!trimmedContent || isEditSaving) return;
+    if (trimmedContent === displayContent || !onEdit) {
+      setIsEditing(false);
+      return;
     }
-    setIsEditing(false);
-  }, [displayContent, editContent, message.id, onEdit]);
+
+    setIsEditSaving(true);
+    try {
+      await onEdit(message.id, trimmedContent);
+      setIsEditing(false);
+    } catch {
+      // Keep the draft open so the user can retry without losing edits.
+    } finally {
+      setIsEditSaving(false);
+    }
+  }, [displayContent, editContent, isEditSaving, message.id, onEdit]);
 
   // Handle keyboard shortcuts in edit mode
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1509,6 +1522,7 @@ export const MessageItem = memo(function MessageItem({
             <div className={styles.editModeContainer}>
               <textarea
                 className={styles.editTextarea}
+                disabled={isEditSaving}
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 onKeyDown={handleEditKeyDown}
@@ -1518,6 +1532,7 @@ export const MessageItem = memo(function MessageItem({
               <div className={styles.editButtons}>
                 <button
                   className={cx(styles.editButton, styles.editCancelButton)}
+                  disabled={isEditSaving}
                   onClick={handleCancelEdit}
                 >
                   {t('cancel')}
@@ -1525,7 +1540,7 @@ export const MessageItem = memo(function MessageItem({
                 <button
                   className={cx(styles.editButton, styles.editSaveButton)}
                   onClick={handleSaveEdit}
-                  disabled={!editContent.trim() || editContent.trim() === displayContent}
+                  disabled={isEditSaving || !editContent.trim() || editContent.trim() === displayContent}
                 >
                   {t('submit')}
                 </button>
@@ -1670,6 +1685,7 @@ export const MessageItem = memo(function MessageItem({
                   aria-label={t('editMessage')}
                   autoFocus
                   className={styles.editTextarea}
+                  disabled={isEditSaving}
                   onChange={(event) => setEditContent(event.target.value)}
                   onKeyDown={handleEditKeyDown}
                   placeholder="Markdown..."
@@ -1678,6 +1694,7 @@ export const MessageItem = memo(function MessageItem({
                 <div className={styles.editButtons}>
                   <button
                     className={cx(styles.editButton, styles.editCancelButton)}
+                    disabled={isEditSaving}
                     onClick={handleCancelEdit}
                     type="button"
                   >
@@ -1685,7 +1702,7 @@ export const MessageItem = memo(function MessageItem({
                   </button>
                   <button
                     className={cx(styles.editButton, styles.editSaveButton)}
-                    disabled={!editContent.trim() || editContent.trim() === displayContent}
+                    disabled={isEditSaving || !editContent.trim() || editContent.trim() === displayContent}
                     onClick={handleSaveEdit}
                     type="button"
                   >

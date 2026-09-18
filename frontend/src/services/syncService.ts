@@ -12,6 +12,7 @@ type MessageSource = NonNullable<Message['sources']>[number];
 
 function normalizeJsonArray<T>(value: unknown, fallback?: T[]): T[] | undefined {
   if (Array.isArray(value)) return value as T[];
+  if (value === null) return undefined;
   return fallback && fallback.length > 0 ? fallback : undefined;
 }
 
@@ -307,7 +308,7 @@ export const syncService = {
     if (!userId || userId === 'default_user') return;
 
     try {
-      await supabase.from('messages').upsert({
+      const { error } = await supabase.from('messages').upsert({
         id: msg.id,
         user_id: msg.userId,
         conversation_id: msg.conversationId,
@@ -326,9 +327,18 @@ export const syncService = {
         feedback_updated_at: msg.feedbackUpdatedAt?.toISOString() ?? null,
         created_at: msg.createdAt.toISOString(),
       });
+
+      if (error) {
+        handleAuthError(error);
+        throw error;
+      }
     } catch (e) {
       handleAuthError(e);
-      logger.error('Push message error', e instanceof Error ? e : new Error(String(e)));
+      logger.error('Push message error', e instanceof Error ? e : new Error(String(e)), {
+        component: 'syncService',
+        messageId: msg.id,
+        conversationId: msg.conversationId,
+      });
     }
   },
 

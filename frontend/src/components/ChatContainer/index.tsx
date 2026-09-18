@@ -495,6 +495,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     } catch (err) {
       console.error('Failed to edit message:', err);
       antMessageApi.error('編輯訊息失敗，請稍後再試');
+      throw err;
     }
   }, [antMessageApi]);
 

@@ -7,6 +7,7 @@ import { db, getCurrentUserId } from '../db';
 import type { Message, Note } from '../schema';
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
+import { answerBlocksForEditedContent } from '@/utils/answerBlocks';
 
 export type AddNoteData = Omit<Note, 'id' | 'userId' | 'createdAt' | 'updatedAt'> & {
   id?: string;
@@ -234,10 +235,14 @@ export const noteRepo = {
 
     const now = new Date();
     let updatedSourceMessage: Message | undefined;
+    const updatedNoteAnswerBlocks = answerBlocksForEditedContent(
+      normalizedContent,
+      existing.answerBlocksSnapshot,
+    );
     const updatedNote: Note = {
       ...existing,
       contentSnapshot: normalizedContent,
-      answerBlocksSnapshot: undefined,
+      answerBlocksSnapshot: updatedNoteAnswerBlocks,
       updatedAt: now,
     };
 
@@ -248,7 +253,7 @@ export const noteRepo = {
           updatedSourceMessage = {
             ...sourceMessage,
             content: normalizedContent,
-            answerBlocks: undefined,
+            answerBlocks: answerBlocksForEditedContent(normalizedContent, sourceMessage.answerBlocks),
           };
           await db.messages.put(updatedSourceMessage);
         }
@@ -257,9 +262,9 @@ export const noteRepo = {
       await db.notes.put(updatedNote);
     });
 
-    syncService.pushNote(updatedNote);
+    await syncService.pushNote(updatedNote);
     if (updatedSourceMessage) {
-      syncService.pushMessage(updatedSourceMessage);
+      await syncService.pushMessage(updatedSourceMessage);
     }
 
     return { note: updatedNote, sourceMessage: updatedSourceMessage };

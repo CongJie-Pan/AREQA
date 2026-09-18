@@ -24,7 +24,7 @@ import type { AnswerBlock, Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
-import { persistentAnswerBlocks } from '@/utils/answerBlocks';
+import { answerBlocksForEditedContent, persistentAnswerBlocks } from '@/utils/answerBlocks';
 import { logger } from '@/utils/logger';
 
 /**
@@ -1318,10 +1318,11 @@ export async function editUserMessage(
  *   newContent: User-authored Markdown that should replace the assistant text.
  *
  * Side Effects:
- *   Updates the in-memory chat transcript, clears backend-owned answer blocks
- *   that no longer match the edited Markdown, updates the active conversation
- *   preview when this is the latest message, and persists the edited response
- *   for authenticated users. Logs only safe metadata, never message text.
+ *   Updates the in-memory chat transcript, replaces stale text blocks with
+ *   the edited Markdown while preserving existing image blocks, updates the
+ *   active conversation preview when this is the latest message, and persists
+ *   the edited response for authenticated users. Logs only safe metadata,
+ *   never message text.
  *
  * @throws ValidationError if the edited content is empty or too long.
  * @throws Error when the target message is missing, not an assistant reply, or
@@ -1346,13 +1347,16 @@ export async function editAssistantMessage(
     throw new Error('Cannot edit a streaming assistant message');
   }
 
-  if (message.content === sanitizedContent && !message.answerBlocks?.length && !message.streamImageSlots?.length) {
+  const editedAnswerBlocks = answerBlocksForEditedContent(sanitizedContent, message.answerBlocks);
+  const hadAnswerBlocks = Boolean(message.answerBlocks?.length);
+
+  if (message.content === sanitizedContent && !hadAnswerBlocks && !message.streamImageSlots?.length) {
     return;
   }
 
   chatStore.updateAssistantMessage(messageId, {
     content: sanitizedContent,
-    answerBlocks: undefined,
+    answerBlocks: editedAnswerBlocks,
     streamImageSlots: undefined,
     isStreaming: false,
   });
@@ -1360,13 +1364,13 @@ export async function editAssistantMessage(
   const updatedMessage: Message = {
     ...message,
     content: sanitizedContent,
-    answerBlocks: undefined,
+    answerBlocks: editedAnswerBlocks,
   };
 
   if (canPersistHistory()) {
     await databaseService.message.update(messageId, {
       content: sanitizedContent,
-      answerBlocks: undefined,
+      answerBlocks: editedAnswerBlocks,
     });
     await useNotesStore.getState().syncNoteFromMessage(updatedMessage);
   }
@@ -1376,7 +1380,8 @@ export async function editAssistantMessage(
     conversationId: message.conversationId,
     messageId,
     persisted: canPersistHistory(),
-    clearedAnswerBlocks: Boolean(message.answerBlocks?.length),
+    preservedImageBlocks: editedAnswerBlocks?.filter((block) => block.type === 'image_block').length ?? 0,
+    replacedTextBlocks: hadAnswerBlocks,
   });
 }
 

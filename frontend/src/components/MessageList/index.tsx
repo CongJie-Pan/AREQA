@@ -34,7 +34,7 @@ export interface MessageListProps {
   /** Callback when regenerate button is clicked */
   onRegenerate?: (messageId: string) => void;
   /** Callback when edit is submitted for user or assistant messages */
-  onEdit?: (messageId: string, newContent: string) => void;
+  onEdit?: (messageId: string, newContent: string) => Promise<void> | void;
   /** Callback when the bottom assistant turn should be deleted */
   onDeleteLatestTurn?: (assistantMessageId: string) => void;
   /** Callback when an assistant response should be saved as a note */

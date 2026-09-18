@@ -97,7 +97,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     if (sourceMessage) {
       useChatStore.getState().updateAssistantMessage(sourceMessage.id, {
         content: sourceMessage.content,
-        answerBlocks: undefined,
+        answerBlocks: sourceMessage.answerBlocks,
         streamImageSlots: undefined,
       });
     }
