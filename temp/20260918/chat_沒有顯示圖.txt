@@ -1,0 +1,38 @@
+用資訊工程與神經網路（AI）的語言，用最精簡的三句話先破題：
+
+* **中介（Mediation）**：就是模型裡的 **Hidden Layer（隱藏層）**。訊號不是直接到底，而是 $Input \to Hidden \to Output$。
+* **調節（Moderation）**：就是 **動態權重調節（Attention 機制 / Gating 閘門）**。權重大小不是固定的，會根據外在環境參數動態調整。
+* **調節式中介**：就是**「帶有 Gating 閘門的隱藏層傳導網路」**。
+
+---
+
+### 第一張圖（左圖）：中介效果分析（Mediation Analysis）
+
+這張圖是**最基礎的前向傳播管線（Forward Pipeline）**：
+
+1. **直接效果（Direct Effect）**：$X \to Y$
+   * 就像一個 **Skip Connection（殘差連接 / ResNet）**，輸入端 $X$ 直接把訊號傳給輸出端 $Y$。
+2. **間接效果 / 中介效果（Indirect Effect）**：$X \to Me \to Y$
+   * 訊號先傳給中間節點 **$Me$（Hidden Feature / Middleware）**，萃取特徵後再輸出給 $Y$。
+   * **工程一句話**：解釋這個 Model 不是單純的 Black-box End-to-End，而是告訴你「中間到底經過了哪個關鍵特徵層在傳遞訊號」。
+
+---
+
+### 第二張圖（右圖）：MoMi 與 MiMo（結構順序）
+
+右圖討論的是：**「Gating 閘門（調節變數 $W$）裝在神經網路的哪一層？」**
+
+#### 1. MoMi（調節在前半段 / Front-end Gating）
+* **架構**：$X \xrightarrow{\times W} Me \to Y$
+* **AI 概念**：**Input Attention**。
+* **白話**：輸入訊號 $X$ 能不能打進隱藏層 $Me$，取決於當前閘門係數 $W$（例如：學習率或條件遮罩）。如果閘門關閉，中間層根本收不到訊號；但只要能進中間層，後面的輸出就固定穩定。
+
+#### 2. MiMo（調節在後半段 / Back-end Gating）
+* **架構**：$X \to Me \xrightarrow{\times W} Y$
+* **AI 概念**：**Output Projection / Softmax Temperature**。
+* **白話**：輸入 $X$ 會無條件觸發隱藏層 $Me$，但隱藏層的特徵能不能成功對最終結果 $Y$ 產生影響，要看輸出端的閘門係數 $W$。
+
+---
+
+* **總結一句話**：
+左圖在看**「有沒有隱藏層在傳導訊號」**；右圖在看**「控制流量的 Gating 閘門，是裝在隱藏層前面（MoMi）還是後面（MiMo）」**。
