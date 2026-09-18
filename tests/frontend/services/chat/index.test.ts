@@ -131,6 +131,30 @@ describe('Chat Service', () => {
   });
 
   describe('switchConversation', () => {
+    it('characterizes an older slow history load overriding a newer selection', async () => {
+      let resolveOlder!: (messages: never[]) => void;
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => { markStarted = resolve; });
+      const olderRead = new Promise<never[]>((resolve) => { resolveOlder = resolve; });
+      vi.mocked(databaseService.message.getByConversationId)
+        .mockImplementationOnce(() => {
+          markStarted();
+          return olderRead;
+        })
+        .mockResolvedValueOnce([]);
+
+      const olderSwitch = switchConversation('older-conversation');
+      await started;
+      try {
+        await switchConversation('newer-conversation');
+        expect(mockConversationStore.selectConversation).toHaveBeenLastCalledWith('newer-conversation');
+      } finally {
+        resolveOlder([]);
+        await olderSwitch;
+      }
+      expect(mockConversationStore.selectConversation).toHaveBeenLastCalledWith('older-conversation');
+    });
+
     it('keeps the current messages visible until the target conversation messages are loaded', async () => {
       const targetMessages = [
         { id: 'target-user', role: 'user', content: 'target question', conversationId: 'target-conv' },
@@ -673,6 +697,21 @@ describe('Chat Service', () => {
   });
 
   describe('deleteLatestConversationTurn', () => {
+    it('characterizes an orphan user query that blocks further turn deletion', async () => {
+      mockChatStore.messages = [
+        { id: 'orphan-user', role: 'user', content: 'unanswered', conversationId: 'test-conv-id' },
+        { id: 'user-2', role: 'user', content: 'retry', conversationId: 'test-conv-id' },
+        { id: 'assistant-2', role: 'assistant', content: 'answer', conversationId: 'test-conv-id' },
+      ];
+
+      await deleteLatestConversationTurn('assistant-2');
+
+      expect(mockChatStore.messages.map((message: { id: string }) => message.id)).toEqual(['orphan-user']);
+      await expect(deleteLatestConversationTurn('orphan-user')).rejects.toThrow(
+        'Only the latest completed assistant reply can be deleted',
+      );
+    });
+
     it('deletes the bottom assistant reply and paired user query from store and persistence', async () => {
       mockChatStore.messages = [
         { id: 'user-1', role: 'user', content: 'first question', conversationId: 'test-conv-id' },
