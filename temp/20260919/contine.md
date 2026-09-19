@@ -1,0 +1,1 @@
+根據此RJ(docs/tech_docs/Cognition_EL_RJ1_Theoretical_Background_EN_61508017E_潘驄杰.md)來優化AREQA系統，並且將其定為評估標準至 llm-as-a-judge 的評估程序中，進行系統主要方向的優化。
