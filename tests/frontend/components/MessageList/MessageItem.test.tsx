@@ -63,6 +63,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       feedbackActionSlotCollapsed: 'feedbackActionSlotCollapsed',
       editModeContainer: 'editModeContainer',
       editTextarea: 'editTextarea',
+      assistantEditSurface: 'assistantEditSurface',
       editButtons: 'editButtons',
       editButton: 'editButton',
       editCancelButton: 'editCancelButton',
@@ -228,12 +229,49 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     expect(editor).toHaveValue('old **answer**');
     expect(editor.closest('.assistantBubble')).not.toBeNull();
+    expect(editor.closest('.assistantEditSurface')).not.toBeNull();
 
     fireEvent.change(editor, { target: { value: 'new ![圖](https://example.com/image.png)' } });
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
 
     await waitFor(() => {
       expect(onEdit).toHaveBeenCalledWith('msg-1', 'new ![圖](https://example.com/image.png)');
+    });
+  });
+
+  it('inserts a pasted image into assistant edit markdown', async () => {
+    class MockFileReader {
+      result: string | ArrayBuffer | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      readAsDataURL() {
+        this.result = 'data:image/png;base64,abc123';
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal('FileReader', MockFileReader as any);
+
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: 'old answer' }}
+        onEdit={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    (editor as HTMLTextAreaElement).setSelectionRange('old answer'.length, 'old answer'.length);
+    fireEvent.paste(editor, {
+      clipboardData: {
+        files: [
+          new File(['tiny'], 'diagram.png', { type: 'image/png' }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(editor).toHaveValue('old answer\n![diagram.png](data:image/png;base64,abc123)\n');
     });
   });
 

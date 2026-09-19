@@ -9,6 +9,7 @@ import { db, getCurrentUserId } from '../db';
 import type { Message, MessageFeedback, MessageFeedbackDetails } from '../schema';
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
+import { logger } from '@/utils/logger';
 
 type AddMessageData = Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> & {
   id?: string;
@@ -32,13 +33,15 @@ export const messageRepo = {
   ): Promise<Message> {
     const userId = getCurrentUserId();
     if (!userId) throw new Error('Authentication required to persist messages');
+    const createdAt = messageData.createdAt ?? new Date();
 
     const message: Message = {
       id: messageData.id ?? generateUUID(),
       userId,
       conversationId,
       ...messageData,
-      createdAt: messageData.createdAt ?? new Date(),
+      createdAt,
+      updatedAt: messageData.updatedAt ?? createdAt,
     };
 
     await db.transaction('rw', [db.messages, db.conversations], async () => {
@@ -64,14 +67,20 @@ export const messageRepo = {
       }
     });
 
-    syncService.pushMessage(message);
+    void Promise.resolve(syncService.pushMessage(message)).catch((error) => {
+      logger.error('Message add cloud sync failed', error instanceof Error ? error : new Error(String(error)), {
+        component: 'messageRepo',
+        messageId: message.id,
+        conversationId,
+      });
+    });
     
     // Also update conversation timestamp in cloud if needed
     // (though conversation update above will trigger sync if we hooked transaction, 
     // but Dexie transaction doesn't trigger hooks for us automatically here. We can just push it.)
     const conv = await db.conversations.get(conversationId);
     if (conv) {
-      syncService.pushConversation(conv);
+      void syncService.pushConversation(conv);
     }
 
     return message;
@@ -93,11 +102,17 @@ export const messageRepo = {
    * @param updates - Partial message data to update
    */
   async update(id: string, updates: Partial<Message>): Promise<void> {
-    await db.messages.update(id, updates);
-    const message = await db.messages.get(id);
-    if (message) {
-      syncService.pushMessage(message);
-    }
+    const existing = await db.messages.get(id);
+    if (!existing) return;
+
+    const updatedMessage: Message = {
+      ...existing,
+      ...updates,
+      updatedAt: updates.updatedAt ?? new Date(),
+    };
+
+    await syncService.pushMessage(updatedMessage);
+    await db.messages.put(updatedMessage);
   },
 
   /**

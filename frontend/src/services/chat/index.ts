@@ -33,6 +33,7 @@ import { logger } from '@/utils/logger';
  */
 let currentAbortController: AbortController | null = null;
 const CONVERSATION_PREVIEW_MAX_LENGTH = 100;
+const ASSISTANT_EDIT_MAX_CONTENT_LENGTH = 750_000;
 let historyLoadGeneration = 0;
 
 export type SendMessageResponseMode = 'text' | 'voice';
@@ -166,7 +167,11 @@ function prepareMessagesForAPI(
  * @param content - Message content to validate
  * @throws ValidationError if content is invalid
  */
-function validateMessageContent(content: string, hasAttachments = false): void {
+function validateMessageContent(
+  content: string,
+  hasAttachments = false,
+  maxLength = API_CONFIG.maxMessageLength
+): void {
   if (!content && !hasAttachments) {
     throw new ValidationError('Message content is required', 'content');
   }
@@ -177,9 +182,9 @@ function validateMessageContent(content: string, hasAttachments = false): void {
     throw new ValidationError('Message cannot be empty', 'content');
   }
 
-  if (trimmedContent.length > API_CONFIG.maxMessageLength) {
+  if (trimmedContent.length > maxLength) {
     throw new ValidationError(
-      `Message is too long (max ${API_CONFIG.maxMessageLength} characters)`,
+      `Message is too long (max ${maxLength} characters)`,
       'content'
     );
   }
@@ -1163,25 +1168,16 @@ export async function editUserMessage(
     { role: 'user', content: `${sanitizedContent}${formatAttachmentContext(targetMessage.attachments)}` },
   ];
 
-  // Now perform store and database updates
-  // 1. Update user message content in store
+  const originalMessagesSnapshot = [...messages];
+  const supersededMessages = messages.slice(messageIndex + 1);
+  const supersededMessageIds = supersededMessages.map((msg) => msg.id);
+
+  // Now perform optimistic store updates. Persistence is committed only after
+  // the replacement assistant response completes, so failed edits can restore
+  // the original branch without losing later turns.
   chatStore.updateMessageContent(messageId, sanitizedContent);
-
-  // 2. Update user message in database
-  if (shouldPersist) {
-    await databaseService.message.update(messageId, { content: sanitizedContent });
-  }
-
-  // 3. Find and remove all AI messages that come after this user message
-  const messagesToRemove = messages
-    .slice(messageIndex + 1)
-    .filter((msg) => msg.role === 'assistant');
-
-  for (const msg of messagesToRemove) {
+  for (const msg of supersededMessages) {
     chatStore.removeMessage(msg.id);
-    if (shouldPersist) {
-      await databaseService.message.delete(msg.id);
-    }
   }
 
   // 4. Create new abort controller for this request
@@ -1308,10 +1304,20 @@ export async function editUserMessage(
           }
 
           if (shouldPersist) {
+            await databaseService.message.update(messageId, {
+              content: sanitizedContent,
+              updatedAt: new Date(),
+            });
             await databaseService.message.add(activeConversationId, {
               id: assistantMessageId,
               ...messageData,
             });
+            if (supersededMessageIds.length > 0) {
+              await databaseService.message.deleteManyByConversationId(
+                activeConversationId,
+                supersededMessageIds,
+              );
+            }
           }
 
 
@@ -1350,6 +1356,14 @@ export async function editUserMessage(
     const err = normalizeError(error);
     chatStore.setError(err);
     chatStore.endStreaming();
+    chatStore.setMessages(originalMessagesSnapshot);
+    logger.warn('chat_user_message_edit_rolled_back', {
+      component: 'chatService',
+      conversationId: activeConversationId,
+      messageId,
+      removedMessageCount: supersededMessageIds.length,
+      reason: err.name,
+    });
     throw err;
   }
 }
@@ -1376,7 +1390,7 @@ export async function editAssistantMessage(
   messageId: string,
   newContent: string
 ): Promise<void> {
-  validateMessageContent(newContent);
+  validateMessageContent(newContent, false, ASSISTANT_EDIT_MAX_CONTENT_LENGTH);
   const sanitizedContent = newContent.trim();
 
   const chatStore = useChatStore.getState();
@@ -1398,26 +1412,30 @@ export async function editAssistantMessage(
     return;
   }
 
-  chatStore.updateAssistantMessage(messageId, {
-    content: sanitizedContent,
-    answerBlocks: editedAnswerBlocks,
-    streamImageSlots: undefined,
-    isStreaming: false,
-  });
-  patchConversationPreviewIfLatest(message, sanitizedContent);
   const updatedMessage: Message = {
     ...message,
     content: sanitizedContent,
     answerBlocks: editedAnswerBlocks,
+    updatedAt: new Date(),
   };
 
   if (canPersistHistory()) {
     await databaseService.message.update(messageId, {
       content: sanitizedContent,
       answerBlocks: editedAnswerBlocks,
+      updatedAt: updatedMessage.updatedAt,
     });
     await useNotesStore.getState().syncNoteFromMessage(updatedMessage);
   }
+
+  chatStore.updateAssistantMessage(messageId, {
+    content: sanitizedContent,
+    answerBlocks: editedAnswerBlocks,
+    streamImageSlots: undefined,
+    isStreaming: false,
+    updatedAt: updatedMessage.updatedAt,
+  });
+  patchConversationPreviewIfLatest(message, sanitizedContent);
 
   logger.info('chat_assistant_message_edited', {
     component: 'chatService',

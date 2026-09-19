@@ -37,6 +37,10 @@ function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
+function localMessageUpdatedAt(message: Message): Date {
+  return message.updatedAt ?? message.createdAt;
+}
+
 function handleAuthError(error: unknown): void {
   if ((error as { status?: number } | null)?.status === 401) {
     void useAuthStore.getState().invalidateSession();
@@ -151,15 +155,7 @@ export const syncService = {
           const cloudTags = normalizeJsonArray<string>(note.tags, localNote?.tags ?? []) ?? [];
           const cloudIsPinned = Boolean(note.is_pinned);
 
-          if (
-            !localNote ||
-            localNote.updatedAt.getTime() < cloudUpdatedAt.getTime() ||
-            !jsonEqual(localNote.answerBlocksSnapshot, cloudAnswerBlocks) ||
-            !jsonEqual(localNote.citationsSnapshot, cloudCitations) ||
-            !jsonEqual(localNote.sourcesSnapshot, cloudSources) ||
-            !jsonEqual(localNote.tags ?? [], cloudTags) ||
-            Boolean(localNote.isPinned) !== cloudIsPinned
-          ) {
+          if (!localNote || localNote.updatedAt.getTime() < cloudUpdatedAt.getTime()) {
             notesToUpsert.push({
               id: note.id,
               userId: note.user_id,
@@ -229,6 +225,9 @@ export const syncService = {
             });
             continue;
           }
+          const cloudUpdatedAt = m.updated_at
+            ? new Date(m.updated_at)
+            : new Date(m.created_at);
           const cloudFeedback = normalizeMessageFeedback(m.feedback);
           const cloudFeedbackReason = normalizeMessageFeedbackReason(m.feedback_reason);
           const cloudFeedbackComment = typeof m.feedback_comment === 'string'
@@ -238,25 +237,34 @@ export const syncService = {
             ? new Date(m.feedback_updated_at)
             : null;
           const localMsg = localMsgMap.get(m.id);
-          const cloudCitations = normalizeJsonArray<string>(m.citations, localMsg?.citations);
+          const cloudIsNewer = !localMsg || localMessageUpdatedAt(localMsg).getTime() < cloudUpdatedAt.getTime();
+          const cloudCitations = cloudIsNewer
+            ? normalizeJsonArray<string>(m.citations, localMsg?.citations)
+            : localMsg?.citations;
           const cloudSearchResults = normalizeJsonArray<MessageSearchResult>(
-            m.search_results,
+            cloudIsNewer ? m.search_results : undefined,
             localMsg?.searchResults,
           );
           const cloudSources = normalizeJsonArray<MessageSource>(
-            m.sources,
+            cloudIsNewer ? m.sources : undefined,
             localMsg?.sources,
           );
           const cloudAnswerBlocks = normalizeJsonArray<AnswerBlock>(
-            m.answer_blocks,
+            cloudIsNewer ? m.answer_blocks : undefined,
             localMsg?.answerBlocks,
           );
-          const cloudSuggestions = normalizeJsonArray<string>(m.suggestions, localMsg?.suggestions);
-          const cloudReasoning = normalizeReasoning(m.reasoning, localMsg?.reasoning);
+          const cloudSuggestions = cloudIsNewer
+            ? normalizeJsonArray<string>(m.suggestions, localMsg?.suggestions)
+            : localMsg?.suggestions;
+          const cloudReasoning = cloudIsNewer
+            ? normalizeReasoning(m.reasoning, localMsg?.reasoning)
+            : localMsg?.reasoning;
+          const nextContent = cloudIsNewer ? m.content : localMsg?.content;
+          const nextAttachments = cloudIsNewer ? normalizeAttachmentMetadata(m.attachments) : localMsg?.attachments;
 
           if (
             !localMsg ||
-            localMsg.content !== m.content ||
+            cloudIsNewer ||
             (localMsg.feedback ?? null) !== cloudFeedback ||
             (localMsg.feedbackReason ?? null) !== cloudFeedbackReason ||
             (localMsg.feedbackComment ?? null) !== cloudFeedbackComment ||
@@ -274,8 +282,8 @@ export const syncService = {
               userId: m.user_id,
               conversationId: m.conversation_id,
               role: m.role,
-              content: m.content,
-              attachments: normalizeAttachmentMetadata(m.attachments),
+              content: nextContent,
+              attachments: nextAttachments,
               feedback: cloudFeedback,
               feedbackReason: cloudFeedbackReason,
               feedbackComment: cloudFeedbackComment,
@@ -286,7 +294,8 @@ export const syncService = {
               answerBlocks: cloudAnswerBlocks,
               suggestions: cloudSuggestions,
               reasoning: cloudReasoning,
-              createdAt: new Date(m.created_at)
+              createdAt: new Date(m.created_at),
+              updatedAt: cloudIsNewer ? cloudUpdatedAt : localMsg?.updatedAt,
             } as Message);
           }
         }
@@ -367,6 +376,7 @@ export const syncService = {
         feedback_comment: msg.feedbackComment ?? null,
         feedback_updated_at: msg.feedbackUpdatedAt?.toISOString() ?? null,
         created_at: msg.createdAt.toISOString(),
+        updated_at: (msg.updatedAt ?? msg.createdAt).toISOString(),
       });
 
       if (error) {
@@ -380,6 +390,7 @@ export const syncService = {
         messageId: msg.id,
         conversationId: msg.conversationId,
       });
+      throw e;
     }
   },
 
@@ -427,6 +438,7 @@ export const syncService = {
         component: 'syncService',
         noteId: note.id,
       });
+      throw e;
     }
   },
 

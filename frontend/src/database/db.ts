@@ -134,6 +134,20 @@ class PerplexityQADatabase extends Dexie {
       notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
     });
 
+    // Version 8: Message edits need a durable clock so cloud pulls do not
+    // overwrite newer local edits with stale rows from another device.
+    this.version(8).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, updatedAt, [conversationId+createdAt]',
+      messageDeletions: 'id, userId, conversationId, deletedAt, [userId+deletedAt]',
+      settings: 'key',
+      notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
+    }).upgrade(async tx => {
+      await tx.table('messages').toCollection().modify(message => {
+        message.updatedAt = message.updatedAt ?? message.createdAt ?? new Date();
+      });
+    });
+
     // Handle multi-tab upgrades
     this.on('versionchange', () => {
       window.location.reload();

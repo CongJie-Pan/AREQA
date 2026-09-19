@@ -145,4 +145,31 @@ describe('messageRepo - sync integration', () => {
       }),
     );
   });
+
+  it('does not update local message content when cloud update fails', async () => {
+    const createdAt = new Date('2026-08-08T00:00:00.000Z');
+    await db.conversations.add({
+      id: 'conv_1',
+      userId: 'user_123',
+      title: 'Editable answer',
+      createdAt,
+      updatedAt: createdAt,
+      messageCount: 1,
+      lastMessagePreview: 'Old answer',
+    });
+    await db.messages.add({
+      id: 'assistant_edit',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      role: 'assistant',
+      content: 'Old answer',
+      createdAt,
+      updatedAt: createdAt,
+    });
+    vi.mocked(syncService.pushMessage).mockRejectedValueOnce(new Error('cloud failed'));
+
+    await expect(messageRepo.update('assistant_edit', { content: 'New answer' })).rejects.toThrow('cloud failed');
+
+    expect((await db.messages.get('assistant_edit'))?.content).toBe('Old answer');
+  });
 });

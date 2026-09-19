@@ -607,10 +607,11 @@ describe('Chat Service', () => {
   });
 
   describe('editUserMessage', () => {
-    it('deletes superseded assistant replies before saving the edited response', async () => {
+    it('commits a regenerated branch only after the edited response completes', async () => {
       mockChatStore.messages = [
         { id: 'user-1', role: 'user', content: 'old question', conversationId: 'test-conv-id' },
         { id: 'assistant-old', role: 'assistant', content: 'old answer', conversationId: 'test-conv-id' },
+        { id: 'user-later', role: 'user', content: 'later question', conversationId: 'test-conv-id' },
       ];
 
       vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
@@ -622,8 +623,14 @@ describe('Chat Service', () => {
 
       expect(mockChatStore.updateMessageContent).toHaveBeenCalledWith('user-1', 'edited question');
       expect(mockChatStore.removeMessage).toHaveBeenCalledWith('assistant-old');
-      expect(databaseService.message.update).toHaveBeenCalledWith('user-1', { content: 'edited question' });
-      expect(databaseService.message.delete).toHaveBeenCalledWith('assistant-old');
+      expect(mockChatStore.removeMessage).toHaveBeenCalledWith('user-later');
+      expect(databaseService.message.update).toHaveBeenCalledWith('user-1', expect.objectContaining({
+        content: 'edited question',
+      }));
+      expect(databaseService.message.deleteManyByConversationId).toHaveBeenCalledWith(
+        'test-conv-id',
+        ['assistant-old', 'user-later'],
+      );
       expect(databaseService.message.add).toHaveBeenCalledWith(
         'test-conv-id',
         expect.objectContaining({
@@ -643,6 +650,23 @@ describe('Chat Service', () => {
         [],
         expect.objectContaining({ tutorProfile: undefined }),
       );
+    });
+
+    it('restores the original branch when regenerated edit streaming fails', async () => {
+      const originalMessages = [
+        { id: 'user-1', role: 'user' as const, content: 'old question', conversationId: 'test-conv-id' },
+        { id: 'assistant-old', role: 'assistant' as const, content: 'old answer', conversationId: 'test-conv-id' },
+        { id: 'user-later', role: 'user' as const, content: 'later question', conversationId: 'test-conv-id' },
+      ];
+      mockChatStore.messages = originalMessages;
+      vi.mocked(createChatStream).mockRejectedValueOnce(new Error('network failed'));
+
+      await expect(editUserMessage('user-1', 'edited question')).rejects.toThrow('network failed');
+
+      expect(mockChatStore.setMessages).toHaveBeenCalledWith(originalMessages);
+      expect(databaseService.message.update).not.toHaveBeenCalled();
+      expect(databaseService.message.add).not.toHaveBeenCalled();
+      expect(databaseService.message.deleteManyByConversationId).not.toHaveBeenCalled();
     });
 
     it('keeps original attachment context when regenerating from an edited user query', async () => {
@@ -680,7 +704,9 @@ describe('Chat Service', () => {
         [],
         expect.objectContaining({ tutorProfile: undefined }),
       );
-      expect(databaseService.message.update).toHaveBeenCalledWith('user-1', { content: 'edited question' });
+      expect(databaseService.message.update).toHaveBeenCalledWith('user-1', expect.objectContaining({
+        content: 'edited question',
+      }));
     });
   });
 
@@ -716,10 +742,12 @@ describe('Chat Service', () => {
         answerBlocks: [{ type: 'paragraph', text: '**edited** answer' }, imageBlock],
         streamImageSlots: undefined,
         isStreaming: false,
+        updatedAt: expect.any(Date),
       });
       expect(databaseService.message.update).toHaveBeenCalledWith('assistant-1', {
         content: '**edited** answer',
         answerBlocks: [{ type: 'paragraph', text: '**edited** answer' }, imageBlock],
+        updatedAt: expect.any(Date),
       });
       expect(databaseService.note.syncFromMessage).toHaveBeenCalledWith(expect.objectContaining({
         id: 'assistant-1',
@@ -752,6 +780,23 @@ describe('Chat Service', () => {
 
       expect(mockChatStore.updateAssistantMessage).not.toHaveBeenCalled();
       expect(databaseService.message.update).not.toHaveBeenCalled();
+    });
+
+    it('does not update the assistant store when persistence fails', async () => {
+      mockChatStore.messages = [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'old answer',
+          conversationId: 'test-conv-id',
+        },
+      ];
+      vi.mocked(databaseService.message.update).mockRejectedValueOnce(new Error('disk failed'));
+
+      await expect(editAssistantMessage('assistant-1', 'edited answer')).rejects.toThrow('disk failed');
+
+      expect(mockChatStore.updateAssistantMessage).not.toHaveBeenCalled();
+      expect(databaseService.note.syncFromMessage).not.toHaveBeenCalled();
     });
   });
 

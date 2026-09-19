@@ -50,6 +50,7 @@ const STREAMDOWN_PLUGINS = {
   },
 };
 const STREAMDOWN_LINK_SAFETY = { enabled: false };
+const MAX_PASTED_IMAGE_BYTES = 512 * 1024;
 
 /**
  * Prepare assistant/user message Markdown for the renderer.
@@ -707,6 +708,17 @@ function editingTextareaRows(content: string): number {
   return Math.max(3, Math.min(18, content.split(/\r?\n/).length + 1));
 }
 
+function insertTextAtSelection(
+  content: string,
+  insertion: string,
+  selectionStart?: number | null,
+  selectionEnd?: number | null,
+): string {
+  const start = selectionStart ?? content.length;
+  const end = selectionEnd ?? start;
+  return `${content.slice(0, start)}${insertion}${content.slice(end)}`;
+}
+
 // New Sub-Component for handling streaming markdown parsing safely
 export function normalizeCitationMarkers(content: string): string {
   let text = content;
@@ -1325,12 +1337,21 @@ export const MessageItem = memo(function MessageItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(displayContent);
   const [isEditSaving, setIsEditSaving] = useState(false);
+  const editTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   React.useEffect(() => {
     if (!isEditing) {
       setEditContent(displayContent);
     }
   }, [displayContent, isEditing]);
+
+  React.useEffect(() => {
+    const textarea = editTextareaRef.current;
+    if (!textarea || !isEditing) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [editContent, isEditing]);
 
   // Handle copy message content
   const handleCopy = useCallback(async () => {
@@ -1523,6 +1544,37 @@ export const MessageItem = memo(function MessageItem({
     }
   }, [handleCancelEdit, handleSaveEdit]);
 
+  const handleEditPaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isUser) return;
+
+    const imageFile = Array.from(event.clipboardData.files).find((file) => file.type.startsWith('image/'));
+    if (!imageFile) return;
+
+    event.preventDefault();
+    if (imageFile.size > MAX_PASTED_IMAGE_BYTES) {
+      antMessageApi.error('圖片太大，請貼上 512 KB 以下的圖片');
+      return;
+    }
+
+    const selectionStart = event.currentTarget.selectionStart;
+    const selectionEnd = event.currentTarget.selectionEnd;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      const markdownImage = `\n![${imageFile.name || 'pasted image'}](${reader.result})\n`;
+      setEditContent((current) => insertTextAtSelection(
+        current,
+        markdownImage,
+        selectionStart,
+        selectionEnd,
+      ));
+    };
+    reader.onerror = () => {
+      antMessageApi.error('貼上圖片失敗');
+    };
+    reader.readAsDataURL(imageFile);
+  }, [antMessageApi, isUser]);
+
   return (
     <div
       className={cx(styles.messageItem, isUser && styles.userMessage, className)}
@@ -1543,6 +1595,7 @@ export const MessageItem = memo(function MessageItem({
                   onChange={(e) => setEditContent(e.target.value)}
                   onKeyDown={handleEditKeyDown}
                   placeholder="輸入訊息..."
+                  ref={editTextareaRef}
                   rows={editingTextareaRows(editContent)}
                   value={editContent}
                 />
@@ -1716,7 +1769,7 @@ export const MessageItem = memo(function MessageItem({
 
             {isEditing ? (
               <div className={styles.editModeContainer}>
-                <div className={cx(styles.bubble, styles.assistantBubble)}>
+                <div className={cx(styles.bubble, styles.assistantBubble, styles.assistantEditSurface)}>
                   <textarea
                     aria-label={t('editMessage')}
                     autoFocus
@@ -1724,7 +1777,9 @@ export const MessageItem = memo(function MessageItem({
                     disabled={isEditSaving}
                     onChange={(event) => setEditContent(event.target.value)}
                     onKeyDown={handleEditKeyDown}
+                    onPaste={handleEditPaste}
                     placeholder="Markdown..."
+                    ref={editTextareaRef}
                     rows={editingTextareaRows(editContent)}
                     value={editContent}
                   />

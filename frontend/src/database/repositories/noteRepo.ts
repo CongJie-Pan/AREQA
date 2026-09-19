@@ -8,6 +8,7 @@ import type { Message, Note } from '../schema';
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
 import { answerBlocksForEditedContent } from '@/utils/answerBlocks';
+import { logger } from '@/utils/logger';
 
 export type AddNoteData = Omit<Note, 'id' | 'userId' | 'createdAt' | 'updatedAt'> & {
   id?: string;
@@ -41,6 +42,17 @@ function normalizeTags(tags: string[] | undefined): string[] {
       return true;
     })
     .slice(0, 12);
+}
+
+function pushNoteInBackground(note: Note, eventName: string): void {
+  void Promise.resolve(syncService.pushNote(note)).catch((error) => {
+    logger.error(eventName, error instanceof Error ? error : new Error(String(error)), {
+      component: 'noteRepo',
+      noteId: note.id,
+      conversationId: note.conversationId,
+      messageId: note.messageId,
+    });
+  });
 }
 
 /**
@@ -120,7 +132,7 @@ export const noteRepo = {
     };
 
     await db.notes.add(note);
-    syncService.pushNote(note);
+    pushNoteInBackground(note, 'Note add cloud sync failed');
     return note;
   },
 
@@ -172,7 +184,7 @@ export const noteRepo = {
     };
 
     await db.notes.put(updatedNote);
-    syncService.pushNote(updatedNote);
+    pushNoteInBackground(updatedNote, 'Note metadata cloud sync failed');
     return updatedNote;
   },
 
@@ -208,7 +220,7 @@ export const noteRepo = {
     };
 
     await db.notes.put(updatedNote);
-    syncService.pushNote(updatedNote);
+    pushNoteInBackground(updatedNote, 'Note message mirror cloud sync failed');
     return updatedNote;
   },
 
@@ -246,26 +258,27 @@ export const noteRepo = {
       updatedAt: now,
     };
 
-    await db.transaction('rw', [db.notes, db.messages], async () => {
-      if (existing.messageId) {
-        const sourceMessage = await db.messages.get(existing.messageId);
-        if (sourceMessage?.role === 'assistant') {
-          updatedSourceMessage = {
-            ...sourceMessage,
-            content: normalizedContent,
-            answerBlocks: answerBlocksForEditedContent(normalizedContent, sourceMessage.answerBlocks),
-          };
-          await db.messages.put(updatedSourceMessage);
-        }
+    if (existing.messageId) {
+      const sourceMessage = await db.messages.get(existing.messageId);
+      if (sourceMessage?.role === 'assistant') {
+        updatedSourceMessage = {
+          ...sourceMessage,
+          content: normalizedContent,
+          answerBlocks: answerBlocksForEditedContent(normalizedContent, sourceMessage.answerBlocks),
+          updatedAt: now,
+        };
       }
-
-      await db.notes.put(updatedNote);
-    });
+    }
 
     await syncService.pushNote(updatedNote);
     if (updatedSourceMessage) {
       await syncService.pushMessage(updatedSourceMessage);
     }
+
+    await db.transaction('rw', [db.notes, db.messages], async () => {
+      if (updatedSourceMessage) await db.messages.put(updatedSourceMessage);
+      await db.notes.put(updatedNote);
+    });
 
     return { note: updatedNote, sourceMessage: updatedSourceMessage };
   },

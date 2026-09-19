@@ -317,6 +317,7 @@ describe('syncService - pullFromCloud', () => {
         content: 'Edited answer',
         answer_blocks: null,
         created_at: createdAt.toISOString(),
+        updated_at: new Date('2026-08-03T00:01:00.000Z').toISOString(),
       }],
       error: null,
     };
@@ -324,6 +325,60 @@ describe('syncService - pullFromCloud', () => {
     await syncService.pullFromCloud();
 
     expect((await db.messages.get('msg_clear_blocks'))?.answerBlocks).toBeUndefined();
+  });
+
+  it('does not overwrite a newer local message with stale cloud content', async () => {
+    const createdAt = new Date('2026-08-03T00:00:00.000Z');
+    const localUpdatedAt = new Date('2026-08-03T00:10:00.000Z');
+    await db.conversations.add({
+      id: 'conv_stale_cloud',
+      userId: 'user_123',
+      title: 'Edited locally',
+      createdAt,
+      updatedAt: localUpdatedAt,
+      messageCount: 1,
+      lastMessagePreview: 'Local edited answer',
+    });
+    await db.messages.add({
+      id: 'msg_stale_cloud',
+      userId: 'user_123',
+      conversationId: 'conv_stale_cloud',
+      role: 'assistant',
+      content: 'Local edited answer',
+      answerBlocks: [{ type: 'paragraph', text: 'Local edited answer' }],
+      createdAt,
+      updatedAt: localUpdatedAt,
+    });
+
+    mockSupabaseResponse = {
+      data: [{
+        id: 'conv_stale_cloud',
+        user_id: 'user_123',
+        title: 'Edited locally',
+        created_at: createdAt.toISOString(),
+        updated_at: createdAt.toISOString(),
+      }],
+      error: null,
+    };
+    mockSupabaseMsgResponse = {
+      data: [{
+        id: 'msg_stale_cloud',
+        user_id: 'user_123',
+        conversation_id: 'conv_stale_cloud',
+        role: 'assistant',
+        content: 'Old cloud answer',
+        answer_blocks: [{ type: 'paragraph', text: 'Old cloud answer' }],
+        created_at: createdAt.toISOString(),
+        updated_at: new Date('2026-08-03T00:01:00.000Z').toISOString(),
+      }],
+      error: null,
+    };
+
+    await syncService.pullFromCloud();
+
+    const message = await db.messages.get('msg_stale_cloud');
+    expect(message?.content).toBe('Local edited answer');
+    expect(message?.answerBlocks).toEqual([{ type: 'paragraph', text: 'Local edited answer' }]);
   });
 
   it('should push reference metadata to cloud messages', async () => {
@@ -372,18 +427,18 @@ describe('syncService - pullFromCloud', () => {
     }));
   });
 
-  it('logs message upsert errors returned by Supabase', async () => {
+  it('logs and rejects message upsert errors returned by Supabase', async () => {
     const { logger } = await import('@/utils/logger');
     mockMessageUpsert.mockResolvedValueOnce({ error: new Error('upsert failed') });
 
-    await syncService.pushMessage({
+    await expect(syncService.pushMessage({
       id: 'msg_upsert_error',
       userId: 'user_123',
       conversationId: 'conv_1',
       role: 'assistant',
       content: 'Answer',
       createdAt: new Date('2026-08-03T00:00:00.000Z'),
-    });
+    })).rejects.toThrow('upsert failed');
 
     expect(logger.error).toHaveBeenCalledWith(
       'Push message error',

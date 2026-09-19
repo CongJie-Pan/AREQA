@@ -166,6 +166,8 @@ export interface Message {
   };
   /** Creation timestamp */
   createdAt: Date;
+  /** Last local/cloud content or metadata edit timestamp. */
+  updatedAt?: Date;
 }
 
 /**

@@ -2000,7 +2000,7 @@ quoteBlockContent: css`
   // Edit textarea
   editTextarea: css`
     width: 100%;
-    min-height: 0;
+    min-height: 4.5em;
     padding: 0;
     border: 0;
     border-radius: 0;
@@ -2018,6 +2018,10 @@ quoteBlockContent: css`
     &::placeholder {
       color: var(--areqa-message-muted-text);
     }
+  `,
+
+  assistantEditSurface: css`
+    box-shadow: inset 0 -1px 0 rgba(216, 162, 92, 0.28);
   `,
 
   // Edit mode buttons container
