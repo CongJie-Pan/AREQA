@@ -14,7 +14,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX, Type, Heading1, Heading2, List, Table2, Image as ImageIcon } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -717,6 +717,379 @@ function insertTextAtSelection(
   const start = selectionStart ?? content.length;
   const end = selectionEnd ?? start;
   return `${content.slice(0, start)}${insertion}${content.slice(end)}`;
+}
+
+function escapeEditorHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeMarkdownTableCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|');
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function parseMarkdownTableRow(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+}
+
+function inlineMarkdownToEditorHtml(markdown: string): string {
+  const imagePlaceholders: string[] = [];
+  let text = escapeEditorHtml(markdown);
+
+  text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (match, alt, src) => {
+    if (!isSafeImageUrl(src)) return escapeEditorHtml(match);
+    const placeholder = `@@AREQA_IMAGE_${imagePlaceholders.length}@@`;
+    imagePlaceholders.push(`<img src="${escapeEditorHtml(src)}" alt="${escapeEditorHtml(alt)}" />`);
+    return placeholder;
+  });
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
+  text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label, href) => {
+    if (!isSafeUrl(href)) return match;
+    return `<a href="${escapeEditorHtml(href)}">${label}</a>`;
+  });
+  imagePlaceholders.forEach((html, index) => {
+    text = text.replace(`@@AREQA_IMAGE_${index}@@`, html);
+  });
+  return text;
+}
+
+function markdownToEditorHtml(markdown: string): string {
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const html: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? '';
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${inlineMarkdownToEditorHtml(headingMatch[2])}</h${level}>`);
+      index += 1;
+      continue;
+    }
+
+    const imageMatch = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imageMatch && isSafeImageUrl(imageMatch[2])) {
+      html.push(`<figure data-md-image="true"><img src="${escapeEditorHtml(imageMatch[2])}" alt="${escapeEditorHtml(imageMatch[1])}" /><figcaption>${escapeEditorHtml(imageMatch[1])}</figcaption></figure>`);
+      index += 1;
+      continue;
+    }
+
+    if (line.includes('|') && lines[index + 1] && isMarkdownTableSeparator(lines[index + 1])) {
+      const tableRows = [parseMarkdownTableRow(line)];
+      index += 2;
+      while (index < lines.length && lines[index]?.includes('|') && lines[index]?.trim()) {
+        tableRows.push(parseMarkdownTableRow(lines[index]));
+        index += 1;
+      }
+      const [headerRow, ...bodyRows] = tableRows;
+      html.push('<table><thead><tr>');
+      headerRow.forEach((cell) => html.push(`<th>${inlineMarkdownToEditorHtml(cell)}</th>`));
+      html.push('</tr></thead><tbody>');
+      bodyRows.forEach((row) => {
+        html.push('<tr>');
+        row.forEach((cell) => html.push(`<td>${inlineMarkdownToEditorHtml(cell)}</td>`));
+        html.push('</tr>');
+      });
+      html.push('</tbody></table>');
+      continue;
+    }
+
+    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+    if (listMatch) {
+      const ordered = /\d+\./.test(listMatch[2]);
+      const tag = ordered ? 'ol' : 'ul';
+      html.push(`<${tag}>`);
+      while (index < lines.length) {
+        const itemMatch = lines[index]?.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+        if (!itemMatch || /\d+\./.test(itemMatch[2]) !== ordered) break;
+        const depth = Math.floor(itemMatch[1].replace(/\t/g, '  ').length / 2);
+        html.push(`<li data-depth="${depth}">${inlineMarkdownToEditorHtml(itemMatch[3])}</li>`);
+        index += 1;
+      }
+      html.push(`</${tag}>`);
+      continue;
+    }
+
+    if (line.startsWith('>')) {
+      const quoteLines: string[] = [];
+      while (index < lines.length && lines[index]?.startsWith('>')) {
+        quoteLines.push(lines[index].replace(/^>\s?/, ''));
+        index += 1;
+      }
+      html.push(`<blockquote>${inlineMarkdownToEditorHtml(quoteLines.join('\n')).replace(/\n/g, '<br />')}</blockquote>`);
+      continue;
+    }
+
+    const paragraphLines = [line];
+    index += 1;
+    while (
+      index < lines.length &&
+      lines[index]?.trim() &&
+      !/^(#{1,4})\s+/.test(lines[index]) &&
+      !/^(\s*)([-*+]|\d+\.)\s+/.test(lines[index]) &&
+      !(lines[index]?.includes('|') && lines[index + 1] && isMarkdownTableSeparator(lines[index + 1])) &&
+      !/^!\[([^\]]*)\]\(([^)]+)\)$/.test(lines[index].trim()) &&
+      !lines[index]?.startsWith('>')
+    ) {
+      paragraphLines.push(lines[index]);
+      index += 1;
+    }
+    html.push(`<p>${inlineMarkdownToEditorHtml(paragraphLines.join('\n')).replace(/\n/g, '<br />')}</p>`);
+  }
+
+  return html.join('') || '<p><br /></p>';
+}
+
+function elementTextWithBreaks(element: Element): string {
+  return Array.from(element.childNodes)
+    .map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+      if (node.nodeType !== Node.ELEMENT_NODE) return '';
+      const child = node as HTMLElement;
+      if (child.tagName === 'BR') return '\n';
+      return child.innerText ?? child.textContent ?? '';
+    })
+    .join('');
+}
+
+function inlineNodeToMarkdown(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+  const element = node as HTMLElement;
+  const children = Array.from(element.childNodes).map(inlineNodeToMarkdown).join('');
+  switch (element.tagName) {
+    case 'STRONG':
+    case 'B':
+      return children.trim() ? `**${children}**` : '';
+    case 'EM':
+    case 'I':
+      return children.trim() ? `*${children}*` : '';
+    case 'CODE':
+      return children.trim() ? `\`${children}\`` : '';
+    case 'A': {
+      const href = element.getAttribute('href') ?? '';
+      return href && isSafeUrl(href) ? `[${children || href}](${href})` : children;
+    }
+    case 'IMG': {
+      const src = element.getAttribute('src') ?? '';
+      const alt = element.getAttribute('alt') ?? '';
+      return src && isSafeImageUrl(src) ? `![${alt}](${src})` : '';
+    }
+    case 'BR':
+      return '\n';
+    default:
+      return children;
+  }
+}
+
+function inlineElementToMarkdown(element: Element): string {
+  return Array.from(element.childNodes).map(inlineNodeToMarkdown).join('').replace(/\u00a0/g, ' ');
+}
+
+function editorHtmlToMarkdown(root: HTMLElement): string {
+  const blocks: string[] = [];
+
+  Array.from(root.children).forEach((child) => {
+    const element = child as HTMLElement;
+    const text = inlineElementToMarkdown(element).trim();
+
+    if (/^H[1-4]$/.test(element.tagName)) {
+      const level = Number(element.tagName.slice(1));
+      if (text) blocks.push(`${'#'.repeat(level)} ${text}`);
+      return;
+    }
+
+    if (element.tagName === 'UL' || element.tagName === 'OL') {
+      const ordered = element.tagName === 'OL';
+      const lines = Array.from(element.querySelectorAll(':scope > li'))
+        .map((item, index) => {
+          const depth = Number((item as HTMLElement).dataset.depth ?? 0);
+          const marker = ordered ? `${index + 1}.` : '-';
+          return `${'  '.repeat(Math.max(0, depth))}${marker} ${inlineElementToMarkdown(item).trim()}`;
+        })
+        .filter((line) => line.trim().length > 1);
+      if (lines.length) blocks.push(lines.join('\n'));
+      return;
+    }
+
+    if (element.tagName === 'TABLE') {
+      const rows = Array.from((element as HTMLTableElement).rows)
+        .map((row) => Array.from(row.cells).map((cell) => escapeMarkdownTableCell(inlineElementToMarkdown(cell))))
+        .filter((row) => row.some(Boolean));
+      if (rows.length) {
+        const columnCount = Math.max(...rows.map((row) => row.length));
+        const normalizedRows = rows.map((row) => [...row, ...Array.from({ length: columnCount - row.length }, () => '')]);
+        blocks.push([
+          `| ${normalizedRows[0].join(' | ')} |`,
+          `| ${Array.from({ length: columnCount }, () => '---').join(' | ')} |`,
+          ...normalizedRows.slice(1).map((row) => `| ${row.join(' | ')} |`),
+        ].join('\n'));
+      }
+      return;
+    }
+
+    if (element.tagName === 'FIGURE') {
+      const image = element.querySelector('img');
+      const src = image?.getAttribute('src') ?? '';
+      const alt = image?.getAttribute('alt') ?? elementTextWithBreaks(element).trim();
+      if (src && isSafeImageUrl(src)) blocks.push(`![${alt}](${src})`);
+      return;
+    }
+
+    if (element.tagName === 'BLOCKQUOTE') {
+      const quote = elementTextWithBreaks(element).trim();
+      if (quote) blocks.push(quote.split('\n').map((line) => `> ${line}`).join('\n'));
+      return;
+    }
+
+    if (element.tagName === 'IMG') {
+      const src = element.getAttribute('src') ?? '';
+      const alt = element.getAttribute('alt') ?? '';
+      if (src && isSafeImageUrl(src)) blocks.push(`![${alt}](${src})`);
+      return;
+    }
+
+    if (text) blocks.push(text);
+  });
+
+  return blocks.join('\n\n').trim();
+}
+
+type AssistantRichMarkdownEditorProps = {
+  value: string;
+  disabled: boolean;
+  label: string;
+  className: string;
+  menuClassName: string;
+  menuItemClassName: string;
+  onChange: (value: string) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  onPaste: (event: React.ClipboardEvent<HTMLDivElement>) => void;
+};
+
+function AssistantRichMarkdownEditor({
+  value,
+  disabled,
+  label,
+  className,
+  menuClassName,
+  menuItemClassName,
+  onChange,
+  onKeyDown,
+  onPaste,
+}: AssistantRichMarkdownEditorProps) {
+  const editorRef = React.useRef<HTMLDivElement | null>(null);
+  const lastInputMarkdownRef = React.useRef<string | null>(null);
+  const hasFocusedRef = React.useRef(false);
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const [renderVersion, setRenderVersion] = React.useState(0);
+
+  React.useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (document.activeElement === editor && value === lastInputMarkdownRef.current) return;
+    editor.innerHTML = markdownToEditorHtml(value);
+    if (!hasFocusedRef.current) {
+      hasFocusedRef.current = true;
+      window.setTimeout(() => editor.focus(), 0);
+    }
+  }, [renderVersion, value]);
+
+  const syncMarkdown = React.useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const nextMarkdown = editorHtmlToMarkdown(editor);
+    lastInputMarkdownRef.current = nextMarkdown;
+    onChange(nextMarkdown);
+  }, [onChange]);
+
+  const insertMarkdownBlock = React.useCallback((markdownBlock: string) => {
+    const baseValue = value.replace(/(^|\s)\/[\w-]*$/, '$1').trimEnd();
+    const nextValue = `${baseValue}${baseValue.trim() ? '\n\n' : ''}${markdownBlock}`.trim();
+    onChange(nextValue);
+    setRenderVersion((current) => current + 1);
+    setIsMenuOpen(false);
+    window.setTimeout(() => editorRef.current?.focus(), 0);
+  }, [onChange, value]);
+
+  const handleInput = React.useCallback(() => {
+    syncMarkdown();
+    const selection = window.getSelection();
+    const activeText = selection?.anchorNode?.textContent?.slice(0, selection.anchorOffset) ?? '';
+    setIsMenuOpen(/(^|\s)\/[\w-]*$/.test(activeText));
+  }, [syncMarkdown]);
+
+  const menuItems = [
+    { label: 'Text', icon: <Type size={16} aria-hidden="true" />, markdown: '新段落' },
+    { label: 'Heading 1', icon: <Heading1 size={16} aria-hidden="true" />, markdown: '# 新標題' },
+    { label: 'Heading 2', icon: <Heading2 size={16} aria-hidden="true" />, markdown: '## 新標題' },
+    { label: 'Bulleted list', icon: <List size={16} aria-hidden="true" />, markdown: '- 清單項目' },
+    { label: 'Table', icon: <Table2 size={16} aria-hidden="true" />, markdown: '| 欄位 A | 欄位 B |\n| --- | --- |\n| 內容 | 內容 |' },
+    { label: 'Image', icon: <ImageIcon size={16} aria-hidden="true" />, markdown: '![圖片說明](https://example.com/image.png)' },
+  ];
+
+  return (
+    <div className={className}>
+      <div
+        aria-label={label}
+        aria-multiline="true"
+        contentEditable={!disabled}
+        data-testid="assistant-rich-editor"
+        onBlur={() => window.setTimeout(() => setIsMenuOpen(false), 0)}
+        onFocus={() => setIsMenuOpen(false)}
+        onInput={handleInput}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setIsMenuOpen(false);
+          onKeyDown(event);
+        }}
+        onPaste={onPaste}
+        ref={editorRef}
+        role="textbox"
+        suppressContentEditableWarning
+        tabIndex={0}
+      />
+      {isMenuOpen && (
+        <div className={menuClassName} role="menu" aria-label="Insert block">
+          {menuItems.map((item) => (
+            <button
+              className={menuItemClassName}
+              key={item.label}
+              onClick={() => insertMarkdownBlock(item.markdown)}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                insertMarkdownBlock(item.markdown);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // New Sub-Component for handling streaming markdown parsing safely
@@ -1536,7 +1909,7 @@ export const MessageItem = memo(function MessageItem({
   }, [displayContent, editContent, isEditSaving, isUser, message.id, onEdit]);
 
   // Handle keyboard shortcuts in edit mode
-  const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement | HTMLDivElement>) => {
     if (e.key === 'Escape') {
       handleCancelEdit();
     } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -1544,7 +1917,7 @@ export const MessageItem = memo(function MessageItem({
     }
   }, [handleCancelEdit, handleSaveEdit]);
 
-  const handleEditPaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handleEditPaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement | HTMLDivElement>) => {
     if (isUser) return;
 
     const imageFile = Array.from(event.clipboardData.files).find((file) => file.type.startsWith('image/'));
@@ -1556,18 +1929,26 @@ export const MessageItem = memo(function MessageItem({
       return;
     }
 
-    const selectionStart = event.currentTarget.selectionStart;
-    const selectionEnd = event.currentTarget.selectionEnd;
+    const pasteTarget = event.currentTarget;
+    const isTextareaPaste = pasteTarget instanceof HTMLTextAreaElement;
+    const selectionStart = isTextareaPaste ? pasteTarget.selectionStart : undefined;
+    const selectionEnd = isTextareaPaste ? pasteTarget.selectionEnd : undefined;
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== 'string') return;
-      const markdownImage = `\n![${imageFile.name || 'pasted image'}](${reader.result})\n`;
-      setEditContent((current) => insertTextAtSelection(
-        current,
-        markdownImage,
-        selectionStart,
-        selectionEnd,
-      ));
+      const markdownImage = `![${imageFile.name || 'pasted image'}](${reader.result})`;
+      setEditContent((current) => {
+        if (!isTextareaPaste) {
+          return `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${markdownImage}`;
+        }
+
+        return insertTextAtSelection(
+          current,
+          `\n${markdownImage}\n`,
+          selectionStart,
+          selectionEnd,
+        );
+      });
     };
     reader.onerror = () => {
       antMessageApi.error('貼上圖片失敗');
@@ -1770,17 +2151,15 @@ export const MessageItem = memo(function MessageItem({
             {isEditing ? (
               <div className={styles.editModeContainer}>
                 <div className={cx(styles.bubble, styles.assistantBubble, styles.assistantEditSurface)}>
-                  <textarea
-                    aria-label={t('editMessage')}
-                    autoFocus
-                    className={styles.editTextarea}
+                  <AssistantRichMarkdownEditor
+                    className={styles.richEditSurface}
                     disabled={isEditSaving}
-                    onChange={(event) => setEditContent(event.target.value)}
+                    label={t('editMessage')}
+                    menuClassName={styles.richEditSlashMenu}
+                    menuItemClassName={styles.richEditSlashMenuItem}
+                    onChange={setEditContent}
                     onKeyDown={handleEditKeyDown}
                     onPaste={handleEditPaste}
-                    placeholder="Markdown..."
-                    ref={editTextareaRef}
-                    rows={editingTextareaRows(editContent)}
                     value={editContent}
                   />
                 </div>

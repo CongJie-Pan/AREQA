@@ -2021,7 +2021,189 @@ quoteBlockContent: css`
   `,
 
   assistantEditSurface: css`
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+    box-sizing: border-box;
     box-shadow: inset 0 -1px 0 rgba(216, 162, 92, 0.28);
+  `,
+
+  richEditSurface: css`
+    position: relative;
+    width: 100%;
+    min-height: 4.5em;
+    color: var(--areqa-message-text);
+
+    [contenteditable='true'],
+    [contenteditable='false'] {
+      width: 100%;
+      min-height: 4.5em;
+      outline: none;
+      font-size: 16px;
+      line-height: 1.8;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    [contenteditable='false'] {
+      opacity: 0.62;
+      cursor: progress;
+    }
+
+    p,
+    blockquote,
+    ul,
+    ol,
+    table,
+    figure {
+      margin-top: 0;
+    }
+
+    p {
+      margin: 0 0 8px;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      margin: 10px 0 8px;
+      color: var(--areqa-message-text);
+      font-weight: 720;
+      line-height: 1.35;
+    }
+
+    h1 {
+      font-size: 1.45rem;
+    }
+
+    h2 {
+      font-size: 1.25rem;
+    }
+
+    h3,
+    h4 {
+      font-size: 1.08rem;
+    }
+
+    ul,
+    ol {
+      padding-left: 1.55rem;
+      margin-bottom: 10px;
+    }
+
+    li {
+      margin: 2px 0;
+    }
+
+    li[data-depth='1'] {
+      margin-left: 1.4rem;
+    }
+
+    li[data-depth='2'],
+    li[data-depth='3'],
+    li[data-depth='4'] {
+      margin-left: 2.8rem;
+    }
+
+    blockquote {
+      margin-bottom: 10px;
+      padding: 2px 0 2px 16px;
+      border-left: 3px solid rgba(255, 255, 255, 0.25);
+      color: var(--areqa-message-muted-text);
+    }
+
+    table {
+      width: 100%;
+      margin: 12px 0 14px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      min-width: 84px;
+      padding: 8px 10px;
+      border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+      vertical-align: top;
+    }
+
+    th {
+      background: color-mix(in srgb, var(--foreground) 6%, transparent);
+      font-weight: 700;
+    }
+
+    figure {
+      margin: 14px 0;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+      max-height: 460px;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+
+    figcaption {
+      margin-top: 6px;
+      color: var(--areqa-message-muted-text);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    code {
+      padding: 0.14em 0.42em;
+      border-radius: ${token.borderRadiusSM}px;
+      background: color-mix(in srgb, var(--foreground) 9%, transparent);
+      color: color-mix(in srgb, var(--areqa-message-text) 88%, #d8a25c);
+      font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", "Menlo", monospace;
+      font-size: 0.88em;
+    }
+  `,
+
+  richEditSlashMenu: css`
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    bottom: 100%;
+    width: min(304px, calc(100vw - 48px));
+    max-height: 344px;
+    overflow-y: auto;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: #1b1b1d;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+  `,
+
+  richEditSlashMenuItem: css`
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 36px;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.82);
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(216, 162, 92, 0.16);
+      color: #ffffff;
+      outline: none;
+    }
+
+    svg {
+      flex: 0 0 auto;
+      color: #d8a25c;
+    }
   `,
 
   // Edit mode buttons container

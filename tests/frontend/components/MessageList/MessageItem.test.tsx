@@ -64,6 +64,9 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       editModeContainer: 'editModeContainer',
       editTextarea: 'editTextarea',
       assistantEditSurface: 'assistantEditSurface',
+      richEditSurface: 'richEditSurface',
+      richEditSlashMenu: 'richEditSlashMenu',
+      richEditSlashMenuItem: 'richEditSlashMenuItem',
       editButtons: 'editButtons',
       editButton: 'editButton',
       editCancelButton: 'editCancelButton',
@@ -215,7 +218,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(onAddNote).not.toHaveBeenCalled();
   });
 
-  it('lets completed assistant replies be edited as markdown', async () => {
+  it('lets completed assistant replies be edited in a rich rendered surface', async () => {
     const onEdit = vi.fn();
 
     render(
@@ -227,11 +230,13 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
-    expect(editor).toHaveValue('old **answer**');
+    expect(editor).toHaveTextContent('old answer');
     expect(editor.closest('.assistantBubble')).not.toBeNull();
     expect(editor.closest('.assistantEditSurface')).not.toBeNull();
+    expect(editor.closest('.richEditSurface')).not.toBeNull();
 
-    fireEvent.change(editor, { target: { value: 'new ![圖](https://example.com/image.png)' } });
+    editor.innerHTML = '<p>new <img alt="圖" src="https://example.com/image.png"></p>';
+    fireEvent.input(editor);
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
 
     await waitFor(() => {
@@ -240,6 +245,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
   });
 
   it('inserts a pasted image into assistant edit markdown', async () => {
+    const onEdit = vi.fn();
     class MockFileReader {
       result: string | ArrayBuffer | null = null;
       onload: (() => void) | null = null;
@@ -255,13 +261,12 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     render(
       <MessageItem
         message={{ ...baseMessage, content: 'old answer' }}
-        onEdit={vi.fn()}
+        onEdit={onEdit}
       />
     );
 
     fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
-    (editor as HTMLTextAreaElement).setSelectionRange('old answer'.length, 'old answer'.length);
     fireEvent.paste(editor, {
       clipboardData: {
         files: [
@@ -269,9 +274,10 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
         ],
       },
     });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
 
     await waitFor(() => {
-      expect(editor).toHaveValue('old answer\n![diagram.png](data:image/png;base64,abc123)\n');
+      expect(onEdit).toHaveBeenCalledWith('msg-1', 'old answer\n\n![diagram.png](data:image/png;base64,abc123)');
     });
   });
 
@@ -287,13 +293,14 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
-    fireEvent.change(editor, { target: { value: 'draft answer' } });
+    editor.innerHTML = '<p>draft answer</p>';
+    fireEvent.input(editor);
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
 
     await waitFor(() => {
       expect(onEdit).toHaveBeenCalledWith('msg-1', 'draft answer');
     });
-    expect(screen.getByRole('textbox', { name: '編輯訊息' })).toHaveValue('draft answer');
+    expect(screen.getByRole('textbox', { name: '編輯訊息' })).toHaveTextContent('draft answer');
   });
 
   it('keeps user attachments visible while editing and exits edit mode immediately on submit', async () => {
@@ -343,9 +350,9 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '編輯訊息' }), {
-      target: { value: 'discarded answer' },
-    });
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    editor.innerHTML = '<p>discarded answer</p>';
+    fireEvent.input(editor);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
     expect(onEdit).not.toHaveBeenCalled();
