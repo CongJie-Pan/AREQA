@@ -14,7 +14,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX, Type, Heading1, Heading2, List, Table2, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, Table2, Image as ImageIcon, TextQuote, Code2 } from 'lucide-react';
 import { Button, Input, Modal, Tooltip, App } from 'antd';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
@@ -728,45 +728,83 @@ function escapeEditorHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function unescapeEditorHtml(value: string): string {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = value;
+  return textarea.value;
+}
+
 function escapeMarkdownTableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
 }
 
 function isMarkdownTableSeparator(line: string): boolean {
-  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|');
+  const cells = parseMarkdownTableRow(line);
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
 }
 
-function parseMarkdownTableRow(line: string): string[] {
-  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+export function parseMarkdownTableRow(line: string): string[] {
+  const source = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  const cells: string[] = [];
+  let cell = '';
+  let isEscaped = false;
+
+  Array.from(source).forEach((char) => {
+    if (isEscaped) {
+      cell += char;
+      isEscaped = false;
+      return;
+    }
+    if (char === '\\') {
+      isEscaped = true;
+      return;
+    }
+    if (char === '|') {
+      cells.push(cell.trim());
+      cell = '';
+      return;
+    }
+    cell += char;
+  });
+  if (isEscaped) cell += '\\';
+  cells.push(cell.trim());
+  return cells;
 }
 
-function inlineMarkdownToEditorHtml(markdown: string): string {
-  const imagePlaceholders: string[] = [];
-  let text = escapeEditorHtml(markdown);
+export function inlineMarkdownToEditorHtml(markdown: string): string {
+  const placeholders: string[] = [];
+  const store = (html: string) => {
+    const token = `\uE000${placeholders.length}\uE001`;
+    placeholders.push(html);
+    return token;
+  };
+  let text = markdown
+    .replace(/`([^`\n]+)`/g, (_match, code) => store(`<code>${escapeEditorHtml(code)}</code>`))
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (match, alt, src) => (
+      isSafeImageUrl(src)
+        ? store(`<img src="${escapeEditorHtml(src)}" alt="${escapeEditorHtml(alt)}" />`)
+        : match
+    ))
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label, href) => (
+      isSafeUrl(href)
+        ? store(`<a href="${escapeEditorHtml(href)}">${escapeEditorHtml(label)}</a>`)
+        : match
+    ));
 
-  text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (match, alt, src) => {
-    if (!isSafeImageUrl(src)) return escapeEditorHtml(match);
-    const placeholder = `@@AREQA_IMAGE_${imagePlaceholders.length}@@`;
-    imagePlaceholders.push(`<img src="${escapeEditorHtml(src)}" alt="${escapeEditorHtml(alt)}" />`);
-    return placeholder;
-  });
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
-  text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label, href) => {
-    if (!isSafeUrl(href)) return match;
-    return `<a href="${escapeEditorHtml(href)}">${label}</a>`;
-  });
-  imagePlaceholders.forEach((html, index) => {
-    text = text.replace(`@@AREQA_IMAGE_${index}@@`, html);
+  text = escapeEditorHtml(text);
+  text = text
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^\w])__([^_\n]+)__(?=$|[^\w])/g, '$1<strong>$2</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/(^|[^\w])_([^_\n]+)_(?=$|[^\w])/g, '$1<em>$2</em>');
+
+  placeholders.forEach((html, index) => {
+    text = text.replace(new RegExp(`\\uE000${index}\\uE001`, 'g'), html);
   });
   return text;
 }
 
-function markdownToEditorHtml(markdown: string): string {
+export function markdownToEditorHtml(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html: string[] = [];
   let index = 0;
@@ -775,6 +813,20 @@ function markdownToEditorHtml(markdown: string): string {
     const line = lines[index] ?? '';
     if (!line.trim()) {
       index += 1;
+      continue;
+    }
+
+    const fenceMatch = line.match(/^```([\w-]*)\s*$/);
+    if (fenceMatch) {
+      const language = fenceMatch[1] || '';
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !/^```\s*$/.test(lines[index] ?? '')) {
+        codeLines.push(lines[index] ?? '');
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      html.push(`<pre><code${language ? ` data-language="${escapeEditorHtml(language)}"` : ''}>${escapeEditorHtml(codeLines.join('\n'))}</code></pre>`);
       continue;
     }
 
@@ -801,10 +853,13 @@ function markdownToEditorHtml(markdown: string): string {
         index += 1;
       }
       const [headerRow, ...bodyRows] = tableRows;
+      const columnCount = Math.max(...tableRows.map((row) => row.length));
+      const normalizedHeader = [...headerRow, ...Array.from({ length: columnCount - headerRow.length }, () => '')];
+      const normalizedBodyRows = bodyRows.map((row) => [...row, ...Array.from({ length: columnCount - row.length }, () => '')]);
       html.push('<table><thead><tr>');
-      headerRow.forEach((cell) => html.push(`<th>${inlineMarkdownToEditorHtml(cell)}</th>`));
+      normalizedHeader.forEach((cell) => html.push(`<th>${inlineMarkdownToEditorHtml(cell)}</th>`));
       html.push('</tr></thead><tbody>');
-      bodyRows.forEach((row) => {
+      normalizedBodyRows.forEach((row) => {
         html.push('<tr>');
         row.forEach((cell) => html.push(`<td>${inlineMarkdownToEditorHtml(cell)}</td>`));
         html.push('</tr>');
@@ -845,6 +900,7 @@ function markdownToEditorHtml(markdown: string): string {
       index < lines.length &&
       lines[index]?.trim() &&
       !/^(#{1,4})\s+/.test(lines[index]) &&
+      !/^```([\w-]*)\s*$/.test(lines[index] ?? '') &&
       !/^(\s*)([-*+]|\d+\.)\s+/.test(lines[index]) &&
       !(lines[index]?.includes('|') && lines[index + 1] && isMarkdownTableSeparator(lines[index + 1])) &&
       !/^!\[([^\]]*)\]\(([^)]+)\)$/.test(lines[index].trim()) &&
@@ -871,12 +927,13 @@ function elementTextWithBreaks(element: Element): string {
     .join('');
 }
 
-function inlineNodeToMarkdown(node: Node): string {
+function inlineNodeToMarkdown(node: Node, options: { skipNestedLists?: boolean } = {}): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
 
   const element = node as HTMLElement;
-  const children = Array.from(element.childNodes).map(inlineNodeToMarkdown).join('');
+  if (options.skipNestedLists && (element.tagName === 'UL' || element.tagName === 'OL')) return '';
+  const children = Array.from(element.childNodes).map((child) => inlineNodeToMarkdown(child, options)).join('');
   switch (element.tagName) {
     case 'STRONG':
     case 'B':
@@ -887,7 +944,7 @@ function inlineNodeToMarkdown(node: Node): string {
     case 'CODE':
       return children.trim() ? `\`${children}\`` : '';
     case 'A': {
-      const href = element.getAttribute('href') ?? '';
+      const href = unescapeEditorHtml(element.getAttribute('href') ?? '');
       return href && isSafeUrl(href) ? `[${children || href}](${href})` : children;
     }
     case 'IMG': {
@@ -902,14 +959,41 @@ function inlineNodeToMarkdown(node: Node): string {
   }
 }
 
-function inlineElementToMarkdown(element: Element): string {
-  return Array.from(element.childNodes).map(inlineNodeToMarkdown).join('').replace(/\u00a0/g, ' ');
+function inlineElementToMarkdown(element: Element, options: { skipNestedLists?: boolean } = {}): string {
+  return Array.from(element.childNodes).map((node) => inlineNodeToMarkdown(node, options)).join('').replace(/\u00a0/g, ' ');
 }
 
-function editorHtmlToMarkdown(root: HTMLElement): string {
+function listItemToMarkdown(item: HTMLLIElement, ordered: boolean, index: number, depth: number): string[] {
+  const marker = ordered ? `${index + 1}.` : '-';
+  const line = `${'  '.repeat(depth)}${marker} ${inlineElementToMarkdown(item, { skipNestedLists: true }).trim()}`.trimEnd();
+  const nestedLines = Array.from(item.children)
+    .filter((child) => child.tagName === 'UL' || child.tagName === 'OL')
+    .flatMap((nestedList) => listElementToMarkdown(nestedList as HTMLOListElement | HTMLUListElement, depth + 1));
+  return [line, ...nestedLines].filter((value) => value.trim().length > 1);
+}
+
+function listElementToMarkdown(element: HTMLOListElement | HTMLUListElement, depth = 0): string[] {
+  const ordered = element.tagName === 'OL';
+  return Array.from(element.children)
+    .filter((child): child is HTMLLIElement => child.tagName === 'LI')
+    .flatMap((item, index) => {
+      const visualDepth = depth + Number(item.dataset.depth ?? 0);
+      return listItemToMarkdown(item, ordered, index, visualDepth);
+    });
+}
+
+export function editorHtmlToMarkdown(root: HTMLElement): string {
   const blocks: string[] = [];
 
-  Array.from(root.children).forEach((child) => {
+  const childNodes = Array.from(root.childNodes);
+  childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const text = (child.textContent ?? '').trim();
+      if (text) blocks.push(text);
+      return;
+    }
+    if (child.nodeType !== Node.ELEMENT_NODE) return;
+
     const element = child as HTMLElement;
     const text = inlineElementToMarkdown(element).trim();
 
@@ -920,22 +1004,14 @@ function editorHtmlToMarkdown(root: HTMLElement): string {
     }
 
     if (element.tagName === 'UL' || element.tagName === 'OL') {
-      const ordered = element.tagName === 'OL';
-      const lines = Array.from(element.querySelectorAll(':scope > li'))
-        .map((item, index) => {
-          const depth = Number((item as HTMLElement).dataset.depth ?? 0);
-          const marker = ordered ? `${index + 1}.` : '-';
-          return `${'  '.repeat(Math.max(0, depth))}${marker} ${inlineElementToMarkdown(item).trim()}`;
-        })
-        .filter((line) => line.trim().length > 1);
+      const lines = listElementToMarkdown(element as HTMLOListElement | HTMLUListElement);
       if (lines.length) blocks.push(lines.join('\n'));
       return;
     }
 
     if (element.tagName === 'TABLE') {
       const rows = Array.from((element as HTMLTableElement).rows)
-        .map((row) => Array.from(row.cells).map((cell) => escapeMarkdownTableCell(inlineElementToMarkdown(cell))))
-        .filter((row) => row.some(Boolean));
+        .map((row) => Array.from(row.cells).map((cell) => escapeMarkdownTableCell(inlineElementToMarkdown(cell))));
       if (rows.length) {
         const columnCount = Math.max(...rows.map((row) => row.length));
         const normalizedRows = rows.map((row) => [...row, ...Array.from({ length: columnCount - row.length }, () => '')]);
@@ -951,14 +1027,23 @@ function editorHtmlToMarkdown(root: HTMLElement): string {
     if (element.tagName === 'FIGURE') {
       const image = element.querySelector('img');
       const src = image?.getAttribute('src') ?? '';
-      const alt = image?.getAttribute('alt') ?? elementTextWithBreaks(element).trim();
+      const caption = element.querySelector('figcaption');
+      const alt = caption ? inlineElementToMarkdown(caption).trim() : image?.getAttribute('alt') ?? elementTextWithBreaks(element).trim();
       if (src && isSafeImageUrl(src)) blocks.push(`![${alt}](${src})`);
       return;
     }
 
     if (element.tagName === 'BLOCKQUOTE') {
-      const quote = elementTextWithBreaks(element).trim();
+      const quote = inlineElementToMarkdown(element).trim();
       if (quote) blocks.push(quote.split('\n').map((line) => `> ${line}`).join('\n'));
+      return;
+    }
+
+    if (element.tagName === 'PRE') {
+      const code = element.querySelector('code');
+      const language = code?.getAttribute('data-language') ?? '';
+      const codeText = code?.textContent ?? element.textContent ?? '';
+      blocks.push(`\`\`\`${language}\n${codeText.replace(/\n$/, '')}\n\`\`\``);
       return;
     }
 
@@ -975,6 +1060,120 @@ function editorHtmlToMarkdown(root: HTMLElement): string {
   return blocks.join('\n\n').trim();
 }
 
+function selectionBelongsToEditor(editor: HTMLElement, selection: Selection | null): selection is Selection {
+  if (!selection?.rangeCount) return false;
+  const range = selection.getRangeAt(0);
+  return editor.contains(range.startContainer) && editor.contains(range.endContainer);
+}
+
+function getActiveSlashRange(editor: HTMLElement): Range | null {
+  const selection = window.getSelection();
+  if (!selectionBelongsToEditor(editor, selection) || !selection.isCollapsed) return null;
+
+  const range = selection.getRangeAt(0);
+  if (range.startContainer.nodeType !== Node.TEXT_NODE) return null;
+
+  const textNode = range.startContainer;
+  const textBeforeCaret = (textNode.textContent ?? '').slice(0, range.startOffset);
+  const slashMatch = textBeforeCaret.match(/(^|\s)\/[\w-]*$/);
+  if (!slashMatch) return null;
+
+  const slashRange = document.createRange();
+  slashRange.setStart(textNode, textBeforeCaret.length - slashMatch[0].trimStart().length);
+  slashRange.setEnd(textNode, range.startOffset);
+  return slashRange;
+}
+
+function getTrailingSlashRange(editor: HTMLElement): Range | null {
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let lastTextNode: Text | null = null;
+  while (walker.nextNode()) {
+    lastTextNode = walker.currentNode as Text;
+  }
+  const text = lastTextNode?.textContent ?? '';
+  const slashMatch = text.match(/(^|\s)\/[\w-]*$/);
+  if (!lastTextNode || !slashMatch) return null;
+
+  const slashRange = document.createRange();
+  slashRange.setStart(lastTextNode, text.length - slashMatch[0].trimStart().length);
+  slashRange.setEnd(lastTextNode, text.length);
+  return slashRange;
+}
+
+function removeSlashTrigger(editor: HTMLElement, slashRange: Range | null): HTMLElement | null {
+  if (!slashRange || !editor.contains(slashRange.startContainer)) return null;
+  const targetBlock = closestEditableBlock(slashRange.startContainer, editor);
+
+  if (
+    slashRange.startContainer === slashRange.endContainer &&
+    slashRange.startContainer.nodeType === Node.TEXT_NODE
+  ) {
+    const textNode = slashRange.startContainer;
+    const text = textNode.textContent ?? '';
+    textNode.textContent = `${text.slice(0, slashRange.startOffset)}${text.slice(slashRange.endOffset)}`;
+    const selection = window.getSelection();
+    const nextOffset = Math.min(slashRange.startOffset, textNode.textContent.length);
+    const nextRange = document.createRange();
+    nextRange.setStart(textNode, nextOffset);
+    nextRange.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(nextRange);
+    return targetBlock;
+  }
+
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(slashRange);
+  slashRange.deleteContents();
+  return targetBlock;
+}
+
+function removeDanglingSlashTriggerBlocks(editor: HTMLElement): void {
+  Array.from(editor.querySelectorAll('p,li,blockquote,h1,h2,h3,h4')).forEach((block) => {
+    if (/^\/[\w-]*$/.test(elementTextWithBreaks(block).trim())) {
+      block.remove();
+    }
+  });
+}
+
+function placeCaretAtEnd(element: Node): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function htmlFragmentFromMarkdown(markdown: string): DocumentFragment {
+  const template = document.createElement('template');
+  template.innerHTML = markdownToEditorHtml(markdown);
+  return template.content;
+}
+
+function insertFragmentNearSelection(editor: HTMLElement, fragment: DocumentFragment): Node | null {
+  const selection = window.getSelection();
+  if (!selectionBelongsToEditor(editor, selection)) {
+    const firstNode = fragment.firstChild;
+    editor.appendChild(fragment);
+    return firstNode;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const firstNode = fragment.firstChild;
+  const lastNode = fragment.lastChild;
+  range.insertNode(fragment);
+  if (lastNode) {
+    range.setStartAfter(lastNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  return firstNode;
+}
+
 type AssistantRichMarkdownEditorProps = {
   value: string;
   disabled: boolean;
@@ -986,6 +1185,22 @@ type AssistantRichMarkdownEditorProps = {
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   onPaste: (event: React.ClipboardEvent<HTMLDivElement>) => void;
 };
+
+type SlashCommandMenuItem = {
+  label: string;
+  icon: React.ReactNode;
+  markdown: string;
+};
+
+function isBlockFragment(fragment: DocumentFragment): boolean {
+  return Array.from(fragment.children).some((child) => /^(P|H[1-6]|UL|OL|TABLE|FIGURE|BLOCKQUOTE|PRE)$/.test(child.tagName));
+}
+
+function closestEditableBlock(node: Node, editor: HTMLElement): HTMLElement | null {
+  const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+  const block = element?.closest('p,h1,h2,h3,h4,li,blockquote,pre');
+  return block instanceof HTMLElement && editor.contains(block) ? block : null;
+}
 
 function AssistantRichMarkdownEditor({
   value,
@@ -999,10 +1214,11 @@ function AssistantRichMarkdownEditor({
   onPaste,
 }: AssistantRichMarkdownEditorProps) {
   const editorRef = React.useRef<HTMLDivElement | null>(null);
+  const activeSlashRangeRef = React.useRef<Range | null>(null);
   const lastInputMarkdownRef = React.useRef<string | null>(null);
   const hasFocusedRef = React.useRef(false);
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
-  const [renderVersion, setRenderVersion] = React.useState(0);
+  const [menuPosition, setMenuPosition] = React.useState({ top: 0, left: 0 });
 
   React.useEffect(() => {
     const editor = editorRef.current;
@@ -1013,7 +1229,7 @@ function AssistantRichMarkdownEditor({
       hasFocusedRef.current = true;
       window.setTimeout(() => editor.focus(), 0);
     }
-  }, [renderVersion, value]);
+  }, [value]);
 
   const syncMarkdown = React.useCallback(() => {
     const editor = editorRef.current;
@@ -1024,27 +1240,84 @@ function AssistantRichMarkdownEditor({
   }, [onChange]);
 
   const insertMarkdownBlock = React.useCallback((markdownBlock: string) => {
-    const baseValue = value.replace(/(^|\s)\/[\w-]*$/, '$1').trimEnd();
-    const nextValue = `${baseValue}${baseValue.trim() ? '\n\n' : ''}${markdownBlock}`.trim();
-    onChange(nextValue);
-    setRenderVersion((current) => current + 1);
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const slashRange = getActiveSlashRange(editor) ?? activeSlashRangeRef.current ?? getTrailingSlashRange(editor);
+    const slashBlock = removeSlashTrigger(editor, slashRange);
+    activeSlashRangeRef.current = null;
+
+    const selection = window.getSelection();
+    const range = selectionBelongsToEditor(editor, selection) ? selection.getRangeAt(0) : null;
+    const fragment = htmlFragmentFromMarkdown(markdownBlock);
+    const lastNode = fragment.lastChild;
+    const targetBlock = slashBlock ?? (range ? closestEditableBlock(range.startContainer, editor) : null);
+
+    if (targetBlock && isBlockFragment(fragment)) {
+      if (elementTextWithBreaks(targetBlock).trim()) {
+        targetBlock.after(fragment);
+      } else {
+        targetBlock.replaceWith(fragment);
+      }
+      if (lastNode) placeCaretAtEnd(lastNode);
+    } else {
+      const insertedNode = insertFragmentNearSelection(editor, fragment);
+      if (insertedNode) placeCaretAtEnd(insertedNode);
+    }
+
+    removeDanglingSlashTriggerBlocks(editor);
+    const nextMarkdown = editorHtmlToMarkdown(editor);
+    lastInputMarkdownRef.current = nextMarkdown;
+    onChange(nextMarkdown);
     setIsMenuOpen(false);
-    window.setTimeout(() => editorRef.current?.focus(), 0);
-  }, [onChange, value]);
+    window.setTimeout(() => editor.focus(), 0);
+  }, [onChange]);
+
+  const updateSlashMenu = React.useCallback(() => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selectionBelongsToEditor(editor, selection) || !selection.isCollapsed) {
+      setIsMenuOpen(false);
+      activeSlashRangeRef.current = null;
+      return;
+    }
+
+    const slashRange = getActiveSlashRange(editor);
+    if (!slashRange) {
+      setIsMenuOpen(false);
+      activeSlashRangeRef.current = null;
+      return;
+    }
+
+    activeSlashRangeRef.current = slashRange.cloneRange();
+    const editorRect = editor.getBoundingClientRect();
+    const caretRange = selection.getRangeAt(0).cloneRange();
+    const caretRect = typeof caretRange.getBoundingClientRect === 'function'
+      ? caretRange.getBoundingClientRect()
+      : editorRect;
+    setMenuPosition({
+      top: Math.max(0, caretRect.bottom - editorRect.top + 6),
+      left: Math.max(0, Math.min(caretRect.left - editorRect.left, editorRect.width - 304)),
+    });
+    setIsMenuOpen(true);
+  }, []);
 
   const handleInput = React.useCallback(() => {
     syncMarkdown();
-    const selection = window.getSelection();
-    const activeText = selection?.anchorNode?.textContent?.slice(0, selection.anchorOffset) ?? '';
-    setIsMenuOpen(/(^|\s)\/[\w-]*$/.test(activeText));
-  }, [syncMarkdown]);
+    updateSlashMenu();
+  }, [syncMarkdown, updateSlashMenu]);
 
-  const menuItems = [
+  const menuItems: SlashCommandMenuItem[] = [
     { label: 'Text', icon: <Type size={16} aria-hidden="true" />, markdown: '新段落' },
     { label: 'Heading 1', icon: <Heading1 size={16} aria-hidden="true" />, markdown: '# 新標題' },
     { label: 'Heading 2', icon: <Heading2 size={16} aria-hidden="true" />, markdown: '## 新標題' },
+    { label: 'Heading 3', icon: <Heading3 size={16} aria-hidden="true" />, markdown: '### 新標題' },
+    { label: 'Heading 4', icon: <Heading4 size={16} aria-hidden="true" />, markdown: '#### 新標題' },
     { label: 'Bulleted list', icon: <List size={16} aria-hidden="true" />, markdown: '- 清單項目' },
-    { label: 'Table', icon: <Table2 size={16} aria-hidden="true" />, markdown: '| 欄位 A | 欄位 B |\n| --- | --- |\n| 內容 | 內容 |' },
+    { label: 'Numbered list', icon: <ListOrdered size={16} aria-hidden="true" />, markdown: '1. 清單項目' },
+    { label: 'Quote', icon: <TextQuote size={16} aria-hidden="true" />, markdown: '> 引用內容' },
+    { label: 'Code', icon: <Code2 size={16} aria-hidden="true" />, markdown: '```\n程式碼\n```' },
+    { label: 'Table', icon: <Table2 size={16} aria-hidden="true" />, markdown: '| 欄位 A | 欄位 B | 欄位 C |\n| --- | --- | --- |\n| 內容 |  | 內容 |\n|  | 內容 |  |' },
     { label: 'Image', icon: <ImageIcon size={16} aria-hidden="true" />, markdown: '![圖片說明](https://example.com/image.png)' },
   ];
 
@@ -1059,7 +1332,17 @@ function AssistantRichMarkdownEditor({
         onFocus={() => setIsMenuOpen(false)}
         onInput={handleInput}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') setIsMenuOpen(false);
+          if (event.key === 'Escape' && isMenuOpen) {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsMenuOpen(false);
+            return;
+          }
+          if (event.key === 'Enter' && isMenuOpen) {
+            event.preventDefault();
+            insertMarkdownBlock(menuItems[0].markdown);
+            return;
+          }
           onKeyDown(event);
         }}
         onPaste={onPaste}
@@ -1069,7 +1352,12 @@ function AssistantRichMarkdownEditor({
         tabIndex={0}
       />
       {isMenuOpen && (
-        <div className={menuClassName} role="menu" aria-label="Insert block">
+        <div
+          className={menuClassName}
+          role="menu"
+          aria-label="Insert block"
+          style={{ left: menuPosition.left, top: menuPosition.top }}
+        >
           {menuItems.map((item) => (
             <button
               className={menuItemClassName}
@@ -1939,7 +2227,11 @@ export const MessageItem = memo(function MessageItem({
       const markdownImage = `![${imageFile.name || 'pasted image'}](${reader.result})`;
       setEditContent((current) => {
         if (!isTextareaPaste) {
-          return `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${markdownImage}`;
+          const editor = pasteTarget as HTMLElement;
+          const fragment = htmlFragmentFromMarkdown(markdownImage);
+          const insertedNode = insertFragmentNearSelection(editor, fragment);
+          if (insertedNode) placeCaretAtEnd(insertedNode);
+          return editorHtmlToMarkdown(editor);
         }
 
         return insertTextAtSelection(

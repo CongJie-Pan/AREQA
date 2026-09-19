@@ -15,6 +15,71 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
 }));
 
 describe('MessageItem Quote Alignment Regression', () => {
+  it('opens assistant rich edit mode without exposing Markdown source syntax', () => {
+    render(
+      <App>
+        <MessageItem
+          message={{
+            id: 'msg-rich-edit-rendered',
+            role: 'assistant',
+            content: [
+              '- test test test',
+              '  - test test test test',
+              '',
+              '| 000 |  | 000 |',
+              '| --- | --- | --- |',
+              '|  | 000 |  |',
+            ].join('\n'),
+            createdAt: Date.now(),
+          }}
+          onEdit={vi.fn()}
+        />
+      </App>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+
+    expect(editor).toHaveTextContent('test test test');
+    expect(editor.querySelector('table')).toBeInTheDocument();
+    expect(editor).not.toHaveTextContent('| --- |');
+    expect(editor).not.toHaveTextContent('- test test test');
+  });
+
+  it('closes the slash menu with Escape without cancelling assistant editing', () => {
+    render(
+      <App>
+        <MessageItem
+          message={{
+            id: 'msg-rich-edit-escape',
+            role: 'assistant',
+            content: 'stable answer',
+            createdAt: Date.now(),
+          }}
+          onEdit={vi.fn()}
+        />
+      </App>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    editor.innerHTML = '<p>/</p>';
+    const textNode = editor.querySelector('p')?.firstChild;
+    expect(textNode).toBeTruthy();
+    const range = document.createRange();
+    range.setStart(textNode as Node, 1);
+    range.collapse(true);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    fireEvent.input(editor);
+
+    expect(screen.getByRole('menu', { name: 'Insert block' })).toBeInTheDocument();
+    fireEvent.keyDown(editor, { key: 'Escape' });
+
+    expect(screen.queryByRole('menu', { name: 'Insert block' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '編輯訊息' })).toBeInTheDocument();
+  });
+
   it('renders loose bold markers as strong text and keeps code blocks visually scoped', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {

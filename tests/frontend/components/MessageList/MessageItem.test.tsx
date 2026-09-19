@@ -244,6 +244,98 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     });
   });
 
+  it('preserves rich assistant markdown when editing rendered content', async () => {
+    const onEdit = vi.fn();
+    const richContent = [
+      '- parent',
+      '  - child',
+      '',
+      '| A\\|B | C |',
+      '| --- | --- |',
+      '| 1 | 2 |',
+      '|  |  |',
+      '',
+      '> **important** [link](https://example.com/?a=1&b=2)',
+      '',
+      '```js',
+      'const foo_bar_baz = 1;',
+      '```',
+    ].join('\n');
+
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: richContent }}
+        onEdit={onEdit}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    expect(editor).toHaveTextContent('parent');
+    expect(editor).toHaveTextContent('child');
+    expect(editor).toHaveTextContent('A|B');
+    expect(editor).not.toHaveTextContent('```js');
+
+    editor.insertAdjacentHTML('beforeend', '<p>tail</p>');
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+
+    await waitFor(() => {
+      expect(onEdit).toHaveBeenCalledWith('msg-1', [
+        '- parent',
+        '  - child',
+        '',
+        '| A\\|B | C |',
+        '| --- | --- |',
+        '| 1 | 2 |',
+        '|  |  |',
+        '',
+        '> **important** [link](https://example.com/?a=1&b=2)',
+        '',
+        '```js',
+        'const foo_bar_baz = 1;',
+        '```',
+        '',
+        'tail',
+      ].join('\n'));
+    });
+  });
+
+  it('inserts slash command blocks at the current assistant edit caret', async () => {
+    const onEdit = vi.fn();
+
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: 'intro' }}
+        onEdit={onEdit}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    editor.innerHTML = '<p>/</p>';
+    const textNode = editor.querySelector('p')?.firstChild;
+    expect(textNode).toBeTruthy();
+    const range = document.createRange();
+    range.setStart(textNode as Node, 1);
+    range.collapse(true);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    fireEvent.input(editor);
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /Table/ }));
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+
+    await waitFor(() => {
+      expect(onEdit).toHaveBeenCalledWith('msg-1', [
+        '| 欄位 A | 欄位 B | 欄位 C |',
+        '| --- | --- | --- |',
+        '| 內容 |  | 內容 |',
+        '|  | 內容 |  |',
+      ].join('\n'));
+    });
+  });
+
   it('inserts a pasted image into assistant edit markdown', async () => {
     const onEdit = vi.fn();
     class MockFileReader {

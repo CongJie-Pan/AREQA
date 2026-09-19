@@ -2055,7 +2055,8 @@ quoteBlockContent: css`
     ul,
     ol,
     table,
-    figure {
+    figure,
+    pre {
       margin-top: 0;
     }
 
@@ -2160,13 +2161,29 @@ quoteBlockContent: css`
       font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", "Menlo", monospace;
       font-size: 0.88em;
     }
+
+    pre {
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      background: transparent;
+      white-space: pre-wrap;
+    }
   `,
 
   richEditSlashMenu: css`
     position: absolute;
     z-index: 2;
     left: 0;
-    bottom: 100%;
+    top: 0;
     width: min(304px, calc(100vw - 48px));
     max-height: 344px;
     overflow-y: auto;
