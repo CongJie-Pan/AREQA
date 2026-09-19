@@ -1,63 +1,47 @@
 # RJ#1 Question 3: Applying the Selected Theory in AREQA E-learning Design
 
-## Main Argument
+## Main Idea
 
-AREQA should not be positioned as a normal AI answer machine. In this reflection, I would describe AREQA as an adaptive learning companion that applies LearnLM's pedagogical principles to real e-learning design. Its purpose is not only to provide correct answers, but to help learners reduce cognitive overload, think actively, reflect on their own understanding, stay curious, and gradually become more independent.
+AREQA is a project I developed to become a personal tutor for learners. It is not only a text-based chatbot, but a learning-oriented system that can provide learner-centered written responses, real-time voice interaction, virtual teacher video support, note creation, and personalized learning assistance. Therefore, in my e-learning design, I would apply LearnLM's educational principles by making AREQA a tutor-like companion that supports understanding, reflection, and independent learning.
 
-The key design idea is that AREQA's RAG, memory, turn planning, and proactive support can transform generative AI from a tool for answer delivery into a tutor-like system. Instead of replacing teachers or textbooks, AREQA should work beside structured learning materials and help students when they encounter confusion, gaps, or moments of low motivation.
+Instead of treating AI as a shortcut for final answers, AREQA should help learners stay actively involved in the learning process. Its role is to stand beside the learner: explaining difficult ideas, asking guiding questions, helping organize notes, and adapting support when the learner gets stuck.
 
-## 1. Cognitive Load: Short, Structured, and Digestible Explanations
+## 1. Managing Cognitive Load
 
-From the perspective of Cognitive Load Theory, AREQA should avoid giving long and dense answers. Even when the system retrieves accurate information through RAG, it should not directly dump all retrieved content onto the learner. A long answer may look helpful, but it can overload working memory and leave little space for real understanding.
+AREQA should avoid giving long and overwhelming answers. Even when it retrieves useful learning materials through RAG, the information should be reorganized into short, clear explanations. A good response can first state the key idea, then give one simple example, and finally ask a quick check-for-understanding question. This helps reduce unnecessary cognitive load and allows learners to focus on the actual concept.
 
-In design, AREQA should present knowledge in short segments. A good response can begin with the core idea, then provide a simple explanation, followed by one example and a short check-for-understanding question. This structure reduces extraneous cognitive load and helps the learner spend more mental effort on organizing and applying the concept.
+Expected effect: learners can process difficult ideas step by step instead of being overloaded by too much information at once.
 
-Expected effect: learners feel less overwhelmed, understand the main point faster, and can process difficult concepts step by step.
+## 2. Inspiring Active Learning
 
-## 2. Active Learning: Guide Students Before Giving the Final Answer
+AREQA should not always provide the final answer immediately. For learning-related questions, it can first ask what the learner already understands, where they feel confused, or how they would solve the problem. Then it can give hints or partial guidance. This design encourages learners to construct their own understanding rather than passively copy AI-generated answers.
 
-Based on constructivism and the ICAP framework, AREQA should not immediately solve every problem for the student. If the AI always gives the complete answer first, the learner becomes a passive reader. The student may copy the answer without building their own mental model.
+Expected effect: learners become more active participants in the dialogue and gradually build stronger reasoning habits.
 
-For learning-related questions, AREQA can first ask a diagnostic question, such as what the learner already understands or which step feels confusing. It can then provide hints, partial explanations, or guiding questions. This keeps the learner involved in the reasoning process and turns the conversation into a multi-turn learning dialogue.
+## 3. Deepening Metacognition
 
-Expected effect: students move from passive reception toward constructive and interactive learning. They are encouraged to generate their own explanations instead of only consuming AI output.
+AREQA can support metacognition by helping learners reflect on their own thinking. After an explanation, it can ask short reflection questions such as: "Which part was most confusing?" or "How would you check this answer next time?" If AREQA also uses memory to remember repeated misunderstandings or learning goals, the reflection can become more personalized.
 
-## 3. Metacognition: Help Learners Notice Their Own Thinking
+Expected effect: learners practice monitoring and evaluating their own understanding, which supports self-regulated learning.
 
-AREQA can also support metacognition and Self-Regulated Learning. Many learners do not know whether they truly understand a concept; they only know whether they received an answer. If AI only corrects mistakes, students may become dependent on external feedback and skip the habit of self-monitoring.
+## 4. Stimulating Curiosity
 
-After an explanation, AREQA can ask short reflection prompts, such as which step was most confusing, how the learner would check the answer next time, or what evidence helped them reach the conclusion. AREQA's memory system can make this more personal by remembering repeated misunderstandings, recent learning goals, and patterns in the student's questions.
+AREQA should make learning feel like exploration, not just task completion. It can introduce a concept through a surprising question, a real-world example, or a small knowledge gap that makes the learner want to know more. Its voice mode and virtual teacher video can also make the interaction feel more natural and emotionally supportive.
 
-Expected effect: learners practice planning, monitoring, and evaluating their own learning. Over time, AREQA helps them become more self-regulated instead of more dependent.
+Expected effect: learners may feel more motivated to continue learning because the system supports curiosity, competence, and a sense of companionship.
 
-## 4. Curiosity: Make Learning Feel Like Exploration
+## 5. Adapting to the Learner
 
-From the perspective of curiosity and Self-Determination Theory, AREQA should make learning feel less transactional. A normal chatbot often answers the question and ends the interaction. This is efficient, but it does not always create motivation to explore deeper.
+AREQA's most important design direction is adaptive scaffolding. For beginners, it can provide simpler language, concrete examples, and step-by-step hints. For more advanced learners, it can reduce hints and ask deeper questions. As the learner improves, AREQA should gradually fade its support and give more responsibility back to the learner.
 
-AREQA can stimulate curiosity by creating small information gaps. For example, before explaining a concept, it can point out a surprising contradiction, a hidden assumption, or a real-world puzzle. Its ComPeer or mailbox-style proactive support can also provide gentle follow-up messages after the main conversation, reminding the learner of unfinished questions or encouraging continued reflection.
-
-Expected effect: learners are more likely to stay engaged because the system supports competence, autonomy, and relatedness. Learning becomes a process of discovery rather than only task completion.
-
-## 5. ZPD and Scaffolding: Adjust Help to the Learner's Level
-
-The most important design principle for AREQA is adaptive scaffolding. According to ZPD, learning is most effective when the task is slightly beyond what the learner can do alone, but still achievable with support. A fixed explanation cannot satisfy this condition for every learner.
-
-AREQA can use hot memory and long-term memory to infer the learner's recent progress and adjust its help. Beginners may need simpler language, concrete examples, and step-by-step hints. Intermediate learners may benefit from partial hints and guiding questions. Advanced learners should receive fewer hints and more challenging prompts, so they can take more responsibility for the reasoning process.
-
-Expected effect: AREQA keeps learners in the productive zone between boredom and frustration. As the learner improves, the system gradually fades support and transfers responsibility back to the student.
-
-## 6. Why AREQA Fits This Theory
-
-AREQA is suitable for this theory because its architecture already supports several educational mechanisms. RAG can ground explanations in reliable learning materials, memory can support personalization across sessions, turn planning can distinguish learning help from general chat, and post-turn suggestions can guide students toward deeper follow-up questions.
-
-The ComPeer and mailbox features are also meaningful from an e-learning perspective. They allow AREQA to provide gentle proactive support instead of waiting passively for the learner to ask. If designed carefully, this can help students return to unfinished learning goals without feeling pressured or interrupted.
+Expected effect: learners stay within their Zone of Proximal Development, where the task is challenging but still achievable with support.
 
 ## Possible Journal Paragraph
 
-In my e-learning design, I would apply the selected theory by turning AREQA from a simple answer engine into an adaptive learning companion. Since AREQA is an Adaptive RAG-based Educational QA system, its retrieved knowledge should not be delivered as long final answers. Instead, based on Cognitive Load Theory, AREQA should segment explanations into short steps, highlight the key idea first, and provide examples only when they are needed. This reduces extraneous cognitive load and helps learners focus on real understanding.
+In my e-learning design, I would apply the selected theory through AREQA, a personal tutor system designed for learners. AREQA is not only a text-based chatbot; it also aims to support learner-centered written responses, real-time voice interaction, virtual teacher video, note creation, and personalized learning assistance. Therefore, its goal is not simply to give answers, but to guide learners through a more active and reflective learning process.
 
-AREQA should also support active learning by guiding students through questions, hints, and multi-turn dialogue. Instead of immediately giving the final answer, it can ask learners to explain their current thinking and then provide scaffolded support. Through memory and reflection prompts, AREQA can further support metacognition and Self-Regulated Learning by helping students notice their own misunderstandings and evaluate their reasoning. Finally, by adapting the level of support to the learner's progress, AREQA can operate within the learner's Zone of Proximal Development. As students become more competent, AREQA should gradually fade its hints and transfer responsibility back to the learner.
+Based on Cognitive Load Theory, AREQA should present retrieved knowledge in short and structured explanations instead of long information dumps. Based on constructivism and the ICAP framework, it should ask guiding questions and provide hints so learners can construct their own understanding. It can also support metacognition by prompting learners to reflect on their confusion, reasoning, and learning strategies. Finally, through adaptive scaffolding, AREQA can adjust its support to the learner's level and gradually fade help as the learner becomes more competent. In this way, AREQA applies LearnLM's theory by becoming a tutor-like companion that supports understanding, curiosity, and independent learning.
 
 ## One-Sentence Summary
 
-AREQA applies LearnLM's theory by transforming AI from a system that gives answers into a tutor-like learning companion that manages cognitive load, encourages active thinking, supports reflection, stimulates curiosity, and adapts scaffolding to each learner's development.
+AREQA applies LearnLM's theory by becoming a personal tutor that reduces cognitive overload, encourages active thinking, supports reflection, stimulates curiosity, and adapts support to each learner's level.
