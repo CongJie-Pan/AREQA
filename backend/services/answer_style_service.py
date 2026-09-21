@@ -6,6 +6,11 @@ not redefine the core teaching voice in local prompt strings. Keeping the style
 as a versioned contract gives prompt variants one source of truth and lets tests
 detect accidental drift between normal answers, PARTS-guided turns, and paper
 overview turns.
+
+The human-maintained source specification lives in
+``backend/prompts/skills/pedagogy_tutor_skill.md``. Runtime code keeps a compact
+rendered contract here so prompt assembly stays deterministic and does not depend
+on filesystem reads during chat turns.
 """
 
 from __future__ import annotations
@@ -15,6 +20,8 @@ from typing import Any
 
 
 AREQA_TEACHING_PROFILE_VERSION = "AREQA_TEACHING_V1"
+PEDAGOGY_TUTOR_SKILL_ID = "PEDAGOGY_TUTOR_SKILL_V1"
+PEDAGOGY_TUTOR_SKILL_PATH = "backend/prompts/skills/pedagogy_tutor_skill.md"
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +30,8 @@ class AnswerStyleContract:
 
     Args:
         version: Stable identifier used in prompt output and regression tests.
+        skill_id: Stable identifier for the source pedagogy skill specification.
+        skill_path: Repository path to the human-maintained skill specification.
         identity: Concise assistant identity.
         opening_rule: How an answer should begin.
         task_fit_rule: How much depth to use by default.
@@ -47,6 +56,8 @@ class AnswerStyleContract:
     """
 
     version: str
+    skill_id: str
+    skill_path: str
     identity: str
     opening_rule: str
     task_fit_rule: str
@@ -61,6 +72,8 @@ class AnswerStyleContract:
 
 AREQA_TEACHING_V1 = AnswerStyleContract(
     version=AREQA_TEACHING_PROFILE_VERSION,
+    skill_id=PEDAGOGY_TUTOR_SKILL_ID,
+    skill_path=PEDAGOGY_TUTOR_SKILL_PATH,
     identity="你叫「AREQA」，是一位引導型學習助手。你的核心特質是認知感知力：先判斷使用者當下任務，再用剛好足夠的深度協助他前進。",
     opening_rule="首段先貼合本回合學習模式：REFERENCE 可直接給資訊，LEARN 先補必要理解支點，PRACTICE 先回應卡點但不代做學習者應練習的核心推理。",
     task_fit_rule="預設貼合使用者眼前任務來做適合的答覆，例如用戶當前只是簡單詢問，則不主動把答覆深度改過深。",
@@ -73,6 +86,8 @@ AREQA_TEACHING_V1 = AnswerStyleContract(
         "啟發主動學習：直接答案只適用於 REFERENCE；在 PRACTICE 中，即使使用者施壓要求標準答案、考試作答或一句話結論，也不要一次給完目標推理；優先用最小提示、診斷問題或回饋，促使使用者自己完成下一步。",
         "深層元認知與反思：當使用者提出看法時，先指出其推理中正確或可取之處，再追問為什麼會得出該結論，引導使用者檢視自己的思考歷程。",
         "支持與引導：當使用者困惑或回答有偏差時，先承接具體難處，再給溫和提示、關鍵線索或可比較選項；必要前置知識可以直接教，但不要替學習者完成正在練習的答案、論證、證明、除錯或文本詮釋。",
+        "好奇心與情緒安全：把困惑視為可處理的學習訊號；可用具體類比、小型資訊缺口或有趣對照讓主題更可接近，但不要為了有趣而離開使用者原問題。",
+        "適應性鷹架：依使用者表現調整提示量；初學或卡住時給更多結構，當使用者展現理解時逐步淡出提示，交還推理責任。",
     ),
     visual_rule="圖文並茂：當圖像、地圖、流程圖或示意圖能實質幫助理解時，依系統圖片規則使用已授權的圖片請求或圖片引用標記；若沒有可用圖片，不要輸出失敗文字或假裝已插圖。",
 )
@@ -111,6 +126,7 @@ def render_base_persona(contract: AnswerStyleContract = AREQA_TEACHING_V1) -> st
         f"{contract.identity}\n\n"
         "【回答結構與風格】\n"
         f"profile: {contract.version}\n"
+        f"skill: {contract.skill_id}\n"
         f"1. {contract.opening_rule}\n"
         f"2. {contract.task_fit_rule}\n"
         f"3. {contract.escalation_rule}\n"
@@ -262,7 +278,7 @@ def render_style_profile_marker(contract: AnswerStyleContract = AREQA_TEACHING_V
         None.
     """
 
-    return f"請套用共享回答風格契約 profile: {contract.version}。"
+    return f"請套用共享回答風格契約 profile: {contract.version}；skill: {contract.skill_id}。"
 
 
 def render_paper_overview_style(contract: AnswerStyleContract = AREQA_TEACHING_V1) -> str:
@@ -317,7 +333,7 @@ def render_response_strategy_style_reminder(
         return ""
     if _enum_value(tone) in {"TUTORING", "PLAIN"}:
         return (
-            f"\n【共享風格契約】profile: {contract.version}；"
+            f"\n【共享風格契約】profile: {contract.version}；skill: {contract.skill_id}；"
             f"{contract.opening_rule}{contract.explanation_order_rule}"
         )
-    return f"\n【共享風格契約】profile: {contract.version}；{contract.task_fit_rule}"
+    return f"\n【共享風格契約】profile: {contract.version}；skill: {contract.skill_id}；{contract.task_fit_rule}"
