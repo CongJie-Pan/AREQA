@@ -94,6 +94,16 @@ _AUTHORITY_EVIDENCE_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for patt
     r"法律|法規|判例|合約|稅務|投資|保險|退休金|理財建議",
     r"\b(legal|law|regulation|contract|tax|investment|insurance|financial advice)\b",
 ))
+_DOMAIN_ORIENTATION_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"學\s*(什麼|哪些|甚麼)",
+    r"(主要|通常|大概)?.{0,12}(學|包含|涵蓋|包括).{0,8}(哪些|什麼|甚麼|內容|面向)",
+    r"\bwhat\s+(do|does|is)\b.{0,80}\b(study|learn|cover|include)\b",
+    r"\bwhat\s+is\b.{0,80}\babout\b",
+))
+_BROAD_LEARNING_START_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"(我想|想要|準備|打算|要).{0,8}(學|開始學|入門).{0,30}(從哪|怎麼開始|如何開始|先學)",
+    r"\b(i want to|i'd like to|where should i start|how should i start)\b.{0,80}\b(learn|study)\b",
+))
 
 
 def _detect_learning_technique(user_msg: str) -> LearningTechnique:
@@ -128,6 +138,20 @@ def _detect_evidence_mode(user_msg: str) -> EvidenceMode:
     if any(pattern.search(normalized) for pattern in _CURRENT_EVIDENCE_PATTERNS):
         return EvidenceMode.CURRENT_REQUIRED
     return EvidenceMode.NONE
+
+
+def _is_domain_orientation_request(user_msg: str) -> bool:
+    """Return whether the user asks for a compact field-scope orientation."""
+
+    normalized = str(user_msg or "").strip()
+    return bool(normalized) and any(pattern.search(normalized) for pattern in _DOMAIN_ORIENTATION_PATTERNS)
+
+
+def _is_broad_learning_start_request(user_msg: str) -> bool:
+    """Return whether the user needs goal clarification before a study plan."""
+
+    normalized = str(user_msg or "").strip()
+    return bool(normalized) and any(pattern.search(normalized) for pattern in _BROAD_LEARNING_START_PATTERNS)
 
 
 def _normalize_learning_ownership(policy: ResponsePolicy) -> ResponsePolicy:
@@ -195,6 +219,36 @@ def _apply_learning_and_evidence_guardrails(
         evidence_mode=evidence_mode,
     )
     guarded = _normalize_learning_ownership(guarded)
+    if _is_domain_orientation_request(user_msg):
+        guarded = replace(
+            guarded,
+            task_intent=TaskIntent.GENERAL_QA,
+            answer_depth=AnswerDepth.DIRECT,
+            tone=ResponseTone.PLAIN,
+            structure=ResponseStructure.SHORT,
+            followup_mode=FollowupMode.OPTIONAL,
+            learning_technique=LearningTechnique.NONE,
+            learning_mode=LearningMode.REFERENCE,
+            pedagogical_action=PedagogicalAction.ANSWER,
+            visual_support=VisualSupport.NONE,
+            visual_reason=VisualReason.NOT_NEEDED,
+            legacy_policy="NORMAL",
+        )
+    elif _is_broad_learning_start_request(user_msg):
+        guarded = replace(
+            guarded,
+            task_intent=TaskIntent.GENERAL_QA,
+            answer_depth=AnswerDepth.SCAFFOLDED,
+            tone=ResponseTone.TUTORING,
+            structure=ResponseStructure.SHORT,
+            followup_mode=FollowupMode.REQUIRED,
+            learning_technique=LearningTechnique.NONE,
+            learning_mode=LearningMode.LEARN,
+            pedagogical_action=PedagogicalAction.DIAGNOSTIC_QUESTION,
+            visual_support=VisualSupport.NONE,
+            visual_reason=VisualReason.NOT_NEEDED,
+            legacy_policy="PROBE_UNDERSTANDING",
+        )
     if guarded != policy:
         logger.info(
             "orchestration.response_policy_learning_guardrail_applied metadata=%s",
@@ -358,6 +412,10 @@ Decision rules:
   - Use PRACTICE with HINT, DIAGNOSTIC_QUESTION, or FEEDBACK when the latest turn asks AREQA to complete the reasoning step the learner is supposed to practice.
   - Use LEARN with EXPLAIN_PREREQ or MODEL_ANALOGY when missing background knowledge blocks the learner before the target reasoning step.
   - Use REFERENCE with ANSWER for explicit reference mode, general factual questions, definitions, adult self-study answer requests, or non-assessment professional lookup.
+- Domain orientation:
+  - If the user asks what a field, major, skill, or discipline studies, includes, covers, or is mainly about, choose GENERAL_QA, DIRECT, PLAIN, SHORT, REFERENCE, ANSWER, followup OPTIONAL. This is a compact orientation, not a roadmap.
+  - Do not set LEVEL_PATH for domain-orientation questions unless the user explicitly asks for stages, levels, roadmap, beginner-to-advanced path, or pass criteria.
+  - If the user only says they want to learn a broad field and asks where to start without giving goal, level, or use case, choose GENERAL_QA, SCAFFOLDED, TUTORING, SHORT, LEARN, DIAGNOSTIC_QUESTION, followup REQUIRED before producing a full plan.
 - If the user asks "I do not understand", "what does this mean", or asks for a plain explanation, choose EXPLAIN_TEXT, SCAFFOLDED, PLAIN, STEP_BY_STEP.
 - If the user asks for a forced-choice answer, exam answer, or "only choose one" inside homework, quiz, essay, or practice context, choose ANSWER_EXAM, SCAFFOLDED, TUTORING, STEP_BY_STEP, PRACTICE, HINT or DIAGNOSTIC_QUESTION, followup REQUIRED.
 - If the user explicitly switches to reference/self-study mode and is not asking AREQA to complete an assessment step, forced-choice or short-answer requests may use REFERENCE, DIRECT, PLAIN, SHORT, ANSWER, followup NONE.

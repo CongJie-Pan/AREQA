@@ -325,6 +325,97 @@ async def test_learning_guardrail_detects_short_quiz_request(caplog):
 
 
 @pytest.mark.asyncio
+async def test_domain_orientation_request_uses_short_reference_policy(caplog):
+    """Field-scope questions should not become a staged learning roadmap."""
+
+    caplog.set_level("INFO")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "GENERAL_QA",
+              "answer_depth": "SCAFFOLDED",
+              "tone": "TUTORING",
+              "structure": "STEP_BY_STEP",
+              "followup_mode": "OPTIONAL",
+              "learning_technique": "LEVEL_PATH",
+              "learning_mode": "LEARN",
+              "pedagogical_action": "EXPLAIN_PREREQ",
+              "visual_support": "OPTIONAL",
+              "visual_reason": "KNOWLEDGE_EXPLANATION",
+              "attachment_task": "NONE",
+              "attachment_reason": "NO_ATTACHMENT",
+              "legacy_policy": "NORMAL"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "產品設計學什麼？",
+        [],
+    )
+
+    assert policy.task_intent is TaskIntent.GENERAL_QA
+    assert policy.answer_depth is AnswerDepth.DIRECT
+    assert policy.tone is ResponseTone.PLAIN
+    assert policy.structure is ResponseStructure.SHORT
+    assert policy.learning_mode is LearningMode.REFERENCE
+    assert policy.learning_technique is LearningTechnique.NONE
+    assert policy.pedagogical_action is PedagogicalAction.ANSWER
+    assert policy.visual_support is VisualSupport.NONE
+    assert "orchestration.response_policy_learning_guardrail_applied" in caplog.text
+    assert "產品設計" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_broad_learning_start_asks_need_before_full_plan():
+    """Underspecified learning-start turns should clarify goals before planning."""
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_chat_response(
+            """
+            {
+              "task_intent": "GENERAL_QA",
+              "answer_depth": "SCAFFOLDED",
+              "tone": "TUTORING",
+              "structure": "STEP_BY_STEP",
+              "followup_mode": "OPTIONAL",
+              "learning_technique": "LEVEL_PATH",
+              "learning_mode": "LEARN",
+              "pedagogical_action": "EXPLAIN_PREREQ",
+              "visual_support": "OPTIONAL",
+              "visual_reason": "KNOWLEDGE_EXPLANATION",
+              "attachment_task": "NONE",
+              "attachment_reason": "NO_ATTACHMENT",
+              "legacy_policy": "SUGGEST_ACTION"
+            }
+            """
+        )
+    )
+
+    policy = await classify_response_policy_impl(
+        mock_client,
+        "test-model",
+        "我想學資料科學，該從哪裡開始？",
+        [],
+    )
+
+    assert policy.answer_depth is AnswerDepth.SCAFFOLDED
+    assert policy.structure is ResponseStructure.SHORT
+    assert policy.followup_mode is FollowupMode.REQUIRED
+    assert policy.learning_technique is LearningTechnique.NONE
+    assert policy.learning_mode is LearningMode.LEARN
+    assert policy.pedagogical_action is PedagogicalAction.DIAGNOSTIC_QUESTION
+    assert policy.visual_support is VisualSupport.NONE
+    assert policy.legacy_policy == "PROBE_UNDERSTANDING"
+
+
+@pytest.mark.asyncio
 async def test_evidence_guardrail_requires_multiple_sources_for_medical_topic():
     """Medical learning requests should carry stricter evidence requirements."""
 

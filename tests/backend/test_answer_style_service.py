@@ -79,6 +79,7 @@ def test_learnlm_rules_render_from_shared_contract():
     assert "支持與引導" in prompt
     assert "好奇心與情緒安全" in prompt
     assert "適應性鷹架" in prompt
+    assert "領域導覽短答" in prompt
     assert "learner action" not in prompt
     assert "Author/Source、Audience、Purpose、Context、Evidence、Limitation" not in prompt
     assert "圖文並茂" in prompt
