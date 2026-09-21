@@ -798,6 +798,29 @@ describe('Chat Service', () => {
       expect(mockChatStore.updateAssistantMessage).not.toHaveBeenCalled();
       expect(databaseService.note.syncFromMessage).not.toHaveBeenCalled();
     });
+
+    it('updates the assistant reply even when linked note mirroring fails', async () => {
+      mockChatStore.messages = [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'old answer',
+          conversationId: 'test-conv-id',
+        },
+      ];
+      vi.mocked(databaseService.note.syncFromMessage).mockRejectedValueOnce(new Error('note failed'));
+
+      await editAssistantMessage('assistant-1', 'edited answer');
+
+      expect(mockChatStore.updateAssistantMessage).toHaveBeenCalledWith('assistant-1', expect.objectContaining({
+        content: 'edited answer',
+        isStreaming: false,
+      }));
+      expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
+        'test-conv-id',
+        expect.objectContaining({ lastMessagePreview: 'edited answer' }),
+      );
+    });
   });
 
   describe('deleteLatestConversationTurn', () => {

@@ -1418,13 +1418,14 @@ function StreamingMarkdown({
   const visibleContent = useVoiceReveal(content, voicePlayback);
   const isVoicePlayback = Boolean(voicePlayback);
   const throttledContent = useThrottledValue(visibleContent, STREAMING_MARKDOWN_FLUSH_MS);
-  const deferredContent = React.useDeferredValue(isVoicePlayback ? visibleContent : throttledContent);
+  const deferredContent = React.useDeferredValue((isVoicePlayback || !animate) ? visibleContent : throttledContent);
   const processedContent = React.useMemo(() => {
     return normalizeMessageMarkdown(normalizeCitationMarkers(deferredContent));
   }, [deferredContent]);
 
   return (
     <Streamdown
+      key={animate ? 'animated' : 'static'}
       components={markdownComponents as StreamdownComponents}
       controls={false}
       disallowedElements={['script', 'iframe', 'object', 'embed']}
@@ -2504,7 +2505,7 @@ export const MessageItem = memo(function MessageItem({
                   ) : (
                     <StreamingMarkdown
                       content={message.content}
-                      animate={hasLiveStreamed || Boolean(message.voicePlayback)}
+                      animate={(isStreaming && hasLiveStreamed) || Boolean(message.voicePlayback)}
                       voicePlayback={message.voicePlayback}
                       markdownComponents={markdownComponents}
                     />

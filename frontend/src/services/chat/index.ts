@@ -1425,7 +1425,16 @@ export async function editAssistantMessage(
       answerBlocks: editedAnswerBlocks,
       updatedAt: updatedMessage.updatedAt,
     });
-    await useNotesStore.getState().syncNoteFromMessage(updatedMessage);
+    try {
+      await useNotesStore.getState().syncNoteFromMessage(updatedMessage);
+    } catch (error) {
+      logger.warn('chat_assistant_message_note_sync_failed', {
+        component: 'chatService',
+        conversationId: message.conversationId,
+        messageId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   chatStore.updateAssistantMessage(messageId, {

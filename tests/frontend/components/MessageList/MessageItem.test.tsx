@@ -793,6 +793,34 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container.querySelector('.streamingDots')).not.toBeInTheDocument();
   });
 
+  it('does not replay output animation when a completed assistant message is edited', () => {
+    const { container, rerender } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '原本串流回答',
+        }}
+        isStreaming={true}
+      />
+    );
+
+    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+
+    rerender(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '編輯後回答',
+          updatedAt: new Date('2026-09-21T08:00:00.000Z'),
+        }}
+        isStreaming={false}
+      />
+    );
+
+    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
+    expect(container).toHaveTextContent('編輯後回答');
+  });
+
   it('uses final structured blocks immediately when no live image slot event exists', () => {
     const streamedContent = '串流期間已顯示的回答';
     const { container, rerender } = render(

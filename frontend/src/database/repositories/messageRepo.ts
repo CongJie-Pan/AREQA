@@ -111,8 +111,14 @@ export const messageRepo = {
       updatedAt: updates.updatedAt ?? new Date(),
     };
 
-    await syncService.pushMessage(updatedMessage);
     await db.messages.put(updatedMessage);
+    void Promise.resolve(syncService.pushMessage(updatedMessage)).catch((error) => {
+      logger.error('Message update cloud sync failed', error instanceof Error ? error : new Error(String(error)), {
+        component: 'messageRepo',
+        messageId: id,
+        conversationId: updatedMessage.conversationId,
+      });
+    });
   },
 
   /**

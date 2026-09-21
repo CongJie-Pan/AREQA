@@ -113,6 +113,12 @@ describe('ChatInput', () => {
     expect(input.compareDocumentPosition(sendButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('should not focus the composer on initial mount', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+
+    expect(screen.getByLabelText('訊息輸入框')).not.toHaveFocus();
+  });
+
   it('should toggle explicit web search from the globe button', () => {
     render(<ChatInput onSend={mockOnSend} />);
 

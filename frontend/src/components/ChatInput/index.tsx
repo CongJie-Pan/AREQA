@@ -477,13 +477,6 @@ export function ChatInput({
     }
   }, [quotedText]);
 
-  // Focus textarea on mount
-  useEffect(() => {
-    if (textareaRef.current && !disabled) {
-      textareaRef.current.focus();
-    }
-  }, [disabled]);
-
   useEffect(() => {
     attachmentPreviewsRef.current = attachmentPreviews;
   }, [attachmentPreviews]);
