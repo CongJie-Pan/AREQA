@@ -23,6 +23,8 @@ DEFAULT_DATASET = ROOT / "eval" / "datasets" / "learnlm_text_tutor_cases.jsonl"
 DEFAULT_RUBRIC = ROOT / "eval" / "rubrics" / "learnlm_pedagogy_rubric.md"
 DEFAULT_OUTPUT_DIR = ROOT / "eval" / "outputs"
 DEFAULT_CACHE = DEFAULT_OUTPUT_DIR / "llm_judge_cache.json"
+PEDAGOGY_TUTOR_SKILL = ROOT / "backend" / "prompts" / "skills" / "pedagogy_tutor_skill.md"
+ENGLISH_TUTOR_SKILL = ROOT / "backend" / "prompts" / "skills" / "english_tutor_skill.md"
 
 SINGLE_RUBRIC_DIMENSIONS = [
     "instruction_following",
@@ -57,6 +59,29 @@ class EvalCase:
     scenario_instructions: str
     initial_query: str
     expected_tutor_behavior: list[str]
+
+
+@dataclass(frozen=True)
+class EvalSkillContext:
+    """Skill specifications used by the judge for profile-specific evaluation.
+
+    Args:
+        tutor_profile: Candidate tutor profile being evaluated.
+        skill_ids: Stable skill identifiers expected in the evaluated behavior.
+        text: Compact concatenation of the relevant skill specifications.
+
+    Side effects:
+        None.
+
+    Compatibility:
+        Skill context is sent only to the judge and written to reports. It is
+        deliberately not sent to the AREQA candidate request, so each eval case
+        still measures runtime prompt/profile behavior.
+    """
+
+    tutor_profile: str
+    skill_ids: tuple[str, ...]
+    text: str
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -104,6 +129,49 @@ def load_cache(path: Path) -> dict[str, Any]:
 def save_cache(path: Path, cache: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _read_skill_spec(path: Path) -> str:
+    """Read a skill specification for judge-only evaluation context."""
+
+    return path.read_text(encoding="utf-8").strip()
+
+
+def resolve_eval_skill_context(tutor_profile: str) -> EvalSkillContext:
+    """Return the skill contract context expected for an eval tutor profile.
+
+    Args:
+        tutor_profile: Raw tutor profile value from CLI arguments.
+
+    Returns:
+        The base pedagogy skill for general profile, and base pedagogy plus the
+        English subject overlay for the English tutor profile.
+
+    Side effects:
+        Reads local skill specification markdown files.
+
+    Raises:
+        ValueError: If an unsupported tutor profile is supplied.
+    """
+
+    normalized = str(tutor_profile or "general").strip().lower()
+    if normalized == "general":
+        return EvalSkillContext(
+            tutor_profile="general",
+            skill_ids=("PEDAGOGY_TUTOR_SKILL_V1",),
+            text=_read_skill_spec(PEDAGOGY_TUTOR_SKILL),
+        )
+    if normalized == "english":
+        specs = [
+            _read_skill_spec(PEDAGOGY_TUTOR_SKILL),
+            _read_skill_spec(ENGLISH_TUTOR_SKILL),
+        ]
+        return EvalSkillContext(
+            tutor_profile="english",
+            skill_ids=("PEDAGOGY_TUTOR_SKILL_V1", "ENGLISH_TUTOR_SKILL_V1"),
+            text="\n\n---\n\n".join(specs),
+        )
+    raise ValueError(f"unsupported tutor profile for eval: {tutor_profile}")
 
 
 def cache_key(*parts: Any) -> str:
@@ -265,14 +333,22 @@ def build_judge_prompt(
     baseline_answer: str,
     candidate_label: str,
     baseline_label: str,
+    skill_context: EvalSkillContext,
 ) -> str:
-    return f"""You are an expert pedagogy evaluator for English humanities tutoring.
+    profile_note = (
+        "general AREQA pedagogy tutor"
+        if skill_context.tutor_profile == "general"
+        else "AREQA English tutor overlay on the general pedagogy tutor"
+    )
+    return f"""You are an expert pedagogy evaluator for AREQA text tutoring.
 
 Evaluate two tutor answers for the same learner query. The learner query is the only
 message sent to the tutors. The scenario metadata is for your evaluation context.
 
 Do not reward verbosity. Reward helpful tutoring that supports learning, follows
 the scenario, manages cognitive load, and avoids simply doing the learner's work.
+Evaluate the candidate against the active AREQA skill contract, not against a
+generic prompt-writing style. The active candidate target is: {profile_note}.
 
 Return JSON only, with this exact shape:
 {{
@@ -318,6 +394,10 @@ Pairwise preferences must be integers from -3 to +3, where positive favors
 
 Rubric:
 {rubric_text}
+
+Active AREQA skill contract for the candidate:
+skill_ids: {", ".join(skill_context.skill_ids)}
+{skill_context.text}
 
 Scenario:
 {render_case_for_judge(case)}
@@ -565,12 +645,14 @@ def write_charts(summary: dict[str, Any], charts_dir: Path) -> None:
 
 def write_report(summary: dict[str, Any], output_dir: Path, args: argparse.Namespace) -> None:
     overall = summary.get("overall", {})
+    skill_context = resolve_eval_skill_context(args.tutor_profile)
     lines = [
         "# AREQA Text Tutor LLM Judge Eval Report",
         "",
         f"- Dataset: `{args.dataset}`",
         f"- Candidate source: `{args.candidate_url}`",
         f"- Tutor profile: `{args.tutor_profile}`",
+        f"- Eval skill IDs: `{', '.join(skill_context.skill_ids)}`",
         f"- Baseline model: `{args.baseline_model}`",
         f"- Judge model: `{args.judge_model}`",
         f"- Cases: `{summary.get('cases', 0)}`",
@@ -628,7 +710,9 @@ def run_case(
     rubric_text: str,
     cache: dict[str, Any],
     api_key: str,
+    skill_context: EvalSkillContext | None = None,
 ) -> dict[str, Any]:
+    skill_context = skill_context or resolve_eval_skill_context(args.tutor_profile)
     candidate_key = cache_key(
         "candidate",
         args.candidate_url,
@@ -678,6 +762,7 @@ def run_case(
         baseline_answer=baseline_answer,
         candidate_label="AREQA candidate",
         baseline_label=args.baseline_model,
+        skill_context=skill_context,
     )
     judge_key = cache_key(
         "judge",
@@ -686,6 +771,8 @@ def run_case(
         candidate_answer,
         baseline_answer,
         rubric_text,
+        skill_context.skill_ids,
+        skill_context.text,
     )
     if args.refresh_cache or judge_key not in cache:
         judge_content = call_openrouter_chat(
@@ -708,6 +795,10 @@ def run_case(
     pairwise_mean = round(statistics.fmean(judge["pairwise_preferences"].values()), 3)
     return {
         "case": case_to_public_dict(case),
+        "eval_skill_context": {
+            "tutor_profile": skill_context.tutor_profile,
+            "skill_ids": list(skill_context.skill_ids),
+        },
         "input": {"initial_query": case.initial_query},
         "candidate": {"source": args.candidate_url, "answer": candidate_answer},
         "baseline": {"model": args.baseline_model, "answer": baseline_answer},
@@ -773,6 +864,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_cases > 0:
         cases = cases[: args.max_cases]
     rubric_text = args.rubric.read_text(encoding="utf-8")
+    skill_context = resolve_eval_skill_context(args.tutor_profile)
     cache = load_cache(args.cache_file)
 
     run_id = dt.datetime.now(dt.UTC).strftime("run_%Y%m%d_%H%M%S")
@@ -791,6 +883,7 @@ def main(argv: list[str] | None = None) -> int:
                 rubric_text=rubric_text,
                 cache=cache,
                 api_key=api_key,
+                skill_context=skill_context,
             )
             result["elapsed_seconds"] = round(time.monotonic() - started, 3)
             results.append(result)

@@ -12,6 +12,9 @@ from typing import Literal
 
 TutorProfileId = Literal["general", "english"]
 
+ENGLISH_TUTOR_SKILL_ID = "ENGLISH_TUTOR_SKILL_V1"
+ENGLISH_TUTOR_SKILL_PATH = "backend/prompts/skills/english_tutor_skill.md"
+
 
 @dataclass(frozen=True, slots=True)
 class TutorProfile:
@@ -37,6 +40,7 @@ ENGLISH_TUTOR_PROFILE = TutorProfile(
     profile_id="english",
     label="English Tutor",
     rules=(
+        f"Skill contract: {ENGLISH_TUTOR_SKILL_ID}. This subject overlay is applied on top of the general pedagogy tutor skill.",
         "English Tutor scope: reading comprehension, literary analysis, essay writing, grammar, vocabulary, discussion preparation, media literacy, and humanities source analysis.",
         "Language boundary: this profile must not force English output. Follow the system answer-language rule; answer in Chinese when the latest user message asks in Chinese or explicitly requests Chinese.",
         "Humanities learning closure: unless the user only asks for translation or formatting, end with a short explanation, a text/context clue, one guiding question, and one immediately actionable learner action or practice prompt.",

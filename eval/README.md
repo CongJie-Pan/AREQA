@@ -2,10 +2,16 @@
 
 This folder contains offline evaluation tooling for AREQA's text-only tutor answers.
 
-The first evaluation target is English humanities tutoring without RAG, web search,
-voice, LiveKit, or avatar flows. Each case sends only the learner's `initial_query`
-to AREQA. Scenario metadata is kept for the judge so the score reflects the intended
-learning context without injecting extra per-case system prompts into AREQA.
+The evaluation target is skill-aligned text tutoring without RAG, web search,
+voice, LiveKit, or avatar flows. Each case sends only the learner's
+`initial_query` to AREQA. Scenario metadata and skill specs are kept for the
+judge so the score reflects the intended learning context without injecting
+extra per-case system prompts into AREQA.
+
+The runner loads skill specs by tutor profile:
+
+- `general`: `PEDAGOGY_TUTOR_SKILL_V1`
+- `english`: `PEDAGOGY_TUTOR_SKILL_V1` + `ENGLISH_TUTOR_SKILL_V1`
 
 ## Run
 
@@ -21,6 +27,19 @@ Then run:
 python eval/llm_judge_eval.py \
   --dataset eval/datasets/learnlm_text_tutor_cases.jsonl \
   --candidate-url http://127.0.0.1:8000/api/v1/stream \
+  --tutor-profile english \
+  --baseline-model google/gemini-3.8-flash \
+  --judge-model openai/gpt-5.6-luna \
+  --no-rag
+```
+
+For the general pedagogy skill, use:
+
+```bash
+python eval/llm_judge_eval.py \
+  --dataset eval/datasets/pedagogy_general_skill_cases.jsonl \
+  --candidate-url http://127.0.0.1:8000/api/v1/stream \
+  --tutor-profile general \
   --baseline-model google/gemini-3.8-flash \
   --judge-model openai/gpt-5.6-luna \
   --no-rag
@@ -44,6 +63,7 @@ The rubric is adapted from the LearnLM evaluation design:
 - scenario-guided learner tasks
 - single-conversation pedagogical scoring
 - pairwise candidate-vs-baseline preference
+- active AREQA skill contract supplied to the judge
 - aggregation by category and learning goal
 
 The runner intentionally uses a compact rubric rather than the full LearnLM 29-item

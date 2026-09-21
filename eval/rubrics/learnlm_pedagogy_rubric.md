@@ -1,4 +1,4 @@
-# LearnLM-Style Pedagogical Rubric For AREQA Text Tutor Eval
+# Skill-Aligned LearnLM-Style Pedagogical Rubric For AREQA Text Tutor Eval
 
 Score each item from 1 to 7.
 
@@ -11,14 +11,25 @@ Score each item from 1 to 7.
 - 7: excellent
 
 Do not reward verbosity. Prefer responses that are pedagogically useful for the
-specific learner persona, learning goal, and scenario.
+specific learner persona, learning goal, scenario, and active AREQA skill
+contract.
+
+The judge must evaluate whether the candidate behaves according to the skill IDs
+provided by the eval runner. For `general`, the target is
+`PEDAGOGY_TUTOR_SKILL_V1`. For `english`, the target is
+`PEDAGOGY_TUTOR_SKILL_V1` plus `ENGLISH_TUTOR_SKILL_V1`.
+
+The skill contract is about observable behavior, not whether the answer mentions
+skills or prompts. Do not reward the candidate for saying it follows a skill;
+reward it only when the response demonstrates the expected teaching behavior.
 
 ## Single-Conversation Dimensions
 
 ### instruction_following
 
 The tutor follows the scenario's tutoring requirements, such as not writing the
-student's full answer when the intended behavior is guidance.
+student's full answer when the intended behavior is guidance, and follows the
+active skill boundaries for the selected tutor profile.
 
 ### cognitive_load
 
@@ -51,6 +62,10 @@ The tutor avoids inaccuracies and expresses uncertainty or limitations when need
 ### learning_goal_support
 
 The tutor helps the learner make progress toward the stated learning goal.
+
+For English tutor cases, this includes preserving learner authorship, grounding
+interpretation in clues/evidence, and offering useful revision or practice steps
+without producing submit-ready work when practice is expected.
 
 ### overall_tutor_quality
 

@@ -75,6 +75,35 @@ def test_unit_parse_args_uses_non_truncating_default_answer_budget() -> None:
     assert args.tutor_profile == "english"
 
 
+def test_unit_resolve_eval_skill_context_matches_tutor_profile() -> None:
+    general = llm_judge_eval.resolve_eval_skill_context("general")
+    english = llm_judge_eval.resolve_eval_skill_context("english")
+
+    assert general.skill_ids == ("PEDAGOGY_TUTOR_SKILL_V1",)
+    assert "Manage cognitive load" in general.text
+    assert english.skill_ids == ("PEDAGOGY_TUTOR_SKILL_V1", "ENGLISH_TUTOR_SKILL_V1")
+    assert "Preserve learner authorship" in english.text
+
+
+def test_unit_build_judge_prompt_includes_active_skill_context() -> None:
+    skill_context = llm_judge_eval.resolve_eval_skill_context("english")
+
+    prompt = llm_judge_eval.build_judge_prompt(
+        case=_case(),
+        rubric_text="Skill rubric",
+        candidate_answer="Candidate answer",
+        baseline_answer="Baseline answer",
+        candidate_label="AREQA candidate",
+        baseline_label="baseline",
+        skill_context=skill_context,
+    )
+
+    assert "Evaluate the candidate against the active AREQA skill contract" in prompt
+    assert "PEDAGOGY_TUTOR_SKILL_V1, ENGLISH_TUTOR_SKILL_V1" in prompt
+    assert "English Tutor Skill" in prompt
+    assert "generic prompt-writing style" in prompt
+
+
 def test_unit_parse_sse_text_ignores_non_delta_json_events() -> None:
     body = "\n".join(
         [
@@ -239,6 +268,7 @@ def test_unit_write_charts_and_report_create_files(tmp_path: Path) -> None:
     report = (tmp_path / "report.md").read_text(encoding="utf-8")
     assert "AREQA Text Tutor LLM Judge Eval Report" in report
     assert "google/gemini-3.8-flash" in report
+    assert "PEDAGOGY_TUTOR_SKILL_V1, ENGLISH_TUTOR_SKILL_V1" in report
 
 
 def test_regression_dataset_rows_are_valid_jsonl() -> None:
@@ -252,6 +282,22 @@ def test_regression_dataset_rows_are_valid_jsonl() -> None:
     assert len(rows) == 20
     assert all("initial_query" in row for row in rows)
     assert {row["subject_area"] for row in rows} <= {"English", "History"}
+
+
+def test_regression_general_skill_dataset_rows_are_valid_jsonl() -> None:
+    dataset = ROOT / "eval" / "datasets" / "pedagogy_general_skill_cases.jsonl"
+    rows = [
+        json.loads(line)
+        for line in dataset.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert len(rows) >= 6
+    assert all("expected_tutor_behavior" in row for row in rows)
+    assert {row["case_id"] for row in rows} >= {
+        "general_reference_zpd_001",
+        "general_practice_math_hint_002",
+    }
 
 
 def test_regression_candidate_request_sends_only_user_query_not_scenario_metadata(monkeypatch) -> None:
@@ -327,6 +373,10 @@ def test_integration_run_case_collects_candidate_baseline_and_judge_with_cache(
 
     assert result["candidate"]["answer"] == "Candidate tutoring answer"
     assert result["baseline"]["answer"] == "Baseline tutoring answer"
+    assert result["eval_skill_context"]["skill_ids"] == [
+        "PEDAGOGY_TUTOR_SKILL_V1",
+        "ENGLISH_TUTOR_SKILL_V1",
+    ]
     assert result["judge"]["winner"] == "candidate"
     assert result["metrics"]["candidate_mean_score"] == 6
     assert cached_result["metrics"] == result["metrics"]
