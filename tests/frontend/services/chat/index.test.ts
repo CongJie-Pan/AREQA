@@ -29,6 +29,7 @@ vi.mock('@/services/database', () => ({
       delete: vi.fn(),
       deleteManyByConversationId: vi.fn(),
       getByConversationId: vi.fn(),
+      flushPendingCloudSync: vi.fn(),
       update: vi.fn(),
     },
     note: {
@@ -742,6 +743,7 @@ describe('Chat Service', () => {
         answerBlocks: [{ type: 'paragraph', text: '**edited** answer' }, imageBlock],
         streamImageSlots: undefined,
         isStreaming: false,
+        voicePlayback: undefined,
         updatedAt: expect.any(Date),
       });
       expect(databaseService.message.update).toHaveBeenCalledWith('assistant-1', {

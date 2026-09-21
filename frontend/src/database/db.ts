@@ -4,7 +4,7 @@
  */
 
 import Dexie, { type EntityTable } from 'dexie';
-import type { Conversation, Message, MessageDeletion, Note, Setting } from './schema';
+import type { Conversation, Message, MessageDeletion, MessageSyncQueueItem, Note, Setting } from './schema';
 
 /**
  * PerplexityQA Database class
@@ -59,6 +59,8 @@ class PerplexityQADatabase extends Dexie {
   messages!: EntityTable<Message, 'id'>;
   /** Local-only message delete markers used to prevent stale sync resurrection. */
   messageDeletions!: EntityTable<MessageDeletion, 'id'>;
+  /** Local-only pending message cloud sync queue. */
+  messageSyncQueue!: EntityTable<MessageSyncQueueItem, 'id'>;
   /** Settings table */
   settings!: EntityTable<Setting, 'key'>;
   /** Notes table */
@@ -146,6 +148,17 @@ class PerplexityQADatabase extends Dexie {
       await tx.table('messages').toCollection().modify(message => {
         message.updatedAt = message.updatedAt ?? message.createdAt ?? new Date();
       });
+    });
+
+    // Version 9: Durable pending message sync rows let local edits survive
+    // transient cloud failures and app reloads without replaying stale content.
+    this.version(9).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, updatedAt, [conversationId+createdAt]',
+      messageDeletions: 'id, userId, conversationId, deletedAt, [userId+deletedAt]',
+      messageSyncQueue: 'id, userId, conversationId, queuedAt, updatedAt, [userId+queuedAt]',
+      settings: 'key',
+      notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
     });
 
     // Handle multi-tab upgrades

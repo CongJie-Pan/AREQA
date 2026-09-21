@@ -37,11 +37,13 @@ describe('messageRepo - sync integration', () => {
     await db.conversations.clear();
     await db.messages.clear();
     await db.messageDeletions.clear();
+    await db.messageSyncQueue.clear();
   });
 
   afterEach(async () => {
     await db.messages.clear();
     await db.messageDeletions.clear();
+    await db.messageSyncQueue.clear();
     await db.conversations.clear();
   });
 
@@ -146,7 +148,7 @@ describe('messageRepo - sync integration', () => {
     );
   });
 
-  it('keeps local message edits when cloud update fails', async () => {
+  it('keeps local message edits queued when cloud update fails and flushes them later', async () => {
     const createdAt = new Date('2026-08-08T00:00:00.000Z');
     await db.conversations.add({
       id: 'conv_1',
@@ -171,9 +173,82 @@ describe('messageRepo - sync integration', () => {
     await messageRepo.update('assistant_edit', { content: 'New answer' });
 
     expect((await db.messages.get('assistant_edit'))?.content).toBe('New answer');
-    expect(syncService.pushMessage).toHaveBeenCalledWith(expect.objectContaining({
+    await vi.waitFor(async () => {
+      expect(await db.messageSyncQueue.get('assistant_edit')).toEqual(expect.objectContaining({
+        id: 'assistant_edit',
+        retryCount: 1,
+        lastError: 'cloud failed',
+      }));
+    });
+
+    vi.mocked(syncService.pushMessage).mockResolvedValue(undefined);
+    await messageRepo.flushPendingCloudSync('user_123');
+
+    expect(syncService.pushMessage).toHaveBeenLastCalledWith(expect.objectContaining({
       id: 'assistant_edit',
       content: 'New answer',
     }));
+    expect(await db.messageSyncQueue.get('assistant_edit')).toBeUndefined();
+  });
+
+  it('serializes repeated message sync and leaves the latest edit in cloud', async () => {
+    const createdAt = new Date('2026-08-08T00:00:00.000Z');
+    const firstEditAt = new Date('2026-08-08T00:00:01.000Z');
+    const secondEditAt = new Date('2026-08-08T00:00:02.000Z');
+    let resolveFirstPush: (() => void) | undefined;
+    await db.conversations.add({
+      id: 'conv_1',
+      userId: 'user_123',
+      title: 'Editable answer',
+      createdAt,
+      updatedAt: createdAt,
+      messageCount: 1,
+      lastMessagePreview: 'Old answer',
+    });
+    await db.messages.add({
+      id: 'assistant_edit',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      role: 'assistant',
+      content: 'Old answer',
+      createdAt,
+      updatedAt: createdAt,
+    });
+    vi.mocked(syncService.pushMessage)
+      .mockImplementationOnce(() => new Promise<void>((resolve) => {
+        resolveFirstPush = resolve;
+      }))
+      .mockResolvedValue(undefined);
+
+    await messageRepo.update('assistant_edit', {
+      content: 'First edit',
+      updatedAt: firstEditAt,
+    });
+    await vi.waitFor(() => {
+      expect(syncService.pushMessage).toHaveBeenCalledTimes(1);
+    });
+
+    await messageRepo.update('assistant_edit', {
+      content: 'Second edit',
+      updatedAt: secondEditAt,
+    });
+    expect(syncService.pushMessage).toHaveBeenCalledTimes(1);
+
+    resolveFirstPush?.();
+
+    await vi.waitFor(() => {
+      expect(syncService.pushMessage).toHaveBeenCalledTimes(2);
+    });
+    expect(syncService.pushMessage).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      id: 'assistant_edit',
+      content: 'First edit',
+      updatedAt: firstEditAt,
+    }));
+    expect(syncService.pushMessage).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      id: 'assistant_edit',
+      content: 'Second edit',
+      updatedAt: secondEditAt,
+    }));
+    expect(await db.messageSyncQueue.get('assistant_edit')).toBeUndefined();
   });
 });

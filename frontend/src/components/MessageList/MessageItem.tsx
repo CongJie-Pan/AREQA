@@ -2505,7 +2505,7 @@ export const MessageItem = memo(function MessageItem({
                   ) : (
                     <StreamingMarkdown
                       content={message.content}
-                      animate={(isStreaming && hasLiveStreamed) || Boolean(message.voicePlayback)}
+                      animate={(isStreaming && hasLiveStreamed) || message.voicePlayback === 'waiting' || message.voicePlayback === 'playing'}
                       voicePlayback={message.voicePlayback}
                       markdownComponents={markdownComponents}
                     />

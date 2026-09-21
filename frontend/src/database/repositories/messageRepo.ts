@@ -17,6 +17,121 @@ type AddMessageData = Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'use
   createdAt?: Date;
 };
 
+const MESSAGE_SYNC_RETRY_BASE_DELAY_MS = 1_000;
+const MESSAGE_SYNC_RETRY_MAX_DELAY_MS = 30_000;
+const messageSyncChains = new Map<string, Promise<void>>();
+const messageSyncRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function localMessageUpdatedAt(message: Message): Date {
+  return message.updatedAt ?? message.createdAt;
+}
+
+function safeErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return String(error);
+}
+
+function retryDelayMs(retryCount: number): number {
+  return Math.min(
+    MESSAGE_SYNC_RETRY_MAX_DELAY_MS,
+    MESSAGE_SYNC_RETRY_BASE_DELAY_MS * Math.max(1, 2 ** Math.min(retryCount - 1, 5)),
+  );
+}
+
+async function queueMessageCloudSync(message: Message): Promise<void> {
+  const existing = await db.messageSyncQueue.get(message.id);
+  await db.messageSyncQueue.put({
+    id: message.id,
+    userId: message.userId,
+    conversationId: message.conversationId,
+    queuedAt: new Date(),
+    updatedAt: localMessageUpdatedAt(message),
+    retryCount: existing?.retryCount ?? 0,
+    lastError: existing?.lastError ?? null,
+  });
+}
+
+function runQueuedMessageCloudSync(id: string): Promise<void> {
+  const existingTimer = messageSyncRetryTimers.get(id);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    messageSyncRetryTimers.delete(id);
+  }
+
+  const next = (messageSyncChains.get(id) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => flushQueuedMessageCloudSync(id));
+  const tracked = next.finally(() => {
+    if (messageSyncChains.get(id) === tracked) {
+      messageSyncChains.delete(id);
+    }
+  });
+  messageSyncChains.set(id, tracked);
+  return tracked;
+}
+
+function scheduleQueuedMessageCloudSync(id: string, delayMs = 0): void {
+  const existingTimer = messageSyncRetryTimers.get(id);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    messageSyncRetryTimers.delete(id);
+  }
+
+  if (delayMs <= 0) {
+    void runQueuedMessageCloudSync(id);
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    messageSyncRetryTimers.delete(id);
+    void runQueuedMessageCloudSync(id);
+  }, delayMs);
+  messageSyncRetryTimers.set(id, timer);
+}
+
+async function flushQueuedMessageCloudSync(id: string): Promise<void> {
+  const pending = await db.messageSyncQueue.get(id);
+  if (!pending) return;
+
+  const message = await db.messages.get(id);
+  if (!message) {
+    await db.messageSyncQueue.delete(id);
+    return;
+  }
+
+  const pushedUpdatedAt = localMessageUpdatedAt(message);
+  try {
+    await syncService.pushMessage(message);
+    const latestPending = await db.messageSyncQueue.get(id);
+    if (latestPending && latestPending.updatedAt.getTime() <= pushedUpdatedAt.getTime()) {
+      await db.messageSyncQueue.delete(id);
+    }
+    logger.info('sync_message_queue_flushed', {
+      component: 'messageRepo',
+      messageId: id,
+      conversationId: message.conversationId,
+      retryCount: pending.retryCount,
+    });
+  } catch (error) {
+    const nextRetryCount = pending.retryCount + 1;
+    await db.messageSyncQueue.update(id, {
+      retryCount: nextRetryCount,
+      lastError: safeErrorMessage(error),
+    });
+    logger.error('sync_message_queue_push_failed', error instanceof Error ? error : new Error(safeErrorMessage(error)), {
+      component: 'messageRepo',
+      messageId: id,
+      conversationId: message.conversationId,
+      retryCount: nextRetryCount,
+    });
+    scheduleQueuedMessageCloudSync(id, retryDelayMs(nextRetryCount));
+  }
+}
+
 export const messageRepo = {
   /**
    * Add a new message to a conversation
@@ -44,7 +159,7 @@ export const messageRepo = {
       updatedAt: messageData.updatedAt ?? createdAt,
     };
 
-    await db.transaction('rw', [db.messages, db.conversations], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageSyncQueue], async () => {
       // Add the message first
       await db.messages.add(message);
 
@@ -65,15 +180,11 @@ export const messageRepo = {
           lastMessagePreview: message.content.substring(0, 100) + (message.content.length > 100 ? '...' : ''),
         });
       }
+
+      await queueMessageCloudSync(message);
     });
 
-    void Promise.resolve(syncService.pushMessage(message)).catch((error) => {
-      logger.error('Message add cloud sync failed', error instanceof Error ? error : new Error(String(error)), {
-        component: 'messageRepo',
-        messageId: message.id,
-        conversationId,
-      });
-    });
+    scheduleQueuedMessageCloudSync(message.id);
     
     // Also update conversation timestamp in cloud if needed
     // (though conversation update above will trigger sync if we hooked transaction, 
@@ -111,14 +222,32 @@ export const messageRepo = {
       updatedAt: updates.updatedAt ?? new Date(),
     };
 
-    await db.messages.put(updatedMessage);
-    void Promise.resolve(syncService.pushMessage(updatedMessage)).catch((error) => {
-      logger.error('Message update cloud sync failed', error instanceof Error ? error : new Error(String(error)), {
-        component: 'messageRepo',
-        messageId: id,
-        conversationId: updatedMessage.conversationId,
-      });
+    await db.transaction('rw', [db.messages, db.messageSyncQueue], async () => {
+      await db.messages.put(updatedMessage);
+      await queueMessageCloudSync(updatedMessage);
     });
+    scheduleQueuedMessageCloudSync(id);
+  },
+
+  /**
+   * Flush pending message cloud sync rows for the current user.
+   *
+   * Side Effects:
+   *   Starts per-message serialized cloud push workers. The method resolves
+   *   after the currently scheduled attempts settle, while failed rows remain
+   *   queued with retry metadata for later automatic attempts.
+   */
+  async flushPendingCloudSync(userId = getCurrentUserId()): Promise<void> {
+    if (!userId || userId === 'default_user') return;
+
+    const pendingRows = await db.messageSyncQueue
+      .where('userId')
+      .equals(userId)
+      .sortBy('queuedAt');
+
+    await Promise.allSettled(
+      pendingRows.map((row) => runQueuedMessageCloudSync(row.id)),
+    );
   },
 
   /**
@@ -174,10 +303,11 @@ export const messageRepo = {
       lastError: null,
     };
 
-    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions, db.messageSyncQueue], async () => {
       // Delete the message first
       await db.messages.delete(id);
       await db.messageDeletions.put(deletion);
+      await db.messageSyncQueue.delete(id);
 
       // Use atomic modify to decrement message count
       // This prevents race conditions when multiple messages are deleted concurrently
@@ -206,7 +336,7 @@ export const messageRepo = {
 
     let deletedIds: string[] = [];
     const deletedAt = new Date();
-    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions, db.messageSyncQueue], async () => {
       const existingMessages = await db.messages
         .where('id')
         .anyOf(uniqueIds)
@@ -216,6 +346,7 @@ export const messageRepo = {
       if (deletedIds.length === 0) return;
 
       await db.messages.bulkDelete(deletedIds);
+      await db.messageSyncQueue.bulkDelete(deletedIds);
       await db.messageDeletions.bulkPut(existingMessages.map((message) => ({
         id: message.id,
         userId: message.userId,
@@ -255,9 +386,13 @@ export const messageRepo = {
    * @param conversationId - The conversation ID
    */
   async deleteByConversationId(conversationId: string): Promise<void> {
-    await db.transaction('rw', [db.messages, db.conversations], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageSyncQueue], async () => {
+      const deletedIds = (await db.messages.where('conversationId').equals(conversationId).primaryKeys()) as string[];
       // Delete all messages for the conversation
       await db.messages.where('conversationId').equals(conversationId).delete();
+      if (deletedIds.length > 0) {
+        await db.messageSyncQueue.bulkDelete(deletedIds);
+      }
 
       // Reset message count atomically
       await db.conversations

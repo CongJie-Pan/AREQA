@@ -880,7 +880,10 @@ export async function deleteLatestConversationTurn(assistantMessageId: string): 
 export async function initializeChatService(userId?: string): Promise<void> {
   const conversationStore = useConversationStore.getState();
   const authenticatedUserId = userId ?? getCurrentUserId();
-  if (authenticatedUserId) await conversationStore.loadConversations(authenticatedUserId);
+  if (authenticatedUserId) {
+    await conversationStore.loadConversations(authenticatedUserId);
+    void databaseService.message.flushPendingCloudSync(authenticatedUserId);
+  }
 }
 
 /**
@@ -1442,6 +1445,7 @@ export async function editAssistantMessage(
     answerBlocks: editedAnswerBlocks,
     streamImageSlots: undefined,
     isStreaming: false,
+    voicePlayback: undefined,
     updatedAt: updatedMessage.updatedAt,
   });
   patchConversationPreviewIfLatest(message, sanitizedContent);

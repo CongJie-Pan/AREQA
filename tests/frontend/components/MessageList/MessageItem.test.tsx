@@ -821,6 +821,22 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container).toHaveTextContent('編輯後回答');
   });
 
+  it('does not replay output animation for finished voice replies after editing', () => {
+    const { container } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '語音回答編輯後',
+          voicePlayback: 'finished',
+          updatedAt: new Date('2026-09-21T08:00:00.000Z'),
+        }}
+      />
+    );
+
+    expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
+    expect(container).toHaveTextContent('語音回答編輯後');
+  });
+
   it('uses final structured blocks immediately when no live image slot event exists', () => {
     const streamedContent = '串流期間已顯示的回答';
     const { container, rerender } = render(

@@ -194,6 +194,31 @@ export interface MessageDeletion {
 }
 
 /**
+ * Local-only marker for message rows that still need cloud sync.
+ *
+ * Compatibility:
+ * - The queue stores only identifiers, timestamps, and safe error summaries.
+ * - The latest message body is read from `messages` immediately before push,
+ *   so queued work cannot replay stale edited content.
+ */
+export interface MessageSyncQueueItem {
+  /** Message ID to push. */
+  id: string;
+  /** User ID that owns the pending message. */
+  userId: string;
+  /** Conversation that owns the pending message. */
+  conversationId: string;
+  /** When this message was last queued for cloud sync. */
+  queuedAt: Date;
+  /** Local message updatedAt snapshot that the queue must cover. */
+  updatedAt: Date;
+  /** Number of failed cloud push attempts for this pending row. */
+  retryCount: number;
+  /** Last safe error summary from cloud push, if any. */
+  lastError?: string | null;
+}
+
+/**
  * User-saved note linked to an assistant response.
  *
  * Compatibility:
