@@ -206,6 +206,24 @@ describe('Chat Service', () => {
       expect(mockConversationStore.selectConversation).toHaveBeenCalledWith('phone-conv');
     });
 
+    it('rereads local messages after cloud hydration even when the targeted pull reports no changes', async () => {
+      const concurrentlyHydratedMessages = [
+        { id: 'phone-user', role: 'user', content: 'phone question', conversationId: 'phone-conv' },
+        { id: 'phone-assistant', role: 'assistant', content: 'phone answer', conversationId: 'phone-conv' },
+      ];
+      vi.mocked(databaseService.message.getByConversationId)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(concurrentlyHydratedMessages as any);
+      vi.mocked(syncService.pullConversationMessages).mockResolvedValueOnce(false);
+
+      await switchConversation('phone-conv');
+
+      expect(syncService.pullConversationMessages).toHaveBeenCalledWith('phone-conv', 'test-user-id');
+      expect(databaseService.message.getByConversationId).toHaveBeenCalledTimes(2);
+      expect(mockChatStore.setMessages).toHaveBeenCalledWith(concurrentlyHydratedMessages);
+      expect(mockConversationStore.selectConversation).toHaveBeenCalledWith('phone-conv');
+    });
+
     it('does not let a stale history load override starting a new conversation', async () => {
       let resolveOlder!: (messages: never[]) => void;
       let markStarted!: () => void;

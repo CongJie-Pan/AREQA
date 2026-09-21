@@ -301,6 +301,41 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     });
   });
 
+  it('keeps list markdown after saving wrapped assistant editor content and reopening edit', async () => {
+    let savedContent = '- old';
+    const onEdit = vi.fn(async (_id: string, nextContent: string) => {
+      savedContent = nextContent;
+    });
+    const { rerender } = render(
+      <MessageItem
+        message={{ ...baseMessage, content: savedContent }}
+        onEdit={onEdit}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    const editor = screen.getByRole('textbox', { name: '編輯訊息' });
+    editor.innerHTML = '<div><ul><li data-depth="0">test</li></ul></div>';
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+
+    await waitFor(() => {
+      expect(onEdit).toHaveBeenCalledWith('msg-1', '- test');
+    });
+
+    rerender(
+      <MessageItem
+        message={{ ...baseMessage, content: savedContent }}
+        onEdit={onEdit}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+
+    const reopenedEditor = screen.getByRole('textbox', { name: '編輯訊息' });
+    expect(reopenedEditor.querySelector('ul li')).toHaveTextContent('test');
+    expect(reopenedEditor).not.toHaveTextContent('- test');
+  });
+
   it('inserts slash command blocks at the current assistant edit caret', async () => {
     const onEdit = vi.fn();
 

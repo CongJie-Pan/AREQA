@@ -682,7 +682,7 @@ export async function loadMessages(
     let messages = await databaseService.message.getByConversationId(conversationId, userId);
 
     if (messages.length === 0) {
-      const hydrated = await syncService.pullConversationMessages(conversationId, userId);
+      await syncService.pullConversationMessages(conversationId, userId);
       if (options.isStale?.()) {
         logger.info('chat_history_hydration_stale_ignored', {
           component: 'chatService',
@@ -690,9 +690,7 @@ export async function loadMessages(
         });
         return;
       }
-      if (hydrated) {
-        messages = await databaseService.message.getByConversationId(conversationId, userId);
-      }
+      messages = await databaseService.message.getByConversationId(conversationId, userId);
     }
 
     if (options.isStale?.()) {

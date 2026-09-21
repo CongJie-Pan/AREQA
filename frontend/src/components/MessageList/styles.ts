@@ -2093,6 +2093,14 @@ quoteBlockContent: css`
       margin-bottom: 10px;
     }
 
+    ul {
+      list-style-type: disc;
+    }
+
+    ol {
+      list-style-type: decimal;
+    }
+
     li {
       margin: 2px 0;
     }

@@ -48,4 +48,21 @@ describe('assistant rich markdown editor conversion utilities', () => {
 
     expect(editorHtmlToMarkdown(root)).toBe('replacement text');
   });
+
+  it('preserves markdown blocks when the browser wraps editor content', () => {
+    const root = document.createElement('div');
+    root.innerHTML = [
+      '<div><ul><li data-depth="0">test</li></ul></div>',
+      '<div><ol><li data-depth="0">first</li></ol></div>',
+      '<section><blockquote><strong>note</strong></blockquote></section>',
+    ].join('');
+
+    expect(editorHtmlToMarkdown(root)).toBe([
+      '- test',
+      '',
+      '1. first',
+      '',
+      '> **note**',
+    ].join('\n'));
+  });
 });

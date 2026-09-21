@@ -982,81 +982,90 @@ function listElementToMarkdown(element: HTMLOListElement | HTMLUListElement, dep
     });
 }
 
+function hasMarkdownBlockDescendant(element: Element): boolean {
+  return Array.from(element.children).some((child) => (
+    /^(H[1-4]|UL|OL|TABLE|FIGURE|BLOCKQUOTE|PRE|P|DIV|SECTION|ARTICLE)$/.test(child.tagName) ||
+    hasMarkdownBlockDescendant(child)
+  ));
+}
+
+function nodeToMarkdownBlocks(node: Node): string[] {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = (node.textContent ?? '').trim();
+    return text ? [text] : [];
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return [];
+  return elementToMarkdownBlocks(node as HTMLElement);
+}
+
+function elementToMarkdownBlocks(element: HTMLElement): string[] {
+  const text = inlineElementToMarkdown(element).trim();
+
+  if (/^H[1-4]$/.test(element.tagName)) {
+    const level = Number(element.tagName.slice(1));
+    return text ? [`${'#'.repeat(level)} ${text}`] : [];
+  }
+
+  if (element.tagName === 'UL' || element.tagName === 'OL') {
+    const lines = listElementToMarkdown(element as HTMLOListElement | HTMLUListElement);
+    return lines.length ? [lines.join('\n')] : [];
+  }
+
+  if (element.tagName === 'TABLE') {
+    const rows = Array.from((element as HTMLTableElement).rows)
+      .map((row) => Array.from(row.cells).map((cell) => escapeMarkdownTableCell(inlineElementToMarkdown(cell))));
+    if (!rows.length) return [];
+    const columnCount = Math.max(...rows.map((row) => row.length));
+    const normalizedRows = rows.map((row) => [...row, ...Array.from({ length: columnCount - row.length }, () => '')]);
+    return [[
+      `| ${normalizedRows[0].join(' | ')} |`,
+      `| ${Array.from({ length: columnCount }, () => '---').join(' | ')} |`,
+      ...normalizedRows.slice(1).map((row) => `| ${row.join(' | ')} |`),
+    ].join('\n')];
+  }
+
+  if (element.tagName === 'FIGURE') {
+    const image = element.querySelector('img');
+    const src = image?.getAttribute('src') ?? '';
+    const caption = element.querySelector('figcaption');
+    const alt = caption ? inlineElementToMarkdown(caption).trim() : image?.getAttribute('alt') ?? elementTextWithBreaks(element).trim();
+    return src && isSafeImageUrl(src) ? [`![${alt}](${src})`] : [];
+  }
+
+  if (element.tagName === 'BLOCKQUOTE') {
+    const quote = inlineElementToMarkdown(element).trim();
+    return quote ? [quote.split('\n').map((line) => `> ${line}`).join('\n')] : [];
+  }
+
+  if (element.tagName === 'PRE') {
+    const code = element.querySelector('code');
+    const language = code?.getAttribute('data-language') ?? '';
+    const codeText = code?.textContent ?? element.textContent ?? '';
+    return [`\`\`\`${language}\n${codeText.replace(/\n$/, '')}\n\`\`\``];
+  }
+
+  if (element.tagName === 'IMG') {
+    const src = element.getAttribute('src') ?? '';
+    const alt = element.getAttribute('alt') ?? '';
+    return src && isSafeImageUrl(src) ? [`![${alt}](${src})`] : [];
+  }
+
+  if (hasMarkdownBlockDescendant(element)) {
+    return Array.from(element.childNodes).flatMap(nodeToMarkdownBlocks);
+  }
+
+  return text ? [text] : [];
+}
+
+/**
+ * Converts the rich assistant editor DOM back to Markdown.
+ *
+ * Browser editing commands can wrap pasted or edited blocks in neutral elements
+ * such as divs. The serializer walks nested block descendants so those wrappers
+ * do not flatten lists, tables, quotes, or code blocks into plain text.
+ */
 export function editorHtmlToMarkdown(root: HTMLElement): string {
-  const blocks: string[] = [];
-
-  const childNodes = Array.from(root.childNodes);
-  childNodes.forEach((child) => {
-    if (child.nodeType === Node.TEXT_NODE) {
-      const text = (child.textContent ?? '').trim();
-      if (text) blocks.push(text);
-      return;
-    }
-    if (child.nodeType !== Node.ELEMENT_NODE) return;
-
-    const element = child as HTMLElement;
-    const text = inlineElementToMarkdown(element).trim();
-
-    if (/^H[1-4]$/.test(element.tagName)) {
-      const level = Number(element.tagName.slice(1));
-      if (text) blocks.push(`${'#'.repeat(level)} ${text}`);
-      return;
-    }
-
-    if (element.tagName === 'UL' || element.tagName === 'OL') {
-      const lines = listElementToMarkdown(element as HTMLOListElement | HTMLUListElement);
-      if (lines.length) blocks.push(lines.join('\n'));
-      return;
-    }
-
-    if (element.tagName === 'TABLE') {
-      const rows = Array.from((element as HTMLTableElement).rows)
-        .map((row) => Array.from(row.cells).map((cell) => escapeMarkdownTableCell(inlineElementToMarkdown(cell))));
-      if (rows.length) {
-        const columnCount = Math.max(...rows.map((row) => row.length));
-        const normalizedRows = rows.map((row) => [...row, ...Array.from({ length: columnCount - row.length }, () => '')]);
-        blocks.push([
-          `| ${normalizedRows[0].join(' | ')} |`,
-          `| ${Array.from({ length: columnCount }, () => '---').join(' | ')} |`,
-          ...normalizedRows.slice(1).map((row) => `| ${row.join(' | ')} |`),
-        ].join('\n'));
-      }
-      return;
-    }
-
-    if (element.tagName === 'FIGURE') {
-      const image = element.querySelector('img');
-      const src = image?.getAttribute('src') ?? '';
-      const caption = element.querySelector('figcaption');
-      const alt = caption ? inlineElementToMarkdown(caption).trim() : image?.getAttribute('alt') ?? elementTextWithBreaks(element).trim();
-      if (src && isSafeImageUrl(src)) blocks.push(`![${alt}](${src})`);
-      return;
-    }
-
-    if (element.tagName === 'BLOCKQUOTE') {
-      const quote = inlineElementToMarkdown(element).trim();
-      if (quote) blocks.push(quote.split('\n').map((line) => `> ${line}`).join('\n'));
-      return;
-    }
-
-    if (element.tagName === 'PRE') {
-      const code = element.querySelector('code');
-      const language = code?.getAttribute('data-language') ?? '';
-      const codeText = code?.textContent ?? element.textContent ?? '';
-      blocks.push(`\`\`\`${language}\n${codeText.replace(/\n$/, '')}\n\`\`\``);
-      return;
-    }
-
-    if (element.tagName === 'IMG') {
-      const src = element.getAttribute('src') ?? '';
-      const alt = element.getAttribute('alt') ?? '';
-      if (src && isSafeImageUrl(src)) blocks.push(`![${alt}](${src})`);
-      return;
-    }
-
-    if (text) blocks.push(text);
-  });
-
+  const blocks = Array.from(root.childNodes).flatMap(nodeToMarkdownBlocks);
   return blocks.join('\n\n').trim();
 }
 
