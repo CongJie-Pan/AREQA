@@ -17,6 +17,7 @@ import { useConversationStore } from '@/store/conversation';
 import { useNotesStore } from '@/store/notes';
 import { createChatStream } from '@/services/chat-stream';
 import { databaseService } from '@/services/database';
+import { syncService } from '@/services/syncService';
 import { ValidationError, normalizeError } from '@/utils/error';
 import { sanitizeMessagesForAPI } from '@/utils/sanitizer';
 import type { ChatMessage } from '@/services/chat-stream/types';
@@ -678,7 +679,21 @@ export async function loadMessages(
   if (!userId) return;
 
   try {
-    const messages = await databaseService.message.getByConversationId(conversationId, userId);
+    let messages = await databaseService.message.getByConversationId(conversationId, userId);
+
+    if (messages.length === 0) {
+      const hydrated = await syncService.pullConversationMessages(conversationId, userId);
+      if (options.isStale?.()) {
+        logger.info('chat_history_hydration_stale_ignored', {
+          component: 'chatService',
+          conversationId,
+        });
+        return;
+      }
+      if (hydrated) {
+        messages = await databaseService.message.getByConversationId(conversationId, userId);
+      }
+    }
 
     if (options.isStale?.()) {
       logger.info('chat_history_load_stale_ignored', {

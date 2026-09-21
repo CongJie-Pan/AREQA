@@ -5,6 +5,7 @@ import { useConversationStore } from '@/store/conversation';
 import { createChatStream } from '@/services/chat-stream';
 import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
+import { syncService } from '@/services/syncService';
 
 vi.mock('@/store/chat', () => ({
   useChatStore: {
@@ -35,6 +36,12 @@ vi.mock('@/services/database', () => ({
     note: {
       syncFromMessage: vi.fn().mockResolvedValue(null),
     },
+  },
+}));
+
+vi.mock('@/services/syncService', () => ({
+  syncService: {
+    pullConversationMessages: vi.fn().mockResolvedValue(false),
   },
 }));
 
@@ -179,6 +186,24 @@ describe('Chat Service', () => {
       expect(mockConversationStore.setLoading).not.toHaveBeenCalled();
       expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenNthCalledWith(1, true);
       expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenLastCalledWith(false);
+    });
+
+    it('hydrates a cloud conversation when the local message rows are missing', async () => {
+      const hydratedMessages = [
+        { id: 'phone-user', role: 'user', content: 'phone question', conversationId: 'phone-conv' },
+        { id: 'phone-assistant', role: 'assistant', content: 'phone answer', conversationId: 'phone-conv' },
+      ];
+      vi.mocked(databaseService.message.getByConversationId)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(hydratedMessages as any);
+      vi.mocked(syncService.pullConversationMessages).mockResolvedValueOnce(true);
+
+      await switchConversation('phone-conv');
+
+      expect(syncService.pullConversationMessages).toHaveBeenCalledWith('phone-conv', 'test-user-id');
+      expect(databaseService.message.getByConversationId).toHaveBeenCalledTimes(2);
+      expect(mockChatStore.setMessages).toHaveBeenCalledWith(hydratedMessages);
+      expect(mockConversationStore.selectConversation).toHaveBeenCalledWith('phone-conv');
     });
 
     it('does not let a stale history load override starting a new conversation', async () => {

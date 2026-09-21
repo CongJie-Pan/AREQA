@@ -35,6 +35,30 @@ vi.mock('@/database/db', async (importOriginal) => {
 let mockSupabaseResponse: any = { data: [], error: null };
 let mockSupabaseMsgResponse: any = { data: [], error: null };
 let mockSupabaseNoteResponse: any = { data: [], error: null };
+const createSelectQuery = (responseProvider: () => any) => {
+  const filters: Array<{ column: string; value: unknown }> = [];
+  const query = {
+    select: vi.fn(() => query),
+    eq: vi.fn((column: string, value: unknown) => {
+      filters.push({ column, value });
+      return query;
+    }),
+    order: vi.fn(() => query),
+    range: vi.fn((from: number, to: number) => {
+      const response = responseProvider();
+      if (response.error) return Promise.resolve(response);
+      const data = Array.isArray(response.data) ? response.data : [];
+      const filtered = filters.reduce((rows, filter) => {
+        if (filter.column === 'conversation_id') {
+          return rows.filter((row: any) => row.conversation_id === filter.value);
+        }
+        return rows;
+      }, data);
+      return Promise.resolve({ data: filtered.slice(from, to + 1), error: null });
+    }),
+  };
+  return query;
+};
 const { mockConversationUpsert, mockMessageUpsert, mockNoteUpsert } = vi.hoisted(() => ({
   mockConversationUpsert: vi.fn(),
   mockMessageUpsert: vi.fn(),
@@ -51,32 +75,44 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: vi.fn().mockImplementation((table) => {
       if (table === 'conversations') {
+        const selectQuery = createSelectQuery(() => mockSupabaseResponse);
         return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockResolvedValue(mockSupabaseResponse),
+          select: selectQuery.select,
+          eq: selectQuery.eq,
+          order: selectQuery.order,
+          range: selectQuery.range,
           upsert: mockConversationUpsert.mockResolvedValue({ error: null }),
           delete: vi.fn().mockReturnThis()
         };
       }
       if (table === 'messages') {
+        const selectQuery = createSelectQuery(() => mockSupabaseMsgResponse);
         return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockResolvedValue(mockSupabaseMsgResponse),
+          select: selectQuery.select,
+          eq: selectQuery.eq,
+          order: selectQuery.order,
+          range: selectQuery.range,
           upsert: mockMessageUpsert.mockResolvedValue({ error: null }),
           delete: mockMessageDelete
         };
       }
       if (table === 'notes') {
+        const selectQuery = createSelectQuery(() => mockSupabaseNoteResponse);
         return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockResolvedValue(mockSupabaseNoteResponse),
+          select: selectQuery.select,
+          eq: selectQuery.eq,
+          order: selectQuery.order,
+          range: selectQuery.range,
           upsert: mockNoteUpsert.mockResolvedValue({ error: null }),
           delete: mockNoteDelete
         };
       }
+      const selectQuery = createSelectQuery(() => ({ data: [], error: null }));
       return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: [], error: null })
+        select: selectQuery.select,
+        eq: selectQuery.eq,
+        order: selectQuery.order,
+        range: selectQuery.range,
       };
     })
   }
@@ -275,6 +311,95 @@ describe('syncService - pullFromCloud', () => {
     } finally {
       setTimeoutSpy.mockRestore();
     }
+  });
+
+  it('paginates cloud pulls so conversations beyond the first Supabase page get messages', async () => {
+    const createdAt = new Date('2026-09-21T00:00:00.000Z');
+    const olderMessages = Array.from({ length: 1000 }, (_, index) => ({
+      id: `older_msg_${index}`,
+      user_id: 'user_123',
+      conversation_id: 'older_conv',
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `older ${index}`,
+      created_at: new Date(createdAt.getTime() + index).toISOString(),
+      updated_at: new Date(createdAt.getTime() + index).toISOString(),
+    }));
+    mockSupabaseResponse = {
+      data: [
+        {
+          id: 'older_conv',
+          user_id: 'user_123',
+          title: 'Older chat',
+          created_at: createdAt.toISOString(),
+          updated_at: createdAt.toISOString(),
+        },
+        {
+          id: 'phone_conv',
+          user_id: 'user_123',
+          title: 'Phone chat',
+          created_at: new Date(createdAt.getTime() + 1001).toISOString(),
+          updated_at: new Date(createdAt.getTime() + 1001).toISOString(),
+        },
+      ],
+      error: null,
+    };
+    mockSupabaseMsgResponse = {
+      data: [
+        ...olderMessages,
+        {
+          id: 'phone_msg_1',
+          user_id: 'user_123',
+          conversation_id: 'phone_conv',
+          role: 'user',
+          content: 'Created from phone',
+          created_at: new Date(createdAt.getTime() + 1001).toISOString(),
+          updated_at: new Date(createdAt.getTime() + 1001).toISOString(),
+        },
+      ],
+      error: null,
+    };
+
+    await syncService.pullFromCloud();
+
+    expect(await db.messages.get('phone_msg_1')).toEqual(expect.objectContaining({
+      conversationId: 'phone_conv',
+      content: 'Created from phone',
+    }));
+    expect(await db.conversations.get('phone_conv')).toEqual(expect.objectContaining({
+      messageCount: 1,
+    }));
+  });
+
+  it('keeps conversations and messages when notes pull fails', async () => {
+    const createdAt = new Date('2026-09-21T00:00:00.000Z');
+    mockSupabaseResponse = {
+      data: [{
+        id: 'conv_notes_error',
+        user_id: 'user_123',
+        title: 'Notes failure should not block chat',
+        created_at: createdAt.toISOString(),
+        updated_at: createdAt.toISOString(),
+      }],
+      error: null,
+    };
+    mockSupabaseMsgResponse = {
+      data: [{
+        id: 'msg_notes_error',
+        user_id: 'user_123',
+        conversation_id: 'conv_notes_error',
+        role: 'user',
+        content: 'Still sync me',
+        created_at: createdAt.toISOString(),
+        updated_at: createdAt.toISOString(),
+      }],
+      error: null,
+    };
+    mockSupabaseNoteResponse = { data: null, error: new Error('notes unavailable') };
+
+    await syncService.pullFromCloud();
+
+    expect(await db.conversations.get('conv_notes_error')).toBeDefined();
+    expect(await db.messages.get('msg_notes_error')).toBeDefined();
   });
 
   it('clears local answer blocks when the cloud row explicitly stores null', async () => {

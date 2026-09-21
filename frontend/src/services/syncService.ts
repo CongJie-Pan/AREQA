@@ -10,6 +10,59 @@ import type { MessageFeedback, MessageFeedbackDetails, MessageFeedbackReason } f
 type MessageSearchResult = NonNullable<Message['searchResults']>[number];
 type MessageSource = NonNullable<Message['sources']>[number];
 const MESSAGE_DELETION_TOMBSTONE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const CLOUD_SYNC_PAGE_SIZE = 1000;
+
+type CloudQueryResult<T> = { data: T[] | null; error: unknown };
+type CloudQuery<T> = {
+  eq: (column: string, value: unknown) => CloudQuery<T>;
+  order: (column: string, options?: { ascending?: boolean }) => CloudQuery<T>;
+  range: (from: number, to: number) => Promise<CloudQueryResult<T>>;
+};
+
+type CloudConversationRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type CloudMessageRow = {
+  id: string;
+  user_id: string;
+  conversation_id: string;
+  role: Message['role'];
+  content: string;
+  attachments?: unknown;
+  citations?: unknown;
+  search_results?: unknown;
+  sources?: unknown;
+  answer_blocks?: unknown;
+  suggestions?: unknown;
+  reasoning?: unknown;
+  feedback?: unknown;
+  feedback_reason?: unknown;
+  feedback_comment?: unknown;
+  feedback_updated_at?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+type CloudNoteRow = {
+  id: string;
+  user_id: string;
+  conversation_id: string | null;
+  message_id: string | null;
+  conversation_title?: string | null;
+  content_snapshot: string;
+  answer_blocks_snapshot?: unknown;
+  citations_snapshot?: unknown;
+  sources_snapshot?: unknown;
+  tags?: unknown;
+  is_pinned?: unknown;
+  created_at: string;
+  updated_at: string;
+};
 
 function normalizeJsonArray<T>(value: unknown, fallback?: T[]): T[] | undefined {
   if (Array.isArray(value)) return value as T[];
@@ -64,6 +117,244 @@ async function pruneExpiredMessageDeletionTombstones(userId: string): Promise<vo
     .delete();
 }
 
+async function fetchCloudRows<T>(
+  table: string,
+  userId: string,
+  applyFilters?: (query: CloudQuery<T>) => CloudQuery<T>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let pageStart = 0;
+
+  while (true) {
+    let query = supabase
+      .from(table)
+      .select('*')
+      .eq('user_id', userId) as unknown as CloudQuery<T>;
+
+    if (applyFilters) {
+      query = applyFilters(query);
+    }
+
+    const { data, error } = await query
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(pageStart, pageStart + CLOUD_SYNC_PAGE_SIZE - 1);
+
+    if (error) {
+      handleAuthError(error);
+      throw error;
+    }
+
+    const page = data ?? [];
+    rows.push(...page);
+
+    if (page.length < CLOUD_SYNC_PAGE_SIZE) {
+      return rows;
+    }
+
+    pageStart += CLOUD_SYNC_PAGE_SIZE;
+  }
+}
+
+async function mergeCloudNotes(cloudNotes: CloudNoteRow[]): Promise<boolean> {
+  if (cloudNotes.length === 0) return false;
+
+  const localNotes = await db.notes.toArray();
+  const localNoteMap = new Map(localNotes.map((note) => [note.id, note]));
+
+  const notesToUpsert = [];
+  for (const note of cloudNotes) {
+    const cloudUpdatedAt = new Date(note.updated_at);
+    const localNote = localNoteMap.get(note.id);
+    const cloudAnswerBlocks = normalizeJsonArray<AnswerBlock>(
+      note.answer_blocks_snapshot,
+      localNote?.answerBlocksSnapshot,
+    );
+    const cloudCitations = normalizeJsonArray<string>(
+      note.citations_snapshot,
+      localNote?.citationsSnapshot,
+    );
+    const cloudSources = normalizeJsonArray<MessageSource>(
+      note.sources_snapshot,
+      localNote?.sourcesSnapshot,
+    );
+    const cloudTags = normalizeJsonArray<string>(note.tags, localNote?.tags ?? []) ?? [];
+    const cloudIsPinned = Boolean(note.is_pinned);
+
+    if (!localNote || localNote.updatedAt.getTime() < cloudUpdatedAt.getTime()) {
+      notesToUpsert.push({
+        id: note.id,
+        userId: note.user_id,
+        conversationId: note.conversation_id,
+        messageId: note.message_id,
+        conversationTitle: note.conversation_title ?? null,
+        contentSnapshot: note.content_snapshot,
+        answerBlocksSnapshot: cloudAnswerBlocks,
+        citationsSnapshot: cloudCitations,
+        sourcesSnapshot: cloudSources,
+        tags: cloudTags,
+        isPinned: cloudIsPinned,
+        createdAt: new Date(note.created_at),
+        updatedAt: cloudUpdatedAt,
+      } as Note);
+    }
+  }
+
+  if (notesToUpsert.length === 0) return false;
+
+  await db.notes.bulkPut(notesToUpsert);
+  return true;
+}
+
+async function mergeCloudConversations(
+  cloudConvs: CloudConversationRow[],
+  msgCountByConv: Record<string, number>,
+): Promise<boolean> {
+  if (cloudConvs.length === 0) return false;
+
+  const localConvs = await db.conversations.toArray();
+  const localConvMap = new Map(localConvs.map(c => [c.id, c]));
+
+  const convsToUpsert = [];
+  for (const c of cloudConvs) {
+    const cloudDate = new Date(c.updated_at);
+    const localConv = localConvMap.get(c.id);
+    if (!localConv || localConv.updatedAt.getTime() < cloudDate.getTime()) {
+      convsToUpsert.push({
+        id: c.id,
+        userId: c.user_id,
+        title: c.title,
+        createdAt: new Date(c.created_at),
+        updatedAt: cloudDate,
+        messageCount: msgCountByConv[c.id] || 0,
+        lastMessagePreview: ''
+      } as Conversation);
+    }
+  }
+
+  if (convsToUpsert.length === 0) return false;
+
+  await db.conversations.bulkPut(convsToUpsert);
+  return true;
+}
+
+async function updateLocalConversationMessageCounts(
+  msgCountByConv: Record<string, number>,
+): Promise<boolean> {
+  let changed = false;
+
+  for (const [conversationId, messageCount] of Object.entries(msgCountByConv)) {
+    const localConv = await db.conversations.get(conversationId);
+    if (localConv && localConv.messageCount !== messageCount) {
+      await db.conversations.update(conversationId, { messageCount });
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]): Promise<boolean> {
+  if (cloudMsgs.length === 0) return false;
+
+  const localMsgs = await db.messages.toArray();
+  const localMsgMap = new Map(localMsgs.map(m => [m.id, m]));
+  const deletedMessageIds = new Set(
+    (await db.messageDeletions.where('userId').equals(userId).toArray())
+      .map((deletion) => deletion.id),
+  );
+
+  const msgsToUpsert = [];
+  for (const m of cloudMsgs) {
+    if (deletedMessageIds.has(m.id)) {
+      logger.info('sync_message_pull_tombstone_skipped', {
+        component: 'syncService',
+        messageId: m.id,
+        conversationId: m.conversation_id,
+      });
+      continue;
+    }
+    const cloudUpdatedAt = m.updated_at
+      ? new Date(m.updated_at)
+      : new Date(m.created_at);
+    const cloudFeedback = normalizeMessageFeedback(m.feedback);
+    const cloudFeedbackReason = normalizeMessageFeedbackReason(m.feedback_reason);
+    const cloudFeedbackComment = typeof m.feedback_comment === 'string'
+      ? m.feedback_comment
+      : null;
+    const cloudFeedbackUpdatedAt = m.feedback_updated_at
+      ? new Date(m.feedback_updated_at)
+      : null;
+    const localMsg = localMsgMap.get(m.id);
+    const cloudIsNewer = !localMsg || localMessageUpdatedAt(localMsg).getTime() < cloudUpdatedAt.getTime();
+    const cloudCitations = cloudIsNewer
+      ? normalizeJsonArray<string>(m.citations, localMsg?.citations)
+      : localMsg?.citations;
+    const cloudSearchResults = normalizeJsonArray<MessageSearchResult>(
+      cloudIsNewer ? m.search_results : undefined,
+      localMsg?.searchResults,
+    );
+    const cloudSources = normalizeJsonArray<MessageSource>(
+      cloudIsNewer ? m.sources : undefined,
+      localMsg?.sources,
+    );
+    const cloudAnswerBlocks = normalizeJsonArray<AnswerBlock>(
+      cloudIsNewer ? m.answer_blocks : undefined,
+      localMsg?.answerBlocks,
+    );
+    const cloudSuggestions = cloudIsNewer
+      ? normalizeJsonArray<string>(m.suggestions, localMsg?.suggestions)
+      : localMsg?.suggestions;
+    const cloudReasoning = cloudIsNewer
+      ? normalizeReasoning(m.reasoning, localMsg?.reasoning)
+      : localMsg?.reasoning;
+    const nextContent = cloudIsNewer ? m.content : localMsg?.content;
+    const nextAttachments = cloudIsNewer ? normalizeAttachmentMetadata(m.attachments) : localMsg?.attachments;
+
+    if (
+      !localMsg ||
+      cloudIsNewer ||
+      (localMsg.feedback ?? null) !== cloudFeedback ||
+      (localMsg.feedbackReason ?? null) !== cloudFeedbackReason ||
+      (localMsg.feedbackComment ?? null) !== cloudFeedbackComment ||
+      (localMsg.feedbackUpdatedAt?.getTime() ?? null) !==
+        (cloudFeedbackUpdatedAt?.getTime() ?? null) ||
+      !jsonEqual(localMsg.citations, cloudCitations) ||
+      !jsonEqual(localMsg.searchResults, cloudSearchResults) ||
+      !jsonEqual(localMsg.sources, cloudSources) ||
+      !jsonEqual(localMsg.answerBlocks, cloudAnswerBlocks) ||
+      !jsonEqual(localMsg.suggestions, cloudSuggestions) ||
+      !jsonEqual(localMsg.reasoning, cloudReasoning)
+    ) {
+      msgsToUpsert.push({
+        id: m.id,
+        userId: m.user_id,
+        conversationId: m.conversation_id,
+        role: m.role,
+        content: nextContent,
+        attachments: nextAttachments,
+        feedback: cloudFeedback,
+        feedbackReason: cloudFeedbackReason,
+        feedbackComment: cloudFeedbackComment,
+        feedbackUpdatedAt: cloudFeedbackUpdatedAt,
+        citations: cloudCitations,
+        searchResults: cloudSearchResults,
+        sources: cloudSources,
+        answerBlocks: cloudAnswerBlocks,
+        suggestions: cloudSuggestions,
+        reasoning: cloudReasoning,
+        createdAt: new Date(m.created_at),
+        updatedAt: cloudIsNewer ? cloudUpdatedAt : localMsg?.updatedAt,
+      } as Message);
+    }
+  }
+
+  if (msgsToUpsert.length === 0) return false;
+
+  await db.messages.bulkPut(msgsToUpsert);
+  return true;
+}
+
 function normalizeMessageFeedback(value: unknown): MessageFeedback | null {
   return value === 'liked' || value === 'disliked' ? value : null;
 }
@@ -89,221 +380,40 @@ export const syncService = {
     if (!userId || userId === 'default_user') return;
 
     try {
-      // Pull conversations
-      const { data: cloudConvs, error: convError } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('user_id', userId);
-        
-      if (convError) {
-        handleAuthError(convError);
-        throw convError;
-      }
-
-      // Pull messages
-      const { data: cloudMsgs, error: msgError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('user_id', userId);
-
-      if (msgError) {
-        handleAuthError(msgError);
-        throw msgError;
-      }
-
-      // Pull notes after messages so local references are available when they exist.
-      const { data: cloudNotes, error: noteError } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('user_id', userId);
-
-      if (noteError) {
-        handleAuthError(noteError);
-        throw noteError;
-      }
-
+      const cloudConvs = await fetchCloudRows<CloudConversationRow>('conversations', userId);
+      const cloudMsgs = await fetchCloudRows<CloudMessageRow>('messages', userId);
       let dataChanged = false;
 
       // Group messages by conversation ID to calculate message count
       const msgCountByConv: Record<string, number> = {};
-      if (cloudMsgs && cloudMsgs.length > 0) {
-        cloudMsgs.forEach(m => {
-          msgCountByConv[m.conversation_id] = (msgCountByConv[m.conversation_id] || 0) + 1;
-        });
+      cloudMsgs.forEach(m => {
+        msgCountByConv[m.conversation_id] = (msgCountByConv[m.conversation_id] || 0) + 1;
+      });
+
+      if (await mergeCloudConversations(cloudConvs, msgCountByConv)) {
+        dataChanged = true;
+      }
+      if (await mergeCloudMessages(userId, cloudMsgs)) {
+        dataChanged = true;
+      }
+      if (await updateLocalConversationMessageCounts(msgCountByConv)) {
+        dataChanged = true;
       }
 
-      if (cloudNotes && cloudNotes.length > 0) {
-        const localNotes = await db.notes.toArray();
-        const localNoteMap = new Map(localNotes.map((note) => [note.id, note]));
-
-        const notesToUpsert = [];
-        for (const note of cloudNotes) {
-          const cloudUpdatedAt = new Date(note.updated_at);
-          const localNote = localNoteMap.get(note.id);
-          const cloudAnswerBlocks = normalizeJsonArray<AnswerBlock>(
-            note.answer_blocks_snapshot,
-            localNote?.answerBlocksSnapshot,
-          );
-          const cloudCitations = normalizeJsonArray<string>(
-            note.citations_snapshot,
-            localNote?.citationsSnapshot,
-          );
-          const cloudSources = normalizeJsonArray<MessageSource>(
-            note.sources_snapshot,
-            localNote?.sourcesSnapshot,
-          );
-          const cloudTags = normalizeJsonArray<string>(note.tags, localNote?.tags ?? []) ?? [];
-          const cloudIsPinned = Boolean(note.is_pinned);
-
-          if (!localNote || localNote.updatedAt.getTime() < cloudUpdatedAt.getTime()) {
-            notesToUpsert.push({
-              id: note.id,
-              userId: note.user_id,
-              conversationId: note.conversation_id,
-              messageId: note.message_id,
-              conversationTitle: note.conversation_title ?? null,
-              contentSnapshot: note.content_snapshot,
-              answerBlocksSnapshot: cloudAnswerBlocks,
-              citationsSnapshot: cloudCitations,
-              sourcesSnapshot: cloudSources,
-              tags: cloudTags,
-              isPinned: cloudIsPinned,
-              createdAt: new Date(note.created_at),
-              updatedAt: cloudUpdatedAt,
-            } as Note);
-          }
-        }
-
-        if (notesToUpsert.length > 0) {
-          await db.notes.bulkPut(notesToUpsert);
+      try {
+        // Notes are secondary metadata. A notes pull failure should not prevent
+        // conversations and messages from hydrating on a fresh device.
+        const cloudNotes = await fetchCloudRows<CloudNoteRow>('notes', userId);
+        if (await mergeCloudNotes(cloudNotes)) {
           dataChanged = true;
         }
-      }
-
-      if (cloudConvs && cloudConvs.length > 0) {
-        const localConvs = await db.conversations.toArray();
-        const localConvMap = new Map(localConvs.map(c => [c.id, c]));
-        
-        const convsToUpsert = [];
-        for (const c of cloudConvs) {
-          const cloudDate = new Date(c.updated_at);
-          const localConv = localConvMap.get(c.id);
-          if (!localConv || localConv.updatedAt.getTime() < cloudDate.getTime()) {
-            convsToUpsert.push({
-              id: c.id,
-              userId: c.user_id,
-              title: c.title,
-              createdAt: new Date(c.created_at),
-              updatedAt: cloudDate,
-              messageCount: msgCountByConv[c.id] || 0,
-              lastMessagePreview: '' 
-            } as Conversation);
-          }
-        }
-
-        if (convsToUpsert.length > 0) {
-          await db.conversations.bulkPut(convsToUpsert);
-          dataChanged = true;
-        }
-      }
-
-      if (cloudMsgs && cloudMsgs.length > 0) {
-        const localMsgs = await db.messages.toArray();
-        const localMsgMap = new Map(localMsgs.map(m => [m.id, m]));
-        const deletedMessageIds = new Set(
-          (await db.messageDeletions.where('userId').equals(userId).toArray())
-            .map((deletion) => deletion.id),
+      } catch (noteError) {
+        handleAuthError(noteError);
+        logger.error(
+          'sync_notes_pull_failed',
+          noteError instanceof Error ? noteError : new Error(String(noteError)),
+          { component: 'syncService' },
         );
-        
-        const msgsToUpsert = [];
-        for (const m of cloudMsgs) {
-          if (deletedMessageIds.has(m.id)) {
-            logger.info('sync_message_pull_tombstone_skipped', {
-              component: 'syncService',
-              messageId: m.id,
-              conversationId: m.conversation_id,
-            });
-            continue;
-          }
-          const cloudUpdatedAt = m.updated_at
-            ? new Date(m.updated_at)
-            : new Date(m.created_at);
-          const cloudFeedback = normalizeMessageFeedback(m.feedback);
-          const cloudFeedbackReason = normalizeMessageFeedbackReason(m.feedback_reason);
-          const cloudFeedbackComment = typeof m.feedback_comment === 'string'
-            ? m.feedback_comment
-            : null;
-          const cloudFeedbackUpdatedAt = m.feedback_updated_at
-            ? new Date(m.feedback_updated_at)
-            : null;
-          const localMsg = localMsgMap.get(m.id);
-          const cloudIsNewer = !localMsg || localMessageUpdatedAt(localMsg).getTime() < cloudUpdatedAt.getTime();
-          const cloudCitations = cloudIsNewer
-            ? normalizeJsonArray<string>(m.citations, localMsg?.citations)
-            : localMsg?.citations;
-          const cloudSearchResults = normalizeJsonArray<MessageSearchResult>(
-            cloudIsNewer ? m.search_results : undefined,
-            localMsg?.searchResults,
-          );
-          const cloudSources = normalizeJsonArray<MessageSource>(
-            cloudIsNewer ? m.sources : undefined,
-            localMsg?.sources,
-          );
-          const cloudAnswerBlocks = normalizeJsonArray<AnswerBlock>(
-            cloudIsNewer ? m.answer_blocks : undefined,
-            localMsg?.answerBlocks,
-          );
-          const cloudSuggestions = cloudIsNewer
-            ? normalizeJsonArray<string>(m.suggestions, localMsg?.suggestions)
-            : localMsg?.suggestions;
-          const cloudReasoning = cloudIsNewer
-            ? normalizeReasoning(m.reasoning, localMsg?.reasoning)
-            : localMsg?.reasoning;
-          const nextContent = cloudIsNewer ? m.content : localMsg?.content;
-          const nextAttachments = cloudIsNewer ? normalizeAttachmentMetadata(m.attachments) : localMsg?.attachments;
-
-          if (
-            !localMsg ||
-            cloudIsNewer ||
-            (localMsg.feedback ?? null) !== cloudFeedback ||
-            (localMsg.feedbackReason ?? null) !== cloudFeedbackReason ||
-            (localMsg.feedbackComment ?? null) !== cloudFeedbackComment ||
-            (localMsg.feedbackUpdatedAt?.getTime() ?? null) !==
-              (cloudFeedbackUpdatedAt?.getTime() ?? null) ||
-            !jsonEqual(localMsg.citations, cloudCitations) ||
-            !jsonEqual(localMsg.searchResults, cloudSearchResults) ||
-            !jsonEqual(localMsg.sources, cloudSources) ||
-            !jsonEqual(localMsg.answerBlocks, cloudAnswerBlocks) ||
-            !jsonEqual(localMsg.suggestions, cloudSuggestions) ||
-            !jsonEqual(localMsg.reasoning, cloudReasoning)
-          ) {
-            msgsToUpsert.push({
-              id: m.id,
-              userId: m.user_id,
-              conversationId: m.conversation_id,
-              role: m.role,
-              content: nextContent,
-              attachments: nextAttachments,
-              feedback: cloudFeedback,
-              feedbackReason: cloudFeedbackReason,
-              feedbackComment: cloudFeedbackComment,
-              feedbackUpdatedAt: cloudFeedbackUpdatedAt,
-              citations: cloudCitations,
-              searchResults: cloudSearchResults,
-              sources: cloudSources,
-              answerBlocks: cloudAnswerBlocks,
-              suggestions: cloudSuggestions,
-              reasoning: cloudReasoning,
-              createdAt: new Date(m.created_at),
-              updatedAt: cloudIsNewer ? cloudUpdatedAt : localMsg?.updatedAt,
-            } as Message);
-          }
-        }
-
-        if (msgsToUpsert.length > 0) {
-          await db.messages.bulkPut(msgsToUpsert);
-          dataChanged = true;
-        }
       }
 
       // Keep cloud reconciliation non-disruptive. A full page reload tears down
@@ -316,6 +426,61 @@ export const syncService = {
     } catch (e) {
       handleAuthError(e);
       logger.error('Failed to sync from cloud', e instanceof Error ? e : new Error(String(e)));
+    }
+  },
+
+  /**
+   * Pulls messages for one conversation when local IndexedDB has a sidebar row
+   * but no hydrated message rows yet.
+   *
+   * Args:
+   *   conversationId: Conversation to hydrate.
+   *   overrideUserId: Optional authenticated user ID already known by caller.
+   *
+   * Returns:
+   *   True when local data changed.
+   *
+   * Side Effects:
+   *   Writes fetched message rows into IndexedDB and updates the local message
+   *   count for the conversation. Logs only safe IDs and counters.
+   */
+  async pullConversationMessages(conversationId: string, overrideUserId?: string): Promise<boolean> {
+    const userId = overrideUserId || getCurrentUserId();
+    if (!userId || userId === 'default_user') return false;
+
+    try {
+      const cloudMsgs = await fetchCloudRows<CloudMessageRow>(
+        'messages',
+        userId,
+        (query) => query.eq('conversation_id', conversationId),
+      );
+      const msgCountByConv: Record<string, number> = {
+        [conversationId]: cloudMsgs.length,
+      };
+      let dataChanged = false;
+
+      if (await mergeCloudMessages(userId, cloudMsgs)) {
+        dataChanged = true;
+      }
+      if (await updateLocalConversationMessageCounts(msgCountByConv)) {
+        dataChanged = true;
+      }
+
+      logger.info('sync_conversation_messages_pulled', {
+        component: 'syncService',
+        conversationId,
+        messageCount: cloudMsgs.length,
+        dataChanged,
+      });
+
+      return dataChanged;
+    } catch (e) {
+      handleAuthError(e);
+      logger.error('sync_conversation_messages_pull_failed', e instanceof Error ? e : new Error(String(e)), {
+        component: 'syncService',
+        conversationId,
+      });
+      return false;
     }
   },
 
