@@ -71,6 +71,7 @@ def test_unit_parse_sse_text_collects_streaming_delta_content() -> None:
 def test_unit_parse_args_uses_non_truncating_default_answer_budget() -> None:
     args = llm_judge_eval.parse_args([])
 
+    assert args.dataset == ROOT / "eval" / "datasets" / "english_tutor_cases_eval.json"
     assert args.max_tokens == 2400
     assert args.tutor_profile == "english"
 
@@ -271,8 +272,8 @@ def test_unit_write_charts_and_report_create_files(tmp_path: Path) -> None:
     assert "PEDAGOGY_TUTOR_SKILL_V1, ENGLISH_TUTOR_SKILL_V1" in report
 
 
-def test_regression_dataset_rows_are_valid_jsonl() -> None:
-    dataset = ROOT / "eval" / "datasets" / "learnlm_text_tutor_cases.jsonl"
+def test_regression_english_dataset_rows_are_valid() -> None:
+    dataset = ROOT / "eval" / "datasets" / "english_tutor_cases_eval.json"
     rows = [
         json.loads(line)
         for line in dataset.read_text(encoding="utf-8").splitlines()

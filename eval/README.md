@@ -25,7 +25,7 @@ Then run:
 
 ```bash
 python eval/llm_judge_eval.py \
-  --dataset eval/datasets/learnlm_text_tutor_cases.jsonl \
+  --dataset eval/datasets/english_tutor_cases_eval.json \
   --candidate-url http://127.0.0.1:8000/api/v1/stream \
   --tutor-profile english \
   --baseline-model google/gemini-3.8-flash \
@@ -55,6 +55,8 @@ The script writes a timestamped run folder under `eval/outputs/` with:
 - `summary.json`: aggregate metrics.
 - `report.md`: human-readable report.
 - `charts/*.svg`: generated charts.
+
+Human-readable dataset mirrors are available under `eval/datasets/markdown/`.
 
 ## Evaluation Shape
 

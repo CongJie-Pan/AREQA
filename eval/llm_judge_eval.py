@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATASET = ROOT / "eval" / "datasets" / "learnlm_text_tutor_cases.jsonl"
+DEFAULT_DATASET = ROOT / "eval" / "datasets" / "english_tutor_cases_eval.json"
 DEFAULT_RUBRIC = ROOT / "eval" / "rubrics" / "learnlm_pedagogy_rubric.md"
 DEFAULT_OUTPUT_DIR = ROOT / "eval" / "outputs"
 DEFAULT_CACHE = DEFAULT_OUTPUT_DIR / "llm_judge_cache.json"
