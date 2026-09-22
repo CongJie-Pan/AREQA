@@ -137,6 +137,7 @@ class Settings(BaseSettings):
     # backend setting enabled by default so deployments can use one environment
     # flag name while debugging share failures.
     enable_share_link_debug_logs: bool = True
+    enable_conversation_history_debug_logs: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 

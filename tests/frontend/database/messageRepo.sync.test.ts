@@ -191,6 +191,71 @@ describe('messageRepo - sync integration', () => {
     expect(await db.messageSyncQueue.get('assistant_edit')).toBeUndefined();
   });
 
+  it('reports safe conversation diagnostics for pending edited-message sync state', async () => {
+    const createdAt = new Date('2026-08-08T00:00:00.000Z');
+    const editedAt = new Date('2026-08-08T00:00:01.000Z');
+    await db.conversations.add({
+      id: 'conv_1',
+      userId: 'user_123',
+      title: 'Editable answer',
+      createdAt,
+      updatedAt: editedAt,
+      messageCount: 2,
+      lastMessagePreview: 'New answer',
+    });
+    await db.messages.bulkAdd([
+      {
+        id: 'user_edit',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'user',
+        content: 'Edited question should not be exposed',
+        createdAt,
+        updatedAt: editedAt,
+      },
+      {
+        id: 'assistant_edit',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'assistant',
+        content: 'New answer should not be exposed',
+        createdAt,
+        updatedAt: editedAt,
+      },
+    ]);
+    await db.messageSyncQueue.add({
+      id: 'assistant_edit',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      queuedAt: editedAt,
+      updatedAt: editedAt,
+      retryCount: 1,
+      lastError: 'cloud failed',
+    });
+    await db.messageDeletions.add({
+      id: 'assistant_old',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      deletedAt: editedAt,
+      retryCount: 0,
+      lastError: null,
+    });
+
+    const diagnostics = await messageRepo.getConversationDiagnostics('conv_1', 'user_123');
+
+    expect(diagnostics).toEqual({
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      pendingSyncCount: 1,
+      deletionMarkerCount: 1,
+      latestMessageUpdatedAt: editedAt,
+      latestQueuedAt: editedAt,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain('Edited question should not be exposed');
+    expect(JSON.stringify(diagnostics)).not.toContain('New answer should not be exposed');
+  });
+
   it('serializes repeated message sync and leaves the latest edit in cloud', async () => {
     const createdAt = new Date('2026-08-08T00:00:00.000Z');
     const firstEditAt = new Date('2026-08-08T00:00:01.000Z');

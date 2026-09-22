@@ -17,6 +17,7 @@ def test_runtime_features_are_disabled_by_default():
         "mailbox": False,
         "compeer": False,
         "compeerTelemetry": False,
+        "conversationHistoryDebugLogs": True,
     }
 
 
@@ -25,6 +26,7 @@ def test_runtime_features_follow_backend_settings():
         patch("config.settings.enable_mailbox_feature", True),
         patch("config.settings.enable_compeer_feature", True),
         patch("config.settings.enable_compeer_telemetry", True),
+        patch("config.settings.enable_conversation_history_debug_logs", False),
     ):
         response = client.get("/api/v1/features")
 
@@ -33,6 +35,7 @@ def test_runtime_features_follow_backend_settings():
         "mailbox": True,
         "compeer": True,
         "compeerTelemetry": True,
+        "conversationHistoryDebugLogs": False,
     }
 
 

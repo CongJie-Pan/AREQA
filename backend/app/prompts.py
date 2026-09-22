@@ -22,6 +22,8 @@ class RuntimeFeatureResponse(BaseModel):
         compeerTelemetry: Whether the browser may send ComPeer behavior
             telemetry. This is constrained by `compeer` so telemetry cannot run
             while the broader ComPeer surface is archived.
+        conversationHistoryDebugLogs: Whether the browser should emit safe
+            diagnostics for conversation history loading and switching.
 
     Compatibility:
         Field names intentionally use the existing frontend camelCase shape so
@@ -31,6 +33,7 @@ class RuntimeFeatureResponse(BaseModel):
     mailbox: bool
     compeer: bool
     compeerTelemetry: bool
+    conversationHistoryDebugLogs: bool
 
 
 BASE_PERSONA = render_base_persona()

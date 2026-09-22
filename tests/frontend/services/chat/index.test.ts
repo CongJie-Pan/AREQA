@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { sendMessage, regenerateMessage, editUserMessage, editAssistantMessage, switchConversation, startNewConversation, cancelCurrentStream, deleteLatestConversationTurn } from '@/services/chat';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
+import { useFeatureStore } from '@/store/features';
 import { createChatStream } from '@/services/chat-stream';
 import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
 import { syncService } from '@/services/syncService';
+import { logger } from '@/utils/logger';
 
 vi.mock('@/store/chat', () => ({
   useChatStore: {
@@ -30,6 +32,7 @@ vi.mock('@/services/database', () => ({
       delete: vi.fn(),
       deleteManyByConversationId: vi.fn(),
       getByConversationId: vi.fn(),
+      getConversationDiagnostics: vi.fn(),
       flushPendingCloudSync: vi.fn(),
       update: vi.fn(),
     },
@@ -47,6 +50,15 @@ vi.mock('@/services/syncService', () => ({
 
 vi.mock('@/database/db', () => ({
   getCurrentUserId: vi.fn().mockReturnValue('test-user-id'),
+}));
+
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 vi.mock('@/config/api', () => ({
@@ -132,6 +144,16 @@ describe('Chat Service', () => {
 
     vi.mocked(useChatStore.getState).mockReturnValue(mockChatStore);
     vi.mocked(useConversationStore.getState).mockReturnValue(mockConversationStore);
+    vi.mocked(databaseService.message.getConversationDiagnostics).mockResolvedValue({
+      messageCount: 0,
+      userMessageCount: 0,
+      assistantMessageCount: 0,
+      pendingSyncCount: 0,
+      deletionMarkerCount: 0,
+      latestMessageUpdatedAt: null,
+      latestQueuedAt: null,
+    });
+    useFeatureStore.setState({ conversationHistoryDebugLogs: false });
   });
 
   afterEach(() => {
@@ -186,6 +208,82 @@ describe('Chat Service', () => {
       expect(mockConversationStore.setLoading).not.toHaveBeenCalled();
       expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenNthCalledWith(1, true);
       expect(mockConversationStore.setMessageHandoffLoading).toHaveBeenLastCalledWith(false);
+    });
+
+    it('logs safe diagnostics when loading a conversation with pending edited-message sync state', async () => {
+      useFeatureStore.setState({ conversationHistoryDebugLogs: true });
+      const latestMessageUpdatedAt = new Date('2026-08-08T00:00:02.000Z');
+      const latestQueuedAt = new Date('2026-08-08T00:00:03.000Z');
+      const targetMessages = [
+        {
+          id: 'edited-user',
+          role: 'user',
+          content: 'edited question should not be logged',
+          conversationId: 'edited-conv',
+          updatedAt: latestMessageUpdatedAt,
+        },
+        {
+          id: 'replacement-assistant',
+          role: 'assistant',
+          content: 'replacement answer should not be logged',
+          conversationId: 'edited-conv',
+          updatedAt: latestMessageUpdatedAt,
+        },
+      ];
+      vi.mocked(databaseService.message.getByConversationId).mockResolvedValue(targetMessages as any);
+      vi.mocked(databaseService.message.getConversationDiagnostics).mockResolvedValue({
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        pendingSyncCount: 1,
+        deletionMarkerCount: 2,
+        latestMessageUpdatedAt,
+        latestQueuedAt,
+      });
+
+      await switchConversation('edited-conv');
+
+      await vi.waitFor(() => {
+        expect(logger.info).toHaveBeenCalledWith(
+          'chat_history_messages_committed',
+          expect.objectContaining({
+            component: 'chatService',
+            conversationId: 'edited-conv',
+            messageCount: 2,
+            userMessageCount: 1,
+            assistantMessageCount: 1,
+            pendingSyncCount: 1,
+            deletionMarkerCount: 2,
+            latestMessageUpdatedAt: '2026-08-08T00:00:02.000Z',
+            latestQueuedAt: '2026-08-08T00:00:03.000Z',
+          }),
+        );
+      });
+      expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain(
+        'edited question should not be logged',
+      );
+      expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain(
+        'replacement answer should not be logged',
+      );
+    });
+
+    it('skips conversation history diagnostics when the runtime flag is disabled', async () => {
+      useFeatureStore.setState({ conversationHistoryDebugLogs: false });
+      vi.mocked(databaseService.message.getByConversationId).mockResolvedValue([
+        { id: 'target-user', role: 'user', content: 'target question', conversationId: 'target-conv' },
+      ] as any);
+
+      await switchConversation('target-conv');
+
+      expect(databaseService.message.getConversationDiagnostics).not.toHaveBeenCalled();
+      expect(logger.info).not.toHaveBeenCalledWith(
+        'chat_history_load_started',
+        expect.any(Object),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        'chat_history_messages_committed',
+        expect.any(Object),
+      );
     });
 
     it('hydrates a cloud conversation when the local message rows are missing', async () => {

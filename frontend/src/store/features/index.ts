@@ -54,6 +54,7 @@ export const useFeatureStore = create<FeatureState>((set, get) => ({
         mailbox: flags.mailbox,
         compeer: flags.compeer,
         compeerTelemetry: flags.compeerTelemetry,
+        conversationHistoryDebugLogs: flags.conversationHistoryDebugLogs,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

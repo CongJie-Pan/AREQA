@@ -11,12 +11,14 @@ export interface RuntimeFeatureFlags {
   mailbox: boolean;
   compeer: boolean;
   compeerTelemetry: boolean;
+  conversationHistoryDebugLogs: boolean;
 }
 
 export const disabledRuntimeFeatureFlags: RuntimeFeatureFlags = {
   mailbox: false,
   compeer: false,
   compeerTelemetry: false,
+  conversationHistoryDebugLogs: false,
 };
 
 export function normalizeRuntimeFeatureFlags(payload: unknown): RuntimeFeatureFlags {
@@ -29,5 +31,6 @@ export function normalizeRuntimeFeatureFlags(payload: unknown): RuntimeFeatureFl
     mailbox: source.mailbox === true,
     compeer,
     compeerTelemetry: compeer && source.compeerTelemetry === true,
+    conversationHistoryDebugLogs: source.conversationHistoryDebugLogs === true,
   };
 }

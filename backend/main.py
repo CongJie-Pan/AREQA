@@ -307,16 +307,21 @@ async def get_runtime_features() -> RuntimeFeatureResponse:
     compeer_telemetry_enabled = (
         compeer_enabled and bool(settings.enable_compeer_telemetry)
     )
+    conversation_history_debug_logs = bool(
+        settings.enable_conversation_history_debug_logs
+    )
     logger.info(
-        "features.runtime_served mailbox=%s compeer=%s compeer_telemetry=%s",
+        "features.runtime_served mailbox=%s compeer=%s compeer_telemetry=%s conversation_history_debug_logs=%s",
         mailbox_enabled,
         compeer_enabled,
         compeer_telemetry_enabled,
+        conversation_history_debug_logs,
     )
     return RuntimeFeatureResponse(
         mailbox=mailbox_enabled,
         compeer=compeer_enabled,
         compeerTelemetry=compeer_telemetry_enabled,
+        conversationHistoryDebugLogs=conversation_history_debug_logs,
     )
 
 MAX_CHAT_MULTIPART_BYTES = 30 * 1024 * 1024

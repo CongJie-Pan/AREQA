@@ -14,6 +14,7 @@ import { useChatStore } from '@/store/chat';
 import type { DisplayMessage, SearchMode, StreamingImageSlot } from '@/store/chat';
 import type { CitationSource } from '@/components/Citations';
 import { useConversationStore } from '@/store/conversation';
+import { useFeatureStore } from '@/store/features';
 import { useNotesStore } from '@/store/notes';
 import { createChatStream } from '@/services/chat-stream';
 import { databaseService } from '@/services/database';
@@ -117,6 +118,55 @@ function patchConversationPreviewIfLatest(message: DisplayMessage, content: stri
   if (latestMessage?.id !== message.id) return;
 
   updateConversationPreviewInStore(message.conversationId, content);
+}
+
+function conversationHistoryDebugLogsEnabled(): boolean {
+  return useFeatureStore.getState().conversationHistoryDebugLogs;
+}
+
+function logConversationHistoryDiagnostics(
+  eventName: string,
+  context: {
+    conversationId: string;
+    userId: string;
+    durationMs?: number;
+    error?: unknown;
+  },
+): void {
+  if (!conversationHistoryDebugLogsEnabled()) return;
+
+  void databaseService.message.getConversationDiagnostics(context.conversationId, context.userId)
+    .then((diagnostics) => {
+      const payload = {
+        component: 'chatService',
+        conversationId: context.conversationId,
+        durationMs: context.durationMs,
+        messageCount: diagnostics.messageCount,
+        userMessageCount: diagnostics.userMessageCount,
+        assistantMessageCount: diagnostics.assistantMessageCount,
+        pendingSyncCount: diagnostics.pendingSyncCount,
+        deletionMarkerCount: diagnostics.deletionMarkerCount,
+        latestMessageUpdatedAt: diagnostics.latestMessageUpdatedAt?.toISOString() ?? null,
+        latestQueuedAt: diagnostics.latestQueuedAt?.toISOString() ?? null,
+      };
+      if (context.error) {
+        logger.error(
+          eventName,
+          context.error instanceof Error ? context.error : new Error(String(context.error)),
+          payload,
+        );
+        return;
+      }
+      logger.info(eventName, payload);
+    })
+    .catch((diagnosticsError) => {
+      logger.warn('chat_history_load_diagnostics_failed', {
+        component: 'chatService',
+        conversationId: context.conversationId,
+        eventName,
+        reason: diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError),
+      });
+    });
 }
 
 /**
@@ -669,6 +719,7 @@ export async function loadMessages(
 ): Promise<void> {
   const chatStore = useChatStore.getState();
   const shouldClearBeforeLoad = options.clearBeforeLoad ?? true;
+  const loadStartedAt = performance.now();
 
   if (shouldClearBeforeLoad) {
     chatStore.clearMessages();
@@ -679,14 +730,32 @@ export async function loadMessages(
   if (!userId) return;
 
   try {
+    if (conversationHistoryDebugLogsEnabled()) {
+      logger.info('chat_history_load_started', {
+        component: 'chatService',
+        conversationId,
+        clearBeforeLoad: shouldClearBeforeLoad,
+      });
+    }
     let messages = await databaseService.message.getByConversationId(conversationId, userId);
+    logConversationHistoryDiagnostics('chat_history_local_messages_read', {
+      conversationId,
+      userId,
+      durationMs: Math.round(performance.now() - loadStartedAt),
+    });
 
     if (messages.length === 0) {
       await syncService.pullConversationMessages(conversationId, userId);
+      logConversationHistoryDiagnostics('chat_history_cloud_hydration_finished', {
+        conversationId,
+        userId,
+        durationMs: Math.round(performance.now() - loadStartedAt),
+      });
       if (options.isStale?.()) {
         logger.info('chat_history_hydration_stale_ignored', {
           component: 'chatService',
           conversationId,
+          durationMs: Math.round(performance.now() - loadStartedAt),
         });
         return;
       }
@@ -697,6 +766,7 @@ export async function loadMessages(
       logger.info('chat_history_load_stale_ignored', {
         component: 'chatService',
         conversationId,
+        durationMs: Math.round(performance.now() - loadStartedAt),
       });
       return;
     }
@@ -705,8 +775,19 @@ export async function loadMessages(
       chatStore.resetStreamingState();
     }
     chatStore.setMessages(messages);
+    logConversationHistoryDiagnostics('chat_history_messages_committed', {
+      conversationId,
+      userId,
+      durationMs: Math.round(performance.now() - loadStartedAt),
+    });
   } catch (error) {
     const err = normalizeError(error);
+    logConversationHistoryDiagnostics('chat_history_load_failed', {
+      conversationId,
+      userId,
+      durationMs: Math.round(performance.now() - loadStartedAt),
+      error: err,
+    });
     chatStore.setError(err);
     throw err;
   }

@@ -17,6 +17,16 @@ type AddMessageData = Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'use
   createdAt?: Date;
 };
 
+export interface ConversationMessageDiagnostics {
+  messageCount: number;
+  userMessageCount: number;
+  assistantMessageCount: number;
+  pendingSyncCount: number;
+  deletionMarkerCount: number;
+  latestMessageUpdatedAt: Date | null;
+  latestQueuedAt: Date | null;
+}
+
 const MESSAGE_SYNC_RETRY_BASE_DELAY_MS = 1_000;
 const MESSAGE_SYNC_RETRY_MAX_DELAY_MS = 30_000;
 const messageSyncChains = new Map<string, Promise<void>>();
@@ -205,6 +215,56 @@ export const messageRepo = {
   async getByConversationId(conversationId: string, userId: string): Promise<Message[]> {
     const messages = await db.messages.where('conversationId').equals(conversationId).sortBy('createdAt');
     return messages.filter((message) => message.userId === userId);
+  },
+
+  /**
+   * Return safe metadata for investigating conversation-load failures.
+   *
+   * Compatibility:
+   *   This intentionally excludes message content, prompts, model output, and
+   *   attachment names. It is suitable for frontend diagnostics logs.
+   */
+  async getConversationDiagnostics(
+    conversationId: string,
+    userId: string,
+  ): Promise<ConversationMessageDiagnostics> {
+    const [messages, pendingRows, deletionRows] = await Promise.all([
+      db.messages
+        .where('conversationId')
+        .equals(conversationId)
+        .filter((message) => message.userId === userId)
+        .toArray(),
+      db.messageSyncQueue
+        .where('conversationId')
+        .equals(conversationId)
+        .filter((row) => row.userId === userId)
+        .toArray(),
+      db.messageDeletions
+        .where('conversationId')
+        .equals(conversationId)
+        .filter((row) => row.userId === userId)
+        .toArray(),
+    ]);
+
+    const latestMessageUpdatedAt = messages.reduce<Date | null>((latest, message) => {
+      const updatedAt = localMessageUpdatedAt(message);
+      if (!latest || updatedAt.getTime() > latest.getTime()) return updatedAt;
+      return latest;
+    }, null);
+    const latestQueuedAt = pendingRows.reduce<Date | null>((latest, row) => {
+      if (!latest || row.queuedAt.getTime() > latest.getTime()) return row.queuedAt;
+      return latest;
+    }, null);
+
+    return {
+      messageCount: messages.length,
+      userMessageCount: messages.filter((message) => message.role === 'user').length,
+      assistantMessageCount: messages.filter((message) => message.role === 'assistant').length,
+      pendingSyncCount: pendingRows.length,
+      deletionMarkerCount: deletionRows.length,
+      latestMessageUpdatedAt,
+      latestQueuedAt,
+    };
   },
 
   /**
