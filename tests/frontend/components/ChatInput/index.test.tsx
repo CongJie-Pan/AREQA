@@ -1,4 +1,6 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
@@ -38,6 +40,18 @@ class FakeMediaRecorder {
 describe('ChatInput', () => {
   const mockOnSend = vi.fn();
   const mockSetQuotedText = vi.fn();
+
+  it('keeps the input shell layout from animating during initial style overrides', () => {
+    const chatInputStyles = readFileSync(
+      path.resolve(__dirname, '../../../../frontend/src/components/ChatInput/styles.ts'),
+      'utf8',
+    );
+
+    const containerRule = chatInputStyles.match(/container:\s*css`(?<rule>[\s\S]*?)`,\n\n\s*containerWithAttachments:/);
+
+    expect(containerRule?.groups?.rule ?? '').toContain('transition: none;');
+    expect(containerRule?.groups?.rule ?? '').not.toContain('transition: all');
+  });
   const mockToggleWebSearch = vi.fn();
   const mockSetTutorProfile = vi.fn();
   const createObjectUrlMock = vi.fn((file: File) => `blob:${file.name}`);

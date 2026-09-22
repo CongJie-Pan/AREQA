@@ -25,7 +25,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     width: min(90%, 800px);
     margin: 0 auto 12px;
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
-    transition: all 0.2s ease;
+    transition: none;
     
     @media (max-width: 768px) {
       width: calc(100% - 24px);
