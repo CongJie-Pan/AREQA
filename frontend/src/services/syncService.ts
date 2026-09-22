@@ -355,6 +355,101 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
   return true;
 }
 
+function messageFromCloudRow(m: CloudMessageRow): Message {
+  const cloudUpdatedAt = m.updated_at
+    ? new Date(m.updated_at)
+    : new Date(m.created_at);
+
+  return {
+    id: m.id,
+    userId: m.user_id,
+    conversationId: m.conversation_id,
+    role: m.role,
+    content: m.content,
+    attachments: normalizeAttachmentMetadata(m.attachments),
+    feedback: normalizeMessageFeedback(m.feedback),
+    feedbackReason: normalizeMessageFeedbackReason(m.feedback_reason),
+    feedbackComment: typeof m.feedback_comment === 'string' ? m.feedback_comment : null,
+    feedbackUpdatedAt: m.feedback_updated_at ? new Date(m.feedback_updated_at) : null,
+    citations: normalizeJsonArray<string>(m.citations),
+    searchResults: normalizeJsonArray<MessageSearchResult>(m.search_results),
+    sources: normalizeJsonArray<MessageSource>(m.sources),
+    answerBlocks: normalizeJsonArray<AnswerBlock>(m.answer_blocks),
+    suggestions: normalizeJsonArray<string>(m.suggestions),
+    reasoning: normalizeReasoning(m.reasoning),
+    createdAt: new Date(m.created_at),
+    updatedAt: cloudUpdatedAt,
+  };
+}
+
+async function replaceLocalConversationMessagesFromCloud(
+  userId: string,
+  conversationId: string,
+  cloudMsgs: CloudMessageRow[],
+): Promise<boolean> {
+  const [localMessages, pendingRows, deletionRows] = await Promise.all([
+    db.messages
+      .where('conversationId')
+      .equals(conversationId)
+      .filter((message) => message.userId === userId)
+      .toArray(),
+    db.messageSyncQueue
+      .where('conversationId')
+      .equals(conversationId)
+      .filter((row) => row.userId === userId)
+      .toArray(),
+    db.messageDeletions
+      .where('conversationId')
+      .equals(conversationId)
+      .filter((row) => row.userId === userId)
+      .toArray(),
+  ]);
+  const cloudMessages = cloudMsgs.map(messageFromCloudRow);
+  const localIds = localMessages.map((message) => message.id);
+  const pendingIds = pendingRows.map((row) => row.id);
+  const deletionIds = deletionRows.map((row) => row.id);
+  const latestCloudMessage = cloudMessages.at(-1);
+  const localFingerprint = localMessages
+    .map((message) => `${message.id}:${localMessageUpdatedAt(message).toISOString()}`)
+    .join('|');
+  const cloudFingerprint = cloudMessages
+    .map((message) => `${message.id}:${localMessageUpdatedAt(message).toISOString()}`)
+    .join('|');
+  const dataChanged = (
+    localFingerprint !== cloudFingerprint ||
+    pendingIds.length > 0 ||
+    deletionIds.length > 0
+  );
+
+  await db.transaction(
+    'rw',
+    [db.messages, db.conversations, db.messageSyncQueue, db.messageDeletions],
+    async () => {
+      if (localIds.length > 0) {
+        await db.messages.bulkDelete(localIds);
+      }
+      if (cloudMessages.length > 0) {
+        await db.messages.bulkPut(cloudMessages);
+      }
+      if (pendingIds.length > 0) {
+        await db.messageSyncQueue.bulkDelete(pendingIds);
+      }
+      if (deletionIds.length > 0) {
+        await db.messageDeletions.bulkDelete(deletionIds);
+      }
+      await db.conversations.update(conversationId, {
+        messageCount: cloudMessages.length,
+        lastMessagePreview: latestCloudMessage?.content.slice(0, 100) ?? '',
+        updatedAt: latestCloudMessage
+          ? localMessageUpdatedAt(latestCloudMessage)
+          : new Date(),
+      });
+    },
+  );
+
+  return dataChanged;
+}
+
 function normalizeMessageFeedback(value: unknown): MessageFeedback | null {
   return value === 'liked' || value === 'disliked' ? value : null;
 }
@@ -430,23 +525,29 @@ export const syncService = {
   },
 
   /**
-   * Pulls messages for one conversation when local IndexedDB has a sidebar row
-   * but no hydrated message rows yet.
+   * Pulls messages for one conversation from Supabase.
    *
    * Args:
    *   conversationId: Conversation to hydrate.
    *   overrideUserId: Optional authenticated user ID already known by caller.
    *
    * Returns:
-   *   True when local data changed.
+   *   True when local data changed. A false return can also mean the cloud
+   *   request failed and local cache should remain available as a fallback.
    *
    * Side Effects:
-   *   Writes fetched message rows into IndexedDB and updates the local message
-   *   count for the conversation. Logs only safe IDs and counters.
+   *   By default, replaces local message rows, pending message sync, and local
+   *   deletion markers for this conversation with the cloud snapshot. Logs only
+   *   safe IDs and counters.
    */
-  async pullConversationMessages(conversationId: string, overrideUserId?: string): Promise<boolean> {
+  async pullConversationMessages(
+    conversationId: string,
+    overrideUserId?: string,
+    options: { authoritative?: boolean } = {},
+  ): Promise<boolean> {
     const userId = overrideUserId || getCurrentUserId();
     if (!userId || userId === 'default_user') return false;
+    const authoritative = options.authoritative ?? true;
 
     try {
       const cloudMsgs = await fetchCloudRows<CloudMessageRow>(
@@ -459,10 +560,16 @@ export const syncService = {
       };
       let dataChanged = false;
 
-      if (await mergeCloudMessages(userId, cloudMsgs)) {
+      if (authoritative) {
+        dataChanged = await replaceLocalConversationMessagesFromCloud(
+          userId,
+          conversationId,
+          cloudMsgs,
+        );
+      } else if (await mergeCloudMessages(userId, cloudMsgs)) {
         dataChanged = true;
       }
-      if (await updateLocalConversationMessageCounts(msgCountByConv)) {
+      if (!authoritative && await updateLocalConversationMessageCounts(msgCountByConv)) {
         dataChanged = true;
       }
 
@@ -471,6 +578,7 @@ export const syncService = {
         conversationId,
         messageCount: cloudMsgs.length,
         dataChanged,
+        authoritative,
       });
 
       return dataChanged;

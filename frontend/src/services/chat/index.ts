@@ -737,30 +737,29 @@ export async function loadMessages(
         clearBeforeLoad: shouldClearBeforeLoad,
       });
     }
-    let messages = await databaseService.message.getByConversationId(conversationId, userId);
+    await syncService.pullConversationMessages(conversationId, userId, {
+      authoritative: true,
+    });
+    logConversationHistoryDiagnostics('chat_history_cloud_hydration_finished', {
+      conversationId,
+      userId,
+      durationMs: Math.round(performance.now() - loadStartedAt),
+    });
+    if (options.isStale?.()) {
+      logger.info('chat_history_hydration_stale_ignored', {
+        component: 'chatService',
+        conversationId,
+        durationMs: Math.round(performance.now() - loadStartedAt),
+      });
+      return;
+    }
+
+    const messages = await databaseService.message.getByConversationId(conversationId, userId);
     logConversationHistoryDiagnostics('chat_history_local_messages_read', {
       conversationId,
       userId,
       durationMs: Math.round(performance.now() - loadStartedAt),
     });
-
-    if (messages.length === 0) {
-      await syncService.pullConversationMessages(conversationId, userId);
-      logConversationHistoryDiagnostics('chat_history_cloud_hydration_finished', {
-        conversationId,
-        userId,
-        durationMs: Math.round(performance.now() - loadStartedAt),
-      });
-      if (options.isStale?.()) {
-        logger.info('chat_history_hydration_stale_ignored', {
-          component: 'chatService',
-          conversationId,
-          durationMs: Math.round(performance.now() - loadStartedAt),
-        });
-        return;
-      }
-      messages = await databaseService.message.getByConversationId(conversationId, userId);
-    }
 
     if (options.isStale?.()) {
       logger.info('chat_history_load_stale_ignored', {

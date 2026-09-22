@@ -286,56 +286,60 @@ describe('Chat Service', () => {
       );
     });
 
-    it('hydrates a cloud conversation when the local message rows are missing', async () => {
+    it('refreshes from the cloud before reading local messages for display', async () => {
       const hydratedMessages = [
         { id: 'phone-user', role: 'user', content: 'phone question', conversationId: 'phone-conv' },
         { id: 'phone-assistant', role: 'assistant', content: 'phone answer', conversationId: 'phone-conv' },
       ];
-      vi.mocked(databaseService.message.getByConversationId)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(hydratedMessages as any);
+      vi.mocked(databaseService.message.getByConversationId).mockResolvedValueOnce(hydratedMessages as any);
       vi.mocked(syncService.pullConversationMessages).mockResolvedValueOnce(true);
 
       await switchConversation('phone-conv');
 
-      expect(syncService.pullConversationMessages).toHaveBeenCalledWith('phone-conv', 'test-user-id');
-      expect(databaseService.message.getByConversationId).toHaveBeenCalledTimes(2);
+      expect(syncService.pullConversationMessages).toHaveBeenCalledWith(
+        'phone-conv',
+        'test-user-id',
+        { authoritative: true },
+      );
+      expect(databaseService.message.getByConversationId).toHaveBeenCalledTimes(1);
       expect(mockChatStore.setMessages).toHaveBeenCalledWith(hydratedMessages);
       expect(mockConversationStore.selectConversation).toHaveBeenCalledWith('phone-conv');
     });
 
-    it('rereads local messages after cloud hydration even when the targeted pull reports no changes', async () => {
+    it('reads local messages after cloud refresh even when the targeted pull reports no changes', async () => {
       const concurrentlyHydratedMessages = [
         { id: 'phone-user', role: 'user', content: 'phone question', conversationId: 'phone-conv' },
         { id: 'phone-assistant', role: 'assistant', content: 'phone answer', conversationId: 'phone-conv' },
       ];
-      vi.mocked(databaseService.message.getByConversationId)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(concurrentlyHydratedMessages as any);
+      vi.mocked(databaseService.message.getByConversationId).mockResolvedValueOnce(concurrentlyHydratedMessages as any);
       vi.mocked(syncService.pullConversationMessages).mockResolvedValueOnce(false);
 
       await switchConversation('phone-conv');
 
-      expect(syncService.pullConversationMessages).toHaveBeenCalledWith('phone-conv', 'test-user-id');
-      expect(databaseService.message.getByConversationId).toHaveBeenCalledTimes(2);
+      expect(syncService.pullConversationMessages).toHaveBeenCalledWith(
+        'phone-conv',
+        'test-user-id',
+        { authoritative: true },
+      );
+      expect(databaseService.message.getByConversationId).toHaveBeenCalledTimes(1);
       expect(mockChatStore.setMessages).toHaveBeenCalledWith(concurrentlyHydratedMessages);
       expect(mockConversationStore.selectConversation).toHaveBeenCalledWith('phone-conv');
     });
 
     it('does not let a stale history load override starting a new conversation', async () => {
-      let resolveOlder!: (messages: never[]) => void;
+      let resolveOlder!: (changed: boolean) => void;
       let markStarted!: () => void;
       const started = new Promise<void>((resolve) => { markStarted = resolve; });
-      const olderRead = new Promise<never[]>((resolve) => { resolveOlder = resolve; });
-      vi.mocked(databaseService.message.getByConversationId).mockImplementationOnce(() => {
+      const olderPull = new Promise<boolean>((resolve) => { resolveOlder = resolve; });
+      vi.mocked(syncService.pullConversationMessages).mockImplementationOnce(() => {
         markStarted();
-        return olderRead;
+        return olderPull;
       });
 
       const olderSwitch = switchConversation('older-conversation');
       await started;
       await startNewConversation();
-      resolveOlder([]);
+      resolveOlder(false);
       await olderSwitch;
 
       expect(mockChatStore.clearMessages).toHaveBeenCalled();

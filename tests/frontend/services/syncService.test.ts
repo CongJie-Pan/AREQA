@@ -139,6 +139,7 @@ describe('syncService - pullFromCloud', () => {
     await db.conversations.clear();
     await db.messages.clear();
     await db.messageDeletions.clear();
+    await db.messageSyncQueue.clear();
     await db.notes.clear();
   });
 
@@ -147,6 +148,7 @@ describe('syncService - pullFromCloud', () => {
     await db.conversations.clear();
     await db.messages.clear();
     await db.messageDeletions.clear();
+    await db.messageSyncQueue.clear();
     await db.notes.clear();
   });
 
@@ -160,6 +162,93 @@ describe('syncService - pullFromCloud', () => {
     expect(mockReload).not.toHaveBeenCalled();
     const convs = await db.conversations.toArray();
     expect(convs).toHaveLength(0);
+  });
+
+  it('replaces one conversation with the cloud snapshot when pulling targeted messages', async () => {
+    const createdAt = new Date('2026-08-08T00:00:00.000Z');
+    const editedAt = new Date('2026-08-08T00:00:01.000Z');
+    await db.conversations.add({
+      id: 'conv_1',
+      userId: 'user_123',
+      title: 'Edited branch',
+      createdAt,
+      updatedAt: editedAt,
+      messageCount: 3,
+      lastMessagePreview: 'Local replacement',
+    });
+    await db.messages.bulkAdd([
+      {
+        id: 'user_local_edit',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'user',
+        content: 'Local edited question',
+        createdAt,
+        updatedAt: editedAt,
+      },
+      {
+        id: 'assistant_local_replacement',
+        userId: 'user_123',
+        conversationId: 'conv_1',
+        role: 'assistant',
+        content: 'Local replacement',
+        createdAt,
+        updatedAt: editedAt,
+      },
+    ]);
+    await db.messageSyncQueue.add({
+      id: 'assistant_local_replacement',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      queuedAt: editedAt,
+      updatedAt: editedAt,
+      retryCount: 1,
+      lastError: 'cloud failed',
+    });
+    await db.messageDeletions.add({
+      id: 'assistant_cloud_kept',
+      userId: 'user_123',
+      conversationId: 'conv_1',
+      deletedAt: editedAt,
+      retryCount: 0,
+      lastError: null,
+    });
+    mockSupabaseMsgResponse = {
+      data: [
+        {
+          id: 'user_cloud',
+          user_id: 'user_123',
+          conversation_id: 'conv_1',
+          role: 'user',
+          content: 'Cloud question',
+          created_at: createdAt.toISOString(),
+          updated_at: createdAt.toISOString(),
+        },
+        {
+          id: 'assistant_cloud_kept',
+          user_id: 'user_123',
+          conversation_id: 'conv_1',
+          role: 'assistant',
+          content: 'Cloud answer',
+          created_at: editedAt.toISOString(),
+          updated_at: editedAt.toISOString(),
+        },
+      ],
+      error: null,
+    };
+
+    const changed = await syncService.pullConversationMessages('conv_1', 'user_123');
+
+    const messages = await db.messages.where('conversationId').equals('conv_1').sortBy('createdAt');
+    expect(changed).toBe(true);
+    expect(messages.map((message) => message.id)).toEqual(['user_cloud', 'assistant_cloud_kept']);
+    expect(messages.map((message) => message.content)).toEqual(['Cloud question', 'Cloud answer']);
+    expect(await db.messageSyncQueue.toArray()).toEqual([]);
+    expect(await db.messageDeletions.toArray()).toEqual([]);
+    expect(await db.conversations.get('conv_1')).toEqual(expect.objectContaining({
+      messageCount: 2,
+      lastMessagePreview: 'Cloud answer',
+    }));
   });
 
   it('should save cloud data to Dexie without forcing a page reload', async () => {
