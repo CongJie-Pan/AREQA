@@ -164,7 +164,7 @@ describe('syncService - pullFromCloud', () => {
     expect(convs).toHaveLength(0);
   });
 
-  it('replaces one conversation with the cloud snapshot when pulling targeted messages', async () => {
+  it('keeps pending local edits and deletion markers while reconciling a cloud snapshot', async () => {
     const createdAt = new Date('2026-08-08T00:00:00.000Z');
     const editedAt = new Date('2026-08-08T00:00:01.000Z');
     await db.conversations.add({
@@ -192,7 +192,7 @@ describe('syncService - pullFromCloud', () => {
         conversationId: 'conv_1',
         role: 'assistant',
         content: 'Local replacement',
-        createdAt,
+        createdAt: editedAt,
         updatedAt: editedAt,
       },
     ]);
@@ -241,14 +241,72 @@ describe('syncService - pullFromCloud', () => {
 
     const messages = await db.messages.where('conversationId').equals('conv_1').sortBy('createdAt');
     expect(changed).toBe(true);
-    expect(messages.map((message) => message.id)).toEqual(['user_cloud', 'assistant_cloud_kept']);
-    expect(messages.map((message) => message.content)).toEqual(['Cloud question', 'Cloud answer']);
-    expect(await db.messageSyncQueue.toArray()).toEqual([]);
-    expect(await db.messageDeletions.toArray()).toEqual([]);
+    expect(Object.fromEntries(messages.map((message) => [message.id, message.content]))).toEqual({
+      user_cloud: 'Cloud question',
+      assistant_local_replacement: 'Local replacement',
+    });
+    expect((await db.messageSyncQueue.toArray()).map((row) => row.id)).toEqual(['assistant_local_replacement']);
+    expect((await db.messageDeletions.toArray()).map((row) => row.id)).toEqual(['assistant_cloud_kept']);
     expect(await db.conversations.get('conv_1')).toEqual(expect.objectContaining({
       messageCount: 2,
-      lastMessagePreview: 'Cloud answer',
+      lastMessagePreview: 'Local replacement',
     }));
+  });
+
+  it('preserves local messages and pending writes when the cloud conversation is empty', async () => {
+    const createdAt = new Date('2026-09-22T08:38:37.000Z');
+    await db.conversations.add({
+      id: 'conv_1', userId: 'user_123', title: 'Local conversation',
+      createdAt, updatedAt: createdAt, messageCount: 1,
+      lastMessagePreview: 'Local question',
+    });
+    await db.messages.add({
+      id: 'local_message', userId: 'user_123', conversationId: 'conv_1',
+      role: 'user', content: 'Local question', createdAt, updatedAt: createdAt,
+    });
+    await db.messageSyncQueue.add({
+      id: 'local_message', userId: 'user_123', conversationId: 'conv_1',
+      queuedAt: createdAt, updatedAt: createdAt, retryCount: 1,
+      lastError: 'cloud failed',
+    });
+    mockSupabaseMsgResponse = { data: [], error: null };
+
+    const changed = await syncService.pullConversationMessages('conv_1', 'user_123');
+
+    expect(changed).toBe(false);
+    expect((await db.messages.get('local_message'))?.content).toBe('Local question');
+    expect(await db.messageSyncQueue.get('local_message')).toEqual(expect.objectContaining({
+      retryCount: 1, lastError: 'cloud failed',
+    }));
+    expect(await db.conversations.get('conv_1')).toEqual(expect.objectContaining({
+      messageCount: 1, lastMessagePreview: 'Local question',
+    }));
+  });
+
+  it('does not overwrite a pending local edit during background cloud sync', async () => {
+    const createdAt = new Date('2026-09-18T10:00:00.000Z');
+    const editedAt = new Date('2026-09-22T10:00:00.000Z');
+    await db.messages.add({
+      id: 'message_1', userId: 'user_123', conversationId: 'conv_1',
+      role: 'assistant', content: 'Pending local edit',
+      createdAt, updatedAt: editedAt,
+    });
+    await db.messageSyncQueue.add({
+      id: 'message_1', userId: 'user_123', conversationId: 'conv_1',
+      queuedAt: editedAt, updatedAt: editedAt, retryCount: 1,
+      lastError: 'cloud failed',
+    });
+    mockSupabaseMsgResponse = { data: [{
+      id: 'message_1', user_id: 'user_123', conversation_id: 'conv_1',
+      role: 'assistant', content: 'Stale cloud answer',
+      created_at: createdAt.toISOString(),
+      updated_at: new Date('2026-09-23T00:00:00.000Z').toISOString(),
+    }], error: null };
+
+    await syncService.pullFromCloud('user_123');
+
+    expect((await db.messages.get('message_1'))?.content).toBe('Pending local edit');
+    expect(await db.messageSyncQueue.get('message_1')).toBeDefined();
   });
 
   it('should save cloud data to Dexie without forcing a page reload', async () => {
@@ -662,6 +720,41 @@ describe('syncService - pullFromCloud', () => {
         messageId: 'msg_upsert_error',
       }),
     );
+  });
+
+  it('creates a missing cloud conversation before retrying its queued message', async () => {
+    const createdAt = new Date('2026-09-22T08:38:37.000Z');
+    await db.conversations.add({
+      id: 'conv_1', userId: 'user_123', title: 'New conversation',
+      createdAt, updatedAt: createdAt, messageCount: 1,
+      lastMessagePreview: '',
+    });
+    mockMessageUpsert
+      .mockResolvedValueOnce({ error: { code: '23503', message: 'foreign key violation' } })
+      .mockResolvedValueOnce({ error: null });
+
+    await syncService.pushMessage({
+      id: 'msg_1', userId: 'user_123', conversationId: 'conv_1',
+      role: 'user', content: 'Question', createdAt,
+    });
+
+    expect(mockConversationUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'conv_1', user_id: 'user_123',
+    }));
+    expect(mockMessageUpsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports conversation upsert errors instead of treating them as saved', async () => {
+    mockConversationUpsert.mockResolvedValueOnce({ error: { code: '42501', message: 'permission denied' } });
+
+    const result = await syncService.pushConversation({
+      id: 'conv_1', userId: 'user_123', title: 'New conversation',
+      createdAt: new Date('2026-09-22T08:38:37.000Z'),
+      updatedAt: new Date('2026-09-22T08:38:37.000Z'),
+      messageCount: 0, lastMessagePreview: '',
+    });
+
+    expect(result).toBe(false);
   });
 
   it('should delete one cloud message scoped to the current user', async () => {

@@ -205,6 +205,7 @@ export type TranslationKey =
   | 'shareLinkCopied'
   | 'shareLinkCreated'
   | 'shareLinkFailed'
+  | 'historySyncPending'
   | 'exportMarkdown'
   | 'exportPdf'
   | 'exportDocx'
@@ -447,6 +448,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLinkCopied: '已公開並複製分享連結',
     shareLinkCreated: '分享連結已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
+    historySyncPending: '部分訊息尚未備份至雲端。請保留此瀏覽器資料，連線恢復後將自動重試。',
     exportMarkdown: '下載為 Markdown (.md)',
     exportPdf: '下載為 PDF (.pdf)',
     exportDocx: '下載為 Word (.docx)',
@@ -659,6 +661,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLinkCopied: '已公开并复制分享链接',
     shareLinkCreated: '分享链接已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
+    historySyncPending: '部分消息尚未备份到云端。请保留此浏览器数据，连接恢复后将自动重试。',
     exportMarkdown: '下载为 Markdown (.md)',
     exportPdf: '下载为 PDF (.pdf)',
     exportDocx: '下载为 Word (.docx)',
@@ -871,6 +874,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLinkCopied: 'Public share link copied',
     shareLinkCreated: 'Share link created: ',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
+    historySyncPending: 'Some messages are not backed up yet. Keep this browser data; sync will retry automatically.',
     exportMarkdown: 'Download as Markdown (.md)',
     exportPdf: 'Download as PDF (.pdf)',
     exportDocx: 'Download as Word (.docx)',

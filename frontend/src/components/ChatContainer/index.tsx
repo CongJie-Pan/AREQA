@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Menu, X, AlertCircle, MoreHorizontal, FileText, FileImage, FileCode, Share2 } from 'lucide-react';
 import { App, Dropdown } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
@@ -29,6 +30,7 @@ import { useLiveTutorStore } from '@/store/liveTutor';
 import { useNotesStore } from '@/store/notes';
 import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
+import { db } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
@@ -108,10 +110,32 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const compeerEnabled = useFeatureStore((state) => state.compeer);
   const fetchFeatures = useFeatureStore((state) => state.fetchFeatures);
   const user = useAuthStore((state) => state.user);
+  const failedMessageSyncCount = useLiveQuery(
+    () => user
+      ? db.messageSyncQueue.where('userId').equals(user.id)
+          .filter((row) => Boolean(row.lastError)).count()
+      : Promise.resolve(0),
+    [user?.id],
+    0,
+  );
   const isAuthInitialized = useAuthStore((state) => state.isInitialized);
   const validateSession = useAuthStore((state) => state.validateSession);
   const addNoteFromMessage = useNotesStore((state) => state.addNoteFromMessage);
   const loadNotes = useNotesStore((state) => state.loadNotes);
+
+  useEffect(() => {
+    if (failedMessageSyncCount > 0) {
+      antMessageApi.open({
+        type: 'warning',
+        key: 'history-sync-pending',
+        content: t('historySyncPending'),
+        duration: 0,
+      });
+    } else {
+      antMessageApi.destroy('history-sync-pending');
+    }
+    return () => antMessageApi.destroy('history-sync-pending');
+  }, [antMessageApi, failedMessageSyncCount, t]);
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);

@@ -259,6 +259,10 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
 
   const localMsgs = await db.messages.toArray();
   const localMsgMap = new Map(localMsgs.map(m => [m.id, m]));
+  const pendingMessageIds = new Set(
+    (await db.messageSyncQueue.where('userId').equals(userId).toArray())
+      .map((row) => row.id),
+  );
   const deletedMessageIds = new Set(
     (await db.messageDeletions.where('userId').equals(userId).toArray())
       .map((deletion) => deletion.id),
@@ -266,6 +270,7 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
 
   const msgsToUpsert = [];
   for (const m of cloudMsgs) {
+    if (pendingMessageIds.has(m.id) && localMsgMap.has(m.id)) continue;
     if (deletedMessageIds.has(m.id)) {
       logger.info('sync_message_pull_tombstone_skipped', {
         component: 'syncService',
@@ -387,67 +392,82 @@ async function replaceLocalConversationMessagesFromCloud(
   conversationId: string,
   cloudMsgs: CloudMessageRow[],
 ): Promise<boolean> {
-  const [localMessages, pendingRows, deletionRows] = await Promise.all([
-    db.messages
-      .where('conversationId')
-      .equals(conversationId)
-      .filter((message) => message.userId === userId)
-      .toArray(),
-    db.messageSyncQueue
-      .where('conversationId')
-      .equals(conversationId)
-      .filter((row) => row.userId === userId)
-      .toArray(),
-    db.messageDeletions
-      .where('conversationId')
-      .equals(conversationId)
-      .filter((row) => row.userId === userId)
-      .toArray(),
-  ]);
-  const cloudMessages = cloudMsgs.map(messageFromCloudRow);
-  const localIds = localMessages.map((message) => message.id);
-  const pendingIds = pendingRows.map((row) => row.id);
-  const deletionIds = deletionRows.map((row) => row.id);
-  const latestCloudMessage = cloudMessages.at(-1);
-  const localFingerprint = localMessages
-    .map((message) => `${message.id}:${localMessageUpdatedAt(message).toISOString()}`)
-    .join('|');
-  const cloudFingerprint = cloudMessages
-    .map((message) => `${message.id}:${localMessageUpdatedAt(message).toISOString()}`)
-    .join('|');
-  const dataChanged = (
-    localFingerprint !== cloudFingerprint ||
-    pendingIds.length > 0 ||
-    deletionIds.length > 0
-  );
-
-  await db.transaction(
+  return db.transaction(
     'rw',
     [db.messages, db.conversations, db.messageSyncQueue, db.messageDeletions],
     async () => {
-      if (localIds.length > 0) {
-        await db.messages.bulkDelete(localIds);
+      const [localMessages, pendingRows, deletionRows] = await Promise.all([
+        db.messages.where('conversationId').equals(conversationId)
+          .filter((message) => message.userId === userId).toArray(),
+        db.messageSyncQueue.where('conversationId').equals(conversationId)
+          .filter((row) => row.userId === userId).toArray(),
+        db.messageDeletions.where('conversationId').equals(conversationId)
+          .filter((row) => row.userId === userId).toArray(),
+      ]);
+
+      // An empty cloud snapshot cannot prove that local-only messages were saved.
+      if (cloudMsgs.length === 0 && localMessages.length > 0) {
+        logger.warn('sync_empty_cloud_snapshot_local_preserved', {
+          component: 'syncService',
+          conversationId,
+          localMessageCount: localMessages.length,
+          pendingSyncCount: pendingRows.length,
+        });
+        return false;
       }
-      if (cloudMessages.length > 0) {
-        await db.messages.bulkPut(cloudMessages);
+
+      const deletedIds = new Set(deletionRows.map((row) => row.id));
+      const pendingIds = new Set(pendingRows.map((row) => row.id));
+      const localById = new Map(localMessages.map((message) => [message.id, message]));
+      const merged = new Map<string, Message>();
+      for (const row of cloudMsgs) {
+        if (deletedIds.has(row.id)) continue;
+        const cloudMessage = messageFromCloudRow(row);
+        const localMessage = localById.get(row.id);
+        merged.set(row.id, localMessage && (
+          pendingIds.has(row.id) ||
+          localMessageUpdatedAt(localMessage).getTime() > localMessageUpdatedAt(cloudMessage).getTime()
+        ) ? localMessage : cloudMessage);
       }
-      if (pendingIds.length > 0) {
-        await db.messageSyncQueue.bulkDelete(pendingIds);
+      for (const message of localMessages) {
+        if (pendingIds.has(message.id) && !deletedIds.has(message.id)) {
+          merged.set(message.id, message);
+        }
       }
-      if (deletionIds.length > 0) {
-        await db.messageDeletions.bulkDelete(deletionIds);
+
+      const obsoleteIds = localMessages
+        .filter((message) => !merged.has(message.id))
+        .map((message) => message.id);
+      if (obsoleteIds.length > 0) {
+        await db.messages.bulkDelete(obsoleteIds);
       }
+      const messages = [...merged.values()].sort((a, b) =>
+        a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+      if (messages.length > 0) await db.messages.bulkPut(messages);
+      const latestMessage = messages.at(-1);
       await db.conversations.update(conversationId, {
-        messageCount: cloudMessages.length,
-        lastMessagePreview: latestCloudMessage?.content.slice(0, 100) ?? '',
-        updatedAt: latestCloudMessage
-          ? localMessageUpdatedAt(latestCloudMessage)
+        messageCount: messages.length,
+        lastMessagePreview: latestMessage?.content.slice(0, 100) ?? '',
+        updatedAt: latestMessage
+          ? localMessageUpdatedAt(latestMessage)
           : new Date(),
       });
+      logger.info('sync_conversation_snapshot_reconciled', {
+        component: 'syncService',
+        conversationId,
+        cloudMessageCount: cloudMsgs.length,
+        localMessageCount: localMessages.length,
+        pendingSyncCount: pendingRows.length,
+        deletionMarkerCount: deletionRows.length,
+        resultingMessageCount: messages.length,
+      });
+      return obsoleteIds.length > 0 || messages.length !== localMessages.length ||
+        messages.some((message) => {
+          const local = localById.get(message.id);
+          return !local || localMessageUpdatedAt(local).getTime() !== localMessageUpdatedAt(message).getTime();
+        });
     },
   );
-
-  return dataChanged;
 }
 
 function normalizeMessageFeedback(value: unknown): MessageFeedback | null {
@@ -536,9 +556,8 @@ export const syncService = {
    *   request failed and local cache should remain available as a fallback.
    *
    * Side Effects:
-   *   By default, replaces local message rows, pending message sync, and local
-   *   deletion markers for this conversation with the cloud snapshot. Logs only
-   *   safe IDs and counters.
+   *   Reconciles the cloud snapshot with local pending writes and deletion
+   *   markers. Logs only safe IDs and counters.
    */
   async pullConversationMessages(
     conversationId: string,
@@ -595,21 +614,27 @@ export const syncService = {
   /**
    * Pushes a conversation to Supabase
    */
-  async pushConversation(conv: Conversation) {
+  async pushConversation(conv: Conversation): Promise<boolean> {
     const userId = getCurrentUserId();
-    if (!userId || userId === 'default_user') return;
+    if (!userId || userId === 'default_user') return false;
 
     try {
-      await supabase.from('conversations').upsert({
+      const { error } = await supabase.from('conversations').upsert({
         id: conv.id,
         user_id: conv.userId,
         title: conv.title,
         created_at: conv.createdAt.toISOString(),
         updated_at: conv.updatedAt.toISOString(),
       });
+      if (error) throw error;
+      return true;
     } catch (e) {
       handleAuthError(e);
-      logger.error('Push conversation error', e instanceof Error ? e : new Error(String(e)));
+      logger.error('Push conversation error', e instanceof Error ? e : new Error(errorMessage(e)), {
+        component: 'syncService',
+        conversationId: conv.id,
+      });
+      return false;
     }
   },
 
@@ -631,7 +656,7 @@ export const syncService = {
         return;
       }
 
-      const { error } = await supabase.from('messages').upsert({
+      const payload = {
         id: msg.id,
         user_id: msg.userId,
         conversation_id: msg.conversationId,
@@ -650,7 +675,15 @@ export const syncService = {
         feedback_updated_at: msg.feedbackUpdatedAt?.toISOString() ?? null,
         created_at: msg.createdAt.toISOString(),
         updated_at: (msg.updatedAt ?? msg.createdAt).toISOString(),
-      });
+      };
+      let { error } = await supabase.from('messages').upsert(payload);
+
+      if (error?.code === '23503') {
+        const conversation = await db.conversations.get(msg.conversationId);
+        if (conversation?.userId === userId && await syncService.pushConversation(conversation)) {
+          ({ error } = await supabase.from('messages').upsert(payload));
+        }
+      }
 
       if (error) {
         handleAuthError(error);
