@@ -8,6 +8,7 @@ import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
 import { syncService } from '@/services/syncService';
 import { logger } from '@/utils/logger';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 vi.mock('@/store/chat', () => ({
   useChatStore: {
@@ -50,6 +51,10 @@ vi.mock('@/services/syncService', () => ({
 
 vi.mock('@/database/db', () => ({
   getCurrentUserId: vi.fn().mockReturnValue('test-user-id'),
+}));
+
+vi.mock('@/services/authenticatedFetch', () => ({
+  authenticatedFetch: vi.fn(),
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -153,6 +158,7 @@ describe('Chat Service', () => {
       latestMessageUpdatedAt: null,
       latestQueuedAt: null,
     });
+    vi.mocked(authenticatedFetch).mockResolvedValue({ ok: true, status: 200 } as Response);
     useFeatureStore.setState({ conversationHistoryDebugLogs: false });
   });
 
@@ -173,6 +179,15 @@ describe('Chat Service', () => {
       expect(logger.warn).toHaveBeenCalledWith('chat_history_switch_skipped_auth', expect.objectContaining({
         conversationId: 'target-conv',
       }));
+      await vi.waitFor(() => {
+        expect(authenticatedFetch).toHaveBeenCalledWith(
+          'http://localhost:8000/api/v1/conversation-history/debug-log',
+          expect.objectContaining({
+            method: 'POST',
+            body: expect.stringContaining('chat_history_switch_skipped_auth'),
+          }),
+        );
+      });
       expect(databaseService.message.getByConversationId).not.toHaveBeenCalled();
       expect(mockConversationStore.selectConversation).not.toHaveBeenCalled();
     });
@@ -195,6 +210,13 @@ describe('Chat Service', () => {
           pendingSyncCount: 0,
         }));
       });
+      expect(authenticatedFetch).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/conversation-history/debug-log',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('chat_history_switch_completed'),
+        }),
+      );
     });
 
     it('ignores an older slow history load after a newer selection wins', async () => {
@@ -301,6 +323,10 @@ describe('Chat Service', () => {
       expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain(
         'replacement answer should not be logged',
       );
+      const forwardedBodies = vi.mocked(authenticatedFetch).mock.calls.map(([, init]) => String(init?.body ?? ''));
+      expect(forwardedBodies.some((body) => body.includes('chat_history_messages_committed'))).toBe(true);
+      expect(JSON.stringify(forwardedBodies)).not.toContain('edited question should not be logged');
+      expect(JSON.stringify(forwardedBodies)).not.toContain('replacement answer should not be logged');
     });
 
     it('skips conversation history diagnostics when the runtime flag is disabled', async () => {
@@ -318,6 +344,10 @@ describe('Chat Service', () => {
       );
       expect(logger.info).not.toHaveBeenCalledWith(
         'chat_history_messages_committed',
+        expect.any(Object),
+      );
+      expect(authenticatedFetch).not.toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/conversation-history/debug-log',
         expect.any(Object),
       );
     });

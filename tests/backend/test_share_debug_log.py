@@ -57,3 +57,50 @@ def test_share_debug_log_rejects_unexpected_event_name():
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
+
+
+def test_conversation_history_debug_log_sanitizes_context(caplog):
+    app.dependency_overrides[get_current_user] = lambda: "user-1"
+    client = TestClient(app)
+
+    try:
+        with caplog.at_level(logging.INFO):
+            response = client.post(
+                "/api/v1/conversation-history/debug-log",
+                json={
+                    "event": "chat_history_switch_completed",
+                    "context": {
+                        "component": "chatService",
+                        "conversationId": "conversation-1",
+                        "activeConversationId": "conversation-1",
+                        "displayMessageCount": 0,
+                        "pendingSyncCount": 0,
+                        "messageContent": "private text",
+                        "token": "secret-token",
+                    },
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "conversation_history.backend_debug" in caplog.text
+    assert "chat_history_switch_completed" in caplog.text
+    assert "conversation-1" in caplog.text
+    assert "private text" not in caplog.text
+    assert "secret-token" not in caplog.text
+
+
+def test_conversation_history_debug_log_rejects_unexpected_event_name():
+    app.dependency_overrides[get_current_user] = lambda: "user-1"
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/api/v1/conversation-history/debug-log",
+            json={"event": "memory.write", "context": {}},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400

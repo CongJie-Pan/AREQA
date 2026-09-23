@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-from auth import get_current_user
+from auth import get_current_user, get_optional_current_user
 
 router = APIRouter()
 logger = logging.getLogger("backend.main")
@@ -34,6 +34,10 @@ class ActionLogRequest(BaseModel):
     context: Dict[str, Any] = {}
 
 class ShareDebugLogRequest(BaseModel):
+    event: str
+    context: Dict[str, Any] = {}
+
+class ConversationHistoryDebugLogRequest(BaseModel):
     event: str
     context: Dict[str, Any] = {}
 
@@ -230,6 +234,35 @@ def _safe_share_debug_context(context: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
+def _safe_conversation_history_debug_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep conversation history diagnostics metadata-only."""
+    allowed_keys = {
+        "activeConversationId",
+        "assistantMessageCount",
+        "clearBeforeLoad",
+        "component",
+        "conversationId",
+        "deletionMarkerCount",
+        "displayMessageCount",
+        "durationMs",
+        "errorName",
+        "latestMessageUpdatedAt",
+        "latestQueuedAt",
+        "messageCount",
+        "pendingSyncCount",
+        "previousActiveConversationId",
+        "status",
+        "userMessageCount",
+    }
+    safe: Dict[str, Any] = {}
+    for key, value in context.items():
+        if key not in allowed_keys:
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            safe[key] = value
+    return safe
+
+
 @router.post("/api/v1/share/debug-log")
 async def log_share_debug(req: ShareDebugLogRequest, current_user_id: str = Depends(get_current_user)):
     if not re.fullmatch(r"share\.[a-z0-9_.-]{1,96}", req.event):
@@ -238,6 +271,23 @@ async def log_share_debug(req: ShareDebugLogRequest, current_user_id: str = Depe
     logger.info(
         "share.backend_debug user_id=%s event=%s context=%s",
         current_user_id,
+        req.event,
+        json.dumps(safe_context, ensure_ascii=False, sort_keys=True),
+    )
+    return {"status": "ok"}
+
+
+@router.post("/api/v1/conversation-history/debug-log")
+async def log_conversation_history_debug(
+    req: ConversationHistoryDebugLogRequest,
+    current_user_id: str | None = Depends(get_optional_current_user),
+):
+    if not re.fullmatch(r"chat_history_[a-z0-9_]{1,96}", req.event):
+        raise HTTPException(status_code=400, detail="Invalid conversation history debug event")
+    safe_context = _safe_conversation_history_debug_context(req.context)
+    logger.info(
+        "conversation_history.backend_debug user_id=%s event=%s context=%s",
+        current_user_id or "anonymous",
         req.event,
         json.dumps(safe_context, ensure_ascii=False, sort_keys=True),
     )

@@ -28,6 +28,7 @@ import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
 import { answerBlocksForEditedContent, persistentAnswerBlocks } from '@/utils/answerBlocks';
 import { logger } from '@/utils/logger';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 /**
  * Active abort controller for the current stream
@@ -36,6 +37,7 @@ import { logger } from '@/utils/logger';
 let currentAbortController: AbortController | null = null;
 const CONVERSATION_PREVIEW_MAX_LENGTH = 100;
 const ASSISTANT_EDIT_MAX_CONTENT_LENGTH = 750_000;
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 let historyLoadGeneration = 0;
 
 export type SendMessageResponseMode = 'text' | 'voice';
@@ -124,6 +126,80 @@ function conversationHistoryDebugLogsEnabled(): boolean {
   return useFeatureStore.getState().conversationHistoryDebugLogs;
 }
 
+type ConversationHistoryDebugContext = {
+  activeConversationId?: string | null;
+  assistantMessageCount?: number;
+  clearBeforeLoad?: boolean;
+  component: string;
+  conversationId: string;
+  deletionMarkerCount?: number;
+  displayMessageCount?: number;
+  durationMs?: number;
+  error?: unknown;
+  latestMessageUpdatedAt?: string | null;
+  latestQueuedAt?: string | null;
+  messageCount?: number;
+  pendingSyncCount?: number;
+  previousActiveConversationId?: string | null;
+  status?: number | string;
+  userMessageCount?: number;
+};
+
+function safeConversationHistoryDebugContext(
+  context: ConversationHistoryDebugContext,
+): Record<string, string | number | boolean | null> {
+  const safe: Record<string, string | number | boolean | null> = {};
+
+  Object.entries(context).forEach(([key, value]) => {
+    if (key === 'error') {
+      safe.errorName = value instanceof Error ? value.name : typeof value;
+      return;
+    }
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+      safe[key] = value;
+    }
+  });
+
+  return safe;
+}
+
+export function logConversationHistoryDebugEvent(
+  eventName: string,
+  context: ConversationHistoryDebugContext,
+): void {
+  if (!conversationHistoryDebugLogsEnabled()) return;
+
+  const safeContext = safeConversationHistoryDebugContext(context);
+  void authenticatedFetch(`${BACKEND_URL}/api/v1/conversation-history/debug-log`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      event: eventName,
+      context: safeContext,
+    }),
+  })
+    .then((response) => {
+      if (!response.ok) {
+        logger.warn('chat_history_backend_debug_forward_failed', {
+          component: context.component,
+          conversationId: context.conversationId,
+          eventName,
+          status: response.status,
+        });
+      }
+    })
+    .catch((error) => {
+      logger.warn('chat_history_backend_debug_forward_failed', {
+        component: context.component,
+        conversationId: context.conversationId,
+        eventName,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    });
+}
+
 function logConversationHistoryDiagnostics(
   eventName: string,
   context: {
@@ -157,9 +233,11 @@ function logConversationHistoryDiagnostics(
           context.error instanceof Error ? context.error : new Error(String(context.error)),
           payload,
         );
+        logConversationHistoryDebugEvent(eventName, { ...payload, error: context.error });
         return;
       }
       logger.info(eventName, payload);
+      logConversationHistoryDebugEvent(eventName, payload);
     })
     .catch((diagnosticsError) => {
       logger.warn('chat_history_load_diagnostics_failed', {
@@ -735,6 +813,10 @@ export async function loadMessages(
         component: 'chatService',
         conversationId,
       });
+      logConversationHistoryDebugEvent('chat_history_load_skipped_auth', {
+        component: 'chatService',
+        conversationId,
+      });
     }
     return;
   }
@@ -742,6 +824,11 @@ export async function loadMessages(
   try {
     if (conversationHistoryDebugLogsEnabled()) {
       logger.info('chat_history_load_started', {
+        component: 'chatService',
+        conversationId,
+        clearBeforeLoad: shouldClearBeforeLoad,
+      });
+      logConversationHistoryDebugEvent('chat_history_load_started', {
         component: 'chatService',
         conversationId,
         clearBeforeLoad: shouldClearBeforeLoad,
@@ -842,6 +929,11 @@ export async function switchConversation(conversationId: string): Promise<void> 
       conversationId,
       previousActiveConversationId: useConversationStore.getState().activeConversationId,
     });
+    logConversationHistoryDebugEvent('chat_history_switch_requested', {
+      component: 'chatService',
+      conversationId,
+      previousActiveConversationId: useConversationStore.getState().activeConversationId,
+    });
   }
   // Cancel any ongoing stream
   await cancelCurrentStream();
@@ -851,6 +943,11 @@ export async function switchConversation(conversationId: string): Promise<void> 
   if (!canPersistHistory()) {
     if (conversationHistoryDebugLogsEnabled()) {
       logger.warn('chat_history_switch_skipped_auth', {
+        component: 'chatService',
+        conversationId,
+        durationMs: Math.round(performance.now() - switchStartedAt),
+      });
+      logConversationHistoryDebugEvent('chat_history_switch_skipped_auth', {
         component: 'chatService',
         conversationId,
         durationMs: Math.round(performance.now() - switchStartedAt),
@@ -877,6 +974,13 @@ export async function switchConversation(conversationId: string): Promise<void> 
     conversationStore.selectConversation(conversationId);
     if (conversationHistoryDebugLogsEnabled()) {
       logger.info('chat_history_switch_completed', {
+        component: 'chatService',
+        conversationId,
+        activeConversationId: useConversationStore.getState().activeConversationId,
+        displayMessageCount: useChatStore.getState().messages.length,
+        durationMs: Math.round(performance.now() - switchStartedAt),
+      });
+      logConversationHistoryDebugEvent('chat_history_switch_completed', {
         component: 'chatService',
         conversationId,
         activeConversationId: useConversationStore.getState().activeConversationId,

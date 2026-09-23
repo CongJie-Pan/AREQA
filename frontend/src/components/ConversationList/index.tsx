@@ -16,7 +16,11 @@ import { useMailboxStore } from '@/store/mailbox';
 import { useFeatureStore } from '@/store/features';
 import { useStyles } from './styles';
 import { SidePanelType } from '@/types/panel';
-import { switchConversation, deleteConversation as deleteConversationService } from '@/services/chat';
+import {
+  logConversationHistoryDebugEvent,
+  switchConversation,
+  deleteConversation as deleteConversationService,
+} from '@/services/chat';
 import { databaseService } from '@/services/database';
 import { UserAuthUI } from '../Auth';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
@@ -134,8 +138,18 @@ export function ConversationList({
         conversationId: id,
         activeConversationId: useConversationStore.getState().activeConversationId,
       });
+      logConversationHistoryDebugEvent('chat_history_sidebar_selected', {
+        component: 'ConversationList',
+        conversationId: id,
+        activeConversationId: useConversationStore.getState().activeConversationId,
+      });
       await switchConversation(id);
       logger.info('chat_history_sidebar_selection_finished', {
+        component: 'ConversationList',
+        conversationId: id,
+        activeConversationId: useConversationStore.getState().activeConversationId,
+      });
+      logConversationHistoryDebugEvent('chat_history_sidebar_selection_finished', {
         component: 'ConversationList',
         conversationId: id,
         activeConversationId: useConversationStore.getState().activeConversationId,
