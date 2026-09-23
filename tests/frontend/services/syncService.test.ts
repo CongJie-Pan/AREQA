@@ -140,6 +140,7 @@ describe('syncService - pullFromCloud', () => {
     await db.messages.clear();
     await db.messageDeletions.clear();
     await db.messageSyncQueue.clear();
+    await db.conversationSyncQueue.clear();
     await db.notes.clear();
   });
 
@@ -149,6 +150,7 @@ describe('syncService - pullFromCloud', () => {
     await db.messages.clear();
     await db.messageDeletions.clear();
     await db.messageSyncQueue.clear();
+    await db.conversationSyncQueue.clear();
     await db.notes.clear();
   });
 
@@ -307,6 +309,43 @@ describe('syncService - pullFromCloud', () => {
 
     expect((await db.messages.get('message_1'))?.content).toBe('Pending local edit');
     expect(await db.messageSyncQueue.get('message_1')).toBeDefined();
+  });
+
+  it('does not overwrite a pending local conversation update during background cloud sync', async () => {
+    const createdAt = new Date('2026-09-18T10:00:00.000Z');
+    const editedAt = new Date('2026-09-22T10:00:00.000Z');
+    await db.conversations.add({
+      id: 'conv_1',
+      userId: 'user_123',
+      title: 'Pending local title',
+      createdAt,
+      updatedAt: editedAt,
+      messageCount: 0,
+      lastMessagePreview: '',
+    });
+    await db.conversationSyncQueue.add({
+      id: 'conv_1',
+      userId: 'user_123',
+      queuedAt: editedAt,
+      updatedAt: editedAt,
+      retryCount: 1,
+      lastError: 'cloud failed',
+    });
+    mockSupabaseResponse = {
+      data: [{
+        id: 'conv_1',
+        user_id: 'user_123',
+        title: 'Stale cloud title',
+        created_at: createdAt.toISOString(),
+        updated_at: new Date('2026-09-23T00:00:00.000Z').toISOString(),
+      }],
+      error: null,
+    };
+
+    await syncService.pullFromCloud('user_123');
+
+    expect((await db.conversations.get('conv_1'))?.title).toBe('Pending local title');
+    expect(await db.conversationSyncQueue.get('conv_1')).toBeDefined();
   });
 
   it('should save cloud data to Dexie without forcing a page reload', async () => {

@@ -33,17 +33,20 @@ describe('messageRepo - sync integration', () => {
   });
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.mocked(syncService.pushConversation).mockResolvedValue(true);
     await db.open();
     await db.conversations.clear();
     await db.messages.clear();
     await db.messageDeletions.clear();
     await db.messageSyncQueue.clear();
+    await db.conversationSyncQueue.clear();
   });
 
   afterEach(async () => {
     await db.messages.clear();
     await db.messageDeletions.clear();
     await db.messageSyncQueue.clear();
+    await db.conversationSyncQueue.clear();
     await db.conversations.clear();
   });
 
@@ -139,13 +142,15 @@ describe('messageRepo - sync integration', () => {
     expect(conversation?.lastMessagePreview).toBe('Previous answer');
     expect(syncService.deleteMessage).toHaveBeenCalledWith('user_latest');
     expect(syncService.deleteMessage).toHaveBeenCalledWith('assistant_latest');
-    expect(syncService.pushConversation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'conv_1',
-        messageCount: 2,
-        lastMessagePreview: 'Previous answer',
-      }),
-    );
+    await vi.waitFor(() => {
+      expect(syncService.pushConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'conv_1',
+          messageCount: 2,
+          lastMessagePreview: 'Previous answer',
+        }),
+      );
+    });
   });
 
   it('keeps local message edits queued when cloud update fails and flushes them later', async () => {

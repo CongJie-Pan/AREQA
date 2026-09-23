@@ -28,6 +28,9 @@ vi.mock('@/services/chat-stream', () => ({
 
 vi.mock('@/services/database', () => ({
   databaseService: {
+    conversation: {
+      flushPendingCloudSync: vi.fn(),
+    },
     message: {
       add: vi.fn(),
       delete: vi.fn(),

@@ -24,12 +24,15 @@ vi.mock('@/database/db', async (importOriginal) => {
 describe('conversationRepo - sync intergration', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.mocked(syncService.pushConversation).mockResolvedValue(true);
     await db.open();
     await db.conversations.clear();
     await db.messages.clear();
+    await db.conversationSyncQueue.clear();
   });
 
   afterEach(async () => {
+    await db.conversationSyncQueue.clear();
     await db.conversations.clear();
     await db.messages.clear();
   });
@@ -38,10 +41,15 @@ describe('conversationRepo - sync intergration', () => {
     const conv = await conversationRepo.create('Test Title');
     
     expect(conv.title).toBe('Test Title');
-    expect(syncService.pushConversation).toHaveBeenCalledOnce();
-    expect(syncService.pushConversation).toHaveBeenCalledWith(
-      expect.objectContaining({ id: conv.id, title: 'Test Title' })
-    );
+    await vi.waitFor(() => {
+      expect(syncService.pushConversation).toHaveBeenCalledOnce();
+      expect(syncService.pushConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ id: conv.id, title: 'Test Title' })
+      );
+    });
+    await vi.waitFor(async () => {
+      expect(await db.conversationSyncQueue.get(conv.id)).toBeUndefined();
+    });
   });
 
   it('update should trigger pushConversation', async () => {
@@ -50,10 +58,38 @@ describe('conversationRepo - sync intergration', () => {
 
     await conversationRepo.update(conv.id, { title: 'Updated Title' });
     
-    expect(syncService.pushConversation).toHaveBeenCalledOnce();
-    expect(syncService.pushConversation).toHaveBeenCalledWith(
-      expect.objectContaining({ id: conv.id, title: 'Updated Title' })
-    );
+    await vi.waitFor(() => {
+      expect(syncService.pushConversation).toHaveBeenCalledOnce();
+      expect(syncService.pushConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ id: conv.id, title: 'Updated Title' })
+      );
+    });
+    await vi.waitFor(async () => {
+      expect(await db.conversationSyncQueue.get(conv.id)).toBeUndefined();
+    });
+  });
+
+  it('keeps created conversations queued when cloud push fails and flushes them later', async () => {
+    vi.mocked(syncService.pushConversation).mockResolvedValueOnce(false);
+
+    const conv = await conversationRepo.create('Recoverable Title');
+
+    await vi.waitFor(async () => {
+      expect(await db.conversationSyncQueue.get(conv.id)).toEqual(expect.objectContaining({
+        id: conv.id,
+        retryCount: 1,
+        lastError: 'Cloud conversation push was not acknowledged',
+      }));
+    });
+
+    vi.mocked(syncService.pushConversation).mockResolvedValue(true);
+    await conversationRepo.flushPendingCloudSync('user_123');
+
+    expect(syncService.pushConversation).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: conv.id,
+      title: 'Recoverable Title',
+    }));
+    expect(await db.conversationSyncQueue.get(conv.id)).toBeUndefined();
   });
 
   it('delete should trigger deleteConversation', async () => {

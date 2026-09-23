@@ -219,6 +219,30 @@ export interface MessageSyncQueueItem {
 }
 
 /**
+ * Local-only marker for conversation rows that still need cloud sync.
+ *
+ * Compatibility:
+ * - Conversation creation/title updates must survive reloads before Supabase
+ *   acknowledges them.
+ * - The latest conversation row is read from `conversations` immediately
+ *   before push, so queued work cannot replay stale titles or timestamps.
+ */
+export interface ConversationSyncQueueItem {
+  /** Conversation ID to push. */
+  id: string;
+  /** User ID that owns the pending conversation. */
+  userId: string;
+  /** When this conversation was last queued for cloud sync. */
+  queuedAt: Date;
+  /** Local conversation updatedAt snapshot that the queue must cover. */
+  updatedAt: Date;
+  /** Number of failed cloud push attempts for this pending row. */
+  retryCount: number;
+  /** Last safe error summary from cloud push, if any. */
+  lastError?: string | null;
+}
+
+/**
  * User-saved note linked to an assistant response.
  *
  * Compatibility:

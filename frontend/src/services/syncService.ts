@@ -214,11 +214,15 @@ async function mergeCloudConversations(
 
   const localConvs = await db.conversations.toArray();
   const localConvMap = new Map(localConvs.map(c => [c.id, c]));
+  const pendingConversationIds = new Set(
+    (await db.conversationSyncQueue.toArray()).map((row) => row.id),
+  );
 
   const convsToUpsert = [];
   for (const c of cloudConvs) {
     const cloudDate = new Date(c.updated_at);
     const localConv = localConvMap.get(c.id);
+    if (localConv && pendingConversationIds.has(c.id)) continue;
     if (!localConv || localConv.updatedAt.getTime() < cloudDate.getTime()) {
       convsToUpsert.push({
         id: c.id,

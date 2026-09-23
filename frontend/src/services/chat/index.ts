@@ -1116,6 +1116,7 @@ export async function initializeChatService(userId?: string): Promise<void> {
   const authenticatedUserId = userId ?? getCurrentUserId();
   if (authenticatedUserId) {
     await conversationStore.loadConversations(authenticatedUserId);
+    await databaseService.conversation.flushPendingCloudSync(authenticatedUserId);
     void databaseService.message.flushPendingCloudSync(authenticatedUserId);
   }
 }

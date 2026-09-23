@@ -10,6 +10,7 @@ import type { Message, MessageFeedback, MessageFeedbackDetails } from '../schema
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
 import { logger } from '@/utils/logger';
+import { queueConversationCloudSync, scheduleConversationCloudSync } from './conversationRepo';
 
 type AddMessageData = Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> & {
   id?: string;
@@ -169,7 +170,7 @@ export const messageRepo = {
       updatedAt: messageData.updatedAt ?? createdAt,
     };
 
-    await db.transaction('rw', [db.messages, db.conversations, db.messageSyncQueue], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageSyncQueue, db.conversationSyncQueue], async () => {
       // Add the message first
       await db.messages.add(message);
 
@@ -191,19 +192,16 @@ export const messageRepo = {
         });
       }
 
+      const conversation = await db.conversations.get(conversationId);
+      if (conversation) {
+        await queueConversationCloudSync(conversation);
+      }
       await queueMessageCloudSync(message);
     });
 
+    scheduleConversationCloudSync(conversationId);
     scheduleQueuedMessageCloudSync(message.id);
     
-    // Also update conversation timestamp in cloud if needed
-    // (though conversation update above will trigger sync if we hooked transaction, 
-    // but Dexie transaction doesn't trigger hooks for us automatically here. We can just push it.)
-    const conv = await db.conversations.get(conversationId);
-    if (conv) {
-      void syncService.pushConversation(conv);
-    }
-
     return message;
   },
 
@@ -363,7 +361,7 @@ export const messageRepo = {
       lastError: null,
     };
 
-    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions, db.messageSyncQueue], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions, db.messageSyncQueue, db.conversationSyncQueue], async () => {
       // Delete the message first
       await db.messages.delete(id);
       await db.messageDeletions.put(deletion);
@@ -378,8 +376,13 @@ export const messageRepo = {
           conv.messageCount = Math.max(0, (conv.messageCount || 1) - 1);
           conv.updatedAt = new Date();
         });
+      const conversation = await db.conversations.get(message.conversationId);
+      if (conversation) {
+        await queueConversationCloudSync(conversation);
+      }
     });
 
+    scheduleConversationCloudSync(message.conversationId);
     await syncService.deleteMessage(id);
   },
 
@@ -396,7 +399,7 @@ export const messageRepo = {
 
     let deletedIds: string[] = [];
     const deletedAt = new Date();
-    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions, db.messageSyncQueue], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageDeletions, db.messageSyncQueue, db.conversationSyncQueue], async () => {
       const existingMessages = await db.messages
         .where('id')
         .anyOf(uniqueIds)
@@ -430,14 +433,15 @@ export const messageRepo = {
           conv.lastMessagePreview = latestRemainingMessage?.content.slice(0, 100) ?? '';
           conv.updatedAt = new Date();
         });
+      const conversation = await db.conversations.get(conversationId);
+      if (conversation) {
+        await queueConversationCloudSync(conversation);
+      }
     });
 
+    scheduleConversationCloudSync(conversationId);
     await Promise.allSettled(deletedIds.map((id) => syncService.deleteMessage(id)));
 
-    const conversation = await db.conversations.get(conversationId);
-    if (conversation) {
-      syncService.pushConversation(conversation);
-    }
   },
 
   /**
@@ -446,7 +450,7 @@ export const messageRepo = {
    * @param conversationId - The conversation ID
    */
   async deleteByConversationId(conversationId: string): Promise<void> {
-    await db.transaction('rw', [db.messages, db.conversations, db.messageSyncQueue], async () => {
+    await db.transaction('rw', [db.messages, db.conversations, db.messageSyncQueue, db.conversationSyncQueue], async () => {
       const deletedIds = (await db.messages.where('conversationId').equals(conversationId).primaryKeys()) as string[];
       // Delete all messages for the conversation
       await db.messages.where('conversationId').equals(conversationId).delete();
@@ -463,6 +467,12 @@ export const messageRepo = {
           conv.lastMessagePreview = '';
           conv.updatedAt = new Date();
         });
+      const conversation = await db.conversations.get(conversationId);
+      if (conversation) {
+        await queueConversationCloudSync(conversation);
+      }
     });
+
+    scheduleConversationCloudSync(conversationId);
   },
 };

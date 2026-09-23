@@ -4,7 +4,15 @@
  */
 
 import Dexie, { type EntityTable } from 'dexie';
-import type { Conversation, Message, MessageDeletion, MessageSyncQueueItem, Note, Setting } from './schema';
+import type {
+  Conversation,
+  ConversationSyncQueueItem,
+  Message,
+  MessageDeletion,
+  MessageSyncQueueItem,
+  Note,
+  Setting,
+} from './schema';
 
 /**
  * PerplexityQA Database class
@@ -61,6 +69,8 @@ class PerplexityQADatabase extends Dexie {
   messageDeletions!: EntityTable<MessageDeletion, 'id'>;
   /** Local-only pending message cloud sync queue. */
   messageSyncQueue!: EntityTable<MessageSyncQueueItem, 'id'>;
+  /** Local-only pending conversation cloud sync queue. */
+  conversationSyncQueue!: EntityTable<ConversationSyncQueueItem, 'id'>;
   /** Settings table */
   settings!: EntityTable<Setting, 'key'>;
   /** Notes table */
@@ -157,6 +167,18 @@ class PerplexityQADatabase extends Dexie {
       messages: 'id, userId, conversationId, createdAt, updatedAt, [conversationId+createdAt]',
       messageDeletions: 'id, userId, conversationId, deletedAt, [userId+deletedAt]',
       messageSyncQueue: 'id, userId, conversationId, queuedAt, updatedAt, [userId+queuedAt]',
+      settings: 'key',
+      notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
+    });
+
+    // Version 10: Durable pending conversation sync rows ensure a newly
+    // created conversation shell/title survives reloads until cloud confirms it.
+    this.version(10).stores({
+      conversations: 'id, userId, createdAt, updatedAt',
+      messages: 'id, userId, conversationId, createdAt, updatedAt, [conversationId+createdAt]',
+      messageDeletions: 'id, userId, conversationId, deletedAt, [userId+deletedAt]',
+      messageSyncQueue: 'id, userId, conversationId, queuedAt, updatedAt, [userId+queuedAt]',
+      conversationSyncQueue: 'id, userId, queuedAt, updatedAt, [userId+queuedAt]',
       settings: 'key',
       notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
     });
