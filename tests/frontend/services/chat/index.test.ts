@@ -161,6 +161,42 @@ describe('Chat Service', () => {
   });
 
   describe('switchConversation', () => {
+    it('logs when a history click cannot load because browser auth is unavailable', async () => {
+      useFeatureStore.setState({ conversationHistoryDebugLogs: true });
+      vi.mocked(getCurrentUserId).mockReturnValue(null);
+
+      await switchConversation('target-conv');
+
+      expect(logger.info).toHaveBeenCalledWith('chat_history_switch_requested', expect.objectContaining({
+        conversationId: 'target-conv',
+      }));
+      expect(logger.warn).toHaveBeenCalledWith('chat_history_switch_skipped_auth', expect.objectContaining({
+        conversationId: 'target-conv',
+      }));
+      expect(databaseService.message.getByConversationId).not.toHaveBeenCalled();
+      expect(mockConversationStore.selectConversation).not.toHaveBeenCalled();
+    });
+
+    it('logs an empty conversation after selecting it', async () => {
+      useFeatureStore.setState({ conversationHistoryDebugLogs: true });
+      vi.mocked(databaseService.message.getByConversationId).mockResolvedValue([]);
+
+      await switchConversation('empty-conv');
+
+      expect(logger.info).toHaveBeenCalledWith('chat_history_switch_completed', expect.objectContaining({
+        conversationId: 'empty-conv',
+        displayMessageCount: 0,
+      }));
+      await vi.waitFor(() => {
+        expect(logger.info).toHaveBeenCalledWith('chat_history_messages_committed', expect.objectContaining({
+          conversationId: 'empty-conv',
+          displayMessageCount: 0,
+          messageCount: 0,
+          pendingSyncCount: 0,
+        }));
+      });
+    });
+
     it('ignores an older slow history load after a newer selection wins', async () => {
       let resolveOlder!: (messages: never[]) => void;
       let markStarted!: () => void;

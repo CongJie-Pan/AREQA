@@ -130,6 +130,7 @@ function logConversationHistoryDiagnostics(
     conversationId: string;
     userId: string;
     durationMs?: number;
+    displayMessageCount?: number;
     error?: unknown;
   },
 ): void {
@@ -141,6 +142,7 @@ function logConversationHistoryDiagnostics(
         component: 'chatService',
         conversationId: context.conversationId,
         durationMs: context.durationMs,
+        displayMessageCount: context.displayMessageCount,
         messageCount: diagnostics.messageCount,
         userMessageCount: diagnostics.userMessageCount,
         assistantMessageCount: diagnostics.assistantMessageCount,
@@ -727,7 +729,15 @@ export async function loadMessages(
   }
 
   const userId = getCurrentUserId();
-  if (!userId) return;
+  if (!userId) {
+    if (conversationHistoryDebugLogsEnabled()) {
+      logger.warn('chat_history_load_skipped_auth', {
+        component: 'chatService',
+        conversationId,
+      });
+    }
+    return;
+  }
 
   try {
     if (conversationHistoryDebugLogsEnabled()) {
@@ -778,6 +788,7 @@ export async function loadMessages(
       conversationId,
       userId,
       durationMs: Math.round(performance.now() - loadStartedAt),
+      displayMessageCount: messages.length,
     });
   } catch (error) {
     const err = normalizeError(error);
@@ -824,12 +835,29 @@ export async function startNewConversation(): Promise<string> {
  * @param conversationId - Conversation ID to switch to
  */
 export async function switchConversation(conversationId: string): Promise<void> {
+  const switchStartedAt = performance.now();
+  if (conversationHistoryDebugLogsEnabled()) {
+    logger.info('chat_history_switch_requested', {
+      component: 'chatService',
+      conversationId,
+      previousActiveConversationId: useConversationStore.getState().activeConversationId,
+    });
+  }
   // Cancel any ongoing stream
   await cancelCurrentStream();
 
   const conversationStore = useConversationStore.getState();
 
-  if (!canPersistHistory()) return;
+  if (!canPersistHistory()) {
+    if (conversationHistoryDebugLogsEnabled()) {
+      logger.warn('chat_history_switch_skipped_auth', {
+        component: 'chatService',
+        conversationId,
+        durationMs: Math.round(performance.now() - switchStartedAt),
+      });
+    }
+    return;
+  }
   const requestGeneration = ++historyLoadGeneration;
   const isStale = () => requestGeneration !== historyLoadGeneration;
 
@@ -847,6 +875,15 @@ export async function switchConversation(conversationId: string): Promise<void> 
       return;
     }
     conversationStore.selectConversation(conversationId);
+    if (conversationHistoryDebugLogsEnabled()) {
+      logger.info('chat_history_switch_completed', {
+        component: 'chatService',
+        conversationId,
+        activeConversationId: useConversationStore.getState().activeConversationId,
+        displayMessageCount: useChatStore.getState().messages.length,
+        durationMs: Math.round(performance.now() - switchStartedAt),
+      });
+    }
   } finally {
     if (!isStale()) {
       useConversationStore.getState().setMessageHandoffLoading(false);

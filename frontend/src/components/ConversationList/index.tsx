@@ -20,6 +20,7 @@ import { switchConversation, deleteConversation as deleteConversationService } f
 import { databaseService } from '@/services/database';
 import { UserAuthUI } from '../Auth';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { logger } from '@/utils/logger';
 
 const PINNED_CONVERSATION_IDS_KEY = 'areqa:pinned-conversation-ids';
 const LONG_PRESS_MENU_MS = 520;
@@ -128,7 +129,17 @@ export function ConversationList({
   const handleSelect = useCallback(
     async (id: string) => {
       if (openMenuId === id) return;
+      logger.info('chat_history_sidebar_selected', {
+        component: 'ConversationList',
+        conversationId: id,
+        activeConversationId: useConversationStore.getState().activeConversationId,
+      });
       await switchConversation(id);
+      logger.info('chat_history_sidebar_selection_finished', {
+        component: 'ConversationList',
+        conversationId: id,
+        activeConversationId: useConversationStore.getState().activeConversationId,
+      });
       onSelect?.(id);
     },
     [onSelect, openMenuId]

@@ -595,7 +595,7 @@ export const syncService = {
       logger.info('sync_conversation_messages_pulled', {
         component: 'syncService',
         conversationId,
-        messageCount: cloudMsgs.length,
+        cloudMessageCount: cloudMsgs.length,
         dataChanged,
         authoritative,
       });
