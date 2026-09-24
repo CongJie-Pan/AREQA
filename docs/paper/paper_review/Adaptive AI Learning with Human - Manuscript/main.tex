@@ -1,0 +1,219 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\geometry{margin=1in}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\setlist{nosep}
+\title{Adaptive AI Learning with Humans: A Documentary Synthesis of a Research Whiteboard on Cognitive Engagement, Pedagogical Dialogue, and Human Agency}
+\author{Working manuscript based on the author's Heptabase whiteboard\\Author name to be supplied}
+\date{September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This article reorganizes a research whiteboard on adaptive artificial intelligence (AI) learning into an academic narrative. The source collection comprises a whiteboard index, research cards, reading highlights, and an archived PDF library. Its central concern is the difference between receiving a useful answer and developing the capacity to reason without assistance. The notes connect immediate-answer systems, cognitive offloading, uncertainty and model calibration, productive struggle, Socratic dialogue, adaptive scaffolding, learner modelling, argumentation, and the evaluation of teaching quality. They also record alternative system designs and several incompatible candidate study settings, from literary interpretation and historical inquiry to school science. This paper preserves those alternatives as a research trajectory rather than presenting them as settled decisions. It proposes an analytic distinction among the quality of an AI response, the learner's observable interaction, and durable independent learning. It then documents the whiteboard's candidate mechanisms, measurements, and future experiments, while marking their evidential status. This is a documentary, integrative synthesis of the supplied archive, not a systematic review, a meta-analysis, or a report of a completed AREQA experiment. Claims taken from secondary notes require checking against the archived original papers before submission as a literature review.
+\end{abstract}
+
+\noindent\textbf{Keywords:} AI tutoring; cognitive offloading; productive struggle; Socratic dialogue; adaptive scaffolding; self-regulated learning; argumentation; human agency.
+
+\section{Introduction}
+Generative AI can produce fluent explanations and complete answers at little apparent cost to a learner. The whiteboard asks whether this convenience is always pedagogically desirable. Its recurring distinction is between an answer that resolves the immediate task and a response that helps the learner build understanding, evaluate evidence, revise a position, and later act independently. The board calls the first possible failure an \emph{illusion of learning}: a student recognizes a convincing explanation but cannot reconstruct or use the underlying reasoning without help. This is a motivating hypothesis, not an established conclusion about all AI use.
+
+The archive is also a record of changing research intentions. One strand criticizes satisfaction and answer completeness as insufficient measures of teaching. A second examines alternatives such as delayed feedback, partial hints, multi-perspective prompts, and metacognitive questions. A third asks how to measure the learner's cognitive activity and whether those measures predict later learning. A fourth considers AREQA as a possible experimental system. Across these strands, the author repeatedly returns to a practical question: what should an AI tutor do at a particular moment in a particular learning dialogue?
+
+The concern is especially sharp for open-ended work, including historical interpretation, literary analysis, civic reasoning, ethical judgment, and policy argument. Such tasks may admit several defensible interpretations while still requiring accurate sources and accountable reasoning. The board contrasts them with mathematics and programming tasks, where a more explicit correctness signal may often be available. This is a difference in task structure, not a claim that all humanities tasks lack standards or that all STEM tasks have unique answers.
+
+\section{Materials and Method of Synthesis}
+\subsection{Source collection and unit of analysis}
+The supplied export contains one whiteboard index, seven text elements, 58 markdown cards, 19 reading highlights, 55 PDF files, and a layout file. The markdown files range from single-line idea labels to extended AI-assisted literature summaries and draft experiment plans. The PDF files are an archival reading library; their mere presence does not establish that each was read, verified, or eligible for a formal evidence review. A machine-readable inventory of all files accompanies this manuscript as \texttt{source\_index.csv}.
+
+The unit of synthesis is the \emph{idea in the author's whiteboard}, not the publication as independently appraised evidence. I grouped recurring ideas under seven questions: (1) what counts as educational value, (2) how answers affect cognition, (3) what dialogue strategies are proposed, (4) when those strategies should change, (5) how learning should be measured, (6) which system mechanisms are contemplated, and (7) which experiments remain possible. Repeated cards are consolidated in the prose; distinct alternatives and explicit doubts are retained.
+
+\subsection{Epistemic status}
+This manuscript uses four statuses. \emph{Archived observation} means that an idea appears in the supplied notes. \emph{Attributed literature summary} means that a note reports a finding from a named PDF, without implying independent verification of that finding. \emph{Design proposal} means a candidate system or measurement strategy. \emph{Open question} means the author explicitly withheld a decision or challenged an earlier claim. No participant data, effect estimate, or AREQA learning outcome is reported here. In particular, the archive's confident statements about neural decline, universal harm from direct answers, the uniqueness of a research gap, or a specific experiment's effectiveness are treated as claims to verify, not results of this synthesis.
+
+\section{From Answer Quality to Educational Value}
+\subsection{The satisfaction--learning distinction}
+The board's proposed paradigm shift starts with a construct-validity problem. A learner may like an answer because it is quick, complete, and polished. The same answer may reduce opportunities to retrieve prior knowledge, articulate uncertainty, test an interpretation, or decide what to investigate next. Consequently, a positive rating, rapid task completion, and perceived clarity cannot by themselves establish learning. The archive proposes a separate study of whether immediate user satisfaction is a valid proxy for educational effectiveness; it does not contain that study's data.
+
+The contrast should not be simplified into a rule that direct answers are harmful. Complete explanations can reduce irrelevant burden, correct misconceptions, provide essential background, and prevent a learner from remaining stuck. The pedagogical issue is whether a response is appropriately timed and matched to the learner, the task, and the desired outcome. The board's more forceful metaphors---the ``answer vending machine'' and the ``overindulgent parent''---express a design concern rather than a demonstrated general law.
+
+\subsection{Cognitive offloading and its alternatives}
+Several archived readings address cognitive offloading, AI reliance, and critical thinking, including work on essay writing, knowledge workers, student--AI collaboration, cognitive forcing, and distinctions between dependent and autonomous offloading \cite{P12,P13,P15,P38,P43,P45,P53}. The notes suggest a causal chain in which immediate, authoritative answers invite the learner to outsource interpretation and judgment. However, the methods represented in the library differ: surveys, experimental studies, longitudinal observations, theoretical papers, and secondary reviews answer different questions. Self-reported effort, an EEG signal, an observed interaction, and a delayed unaided test are not interchangeable measures of cognitive development. Nor does reduced effort necessarily mean reduced learning: offloading routine work might free attention for more demanding reasoning. The paper therefore preserves the archive's concern while refusing to infer uniform cognitive harm from a mixed set of source types.
+
+The board also identifies an alternative aim: \emph{autonomous offloading}. Under this view, effective assistance can remove mechanical work while the learner retains responsibility for checking premises, comparing perspectives, deciding what counts as evidence, and explaining a conclusion. The distinction is central to the proposed AREQA direction. Its desired outcome is not simply ``more effort,'' but more well-directed intellectual agency.
+
+\subsection{Model uncertainty and the appearance of authority}
+The archive connects pedagogical risk to language-model uncertainty. Notes on model self-knowledge and medical reasoning \cite{P18,P22,P34} suggest that a fluent tutor may convey confidence beyond what its evidence supports. In open-ended study, the distinction among fact, interpretation, contested claim, and unknown becomes especially important. The proposed response is not indiscriminate hedging. It is calibrated disclosure of uncertainty, source limits, and alternative defensible readings. Whether an expressed uncertainty is faithful to model reliability, and whether it improves user judgment, remain empirical questions; the source library contains related work on trust and rationale presentation, but the whiteboard does not settle their answers.
+
+\section{Pedagogical Dialogue and Adaptive Scaffolding}
+\subsection{A repertoire rather than a single script}
+The whiteboard considers several response moves: direct explanation, diagnostic questioning, an incomplete hint, a request for justification, an evidence prompt, a counterexample, a competing perspective, an uncertainty statement, emotional reassurance, and a metacognitive question. Its aim is to decide which move supports the learner \emph{now}. Archived studies on Socratic dialogue, thinking assistants, partial explanations, tutorial tactics, and scaffolding \cite{P04,P06,P07,P10,P13,P16,P25,P41,P46,P52} motivate this repertoire. The notes do not establish that any one move is always superior.
+
+Some cards argue for diagnostic interaction before advice: learn what the student knows, where the misunderstanding lies, and how confident or frustrated the student feels. Others suggest beginning with enough ordinary explanation to establish context, then shifting toward deeper questioning as the conversation develops. These two suggestions can coexist as alternative timing policies. A tutoring system could also retreat from questioning and provide a direct explanation when the student lacks prerequisite knowledge, encounters excessive difficulty, or has already demonstrated mastery. Such \emph{adaptive fading} matters because perpetual Socratic questioning may become irritating, unproductive, or inequitable for students who need a clear answer.
+
+\subsection{Productive struggle and the cost of friction}
+The notes use ``productive'' or ``constructive struggle'' to describe effort that advances understanding rather than merely prolonging discomfort. They propose delayed answers, incomplete scaffolds, and strategically unresolved questions. At the same time, they ask when a delay becomes abandonment and when a difficult question leads to disengagement. The notion of a universal optimal waiting time is only a candidate hypothesis. The archive proposes studying an intervention threshold that responds to task difficulty, learner history, expressed frustration, silence, and observed progress.
+
+This creates a design tension. A system must leave room for the learner to think while providing sufficient emotional support and a route out of impasse. The cards suggest encouragement before challenge, recognition of correct partial reasoning, and a gradual shift between ``elicit'' and ``tell.'' A highlighted study of pedagogical tutorial tactics \cite{P07} is used in the notes to illustrate that the effect of elicitation may depend on the knowledge component. That result is not generalized here without checking the original experiment.
+
+\subsection{Human tutoring as a reference}
+The archive expresses dissatisfaction with AI that behaves only as a question-answering tool. Human tutors can diagnose, notice hesitation, remember earlier misconceptions, adjust challenge, and support the social experience of learning. A note on \emph{When Help is Unhelpful} \cite{P52} proposes using real tutor--student dialogue and teacher judgments as a source of contextual examples instead of assuming a short prompt can encode pedagogical expertise. The proposed process is to identify a dialogue situation, describe the tutor action, and evaluate what followed. This remains a design direction, not evidence that fine-tuning on such conversations would succeed in humanities teaching.
+
+The board also considers an embodied agent. It suggests that a visible tutor, perhaps in a desktop overlay with a selectable persona, might change expectations of the interaction and create a greater sense of co-learning. Notes on avatar attractiveness and demographic matching make this a possible social-interface research question; the referenced avatar papers are linked from a card but are not among the archived PDFs. Appearance, however, cannot substitute for pedagogical quality, and any such claim would need its own study. Text interaction, structured controls, split-screen argument canvases, source-inspection affordances, and an embodied tutor are alternative interface forms in the archive; none is fixed as the final AREQA implementation.
+
+\section{Open-Ended Tasks, Argumentation, and Domain Transfer}
+\subsection{Why the task matters}
+The notes repeatedly compare the evidential structure of programming and mathematics with that of historical, literary, ethical, and civic tasks. A compiler error or incorrect numerical answer can sometimes provide a visible failure signal. A ten-minute pause over a historical source is ambiguous: it may indicate reflection, confusion, distraction, or a technical obstacle. The board therefore questions whether scaffolds validated in more constrained domains transfer without modification to interpretive ones. It also recognizes that open-ended work still has assessable features, such as accurate use of sources, coherence, reasons, treatment of counterarguments, and justified revision.
+
+Several possible focal domains remain in the archive: a fixed literary passage, a history task with conflicting documents, civic or policy argument, and school science inquiry. A suggested \emph{Dream of the Red Chamber} passage was later explicitly left undecided. One draft imagined secondary-school history; another imagined university students doing literary interpretation; another explored adapting AREQA to a primary-school science video on Moodle/H5P. These are separate candidate contexts. They should not be fused into one fictitious completed study or silently narrowed to a single population.
+
+\subsection{Perspective conflict and epistemic caution}
+The board's most developed humanities proposal is a multi-perspective scaffold. Rather than offer a single polished summary, the tutor would distinguish source claims and interpretations, put defensible perspectives in tension, ask the learner to justify a position, and invite revision in light of counterevidence. The intended mechanism is not conflict for its own sake. It is an opportunity to inspect why accounts diverge and how evidence bears on them. Poorly chosen ``conflicting perspectives'' could manufacture false balance or imply that factual disputes are merely matters of opinion. The tutor must therefore preserve source quality and disclose uncertainty.
+
+Some notes propose a fixed three-stage sequence: uncertainty and multiple perspectives, challenge to a learner's warrant, then a metacognitive question about the basis of judgment. Later notes withdraw commitment to exactly three stages. They also question whether a fixed script is appropriate at all. This manuscript accordingly treats the sequence as one design candidate among adaptive policies, not the definition of the project.
+
+\section{What Counts as Evidence of Learning?}
+\subsection{Three distinct evaluation targets}
+The whiteboard brings together three targets that must remain analytically separate. \emph{Response quality} concerns what the AI says: accuracy, calibration, clarity, appropriate challenge, feedback, support, and adaptation. \emph{Interaction quality} concerns what the learner does during the dialogue: seeks evidence, explains a reason, challenges a claim, asks a substantive question, compares interpretations, and revises a position. \emph{Learning outcome} concerns what the learner can understand or do afterward, preferably without AI and on a new task. A good-looking response need not cause good interaction; active interaction need not produce durable learning. This three-part distinction is a synthesis of the board's repeated doubts about its own proposed metrics.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Measurement ideas preserved from the whiteboard}
+\begin{tabular}{p{0.22\linewidth}p{0.37\linewidth}p{0.31\linewidth}}
+\toprule
+Target & Candidate observation & Main validity concern \\
+\midrule
+AI response & Factual and source accuracy; uncertainty disclosure; number and quality of perspectives; timing of hints; emotional support & A response can satisfy a rubric yet fail this learner in this context. \\
+Dialogue behavior & Reasoned disagreement; substantive follow-up; source inspection; self-explanation; revision of position & More turns, words, or clicks can reflect confusion or compliance. \\
+Argument product & Claim, evidence, warrant, counterargument; SOLO level; conceptual integration & A richer text may be borrowed from the AI rather than independently understood. \\
+Durable learning & Delayed unaided explanation, transfer task, self-regulated learning, continued use & Longitudinal data and valid task matching are required. \\
+Experience & Satisfaction, frustration, trust, perceived support, willingness to return & A pleasant experience and an effective learning experience can diverge. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Candidate frameworks and their limits}
+The notes mention Bloom's taxonomy, revisions that distinguish critical thinking \emph{about AI} from critical thinking \emph{for the task}, the ICAP framework, SOLO, Toulmin's model of argument, and a student-behavior coding scheme. They serve different purposes. Bloom and ICAP organize kinds of cognitive engagement; SOLO addresses the structural complexity of an observed learning outcome; Toulmin identifies components of argument; interaction codes describe what a student does in dialogue. A composite score built by stacking these frameworks would need a clear construct definition and validation, not merely a large list of indicators.
+
+The whiteboard explicitly challenges the inference that counting objections, follow-up questions, stance changes, long pauses, backspaces, or source clicks proves educational benefit. A student can object without good reasons, revise toward a weaker claim, pause because of distraction, or click a source without reading it. Consequently, candidate behavioral measures require coding rules, contextual interpretation, inter-rater agreement where human annotation is used, and tests against independent learning outcomes. The original Toulmin theory is flagged as unread in one card; Toulmin-based scoring must therefore remain provisional rather than an established measure in this manuscript.
+
+The archived highlights on learner interaction \cite{P11}, AI-assisted critical thinking \cite{P43,P54}, assessment rubrics \cite{P29,P31,P32,P47,P50}, and self-regulated learning \cite{P17,P33} offer potential measurement resources. Their reported sample sizes, coefficients, and effect estimates in the notes have not been independently checked for this draft. The value of the archive is to identify candidate constructs and tests, not to pool numbers that come from unlike studies.
+
+\section{System Concepts in the Whiteboard}
+\subsection{From a single prompt to an inspectable policy}
+The board contrasts a single prompt telling a model to ``be Socratic'' with a system that records learner evidence and selects a dialogue action at each turn. It sketches an Evidence--Decision--Feedback (EDF) architecture: collect evidence about the learner and task; decide whether to elicit, explain, challenge, reassure, or fade support; then generate an appropriate response and log the decision. It also mentions a learner model or memory graph that could preserve progress across sessions. This architecture is a proposal, and the claim that it is \emph{necessary} or always superior to prompting has not been tested in the supplied materials.
+
+Several notes qualify that proposal. A larger context window or better model memory might address some persistence problems without a full multi-module architecture. Conversely, persistent memory is only valuable if it is accurate, proportionate, and responsive to the learner's control. AREQA reportedly produced more concise explanations than general-purpose assistants in an informal comparison, but no controlled evaluation of that observation appears in the archive. The project therefore has an unresolved choice between improving a pedagogical policy and building more infrastructure.
+
+\subsection{Learner state, silence, and episodic memory}
+Further cards imagine a dynamic model of what the learner understands, multimodal cues of impasse during silence, and memory of earlier struggles. These ideas address a tutor's ability to intervene before a learner explicitly asks for help and to connect present challenges with previous progress. Yet silence is not a reliable indicator of being stuck by itself, and recalling past frustration might help some learners while intruding on others. The notes themselves question the feasibility and research value of expensive sensing work, suggesting that pedagogical decision quality may be a better near-term focus than hardware-dependent behavior prediction.
+
+\subsection{Pedagogical model quality}
+The archive also explores a learning-focused language model that can be judged on pedagogical instruction following. It records dimensions such as cognitive load, active learning, metacognition, curiosity, adaptation, factual correctness, and overall teaching quality. It considers teacher-labeled tutor dialogues, human ratings, paired comparisons, and hierarchical analysis as possible development and evaluation methods. The distinction between optimizing a model and designing a surrounding tutoring policy remains open. So does the question of whether a score for an AI reply predicts better learning, rather than merely resembling a preferred teaching style.
+
+\section{Research Trajectory and Unresolved Experiments}
+The whiteboard contains a sequence of possible studies, not a single finalized protocol. First, it proposes examining whether immediate satisfaction is a valid indicator of educational value. Second, it proposes comparing direct answers with delayed, incomplete, or open-ended feedback. Third, it asks how much productive struggle and how much emotional support should be offered before an intervention. Fourth, it suggests a longer comparison of students using an AREQA-like tutor and a direct-answer tutor, with unaided self-regulated learning as an important outcome. Fifth, it considers whether multi-perspective scaffolding is useful for humanistic argumentation and whether the effect survives across multiple dialogue turns and sustained use.
+
+The notes also contain more specialized follow-ups: the validity of detecting cognitive impasse from silence; whether episodic reminders of earlier difficulty trigger metacognition; whether an embodied tutor changes trust and persistence; whether uncertainty disclosure is well calibrated; and whether a pedagogical policy learned from human tutoring dialogues is more useful than a hand-written rule set. Their order reflects a developing research agenda rather than an implied claim that every feature belongs in one system.
+
+If an AREQA study is eventually conducted, several choices recorded in the archive must be resolved before data collection: learner age, task domain, fixed or adaptive dialogue policy, text-only or richer interface, baseline condition, human oversight, factual source checks, coding manuals, independent outcome measures, follow-up interval, sample size, and ethics review. The archive includes specific ideas for these choices, but also explicitly withdraws earlier commitments to a particular literary text, a three-stage intervention, and Toulmin scoring. It also worries about hallucinations in student-facing humanities tasks. Those reservations are substantive elements of the whiteboard and remain visible in this paper.
+
+\section{Discussion}
+The archive's strongest contribution is a design problem, not a proven intervention: \emph{how can an AI tutor provide enough help to sustain progress while preserving the learner's responsibility to think?} Its materials imply that the answer may vary with prior knowledge, task structure, uncertainty, affect, and the time horizon of the outcome. They also caution against equating observable activity with learning. A measured rise in questioning or revision may be valuable only if the actions are reasoned and lead to stronger unaided performance.
+
+The notes' literature narrative sometimes presents a linear story: language models lack metacognition, direct answers cause cognitive decline, behavioral metrics reveal the decline, and adaptive scaffolding solves it. That chain is useful as a set of hypotheses, but it crosses different methods and constructs. Model calibration is not the same variable as a learner's trust; reduced task effort is not by itself cognitive erosion; a behavioral code is not a learning outcome; and an intervention in a constrained task does not automatically transfer to literary interpretation. A submission-ready review should test each link against the original papers and include contrary findings.
+
+An academic manuscript based on this archive can therefore make a bounded claim now: the whiteboard identifies a coherent family of educational design questions and a set of candidate constructs, intervention moves, and validation requirements. It cannot yet claim that AREQA improves learning or that a unique gap exists in the literature. The documentary method preserves the author's research development while keeping those claims open to correction.
+
+\section{Limitations}
+This synthesis is restricted to a user-curated export. It has no reproducible database search, prespecified eligibility criteria, risk-of-bias assessment, or independent verification of every PDF and secondary summary. Many cards are questions or prior AI-generated interpretations rather than direct annotations of the source articles. Some PDF copies may duplicate one another, and several research ideas recur under different card titles. The article is written in English, so its paraphrases may not capture every nuance of the original Chinese. The accompanying inventory permits direct comparison with the source files. A later literature review would require bibliographic verification, full-text appraisal, and a declared search strategy.
+
+\section{Conclusion}
+The Heptabase whiteboard can be read as a sustained inquiry into pedagogical judgment in AI tutoring. It moves from concern about answer-driven interaction to questions about adaptive dialogue, learner autonomy, uncertainty, humanistic argumentation, and valid measurement. The manuscript retains the proposed studies and the author's later doubts as part of that inquiry. The next evidential step is to verify the source papers and test the proposed links between response policy, learner behavior, and durable independent learning.
+
+\input{archived_references.tex}
+
+\section*{Declarations}
+\noindent\textbf{Data availability.} The underlying research materials are the local whiteboard export identified in \texttt{source\_index.csv}. No new participant data were collected for this paper.\\
+\textbf{Ethics.} This documentary synthesis involved no human-subject intervention. Any future learner study requires an institution-specific ethics determination.\\
+\textbf{Author contributions.} The whiteboard author supplied the source ideas and research materials. Manuscript drafting and source organization were assisted by OpenAI Codex; the author must review substantive claims and determine final authorship and CRediT roles.\\
+\textbf{Competing interests.} To be completed by the author.\\
+\textbf{Funding.} To be completed by the author.\\
+\textbf{AI assistance disclosure.} OpenAI Codex reorganized and translated the supplied notes into this English LaTeX draft. It did not independently validate all literature claims or generate experimental results.
+
+\appendix
+\section{Reading-Note Matrix}
+The following matrix records the question each of the 19 highlighted notes contributes to this manuscript. It describes the \emph{whiteboard's reading notes}, not an independent appraisal or a verified finding of the cited paper. Exact note filenames are in \texttt{source\_index.csv}.
+
+\begin{longtable}{p{0.08\linewidth}p{0.36\linewidth}p{0.47\linewidth}}
+\toprule
+Note & Archived reading & Contribution recorded in the whiteboard \\
+\midrule
+\endhead
+H01 & AI tutoring in UK classrooms & Classroom use, human review of tutor responses, and the question of transfer beyond mathematics. \\
+H02 & Adaptive scaffolding for ill-structured problems & Socratic prompting, three-group comparison, quantitative end products, and the need for emotional support. \\
+H03 & Pedagogical tutorial tactics & Choosing between eliciting and telling according to the learning situation rather than maximizing questions. \\
+H04 & Beyond Answer Generation & Metacognitive dialogue and the risk of an always-questioning tutor. \\
+H05 & Student behaviours with AI feedback & Coding what students actually do with feedback rather than scoring only the AI message. \\
+H06 & Do models know what they do not know? & Recognition of unanswerable questions and the reliability of uncertainty disclosures. \\
+H07 & Immediate answers and structured inquiry & Engagement, adaptation costs, and the timing of direct explanation relative to Socratic dialogue. \\
+H08 & Generative AI and Bloom's taxonomy & Distinguishing critical thinking about AI from reasoning for the substantive task. \\
+H09 & Model metacognition in medical reasoning & The problem of confident outputs when evidence or knowledge is insufficient. \\
+H10 & Ethically scaffolded long-form argumentation & Limits, long-form writing, and the need to examine integration of counterargument. \\
+H11 & Mitigating cognitive offloading in collaboration & Metacognitive prompts and the transfer question from constrained tasks to open-ended argument. \\
+H12 & Rethinking scaffolding in LLM tutors & Mismatch between a benchmark response and a useful intervention in a live dialogue. \\
+H13 & Socratic ChatGPT & An existing design and empirical comparator for a question-led tutor. \\
+H14 & Knowledge workers' critical thinking & Self-reported changes in effort, trust, verification, and task stewardship. \\
+H15 & The cognitive paradox of AI in education & A theoretical mapping across cognitive load, Bloom, and self-determination. \\
+H16 & Over-reliance on AI dialogue systems & Review-level concerns about judgment, analytical reasoning, and independent learning. \\
+H17 & Thinking Assistants & Diagnostic questioning before advice and support before challenge. \\
+H18 & When Help is Unhelpful & Contextual evaluation using human tutoring dialogue and productive struggle. \\
+H19 & Your Brain on ChatGPT & Writing assistance, cognitive debt as an interpretation, and the need to distinguish observed signals from long-term decline. \\
+\bottomrule
+\end{longtable}
+
+\section{Candidate Study and System Registry}
+The board contains the following proposals, some of which conflict. Listing them preserves the research process without claiming that they were conducted.
+\begin{enumerate}
+\item Test the construct validity of immediate satisfaction as a measure of tutoring effectiveness.
+\item Compare direct answers, delayed feedback, partial scaffolds, and deliberately open-ended dialogue for later unaided learning.
+\item Estimate when continued struggle supports learning and when it becomes frustration or withdrawal.
+\item Compare direct-answer and AREQA-like systems over repeated sessions, including independent self-regulated learning after assistance is removed.
+\item Test conflicting-perspective scaffolding in a history task, using document interpretation and argument quality; the age group and task remain undecided.
+\item Test a literary-interpretation task with a common passage and a direct-answer comparison; the proposed novel, fixed three-stage dialogue, and Toulmin scoring were explicitly reopened by later notes.
+\item Explore whether a simpler school-science intervention could be embedded in a Moodle/H5P interactive video; this is an alternative site and population, not the same protocol as the humanities studies.
+\item Examine silence and multimodal behavior as possible indicators of impasse, and compare this investment with less hardware-dependent pedagogical work.
+\item Evaluate episodic learner memory and embodied tutor appearance as possible influences on metacognition, trust, belonging, and continued use.
+\item Compare a policy derived from annotated human tutor--student dialogues with a prompt-only or hand-designed policy for deciding when to explain, question, challenge, or reassure.
+\end{enumerate}
+
+\section{Archive Map}
+The supplemental \texttt{source\_index.csv} enumerates every exported markdown note and archived PDF by stable local identifier, source category, and original filename. The CSV preserves the source-language titles for exact matching, while the manuscript body is in English. PDFs are archived sources; markdown cards and highlights are the primary objects of this documentary synthesis. Repeated notes have been consolidated in the article, not discarded from the inventory.
+
+\section{Source-to-Section Crosswalk}
+\begin{longtable}{p{0.27\linewidth}p{0.63\linewidth}}
+\toprule
+Source group & Principal material retained in the manuscript \\
+\midrule
+\endhead
+Text elements and research-question cards & Paradigm shift; immediate answers versus independent learning; provisional humanities focus; delayed feedback and future experiments (Sections 1, 3, 4, 8). \\
+Offloading and metacognition highlights & Model uncertainty, cognitive offloading, critical-thinking effort, and the limits of causal inference (Sections 3 and 9). \\
+Socratic, adaptive-scaffolding, and tutoring highlights & Elicit/tell balance, timing, emotional support, human tutor dialogue, and adaptive fading (Section 4). \\
+Humanities and argumentation cards & Open-ended tasks, historical and literary alternatives, conflicting perspectives, Toulmin, SOLO, ICAP, and explicit author reservations (Sections 5 and 6). \\
+AREQA, EDF, learner-model, avatar, and interface cards & System-policy alternatives, memory, silence, embodied interaction, and feasibility concerns (Section 7). \\
+Experiment, falsifiability, and advisor-project cards & Alternative populations and platforms, candidate measures, falsifiable outcomes, and future study decisions (Section 8). \\
+Archived PDF library & The publications and guides that prompted the notes; exact filenames and duplicates are preserved in the supplemental inventory. \\
+\bottomrule
+\end{longtable}
+
+\end{document}
