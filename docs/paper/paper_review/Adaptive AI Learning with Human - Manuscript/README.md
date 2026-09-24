@@ -1,18 +1,11 @@
-# Adaptive AI Learning with Humans — manuscript draft
+# Generative AI tutoring review manuscript
 
-`main.tex` is an English academic synthesis of the supplied Heptabase export. It preserves the whiteboard's research ideas, literature interpretations, alternative study designs, and explicit unresolved questions. It is a documentary synthesis, not a verified systematic review or a report of completed experiments.
+`main.tex` is an English integrative narrative review of generative AI tutoring, cognitive engagement, adaptive scaffolding, and independent learning. `references.tex` contains the cited works. The article is a review, not a report of a new experiment or a systematic review.
 
-## Files
+## Preview
 
-- `main.tex`: manuscript and appendices.
-- `archived_references.tex`: bibliography of all 55 PDFs in the export. The entries use archived titles and deliberately leave unverified publication metadata pending.
-- `source_index.csv`: exact inventory of the export's 141 files, including all cards, highlights, PDFs, the whiteboard index, and layout file.
-- `overleaf-preview.zip`: the two TeX files needed to compile a PDF in Overleaf.
+Upload `overleaf-preview.zip` to Overleaf as a new project, set `main.tex` as the main document if needed, and compile. The ZIP includes only the two TeX files required for the manuscript.
 
-## Compile
+A local TeX installation can compile the manuscript by running `pdflatex main.tex` twice in this directory. No TeX engine was available in the drafting environment.
 
-From this directory, run `pdflatex main.tex` twice. The repository environment used to prepare this draft did not have a TeX engine, so a PDF could not be compiled here.
-
-For a browser preview, upload `overleaf-preview.zip` as a new Overleaf project, choose `main.tex` as the main document if prompted, and recompile.
-
-Before submission, the author should verify bibliographic metadata and substantive claims against the original papers, replace the archival bibliography with venue-compliant references, and fill in the declaration fields.
+Before journal submission, verify the remaining `n.d.` reference metadata, apply the target journal's style, and complete the author declarations.
