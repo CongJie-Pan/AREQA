@@ -2,6 +2,8 @@
 
 `main.tex` is an English integrative narrative review of generative AI tutoring, cognitive engagement, adaptive scaffolding, and independent learning. `references.tex` contains the cited works. The article is a review, not a report of a new experiment or a systematic review.
 
+CongJie Pan is listed as the sole and corresponding author in `main.tex`.
+
 ## Preview
 
 Upload `overleaf-preview.zip` to Overleaf as a new project, set `main.tex` as the main document if needed, and compile. The ZIP includes only the two TeX files required for the manuscript.
