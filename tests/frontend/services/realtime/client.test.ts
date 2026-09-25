@@ -401,6 +401,71 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
   });
 
+  it('deduplicates manual replies and rejects replies while the learner speaks', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+
+    controller.requestResponse?.();
+    controller.requestResponse?.();
+    expect(lastPeerConnection?.channel.send.mock.calls.filter(([body]) => JSON.parse(body).type === 'response.create')).toHaveLength(1);
+
+    send({ type: 'input_audio_buffer.speech_started', item_id: 'next_turn' });
+    send({ type: 'response.created', response: { id: 'late_reply' } });
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({
+      type: 'response.cancel', response_id: 'late_reply',
+    }));
+    controller.requestResponse?.();
+    expect(lastPeerConnection?.channel.send.mock.calls.filter(([body]) => JSON.parse(body).type === 'response.create')).toHaveLength(1);
+
+    send({ type: 'input_audio_buffer.committed', item_id: 'next_turn' });
+    controller.requestResponse?.();
+    send({ type: 'response.done', response: { id: 'late_reply', status: 'cancelled' } });
+    controller.requestResponse?.();
+    expect(lastPeerConnection?.channel.send.mock.calls.filter(([body]) => JSON.parse(body).type === 'response.create')).toHaveLength(2);
+    controller.disconnect();
+  });
+
+  it('clears late WebRTC playback from an interrupted completed response', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onPlaybackState = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({ onPlaybackState }));
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+
+    send({ type: 'response.created', response: { id: 'old_reply' } });
+    send({ type: 'response.done', response: { id: 'old_reply' } });
+    send({ type: 'input_audio_buffer.speech_started', item_id: 'new_turn' });
+    send({ type: 'input_audio_buffer.committed', item_id: 'new_turn' });
+    send({ type: 'output_audio_buffer.started', response_id: 'old_reply' });
+
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({ type: 'output_audio_buffer.clear' }));
+    expect(onPlaybackState).not.toHaveBeenCalledWith('started');
+    controller.disconnect();
+  });
+
+  it('cancels a previous manual reply even when it starts after the next turn ends', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const controller = await startRealtimeClient(realtimeOptions());
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+
+    controller.requestResponse?.();
+    send({ type: 'input_audio_buffer.speech_started', item_id: 'new_turn' });
+    send({ type: 'input_audio_buffer.committed', item_id: 'new_turn' });
+    controller.requestResponse?.();
+    send({ type: 'response.created', response: { id: 'old_reply', metadata: { areqa_turn_epoch: '0' } } });
+
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({
+      type: 'response.cancel', response_id: 'old_reply',
+    }));
+    controller.requestResponse?.();
+    expect(lastPeerConnection?.channel.send.mock.calls.filter(([body]) => JSON.parse(body).type === 'response.create')).toHaveLength(2);
+    send({ type: 'response.created', response: { id: 'new_reply', metadata: { areqa_turn_epoch: '1' } } });
+    controller.disconnect();
+  });
+
   it('uses the websocket transport when flagged and owns audio playback events', async () => {
     vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
     installMicrophone();
@@ -442,6 +507,28 @@ describe('Realtime client lifecycle', () => {
     await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('你好'));
     expect(onPlaybackState).toHaveBeenCalledWith('started');
     expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('你好');
+    controller.disconnect();
+  });
+
+  it('stops WebSocket playback and truncates unheard audio when the learner interrupts', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    installMicrophone();
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, value: FakeWebSocket });
+    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    const controller = await startRealtimeClient(realtimeOptions());
+    lastWebSocket?.open();
+    lastWebSocket?.receive({ type: 'response.created', response: { id: 'resp_old' } });
+    lastWebSocket?.receive({ type: 'response.output_item.added', response_id: 'resp_old', item: { id: 'item_old', type: 'message' } });
+    lastWebSocket?.receive({ type: 'response.output_audio.delta', response_id: 'resp_old', item_id: 'item_old', delta: 'AAAAAA==' });
+    lastWebSocket?.receive({ type: 'input_audio_buffer.speech_started', item_id: 'turn_new' });
+
+    const events = lastWebSocket?.send.mock.calls.map(([body]) => JSON.parse(body));
+    expect(events).toContainEqual({ type: 'response.cancel', response_id: 'resp_old' });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'conversation.item.truncate', item_id: 'item_old', content_index: 0,
+    }));
+    expect(events).not.toContainEqual({ type: 'output_audio_buffer.clear' });
     controller.disconnect();
   });
 
@@ -885,6 +972,7 @@ describe('Realtime client lifecycle', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({
       code: 'provider_error',
       message: 'Realtime provider error (conversation_already_has_active_response)',
+      recoverable: true,
     } satisfies Partial<RealtimeClientError>));
   });
 

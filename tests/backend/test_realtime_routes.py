@@ -81,7 +81,12 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
 
 def test_english_voice_waits_for_frontend_turn_routing():
     config = _build_realtime_session_config(RealtimeSessionRequest(tutor_profile="english"))
-    assert config["audio"]["input"]["turn_detection"]["create_response"] is False
+    assert config["audio"]["input"]["turn_detection"] == {
+        "type": "semantic_vad",
+        "eagerness": "medium",
+        "create_response": False,
+        "interrupt_response": True,
+    }
     assert "Speaking practice rule" in config["instructions"]
 
 

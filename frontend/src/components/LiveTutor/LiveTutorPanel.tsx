@@ -118,6 +118,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const assistantTranscriptRef = useRef('');
   const assistantTurnGenerationRef = useRef(0);
   const learnerTurnGenerationRef = useRef(0);
+  const speechEpochRef = useRef(0);
+  const userSpeakingRef = useRef(false);
+  const speechEpochByItemRef = useRef(new Map<string, number>());
   const activeAssistantResponseIdRef = useRef<string | null>(null);
   const staleAssistantResponseIdsRef = useRef(new Set<string>());
   const lastVoiceMessageIdRef = useRef<string | null>(null);
@@ -265,11 +268,17 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     bumpConversationPreview(conversationId, normalized);
 
     if (canPersistHistory()) {
-      await databaseService.message.add(conversationId, {
+      void databaseService.message.add(conversationId, {
         id: userMessageId,
         role: 'user',
         content: normalized,
         createdAt: useChatStore.getState().messages.find((message) => message.id === userMessageId)?.createdAt,
+      }).catch((error) => {
+        logger.warn('realtime.user_transcript_persistence_failed', {
+          component: 'LiveTutorPanel',
+          conversationId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        });
       });
     }
   }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId, language]);
@@ -361,6 +370,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     invalidateAssistantTurn();
     lastVoiceMessageIdRef.current = null;
     userTurnIdsRef.current.clear();
+    speechEpochRef.current = 0;
+    userSpeakingRef.current = false;
+    speechEpochByItemRef.current.clear();
     delegatedDeepAnswerActiveRef.current = false;
     speakingPracticeActiveRef.current = false;
     backendReadbackActiveRef.current = false;
@@ -428,7 +440,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         outputLevelRef.current = Math.min(Math.max(level, 0), 1);
         updateAudioScale();
       },
-      onUserSpeechStarted: () => {
+      onUserSpeechStarted: (itemId) => {
         if (!isCurrentSession()) return;
         const currentStatus = useLiveTutorStore.getState().status;
         if (currentStatus === 'connecting' || currentStatus === 'idle') {
@@ -439,6 +451,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           });
           return;
         }
+        speechEpochRef.current += 1;
+        userSpeakingRef.current = true;
+        if (itemId) speechEpochByItemRef.current.set(itemId, speechEpochRef.current);
         playbackRef.current = 'interrupted';
         invalidateLearnerTurn();
         invalidateAssistantTurn();
@@ -496,6 +511,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       },
       onUserTurnCommitted: (itemId) => {
         if (!isCurrentSession()) return;
+        const turnEpoch = speechEpochByItemRef.current.get(itemId) ?? speechEpochRef.current;
+        speechEpochByItemRef.current.set(itemId, turnEpoch);
+        if (turnEpoch === speechEpochRef.current) userSpeakingRef.current = false;
         enqueueTranscriptWork(async () => {
           if (userTurnIdsRef.current.has(itemId)) return;
           const conversationId = await ensurePersistedConversationId();
@@ -514,9 +532,21 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           });
           return;
         }
+        const transcriptEpoch = (itemId && speechEpochByItemRef.current.get(itemId)) ?? speechEpochRef.current;
+        const transcriptReceivedAt = Date.now();
+        const isSuperseded = () => transcriptEpoch !== speechEpochRef.current || userSpeakingRef.current;
         enqueueTranscriptWork(async () => {
           const normalized = normalizeVoiceTranscript(transcript, language).trim();
           if (!normalized) return;
+          if (isSuperseded()) {
+            await persistUserTranscript(normalized, itemId);
+            logger.info('realtime.stale_user_turn_answer_skipped', {
+              component: 'LiveTutorPanel',
+              conversationId: persistedConversationIdRef.current || conversationId,
+              transcriptAgeMs: Date.now() - transcriptReceivedAt,
+            });
+            return;
+          }
           if (/(停止練習|结束练习|結束練習|stop practice|end practice)/i.test(normalized)) {
             speakingPracticeActiveRef.current = false;
           }
@@ -531,6 +561,10 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               userTurnIdsRef.current.delete(itemId);
             }
             const persistedConversationId = await ensurePersistedConversationId();
+            if (isSuperseded()) {
+              await persistUserTranscript(normalized, itemId);
+              return;
+            }
             const deepGeneration = invalidateLearnerTurn();
             delegatedDeepAnswerActiveRef.current = true;
             lastVoiceMessageIdRef.current = null;
@@ -597,8 +631,13 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           }
 
           await persistUserTranscript(normalized, itemId);
-          if (selectedTutorProfile === 'english' && isCurrentSession()) {
+          if (selectedTutorProfile === 'english' && isCurrentSession() && !isSuperseded()) {
             controllerRef.current?.requestResponse?.();
+            logger.info('realtime.voice_reply_requested', {
+              component: 'LiveTutorPanel',
+              conversationId: persistedConversationIdRef.current || conversationId,
+              transcriptToReplyMs: Date.now() - transcriptReceivedAt,
+            });
           }
         });
       },
@@ -658,6 +697,14 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         const message = nextError instanceof RealtimeClientError
           ? localizedErrors[nextError.code]
           : nextError.message || labels.setupFailed;
+        if (nextError instanceof RealtimeClientError && nextError.recoverable) {
+          logger.warn('realtime.voice_provider_turn_failed', {
+            component: 'LiveTutorPanel',
+            conversationId: persistedConversationIdRef.current || conversationId,
+            provider: selectedProvider,
+          });
+          return;
+        }
         setError(message);
       },
     });
@@ -709,6 +756,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const stop = useCallback(async (): Promise<void> => {
     sessionGenerationRef.current += 1;
     isCancelledRef.current = true;
+    userSpeakingRef.current = false;
+    speechEpochByItemRef.current.clear();
     delegatedDeepAnswerActiveRef.current = false;
     backendReadbackActiveRef.current = false;
     playbackRef.current = 'interrupted';

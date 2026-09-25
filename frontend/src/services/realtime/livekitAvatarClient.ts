@@ -174,7 +174,7 @@ async function handleLiveKitTranscriptionStream(
       if (!chunk) continue;
       if (isUserTranscript && !userSpeechStarted) {
         userSpeechStarted = true;
-        options.onUserSpeechStarted?.();
+        options.onUserSpeechStarted?.(reader.info?.id);
       }
       transcript += chunk;
       if (!isUserTranscript && assistantTranscript.isCurrent(streamGeneration)) {
@@ -185,6 +185,7 @@ async function handleLiveKitTranscriptionStream(
     const trimmedTranscript = transcript.trim();
     if (!trimmedTranscript || !final) return;
     if (isUserTranscript) {
+      if (reader.info?.id) options.onUserTurnCommitted?.(reader.info.id);
       options.onUserTranscript(trimmedTranscript, reader.info?.id);
     } else if (assistantTranscript.isCurrent(streamGeneration)) {
       assistantTranscript.scheduleDone(streamGeneration);

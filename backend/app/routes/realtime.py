@@ -541,11 +541,20 @@ def _build_realtime_session_config(payload: RealtimeSessionRequest) -> dict[str,
             },
             "input": {
                 "transcription": _build_realtime_transcription_config(payload.interface_language),
-                "turn_detection": {
-                    "type": "server_vad",
-                    "create_response": normalize_tutor_profile(payload.tutor_profile) != "english",
-                    "interrupt_response": True,
-                },
+                "turn_detection": (
+                    {
+                        "type": "semantic_vad",
+                        "eagerness": "medium",
+                        "create_response": False,
+                        "interrupt_response": True,
+                    }
+                    if normalize_tutor_profile(payload.tutor_profile) == "english"
+                    else {
+                        "type": "server_vad",
+                        "create_response": True,
+                        "interrupt_response": True,
+                    }
+                ),
             },
         },
         "tools": [

@@ -42,7 +42,11 @@ export class RealtimeClientError extends Error {
    * @param code - Stable client-facing failure category.
    * @param message - Safe diagnostic message without transcript or credentials.
    */
-  constructor(public readonly code: RealtimeClientErrorCode, message: string) {
+  constructor(
+    public readonly code: RealtimeClientErrorCode,
+    message: string,
+    public readonly recoverable = false,
+  ) {
     super(message);
     this.name = 'RealtimeClientError';
   }
@@ -66,7 +70,7 @@ export interface StartRealtimeClientOptions {
   onRemoteVideoStream?: (stream: MediaStream | null) => void;
   onInputAudioLevel?: (level: number) => void;
   onOutputAudioLevel?: (level: number) => void;
-  onUserSpeechStarted?: () => void;
+  onUserSpeechStarted?: (itemId?: string) => void;
   onPlaybackState?: (state: 'started' | 'stopped' | 'interrupted') => void;
   onStatus: (status: RealtimeStatus) => void;
   onAssistantResponseStarted?: (responseId?: string) => void;
@@ -111,6 +115,7 @@ interface RealtimeEvent {
     message?: string;
   };
   item?: {
+    id?: string;
     type?: string;
     call_id?: string;
     name?: string;
@@ -119,7 +124,9 @@ interface RealtimeEvent {
   response?: {
     id?: string;
     status?: string;
+    metadata?: Record<string, string>;
     output?: Array<{
+      id?: string;
       type?: string;
       role?: string;
       content?: Array<{
@@ -254,7 +261,11 @@ function safeProviderError(event: RealtimeEvent): RealtimeClientError {
     errorCode: code,
     errorType: event.error?.type?.slice(0, MAX_PROVIDER_ERROR_CODE_CHARS) || 'unknown',
   });
-  return new RealtimeClientError('provider_error', `Realtime provider error (${code})`);
+  return new RealtimeClientError(
+    'provider_error',
+    `Realtime provider error (${code})`,
+    code === 'conversation_already_has_active_response',
+  );
 }
 
 function isNonFatalCancelError(event: RealtimeEvent): boolean {
@@ -648,7 +659,7 @@ function startWebSocketInputStreamer(
 
 interface WebSocketAudioQueue {
   enqueue: (base64Pcm16: string) => void;
-  clear: () => void;
+  clear: () => number | null;
   close: () => void;
 }
 
@@ -662,6 +673,7 @@ function createWebSocketAudioQueue(
   let nextPlaybackAt = context.currentTime;
   let stopTimer = 0;
   let playing = false;
+  let playbackStartedAt: number | null = null;
 
   const scheduleStop = () => {
     if (stopTimer) window.clearTimeout(stopTimer);
@@ -669,12 +681,16 @@ function createWebSocketAudioQueue(
     stopTimer = window.setTimeout(() => {
       if (sources.size > 0) return;
       playing = false;
+      playbackStartedAt = null;
       onLevel?.(0);
       onPlaybackState?.('stopped');
     }, delayMs);
   };
 
   const clear = () => {
+    const playedMs = playbackStartedAt === null
+      ? null
+      : Math.max(0, Math.round((Math.min(context.currentTime, nextPlaybackAt) - playbackStartedAt) * 1000));
     for (const source of sources) {
       try {
         source.stop();
@@ -686,8 +702,10 @@ function createWebSocketAudioQueue(
     sources.clear();
     nextPlaybackAt = context.currentTime;
     playing = false;
+    playbackStartedAt = null;
     onLevel?.(0);
     onPlaybackState?.('interrupted');
+    return playedMs;
   };
 
   return {
@@ -725,6 +743,7 @@ function createWebSocketAudioQueue(
       };
       if (!playing) {
         playing = true;
+        playbackStartedAt = startAt;
         onPlaybackState?.('started');
       }
       onLevel?.(0.45);
@@ -773,6 +792,10 @@ async function startRealtimeWebRtcClient(
   let assistantTranscriptFinalized = false;
   let activeResponseInProgress = false;
   let activeResponseId: string | null = null;
+  let lastResponseId: string | null = null;
+  let responseRequested = false;
+  let inputSpeechActive = false;
+  let inputEpoch = 0;
   let outputAudioBufferActive = false;
   let responseStartedAt = 0;
   let firstAudioDeltaAt = 0;
@@ -801,6 +824,8 @@ async function startRealtimeWebRtcClient(
   const cancelActiveResponse = (): boolean => {
     if (dataChannel?.readyState !== 'open') return false;
     sessionGeneration += 1;
+    responseRequested = false;
+    if (lastResponseId) canceledResponseIds.add(lastResponseId);
     let sentControlEvent = false;
     if (activeResponseInProgress) {
       if (activeResponseId) canceledResponseIds.add(activeResponseId);
@@ -950,18 +975,42 @@ async function startRealtimeWebRtcClient(
         const event = JSON.parse(String(message.data)) as RealtimeEvent;
         switch (event.type) {
           case 'input_audio_buffer.speech_started':
-            options.onUserSpeechStarted?.();
+            inputEpoch += 1;
+            inputSpeechActive = true;
+            options.onUserSpeechStarted?.(event.item_id);
+            cancelActiveResponse();
             options.onPlaybackState?.('interrupted');
             options.onStatus('listening');
             break;
           case 'input_audio_buffer.committed':
+            inputSpeechActive = false;
             if (event.item_id) options.onUserTurnCommitted?.(event.item_id);
             break;
           case 'response.created':
+            if (event.response?.metadata?.areqa_turn_epoch
+              && event.response.metadata.areqa_turn_epoch !== String(inputEpoch)) {
+              const staleResponseId = event.response.id || event.response_id;
+              if (staleResponseId) {
+                canceledResponseIds.add(staleResponseId);
+                sendRealtimeEvent(dataChannel as RTCDataChannel, { type: 'response.cancel', response_id: staleResponseId });
+              }
+              logger.info('realtime.stale_response_start_cancelled', {
+                conversationId: options.getConversationId?.() || options.conversationId,
+                transport: 'webrtc',
+                responseId: staleResponseId || null,
+              });
+              break;
+            }
+            responseRequested = false;
             assistantTranscript = '';
             assistantTranscriptFinalized = false;
             activeResponseInProgress = true;
             activeResponseId = event.response?.id || event.response_id || null;
+            lastResponseId = activeResponseId;
+            if (inputSpeechActive) {
+              cancelActiveResponse();
+              break;
+            }
             responseStartedAt = Date.now();
             firstAudioDeltaAt = 0;
             firstCaptionDeltaAt = 0;
@@ -989,6 +1038,11 @@ async function startRealtimeWebRtcClient(
             options.onStatus('speaking');
             break;
           case 'output_audio_buffer.started':
+            if (inputSpeechActive || (event.response_id && canceledResponseIds.has(event.response_id))) {
+              sendRealtimeEvent(dataChannel as RTCDataChannel, { type: 'output_audio_buffer.clear' });
+              options.onPlaybackState?.('interrupted');
+              break;
+            }
             outputAudioBufferActive = true;
             options.onPlaybackState?.('started');
             options.onStatus('speaking');
@@ -1050,6 +1104,7 @@ async function startRealtimeWebRtcClient(
               ignoreStaleResponseEvent(event);
               break;
             }
+            responseRequested = false;
             const completedResponseId = eventResponseId(event) || activeResponseId;
             activeResponseInProgress = false;
             activeResponseId = null;
@@ -1087,6 +1142,7 @@ async function startRealtimeWebRtcClient(
               });
               break;
             }
+            responseRequested = false;
             options.onError(safeProviderError(event));
             break;
         }
@@ -1119,7 +1175,12 @@ async function startRealtimeWebRtcClient(
       },
       cancelSpeech: cancelActiveResponse,
       requestResponse: () => {
-        if (dataChannel?.readyState === 'open') sendRealtimeEvent(dataChannel, { type: 'response.create' });
+        if (dataChannel?.readyState !== 'open' || inputSpeechActive || responseRequested || activeResponseInProgress) return;
+        responseRequested = true;
+        sendRealtimeEvent(dataChannel, {
+          type: 'response.create',
+          response: { metadata: { areqa_turn_epoch: String(inputEpoch) } },
+        });
       },
       speakText: (text: string) => {
         if (dataChannel?.readyState !== 'open') return false;
@@ -1161,6 +1222,10 @@ async function startRealtimeWebSocketClient(
   let assistantTranscriptFinalized = false;
   let activeResponseInProgress = false;
   let activeResponseId: string | null = null;
+  let responseRequested = false;
+  let inputSpeechActive = false;
+  let inputEpoch = 0;
+  let audioItemId: string | null = null;
   let closedByClient = false;
   let responseStartedAt = 0;
   let firstAudioDeltaAt = 0;
@@ -1189,6 +1254,7 @@ async function startRealtimeWebSocketClient(
   const cancelActiveResponse = (): boolean => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     sessionGeneration += 1;
+    responseRequested = false;
     let sentControlEvent = false;
     if (activeResponseInProgress) {
       if (activeResponseId) canceledResponseIds.add(activeResponseId);
@@ -1199,9 +1265,17 @@ async function startRealtimeWebSocketClient(
       activeResponseId = null;
       sentControlEvent = true;
     }
-    audioQueue?.clear();
-    sendRealtimeEvent(socket, { type: 'output_audio_buffer.clear' });
-    sentControlEvent = true;
+    const playedMs = audioQueue?.clear();
+    if (playedMs !== null && playedMs !== undefined && audioItemId) {
+      sendRealtimeEvent(socket, {
+        type: 'conversation.item.truncate',
+        item_id: audioItemId,
+        content_index: 0,
+        audio_end_ms: playedMs,
+      });
+      audioItemId = null;
+      sentControlEvent = true;
+    }
     return sentControlEvent;
   };
 
@@ -1226,18 +1300,41 @@ async function startRealtimeWebSocketClient(
   const handleServerEvent = async (event: RealtimeEvent) => {
     switch (event.type) {
       case 'input_audio_buffer.speech_started':
-        options.onUserSpeechStarted?.();
+        inputEpoch += 1;
+        inputSpeechActive = true;
+        options.onUserSpeechStarted?.(event.item_id);
+        cancelActiveResponse();
         options.onPlaybackState?.('interrupted');
         options.onStatus('listening');
         break;
       case 'input_audio_buffer.committed':
+        inputSpeechActive = false;
         if (event.item_id) options.onUserTurnCommitted?.(event.item_id);
         break;
       case 'response.created':
+        if (event.response?.metadata?.areqa_turn_epoch
+          && event.response.metadata.areqa_turn_epoch !== String(inputEpoch)) {
+          const staleResponseId = event.response.id || event.response_id;
+          if (staleResponseId) {
+            canceledResponseIds.add(staleResponseId);
+            sendRealtimeEvent(socket as WebSocket, { type: 'response.cancel', response_id: staleResponseId });
+          }
+          logger.info('realtime.stale_response_start_cancelled', {
+            conversationId: options.getConversationId?.() || options.conversationId,
+            transport: 'websocket',
+            responseId: staleResponseId || null,
+          });
+          break;
+        }
+        responseRequested = false;
         assistantTranscript = '';
         assistantTranscriptFinalized = false;
         activeResponseInProgress = true;
         activeResponseId = event.response?.id || event.response_id || null;
+        if (inputSpeechActive) {
+          cancelActiveResponse();
+          break;
+        }
         options.onAssistantResponseStarted?.(activeResponseId || undefined);
         responseStartedAt = Date.now();
         firstAudioDeltaAt = 0;
@@ -1247,6 +1344,9 @@ async function startRealtimeWebSocketClient(
           conversationId: options.getConversationId?.() || options.conversationId,
           responseId: activeResponseId,
         });
+        break;
+      case 'response.output_item.added':
+        if (isCurrentResponseEvent(event) && event.item?.type === 'message' && event.item.id) audioItemId = event.item.id;
         break;
       case 'response.audio.delta':
       case 'response.output_audio.delta':
@@ -1263,6 +1363,7 @@ async function startRealtimeWebSocketClient(
               responseStartLagMs: responseStartedAt ? firstAudioDeltaAt - responseStartedAt : null,
             });
           }
+          if (event.item_id) audioItemId = event.item_id;
           audioQueue?.enqueue(event.delta);
           options.onStatus('speaking');
         }
@@ -1326,6 +1427,9 @@ async function startRealtimeWebSocketClient(
           ignoreStaleResponseEvent(event);
           break;
         }
+        responseRequested = false;
+        const completedAudioItem = event.response?.output?.find((item) => item.type === 'message' && item.id);
+        if (completedAudioItem?.id && !audioItemId) audioItemId = completedAudioItem.id;
         const completedResponseId = eventResponseId(event) || activeResponseId;
         activeResponseInProgress = false;
         activeResponseId = null;
@@ -1363,6 +1467,7 @@ async function startRealtimeWebSocketClient(
           });
           break;
         }
+        responseRequested = false;
         options.onError(safeProviderError(event));
         break;
     }
@@ -1449,7 +1554,10 @@ async function startRealtimeWebSocketClient(
         code: event.code,
         wasClean: event.wasClean,
       });
-      if (!closedByClient) options.onStatus(event.wasClean ? 'connected' : 'error');
+      if (!closedByClient) {
+        options.onStatus('error');
+        options.onError(new Error('Realtime WebSocket connection closed'));
+      }
     };
 
     return {
@@ -1461,7 +1569,12 @@ async function startRealtimeWebSocketClient(
       },
       cancelSpeech: cancelActiveResponse,
       requestResponse: () => {
-        if (socket?.readyState === WebSocket.OPEN) sendRealtimeEvent(socket, { type: 'response.create' });
+        if (!socket || socket.readyState !== WebSocket.OPEN || inputSpeechActive || responseRequested || activeResponseInProgress) return;
+        responseRequested = true;
+        sendRealtimeEvent(socket, {
+          type: 'response.create',
+          response: { metadata: { areqa_turn_epoch: String(inputEpoch) } },
+        });
       },
       speakText: (text: string) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;

@@ -193,6 +193,8 @@ async def test_livekit_worker_reads_backend_answer_through_avatar_audio(monkeypa
     await agent_module.areqa_live_tutor(ctx)
 
     assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].create_response is False
+    assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].type == "semantic_vad"
+    assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].eagerness == "medium"
     handler = ctx.room.handlers[agent_module.BACKEND_SPEECH_TOPIC]
 
     class Reader:

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveTutorPanel } from '@/components/LiveTutor/LiveTutorPanel';
 import {
   playLiveVoiceCue,
+  RealtimeClientError,
   startLiveKitAvatarClient,
   startRealtimeClient,
   type StartRealtimeClientOptions,
@@ -12,6 +13,8 @@ import { cancelCurrentStream, sendMessage } from '@/services/chat';
 import { useChatStore, type DisplayMessage } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
+import { getCurrentUserId } from '@/database/db';
+import { databaseService } from '@/services/database';
 
 vi.mock('next/image', () => ({
   default: ({ alt, ...props }: { alt: string; src: string }) => <img alt={alt} {...props} />,
@@ -19,7 +22,7 @@ vi.mock('next/image', () => ({
 
 vi.mock('@/services/realtime', () => ({
   RealtimeClientError: class RealtimeClientError extends Error {
-    constructor(public readonly code: string, message: string) {
+    constructor(public readonly code: string, message: string, public readonly recoverable = false) {
       super(message);
     }
   },
@@ -127,6 +130,7 @@ async function renderOpenPanel(
 describe('LiveTutorPanel realtime-primary voice integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getCurrentUserId).mockReturnValue(null);
     controller.speakText.mockReturnValue(true);
     realtimeOptions = null;
     resetStores();
@@ -184,6 +188,89 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     });
     await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
     expect(controller.requestResponse).toHaveBeenCalledTimes(1);
+    act(() => view.unmount());
+  });
+
+  it('does not answer an older transcript after the learner starts another turn', async () => {
+    useChatStore.getState().setTutorProfile('english');
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserSpeechStarted?.('turn_old');
+      realtimeOptions?.onUserTurnCommitted?.('turn_old');
+      realtimeOptions?.onUserSpeechStarted?.('turn_new');
+      realtimeOptions?.onUserTranscript('I am still thinking', 'turn_old');
+    });
+
+    expect(controller.requestResponse).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    await waitFor(() => expect(useChatStore.getState().messages.some((item) => item.content === 'I am still thinking')).toBe(true));
+
+    await act(async () => {
+      realtimeOptions?.onUserTurnCommitted?.('turn_new');
+      realtimeOptions?.onUserTranscript('Now my answer is ready', 'turn_new');
+    });
+    await waitFor(() => expect(controller.requestResponse).toHaveBeenCalledOnce());
+    act(() => view.unmount());
+  });
+
+  it('does not release a queued transcript when new speech begins during persistence', async () => {
+    useChatStore.getState().setTutorProfile('english');
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('Let me explain', 'turn_old');
+      realtimeOptions?.onUserSpeechStarted?.('turn_new');
+    });
+
+    await waitFor(() => expect(useChatStore.getState().messages.some((item) => item.content === 'Let me explain')).toBe(true));
+    expect(controller.requestResponse).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('starts the English reply without waiting for local history storage', async () => {
+    vi.mocked(getCurrentUserId).mockReturnValue('user_1');
+    vi.mocked(databaseService.message.add).mockImplementation(
+      () => new Promise<Awaited<ReturnType<typeof databaseService.message.add>>>(() => undefined),
+    );
+    useChatStore.getState().setTutorProfile('english');
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => realtimeOptions?.onUserTranscript('Hello there', 'turn_1'));
+
+    await waitFor(() => expect(databaseService.message.add).toHaveBeenCalledOnce());
+    expect(controller.requestResponse).toHaveBeenCalledOnce();
+    act(() => view.unmount());
+  });
+
+  it('keeps voice connected after a recoverable provider turn error', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    act(() => {
+      realtimeOptions?.onError(new RealtimeClientError('provider_error', 'Realtime provider error (conversation_already_has_active_response)', true));
+      realtimeOptions?.onStatus('speaking');
+    });
+
+    expect(useLiveTutorStore.getState().status).toBe('speaking');
+    expect(useLiveTutorStore.getState().error).toBeNull();
+    expect(controller.disconnect).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('shows a real provider failure and clears it after transport recovery', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    act(() => realtimeOptions?.onError(new RealtimeClientError('provider_error', 'Realtime provider error (invalid_session)')));
+    expect(useLiveTutorStore.getState().error).toContain('invalid_session');
+    expect(screen.getByText('Lost Connection')).toBeInTheDocument();
+
+    act(() => realtimeOptions?.onStatus('listening'));
+    expect(useLiveTutorStore.getState().error).toBeNull();
     act(() => view.unmount());
   });
 

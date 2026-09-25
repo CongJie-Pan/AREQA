@@ -25,7 +25,10 @@ export const useLiveTutorStore = create<LiveTutorStore>((set) => ({
   open: () => set({ isOpen: true, closeRequestId: 0, error: null }),
   close: () => set({ isOpen: false, status: 'idle', isMuted: false, error: null }),
   requestClose: () => set((state) => ({ closeRequestId: state.closeRequestId + 1 })),
-  setStatus: (status) => set({ status }),
+  setStatus: (status) => set({
+    status,
+    ...(status !== 'error' && status !== 'connecting' ? { error: null } : {}),
+  }),
   setMuted: (isMuted) => set({ isMuted, status: isMuted ? 'muted' : 'listening' }),
   setAvatarEnabled: (avatarEnabled) => set({ avatarEnabled }),
   setUserTranscript: (userTranscript) => set({ userTranscript }),
