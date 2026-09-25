@@ -296,9 +296,12 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
         llm=openai.realtime.RealtimeModel(
             model=OPENAI_REALTIME_MODEL,
             voice=OPENAI_REALTIME_VOICE,
-            **({"turn_detection": openai_realtime_types.realtime_audio_input_turn_detection.SemanticVad(
-                type="semantic_vad", eagerness="medium", create_response=False, interrupt_response=False,
-            )} if metadata["tutor_profile"] == "english" else {}),
+            turn_detection=openai_realtime_types.realtime_audio_input_turn_detection.SemanticVad(
+                type="semantic_vad",
+                eagerness="medium",
+                create_response=metadata["tutor_profile"] != "english",
+                interrupt_response=metadata["tutor_profile"] != "english",
+            ),
         )
     )
     session_ready = asyncio.Event()

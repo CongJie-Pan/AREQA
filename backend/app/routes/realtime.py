@@ -550,7 +550,8 @@ def _build_realtime_session_config(payload: RealtimeSessionRequest) -> dict[str,
                     }
                     if normalize_tutor_profile(payload.tutor_profile) == "english"
                     else {
-                        "type": "server_vad",
+                        "type": "semantic_vad",
+                        "eagerness": "medium",
                         "create_response": True,
                         "interrupt_response": True,
                     }

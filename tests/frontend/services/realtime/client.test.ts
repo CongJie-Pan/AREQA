@@ -367,7 +367,52 @@ describe('Realtime client lifecycle', () => {
       }),
     }));
     expect(event.response.instructions).toContain('Do not paraphrase');
+    expect(event.response.metadata).toEqual({ areqa_turn_epoch: '0' });
     expect(event.response.instructions).not.toContain('Use natural spoken wording');
+    controller.disconnect();
+  });
+
+  it('cancels backend speech that starts after a newer WebRTC learner turn', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onAssistantResponseStarted = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({ onAssistantResponseStarted }));
+    controller.speakText('Old backend answer');
+    const sent = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
+    const metadata = sent?.findLast((event) => event.type === 'response.create')?.response.metadata;
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+
+    send({ type: 'input_audio_buffer.speech_started' });
+    send({ type: 'input_audio_buffer.committed' });
+    send({ type: 'response.created', response: { id: 'late_readback', metadata } });
+
+    expect(onAssistantResponseStarted).not.toHaveBeenCalled();
+    expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(JSON.stringify({
+      type: 'response.cancel', response_id: 'late_readback',
+    }));
+    controller.disconnect();
+  });
+
+  it('ignores an old WebRTC playback stop after a new response starts', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onStatus = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({ onStatus }));
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+
+    send({ type: 'response.created', response: { id: 'old' } });
+    send({ type: 'output_audio_buffer.started', response_id: 'old' });
+    controller.cancelSpeech();
+    send({ type: 'response.created', response: { id: 'new' } });
+    send({ type: 'output_audio_buffer.started', response_id: 'new' });
+    lastPeerConnection?.channel.send.mockClear();
+    send({ type: 'output_audio_buffer.started', response_id: 'old' });
+    send({ type: 'output_audio_buffer.stopped', response_id: 'old' });
+
+    expect(onStatus).toHaveBeenLastCalledWith('speaking');
+    expect(lastPeerConnection?.channel.send).not.toHaveBeenCalledWith(JSON.stringify({
+      type: 'output_audio_buffer.clear',
+    }));
     controller.disconnect();
   });
 
@@ -532,6 +577,30 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
   });
 
+  it('truncates WebSocket audio by played samples without counting packet gaps', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    installMicrophone();
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, value: FakeWebSocket });
+    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    const controller = await startRealtimeClient(realtimeOptions());
+    lastWebSocket?.open();
+    lastWebSocket?.receive({ type: 'response.created', response: { id: 'old' } });
+    const audio = btoa(String.fromCharCode(0).repeat(480));
+    lastWebSocket?.receive({ type: 'response.output_audio.delta', response_id: 'old', item_id: 'item_old', delta: audio });
+    const outputContext = FakeAudioContext.instances[1];
+    if (!outputContext) throw new Error('Missing output context');
+    outputContext.currentTime = 0.05;
+    lastWebSocket?.receive({ type: 'response.output_audio.delta', response_id: 'old', item_id: 'item_old', delta: audio });
+    outputContext.currentTime = 0.08;
+    controller.cancelSpeech();
+
+    const events = lastWebSocket?.send.mock.calls.map(([body]) => JSON.parse(body));
+    const truncate = events?.find((event) => event.type === 'conversation.item.truncate');
+    expect(truncate?.audio_end_ms).toBe(20);
+    controller.disconnect();
+  });
+
   it('ignores stale WebSocket transcript and audio events from a canceled response', async () => {
     vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
     installMicrophone();
@@ -591,6 +660,31 @@ describe('Realtime client lifecycle', () => {
     expect(lastWebSocket?.send).toHaveBeenCalledWith(expect.stringContaining('"response.create"'));
     const event = JSON.parse(String(lastWebSocket?.send.mock.calls.at(-1)?.[0]));
     expect(event.response.instructions).toContain('Backend answer for readback.');
+    expect(event.response.metadata).toEqual({ areqa_turn_epoch: '0' });
+    controller.disconnect();
+  });
+
+  it('cancels backend speech that starts after a newer WebSocket learner turn', async () => {
+    vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
+    installMicrophone();
+    mockRealtimeSession();
+    Object.defineProperty(globalThis, 'WebSocket', { configurable: true, value: FakeWebSocket });
+    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    const onAssistantResponseStarted = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({ onAssistantResponseStarted }));
+    lastWebSocket?.open();
+    controller.speakText('Old backend answer');
+    const sent = lastWebSocket?.send.mock.calls.map(([body]) => JSON.parse(body));
+    const metadata = sent?.findLast((event) => event.type === 'response.create')?.response.metadata;
+
+    lastWebSocket?.receive({ type: 'input_audio_buffer.speech_started' });
+    lastWebSocket?.receive({ type: 'input_audio_buffer.committed' });
+    lastWebSocket?.receive({ type: 'response.created', response: { id: 'late_readback', metadata } });
+
+    expect(onAssistantResponseStarted).not.toHaveBeenCalled();
+    expect(lastWebSocket?.send).toHaveBeenCalledWith(JSON.stringify({
+      type: 'response.cancel', response_id: 'late_readback',
+    }));
     controller.disconnect();
   });
 
@@ -621,7 +715,7 @@ describe('Realtime client lifecycle', () => {
     controller.disconnect();
   });
 
-  it('resumes websocket output audio and suppresses microphone echo while assistant audio plays', async () => {
+  it('keeps microphone streaming during WebSocket playback so speech can interrupt', async () => {
     vi.stubEnv('NEXT_PUBLIC_LIVE_VOICE_TRANSPORT', 'websocket');
     FakeAudioContext.suspendOutputContext = true;
     installMicrophone();
@@ -641,10 +735,12 @@ describe('Realtime client lifecycle', () => {
 
     lastWebSocket?.receive({ type: 'response.created', response: { id: 'resp_ws' } });
     lastWebSocket?.receive({ type: 'response.output_audio.delta', delta: 'AAAAAA==' });
-    emitMicrophoneFrame(new Float32Array(8192).fill(0.5));
+    for (let frame = 0; frame < 12; frame += 1) {
+      emitMicrophoneFrame(new Float32Array(2048).fill(0.5));
+    }
 
     expect(FakeAudioContext.instances[1]?.resume).toHaveBeenCalledOnce();
-    expect(lastWebSocket?.send).not.toHaveBeenCalledWith(expect.stringContaining('"input_audio_buffer.append"'));
+    expect(lastWebSocket?.send).toHaveBeenCalledWith(expect.stringContaining('"input_audio_buffer.append"'));
     controller.disconnect();
   });
 

@@ -615,7 +615,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
               });
             } catch (error) {
               if (isCurrentSession() && isCurrentLearnerTurn(deepGeneration)) {
-                setError(error instanceof Error ? error.message : labels.setupFailed);
+                controllerRef.current?.cancelSpeech();
+                backendReadbackActiveRef.current = false;
+                setStatus('listening');
               }
               logger.warn('realtime.deep_answer_failed', {
                 component: 'LiveTutorPanel',

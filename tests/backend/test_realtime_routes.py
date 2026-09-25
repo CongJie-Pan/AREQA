@@ -71,7 +71,8 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert "AREQA soul" in config["instructions"]
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["audio"]["input"]["turn_detection"] == {
-        "type": "server_vad",
+        "type": "semantic_vad",
+        "eagerness": "medium",
         "create_response": True,
         "interrupt_response": True,
     }

@@ -207,3 +207,21 @@ async def test_livekit_worker_reads_backend_answer_through_avatar_audio(monkeypa
 
     await handler(Reader(), "another-participant")
     assert FakeAgentSession.last_instance.spoken == ["Try the same idea once more."]
+
+
+@pytest.mark.asyncio
+async def test_livekit_general_voice_uses_patient_turn_detection(monkeypatch):
+    monkeypatch.setattr(agent_module, "ANAM_AVATAR_ID", "")
+    monkeypatch.setattr(agent_module, "AgentSession", FakeAgentSession)
+    monkeypatch.setattr(agent_module.openai, "realtime", SimpleNamespace(
+        RealtimeModel=lambda **kwargs: {"kwargs": kwargs},
+    ))
+    monkeypatch.setattr(agent_module.room_io, "RoomOptions", FakeRoomOptions)
+
+    await agent_module.areqa_live_tutor(fake_job_context())
+
+    turn_detection = FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"]
+    assert turn_detection.type == "semantic_vad"
+    assert turn_detection.eagerness == "medium"
+    assert turn_detection.create_response is True
+    assert turn_detection.interrupt_response is True

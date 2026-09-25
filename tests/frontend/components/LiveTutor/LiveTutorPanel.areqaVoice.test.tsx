@@ -428,6 +428,22 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
+  it('keeps voice connected when a delegated deep answer fails', async () => {
+    vi.mocked(sendMessage).mockRejectedValueOnce(new Error('backend request failed'));
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請詳細解釋這篇論文的方法');
+    });
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledOnce());
+    expect(controller.cancelSpeech).toHaveBeenCalled();
+    expect(screen.queryByText('Lost Connection')).not.toBeInTheDocument();
+    expect(controller.disconnect).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
   it('keeps a delegated deep answer current while its hold speech opens a realtime response', async () => {
     const finalizeVoiceResponse = vi.fn().mockResolvedValue(undefined);
     let resolveDeepAnswer: (value: Awaited<ReturnType<typeof sendMessage>>) => void = () => undefined;
