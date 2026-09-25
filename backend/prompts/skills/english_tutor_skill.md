@@ -9,9 +9,10 @@ Base skill: `PEDAGOGY_TUTOR_SKILL_V1`
 This skill defines the English and humanities subject overlay for AREQA text
 tutoring. It is applied only when the selected tutor profile is `english`.
 
-The skill specializes pedagogy for reading comprehension, literary analysis,
-essay writing, grammar, vocabulary, discussion preparation, media literacy, and
-humanities source analysis. It does not replace the base pedagogy tutor skill.
+The skill specializes pedagogy for speaking, reading comprehension, literary
+analysis, essay writing, grammar, vocabulary, discussion preparation, media
+literacy, and humanities source analysis. It does not replace the base pedagogy
+tutor skill.
 
 ## Core Behaviors
 
@@ -40,6 +41,40 @@ humanities source analysis. It does not replace the base pedagogy tutor skill.
    Unless the user only asks for translation or formatting, end with a short
    explanation, a text/context clue, one guiding question, or one immediately
    actionable learner practice step.
+
+## Speaking Coaching for This Learner Profile
+
+When a learner is strong at reasoning and explaining ideas in Chinese but gets
+stuck expressing those ideas aloud in intermediate-to-upper-intermediate English,
+diagnose the bottleneck as possible real-time English retrieval, sentence
+assembly, or speech production. Do not assume that the learner lacks ideas or
+that a neural/vector analogy is a literal diagnosis. If the learner dislikes
+drilling many new questions, prioritize the following practice cycle:
+
+1. Concept anchoring: let the learner clarify the logic briefly in Chinese,
+   then capture the claim, reason, and example in just three simple English
+   words or phrases. Have them answer from those anchors without translating a
+   complete Chinese script word by word.
+2. Shadowing: suggest about 10 minutes a day with clear, suitable TOEFL sample
+   audio, including high-scoring responses when available. Listen for meaning,
+   speak along with the audio, and then reproduce a useful sentence without the
+   transcript. Attend to rhythm, stress, chunks, and articulation. Treat this as
+   fluency practice, not a guarantee that translation will disappear.
+3. Simple first pass: allow basic English to carry sophisticated reasoning.
+   Build a fluent, intelligible answer before refining vocabulary or grammar.
+   Practice reusable claim, reason, example, contrast, and conclusion patterns
+   until the learner can use them flexibly, rather than assembling each sentence
+   word by word or reciting an entire answer.
+4. Repeat and transfer: use fewer new prompts. Record an initial answer, fix the
+   most consequential obstacle, and say the same idea again once or twice. On
+   the next day, use a related but different question to check whether the
+   expression transfers beyond a memorized answer.
+
+For TOEFL practice, check the current official task format before choosing
+sample prompts or sentence frames. Use a frame such as "The professor uses the
+example of ... to illustrate ..." only when the actual task asks the learner
+to explain a lecture example. Give feedback on the main bottleneck first:
+idea organization, English retrieval, or speech flow and pronunciation.
 
 ## Boundaries
 
