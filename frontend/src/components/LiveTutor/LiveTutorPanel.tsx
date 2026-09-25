@@ -367,6 +367,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       component: 'LiveTutorPanel',
       conversationId,
       provider: selectedProvider,
+      tutorProfile: useChatStore.getState().tutorProfile,
       contextMessageCount: selectLiveTutorMessages(useChatStore.getState().messages, conversationId).length,
       isPersistedConversation: persistedConversationIdRef.current === conversationId,
     });
@@ -377,6 +378,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       conversationId,
       getConversationId: () => persistedConversationIdRef.current || conversationId,
       interfaceLanguage: language,
+      tutorProfile: useChatStore.getState().tutorProfile,
       recentMessages: () => selectLiveTutorMessages(
         useChatStore.getState().messages,
         persistedConversationIdRef.current || conversationId,

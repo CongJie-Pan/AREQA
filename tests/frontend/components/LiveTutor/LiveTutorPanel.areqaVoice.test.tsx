@@ -85,6 +85,7 @@ function resetStores(): void {
     streamingTitles: {},
   });
   useChatStore.setState({
+    tutorProfile: 'general',
     messages: [message('user', '這篇論文的背景內容')],
     isStreaming: false,
     currentStreamingId: null,
@@ -144,6 +145,15 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
 
   afterEach(() => {
     resetStores();
+  });
+
+  it('passes the selected English Tutor profile to voice sessions', async () => {
+    useChatStore.getState().setTutorProfile('english');
+    const view = await renderOpenPanel();
+
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    expect(vi.mocked(startRealtimeClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
+    act(() => view.unmount());
   });
 
   it('mirrors short realtime user and assistant transcripts into the chat without AREQA stream', async () => {
@@ -469,6 +479,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
 
   it('falls back to voice-only realtime when LiveKit avatar startup fails', async () => {
     useLiveTutorStore.setState({ avatarEnabled: true });
+    useChatStore.getState().setTutorProfile('english');
     vi.mocked(startLiveKitAvatarClient).mockImplementationOnce(async (options) => {
       realtimeOptions = options;
       options.onError(new Error('avatar video timeout'));
@@ -479,6 +490,8 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
 
     await waitFor(() => expect(startLiveKitAvatarClient).toHaveBeenCalledOnce());
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    expect(vi.mocked(startLiveKitAvatarClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
+    expect(vi.mocked(startRealtimeClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
     expect(screen.getByText('虛擬角色啟動失敗，已切回語音模式。')).toBeInTheDocument();
     expect(useLiveTutorStore.getState().avatarEnabled).toBe(false);
     act(() => view.unmount());

@@ -194,11 +194,14 @@ describe('Realtime client lifecycle', () => {
   it('seeds role-preserving history when the channel opens, before speech responses', async () => {
     installMicrophone();
     mockRealtimeSession();
-    const options = realtimeOptions({ recentMessages: () => [
+    const options = realtimeOptions({ tutorProfile: 'english', recentMessages: () => [
       { id: 'u1', conversationId: 'conv_123', userId: 'guest', role: 'user', content: 'Explain paper A', createdAt: new Date() },
       { id: 'a1', conversationId: 'conv_123', userId: 'guest', role: 'assistant', content: 'Paper A studies learning.', createdAt: new Date() },
     ] });
     const controller = await startRealtimeClient(options);
+    expect(JSON.parse(String(vi.mocked(authenticatedFetch).mock.calls[0]?.[1]?.body))).toEqual(expect.objectContaining({
+      tutor_profile: 'english',
+    }));
     lastPeerConnection?.channel.onopen?.();
     const events = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
     expect(events?.map((event) => event.item.role)).toEqual(['user', 'assistant']);

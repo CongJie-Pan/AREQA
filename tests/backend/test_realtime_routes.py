@@ -88,6 +88,17 @@ def test_realtime_session_config_preserves_simplified_chinese_preference():
     assert "Simplified Chinese" in config["audio"]["input"]["transcription"]["prompt"]
 
 
+def test_realtime_session_applies_selected_english_tutor_rules_only():
+    english = _build_realtime_session_config(RealtimeSessionRequest(tutor_profile="english"))
+    general = _build_realtime_session_config(RealtimeSessionRequest())
+    unknown = _build_realtime_session_config(RealtimeSessionRequest(tutor_profile="history"))
+
+    assert "Speaking practice rule" in english["instructions"]
+    assert "Speaking shadowing rule" in english["instructions"]
+    assert "Speaking practice rule" not in general["instructions"]
+    assert unknown["instructions"] == general["instructions"]
+
+
 def test_livekit_avatar_metadata_includes_bounded_recent_context():
     metadata = json.loads(_livekit_avatar_agent_metadata(
         LiveKitAvatarSessionRequest(
@@ -114,6 +125,20 @@ def test_livekit_avatar_metadata_includes_bounded_recent_context():
     assert metadata["recent_messages"][-1] == {"role": "user", "content": "x" * 1000}
     assert metadata["memory_items"] == ["preferred short explanations", "y" * 500]
     assert metadata["parts_context"]["persona"]
+
+
+def test_livekit_dispatch_includes_server_authored_english_tutor_rules():
+    english = json.loads(_livekit_avatar_agent_metadata(
+        LiveKitAvatarSessionRequest(tutor_profile="english"),
+    ))
+    general = json.loads(_livekit_avatar_agent_metadata(
+        LiveKitAvatarSessionRequest(tutor_profile="unknown"),
+    ))
+
+    assert english["tutor_profile"] == "english"
+    assert "Speaking repetition rule" in english["tutor_profile_prompt"]
+    assert general["tutor_profile"] == "general"
+    assert general["tutor_profile_prompt"] == ""
 
 
 def test_livekit_avatar_room_isolated_by_session_without_exposing_conversation():

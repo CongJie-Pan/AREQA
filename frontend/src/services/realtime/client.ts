@@ -10,7 +10,7 @@
 
 import { API_CONFIG } from '@/config/api';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import type { DisplayMessage } from '@/store/chat';
+import type { DisplayMessage, TutorProfile } from '@/store/chat';
 import { logger } from '@/utils/logger';
 import { buildRealtimeContext } from './context';
 
@@ -60,6 +60,7 @@ export interface StartRealtimeClientOptions {
   conversationId: string;
   getConversationId?: () => string;
   interfaceLanguage: 'zh-TW' | 'zh-CN' | 'en';
+  tutorProfile?: TutorProfile;
   recentMessages: () => DisplayMessage[];
   onRemoteStream: (stream: MediaStream) => void;
   onRemoteVideoStream?: (stream: MediaStream | null) => void;
@@ -308,6 +309,7 @@ async function readSafeErrorBody(response: Response): Promise<string> {
 async function createRealtimeSession(
   conversationId: string,
   interfaceLanguage: StartRealtimeClientOptions['interfaceLanguage'],
+  tutorProfile: StartRealtimeClientOptions['tutorProfile'],
 ): Promise<RealtimeSessionResponse> {
   const response = await authenticatedFetch(API_CONFIG.realtimeSessionEndpoint, {
     method: 'POST',
@@ -317,6 +319,7 @@ async function createRealtimeSession(
       voice: 'marin',
       conversation_id: conversationId,
       interface_language: interfaceLanguage,
+      tutor_profile: tutorProfile ?? 'general',
     }),
   });
   if (!response.ok) {
@@ -858,7 +861,7 @@ async function startRealtimeWebRtcClient(
           });
           return stream;
         });
-      sessionPromise = createRealtimeSession(options.conversationId, options.interfaceLanguage)
+      sessionPromise = createRealtimeSession(options.conversationId, options.interfaceLanguage, options.tutorProfile)
         .then((session) => {
           logger.info('realtime.webrtc_session_ready', {
             conversationId: options.getConversationId?.() || options.conversationId,
@@ -1373,7 +1376,7 @@ async function startRealtimeWebSocketClient(
       throw error instanceof RealtimeClientError ? error : microphoneAccessError(error);
     }
 
-    const session = await createRealtimeSession(options.conversationId, options.interfaceLanguage);
+    const session = await createRealtimeSession(options.conversationId, options.interfaceLanguage, options.tutorProfile);
     const AudioContextClass = window.AudioContext
       || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) {

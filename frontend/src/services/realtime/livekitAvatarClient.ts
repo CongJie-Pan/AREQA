@@ -111,6 +111,7 @@ export function __setLiveKitClientLoaderForTests(
 async function createLiveKitAvatarSession(
   conversationId: string,
   interfaceLanguage: StartRealtimeClientOptions['interfaceLanguage'],
+  tutorProfile: StartRealtimeClientOptions['tutorProfile'],
   recentMessages: DisplayMessage[],
 ): Promise<LiveKitAvatarSessionResponse> {
   /** Fetches only browser-safe room metadata; signed tokens are never logged. */
@@ -120,6 +121,7 @@ async function createLiveKitAvatarSession(
     body: JSON.stringify({
       conversation_id: conversationId,
       interface_language: interfaceLanguage,
+      tutor_profile: tutorProfile ?? 'general',
       messages: buildRealtimeContext(recentMessages).map(({ role, content }) => ({ role, content })),
     }),
   });
@@ -316,6 +318,7 @@ export async function startLiveKitAvatarClient(
     const session = await createLiveKitAvatarSession(
       options.conversationId,
       options.interfaceLanguage,
+      options.tutorProfile,
       options.recentMessages(),
     );
     roomNameForDiagnostics = session.room_name;

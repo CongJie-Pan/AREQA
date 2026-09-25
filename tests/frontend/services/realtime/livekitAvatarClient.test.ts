@@ -181,7 +181,7 @@ describe('LiveKit avatar client', () => {
 
   it('fetches a LiveKit avatar session and publishes microphone audio after connect', async () => {
     mockAvatarSession();
-    const options = livekitOptions();
+    const options = livekitOptions({ tutorProfile: 'english' });
 
     const clientPromise = startLiveKitAvatarClient(options);
     await resolveAvatarVideoTrack();
@@ -193,6 +193,7 @@ describe('LiveKit avatar client', () => {
     expect(JSON.parse(String(vi.mocked(authenticatedFetch).mock.calls[0]?.[1]?.body))).toEqual(expect.objectContaining({
       conversation_id: 'conv_avatar',
       interface_language: 'zh-TW',
+      tutor_profile: 'english',
       messages: [],
     }));
     expect(lastRoom?.connect).toHaveBeenCalledWith('wss://example.livekit.cloud', 'lk_join_token');

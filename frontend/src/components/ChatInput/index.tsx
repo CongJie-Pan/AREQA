@@ -383,19 +383,19 @@ const ADD_MENU_LABELS = {
     open: '新增',
     upload: '上傳檔案',
     englishTutor: 'English Tutor',
-    englishTutorDescription: '英文閱讀、寫作與文學分析',
+    englishTutorDescription: '英文口說、閱讀、寫作與文學分析',
   },
   'zh-CN': {
     open: '新增',
     upload: '上传文件',
     englishTutor: 'English Tutor',
-    englishTutorDescription: '英文阅读、写作与文学分析',
+    englishTutorDescription: '英文口语、阅读、写作与文学分析',
   },
   en: {
     open: 'Add',
     upload: 'Upload file',
     englishTutor: 'English Tutor',
-    englishTutorDescription: 'Reading, writing, and literary analysis',
+    englishTutorDescription: 'Speaking, reading, writing, and literary analysis',
   },
 } as const;
 

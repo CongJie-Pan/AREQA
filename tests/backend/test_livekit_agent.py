@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -72,6 +73,27 @@ def test_livekit_agent_instructions_use_task_adaptive_depth():
     assert "Choose response language by priority" in instructions
     assert "language the learner is speaking now" in instructions
     assert "Do not switch to English merely because the interface" in instructions
+
+
+def test_livekit_agent_applies_dispatched_tutor_rules_without_changing_default():
+    profile_prompt = " English Tutor speaking practice rule: use three English anchors."
+    metadata = agent_module._dispatch_metadata(SimpleNamespace(
+        job=SimpleNamespace(metadata=json.dumps({
+            "tutor_profile": "english",
+            "tutor_profile_prompt": profile_prompt.strip(),
+        })),
+    ))
+    tutor = agent_module.AreqaLiveTutor(
+        interface_language="zh-TW",
+        recent_messages=[],
+        memory_items=[],
+        parts_context={},
+        tutor_profile_prompt=metadata["tutor_profile_prompt"],
+    )
+
+    assert profile_prompt.strip() in tutor.instructions
+    assert profile_prompt.strip() not in agent_module._instructions("zh-TW")
+    assert agent_module._dispatch_metadata(SimpleNamespace(job=SimpleNamespace(metadata='{}')))["tutor_profile_prompt"] == ""
 
 
 @pytest.mark.asyncio

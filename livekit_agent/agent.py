@@ -147,8 +147,8 @@ def _dispatch_metadata(ctx: agents.JobContext) -> dict[str, Any]:
         ctx: LiveKit job context.
 
     Returns:
-        String metadata with safe defaults. The backend only sends opaque
-        correlation values and language, never credentials or raw transcript.
+        Bounded dispatch metadata with safe defaults. The backend supplies the
+        selected tutor rules and recent context, but no provider credentials.
     """
 
     raw = getattr(ctx.job, "metadata", "") or "{}"
@@ -160,14 +160,20 @@ def _dispatch_metadata(ctx: agents.JobContext) -> dict[str, Any]:
             "interface_language": "zh-TW",
             "conversation_id": "",
             "session_id": "",
+            "tutor_profile": "general",
+            "tutor_profile_prompt": "",
             "recent_messages": [],
             "memory_items": [],
             "parts_context": {},
         }
+    tutor_profile = "english" if payload.get("tutor_profile") == "english" else "general"
+    tutor_profile_prompt = payload.get("tutor_profile_prompt")
     return {
         "interface_language": str(payload.get("interface_language") or "zh-TW"),
         "conversation_id": str(payload.get("conversation_id") or ""),
         "session_id": str(payload.get("session_id") or ""),
+        "tutor_profile": tutor_profile,
+        "tutor_profile_prompt": tutor_profile_prompt[:6000] if tutor_profile == "english" and isinstance(tutor_profile_prompt, str) else "",
         "recent_messages": _bounded_recent_messages(payload.get("recent_messages")),
         "memory_items": _bounded_memory_items(payload.get("memory_items")),
         "parts_context": _bounded_parts_context(payload.get("parts_context")),
@@ -193,6 +199,7 @@ class AreqaLiveTutor(Agent):
         recent_messages: list[dict[str, str]],
         memory_items: list[str],
         parts_context: dict[str, str],
+        tutor_profile_prompt: str = "",
     ) -> None:
         """Create the LiveKit voice agent.
 
@@ -202,6 +209,7 @@ class AreqaLiveTutor(Agent):
                 browser through the backend dispatch.
             memory_items: Bounded memory snapshot supplied by the backend.
             parts_context: Compact AREQA response-shaping guidance.
+            tutor_profile_prompt: Server-authored subject tutor overlay.
         """
 
         self._interface_language = interface_language
@@ -209,7 +217,7 @@ class AreqaLiveTutor(Agent):
         self._memory_items = memory_items
         self._parts_context = parts_context
         super().__init__(
-            instructions=_instructions(interface_language),
+            instructions=_instructions(interface_language) + tutor_profile_prompt,
             chat_ctx=_seed_chat_context(recent_messages),
         )
 
@@ -266,13 +274,14 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
         metadata["session_id"],
     )
     logger.info(
-        "livekit_agent.context_seed_ready room=%s conversation_id=%s session_id=%s message_count=%s memory_count=%s parts_context=%s",
+        "livekit_agent.context_seed_ready room=%s conversation_id=%s session_id=%s message_count=%s memory_count=%s parts_context=%s tutor_profile=%s",
         ctx.room.name,
         metadata["conversation_id"],
         metadata["session_id"],
         len(metadata["recent_messages"]),
         len(metadata["memory_items"]),
         bool(metadata["parts_context"]),
+        metadata["tutor_profile"],
     )
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
@@ -318,6 +327,7 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
             recent_messages=metadata["recent_messages"],
             memory_items=metadata["memory_items"],
             parts_context=metadata["parts_context"],
+            tutor_profile_prompt=metadata["tutor_profile_prompt"],
         ),
         room_options=room_io.RoomOptions(
             audio_output=not avatar_started,
