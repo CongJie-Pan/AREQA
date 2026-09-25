@@ -35,6 +35,7 @@ MAX_CONTEXT_MESSAGES = 8
 MAX_CONTEXT_MESSAGE_CHARS = 1000
 MAX_MEMORY_ITEMS = 4
 MAX_MEMORY_ITEM_CHARS = 500
+MAX_TUTOR_PROFILE_PROMPT_CHARS = 6000
 
 logger.info(
     "livekit_agent.worker_config_ready agent_name=%s livekit_configured=%s openai_configured=%s anam_configured=%s avatar_configured=%s auto_greeting=%s model=%s voice=%s",
@@ -168,12 +169,15 @@ def _dispatch_metadata(ctx: agents.JobContext) -> dict[str, Any]:
         }
     tutor_profile = "english" if payload.get("tutor_profile") == "english" else "general"
     tutor_profile_prompt = payload.get("tutor_profile_prompt")
+    if tutor_profile == "english" and isinstance(tutor_profile_prompt, str) and len(tutor_profile_prompt) > MAX_TUTOR_PROFILE_PROMPT_CHARS:
+        logger.warning("livekit_agent.tutor_profile_too_large profile=%s prompt_chars=%s", tutor_profile, len(tutor_profile_prompt))
+        raise ValueError("LiveKit tutor profile exceeds the supported instruction length")
     return {
         "interface_language": str(payload.get("interface_language") or "zh-TW"),
         "conversation_id": str(payload.get("conversation_id") or ""),
         "session_id": str(payload.get("session_id") or ""),
         "tutor_profile": tutor_profile,
-        "tutor_profile_prompt": tutor_profile_prompt[:6000] if tutor_profile == "english" and isinstance(tutor_profile_prompt, str) else "",
+        "tutor_profile_prompt": tutor_profile_prompt if tutor_profile == "english" and isinstance(tutor_profile_prompt, str) else "",
         "recent_messages": _bounded_recent_messages(payload.get("recent_messages")),
         "memory_items": _bounded_memory_items(payload.get("memory_items")),
         "parts_context": _bounded_parts_context(payload.get("parts_context")),

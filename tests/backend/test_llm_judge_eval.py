@@ -83,7 +83,9 @@ def test_unit_resolve_eval_skill_context_matches_tutor_profile() -> None:
     assert general.skill_ids == ("PEDAGOGY_TUTOR_SKILL_V1",)
     assert "Manage cognitive load" in general.text
     assert english.skill_ids == ("PEDAGOGY_TUTOR_SKILL_V1", "ENGLISH_TUTOR_SKILL_V1")
-    assert "Preserve learner authorship" in english.text
+    assert "Anti-ghostwriting rule" in english.text
+    assert "Speaking shadowing rule" in english.text
+    assert llm_judge_eval.render_tutor_profile_prompt("english") in english.text
 
 
 def test_unit_build_judge_prompt_includes_active_skill_context() -> None:
@@ -280,9 +282,10 @@ def test_regression_english_dataset_rows_are_valid() -> None:
         if line.strip()
     ]
 
-    assert len(rows) == 20
+    assert len(rows) == 21
     assert all("initial_query" in row for row in rows)
     assert {row["subject_area"] for row in rows} <= {"English", "History"}
+    assert any(row["case_id"] == "english_toefl_speaking_021" for row in rows)
 
 
 def test_regression_general_skill_dataset_rows_are_valid_jsonl() -> None:

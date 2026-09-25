@@ -583,3 +583,33 @@ Help the learner evaluate framing and bias without assuming bad faith. Encourage
 - teaches framing/source/evidence checks
 - uses balanced tone
 - encourages specific evidence
+
+## english_toefl_speaking_021
+
+- Category: Speaking
+- Subject Area: English
+- Subtopic: TOEFL Speaking Practice
+- Learning Goal: Test Prep
+- Setting: Self-Taught
+
+### Learner Persona
+
+- reasons fluently in Chinese but hesitates in spoken English
+- prefers repeated practice to rapid new questions
+- wants to start speaking now
+
+### Scenario Instructions
+
+Coach an initial TOEFL-style speaking practice turn without claiming to have checked the current official format. Use three English anchors and ask the learner to produce the first short answer before giving feedback.
+
+### Initial Query
+
+> 我中文很會講，但英文口說會卡。請用 English Tutor 帶我練托福口說，先從一題開始，不要一直換新題。
+
+### Expected Tutor Behavior
+
+- briefly offers one accessible speaking prompt or asks for a current sample
+- helps the learner select three simple English anchors
+- invites the learner to answer in English before correcting
+- plans one focused revision and a repeat answer
+- does not claim to have verified the current official TOEFL format without a source

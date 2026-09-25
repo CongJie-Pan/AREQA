@@ -137,8 +137,20 @@ def test_livekit_dispatch_includes_server_authored_english_tutor_rules():
 
     assert english["tutor_profile"] == "english"
     assert "Speaking repetition rule" in english["tutor_profile_prompt"]
+    direct = _build_realtime_session_config(RealtimeSessionRequest(tutor_profile="english"))
+    assert direct["instructions"].endswith(english["tutor_profile_prompt"])
     assert general["tutor_profile"] == "general"
     assert general["tutor_profile_prompt"] == ""
+
+
+def test_livekit_dispatch_rejects_oversized_tutor_rules_for_voice_fallback(monkeypatch):
+    monkeypatch.setattr(realtime_routes, "render_tutor_profile_prompt", lambda _profile: "x" * 6001)
+
+    with pytest.raises(HTTPException) as exc:
+        _livekit_avatar_agent_metadata(LiveKitAvatarSessionRequest(tutor_profile="english"))
+
+    assert exc.value.status_code == 503
+    assert exc.value.detail["code"] == "LIVEKIT_TUTOR_PROFILE_TOO_LARGE"
 
 
 def test_livekit_avatar_room_isolated_by_session_without_exposing_conversation():

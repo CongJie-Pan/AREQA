@@ -19,12 +19,16 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from backend.services.tutor_profile_service import render_tutor_profile_prompt
+
 DEFAULT_DATASET = ROOT / "eval" / "datasets" / "english_tutor_cases_eval.json"
 DEFAULT_RUBRIC = ROOT / "eval" / "rubrics" / "learnlm_pedagogy_rubric.md"
 DEFAULT_OUTPUT_DIR = ROOT / "eval" / "outputs"
 DEFAULT_CACHE = DEFAULT_OUTPUT_DIR / "llm_judge_cache.json"
 PEDAGOGY_TUTOR_SKILL = ROOT / "backend" / "prompts" / "skills" / "pedagogy_tutor_skill.md"
-ENGLISH_TUTOR_SKILL = ROOT / "backend" / "prompts" / "skills" / "english_tutor_skill.md"
 
 SINGLE_RUBRIC_DIMENSIONS = [
     "instruction_following",
@@ -164,7 +168,7 @@ def resolve_eval_skill_context(tutor_profile: str) -> EvalSkillContext:
     if normalized == "english":
         specs = [
             _read_skill_spec(PEDAGOGY_TUTOR_SKILL),
-            _read_skill_spec(ENGLISH_TUTOR_SKILL),
+            "# English Tutor Skill\n\n" + render_tutor_profile_prompt("english"),
         ]
         return EvalSkillContext(
             tutor_profile="english",

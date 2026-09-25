@@ -11,7 +11,7 @@
 
 import { API_CONFIG } from '@/config/api';
 import { useChatStore } from '@/store/chat';
-import type { DisplayMessage, SearchMode, StreamingImageSlot } from '@/store/chat';
+import type { DisplayMessage, SearchMode, StreamingImageSlot, TutorProfile } from '@/store/chat';
 import type { CitationSource } from '@/components/Citations';
 import { useConversationStore } from '@/store/conversation';
 import { useFeatureStore } from '@/store/features';
@@ -53,6 +53,8 @@ export interface SendMessageOptions {
   searchMode?: SearchMode;
   /** Optional per-turn thinking override; voice responses still suppress hidden thinking. */
   forceThink?: boolean;
+  /** Keep delegated voice answers aligned with the profile that started the voice session. */
+  tutorProfile?: TutorProfile;
 }
 
 export interface SendMessageResult {
@@ -470,7 +472,7 @@ export async function sendMessage(
   const effectiveUseRag = options.useRag ?? chatStore.useRag;
   const effectiveSearchMode = options.searchMode ?? chatStore.searchMode;
   const effectiveForceThink = isVoiceResponse ? false : (options.forceThink ?? chatStore.forceThink);
-  const effectiveTutorProfile = chatStore.tutorProfile;
+  const effectiveTutorProfile = options.tutorProfile ?? chatStore.tutorProfile;
 
   // Capture conversation ID for async callback (prevents closure issues)
   const conversationIdForSave = activeConversationId;

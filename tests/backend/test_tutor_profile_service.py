@@ -26,7 +26,7 @@ def test_english_tutor_profile_renders_subject_rules():
     assert "three simple English words or phrases" in prompt
     assert "10 minutes daily" in prompt
     assert "related new question on another day" in prompt
-    assert "verify the current official task format" in prompt
+    assert "without claiming that the format was checked" in prompt
     assert get_tutor_profile("general").rules == ()
 
 

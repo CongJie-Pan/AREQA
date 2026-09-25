@@ -96,6 +96,13 @@ def test_livekit_agent_applies_dispatched_tutor_rules_without_changing_default()
     assert agent_module._dispatch_metadata(SimpleNamespace(job=SimpleNamespace(metadata='{}')))["tutor_profile_prompt"] == ""
 
 
+def test_livekit_agent_rejects_oversized_tutor_rules_instead_of_truncating():
+    metadata = json.dumps({"tutor_profile": "english", "tutor_profile_prompt": "x" * 6001})
+
+    with pytest.raises(ValueError, match="exceeds"):
+        agent_module._dispatch_metadata(SimpleNamespace(job=SimpleNamespace(metadata=metadata)))
+
+
 @pytest.mark.asyncio
 async def test_livekit_agent_context_guidance_preserves_deep_explanations():
     tutor = agent_module.AreqaLiveTutor(

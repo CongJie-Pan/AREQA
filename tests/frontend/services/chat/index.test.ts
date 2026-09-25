@@ -621,6 +621,33 @@ describe('Chat Service', () => {
       expect(mockChatStore.searchMode).toBe('never');
     });
 
+    it('keeps delegated voice answers on the session tutor profile during a tag change', async () => {
+      mockChatStore.messages = [];
+      mockChatStore.tutorProfile = 'general';
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('Feedback');
+        await callbacks.onDone();
+      });
+
+      await sendMessage('Please explain', 'test-conv-id', [], {
+        responseMode: 'voice',
+        tutorProfile: 'english',
+      });
+
+      expect(createChatStream).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(Object),
+        expect.any(AbortSignal),
+        expect.any(Boolean),
+        expect.any(Boolean),
+        expect.any(String),
+        'test-conv-id',
+        [],
+        expect.objectContaining({ tutorProfile: 'english' }),
+      );
+      expect(mockChatStore.tutorProfile).toBe('general');
+    });
+
     it('removes an empty streaming assistant placeholder when cancellation happens before content', async () => {
       mockChatStore.currentStreamingId = 'assistant-empty';
       mockChatStore.currentContent = '';

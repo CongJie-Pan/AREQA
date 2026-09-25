@@ -21,7 +21,7 @@ import {
   startRealtimeClient,
   type RealtimeClientController,
 } from '@/services/realtime';
-import { useChatStore } from '@/store/chat';
+import { useChatStore, type TutorProfile } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
 import { databaseService } from '@/services/database';
@@ -131,7 +131,10 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const hasSyncedInitialMuteRef = useRef(false);
   const hasStartedRef = useRef(false);
   const isCancelledRef = useRef(false);
+  const sessionGenerationRef = useRef(0);
   const activeProviderRef = useRef<'openai_realtime' | 'livekit_anam' | null>(null);
+  const activeTutorProfileRef = useRef<TutorProfile | null>(null);
+  const reconfigurePromiseRef = useRef<Promise<void> | null>(null);
   const pendingAvatarNoticeRef = useRef<string | null>(null);
   const [avatarVideoStream, setAvatarVideoStream] = useState<MediaStream | null>(null);
   const [avatarNotice, setAvatarNotice] = useState<string | null>(null);
@@ -149,6 +152,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const addUserMessage = useChatStore((state) => state.addUserMessage);
   const addAssistantMessage = useChatStore((state) => state.addAssistantMessage);
   const updateAssistantMessage = useChatStore((state) => state.updateAssistantMessage);
+  const tutorProfile = useChatStore((state) => state.tutorProfile);
   const createConversation = useConversationStore((state) => state.createConversation);
   const selectConversation = useConversationStore((state) => state.selectConversation);
 
@@ -337,6 +341,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
     isCancelledRef.current = false;
+    const sessionGeneration = ++sessionGenerationRef.current;
+    const isCurrentSession = () => !isCancelledRef.current && sessionGeneration === sessionGenerationRef.current;
     conversationIdRef.current = '';
     persistedConversationIdRef.current = '';
     conversationMaterializationRef.current = null;
@@ -359,7 +365,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     hasPlayedConnectedCueRef.current = false;
     hasSyncedInitialMuteRef.current = false;
     const selectedProvider = useLiveTutorStore.getState().avatarEnabled ? 'livekit_anam' : 'openai_realtime';
+    const selectedTutorProfile = useChatStore.getState().tutorProfile;
     activeProviderRef.current = selectedProvider;
+    activeTutorProfileRef.current = selectedTutorProfile;
     panelRef.current?.style.setProperty('--live-tutor-audio-scale', '1');
     setError(null);
     const conversationId = prepareSessionConversationId();
@@ -367,7 +375,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       component: 'LiveTutorPanel',
       conversationId,
       provider: selectedProvider,
-      tutorProfile: useChatStore.getState().tutorProfile,
+      tutorProfile: selectedTutorProfile,
       contextMessageCount: selectLiveTutorMessages(useChatStore.getState().messages, conversationId).length,
       isPersistedConversation: persistedConversationIdRef.current === conversationId,
     });
@@ -378,20 +386,20 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       conversationId,
       getConversationId: () => persistedConversationIdRef.current || conversationId,
       interfaceLanguage: language,
-      tutorProfile: useChatStore.getState().tutorProfile,
+      tutorProfile: selectedTutorProfile,
       recentMessages: () => selectLiveTutorMessages(
         useChatStore.getState().messages,
         persistedConversationIdRef.current || conversationId,
       ),
       onRemoteStream: (stream) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         if (audioRef.current) {
           audioRef.current.srcObject = stream;
           void audioRef.current.play();
         }
       },
       onRemoteVideoStream: (stream) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         setAvatarVideoStream(stream);
         if (!stream) {
           logger.warn('realtime.avatar_video_stream_cleared', {
@@ -409,17 +417,17 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onInputAudioLevel: (level) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         inputLevelRef.current = Math.min(Math.max(level, 0), 1);
         updateAudioScale();
       },
       onOutputAudioLevel: (level) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         outputLevelRef.current = Math.min(Math.max(level, 0), 1);
         updateAudioScale();
       },
       onUserSpeechStarted: () => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         const currentStatus = useLiveTutorStore.getState().status;
         if (currentStatus === 'connecting' || currentStatus === 'idle') {
           logger.info('realtime.voice_speech_ignored_before_ready', {
@@ -438,7 +446,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         void cancelCurrentStream();
       },
       onStatus: (nextStatus) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         setStatus(nextStatus);
         if ((nextStatus === 'connected' || nextStatus === 'listening') && !hasPlayedConnectedCueRef.current) {
           hasPlayedConnectedCueRef.current = true;
@@ -446,7 +454,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         }
       },
       onAssistantResponseStarted: (responseId) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         assistantTurnGenerationRef.current += 1;
         activeAssistantResponseIdRef.current = responseId || null;
         if (responseId) staleAssistantResponseIdsRef.current.delete(responseId);
@@ -472,7 +480,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onPlaybackState: (state) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         playbackRef.current = state === 'started' ? 'playing' : state === 'stopped' ? 'finished' : 'interrupted';
         if (state === 'stopped' || state === 'interrupted') {
           backendReadbackActiveRef.current = false;
@@ -485,7 +493,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onUserTurnCommitted: (itemId) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         enqueueTranscriptWork(async () => {
           if (userTurnIdsRef.current.has(itemId)) return;
           const conversationId = await ensurePersistedConversationId();
@@ -493,7 +501,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onUserTranscript: (transcript, itemId) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         const currentStatus = useLiveTutorStore.getState().status;
         if (currentStatus === 'connecting' || currentStatus === 'idle') {
           logger.info('realtime.voice_transcript_ignored_before_ready', {
@@ -532,13 +540,14 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                 responseMode: 'voice',
                 useRag: true,
                 searchMode: 'auto',
+                tutorProfile: selectedTutorProfile,
               });
-              if (!isCancelledRef.current && isCurrentLearnerTurn(deepGeneration)) {
+              if (isCurrentSession() && isCurrentLearnerTurn(deepGeneration)) {
                 const readbackText = normalizeReadbackText(result.answerContent ?? '');
                 await result.finalizeVoiceResponse?.(readbackText);
               }
               const readbackText = normalizeReadbackText(result.answerContent ?? '');
-              if (!isCancelledRef.current && isCurrentLearnerTurn(deepGeneration) && readbackText && result.assistantMessageId) {
+              if (isCurrentSession() && isCurrentLearnerTurn(deepGeneration) && readbackText && result.assistantMessageId) {
                 lastVoiceMessageIdRef.current = result.assistantMessageId;
                 updateAssistantMessage(result.assistantMessageId, { voicePlayback: 'waiting' });
                 const speechStarted = controllerRef.current?.speakText(readbackText) ?? false;
@@ -562,7 +571,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                 answerChars: result.answerContent?.length ?? 0,
               });
             } catch (error) {
-              if (!isCancelledRef.current && isCurrentLearnerTurn(deepGeneration)) {
+              if (isCurrentSession() && isCurrentLearnerTurn(deepGeneration)) {
                 setError(error instanceof Error ? error.message : labels.setupFailed);
               }
               logger.warn('realtime.deep_answer_failed', {
@@ -582,7 +591,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onAssistantTranscriptDelta: (delta, responseId) => {
-        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current || !delta) return;
+        if (!isCurrentSession() || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current || !delta) return;
         const responseGeneration = assistantTurnGenerationRef.current;
         enqueueTranscriptWork(async () => {
           if (!isCurrentAssistantTurn(responseGeneration, responseId)) {
@@ -598,7 +607,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onAssistantTranscriptDone: (transcript, responseId) => {
-        if (isCancelledRef.current || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current) return;
+        if (!isCurrentSession() || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current) return;
         const responseGeneration = assistantTurnGenerationRef.current;
         enqueueTranscriptWork(async () => {
           if (!isCurrentAssistantTurn(responseGeneration, responseId)) {
@@ -615,7 +624,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       },
       onError: (nextError) => {
-        if (isCancelledRef.current) return;
+        if (!isCurrentSession()) return;
         if (selectedProvider === 'livekit_anam' && controllerRef.current) {
           logger.warn('livekit.avatar_runtime_fallback_to_realtime', {
             component: 'LiveTutorPanel',
@@ -640,7 +649,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         setError(message);
       },
     });
-    if (isCancelledRef.current || !useLiveTutorStore.getState().isOpen) {
+    if (!isCurrentSession() || !useLiveTutorStore.getState().isOpen) {
       controller.disconnect();
       return;
     }
@@ -686,6 +695,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   ]);
 
   const stop = useCallback(async (): Promise<void> => {
+    sessionGenerationRef.current += 1;
     isCancelledRef.current = true;
     delegatedDeepAnswerActiveRef.current = false;
     backendReadbackActiveRef.current = false;
@@ -697,6 +707,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     void cancelCurrentStream();
     controllerRef.current = null;
     activeProviderRef.current = null;
+    activeTutorProfileRef.current = null;
     const pendingTranscriptWork = transcriptQueueRef.current;
     const finalization = pendingTranscriptWork
       .then(async () => {
@@ -767,6 +778,35 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     })();
   }, [start, stopAndReset]);
 
+  const reconfigureVoiceSession = useCallback(() => {
+    if (reconfigurePromiseRef.current || !useLiveTutorStore.getState().isOpen || !hasStartedRef.current) return;
+    const nextProvider = useLiveTutorStore.getState().avatarEnabled ? 'livekit_anam' : 'openai_realtime';
+    const nextTutorProfile = useChatStore.getState().tutorProfile;
+    if (activeProviderRef.current === nextProvider && activeTutorProfileRef.current === nextTutorProfile) return;
+    logger.info('realtime.voice_configuration_change_requested', {
+      component: 'LiveTutorPanel',
+      fromProvider: activeProviderRef.current,
+      toProvider: nextProvider,
+      fromTutorProfile: activeTutorProfileRef.current,
+      toTutorProfile: nextTutorProfile,
+      conversationId: persistedConversationIdRef.current || conversationIdRef.current,
+    });
+    const pending = (async () => {
+      await stopAndReset();
+      if (useLiveTutorStore.getState().isOpen) await start();
+    })().catch((restartError) => {
+      logger.warn('realtime.voice_reconfigure_failed', {
+        component: 'LiveTutorPanel',
+        errorName: restartError instanceof Error ? restartError.name : 'UnknownError',
+      });
+      setError(labels.setupFailed);
+    }).finally(() => {
+      reconfigurePromiseRef.current = null;
+      if (useLiveTutorStore.getState().isOpen) reconfigureVoiceSession();
+    });
+    reconfigurePromiseRef.current = pending;
+  }, [labels.setupFailed, setError, start, stopAndReset]);
+
   useEffect(() => {
     if (!isOpen) return;
     void start();
@@ -786,20 +826,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   }, [isMuted, isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !hasStartedRef.current) return;
-    const nextProvider = avatarEnabled ? 'livekit_anam' : 'openai_realtime';
-    if (activeProviderRef.current === nextProvider) return;
-    logger.info('realtime.voice_provider_switch_requested', {
-      component: 'LiveTutorPanel',
-      fromProvider: activeProviderRef.current,
-      toProvider: nextProvider,
-      conversationId: persistedConversationIdRef.current || conversationIdRef.current,
-    });
-    void (async () => {
-      await stopAndReset();
-      await start();
-    })();
-  }, [avatarEnabled, isOpen, start, stopAndReset]);
+    if (isOpen) reconfigureVoiceSession();
+  }, [avatarEnabled, tutorProfile, isOpen, reconfigureVoiceSession]);
 
   useEffect(() => {
     if (!isOpen || closeRequestId === 0) return;

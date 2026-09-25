@@ -13,6 +13,10 @@ The runner loads skill specs by tutor profile:
 - `general`: `PEDAGOGY_TUTOR_SKILL_V1`
 - `english`: `PEDAGOGY_TUTOR_SKILL_V1` + `ENGLISH_TUTOR_SKILL_V1`
 
+The English judge contract uses the same runtime rules rendered by
+`backend/services/tutor_profile_service.py`. The Markdown skill describes those
+rules for maintainers.
+
 ## Run
 
 Start the backend first:

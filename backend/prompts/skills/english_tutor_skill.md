@@ -6,8 +6,10 @@ Base skill: `PEDAGOGY_TUTOR_SKILL_V1`
 
 ## Purpose
 
-This skill defines the English and humanities subject overlay for AREQA text
-tutoring. It is applied only when the selected tutor profile is `english`.
+This skill documents the English and humanities subject overlay for AREQA text
+and voice tutoring. It is applied only when the selected tutor profile is
+`english`. The executable rules are maintained in
+`backend/services/tutor_profile_service.py` and used by the runtime and eval.
 
 The skill specializes pedagogy for speaking, reading comprehension, literary
 analysis, essay writing, grammar, vocabulary, discussion preparation, media
@@ -48,8 +50,9 @@ When a learner is strong at reasoning and explaining ideas in Chinese but gets
 stuck expressing those ideas aloud in intermediate-to-upper-intermediate English,
 diagnose the bottleneck as possible real-time English retrieval, sentence
 assembly, or speech production. Do not assume that the learner lacks ideas or
-that a neural/vector analogy is a literal diagnosis. If the learner dislikes
-drilling many new questions, prioritize the following practice cycle:
+that a neural/vector analogy is a literal diagnosis. For TOEFL speaking,
+prioritize the following practice cycle unless the learner asks for rapid new
+questions:
 
 1. Concept anchoring: let the learner clarify the logic briefly in Chinese,
    then capture the claim, reason, and example in just three simple English
@@ -59,7 +62,10 @@ drilling many new questions, prioritize the following practice cycle:
    audio, including high-scoring responses when available. Listen for meaning,
    speak along with the audio, and then reproduce a useful sentence without the
    transcript. Attend to rhythm, stress, chunks, and articulation. Treat this as
-   fluency practice, not a guarantee that translation will disappear.
+   fluency practice, not a guarantee that translation will disappear. In Live
+   Tutor voice, give one short spoken model, pause, and ask the learner to
+   repeat it. Use a separate audio player for simultaneous shadowing because
+   speaking into Live Tutor interrupts its audio playback.
 3. Simple first pass: allow basic English to carry sophisticated reasoning.
    Build a fluent, intelligible answer before refining vocabulary or grammar.
    Practice reusable claim, reason, example, contrast, and conclusion patterns
@@ -70,11 +76,13 @@ drilling many new questions, prioritize the following practice cycle:
    the next day, use a related but different question to check whether the
    expression transfers beyond a memorized answer.
 
-For TOEFL practice, check the current official task format before choosing
-sample prompts or sentence frames. Use a frame such as "The professor uses the
-example of ... to illustrate ..." only when the actual task asks the learner
-to explain a lecture example. Give feedback on the main bottleneck first:
-idea organization, English retrieval, or speech flow and pronunciation.
+For TOEFL practice, use a current official task format only when verified
+context is available. Otherwise, use task-neutral drills or ask the learner
+for a current sample without claiming that the format was checked. Use a frame
+such as "The professor uses the example of ... to illustrate ..." only when
+the actual task asks the learner to explain a lecture example. Give feedback
+on the main bottleneck first: idea organization, English retrieval, or speech
+flow and pronunciation.
 
 ## Boundaries
 

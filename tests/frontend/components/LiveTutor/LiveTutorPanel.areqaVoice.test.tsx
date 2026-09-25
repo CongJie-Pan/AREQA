@@ -156,6 +156,57 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
+  it('restarts voice when the tutor tag changes and ignores events from the old session', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledTimes(1));
+    const oldOptions = vi.mocked(startRealtimeClient).mock.calls[0]?.[0];
+
+    act(() => useChatStore.getState().setTutorProfile('english'));
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(startRealtimeClient).mock.calls[1]?.[0].tutorProfile).toBe('english');
+
+    act(() => oldOptions?.onUserTranscript('stale voice turn'));
+    expect(useChatStore.getState().messages.some((item) => item.content === 'stale voice turn')).toBe(false);
+
+    act(() => useChatStore.getState().setTutorProfile('general'));
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(startRealtimeClient).mock.calls[2]?.[0].tutorProfile).toBe('general');
+    act(() => view.unmount());
+  });
+
+  it('uses the latest tag when avatar and tutor settings change together', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      useChatStore.getState().setTutorProfile('english');
+      useLiveTutorStore.getState().setAvatarEnabled(true);
+    });
+
+    await waitFor(() => expect(startLiveKitAvatarClient).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(startLiveKitAvatarClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
+    act(() => view.unmount());
+  });
+
+  it('converges on the latest tag when it changes during voice startup', async () => {
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledTimes(1));
+
+    let finishEnglishStartup: ((value: typeof controller) => void) | undefined;
+    vi.mocked(startRealtimeClient).mockImplementationOnce(async (options) => {
+      realtimeOptions = options;
+      return new Promise((resolve) => { finishEnglishStartup = resolve; });
+    });
+    act(() => useChatStore.getState().setTutorProfile('english'));
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledTimes(2));
+
+    act(() => useChatStore.getState().setTutorProfile('general'));
+    await act(async () => { finishEnglishStartup?.(controller); });
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(startRealtimeClient).mock.calls[2]?.[0].tutorProfile).toBe('general');
+    act(() => view.unmount());
+  });
+
   it('mirrors short realtime user and assistant transcripts into the chat without AREQA stream', async () => {
     const view = await renderOpenPanel();
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
@@ -182,6 +233,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
   });
 
   it('delegates deep paper voice turns to the AREQA backend voice stream with one plain readback text', async () => {
+    useChatStore.getState().setTutorProfile('english');
     const finalizeVoiceResponse = vi.fn().mockResolvedValue(undefined);
     vi.mocked(sendMessage).mockImplementation(async (_content, _conversationId, _attachments, _options) => {
       return {
@@ -216,6 +268,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
         responseMode: 'voice',
         useRag: true,
         searchMode: 'auto',
+        tutorProfile: 'english',
       }),
     ));
     expect(finalizeVoiceResponse).toHaveBeenCalledWith('深度回答');

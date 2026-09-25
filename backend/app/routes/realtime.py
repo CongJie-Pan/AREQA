@@ -62,6 +62,7 @@ MAX_LIVEKIT_CONTEXT_MESSAGE_CHARS = 1000
 MAX_LIVEKIT_CONTEXT_TOTAL_CHARS = 6000
 MAX_LIVEKIT_MEMORY_ITEMS = 4
 MAX_LIVEKIT_MEMORY_ITEM_CHARS = 500
+MAX_LIVEKIT_TUTOR_PROMPT_CHARS = 6000
 MAX_SPEECH_AUDIO_BYTES = 25 * 1024 * 1024
 
 
@@ -306,8 +307,8 @@ def _livekit_avatar_agent_metadata(
         payload: Client request metadata.
 
     Returns:
-        JSON metadata containing only non-secret operational values needed by
-        the agent to align language and correlate logs.
+        JSON metadata with bounded context and server-authored tutor rules.
+        It contains no provider credentials and is never logged.
     """
 
     context_messages: list[dict[str, str]] = []
@@ -320,13 +321,29 @@ def _livekit_avatar_agent_metadata(
         context_messages.append({"role": item.role, "content": bounded_content})
         remaining_chars -= len(bounded_content)
 
+    tutor_profile_prompt = render_tutor_profile_prompt(payload.tutor_profile)
+    if len(tutor_profile_prompt) > MAX_LIVEKIT_TUTOR_PROMPT_CHARS:
+        logger.warning(
+            "livekit.avatar_tutor_profile_too_large tutor_profile=%s prompt_chars=%s limit=%s fallback=openai_realtime",
+            normalize_tutor_profile(payload.tutor_profile),
+            len(tutor_profile_prompt),
+            MAX_LIVEKIT_TUTOR_PROMPT_CHARS,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "LIVEKIT_TUTOR_PROFILE_TOO_LARGE",
+                "message": "Avatar tutoring profile is temporarily unavailable.",
+            },
+        )
+
     return json.dumps(
         {
             "conversation_id": _safe_livekit_fragment(payload.conversation_id, fallback="conversation"),
             "session_id": _safe_livekit_fragment(session_id or _livekit_avatar_session_id(), fallback="session"),
             "interface_language": payload.interface_language,
             "tutor_profile": normalize_tutor_profile(payload.tutor_profile),
-            "tutor_profile_prompt": render_tutor_profile_prompt(payload.tutor_profile),
+            "tutor_profile_prompt": tutor_profile_prompt,
             "provider": "livekit_anam",
             "recent_messages": context_messages,
             "memory_items": [
