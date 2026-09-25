@@ -17,6 +17,7 @@ import { buildRealtimeContext } from './context';
 const AVATAR_VIDEO_READY_TIMEOUT_MS = 45_000;
 const ASSISTANT_TRANSCRIPT_DONE_DEBOUNCE_MS = 900;
 const LIVEKIT_TRANSCRIPTION_TOPIC = 'lk.transcription';
+const AREQA_BACKEND_SPEECH_TOPIC = 'areqa.backend_speech';
 
 interface LiveKitAvatarSessionResponse {
   livekit_url: string;
@@ -44,6 +45,7 @@ interface LiveKitRoomLike {
   unregisterTextStreamHandler?: (topic: string) => void;
   localParticipant: {
     setMicrophoneEnabled: (enabled: boolean) => Promise<unknown>;
+    sendText?: (text: string, options?: { topic?: string }) => Promise<unknown>;
   };
   on: (event: string, callback: (...args: unknown[]) => void) => LiveKitRoomLike;
 }
@@ -423,10 +425,32 @@ export async function startLiveKitAvatarClient(
       },
       cancelSpeech: () => {
         clearAssistantTranscript('cancel');
+        void room?.localParticipant.sendText?.(JSON.stringify({ action: 'cancel' }), { topic: AREQA_BACKEND_SPEECH_TOPIC })
+          .catch((error: unknown) => logger.warn('livekit.backend_speech_cancel_failed', {
+            conversationId,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }));
         options.onPlaybackState?.('interrupted');
         options.onStatus('listening');
       },
-      speakText: () => false,
+      requestResponse: () => {
+        void room?.localParticipant.sendText?.(JSON.stringify({ action: 'reply' }), { topic: AREQA_BACKEND_SPEECH_TOPIC })
+          .catch((error: unknown) => logger.warn('livekit.backend_reply_failed', {
+            conversationId,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }));
+      },
+      speakText: (text: string) => {
+        if (!room?.localParticipant.sendText || !text.trim()) return false;
+        void room.localParticipant.sendText(
+          JSON.stringify({ action: 'speak', text: text.trim().slice(0, 6000) }),
+          { topic: AREQA_BACKEND_SPEECH_TOPIC },
+        ).catch((error: unknown) => logger.warn('livekit.backend_speech_failed', {
+          conversationId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }));
+        return true;
+      },
       disconnect: () => {
         flushAssistantTranscript();
         clearAssistantTranscript('disconnect');

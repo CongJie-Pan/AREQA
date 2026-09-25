@@ -32,7 +32,7 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 import { selectLiveTutorConversationId, selectLiveTutorMessages } from './session';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
-import { shouldDelegateVoiceTurnToDeepAnswer } from '@/services/realtime/deepDelegation';
+import { shouldDelegateEnglishSpeakingTurn, shouldDelegateVoiceTurnToDeepAnswer } from '@/services/realtime/deepDelegation';
 import { normalizeReadbackText } from '@/services/realtime/readbackText';
 
 const COPY = {
@@ -123,6 +123,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const userTurnIdsRef = useRef(new Map<string, string>());
   const delegatedDeepAnswerActiveRef = useRef(false);
+  const speakingPracticeActiveRef = useRef(false);
   const backendReadbackActiveRef = useRef(false);
   const playbackRef = useRef<'waiting' | 'playing' | 'finished' | 'interrupted'>('waiting');
   const inputLevelRef = useRef(0);
@@ -361,6 +362,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     lastVoiceMessageIdRef.current = null;
     userTurnIdsRef.current.clear();
     delegatedDeepAnswerActiveRef.current = false;
+    speakingPracticeActiveRef.current = false;
     backendReadbackActiveRef.current = false;
     hasPlayedConnectedCueRef.current = false;
     hasSyncedInitialMuteRef.current = false;
@@ -515,8 +517,14 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         enqueueTranscriptWork(async () => {
           const normalized = normalizeVoiceTranscript(transcript, language).trim();
           if (!normalized) return;
+          if (/(停止練習|结束练习|結束練習|stop practice|end practice)/i.test(normalized)) {
+            speakingPracticeActiveRef.current = false;
+          }
 
-          if (shouldDelegateVoiceTurnToDeepAnswer(normalized)) {
+          const speakingPracticeTurn = selectedTutorProfile === 'english'
+            && shouldDelegateEnglishSpeakingTurn(normalized, speakingPracticeActiveRef.current);
+          if (speakingPracticeTurn) speakingPracticeActiveRef.current = true;
+          if (speakingPracticeTurn || shouldDelegateVoiceTurnToDeepAnswer(normalized)) {
             const pendingId = itemId ? userTurnIdsRef.current.get(itemId) : undefined;
             if (pendingId && itemId) {
               useChatStore.getState().removeMessage(pendingId);
@@ -541,6 +549,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
                 useRag: true,
                 searchMode: 'auto',
                 tutorProfile: selectedTutorProfile,
+                speakingPractice: speakingPracticeTurn,
               });
               if (isCurrentSession() && isCurrentLearnerTurn(deepGeneration)) {
                 const readbackText = normalizeReadbackText(result.answerContent ?? '');
@@ -588,6 +597,9 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           }
 
           await persistUserTranscript(normalized, itemId);
+          if (selectedTutorProfile === 'english' && isCurrentSession()) {
+            controllerRef.current?.requestResponse?.();
+          }
         });
       },
       onAssistantTranscriptDelta: (delta, responseId) => {

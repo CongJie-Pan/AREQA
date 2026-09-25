@@ -7,6 +7,7 @@ main AREQA backend only mints browser-safe room tokens.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, function_tool, llm, room_io
 from livekit.plugins import anam, openai
+from openai.types import realtime as openai_realtime_types
 
 load_dotenv(".env.local")
 load_dotenv("../.env")
@@ -36,6 +38,7 @@ MAX_CONTEXT_MESSAGE_CHARS = 1000
 MAX_MEMORY_ITEMS = 4
 MAX_MEMORY_ITEM_CHARS = 500
 MAX_TUTOR_PROFILE_PROMPT_CHARS = 6000
+BACKEND_SPEECH_TOPIC = "areqa.backend_speech"
 
 logger.info(
     "livekit_agent.worker_config_ready agent_name=%s livekit_configured=%s openai_configured=%s anam_configured=%s avatar_configured=%s auto_greeting=%s model=%s voice=%s",
@@ -161,6 +164,7 @@ def _dispatch_metadata(ctx: agents.JobContext) -> dict[str, Any]:
             "interface_language": "zh-TW",
             "conversation_id": "",
             "session_id": "",
+            "participant_identity": "",
             "tutor_profile": "general",
             "tutor_profile_prompt": "",
             "recent_messages": [],
@@ -176,6 +180,7 @@ def _dispatch_metadata(ctx: agents.JobContext) -> dict[str, Any]:
         "interface_language": str(payload.get("interface_language") or "zh-TW"),
         "conversation_id": str(payload.get("conversation_id") or ""),
         "session_id": str(payload.get("session_id") or ""),
+        "participant_identity": str(payload.get("participant_identity") or ""),
         "tutor_profile": tutor_profile,
         "tutor_profile_prompt": tutor_profile_prompt if tutor_profile == "english" and isinstance(tutor_profile_prompt, str) else "",
         "recent_messages": _bounded_recent_messages(payload.get("recent_messages")),
@@ -291,7 +296,38 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
         llm=openai.realtime.RealtimeModel(
             model=OPENAI_REALTIME_MODEL,
             voice=OPENAI_REALTIME_VOICE,
+            **({"turn_detection": openai_realtime_types.realtime_audio_input_turn_detection.ServerVad(
+                type="server_vad", create_response=False, interrupt_response=False,
+            )} if metadata["tutor_profile"] == "english" else {}),
         )
+    )
+    session_ready = asyncio.Event()
+
+    async def handle_backend_speech(reader: Any, participant_identity: str) -> None:
+        try:
+            if participant_identity != metadata["participant_identity"]:
+                logger.warning("livekit_agent.backend_speech_sender_rejected")
+                return
+            payload = json.loads((await reader.read_all())[:6500])
+            await session_ready.wait()
+            action = payload.get("action")
+            if action == "cancel":
+                await session.interrupt()
+                return
+            if action == "reply" and metadata["tutor_profile"] == "english":
+                session.generate_reply()
+                return
+            text = str(payload.get("text") or "").strip()[:6000]
+            if action == "speak" and text:
+                await session.interrupt()
+                session.say(text, allow_interruptions=True)
+                logger.info("livekit_agent.backend_speech_started chars=%s", len(text))
+        except Exception as exc:
+            logger.warning("livekit_agent.backend_speech_failed reason=%s", type(exc).__name__)
+
+    ctx.room.register_text_stream_handler(
+        BACKEND_SPEECH_TOPIC,
+        lambda reader, identity: asyncio.create_task(handle_backend_speech(reader, identity)),
     )
 
     avatar_started = False
@@ -337,6 +373,7 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
             audio_output=not avatar_started,
         ),
     )
+    session_ready.set()
     if LIVEKIT_AGENT_AUTO_GREETING:
         logger.info(
             "livekit_agent.auto_greeting_requested room=%s conversation_id=%s",

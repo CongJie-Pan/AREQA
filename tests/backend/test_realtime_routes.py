@@ -79,6 +79,12 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert config["tool_choice"] == "auto"
 
 
+def test_english_voice_waits_for_frontend_turn_routing():
+    config = _build_realtime_session_config(RealtimeSessionRequest(tutor_profile="english"))
+    assert config["audio"]["input"]["turn_detection"]["create_response"] is False
+    assert "Speaking practice rule" in config["instructions"]
+
+
 def test_realtime_session_config_preserves_simplified_chinese_preference():
     payload = RealtimeSessionRequest(interface_language="zh-CN")
 
@@ -564,6 +570,21 @@ async def test_realtime_context_returns_bounded_recent_messages_for_guest():
     assert response["parts_context"]["persona"]
     assert response["parts_context"]["instruction"]
     assert "parts_context" in response["guidance"]
+
+
+@pytest.mark.asyncio
+async def test_realtime_context_includes_saved_speaking_material(monkeypatch):
+    from services import speaking_material_service
+
+    async def material(user_id, conversation_id):
+        assert user_id == "learner"
+        assert conversation_id == "conv-practice"
+        return {"title": "dialogue.txt", "text": "Student: The plan is too expensive.", "truncated": False}
+
+    monkeypatch.setattr(speaking_material_service, "load_material", material)
+    payload = RealtimeContextRequest(conversation_id="conv-practice", messages=[], tutor_profile="english")
+    response = await get_realtime_context(payload, current_user_id="learner")
+    assert response["speaking_material"]["text"] == "Student: The plan is too expensive."
     assert "preserve the learner-owned core step" in response["guidance"]
     assert "do not omit key ideas merely to be brief" in response["guidance"]
     assert "use memory_items and recent_messages before saying you do not know" in response["guidance"]

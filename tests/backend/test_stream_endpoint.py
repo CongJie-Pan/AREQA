@@ -154,6 +154,103 @@ async def test_stream_endpoint_forwards_english_tutor_profile_to_orchestrator():
 
 
 @pytest.mark.asyncio
+async def test_english_voice_reuses_uploaded_transcript_from_backend(monkeypatch):
+    captured = {}
+
+    class TutorOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    from services import speaking_material_service
+
+    async def saved_material(user_id, conversation_id):
+        assert user_id == "default_user"
+        assert conversation_id == "conv-speaking"
+        return {"title": "dialogue.txt", "text": "Student: The library should stay open.", "truncated": False}
+
+    monkeypatch.setattr(speaking_material_service, "load_material", saved_material)
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=TutorOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post("/api/v1/stream", json={
+                "messages": [{"role": "user", "content": "依逐字稿陪我練托福口說"}],
+                "conversation_id": "conv-speaking",
+                "tutor_profile": "english",
+                "response_mode": "voice",
+                "speaking_practice": True,
+            })
+
+    assert response.status_code == 200
+    assert captured["attachments"][0]["type"] == "text"
+    assert "The library should stay open" in captured["attachments"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_english_voice_asks_for_source_when_transcript_is_unavailable(monkeypatch):
+    from services import speaking_material_service
+
+    monkeypatch.setattr(speaking_material_service, "load_material", AsyncMock(return_value=None))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post("/api/v1/stream", json={
+            "messages": [{"role": "user", "content": "我給你了一個對話的逐字稿，想練習托福口說"}],
+            "conversation_id": "conv-no-source",
+            "tutor_profile": "english",
+            "response_mode": "voice",
+            "speaking_practice": True,
+        })
+
+    assert response.status_code == 200
+    assert "我還沒有讀到逐字稿內容" in response.text
+    assert "data: [DONE]" in response.text
+
+
+@pytest.mark.asyncio
+async def test_english_voice_finds_prior_pasted_dialogue_after_tag_switch(monkeypatch):
+    captured = {}
+
+    class TutorOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    from services import speaking_material_service
+
+    save = AsyncMock(return_value=True)
+    monkeypatch.setattr(speaking_material_service, "save_material", save)
+    dialogue = (
+        "Student: I think the campus library should stay open longer because we need a quiet place to study.\n"
+        "Professor: What is the main reason students would use it at night?"
+    )
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=TutorOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post("/api/v1/stream", json={
+                "messages": [
+                    {"role": "user", "content": dialogue},
+                    {"role": "assistant", "content": "What would you like to practice?"},
+                    {"role": "user", "content": "依逐字稿陪我練口說"},
+                ],
+                "conversation_id": "conv-pasted",
+                "tutor_profile": "english",
+                "response_mode": "voice",
+                "speaking_practice": True,
+            })
+
+    assert response.status_code == 200
+    assert dialogue in captured["attachments"][0]["text"]
+    save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_stream_endpoint_falls_back_for_unknown_tutor_profile_json_payload():
     captured = {}
 
@@ -337,7 +434,8 @@ async def test_stream_endpoint_accepts_complete_multipart_chat_payload():
     }
 
     with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
-         patch("services.orchestration_service.OrchestrationService", return_value=PayloadOrchestrator()):
+         patch("services.orchestration_service.OrchestrationService", return_value=PayloadOrchestrator()), \
+         patch("services.speaking_material_service.save_material", new_callable=AsyncMock, return_value=True) as save_material:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             response = await ac.post(
                 "/api/v1/stream",
@@ -351,6 +449,11 @@ async def test_stream_endpoint_accepts_complete_multipart_chat_payload():
     assert captured["search_mode"] == "always"
     assert captured["tutor_profile"] == "english"
     assert captured["attachments"][0]["type"] == "text"
+    save_material.assert_awaited_once_with(
+        "default_user",
+        "complete-payload-conversation",
+        {"title": "notes.txt", "text": "attachment content", "truncated": False},
+    )
 
 
 @pytest.mark.asyncio

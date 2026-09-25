@@ -97,3 +97,13 @@ export function shouldDelegateVoiceTurnToDeepAnswer(transcript: string): boolean
     '帮我整理',
   ].some((term) => normalized.includes(term.toLowerCase()));
 }
+
+/** Keep transcript-based speaking practice on AREQA's grounded backend path. */
+export function shouldDelegateEnglishSpeakingTurn(transcript: string, practiceActive: boolean): boolean {
+  const normalized = transcript.trim().toLowerCase();
+  if (!normalized) return false;
+  if (practiceActive) return !/(停止練習|结束练习|結束練習|stop practice|end practice)/i.test(normalized);
+  const material = /(逐字稿|對話稿|对话稿|transcript|dialogue|conversation script)/i.test(normalized);
+  const practice = /(練習|练习|口說|口语|托福|toefl|speaking|practice|rehearse)/i.test(normalized);
+  return material && practice;
+}

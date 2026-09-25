@@ -49,6 +49,7 @@ const controller = {
   setMuted: vi.fn(),
   cancelSpeech: vi.fn(),
   speakText: vi.fn(() => true),
+  requestResponse: vi.fn(),
   disconnect: vi.fn(),
 };
 
@@ -153,6 +154,36 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
 
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
     expect(vi.mocked(startRealtimeClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
+    act(() => view.unmount());
+  });
+
+  it('waits for backend transcript practice and delegates the next spoken attempt', async () => {
+    useChatStore.getState().setTutorProfile('english');
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('嗨你好');
+    });
+    await waitFor(() => expect(controller.requestResponse).toHaveBeenCalledOnce());
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('我給你了一個對話的逐字稿，想依此練習托福英文口說');
+    });
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(
+      '我給你了一個對話的逐字稿，想依此練習託福英文口說',
+      'conv_paper',
+      [],
+      expect.objectContaining({ responseMode: 'voice', tutorProfile: 'english' }),
+    ));
+    expect(controller.requestResponse).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('I think the student is right because the library is useful.');
+    });
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
+    expect(controller.requestResponse).toHaveBeenCalledTimes(1);
     act(() => view.unmount());
   });
 

@@ -36,6 +36,7 @@ class FakeLiveKitRoom {
   disconnect = vi.fn();
   localParticipant = {
     setMicrophoneEnabled: vi.fn(async () => undefined),
+    sendText: vi.fn(async () => undefined),
   };
 
   constructor() {
@@ -202,6 +203,32 @@ describe('LiveKit avatar client', () => {
     expect(lastRoom?.localParticipant.setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
     controller.disconnect();
     expect(lastRoom?.disconnect).toHaveBeenCalled();
+  });
+
+  it('sends backend answers and reply control to the avatar worker', async () => {
+    mockAvatarSession();
+    const clientPromise = startLiveKitAvatarClient(livekitOptions({ tutorProfile: 'english' }));
+    await resolveAvatarVideoTrack();
+    const controller = await clientPromise;
+
+    expect(controller.speakText('The library should stay open.')).toBe(true);
+    controller.requestResponse?.();
+    controller.cancelSpeech();
+    expect(lastRoom?.localParticipant.sendText).toHaveBeenNthCalledWith(
+      1,
+      JSON.stringify({ action: 'speak', text: 'The library should stay open.' }),
+      { topic: 'areqa.backend_speech' },
+    );
+    expect(lastRoom?.localParticipant.sendText).toHaveBeenNthCalledWith(
+      2,
+      JSON.stringify({ action: 'reply' }),
+      { topic: 'areqa.backend_speech' },
+    );
+    expect(lastRoom?.localParticipant.sendText).toHaveBeenNthCalledWith(
+      3,
+      JSON.stringify({ action: 'cancel' }),
+      { topic: 'areqa.backend_speech' },
+    );
   });
 
   it('sends bounded recent message context when starting an avatar session', async () => {

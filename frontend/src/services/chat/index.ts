@@ -55,6 +55,8 @@ export interface SendMessageOptions {
   forceThink?: boolean;
   /** Keep delegated voice answers aligned with the profile that started the voice session. */
   tutorProfile?: TutorProfile;
+  /** Include the saved transcript only for an active speaking drill. */
+  speakingPractice?: boolean;
 }
 
 export interface SendMessageResult {
@@ -381,9 +383,9 @@ export async function sendMessage(
   const shouldPersist = canPersistHistory();
 
   // Create or use existing conversation
-  let activeConversationId = shouldPersist
-    ? conversationId ?? conversationStore.activeConversationId
-    : undefined;
+  let activeConversationId = conversationId ?? (shouldPersist
+    ? conversationStore.activeConversationId
+    : undefined);
   let isNewConversation = false;
 
   if (!activeConversationId) {
@@ -622,7 +624,7 @@ export async function sendMessage(
         effectiveSearchMode,
         activeConversationId,
         attachments,
-        { responseMode, tutorProfile: effectiveTutorProfile },
+        { responseMode, tutorProfile: effectiveTutorProfile, speakingPractice: options.speakingPractice },
       );
     } else {
       await createChatStream(
@@ -634,7 +636,7 @@ export async function sendMessage(
         effectiveSearchMode,
         activeConversationId,
         [],
-        { responseMode, tutorProfile: effectiveTutorProfile },
+        { responseMode, tutorProfile: effectiveTutorProfile, speakingPractice: options.speakingPractice },
       );
     }
 

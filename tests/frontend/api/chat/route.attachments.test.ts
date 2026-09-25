@@ -73,6 +73,20 @@ describe('chat attachment BFF route', () => {
     expect(payload.tutor_profile).toBe('english');
   });
 
+  it('preserves voice mode and speaking practice through the JSON proxy', async () => {
+    await POST(jsonRequest({
+      messages: [{ role: 'user', content: '依逐字稿陪我練口說' }],
+      tutor_profile: 'english',
+      response_mode: 'voice',
+      speaking_practice: true,
+    }) as any);
+    const upstream = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const payload = JSON.parse(String(upstream.body));
+    expect(payload).toEqual(expect.objectContaining({
+      tutor_profile: 'english', response_mode: 'voice', speaking_practice: true,
+    }));
+  });
+
   it('preserves tutor profile in multipart chat requests', async () => {
     const formData = new FormData();
     formData.append('messages', JSON.stringify({

@@ -479,6 +479,26 @@ describe('Chat Service', () => {
       expect(databaseService.message.add).not.toHaveBeenCalled();
     });
 
+    it('keeps an explicit guest conversation for grounded voice follow-ups', async () => {
+      vi.mocked(getCurrentUserId).mockReturnValue(null);
+      mockChatStore.messages = [];
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('Try that answer again.');
+        await callbacks.onDone();
+      });
+
+      await sendMessage('My answer', 'guest-speaking', [], {
+        responseMode: 'voice', tutorProfile: 'english', speakingPractice: true,
+      });
+
+      expect(createChatStream).toHaveBeenCalledWith(
+        expect.any(Array), expect.any(Object), expect.anything(),
+        expect.any(Boolean), expect.any(Boolean), expect.any(String),
+        'guest-speaking', [],
+        expect.objectContaining({ responseMode: 'voice', speakingPractice: true }),
+      );
+    });
+
     it('returns an incomplete result when the stream reports an error', async () => {
       mockChatStore.messages = [{ id: 'msg-prev', role: 'user', content: 'previous' }];
 

@@ -38,6 +38,8 @@ interface ChatRequestBody {
   search_mode?: 'auto' | 'always' | 'never';
   interface_language?: 'zh-TW' | 'zh-CN' | 'en';
   tutor_profile?: 'general' | 'english';
+  response_mode?: 'text' | 'voice';
+  speaking_practice?: boolean;
   force_think?: boolean;
   temperature?: number;
   top_p?: number;
@@ -272,6 +274,8 @@ export async function POST(request: NextRequest) {
           search_mode: body.search_mode,
           interface_language: body.interface_language,
           tutor_profile: body.tutor_profile === 'english' ? 'english' : 'general',
+          response_mode: body.response_mode === 'voice' ? 'voice' : 'text',
+          speaking_practice: body.speaking_practice === true,
           force_think: body.force_think || false,
           temperature: body.temperature ?? 0.0,
           top_p: body.top_p ?? 0.9,

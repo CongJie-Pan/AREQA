@@ -122,6 +122,7 @@ export async function createChatStream(
       interface_language: readInterfaceLanguage(),
       tutor_profile: options.tutorProfile ?? 'general',
       response_mode: options.responseMode ?? 'text',
+      speaking_practice: options.speakingPractice ?? false,
     };
     logger.info('chat.stream_request_started', {
       conversationId,

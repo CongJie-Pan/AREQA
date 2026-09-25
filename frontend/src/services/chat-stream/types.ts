@@ -192,4 +192,5 @@ export interface ChatStreamOptions {
   responseMode?: 'text' | 'voice';
   /** Optional subject tutor prompt overlay. */
   tutorProfile?: TutorProfile;
+  speakingPractice?: boolean;
 }

@@ -83,6 +83,8 @@ export interface RealtimeClientController {
   cancelSpeech: () => void;
   /** Ask the live voice session to speak backend-authored text. */
   speakText: (text: string) => boolean;
+  /** Release a transcribed turn after frontend routing has completed. */
+  requestResponse?: () => void;
   disconnect: () => void;
 }
 
@@ -335,6 +337,7 @@ async function createRealtimeSession(
 async function fetchAreqaContext(
   conversationId: string,
   interfaceLanguage: StartRealtimeClientOptions['interfaceLanguage'],
+  tutorProfile: StartRealtimeClientOptions['tutorProfile'],
   recentMessages: DisplayMessage[],
 ): Promise<unknown> {
   const response = await authenticatedFetch(API_CONFIG.realtimeContextEndpoint, {
@@ -343,6 +346,7 @@ async function fetchAreqaContext(
     body: JSON.stringify({
       conversation_id: conversationId,
       interface_language: interfaceLanguage,
+      tutor_profile: tutorProfile ?? 'general',
       messages: buildRealtimeContext(recentMessages).map(({ role, content }) => ({ role, content })),
     }),
   });
@@ -430,6 +434,7 @@ async function handleToolCall(
   const context = await fetchAreqaContext(
     options.getConversationId?.() || options.conversationId,
     options.interfaceLanguage,
+    options.tutorProfile,
     options.recentMessages(),
   );
   if (!shouldContinue()) {
@@ -1113,6 +1118,9 @@ async function startRealtimeWebRtcClient(
         });
       },
       cancelSpeech: cancelActiveResponse,
+      requestResponse: () => {
+        if (dataChannel?.readyState === 'open') sendRealtimeEvent(dataChannel, { type: 'response.create' });
+      },
       speakText: (text: string) => {
         if (dataChannel?.readyState !== 'open') return false;
         const event = backendSpeechResponse(text);
@@ -1452,6 +1460,9 @@ async function startRealtimeWebSocketClient(
         });
       },
       cancelSpeech: cancelActiveResponse,
+      requestResponse: () => {
+        if (socket?.readyState === WebSocket.OPEN) sendRealtimeEvent(socket, { type: 'response.create' });
+      },
       speakText: (text: string) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;
         const event = backendSpeechResponse(text);

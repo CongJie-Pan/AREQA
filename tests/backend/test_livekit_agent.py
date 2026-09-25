@@ -16,12 +16,25 @@ class FakeAvatarStartError(Exception):
 
 class FakeAgentSession:
     last_started_room_options = None
+    last_instance = None
 
     def __init__(self, *, llm):
         self.llm = llm
+        self.spoken = []
+        self.reply_count = 0
+        FakeAgentSession.last_instance = self
 
     async def start(self, *, room, agent, room_options):
         FakeAgentSession.last_started_room_options = room_options
+
+    async def interrupt(self):
+        return None
+
+    def say(self, text, *, allow_interruptions):
+        self.spoken.append(text)
+
+    def generate_reply(self):
+        self.reply_count += 1
 
 
 class FakeRoomOptions:
@@ -49,8 +62,10 @@ class JoiningAvatarSession:
 
 
 def fake_job_context() -> SimpleNamespace:
+    room = SimpleNamespace(name="areqa-live-test-room", handlers={})
+    room.register_text_stream_handler = lambda topic, handler: room.handlers.update({topic: handler})
     return SimpleNamespace(
-        room=SimpleNamespace(name="areqa-live-test-room"),
+        room=room,
         job=SimpleNamespace(metadata='{"conversation_id": "conv_test"}'),
     )
 
@@ -161,3 +176,32 @@ async def test_livekit_agent_disables_direct_audio_when_anam_joins(monkeypatch):
     await agent_module.areqa_live_tutor(fake_job_context())
 
     assert FakeAgentSession.last_started_room_options.audio_output is False
+
+
+@pytest.mark.asyncio
+async def test_livekit_worker_reads_backend_answer_through_avatar_audio(monkeypatch):
+    monkeypatch.setattr(agent_module, "ANAM_AVATAR_ID", "")
+    monkeypatch.setattr(agent_module, "AgentSession", FakeAgentSession)
+    monkeypatch.setattr(agent_module.openai, "realtime", SimpleNamespace(
+        RealtimeModel=lambda **kwargs: {"kwargs": kwargs},
+    ))
+    monkeypatch.setattr(agent_module.room_io, "RoomOptions", FakeRoomOptions)
+    ctx = fake_job_context()
+    ctx.job.metadata = json.dumps({
+        "conversation_id": "conv_test", "tutor_profile": "english", "participant_identity": "learner",
+    })
+    await agent_module.areqa_live_tutor(ctx)
+
+    assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].create_response is False
+    handler = ctx.room.handlers[agent_module.BACKEND_SPEECH_TOPIC]
+
+    class Reader:
+        async def read_all(self):
+            return json.dumps({"action": "speak", "text": "Try the same idea once more."})
+
+    task = handler(Reader(), "learner")
+    await task
+    assert FakeAgentSession.last_instance.spoken == ["Try the same idea once more."]
+
+    await handler(Reader(), "another-participant")
+    assert FakeAgentSession.last_instance.spoken == ["Try the same idea once more."]

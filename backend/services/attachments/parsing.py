@@ -54,6 +54,7 @@ class ProcessedAttachment:
     # PDF bytes are retained only until orchestration decides whether visual
     # enrichment is worth the cost. They are never persisted by this service.
     pdf_bytes: bytes = b""
+    plain_text: str = ""
 
 
 def _attachment_error(code: str, detail: str, status_code: int = 422) -> HTTPException:
@@ -207,6 +208,7 @@ async def process_attachments(
 
             media_type = _validate_type(filename, declared_type, data)
             pdf_bytes = b""
+            plain_text = ""
             if media_type in IMAGE_TYPES:
                 _verify_image(data, media_type)
                 encoded = base64.b64encode(data).decode("ascii")
@@ -226,6 +228,7 @@ async def process_attachments(
                 pdf_bytes = data
             else:
                 content_part = {"type": "text", "text": _decode_text(data, filename)}
+                plain_text = data.decode("utf-8-sig", errors="replace")[:MAX_TEXT_ATTACHMENT_CHARS]
 
             processed.append(
                 ProcessedAttachment(
@@ -235,6 +238,7 @@ async def process_attachments(
                     sha256=hashlib.sha256(data).hexdigest(),
                     content_part=content_part,
                     pdf_bytes=pdf_bytes,
+                    plain_text=plain_text,
                 )
             )
             logger.info(

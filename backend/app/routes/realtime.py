@@ -97,6 +97,7 @@ class RealtimeContextRequest(BaseModel):
     conversation_id: str = ""
     messages: List[RealtimeContextMessage] = Field(default_factory=list, max_length=MAX_CONTEXT_MESSAGES)
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
+    tutor_profile: str = "general"
 
 
 class SpeechReadRequest(BaseModel):
@@ -300,6 +301,7 @@ def _livekit_avatar_agent_metadata(
     *,
     session_id: str | None = None,
     memory_items: list[str] | None = None,
+    participant_identity: str = "",
 ) -> str:
     """Return bounded dispatch metadata for the LiveKit avatar agent.
 
@@ -341,6 +343,7 @@ def _livekit_avatar_agent_metadata(
         {
             "conversation_id": _safe_livekit_fragment(payload.conversation_id, fallback="conversation"),
             "session_id": _safe_livekit_fragment(session_id or _livekit_avatar_session_id(), fallback="session"),
+            "participant_identity": participant_identity,
             "interface_language": payload.interface_language,
             "tutor_profile": normalize_tutor_profile(payload.tutor_profile),
             "tutor_profile_prompt": tutor_profile_prompt,
@@ -540,7 +543,7 @@ def _build_realtime_session_config(payload: RealtimeSessionRequest) -> dict[str,
                 "transcription": _build_realtime_transcription_config(payload.interface_language),
                 "turn_detection": {
                     "type": "server_vad",
-                    "create_response": True,
+                    "create_response": normalize_tutor_profile(payload.tutor_profile) != "english",
                     "interrupt_response": True,
                 },
             },
@@ -663,7 +666,10 @@ async def create_livekit_avatar_session(
     room_name = _livekit_avatar_room_name(payload.conversation_id, session_id)
     participant_identity = _livekit_participant_identity(current_user_id, payload.conversation_id)
     memory_items = await _livekit_avatar_memory_items(current_user_id, payload.conversation_id)
-    metadata = _livekit_avatar_agent_metadata(payload, session_id=session_id, memory_items=memory_items)
+    metadata = _livekit_avatar_agent_metadata(
+        payload, session_id=session_id, memory_items=memory_items,
+        participant_identity=participant_identity,
+    )
 
     try:
         room_config = livekit_api.RoomConfiguration(
@@ -1224,6 +1230,11 @@ async def get_realtime_context(
         for item in payload.messages[-MAX_CONTEXT_MESSAGES:]
         if item.content.strip()
     ]
+    from services.speaking_material_service import load_material, voice_excerpt
+
+    speaking_material = None
+    if normalize_tutor_profile(payload.tutor_profile) == "english":
+        speaking_material = voice_excerpt(await load_material(current_user_id, payload.conversation_id))
     memory_items: list[str] = []
     if current_user_id:
         try:
@@ -1268,6 +1279,7 @@ async def get_realtime_context(
     return {
         "conversation_id": payload.conversation_id,
         "recent_messages": recent_messages,
+        "speaking_material": speaking_material,
         "memory_items": memory_items,
         "parts_context": _build_realtime_parts_context(),
         "guidance": (
