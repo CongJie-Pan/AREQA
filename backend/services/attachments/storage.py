@@ -64,6 +64,56 @@ class AttachmentImageStorageService:
 
         self._async_client_factory = async_client_factory
 
+    async def persist_generated_image(
+        self, *, png_bytes: bytes, conversation_id: str, image_id: str,
+    ) -> dict[str, Any] | None:
+        """Store a generated PNG in the existing private visual bucket.
+
+        Args:
+            png_bytes: Provider output already validated as a bounded PNG.
+            conversation_id: Owning conversation identifier.
+            image_id: Stable identifier for retries and signed URL renewal.
+
+        Returns:
+            Signed display URL and private storage metadata, or ``None`` when
+            storage is unavailable. The caller then treats the image as transient.
+
+        Side Effects:
+            Uploads a private image and requests a signed URL. Safe logs include
+            only correlation identifiers and error classes.
+        """
+
+        storage_config = self._storage_config()
+        if storage_config is None:
+            logger.info("image_generation.storage_skipped conversation_id=%s reason=missing_config", conversation_id)
+            return None
+        supabase_url, service_role_key, bucket, ttl_seconds = storage_config
+        safe_conversation = self._safe_segment(conversation_id, "unknown")
+        safe_image = self._safe_segment(image_id, "image")
+        object_path = f"conversations/{safe_conversation}/generated-images/{safe_image}.png"
+        encoded_path = "/".join(quote(segment, safe="") for segment in object_path.split("/"))
+        upload_url = f"{supabase_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_path}"
+        sign_url = f"{supabase_url}/storage/v1/object/sign/{quote(bucket, safe='')}/{encoded_path}"
+        headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}"}
+        try:
+            async with self._async_client_factory(timeout=12.0) as client:
+                upload = await client.post(upload_url, content=png_bytes, headers={
+                    **headers, "Content-Type": "image/png", "x-upsert": "true",
+                })
+                upload.raise_for_status()
+                signed = await client.post(sign_url, json={"expiresIn": ttl_seconds}, headers=headers)
+                signed.raise_for_status()
+                signed_url = self._absolute_signed_url(supabase_url, signed.json())
+        except Exception as error:
+            logger.warning("image_generation.storage_failed conversation_id=%s reason=%s", conversation_id, type(error).__name__)
+            return None
+        if not signed_url:
+            return None
+        return {
+            "url": signed_url, "bucket": bucket, "path": object_path,
+            "expires_at": int(time.time()) + ttl_seconds,
+        }
+
     async def persist_pdf_image_block(
         self,
         *,

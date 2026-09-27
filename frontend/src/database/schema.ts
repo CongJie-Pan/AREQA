@@ -76,6 +76,8 @@ export interface ImageBlock {
   sourceDomain: string;
   caption: string;
   provider?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | 'pdf_attachment' | string;
+  /** Safe provider model identifier for generated images. */
+  model?: string;
   tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | 'pdf_attachment' | string;
   license?: string;
   licenseUrl?: string;
