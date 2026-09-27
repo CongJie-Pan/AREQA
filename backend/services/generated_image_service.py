@@ -122,13 +122,14 @@ async def generate_teaching_image(
 
     Side Effects:
         Calls OpenRouter and optionally writes private Supabase Storage. Logs
-        only model, correlation identifier, size, cost, and timing metadata.
+        only safe model, routing, dimensions, cost, state, and timing metadata.
     """
 
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
         raise RuntimeError("Image generation is not configured")
     model = choose_image_model(request)
+    debug_logs = settings.enable_generated_image_debug_logs
     payload = {
         "model": model,
         "prompt": build_image_prompt(request, language=language, model=model),
@@ -137,6 +138,14 @@ async def generate_teaching_image(
         **({"quality": "low"} if model == FLARE_MODEL else {"resolution": "1K"}),
     }
     started = time.monotonic()
+    if debug_logs:
+        logger.info(
+            "image_generation.provider_started conversation_id=%s image_id=%s model=%s route=%s language=%s request_chars=%s prompt_chars=%s quality=%s",
+            conversation_id, image_id, model,
+            "structured_visual" if model == QWEN_MODEL else "default",
+            language, len(request), len(payload["prompt"]),
+            "low" if model == FLARE_MODEL else "1K",
+        )
     try:
         async with client_factory(timeout=100.0) as client:
             response = await client.post(
@@ -148,6 +157,12 @@ async def generate_teaching_image(
     except (httpx.HTTPError, ValueError) as error:
         logger.warning("image_generation.provider_failed model=%s conversation_id=%s reason=%s", model, conversation_id, type(error).__name__)
         raise RuntimeError("Image provider is unavailable") from error
+    if debug_logs:
+        logger.info(
+            "image_generation.provider_completed conversation_id=%s image_id=%s model=%s status=%s elapsed_ms=%s",
+            conversation_id, image_id, model, response.status_code,
+            round((time.monotonic() - started) * 1000),
+        )
 
     items = body.get("data") if isinstance(body, dict) else None
     encoded = items[0].get("b64_json") if isinstance(items, list) and items and isinstance(items[0], dict) else None
@@ -164,19 +179,33 @@ async def generate_teaching_image(
             if generated.format != "PNG" or generated.width * generated.height > 16_000_000:
                 raise ValueError("Image provider returned an unsupported image")
             generated.load()
+            width, height = generated.size
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         raise ValueError("Image provider returned an invalid PNG") from error
 
     cost = body.get("usage", {}).get("cost") if isinstance(body.get("usage"), dict) else None
     cost_usd = float(cost) if isinstance(cost, (int, float)) and cost >= 0 else None
+    if debug_logs:
+        logger.info(
+            "image_generation.image_validated conversation_id=%s image_id=%s width=%s height=%s bytes=%s cost_usd=%s",
+            conversation_id, image_id, width, height, len(image_bytes), cost_usd,
+        )
     storage = AttachmentImageStorageService()
+    storage_started = time.monotonic()
     stored = await storage.persist_generated_image(
         png_bytes=image_bytes, user_id=user_id, conversation_id=conversation_id, image_id=image_id,
     )
+    if debug_logs:
+        logger.info(
+            "image_generation.storage_completed conversation_id=%s image_id=%s persisted=%s elapsed_ms=%s",
+            conversation_id, image_id, bool(stored),
+            round((time.monotonic() - storage_started) * 1000),
+        )
     display_url = stored["url"] if stored else f"data:image/png;base64,{encoded}"
     summary = ""
     how_to_read: tuple[str, ...] = ()
     if settings.enable_visual_understanding:
+        understanding_started = time.monotonic()
         try:
             async with AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=key) as vision_client:
                 understanding = await VisualUnderstandingAgent().analyze(
@@ -191,8 +220,16 @@ async def generate_teaching_image(
             if understanding.source == "vision_model" and understanding.confidence in {"high", "medium"}:
                 summary = understanding.summary
                 how_to_read = understanding.how_to_read
+            if debug_logs:
+                logger.info(
+                    "image_generation.understanding_completed conversation_id=%s image_id=%s source=%s confidence=%s summary_available=%s elapsed_ms=%s",
+                    conversation_id, image_id, understanding.source, understanding.confidence,
+                    bool(summary), round((time.monotonic() - understanding_started) * 1000),
+                )
         except Exception as error:
             logger.warning("image_generation.understanding_failed conversation_id=%s reason=%s", conversation_id, type(error).__name__)
+    elif debug_logs:
+        logger.info("image_generation.understanding_skipped conversation_id=%s image_id=%s reason=disabled", conversation_id, image_id)
     logger.info(
         "image_generation.completed model=%s conversation_id=%s bytes=%s cost_usd=%s stored=%s elapsed_ms=%s",
         model, conversation_id, len(image_bytes), cost_usd, bool(stored),

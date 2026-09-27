@@ -2,10 +2,12 @@
 
 import base64
 from io import BytesIO
+import logging
 
 import pytest
 from PIL import Image
 
+from config import Settings
 from services import generated_image_service as images
 from services.visual.understanding import VisualUnderstandingResult
 
@@ -25,14 +27,23 @@ def test_image_model_routing_and_prompt_contract():
     assert "do not invent" in prompt
 
 
+def test_generated_image_debug_logs_can_be_enabled_from_environment(monkeypatch):
+    monkeypatch.setenv("ENABLE_GENERATED_IMAGE_DEBUG_LOGS", "true")
+    assert Settings(_env_file=None).enable_generated_image_debug_logs is True
+
+
 @pytest.mark.asyncio
-async def test_generate_image_uses_bounded_provider_request_and_private_storage(monkeypatch):
+@pytest.mark.parametrize("debug_logs", [False, True])
+async def test_generate_image_uses_bounded_provider_request_and_private_storage(monkeypatch, caplog, debug_logs):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
     monkeypatch.setattr(images.settings, "enable_visual_understanding", False)
+    monkeypatch.setattr(images.settings, "enable_generated_image_debug_logs", debug_logs)
     png = _valid_png()
     seen = {}
 
     class Response:
+        status_code = 200
+
         def raise_for_status(self):
             return None
 
@@ -58,9 +69,10 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
         return {"url": "https://example.test/signed", "bucket": "images", "path": "private/image.png", "expires_at": 123}
 
     monkeypatch.setattr(images.AttachmentImageStorageService, "persist_generated_image", store)
-    result = await images.generate_teaching_image(
-        "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
-    )
+    with caplog.at_level(logging.INFO, logger=images.logger.name):
+        result = await images.generate_teaching_image(
+            "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
+        )
     assert seen["payload"]["model"] == images.FLARE_MODEL
     assert seen["payload"]["n"] == 1
     assert seen["payload"]["quality"] == "low"
@@ -68,6 +80,15 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
     assert result.image_url == "https://example.test/signed"
     assert result.cost_usd == 0.04
     assert result.transient is False
+    detailed_events = ("provider_started", "provider_completed", "image_validated", "storage_completed", "understanding_skipped")
+    for event in detailed_events:
+        assert (f"image_generation.{event}" in caplog.text) is debug_logs
+    if debug_logs:
+        assert "model=openai/gpt-image-2.5-flare" in caplog.text
+        assert "route=default" in caplog.text
+        assert "persisted=True" in caplog.text
+    assert "Draw a cat" not in caplog.text
+    assert "test-only-key" not in caplog.text
 
 
 @pytest.mark.asyncio

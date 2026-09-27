@@ -96,7 +96,7 @@ export async function generateConversationImage(
         id: assistantId, role: 'assistant', content, createdAt,
         ...(!block.transient ? { answerBlocks: [block] } : {}),
       });
-      logger.info('image_generation_completed', { conversationId: id, assistantId, model: block.model, persisted: !block.transient });
+      logger.info('image_generation_completed', { conversationId: id, assistantId, persisted: !block.transient });
       return { completed: true, conversationId: id, block, persisted: !block.transient };
     } catch (error) {
       const unsavedContent = language === 'en'

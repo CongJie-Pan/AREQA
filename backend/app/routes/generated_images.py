@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
+from config import settings
 from services.attachments.storage import AttachmentImageStorageService
 from services.generated_image_quota import consume_image_quota
 from services.generated_image_service import generate_teaching_image
@@ -47,7 +48,14 @@ async def generate_image_endpoint(
 
     if not SAFE_ID.fullmatch(payload.conversation_id):
         raise HTTPException(status_code=400, detail="Invalid conversation identifier")
+    if settings.enable_generated_image_debug_logs:
+        logger.info(
+            "image_generation.request_received conversation_id=%s language=%s request_chars=%s",
+            payload.conversation_id, payload.interface_language, len(payload.prompt),
+        )
     if not await consume_image_quota(current_user_id):
+        if settings.enable_generated_image_debug_logs:
+            logger.info("image_generation.quota_rejected conversation_id=%s", payload.conversation_id)
         raise HTTPException(status_code=429, detail="Image rate limit exceeded")
     image_id = uuid.uuid4().hex
     try:
@@ -68,7 +76,7 @@ async def generate_image_endpoint(
             "purpose": "diagram", "imageUrl": result.image_url,
             "thumbnailUrl": result.image_url, "sourceUrl": "",
             "sourceDomain": "", "caption": result.caption,
-            "provider": "generated_image", "model": result.model,
+            "provider": "generated_image",
             "safetyStatus": "pass", "matchConfidence": 1.0,
             "transient": result.transient,
             "storageBucket": result.storage_bucket,

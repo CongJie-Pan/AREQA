@@ -1,5 +1,7 @@
 """Quota and authenticated route contracts for paid image generation."""
 
+import logging
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -39,10 +41,12 @@ async def test_image_quota_keeps_a_local_guard_when_redis_is_unavailable(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_image_route_requires_auth_and_enforces_backend_quota(monkeypatch):
+@pytest.mark.parametrize("debug_logs", [False, True])
+async def test_image_route_requires_auth_and_enforces_backend_quota(monkeypatch, caplog, debug_logs):
     app = FastAPI()
     app.include_router(route.router)
     seen = []
+    monkeypatch.setattr(route.settings, "enable_generated_image_debug_logs", debug_logs)
 
     async def generate(*args, **kwargs):
         seen.append(kwargs)
@@ -51,18 +55,23 @@ async def test_image_route_requires_auth_and_enforces_backend_quota(monkeypatch)
     monkeypatch.setattr(route, "generate_teaching_image", generate)
     monkeypatch.setattr(route, "consume_image_quota", lambda user_id: _allowed(user_id))
     request = {"prompt": "Draw a cat", "conversation_id": "conv-a", "interface_language": "en"}
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        unauthenticated = await client.post("/api/v1/images/generate", json=request)
-        assert unauthenticated.status_code in {401, 403}
-        app.dependency_overrides[get_current_user] = lambda: "user-a"
-        valid = await client.post("/api/v1/images/generate", json=request)
-        assert valid.status_code == 200
-        assert valid.json()["block"]["provider"] == "generated_image"
-        assert len(seen) == 1
-        monkeypatch.setattr(route, "consume_image_quota", lambda user_id: _denied(user_id))
-        limited = await client.post("/api/v1/images/generate", json=request)
-        assert limited.status_code == 429
-        assert len(seen) == 1
+    with caplog.at_level(logging.INFO, logger=route.logger.name):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            unauthenticated = await client.post("/api/v1/images/generate", json=request)
+            assert unauthenticated.status_code in {401, 403}
+            app.dependency_overrides[get_current_user] = lambda: "user-a"
+            valid = await client.post("/api/v1/images/generate", json=request)
+            assert valid.status_code == 200
+            assert valid.json()["block"]["provider"] == "generated_image"
+            assert "model" not in valid.json()["block"]
+            assert len(seen) == 1
+            monkeypatch.setattr(route, "consume_image_quota", lambda user_id: _denied(user_id))
+            limited = await client.post("/api/v1/images/generate", json=request)
+            assert limited.status_code == 429
+            assert len(seen) == 1
+    assert ("image_generation.request_received" in caplog.text) is debug_logs
+    assert ("image_generation.quota_rejected" in caplog.text) is debug_logs
+    assert "Draw a cat" not in caplog.text
 
 
 @pytest.mark.asyncio

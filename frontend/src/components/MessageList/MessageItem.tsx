@@ -1611,9 +1611,9 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
           <span className={styles.answerImageCaptionText}>{displayCaption}</span>
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
-            {isPdfAttachmentImage || isGeneratedImage ? (
-              <span>{isGeneratedImage ? block.model || 'AI' : t('uploadedAttachmentBadge')}</span>
-            ) : (
+            {isPdfAttachmentImage ? (
+              <span>{t('uploadedAttachmentBadge')}</span>
+            ) : isGeneratedImage ? null : (
               <a
                 href={safeSourceUrl}
                 target="_blank"
@@ -1699,9 +1699,9 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
                   {language === 'en' ? 'Download image' : '下載圖片'}
                 </a>
               )}
-              {isPdfAttachmentImage || isGeneratedImage ? (
-                <span>{isGeneratedImage ? block.model || 'AI' : t('uploadedAttachmentBadge')}</span>
-              ) : safeSourceUrl ? (
+              {isPdfAttachmentImage ? (
+                <span>{t('uploadedAttachmentBadge')}</span>
+              ) : isGeneratedImage ? null : safeSourceUrl ? (
                 <a
                   href={safeSourceUrl}
                   target="_blank"

@@ -696,7 +696,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });
 
-  it('renders generated images without a fabricated source link', () => {
+  it('renders generated images without a model label or fabricated source link', () => {
     render(
       <MessageItem message={{
         ...baseMessage,
@@ -710,8 +710,10 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
     expect(screen.getByAltText('細胞結構')).toHaveAttribute('src', 'https://example.com/generated.png');
     expect(screen.getByText('AI 生成')).toBeInTheDocument();
-    expect(screen.getByText('qwen/qwen-image-3-pro')).toBeInTheDocument();
+    expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
     expect(screen.queryByText('來源')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByAltText('細胞結構').closest('button')!);
+    expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
   });
 
   it('renews an expired generated image URL when reopening a conversation', async () => {
