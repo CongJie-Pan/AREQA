@@ -5,6 +5,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
 import { createReadAloudAudio } from '../../../../frontend/src/services/speech/readAloud';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
+
+vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 
 // Mock child components to isolate tests
 vi.mock('../../../../frontend/src/components/RAGStatusPanel', () => ({
@@ -709,6 +712,49 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('AI 生成')).toBeInTheDocument();
     expect(screen.getByText('qwen/qwen-image-3-pro')).toBeInTheDocument();
     expect(screen.queryByText('來源')).not.toBeInTheDocument();
+  });
+
+  it('renews an expired generated image URL when reopening a conversation', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response(JSON.stringify({
+      imageUrl: 'https://example.com/renewed.png', storageExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+    })));
+    render(<MessageItem message={{
+      ...baseMessage, conversationId: 'conv-a',
+      answerBlocks: [{
+        type: 'image_block', slotId: 'image-a', topic: '細胞', purpose: 'diagram',
+        imageUrl: 'https://example.com/expired.png', sourceUrl: '', sourceDomain: '',
+        caption: '細胞結構', provider: 'generated_image', safetyStatus: 'pass', matchConfidence: 1,
+        storagePath: 'users/owner/conversations/conv-a/generated-images/image-a.png',
+        storageExpiresAt: Math.floor(Date.now() / 1000) - 10,
+      }],
+    }} />);
+
+    await waitFor(() => expect(screen.getByAltText('細胞結構')).toHaveAttribute('src', 'https://example.com/renewed.png'));
+    expect(authenticatedFetch).toHaveBeenCalledWith('/api/images/refresh', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ conversation_id: 'conv-a', image_id: 'image-a' }),
+    }));
+  });
+
+  it('downloads a private generated image through the authenticated proxy', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response(new Blob(['png'], { type: 'image/png' })));
+    const linkClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<MessageItem message={{
+      ...baseMessage, conversationId: 'conv-a',
+      answerBlocks: [{
+        type: 'image_block', slotId: 'image-a', topic: '細胞', purpose: 'diagram',
+        imageUrl: 'https://example.com/image.png', sourceUrl: '', sourceDomain: '',
+        caption: '細胞圖', provider: 'generated_image', safetyStatus: 'pass', matchConfidence: 1,
+        storagePath: 'users/owner/conversations/conv-a/generated-images/image-a.png',
+        storageExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+      }],
+    }} />);
+    fireEvent.click(screen.getByAltText('細胞圖').closest('button')!);
+    fireEvent.click(screen.getByText('下載圖片'));
+    await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledWith('/api/images/download', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ conversation_id: 'conv-a', image_id: 'image-a' }),
+    })));
+    await waitFor(() => expect(linkClick).toHaveBeenCalled());
+    linkClick.mockRestore();
   });
 
   it('uses a container-level reveal for streaming assistant markdown', () => {

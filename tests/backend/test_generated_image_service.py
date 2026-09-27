@@ -1,11 +1,19 @@
 """Focused contracts for educational image routing and provider boundaries."""
 
 import base64
+from io import BytesIO
 
 import pytest
+from PIL import Image
 
 from services import generated_image_service as images
 from services.visual.understanding import VisualUnderstandingResult
+
+
+def _valid_png() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (2, 2), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_image_model_routing_and_prompt_contract():
@@ -21,7 +29,7 @@ def test_image_model_routing_and_prompt_contract():
 async def test_generate_image_uses_bounded_provider_request_and_private_storage(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
     monkeypatch.setattr(images.settings, "enable_visual_understanding", False)
-    png = b"\x89PNG\r\n\x1a\n" + b"test-image"
+    png = _valid_png()
     seen = {}
 
     class Response:
@@ -45,13 +53,13 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
             seen.update(url=url, payload=json, headers=headers)
             return Response()
 
-    async def store(self, *, png_bytes, conversation_id, image_id):
+    async def store(self, *, png_bytes, user_id, conversation_id, image_id):
         seen.update(png_bytes=png_bytes, conversation_id=conversation_id, image_id=image_id)
         return {"url": "https://example.test/signed", "bucket": "images", "path": "private/image.png", "expires_at": 123}
 
     monkeypatch.setattr(images.AttachmentImageStorageService, "persist_generated_image", store)
     result = await images.generate_teaching_image(
-        "Draw a cat", language="en", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
+        "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
     )
     assert seen["payload"]["model"] == images.FLARE_MODEL
     assert seen["payload"]["n"] == 1
@@ -66,7 +74,7 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
 async def test_generate_image_attaches_grounded_vision_summary(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
     monkeypatch.setattr(images.settings, "enable_visual_understanding", True)
-    png = b"\x89PNG\r\n\x1a\n" + b"test-image"
+    png = _valid_png()
 
     class Response:
         def raise_for_status(self):
@@ -113,14 +121,18 @@ async def test_generate_image_attaches_grounded_vision_summary(monkeypatch):
     monkeypatch.setattr(images, "AsyncOpenAI", VisionClient)
     monkeypatch.setattr(images.VisualUnderstandingAgent, "analyze", analyze)
     result = await images.generate_teaching_image(
-        "Draw a cat", language="en", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
+        "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
     )
     assert result.vision_summary == "A cat is sitting beside a book."
     assert result.how_to_read == ("Look at the cat, then the book.",)
 
 
 @pytest.mark.asyncio
-async def test_generate_image_rejects_non_png_provider_output(monkeypatch):
+@pytest.mark.parametrize("invalid_bytes, expected_error", [
+    (b"not an image", "unsupported image"),
+    (b"\x89PNG\r\n\x1a\n" + b"not an image", "invalid PNG"),
+])
+async def test_generate_image_rejects_invalid_provider_output(monkeypatch, invalid_bytes, expected_error):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
     monkeypatch.setattr(images.settings, "enable_visual_understanding", False)
 
@@ -129,7 +141,7 @@ async def test_generate_image_rejects_non_png_provider_output(monkeypatch):
             return None
 
         def json(self):
-            return {"data": [{"b64_json": base64.b64encode(b"not an image").decode()}]}
+            return {"data": [{"b64_json": base64.b64encode(invalid_bytes).decode()}]}
 
     class Client:
         def __init__(self, **kwargs):
@@ -144,7 +156,7 @@ async def test_generate_image_rejects_non_png_provider_output(monkeypatch):
         async def post(self, *args, **kwargs):
             return Response()
 
-    with pytest.raises(ValueError, match="unsupported image"):
+    with pytest.raises(ValueError, match=expected_error):
         await images.generate_teaching_image(
-            "Draw a cat", language="en", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
+            "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
         )

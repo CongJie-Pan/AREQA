@@ -11,5 +11,9 @@ describe('voice image intent', () => {
     expect(shouldCreateImageForVoiceTurn('你好')).toBe(false);
     expect(shouldCreateImageForVoiceTurn('What is photosynthesis?')).toBe(false);
     expect(shouldCreateImageForVoiceTurn('我的學習計畫是每天讀書')).toBe(false);
+    expect(shouldCreateImageForVoiceTurn('不要生成圖片，口頭說明即可')).toBe(false);
+    expect(shouldCreateImageForVoiceTurn('Do not draw an image')).toBe(false);
+    expect(shouldCreateImageForVoiceTurn('請解釋水循環，但不要畫圖')).toBe(false);
+    expect(shouldCreateImageForVoiceTurn('不要畫圖，請畫一張細胞圖')).toBe(true);
   });
 });

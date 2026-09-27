@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   const clientId = getClientIdentifier(request);
-  if (!checkRateLimit(clientId, { maxRequests: 6, windowMs: 60_000 }).allowed) {
+  if (!checkRateLimit(`image-generate:${clientId}`, { maxRequests: 6, windowMs: 60_000 }).allowed) {
     return NextResponse.json({ error: 'Image rate limit exceeded' }, { status: 429 });
   }
   const authorization = request.headers.get('authorization');

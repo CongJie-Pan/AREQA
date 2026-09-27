@@ -431,6 +431,7 @@ export function ChatInput({
   const addMenuLabels = ADD_MENU_LABELS[language];
   const [value, setValue] = useState('');
   const [createImage, setCreateImage] = useState(false);
+  const composerVersionRef = useRef(0);
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [isTextareaMultiline, setIsTextareaMultiline] = useState(false);
@@ -592,6 +593,8 @@ export function ChatInput({
 
   const handleSend = useCallback(async () => {
     const trimmedValue = value.trim();
+    const composerVersionAtSend = composerVersionRef.current;
+    const sendingAsImage = createImage;
     const previewsToSend = attachmentPreviews;
     const quotedTextToSend = quotedText;
 
@@ -620,6 +623,7 @@ export function ChatInput({
     }
 
     setValue('');
+    if (sendingAsImage) setCreateImage(false);
     setIsTextareaMultiline(false);
     setAttachmentPreviews([]);
     setQuotedText(null);
@@ -647,16 +651,17 @@ export function ChatInput({
 
       if (result && 'completed' in result && !result.completed) {
         restoreDraft();
+        if (sendingAsImage && composerVersionRef.current === composerVersionAtSend) setCreateImage(true);
         return;
       }
 
       for (const preview of previewsToSend) {
         if (preview.objectUrl) URL.revokeObjectURL(preview.objectUrl);
       }
-      setCreateImage(false);
     } catch {
       // Preserve text and attachments so the user can retry the request.
       restoreDraft();
+      if (sendingAsImage && composerVersionRef.current === composerVersionAtSend) setCreateImage(true);
       return;
     }
   }, [value, attachmentPreviews, createImage, disabled, onSend, maxLength, quotedText, setQuotedText, t]);
@@ -677,6 +682,7 @@ export function ChatInput({
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      composerVersionRef.current += 1;
       setValue(e.target.value);
     },
     []

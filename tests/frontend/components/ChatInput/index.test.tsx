@@ -168,6 +168,34 @@ describe('ChatInput', () => {
     await waitFor(() => expect(screen.queryByLabelText('Cancel Create Image')).not.toBeInTheDocument());
   });
 
+  it('keeps the next turn as text while an image request is still pending', async () => {
+    let finishImage!: (result: { completed: boolean }) => void;
+    mockOnSend.mockImplementationOnce(() => new Promise((resolve) => { finishImage = resolve; }));
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.click(screen.getByLabelText('新增'));
+    fireEvent.click(await screen.findByText('Create Image'));
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '畫一張細胞圖' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    expect(screen.queryByLabelText('Cancel Create Image')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '請繼續講解' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    expect(mockOnSend).toHaveBeenLastCalledWith('請繼續講解');
+    finishImage({ completed: true });
+  });
+
+  it('restores the image draft when a pending request fails and no new turn was entered', async () => {
+    mockOnSend.mockResolvedValueOnce({ completed: false });
+    render(<ChatInput onSend={mockOnSend} />);
+    fireEvent.click(screen.getByLabelText('新增'));
+    fireEvent.click(await screen.findByText('Create Image'));
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '畫一張細胞圖' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    await waitFor(() => expect(screen.getByLabelText('訊息輸入框')).toHaveValue('畫一張細胞圖'));
+    expect(screen.getByLabelText('Cancel Create Image')).toBeInTheDocument();
+  });
+
   it('should show and clear the active English Tutor profile chip', () => {
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {

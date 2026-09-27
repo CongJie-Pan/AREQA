@@ -36,6 +36,7 @@ import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
 import { createReadAloudAudio, prepareReadAloudText } from '@/services/speech/readAloud';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 const { TextArea } = Input;
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
@@ -1470,14 +1471,17 @@ function getImageAspectRatio(block: ImageBlock): React.CSSProperties {
  * and opens a viewport-level image viewer whose image/source links preserve the
  * original provider navigation path.
  */
-function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnType<typeof useStyles>['styles'] }) {
+function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; conversationId: string; styles: ReturnType<typeof useStyles>['styles'] }) {
   const { language, t } = useUserPreferences();
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
+  const [renewedUrl, setRenewedUrl] = useState('');
+  const [isRenewing, setIsRenewing] = useState(false);
+  const [renewalFailed, setRenewalFailed] = useState(false);
   const isPdfAttachmentImage = block.provider === 'pdf_attachment';
   const isGeneratedImage = block.provider === 'generated_image';
-  const imageUrl = normalizeSupabaseStorageImageUrl(block.thumbnailUrl || block.imageUrl);
-  const fullImageUrl = normalizeSupabaseStorageImageUrl(block.imageUrl || block.thumbnailUrl);
+  const imageUrl = normalizeSupabaseStorageImageUrl(renewedUrl || block.thumbnailUrl || block.imageUrl);
+  const fullImageUrl = normalizeSupabaseStorageImageUrl(renewedUrl || block.imageUrl || block.thumbnailUrl);
   const safeImageUrl = isSafeImageUrl(imageUrl) ? imageUrl : '';
   const safeFullImageUrl = isSafeImageUrl(fullImageUrl) ? fullImageUrl : safeImageUrl;
   const safeSourceUrl = isSafeUrl(block.sourceUrl) ? block.sourceUrl : '';
@@ -1491,6 +1495,27 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : isGeneratedImage ? 'AI 生成' : block.sourceDomain || 'source';
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
+
+  React.useEffect(() => {
+    if (!isGeneratedImage || !block.storagePath?.startsWith('users/') || !block.storageExpiresAt) return;
+    if (block.storageExpiresAt > Date.now() / 1000 + 300) return;
+    let active = true;
+    setIsRenewing(true);
+    void authenticatedFetch('/api/images/refresh', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: conversationId, image_id: block.slotId }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('Image URL renewal failed');
+      const result = await response.json() as { imageUrl?: string };
+      if (!isSafeImageUrl(result.imageUrl)) throw new Error('Invalid renewed image URL');
+      if (active) setRenewedUrl(result.imageUrl || '');
+    }).catch(() => {
+      if (active) setRenewalFailed(true);
+    }).finally(() => {
+      if (active) setIsRenewing(false);
+    });
+    return () => { active = false; };
+  }, [isGeneratedImage, block.storagePath, block.storageExpiresAt, block.slotId, conversationId]);
 
   React.useEffect(() => {
     setIsImageLoaded(false);
@@ -1509,7 +1534,29 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLightboxOpen]);
 
-  if (visualStatus === 'pending') {
+  const handleGeneratedDownload = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!block.storagePath?.startsWith('users/')) return;
+    event.preventDefault();
+    try {
+      const response = await authenticatedFetch('/api/images/download', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: conversationId, image_id: block.slotId }),
+      });
+      if (!response.ok) throw new Error('Image download failed');
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = 'areqa-image.png';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      window.open(safeFullImageUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  if (visualStatus === 'pending' || isRenewing) {
     return (
       <figure className={styles.answerImageCard} aria-label="圖片載入中">
         <div
@@ -1523,6 +1570,10 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
         </div>
       </figure>
     );
+  }
+
+  if (renewalFailed) {
+    return <p role="status">{language === 'en' ? 'The image is temporarily unavailable.' : '圖片目前無法載入。'}</p>;
   }
 
   if (!safeImageUrl || (!safeSourceUrl && !isPdfAttachmentImage && !isGeneratedImage) || block.safetyStatus !== 'pass') {
@@ -1642,6 +1693,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
                   target="_blank"
                   rel="noopener noreferrer"
                   className={styles.answerImageLightboxSource}
+                  onClick={handleGeneratedDownload}
                 >
                   <Download size={14} aria-hidden="true" />
                   {language === 'en' ? 'Download image' : '下載圖片'}
@@ -1676,10 +1728,12 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
  */
 function AnswerBlocksRenderer({
   blocks,
+  conversationId,
   markdownComponents,
   styles,
 }: {
   blocks: AnswerBlock[];
+  conversationId: string;
   markdownComponents: Components;
   styles: ReturnType<typeof useStyles>['styles'];
 }) {
@@ -1692,7 +1746,7 @@ function AnswerBlocksRenderer({
               data-answer-block-index={index}
               key={block.slotId || `image-${index}`}
             >
-              <ImageBlockCard block={block} styles={styles} />
+              <ImageBlockCard block={block} conversationId={conversationId} styles={styles} />
             </div>
           );
         }
@@ -1774,6 +1828,7 @@ function LiveOrderedAnswerRenderer({
   content,
   slots,
   blocks,
+  conversationId,
   markdownComponents,
   styles,
   isStreaming,
@@ -1781,6 +1836,7 @@ function LiveOrderedAnswerRenderer({
   content: string;
   slots: StreamingImageSlot[];
   blocks: AnswerBlock[];
+  conversationId: string;
   markdownComponents: Components;
   styles: ReturnType<typeof useStyles>['styles'];
   isStreaming: boolean;
@@ -1816,7 +1872,7 @@ function LiveOrderedAnswerRenderer({
             data-live-answer-part={part.key}
             key={part.key}
           >
-            <ImageBlockCard block={imageBlock ?? pendingImageBlock(part.slot)} styles={styles} />
+            <ImageBlockCard block={imageBlock ?? pendingImageBlock(part.slot)} conversationId={conversationId} styles={styles} />
           </div>
         );
       })}
@@ -2511,6 +2567,7 @@ export const MessageItem = memo(function MessageItem({
                 >
                   {shouldUseLiveOrderedAnswer ? (
                     <LiveOrderedAnswerRenderer
+                      conversationId={message.conversationId}
                       content={message.content}
                       slots={liveImageSlots}
                       blocks={message.answerBlocks ?? []}
@@ -2520,6 +2577,7 @@ export const MessageItem = memo(function MessageItem({
                     />
                   ) : shouldUseStructuredAnswerBlocks ? (
                     <AnswerBlocksRenderer
+                      conversationId={message.conversationId}
                       blocks={message.answerBlocks ?? []}
                       markdownComponents={markdownComponents}
                       styles={styles}

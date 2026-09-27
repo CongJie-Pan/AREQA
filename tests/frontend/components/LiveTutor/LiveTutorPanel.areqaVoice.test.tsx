@@ -201,6 +201,29 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
+  it('speaks an image explanation after the current voice reply finishes', async () => {
+    vi.mocked(getCurrentUserId).mockReturnValue('user_1');
+    let finishImage!: (result: Awaited<ReturnType<typeof generateConversationImage>>) => void;
+    vi.mocked(generateConversationImage).mockImplementation(() => new Promise((resolve) => { finishImage = resolve; }));
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => realtimeOptions?.onUserTranscript('請畫出水循環流程圖', 'image-busy'));
+    await waitFor(() => expect(generateConversationImage).toHaveBeenCalledOnce());
+    await act(async () => {
+      realtimeOptions?.onStatus('speaking');
+      finishImage({ completed: true, block: {
+        type: 'image_block', slotId: 'image-1', topic: 'cycle', purpose: 'diagram',
+        imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: 'cycle',
+        safetyStatus: 'pass', matchConfidence: 1, visionSummary: 'The arrows form a cycle.',
+      } });
+    });
+    expect(controller.speakText).not.toHaveBeenCalled();
+    await act(async () => realtimeOptions?.onPlaybackState('stopped'));
+    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith(expect.stringContaining('The arrows form a cycle.')));
+    act(() => view.unmount());
+  });
+
   it('prepares and delivers an attachment while the voice session stays connected', async () => {
     vi.mocked(prepareVoiceAttachments).mockResolvedValue({
       conversation_id: 'conv_paper',

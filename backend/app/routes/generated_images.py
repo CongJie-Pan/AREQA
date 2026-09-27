@@ -7,10 +7,12 @@ import re
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
+from services.attachments.storage import AttachmentImageStorageService
+from services.generated_image_quota import consume_image_quota
 from services.generated_image_service import generate_teaching_image
 
 router = APIRouter()
@@ -45,11 +47,13 @@ async def generate_image_endpoint(
 
     if not SAFE_ID.fullmatch(payload.conversation_id):
         raise HTTPException(status_code=400, detail="Invalid conversation identifier")
+    if not await consume_image_quota(current_user_id):
+        raise HTTPException(status_code=429, detail="Image rate limit exceeded")
     image_id = uuid.uuid4().hex
     try:
         result = await generate_teaching_image(
             payload.prompt, language=payload.interface_language,
-            conversation_id=payload.conversation_id, image_id=image_id,
+            user_id=current_user_id, conversation_id=payload.conversation_id, image_id=image_id,
         )
     except (RuntimeError, ValueError) as error:
         logger.warning(
@@ -76,3 +80,41 @@ async def generate_image_endpoint(
         },
         "cost_usd": result.cost_usd,
     }
+
+
+class RefreshImageRequest(BaseModel):
+    """Stable identifiers needed to refresh a generated image's signed URL."""
+
+    conversation_id: str = Field(min_length=1, max_length=128)
+    image_id: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/api/v1/images/refresh")
+async def refresh_image_endpoint(
+    payload: RefreshImageRequest, current_user_id: str = Depends(get_current_user),
+) -> dict[str, object]:
+    if not SAFE_ID.fullmatch(payload.conversation_id) or not SAFE_ID.fullmatch(payload.image_id):
+        raise HTTPException(status_code=400, detail="Invalid image identifier")
+    renewed = await AttachmentImageStorageService().refresh_generated_image_url(
+        user_id=current_user_id, conversation_id=payload.conversation_id, image_id=payload.image_id,
+    )
+    if not renewed:
+        raise HTTPException(status_code=404, detail="Image unavailable")
+    return {"imageUrl": renewed["url"], "storageExpiresAt": renewed["expires_at"]}
+
+
+@router.post("/api/v1/images/download")
+async def download_image_endpoint(
+    payload: RefreshImageRequest, current_user_id: str = Depends(get_current_user),
+) -> Response:
+    if not SAFE_ID.fullmatch(payload.conversation_id) or not SAFE_ID.fullmatch(payload.image_id):
+        raise HTTPException(status_code=400, detail="Invalid image identifier")
+    png = await AttachmentImageStorageService().download_generated_image(
+        user_id=current_user_id, conversation_id=payload.conversation_id, image_id=payload.image_id,
+    )
+    if png is None:
+        raise HTTPException(status_code=404, detail="Image unavailable")
+    return Response(
+        content=png, media_type="image/png",
+        headers={"Content-Disposition": 'attachment; filename="areqa-image.png"', "Cache-Control": "private, no-store"},
+    )

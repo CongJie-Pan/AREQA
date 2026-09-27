@@ -65,12 +65,13 @@ class AttachmentImageStorageService:
         self._async_client_factory = async_client_factory
 
     async def persist_generated_image(
-        self, *, png_bytes: bytes, conversation_id: str, image_id: str,
+        self, *, png_bytes: bytes, user_id: str, conversation_id: str, image_id: str,
     ) -> dict[str, Any] | None:
         """Store a generated PNG in the existing private visual bucket.
 
         Args:
             png_bytes: Provider output already validated as a bounded PNG.
+            user_id: Authenticated storage owner.
             conversation_id: Owning conversation identifier.
             image_id: Stable identifier for retries and signed URL renewal.
 
@@ -88,9 +89,7 @@ class AttachmentImageStorageService:
             logger.info("image_generation.storage_skipped conversation_id=%s reason=missing_config", conversation_id)
             return None
         supabase_url, service_role_key, bucket, ttl_seconds = storage_config
-        safe_conversation = self._safe_segment(conversation_id, "unknown")
-        safe_image = self._safe_segment(image_id, "image")
-        object_path = f"conversations/{safe_conversation}/generated-images/{safe_image}.png"
+        object_path = self._generated_image_path(user_id, conversation_id, image_id)
         encoded_path = "/".join(quote(segment, safe="") for segment in object_path.split("/"))
         upload_url = f"{supabase_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_path}"
         sign_url = f"{supabase_url}/storage/v1/object/sign/{quote(bucket, safe='')}/{encoded_path}"
@@ -113,6 +112,63 @@ class AttachmentImageStorageService:
             "url": signed_url, "bucket": bucket, "path": object_path,
             "expires_at": int(time.time()) + ttl_seconds,
         }
+
+    async def refresh_generated_image_url(
+        self, *, user_id: str, conversation_id: str, image_id: str,
+    ) -> dict[str, Any] | None:
+        """Sign only the authenticated user's deterministic generated-image path."""
+
+        storage_config = self._storage_config()
+        if storage_config is None:
+            return None
+        supabase_url, service_role_key, bucket, ttl_seconds = storage_config
+        object_path = self._generated_image_path(user_id, conversation_id, image_id)
+        encoded_path = "/".join(quote(segment, safe="") for segment in object_path.split("/"))
+        sign_url = f"{supabase_url}/storage/v1/object/sign/{quote(bucket, safe='')}/{encoded_path}"
+        headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}"}
+        try:
+            async with self._async_client_factory(timeout=12.0) as client:
+                signed = await client.post(sign_url, json={"expiresIn": ttl_seconds}, headers=headers)
+                signed.raise_for_status()
+                signed_url = self._absolute_signed_url(supabase_url, signed.json())
+        except Exception as error:
+            logger.warning("image_generation.refresh_failed conversation_id=%s reason=%s", conversation_id, type(error).__name__)
+            return None
+        if not signed_url:
+            return None
+        return {"url": signed_url, "expires_at": int(time.time()) + ttl_seconds}
+
+    async def download_generated_image(
+        self, *, user_id: str, conversation_id: str, image_id: str,
+    ) -> bytes | None:
+        """Read only the authenticated user's private generated PNG."""
+
+        storage_config = self._storage_config()
+        if storage_config is None:
+            return None
+        supabase_url, service_role_key, bucket, _ = storage_config
+        object_path = self._generated_image_path(user_id, conversation_id, image_id)
+        encoded_path = "/".join(quote(segment, safe="") for segment in object_path.split("/"))
+        object_url = f"{supabase_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_path}"
+        headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}"}
+        try:
+            async with self._async_client_factory(timeout=20.0) as client:
+                response = await client.get(object_url, headers=headers)
+                response.raise_for_status()
+                content = response.content
+        except Exception as error:
+            logger.warning("image_generation.download_failed conversation_id=%s reason=%s", conversation_id, type(error).__name__)
+            return None
+        if not content.startswith(b"\x89PNG\r\n\x1a\n") or len(content) > 15_000_000:
+            return None
+        return content
+
+    @classmethod
+    def _generated_image_path(cls, user_id: str, conversation_id: str, image_id: str) -> str:
+        user_hash = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:24]
+        safe_conversation = cls._safe_segment(conversation_id, "unknown")
+        safe_image = cls._safe_segment(image_id, "image")
+        return f"users/{user_hash}/conversations/{safe_conversation}/generated-images/{safe_image}.png"
 
     async def persist_pdf_image_block(
         self,

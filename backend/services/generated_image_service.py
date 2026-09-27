@@ -8,6 +8,7 @@ storage. Provider errors never include the upstream response body in logs.
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 import logging
 import os
 import re
@@ -18,6 +19,7 @@ from pathlib import Path
 
 import httpx
 from openai import AsyncOpenAI
+from PIL import Image, UnidentifiedImageError
 
 from config import settings
 from services.attachments.storage import AttachmentImageStorageService
@@ -98,7 +100,7 @@ def build_image_prompt(request: str, *, language: str, model: str) -> str:
 
 
 async def generate_teaching_image(
-    request: str, *, language: str, conversation_id: str, image_id: str,
+    request: str, *, language: str, user_id: str, conversation_id: str, image_id: str,
     client_factory=httpx.AsyncClient,
 ) -> GeneratedImage:
     """Generate and privately store one image, falling back to transient bytes.
@@ -106,6 +108,7 @@ async def generate_teaching_image(
     Args:
         request: Validated user request.
         language: UI language for image labels.
+        user_id: Authenticated storage owner.
         conversation_id: Safe correlation and storage namespace.
         image_id: Stable image identifier.
         client_factory: Injectable HTTP client for tests.
@@ -156,12 +159,19 @@ async def generate_teaching_image(
         raise ValueError("Image provider returned invalid base64") from error
     if not image_bytes.startswith(b"\x89PNG\r\n\x1a\n") or len(image_bytes) > 15_000_000:
         raise ValueError("Image provider returned an unsupported image")
+    try:
+        with Image.open(BytesIO(image_bytes)) as generated:
+            if generated.format != "PNG" or generated.width * generated.height > 16_000_000:
+                raise ValueError("Image provider returned an unsupported image")
+            generated.load()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+        raise ValueError("Image provider returned an invalid PNG") from error
 
     cost = body.get("usage", {}).get("cost") if isinstance(body.get("usage"), dict) else None
     cost_usd = float(cost) if isinstance(cost, (int, float)) and cost >= 0 else None
     storage = AttachmentImageStorageService()
     stored = await storage.persist_generated_image(
-        png_bytes=image_bytes, conversation_id=conversation_id, image_id=image_id,
+        png_bytes=image_bytes, user_id=user_id, conversation_id=conversation_id, image_id=image_id,
     )
     display_url = stored["url"] if stored else f"data:image/png;base64,{encoded}"
     summary = ""

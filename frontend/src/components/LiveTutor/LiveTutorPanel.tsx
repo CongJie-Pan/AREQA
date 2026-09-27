@@ -130,6 +130,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const userTurnIdsRef = useRef(new Map<string, string>());
   const imageTurnIdsRef = useRef(new Set<string>());
+  const pendingImageAnnouncementRef = useRef<{ text: string; epoch: number } | null>(null);
   const delegatedDeepAnswerActiveRef = useRef(false);
   const speakingPracticeActiveRef = useRef(false);
   const backendReadbackActiveRef = useRef(false);
@@ -418,8 +419,19 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     hasStartedRef.current = true;
     isCancelledRef.current = false;
     imageTurnIdsRef.current.clear();
+    pendingImageAnnouncementRef.current = null;
     const sessionGeneration = ++sessionGenerationRef.current;
     const isCurrentSession = () => !isCancelledRef.current && sessionGeneration === sessionGenerationRef.current;
+    const flushImageAnnouncement = (playbackStopped = false) => {
+      const pending = pendingImageAnnouncementRef.current;
+      if (!pending || !isCurrentSession() || pending.epoch !== speechEpochRef.current) return;
+      if (userSpeakingRef.current || delegatedDeepAnswerActiveRef.current || backendReadbackActiveRef.current) return;
+      if (playbackRef.current === 'playing') return;
+      if (!playbackStopped && useLiveTutorStore.getState().status === 'speaking') return;
+      if (controllerRef.current?.speakText(pending.text)) {
+        pendingImageAnnouncementRef.current = null;
+      }
+    };
     conversationIdRef.current = '';
     persistedConversationIdRef.current = '';
     conversationMaterializationRef.current = null;
@@ -519,6 +531,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
           return;
         }
         speechEpochRef.current += 1;
+        pendingImageAnnouncementRef.current = null;
         userSpeakingRef.current = true;
         if (itemId) speechEpochByItemRef.current.set(itemId, speechEpochRef.current);
         playbackRef.current = 'interrupted';
@@ -532,6 +545,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       onStatus: (nextStatus) => {
         if (!isCurrentSession()) return;
         setStatus(nextStatus);
+        if (nextStatus === 'listening' || nextStatus === 'connected') flushImageAnnouncement();
         if ((nextStatus === 'connected' || nextStatus === 'listening') && !hasPlayedConnectedCueRef.current) {
           hasPlayedConnectedCueRef.current = true;
           playLiveVoiceCue('connected');
@@ -568,6 +582,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         playbackRef.current = state === 'started' ? 'playing' : state === 'stopped' ? 'finished' : 'interrupted';
         if (state === 'stopped' || state === 'interrupted') {
           backendReadbackActiveRef.current = false;
+          if (state === 'stopped') flushImageAnnouncement(true);
         }
         const playback = playbackRef.current;
         enqueueTranscriptWork(async () => {
@@ -628,15 +643,16 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
             // Image work is independent of the voice reply and must not stall speech.
             void generateConversationImage(normalized, imageConversationId, language, false)
               .then((result) => {
-                if (!result.completed || !isCurrentSession() || userSpeakingRef.current) return;
-                if (useLiveTutorStore.getState().status === 'speaking') return;
-                controllerRef.current?.speakText(
-                  result.block?.visionSummary
+                if (!result.completed || !isCurrentSession() || transcriptEpoch !== speechEpochRef.current) return;
+                pendingImageAnnouncementRef.current = {
+                  epoch: transcriptEpoch,
+                  text: result.block?.visionSummary
                     ? `${language === 'en' ? 'The image is ready. ' : '圖片已完成。'}${result.block.visionSummary}`
                     : language === 'en'
                       ? 'The image is ready. You can open it in the conversation while we continue.'
                       : '圖片已完成，可以在對話中打開查看，我們可以接著討論。',
-                );
+                };
+                flushImageAnnouncement();
               })
               .catch((error) => logger.warn('realtime.image_generation_failed', {
                 conversationId: imageConversationId,
@@ -857,6 +873,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     sessionGenerationRef.current += 1;
     attachmentGenerationRef.current += 1;
     isCancelledRef.current = true;
+    pendingImageAnnouncementRef.current = null;
     userSpeakingRef.current = false;
     speechEpochByItemRef.current.clear();
     delegatedDeepAnswerActiveRef.current = false;
