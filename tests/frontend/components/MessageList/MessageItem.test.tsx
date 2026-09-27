@@ -693,6 +693,24 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByText('fallback text')).not.toBeInTheDocument();
   });
 
+  it('renders generated images without a fabricated source link', () => {
+    render(
+      <MessageItem message={{
+        ...baseMessage,
+        answerBlocks: [{
+          type: 'image_block', slotId: 'generated-1', topic: '細胞', purpose: 'diagram',
+          imageUrl: 'https://example.com/generated.png', sourceUrl: '', sourceDomain: '',
+          caption: '細胞結構', provider: 'generated_image', model: 'qwen/qwen-image-3-pro',
+          safetyStatus: 'pass', matchConfidence: 1,
+        }],
+      }} />,
+    );
+    expect(screen.getByAltText('細胞結構')).toHaveAttribute('src', 'https://example.com/generated.png');
+    expect(screen.getByText('AI 生成')).toBeInTheDocument();
+    expect(screen.getByText('qwen/qwen-image-3-pro')).toBeInTheDocument();
+    expect(screen.queryByText('來源')).not.toBeInTheDocument();
+  });
+
   it('uses a container-level reveal for streaming assistant markdown', () => {
     const { container } = render(
       <MessageItem

@@ -70,6 +70,9 @@ async def generate_image_endpoint(
             "storageBucket": result.storage_bucket,
             "storagePath": result.storage_path,
             "storageExpiresAt": result.storage_expires_at,
+            "visionSummary": result.vision_summary,
+            "howToRead": list(result.how_to_read),
+            "explanatoryCaption": result.vision_summary,
         },
         "cost_usd": result.cost_usd,
     }

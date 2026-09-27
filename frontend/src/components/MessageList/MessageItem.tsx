@@ -1475,6 +1475,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const isPdfAttachmentImage = block.provider === 'pdf_attachment';
+  const isGeneratedImage = block.provider === 'generated_image';
   const imageUrl = normalizeSupabaseStorageImageUrl(block.thumbnailUrl || block.imageUrl);
   const fullImageUrl = normalizeSupabaseStorageImageUrl(block.imageUrl || block.thumbnailUrl);
   const safeImageUrl = isSafeImageUrl(imageUrl) ? imageUrl : '';
@@ -1487,7 +1488,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
   // PDF planner captions can contain model-authored English metadata; the main
   // answer text already explains the attachment visual in the user's language.
   const displayExplanatoryCaption = isPdfAttachmentImage ? '' : block.explanatoryCaption;
-  const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : block.sourceDomain || 'source';
+  const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : isGeneratedImage ? 'AI 生成' : block.sourceDomain || 'source';
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
 
@@ -1524,7 +1525,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
     );
   }
 
-  if (!safeImageUrl || (!safeSourceUrl && !isPdfAttachmentImage) || block.safetyStatus !== 'pass') {
+  if (!safeImageUrl || (!safeSourceUrl && !isPdfAttachmentImage && !isGeneratedImage) || block.safetyStatus !== 'pass') {
     return null;
   }
 
@@ -1559,8 +1560,8 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
           <span className={styles.answerImageCaptionText}>{displayCaption}</span>
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
-            {isPdfAttachmentImage ? (
-              <span>{t('uploadedAttachmentBadge')}</span>
+            {isPdfAttachmentImage || isGeneratedImage ? (
+              <span>{isGeneratedImage ? block.model || 'AI' : t('uploadedAttachmentBadge')}</span>
             ) : (
               <a
                 href={safeSourceUrl}
@@ -1602,7 +1603,7 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
             <X size={20} aria-hidden="true" />
           </button>
           <div className={styles.answerImageLightboxStage} onClick={(event) => event.stopPropagation()}>
-            {safeSourceUrl && !isPdfAttachmentImage ? (
+            {safeSourceUrl && !isPdfAttachmentImage && !isGeneratedImage ? (
               <a
                 href={safeSourceUrl}
                 target="_blank"
@@ -1634,8 +1635,20 @@ function ImageBlockCard({ block, styles }: { block: ImageBlock; styles: ReturnTy
             )}
             <div className={styles.answerImageLightboxSourceLine}>
               <span>{sourceLabel}</span>
-              {isPdfAttachmentImage ? (
-                <span>{t('uploadedAttachmentBadge')}</span>
+              {isGeneratedImage && (
+                <a
+                  href={safeFullImageUrl}
+                  download="areqa-image.png"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.answerImageLightboxSource}
+                >
+                  <Download size={14} aria-hidden="true" />
+                  {language === 'en' ? 'Download image' : '下載圖片'}
+                </a>
+              )}
+              {isPdfAttachmentImage || isGeneratedImage ? (
+                <span>{isGeneratedImage ? block.model || 'AI' : t('uploadedAttachmentBadge')}</span>
               ) : safeSourceUrl ? (
                 <a
                   href={safeSourceUrl}

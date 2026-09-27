@@ -153,6 +153,21 @@ describe('ChatInput', () => {
     expect(mockSetTutorProfile).toHaveBeenCalledWith('english');
   });
 
+  it('sends the next request as Create Image and then resets the mode', async () => {
+    mockOnSend.mockResolvedValue({ completed: true });
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.click(screen.getByLabelText('新增'));
+    fireEvent.click(await screen.findByText('Create Image'));
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '畫一張細胞圖' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+
+    await waitFor(() => expect(mockOnSend).toHaveBeenCalledWith(
+      '畫一張細胞圖', [], { createImage: true },
+    ));
+    await waitFor(() => expect(screen.queryByLabelText('Cancel Create Image')).not.toBeInTheDocument());
+  });
+
   it('should show and clear the active English Tutor profile chip', () => {
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {

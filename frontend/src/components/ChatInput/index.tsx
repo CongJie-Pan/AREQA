@@ -14,6 +14,7 @@ import {
   CornerDownRight,
   FileText,
   FileImage,
+  ImagePlus,
   Globe2,
   Mic,
   MicOff,
@@ -280,7 +281,7 @@ function startDictationLevelMonitor(
 
 export interface ChatInputProps {
   /** Callback when message is sent */
-  onSend: (message: string, attachments?: File[]) =>
+  onSend: (message: string, attachments?: File[], options?: { createImage?: boolean }) =>
     | void
     | { completed: boolean }
     | Promise<void | { completed: boolean }>;
@@ -382,18 +383,21 @@ const ADD_MENU_LABELS = {
   'zh-TW': {
     open: '新增',
     upload: '上傳檔案',
+    createImage: 'Create Image',
     englishTutor: 'English Tutor',
     englishTutorDescription: '英文口說、閱讀、寫作與文學分析',
   },
   'zh-CN': {
     open: '新增',
     upload: '上传文件',
+    createImage: 'Create Image',
     englishTutor: 'English Tutor',
     englishTutorDescription: '英文口语、阅读、写作与文学分析',
   },
   en: {
     open: 'Add',
     upload: 'Upload file',
+    createImage: 'Create Image',
     englishTutor: 'English Tutor',
     englishTutorDescription: 'Speaking, reading, writing, and literary analysis',
   },
@@ -426,6 +430,7 @@ export function ChatInput({
   const webSearchLabels = WEB_SEARCH_LABELS[language];
   const addMenuLabels = ADD_MENU_LABELS[language];
   const [value, setValue] = useState('');
+  const [createImage, setCreateImage] = useState(false);
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [isTextareaMultiline, setIsTextareaMultiline] = useState(false);
@@ -634,9 +639,11 @@ export function ChatInput({
 
     try {
       const filesToSend = previewsToSend.map((preview) => preview.file);
-      const result = filesToSend.length > 0
-        ? await onSend(finalMessage, filesToSend)
-        : await onSend(finalMessage);
+      const result = createImage
+        ? await onSend(finalMessage, filesToSend, { createImage: true })
+        : filesToSend.length > 0
+          ? await onSend(finalMessage, filesToSend)
+          : await onSend(finalMessage);
 
       if (result && 'completed' in result && !result.completed) {
         restoreDraft();
@@ -646,12 +653,13 @@ export function ChatInput({
       for (const preview of previewsToSend) {
         if (preview.objectUrl) URL.revokeObjectURL(preview.objectUrl);
       }
+      setCreateImage(false);
     } catch {
       // Preserve text and attachments so the user can retry the request.
       restoreDraft();
       return;
     }
-  }, [value, attachmentPreviews, disabled, onSend, maxLength, quotedText, setQuotedText, t]);
+  }, [value, attachmentPreviews, createImage, disabled, onSend, maxLength, quotedText, setQuotedText, t]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -696,6 +704,11 @@ export function ChatInput({
   const hasComposerContent = value.trim().length > 0 || attachmentPreviews.length > 0 || Boolean(quotedText);
   const addMenuItems: MenuProps['items'] = [
     {
+      key: 'create-image',
+      icon: <ImagePlus size={15} />,
+      label: addMenuLabels.createImage,
+    },
+    {
       key: 'upload',
       icon: <Upload size={15} />,
       label: addMenuLabels.upload,
@@ -714,6 +727,11 @@ export function ChatInput({
 
   const handleAddMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (disabled || dictationState !== 'idle') return;
+    if (key === 'create-image') {
+      setCreateImage((current) => !current);
+      textareaRef.current?.focus();
+      return;
+    }
     if (key === 'upload') {
       fileInputRef.current?.click();
       return;
@@ -886,6 +904,14 @@ export function ChatInput({
         </div>
       )}
 
+      {createImage && (
+        <div className={styles.tutorProfileBar}>
+          <span className={styles.tutorProfileChip}>
+            <ImagePlus size={14} /> {addMenuLabels.createImage}
+            <button type="button" onClick={() => setCreateImage(false)} aria-label="Cancel Create Image"><X size={14} /></button>
+          </span>
+        </div>
+      )}
       {tutorProfile === 'english' && (
         <div className={styles.tutorProfileBar}>
           <span className={styles.tutorProfileChip}>
@@ -916,7 +942,10 @@ export function ChatInput({
             items: addMenuItems,
             onClick: handleAddMenuClick,
             selectable: true,
-            selectedKeys: tutorProfile === 'english' ? ['english'] : [],
+            selectedKeys: [
+              ...(tutorProfile === 'english' ? ['english'] : []),
+              ...(createImage ? ['create-image'] : []),
+            ],
           }}
           trigger={['click']}
           disabled={disabled || dictationState !== 'idle'}

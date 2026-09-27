@@ -32,6 +32,8 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 import { selectLiveTutorConversationId, selectLiveTutorMessages } from './session';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
+import { shouldCreateImageForVoiceTurn } from '@/services/realtime/imageIntent';
+import { generateConversationImage } from '@/services/generatedImages';
 import { shouldDelegateEnglishSpeakingTurn, shouldDelegateVoiceTurnToDeepAnswer } from '@/services/realtime/deepDelegation';
 import { normalizeReadbackText } from '@/services/realtime/readbackText';
 import { loadVoiceMaterial, prepareVoiceAttachments } from '@/services/realtime/attachments';
@@ -127,6 +129,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const staleAssistantResponseIdsRef = useRef(new Set<string>());
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const userTurnIdsRef = useRef(new Map<string, string>());
+  const imageTurnIdsRef = useRef(new Set<string>());
   const delegatedDeepAnswerActiveRef = useRef(false);
   const speakingPracticeActiveRef = useRef(false);
   const backendReadbackActiveRef = useRef(false);
@@ -414,6 +417,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
     isCancelledRef.current = false;
+    imageTurnIdsRef.current.clear();
     const sessionGeneration = ++sessionGenerationRef.current;
     const isCurrentSession = () => !isCancelledRef.current && sessionGeneration === sessionGenerationRef.current;
     conversationIdRef.current = '';
@@ -616,6 +620,29 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
 
           const speakingPracticeTurn = selectedTutorProfile === 'english'
             && shouldDelegateEnglishSpeakingTurn(normalized, speakingPracticeActiveRef.current);
+          const imageTurnKey = itemId || `${transcriptEpoch}:${normalized}`;
+          if (canPersistHistory() && shouldCreateImageForVoiceTurn(normalized)
+            && !imageTurnIdsRef.current.has(imageTurnKey) && !isSuperseded()) {
+            imageTurnIdsRef.current.add(imageTurnKey);
+            const imageConversationId = await ensurePersistedConversationId();
+            // Image work is independent of the voice reply and must not stall speech.
+            void generateConversationImage(normalized, imageConversationId, language, false)
+              .then((result) => {
+                if (!result.completed || !isCurrentSession() || userSpeakingRef.current) return;
+                if (useLiveTutorStore.getState().status === 'speaking') return;
+                controllerRef.current?.speakText(
+                  result.block?.visionSummary
+                    ? `${language === 'en' ? 'The image is ready. ' : '圖片已完成。'}${result.block.visionSummary}`
+                    : language === 'en'
+                      ? 'The image is ready. You can open it in the conversation while we continue.'
+                      : '圖片已完成，可以在對話中打開查看，我們可以接著討論。',
+                );
+              })
+              .catch((error) => logger.warn('realtime.image_generation_failed', {
+                conversationId: imageConversationId,
+                errorName: error instanceof Error ? error.name : 'UnknownError',
+              }));
+          }
           if (speakingPracticeTurn) speakingPracticeActiveRef.current = true;
           if (speakingPracticeTurn || shouldDelegateVoiceTurnToDeepAnswer(normalized)) {
             const pendingId = itemId ? userTurnIdsRef.current.get(itemId) : undefined;

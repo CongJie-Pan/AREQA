@@ -32,6 +32,7 @@ import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
 import { db } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { generateConversationImage } from '@/services/generatedImages';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
@@ -95,7 +96,7 @@ const RESPONSE_PANE_MIN_WIDTH = 420;
 export function ChatContainer({ className }: ChatContainerProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
-  const { t } = useUserPreferences();
+  const { t, language } = useUserPreferences();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
@@ -337,8 +338,19 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   // Handle sending message with improved error handling
   const handleSend = useCallback(
-    async function retryableSend(content: string, attachments: File[] = []) {
+    async function retryableSend(content: string, attachments: File[] = [], options: { createImage?: boolean } = {}) {
       try {
+        if (options.createImage) {
+          if (attachments.length > 0) {
+            antMessageApi.error('Create Image 目前尚不支援參考附件。');
+            return { completed: false };
+          }
+          if (!user) {
+            setShowAuthPrompt(true);
+            return { completed: false };
+          }
+          return await generateConversationImage(content, activeConversationId || undefined, language);
+        }
         const voiceMessage = useLiveTutorStore.getState().isOpen;
         const result = voiceMessage
           ? await (useLiveTutorStore.getState().sendVoiceMessage?.(content, attachments)
@@ -395,7 +407,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
         throw err;
       }
     },
-    [activeConversationId, antMessageApi, t]
+    [activeConversationId, antMessageApi, language, t, user]
   );
 
   // A prompt supplied by the landing page starts a new chat automatically.

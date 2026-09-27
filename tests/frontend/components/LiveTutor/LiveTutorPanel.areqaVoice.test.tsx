@@ -16,6 +16,7 @@ import { useLiveTutorStore } from '@/store/liveTutor';
 import { getCurrentUserId } from '@/database/db';
 import { databaseService } from '@/services/database';
 import { loadVoiceMaterial, prepareVoiceAttachments } from '@/services/realtime/attachments';
+import { generateConversationImage } from '@/services/generatedImages';
 
 vi.mock('next/image', () => ({
   default: ({ alt, ...props }: { alt: string; src: string }) => <img alt={alt} {...props} />,
@@ -40,6 +41,10 @@ vi.mock('@/services/chat', () => ({
 vi.mock('@/services/realtime/attachments', () => ({
   loadVoiceMaterial: vi.fn(),
   prepareVoiceAttachments: vi.fn(),
+}));
+
+vi.mock('@/services/generatedImages', () => ({
+  generateConversationImage: vi.fn(),
 }));
 
 vi.mock('@/database/db', () => ({
@@ -144,6 +149,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     controller.addAttachmentContext.mockResolvedValue(true);
     controller.sendUserText.mockResolvedValue(true);
     vi.mocked(loadVoiceMaterial).mockResolvedValue(null);
+    vi.mocked(generateConversationImage).mockResolvedValue({ completed: false });
     realtimeOptions = null;
     resetStores();
     vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
@@ -170,6 +176,28 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
 
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
     expect(vi.mocked(startRealtimeClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
+    act(() => view.unmount());
+  });
+
+  it('creates a voice-requested teaching image without blocking the voice turn', async () => {
+    vi.mocked(getCurrentUserId).mockReturnValue('user_1');
+    vi.mocked(generateConversationImage).mockResolvedValue({
+      completed: true,
+      block: { type: 'image_block', slotId: 'image-1', topic: 'cycle', purpose: 'diagram',
+        imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: 'cycle',
+        safetyStatus: 'pass', matchConfidence: 1, visionSummary: 'The arrows form a cycle.' },
+    });
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請畫出水循環流程圖', 'image-turn-1');
+    });
+    await waitFor(() => expect(generateConversationImage).toHaveBeenCalledWith(
+      '請畫出水循環流程圖', 'conv_paper', expect.any(String), false,
+    ));
+    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith(expect.stringContaining('The arrows form a cycle.')));
+    expect(sendMessage).not.toHaveBeenCalled();
     act(() => view.unmount());
   });
 
