@@ -129,6 +129,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const staleAssistantResponseIdsRef = useRef(new Set<string>());
   const lastVoiceMessageIdRef = useRef<string | null>(null);
   const userTurnIdsRef = useRef(new Map<string, string>());
+  const titleRequestedConversationIdsRef = useRef(new Set<string>());
   const imageTurnIdsRef = useRef(new Set<string>());
   const pendingImageAnnouncementRef = useRef<{ text: string; epoch: number } | null>(null);
   const delegatedDeepAnswerActiveRef = useRef(false);
@@ -265,6 +266,21 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     });
   }, []);
 
+  const maybeGenerateVoiceTitle = useCallback((conversationId: string, firstUserText: string) => {
+    if (!canPersistHistory() || !firstUserText.trim()
+      || titleRequestedConversationIdsRef.current.has(conversationId)) return;
+    const conversationStore = useConversationStore.getState();
+    const conversation = conversationStore.conversations.find((item) => item.id === conversationId);
+    if (conversation?.title !== '新對話') return;
+    if (useChatStore.getState().messages.some((item) => item.conversationId === conversationId
+      && item.role === 'user' && item.content.trim())) return;
+
+    titleRequestedConversationIdsRef.current.add(conversationId);
+    // Title work is independent of Realtime speech and message persistence.
+    void conversationStore.generateTitle(conversationId, [{ role: 'user', content: firstUserText }]);
+    logger.info('realtime.voice_title_requested', { conversationId });
+  }, []);
+
   const sendVoiceMessage = useCallback(async (content: string, files: File[]) => {
     if (attachmentUploadInProgressRef.current) throw new Error('An attachment is already uploading');
     attachmentUploadInProgressRef.current = true;
@@ -289,6 +305,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       }
       const displayContent = content.trim() || '已上傳檔案';
       const metadata = filesToAttachmentMetadata(files);
+      if (content.trim()) maybeGenerateVoiceTitle(conversationId, displayContent);
       const id = addUserMessage(displayContent, conversationId, metadata);
       bumpConversationPreview(conversationId, displayContent);
       if (canPersistHistory()) {
@@ -315,7 +332,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     } finally {
       attachmentUploadInProgressRef.current = false;
     }
-  }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId]);
+  }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId, maybeGenerateVoiceTitle]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -329,6 +346,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
 
     const conversationId = await ensurePersistedConversationId();
     const pendingId = itemId ? userTurnIdsRef.current.get(itemId) : undefined;
+    maybeGenerateVoiceTitle(conversationId, normalized);
     const userMessageId = pendingId ?? addUserMessage(normalized, conversationId);
     if (pendingId) useChatStore.getState().updateMessageContent(pendingId, normalized);
     if (itemId) userTurnIdsRef.current.delete(itemId);
@@ -348,7 +366,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
         });
       });
     }
-  }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId, language]);
+  }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId, language, maybeGenerateVoiceTitle]);
 
   const finalizeAssistantDraft = useCallback(async (
     contentOverride?: string,

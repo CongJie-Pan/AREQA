@@ -53,6 +53,9 @@ vi.mock('@/database/db', () => ({
 
 vi.mock('@/services/database', () => ({
   databaseService: {
+    conversation: {
+      create: vi.fn(),
+    },
     message: {
       add: vi.fn(),
     },
@@ -132,7 +135,7 @@ async function renderOpenPanel(
   await act(async () => {
     result = render(
       <LiveTutorPanel
-        activeConversationId={props.activeConversationId ?? 'conv_paper'}
+        activeConversationId={props.activeConversationId === undefined ? 'conv_paper' : props.activeConversationId}
         hasMessages={props.hasMessages ?? true}
         layout={props.layout}
       />,
@@ -142,6 +145,8 @@ async function renderOpenPanel(
 }
 
 describe('LiveTutorPanel realtime-primary voice integration', () => {
+  const originalGenerateTitle = useConversationStore.getState().generateTitle;
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getCurrentUserId).mockReturnValue(null);
@@ -150,6 +155,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     controller.sendUserText.mockResolvedValue(true);
     vi.mocked(loadVoiceMaterial).mockResolvedValue(null);
     vi.mocked(generateConversationImage).mockResolvedValue({ completed: false });
+    vi.mocked(databaseService.message.add).mockResolvedValue(undefined as never);
     realtimeOptions = null;
     resetStores();
     vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
@@ -168,6 +174,71 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
 
   afterEach(() => {
     resetStores();
+    useConversationStore.setState({ generateTitle: originalGenerateTitle });
+  });
+
+  it('titles a new voice conversation from its first finalized user transcript', async () => {
+    vi.mocked(getCurrentUserId).mockReturnValue('user_1');
+    const generateTitle = vi.fn().mockResolvedValue(undefined);
+    useConversationStore.setState({ activeConversationId: null, conversations: [], generateTitle });
+    useChatStore.setState({ messages: [] });
+    vi.mocked(databaseService.conversation.create).mockResolvedValue({
+      id: 'new-voice-conv', userId: 'user_1', title: '新對話',
+      createdAt: new Date(), updatedAt: new Date(), messageCount: 0, lastMessagePreview: '',
+    });
+
+    const view = await renderOpenPanel({ activeConversationId: null, hasMessages: false });
+    await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
+    expect(databaseService.conversation.create).not.toHaveBeenCalled();
+    expect(generateTitle).not.toHaveBeenCalled();
+
+    await act(async () => realtimeOptions?.onUserTranscript('請解釋光合作用', 'first-turn'));
+    await waitFor(() => expect(generateTitle).toHaveBeenCalledWith('new-voice-conv', [
+      { role: 'user', content: '請解釋光合作用' },
+    ]));
+    expect(databaseService.conversation.create).toHaveBeenCalledOnce();
+
+    await act(async () => realtimeOptions?.onUserTranscript('再說明葉綠體', 'second-turn'));
+    await waitFor(() => expect(useChatStore.getState().messages.some((item) => item.content === '再說明葉綠體')).toBe(true));
+    expect(generateTitle).toHaveBeenCalledOnce();
+    act(() => view.unmount());
+  });
+
+  it('titles an empty selected conversation from typed voice-mode text', async () => {
+    vi.mocked(getCurrentUserId).mockReturnValue('user_1');
+    const generateTitle = vi.fn().mockResolvedValue(undefined);
+    useConversationStore.setState({
+      generateTitle,
+      conversations: [{ id: 'conv_paper', userId: 'user_1', title: '新對話',
+        createdAt: new Date(), updatedAt: new Date(), messageCount: 0, lastMessagePreview: '' }],
+    });
+    useChatStore.setState({ messages: [] });
+    const view = await renderOpenPanel({ hasMessages: false });
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('請介紹量子電腦', []);
+    });
+    expect(generateTitle).toHaveBeenCalledWith('conv_paper', [
+      { role: 'user', content: '請介紹量子電腦' },
+    ]);
+    expect(generateTitle).toHaveBeenCalledOnce();
+    act(() => view.unmount());
+  });
+
+  it('keeps an existing conversation title when voice mode receives a new turn', async () => {
+    vi.mocked(getCurrentUserId).mockReturnValue('user_1');
+    const generateTitle = vi.fn().mockResolvedValue(undefined);
+    useConversationStore.setState({
+      generateTitle,
+      conversations: [{ id: 'conv_paper', userId: 'user_1', title: '既有標題',
+        createdAt: new Date(), updatedAt: new Date(), messageCount: 0, lastMessagePreview: '' }],
+    });
+    useChatStore.setState({ messages: [] });
+    const view = await renderOpenPanel({ hasMessages: false });
+
+    await act(async () => realtimeOptions?.onUserTranscript('繼續說明', 'existing-turn'));
+    await waitFor(() => expect(useChatStore.getState().messages.some((item) => item.content === '繼續說明')).toBe(true));
+    expect(generateTitle).not.toHaveBeenCalled();
+    act(() => view.unmount());
   });
 
   it('passes the selected English Tutor profile to voice sessions', async () => {
