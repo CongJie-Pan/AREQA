@@ -26,6 +26,8 @@ export const API_CONFIG = {
    */
   realtimeContextEndpoint: process.env.NEXT_PUBLIC_REALTIME_CONTEXT_ENDPOINT || '/api/realtime/context',
 
+  realtimeAttachmentsEndpoint: '/api/realtime/attachments',
+
   /**
    * LiveKit avatar session endpoint.
    * Default: '/api/realtime/livekit-avatar-session' (proxied through Next.js)

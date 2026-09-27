@@ -129,7 +129,7 @@ async def stream_endpoint(
         )
 
     material = None
-    if tutor_profile == "english":
+    if processed_attachments or tutor_profile == "english":
         from services.speaking_material_service import extract_material, extract_pasted_material, save_material
 
         material = extract_material(processed_attachments) if processed_attachments else extract_pasted_material(

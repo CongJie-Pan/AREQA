@@ -231,6 +231,26 @@ describe('LiveKit avatar client', () => {
     );
   });
 
+  it('sends prepared attachment text to the existing avatar worker', async () => {
+    mockAvatarSession();
+    const clientPromise = startLiveKitAvatarClient(livekitOptions());
+    await resolveAvatarVideoTrack();
+    const controller = await clientPromise;
+
+    expect(await controller.addAttachmentContext?.({
+      title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false,
+    }, '請分析檔案')).toBe(true);
+
+    const [body, options] = lastRoom?.localParticipant.sendText.mock.calls.at(-1) ?? [];
+    expect(options).toEqual({ topic: 'areqa.backend_speech' });
+    expect(JSON.parse(body)).toEqual(expect.objectContaining({ action: 'context', reply: true }));
+    expect(JSON.parse(body).text).toContain('The unique finding is cobalt.');
+    expect(await controller.sendUserText?.('請繼續說明')).toBe(true);
+    expect(JSON.parse(lastRoom?.localParticipant.sendText.mock.calls.at(-1)?.[0] ?? '{}'))
+      .toEqual({ action: 'user_text', text: '請繼續說明' });
+    controller.disconnect();
+  });
+
   it('sends bounded recent message context when starting an avatar session', async () => {
     mockAvatarSession();
     const options = livekitOptions({

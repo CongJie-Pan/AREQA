@@ -339,7 +339,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const handleSend = useCallback(
     async function retryableSend(content: string, attachments: File[] = []) {
       try {
-        const result = await sendMessage(content, activeConversationId || undefined, attachments);
+        const voiceMessage = useLiveTutorStore.getState().isOpen;
+        const result = voiceMessage
+          ? await (useLiveTutorStore.getState().sendVoiceMessage?.(content, attachments)
+            ?? Promise.reject(new Error('Voice message is not ready')))
+          : await sendMessage(content, activeConversationId || undefined, attachments);
+        if (voiceMessage && attachments.length > 0 && result.completed) antMessageApi.success('附件已可供語音使用');
         if (result?.completed) {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) setShowAuthPrompt(true);
@@ -771,7 +776,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   <ChatInput
                     key={activeConversationId ?? 'new'}
                     onSend={handleSend}
-                    disabled={isStreaming}
+                    disabled={isStreaming && !isLiveTutorOpen}
                     placeholder={
                       isStreaming
                         ? t('thinkingPlaceholder')

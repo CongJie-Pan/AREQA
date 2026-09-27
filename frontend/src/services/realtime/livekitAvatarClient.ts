@@ -11,6 +11,7 @@ import { API_CONFIG } from '@/config/api';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import type { DisplayMessage } from '@/store/chat';
 import { logger } from '@/utils/logger';
+import { voiceAttachmentContextText } from './client';
 import type { RealtimeClientController, StartRealtimeClientOptions } from './client';
 import { buildRealtimeContext } from './context';
 
@@ -433,6 +434,23 @@ export async function startLiveKitAvatarClient(
           }));
         options.onPlaybackState?.('interrupted');
         options.onStatus('listening');
+      },
+      addAttachmentContext: async (material, request = '') => {
+        if (!room?.localParticipant.sendText) return false;
+        await room.localParticipant.sendText(JSON.stringify({
+          action: 'context',
+          text: voiceAttachmentContextText(material, request),
+          reply: Boolean(request.trim()),
+        }), { topic: AREQA_BACKEND_SPEECH_TOPIC });
+        logger.info('livekit.attachment_context_sent', { conversationId, excerptChars: material.text.length });
+        return true;
+      },
+      sendUserText: async (text) => {
+        if (!room?.localParticipant.sendText || !text.trim()) return false;
+        await room.localParticipant.sendText(JSON.stringify({
+          action: 'user_text', text: text.trim().slice(0, 4000),
+        }), { topic: AREQA_BACKEND_SPEECH_TOPIC });
+        return true;
       },
       requestResponse: () => {
         void room?.localParticipant.sendText?.(JSON.stringify({ action: 'reply' }), { topic: AREQA_BACKEND_SPEECH_TOPIC })

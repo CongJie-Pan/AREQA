@@ -15,6 +15,7 @@ import { useConversationStore } from '@/store/conversation';
 import { useLiveTutorStore } from '@/store/liveTutor';
 import { getCurrentUserId } from '@/database/db';
 import { databaseService } from '@/services/database';
+import { loadVoiceMaterial, prepareVoiceAttachments } from '@/services/realtime/attachments';
 
 vi.mock('next/image', () => ({
   default: ({ alt, ...props }: { alt: string; src: string }) => <img alt={alt} {...props} />,
@@ -36,6 +37,11 @@ vi.mock('@/services/chat', () => ({
   sendMessage: vi.fn(),
 }));
 
+vi.mock('@/services/realtime/attachments', () => ({
+  loadVoiceMaterial: vi.fn(),
+  prepareVoiceAttachments: vi.fn(),
+}));
+
 vi.mock('@/database/db', () => ({
   getCurrentUserId: vi.fn(() => null),
 }));
@@ -53,6 +59,8 @@ const controller = {
   cancelSpeech: vi.fn(),
   speakText: vi.fn(() => true),
   requestResponse: vi.fn(),
+  addAttachmentContext: vi.fn(async () => true),
+  sendUserText: vi.fn(async () => true),
   disconnect: vi.fn(),
 };
 
@@ -79,6 +87,7 @@ function resetStores(): void {
     userTranscript: '',
     assistantTranscript: '',
     error: null,
+    sendVoiceMessage: null,
   });
   useConversationStore.setState({
     activeConversationId: 'conv_paper',
@@ -132,6 +141,9 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     vi.clearAllMocks();
     vi.mocked(getCurrentUserId).mockReturnValue(null);
     controller.speakText.mockReturnValue(true);
+    controller.addAttachmentContext.mockResolvedValue(true);
+    controller.sendUserText.mockResolvedValue(true);
+    vi.mocked(loadVoiceMaterial).mockResolvedValue(null);
     realtimeOptions = null;
     resetStores();
     vi.mocked(startRealtimeClient).mockImplementation(async (options) => {
@@ -159,6 +171,98 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
     expect(vi.mocked(startRealtimeClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
     act(() => view.unmount());
+  });
+
+  it('prepares and delivers an attachment while the voice session stays connected', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper',
+      version: 'version-1',
+      material: { title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false },
+    });
+    const view = await renderOpenPanel();
+    await waitFor(() => expect(useLiveTutorStore.getState().sendVoiceMessage).not.toBeNull());
+    const file = new File(['The unique finding is cobalt.'], 'notes.txt', { type: 'text/plain' });
+
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('請分析檔案', [file]);
+    });
+
+    expect(prepareVoiceAttachments).toHaveBeenCalledWith('conv_paper', [file]);
+    expect(controller.addAttachmentContext).toHaveBeenCalledWith(
+      { title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false }, '請分析檔案',
+    );
+    expect(controller.requestResponse).toHaveBeenCalled();
+    expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: '請分析檔案', attachments: expect.any(Array) }),
+    ]));
+    expect(controller.disconnect).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('sends typed text through the open voice session without starting a chat stream', async () => {
+    const view = await renderOpenPanel();
+
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('請繼續說明', []);
+    });
+
+    expect(controller.sendUserText).toHaveBeenCalledWith('請繼續說明');
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(prepareVoiceAttachments).not.toHaveBeenCalled();
+    expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: '請繼續說明' }),
+    ]));
+    act(() => view.unmount());
+  });
+
+  it('restores saved file content into a reopened voice session without speaking first', async () => {
+    vi.mocked(loadVoiceMaterial).mockResolvedValue({
+      title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false,
+    });
+    const view = await renderOpenPanel();
+
+    await waitFor(() => expect(controller.addAttachmentContext).toHaveBeenCalledWith({
+      title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false,
+    }));
+    expect(controller.requestResponse).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('keeps the upload draft recoverable when attachment delivery fails', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'content', truncated: false },
+    });
+    controller.addAttachmentContext.mockResolvedValueOnce(false);
+    const view = await renderOpenPanel();
+    const file = new File(['content'], 'notes.txt', { type: 'text/plain' });
+
+    await expect(useLiveTutorStore.getState().sendVoiceMessage?.('', [file]))
+      .rejects.toThrow('Voice session could not receive the message');
+    expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ attachments: expect.arrayContaining([expect.objectContaining({ name: 'notes.txt' })]) }),
+    ]));
+    act(() => view.unmount());
+  });
+
+  it('does not attach a late upload to a closed voice session', async () => {
+    let finishUpload: (value: Awaited<ReturnType<typeof prepareVoiceAttachments>>) => void = () => undefined;
+    vi.mocked(prepareVoiceAttachments).mockImplementation(() => new Promise((resolve) => {
+      finishUpload = resolve;
+    }));
+    const view = await renderOpenPanel();
+    const file = new File(['content'], 'notes.txt', { type: 'text/plain' });
+    const upload = useLiveTutorStore.getState().sendVoiceMessage?.('', [file]);
+    await waitFor(() => expect(prepareVoiceAttachments).toHaveBeenCalledOnce());
+    act(() => view.unmount());
+
+    finishUpload({
+      conversation_id: 'conv_paper', version: 'late',
+      material: { title: 'notes.txt', text: 'content', truncated: false },
+    });
+
+    await expect(upload).rejects.toThrow('Voice conversation changed during attachment upload');
+    expect(controller.addAttachmentContext).not.toHaveBeenCalled();
   });
 
   it('waits for backend transcript practice and delegates the next spoken attempt', async () => {

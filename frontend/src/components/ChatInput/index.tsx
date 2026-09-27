@@ -456,6 +456,7 @@ export function ChatInput({
   const hasMath = /(?:\$\$?[\s\S]+?\$\$?|\\\(|\\\[)/.test(value);
   const shouldUseExpandedShape = attachmentPreviews.length > 0
     || Boolean(quotedText)
+    || tutorProfile === 'english'
     || isTextareaMultiline
     || value.includes('\n')
     || value.length > EXPANDED_COMPOSER_MIN_CHARS;
@@ -1086,6 +1087,16 @@ export function ChatInput({
             <ArrowUp size={20} />
           </button>
         ) : null}
+        {dictationState === 'idle' && isLiveVoiceActive && canSend && (
+          <button
+            type="button"
+            className={cx('areqa-chat-input-send-button', styles.iconButton, styles.sendButton)}
+            onClick={handleSend}
+            aria-label={t('sendMessage')}
+          >
+            <ArrowUp size={20} />
+          </button>
+        )}
       </div>
 
       <input

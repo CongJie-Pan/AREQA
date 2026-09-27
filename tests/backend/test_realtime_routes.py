@@ -30,6 +30,7 @@ from backend.app.routes.realtime import (
     read_speech,
     SpeechReadRequest,
     transcribe_speech,
+    upload_realtime_attachments,
 )
 
 
@@ -72,7 +73,7 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["audio"]["input"]["turn_detection"] == {
         "type": "semantic_vad",
-        "eagerness": "medium",
+        "eagerness": "low",
         "create_response": True,
         "interrupt_response": True,
     }
@@ -84,11 +85,59 @@ def test_english_voice_waits_for_frontend_turn_routing():
     config = _build_realtime_session_config(RealtimeSessionRequest(tutor_profile="english"))
     assert config["audio"]["input"]["turn_detection"] == {
         "type": "semantic_vad",
-        "eagerness": "medium",
+        "eagerness": "low",
         "create_response": False,
         "interrupt_response": True,
     }
     assert "Speaking practice rule" in config["instructions"]
+
+
+@pytest.mark.asyncio
+async def test_voice_attachment_upload_prepares_context_without_chat_generation(monkeypatch):
+    from services import attachment_service, speaking_material_service
+    from types import SimpleNamespace
+
+    async def process(uploads, *, conversation_id):
+        assert conversation_id == "conv_voice"
+        assert len(uploads) == 1
+        return [SimpleNamespace(media_type="text/plain", plain_text="The unique finding is cobalt.",
+                                filename="notes.txt", pdf_bytes=b"")]
+
+    saved = {}
+
+    async def save(user_id, conversation_id, material):
+        saved[(user_id, conversation_id)] = material
+        return True
+
+    monkeypatch.setattr(attachment_service, "process_attachments", process)
+    monkeypatch.setattr(speaking_material_service, "save_material", save)
+    result = await upload_realtime_attachments(
+        conversation_id="conv_voice",
+        attachments=[UploadFile(file=io.BytesIO(b"file"), filename="notes.txt")],
+        current_user_id="learner",
+    )
+
+    assert result["material"]["text"] == "The unique finding is cobalt."
+    assert result["version"] == saved[("learner", "conv_voice")]["version"]
+    assert result["conversation_id"] == "conv_voice"
+
+
+@pytest.mark.asyncio
+async def test_voice_attachment_upload_does_not_claim_mixed_image_is_readable(monkeypatch):
+    from services import attachment_service
+    from types import SimpleNamespace
+
+    async def process(_uploads, *, conversation_id):
+        return [SimpleNamespace(media_type="image/png")]
+
+    monkeypatch.setattr(attachment_service, "process_attachments", process)
+    with pytest.raises(HTTPException) as raised:
+        await upload_realtime_attachments(
+            conversation_id="conv_voice",
+            attachments=[UploadFile(file=io.BytesIO(b"image"), filename="photo.png")],
+            current_user_id="learner",
+        )
+    assert raised.value.status_code == 422
 
 
 def test_realtime_session_config_preserves_simplified_chinese_preference():
@@ -588,12 +637,13 @@ async def test_realtime_context_includes_saved_speaking_material(monkeypatch):
         return {"title": "dialogue.txt", "text": "Student: The plan is too expensive.", "truncated": False}
 
     monkeypatch.setattr(speaking_material_service, "load_material", material)
-    payload = RealtimeContextRequest(conversation_id="conv-practice", messages=[], tutor_profile="english")
-    response = await get_realtime_context(payload, current_user_id="learner")
-    assert response["speaking_material"]["text"] == "Student: The plan is too expensive."
-    assert "preserve the learner-owned core step" in response["guidance"]
-    assert "do not omit key ideas merely to be brief" in response["guidance"]
-    assert "use memory_items and recent_messages before saying you do not know" in response["guidance"]
+    for profile in ("english", "general"):
+        payload = RealtimeContextRequest(conversation_id="conv-practice", messages=[], tutor_profile=profile)
+        response = await get_realtime_context(payload, current_user_id="learner")
+        assert response["speaking_material"]["text"] == "Student: The plan is too expensive."
+        assert "preserve the learner-owned core step" in response["guidance"]
+        assert "do not omit key ideas merely to be brief" in response["guidance"]
+        assert "use memory_items and recent_messages before saying you do not know" in response["guidance"]
 
 
 @pytest.mark.asyncio

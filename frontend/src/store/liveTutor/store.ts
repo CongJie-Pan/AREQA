@@ -18,12 +18,13 @@ const initialState = {
   userTranscript: '',
   assistantTranscript: '',
   error: null as string | null,
+  sendVoiceMessage: null as LiveTutorStore['sendVoiceMessage'],
 };
 
 export const useLiveTutorStore = create<LiveTutorStore>((set) => ({
   ...initialState,
   open: () => set({ isOpen: true, closeRequestId: 0, error: null }),
-  close: () => set({ isOpen: false, status: 'idle', isMuted: false, error: null }),
+  close: () => set({ isOpen: false, status: 'idle', isMuted: false, error: null, sendVoiceMessage: null }),
   requestClose: () => set((state) => ({ closeRequestId: state.closeRequestId + 1 })),
   setStatus: (status) => set({
     status,
@@ -38,4 +39,5 @@ export const useLiveTutorStore = create<LiveTutorStore>((set) => ({
   })),
   setError: (error) => set({ error, status: error ? 'error' : 'idle' }),
   resetTranscript: () => set({ userTranscript: '', assistantTranscript: '' }),
+  setSendVoiceMessage: (sendVoiceMessage) => set({ sendVoiceMessage }),
 }));

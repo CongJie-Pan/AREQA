@@ -34,6 +34,8 @@ import { selectLiveTutorConversationId, selectLiveTutorMessages } from './sessio
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
 import { shouldDelegateEnglishSpeakingTurn, shouldDelegateVoiceTurnToDeepAnswer } from '@/services/realtime/deepDelegation';
 import { normalizeReadbackText } from '@/services/realtime/readbackText';
+import { loadVoiceMaterial, prepareVoiceAttachments } from '@/services/realtime/attachments';
+import { filesToAttachmentMetadata } from '@/utils/attachments';
 
 const COPY = {
   'zh-TW': {
@@ -128,6 +130,8 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const delegatedDeepAnswerActiveRef = useRef(false);
   const speakingPracticeActiveRef = useRef(false);
   const backendReadbackActiveRef = useRef(false);
+  const attachmentGenerationRef = useRef(0);
+  const attachmentUploadInProgressRef = useRef(false);
   const playbackRef = useRef<'waiting' | 'playing' | 'finished' | 'interrupted'>('waiting');
   const inputLevelRef = useRef(0);
   const outputLevelRef = useRef(0);
@@ -152,6 +156,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
   const close = useLiveTutorStore((state) => state.close);
   const setStatus = useLiveTutorStore((state) => state.setStatus);
   const setError = useLiveTutorStore((state) => state.setError);
+  const setSendVoiceMessage = useLiveTutorStore((state) => state.setSendVoiceMessage);
   const resetTranscript = useLiveTutorStore((state) => state.resetTranscript);
   const addUserMessage = useChatStore((state) => state.addUserMessage);
   const addAssistantMessage = useChatStore((state) => state.addAssistantMessage);
@@ -255,6 +260,64 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
       messageCount: existing.messageCount + 1,
     });
   }, []);
+
+  const sendVoiceMessage = useCallback(async (content: string, files: File[]) => {
+    if (attachmentUploadInProgressRef.current) throw new Error('An attachment is already uploading');
+    attachmentUploadInProgressRef.current = true;
+    try {
+      const generation = files.length
+        ? ++attachmentGenerationRef.current
+        : attachmentGenerationRef.current;
+      const conversationId = await ensurePersistedConversationId();
+      const prepared = files.length ? await prepareVoiceAttachments(conversationId, files) : null;
+      if (isCancelledRef.current || generation !== attachmentGenerationRef.current
+        || persistedConversationIdRef.current !== conversationId) {
+        throw new Error('Voice conversation changed during attachment upload');
+      }
+      const controller = controllerRef.current;
+      if (!controller) throw new Error('Voice session is not ready');
+      if (prepared && content.trim()) controller.cancelSpeech();
+      const delivered = prepared
+        ? await controller?.addAttachmentContext?.(prepared.material, content)
+        : await controller?.sendUserText?.(content);
+      if (!delivered) {
+        throw new Error('Voice session could not receive the message');
+      }
+      const displayContent = content.trim() || '已上傳檔案';
+      const metadata = filesToAttachmentMetadata(files);
+      const id = addUserMessage(displayContent, conversationId, metadata);
+      bumpConversationPreview(conversationId, displayContent);
+      if (canPersistHistory()) {
+        void databaseService.message.add(conversationId, {
+          id,
+          role: 'user',
+          content: displayContent,
+          ...(metadata.length ? { attachments: metadata } : {}),
+        }).catch((error) => logger.warn('realtime.attachment_message_persistence_failed', {
+          conversationId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }));
+      }
+      if (prepared && content.trim() && activeProviderRef.current === 'openai_realtime') {
+        controller.requestResponse?.();
+      }
+      logger.info('realtime.voice_message_delivered', {
+        conversationId,
+        version: prepared?.version ?? null,
+        fileCount: files.length,
+        excerptChars: prepared?.material.text.length ?? 0,
+      });
+      return { completed: true };
+    } finally {
+      attachmentUploadInProgressRef.current = false;
+    }
+  }, [addUserMessage, bumpConversationPreview, ensurePersistedConversationId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSendVoiceMessage(sendVoiceMessage);
+    return () => setSendVoiceMessage(null);
+  }, [isOpen, setSendVoiceMessage, sendVoiceMessage]);
 
   const persistUserTranscript = useCallback(async (content: string, itemId?: string): Promise<void> => {
     const normalized = normalizeVoiceTranscript(content, language).trim();
@@ -728,6 +791,14 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
     controllerRef.current = controller;
     controller.setMuted(useLiveTutorStore.getState().isMuted);
     hasSyncedInitialMuteRef.current = true;
+    const attachmentGeneration = attachmentGenerationRef.current;
+    void loadVoiceMaterial(conversationId).then((material) => {
+      if (!material || !isCurrentSession() || attachmentGeneration !== attachmentGenerationRef.current) return;
+      return controller.addAttachmentContext?.(material);
+    }).catch((error) => logger.warn('realtime.attachment_restore_failed', {
+      conversationId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    }));
   }, [
     enqueueTranscriptWork,
     appendAssistantTranscript,
@@ -757,6 +828,7 @@ export function LiveTutorPanel({ activeConversationId, hasMessages = false, layo
 
   const stop = useCallback(async (): Promise<void> => {
     sessionGenerationRef.current += 1;
+    attachmentGenerationRef.current += 1;
     isCancelledRef.current = true;
     userSpeakingRef.current = false;
     speechEpochByItemRef.current.clear();

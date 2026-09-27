@@ -194,7 +194,7 @@ async def test_livekit_worker_reads_backend_answer_through_avatar_audio(monkeypa
 
     assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].create_response is False
     assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].type == "semantic_vad"
-    assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].eagerness == "medium"
+    assert FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"].eagerness == "low"
     handler = ctx.room.handlers[agent_module.BACKEND_SPEECH_TOPIC]
 
     class Reader:
@@ -222,6 +222,43 @@ async def test_livekit_general_voice_uses_patient_turn_detection(monkeypatch):
 
     turn_detection = FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"]
     assert turn_detection.type == "semantic_vad"
-    assert turn_detection.eagerness == "medium"
+    assert turn_detection.eagerness == "low"
     assert turn_detection.create_response is True
     assert turn_detection.interrupt_response is True
+
+
+@pytest.mark.asyncio
+async def test_livekit_worker_adds_uploaded_file_context_before_reply(monkeypatch):
+    monkeypatch.setattr(agent_module, "ANAM_AVATAR_ID", "")
+    monkeypatch.setattr(agent_module, "AgentSession", FakeAgentSession)
+    monkeypatch.setattr(agent_module.openai, "realtime", SimpleNamespace(
+        RealtimeModel=lambda **kwargs: {"kwargs": kwargs},
+    ))
+    monkeypatch.setattr(agent_module.room_io, "RoomOptions", FakeRoomOptions)
+    captured = []
+
+    async def update_chat_ctx(self, chat_ctx):
+        captured.append(chat_ctx.messages()[-1].text_content)
+
+    monkeypatch.setattr(agent_module.AreqaLiveTutor, "update_chat_ctx", update_chat_ctx)
+    ctx = fake_job_context()
+    ctx.job.metadata = json.dumps({"participant_identity": "learner"})
+    await agent_module.areqa_live_tutor(ctx)
+    handler = ctx.room.handlers[agent_module.BACKEND_SPEECH_TOPIC]
+
+    class Reader:
+        def __init__(self, action="context"):
+            self.action = action
+
+        async def read_all(self):
+            return json.dumps({
+                "action": self.action,
+                "text": "File: notes.txt. Cobalt is the answer." if self.action == "context" else "Please continue",
+                "reply": True,
+            })
+
+    await handler(Reader(), "learner")
+    await handler(Reader("user_text"), "learner")
+
+    assert captured == ["File: notes.txt. Cobalt is the answer.", "Please continue"]
+    assert FakeAgentSession.last_instance.reply_count == 2

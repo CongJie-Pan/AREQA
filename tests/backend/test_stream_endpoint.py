@@ -400,13 +400,18 @@ async def test_stream_endpoint_forwards_multipart_attachment_to_orchestrator():
     }
 
     with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
-         patch("services.orchestration_service.OrchestrationService", return_value=AttachmentOrchestrator()):
+         patch("services.orchestration_service.OrchestrationService", return_value=AttachmentOrchestrator()), \
+         patch("services.speaking_material_service.save_material", new_callable=AsyncMock, return_value=True) as save_material:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             response = await ac.post("/api/v1/stream", data=request_data, files=files)
 
     assert response.status_code == 200
     assert captured["messages"][-1]["content"] == "請閱讀附件"
     assert captured["attachments"][0]["type"] == "text"
+    save_material.assert_awaited_once_with(
+        "default_user", "attachment-conversation",
+        {"title": "notes.txt", "text": "attachment content", "truncated": False},
+    )
 
 
 @pytest.mark.asyncio

@@ -173,6 +173,7 @@ describe('ChatInput', () => {
     render(<ChatInput onSend={mockOnSend} />);
 
     expect(screen.getByText('English Tutor')).toBeInTheDocument();
+    expect(screen.getByLabelText('訊息輸入框').closest('.areqa-chat-input-shell-expanded')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('刪除 English Tutor'));
 
     expect(mockSetTutorProfile).toHaveBeenCalledWith('general');
@@ -488,6 +489,18 @@ describe('ChatInput', () => {
     expect(onToggleLiveVoiceMute).toHaveBeenCalledOnce();
     expect(onToggleLiveVoiceAvatar).toHaveBeenCalledOnce();
     expect(onCloseLiveVoice).toHaveBeenCalledOnce();
+  });
+
+  it('sends a selected file while voice remains open', async () => {
+    const onCloseLiveVoice = vi.fn();
+    const file = new File(['The answer is cobalt.'], 'notes.txt', { type: 'text/plain' });
+    render(<ChatInput onSend={mockOnSend} isLiveVoiceActive onCloseLiveVoice={onCloseLiveVoice} />);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: [file] } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+
+    await waitFor(() => expect(mockOnSend).toHaveBeenCalledWith('', [file]));
+    expect(onCloseLiveVoice).not.toHaveBeenCalled();
   });
 
   it('should show the avatar toggle off state while live voice avatar is disabled', () => {

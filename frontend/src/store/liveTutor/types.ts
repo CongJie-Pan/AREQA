@@ -25,6 +25,7 @@ export interface LiveTutorState {
   userTranscript: string;
   assistantTranscript: string;
   error: string | null;
+  sendVoiceMessage: ((content: string, files: File[]) => Promise<{ completed: boolean }>) | null;
 }
 
 export interface LiveTutorActions {
@@ -39,6 +40,7 @@ export interface LiveTutorActions {
   appendAssistantTranscript: (delta: string) => void;
   setError: (error: string | null) => void;
   resetTranscript: () => void;
+  setSendVoiceMessage: (handler: LiveTutorState['sendVoiceMessage']) => void;
 }
 
 export type LiveTutorStore = LiveTutorState & LiveTutorActions;

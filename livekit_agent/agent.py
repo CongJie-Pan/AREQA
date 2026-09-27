@@ -298,27 +298,55 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
             voice=OPENAI_REALTIME_VOICE,
             turn_detection=openai_realtime_types.realtime_audio_input_turn_detection.SemanticVad(
                 type="semantic_vad",
-                eagerness="medium",
+                eagerness="low",
                 create_response=metadata["tutor_profile"] != "english",
                 interrupt_response=metadata["tutor_profile"] != "english",
             ),
         )
     )
     session_ready = asyncio.Event()
+    tutor = AreqaLiveTutor(
+        interface_language=metadata["interface_language"],
+        recent_messages=metadata["recent_messages"],
+        memory_items=metadata["memory_items"],
+        parts_context=metadata["parts_context"],
+        tutor_profile_prompt=metadata["tutor_profile_prompt"],
+    )
 
     async def handle_backend_speech(reader: Any, participant_identity: str) -> None:
         try:
             if participant_identity != metadata["participant_identity"]:
                 logger.warning("livekit_agent.backend_speech_sender_rejected")
                 return
-            payload = json.loads((await reader.read_all())[:6500])
+            payload = json.loads((await reader.read_all())[:20_000])
             await session_ready.wait()
             action = payload.get("action")
             if action == "cancel":
                 await session.interrupt()
                 return
-            if action == "reply" and metadata["tutor_profile"] == "english":
+            if action == "reply":
                 session.generate_reply()
+                return
+            if action == "user_text":
+                text = str(payload.get("text") or "").strip()[:4000]
+                if text:
+                    await session.interrupt()
+                    chat_ctx = tutor.chat_ctx.copy()
+                    chat_ctx.add_message(role="user", content=text)
+                    await tutor.update_chat_ctx(chat_ctx)
+                    session.generate_reply()
+                return
+            if action == "context":
+                text = str(payload.get("text") or "").strip()[:16_000]
+                if text:
+                    if payload.get("reply"):
+                        await session.interrupt()
+                    chat_ctx = tutor.chat_ctx.copy()
+                    chat_ctx.add_message(role="user", content=text)
+                    await tutor.update_chat_ctx(chat_ctx)
+                    logger.info("livekit_agent.attachment_context_added chars=%s", len(text))
+                    if payload.get("reply"):
+                        session.generate_reply()
                 return
             text = str(payload.get("text") or "").strip()[:6000]
             if action == "speak" and text:
@@ -365,13 +393,7 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=AreqaLiveTutor(
-            interface_language=metadata["interface_language"],
-            recent_messages=metadata["recent_messages"],
-            memory_items=metadata["memory_items"],
-            parts_context=metadata["parts_context"],
-            tutor_profile_prompt=metadata["tutor_profile_prompt"],
-        ),
+        agent=tutor,
         room_options=room_io.RoomOptions(
             audio_output=not avatar_started,
         ),

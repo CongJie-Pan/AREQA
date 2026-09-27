@@ -100,6 +100,39 @@ class RealtimeContextRequest(BaseModel):
     tutor_profile: str = "general"
 
 
+@router.post("/api/v1/realtime/attachments")
+async def upload_realtime_attachments(
+    conversation_id: str = Form(...),
+    attachments: List[UploadFile] = File(...),
+    current_user_id: str | None = Depends(get_optional_current_user),
+) -> dict[str, Any]:
+    """Prepare text or PDF source material without starting a chat response."""
+
+    if not conversation_id or len(conversation_id) > 128 or not re.fullmatch(r"[A-Za-z0-9_-]+", conversation_id):
+        raise HTTPException(status_code=422, detail="Invalid conversation id")
+    from services.attachment_service import process_attachments
+    from services.speaking_material_service import extract_material, save_material, voice_excerpt
+
+    processed = await process_attachments(attachments, conversation_id=conversation_id)
+    if any(item.media_type not in {"text/plain", "text/markdown", "application/pdf"} for item in processed):
+        raise HTTPException(status_code=422, detail="Voice attachment upload supports text and text-based PDF files")
+    material = extract_material(processed)
+    if not material:
+        raise HTTPException(status_code=422, detail="Voice can currently read text and text-based PDF attachments")
+    material["version"] = uuid.uuid4().hex
+    if not await save_material(current_user_id, conversation_id, material):
+        raise HTTPException(status_code=503, detail="Attachment could not be prepared for voice")
+    excerpt = voice_excerpt(material)
+    logger.info(
+        "realtime.attachments_ready conversation_id=%s count=%s excerpt_chars=%s truncated=%s",
+        conversation_id,
+        len(processed),
+        len(excerpt["text"]),
+        excerpt["truncated"],
+    )
+    return {"conversation_id": conversation_id, "version": material["version"], "material": excerpt}
+
+
 class SpeechReadRequest(BaseModel):
     """Assistant text to render as spoken audio.
 
@@ -416,6 +449,7 @@ def _build_realtime_instructions(language: str, tutor_profile: str = "general") 
         f"Teaching style: {style.opening_rule} {style.task_fit_rule} {style.explanation_order_rule} {style.cognitive_load_rule} {style.followup_rule}",
         "AREQA soul: be curious and guiding, not just informative. After a substantive explanation, invite the learner into one concrete next direction when useful.",
         "Use get_areqa_context when you need recent chat context, memory, attachment summary, learning-state hints, or AREQA-specific grounding.",
+        "If the learner asks about an uploaded file, call get_areqa_context and use speaking_material when present. Never infer file contents from its name.",
         "If the learner asks whether you remember something, refers to prior conversation, or asks about their preferences/history, call get_areqa_context before answering.",
         "Never say you cannot remember or do not have memory until you have checked AREQA context for the current turn.",
         "Answer simple greetings, brief clarifications, and conversational follow-ups directly without tools.",
@@ -544,14 +578,14 @@ def _build_realtime_session_config(payload: RealtimeSessionRequest) -> dict[str,
                 "turn_detection": (
                     {
                         "type": "semantic_vad",
-                        "eagerness": "medium",
+                        "eagerness": "low",
                         "create_response": False,
                         "interrupt_response": True,
                     }
                     if normalize_tutor_profile(payload.tutor_profile) == "english"
                     else {
                         "type": "semantic_vad",
-                        "eagerness": "medium",
+                        "eagerness": "low",
                         "create_response": True,
                         "interrupt_response": True,
                     }
@@ -1242,9 +1276,7 @@ async def get_realtime_context(
     ]
     from services.speaking_material_service import load_material, voice_excerpt
 
-    speaking_material = None
-    if normalize_tutor_profile(payload.tutor_profile) == "english":
-        speaking_material = voice_excerpt(await load_material(current_user_id, payload.conversation_id))
+    speaking_material = voice_excerpt(await load_material(current_user_id, payload.conversation_id))
     memory_items: list[str] = []
     if current_user_id:
         try:
