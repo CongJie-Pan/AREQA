@@ -58,6 +58,16 @@ After implementation, summarize:
 - Which checks could not be run or failed for unrelated reasons.
 - Any follow-up that is required before production rollout.
 
+### Learning Recap
+
+After completing a task, add a concise learning recap to the final response in the user's language unless they request another language:
+
+- Explain which files and behaviors changed, or accurately describe the work if no files changed.
+- Explain the key implementation ideas and why they fit this task in terms a developer can learn from.
+- Include the validation results and any material limitations or follow-up work.
+- End with 2-3 multiple-choice questions directly related to the task, with 3-4 plausible options each. Wait for the developer's answers before revealing the correct choices; then grade and explain them.
+- Keep the recap and questions proportional to the task. Do not invent changes, tests, or results.
+
 ### Completion
 
 - After implementation and validation are complete, commit the task changes to git without waiting for extra confirmation.
