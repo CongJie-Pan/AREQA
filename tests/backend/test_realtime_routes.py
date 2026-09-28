@@ -70,6 +70,8 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert "call get_areqa_context before answering" in config["instructions"]
     assert "Never say you cannot remember" in config["instructions"]
     assert "AREQA soul" in config["instructions"]
+    assert "complete that task in the current reply with substantive content" in config["instructions"]
+    assert "Never attribute them to the learner" in config["instructions"]
     assert "Traditional Chinese" in config["audio"]["input"]["transcription"]["prompt"]
     assert config["audio"]["input"]["turn_detection"] == {
         "type": "semantic_vad",

@@ -88,6 +88,8 @@ def test_livekit_agent_instructions_use_task_adaptive_depth():
     assert "Choose response language by priority" in instructions
     assert "language the learner is speaking now" in instructions
     assert "Do not switch to English merely because the interface" in instructions
+    assert "complete that task in the current reply with substantive content" in instructions
+    assert "Never attribute them to the learner" in instructions
 
 
 def test_livekit_agent_applies_dispatched_tutor_rules_without_changing_default():

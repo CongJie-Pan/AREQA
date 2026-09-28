@@ -311,9 +311,10 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
 
     expect(prepareVoiceAttachments).toHaveBeenCalledWith('conv_paper', [file]);
     expect(controller.addAttachmentContext).toHaveBeenCalledWith(
-      { title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false }, '請分析檔案',
+      { title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false },
     );
-    expect(controller.requestResponse).toHaveBeenCalled();
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('請分析檔案'));
+    expect(controller.requestResponse).not.toHaveBeenCalled();
     expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: '請分析檔案', attachments: expect.any(Array) }),
     ]));
@@ -347,6 +348,104 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
       title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false,
     }));
     expect(controller.requestResponse).not.toHaveBeenCalled();
+    expect(controller.sendUserText).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it.each([false, true])('continues a spoken summary request after a file-only upload (avatar=%s)', async (avatarEnabled) => {
+    useLiveTutorStore.setState({ avatarEnabled });
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'The unique finding is cobalt.', truncated: false },
+    });
+    const view = await renderOpenPanel();
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('請讀這份檔案，然後給我一些summary', 'summary-turn');
+    });
+    await act(async () => {
+      realtimeOptions?.onUserTranscript('我先上傳檔案', 'upload-turn');
+    });
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+    });
+
+    expect(controller.sendUserText).toHaveBeenCalledOnce();
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('source-grounded summary'));
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('請讀這份檔案，然後給我一些summary'));
+    expect(controller.disconnect).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: '已上傳檔案', attachments: expect.any(Array) }),
+    ]));
+    act(() => view.unmount());
+  });
+
+  it('explains a fresh file-only upload even without an earlier request', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'cobalt', truncated: true },
+    });
+    const view = await renderOpenPanel();
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+    });
+    expect(controller.sendUserText).toHaveBeenCalledOnce();
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('Explain the central idea'));
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('only an excerpt'));
+    act(() => view.unmount());
+  });
+
+  it('waits for speech and its transcript before explaining an uploaded file', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+    });
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserSpeechStarted?.('talking-turn'));
+    controller.cancelSpeech.mockClear();
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+    });
+    expect(controller.addAttachmentContext).toHaveBeenCalledOnce();
+    expect(controller.sendUserText).not.toHaveBeenCalled();
+    expect(controller.cancelSpeech).not.toHaveBeenCalled();
+    await act(async () => realtimeOptions?.onUserTurnCommitted?.('talking-turn'));
+    expect(controller.sendUserText).not.toHaveBeenCalled();
+    await act(async () => realtimeOptions?.onUserTranscript('請幫我摘要附件', 'talking-turn'));
+    await waitFor(() => expect(controller.sendUserText).toHaveBeenCalledOnce());
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('source-grounded summary'));
+    expect(sendMessage).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('keeps a fresh attachment silent when the learner requested a pause', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+    });
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserTranscript('先不要解說這份檔案', 'wait-turn'));
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+    });
+    expect(controller.addAttachmentContext).toHaveBeenCalledOnce();
+    expect(controller.sendUserText).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('cancels a deferred file explanation when the spoken turn asks to stop', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+    });
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserSpeechStarted?.('cancel-turn'));
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+    });
+    await act(async () => realtimeOptions?.onUserTurnCommitted?.('cancel-turn'));
+    await act(async () => realtimeOptions?.onUserTranscript('不用了', 'cancel-turn'));
+    expect(controller.sendUserText).not.toHaveBeenCalled();
     act(() => view.unmount());
   });
 
@@ -365,6 +464,103 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
       expect.objectContaining({ attachments: expect.arrayContaining([expect.objectContaining({ name: 'notes.txt' })]) }),
     ]));
     act(() => view.unmount());
+  });
+
+  it('retains a spoken summary task across an upload failure and retry', async () => {
+    vi.mocked(prepareVoiceAttachments)
+      .mockRejectedValueOnce(new Error('Upload unavailable'))
+      .mockResolvedValueOnce({
+        conversation_id: 'conv_paper', version: 'retry',
+        material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+      });
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserTranscript('請幫我摘要這份檔案', 'summary-turn'));
+    const file = new File(['cobalt'], 'notes.txt');
+    await act(async () => {
+      await expect(useLiveTutorStore.getState().sendVoiceMessage?.('', [file])).rejects.toThrow('Upload unavailable');
+    });
+    expect(controller.sendUserText).not.toHaveBeenCalled();
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('', [file]);
+    });
+    expect(controller.sendUserText).toHaveBeenCalledOnce();
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('source-grounded summary'));
+    act(() => view.unmount());
+  });
+
+  it('lets a typed upload request replace the earlier spoken task', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+    });
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserTranscript('請閱讀這份檔案', 'read-turn'));
+    await act(async () => {
+      await useLiveTutorStore.getState().sendVoiceMessage?.('請用英文摘要', [new File(['cobalt'], 'notes.txt')]);
+    });
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('請用英文摘要'));
+    expect(controller.sendUserText).toHaveBeenCalledWith(expect.stringContaining('source-grounded summary'));
+    expect(controller.sendUserText.mock.calls[0]?.[0]).not.toContain('Read aloud');
+    act(() => view.unmount());
+  });
+
+  it('respects a cancellation while the file is still being prepared', async () => {
+    let finishUpload: (value: Awaited<ReturnType<typeof prepareVoiceAttachments>>) => void = () => undefined;
+    vi.mocked(prepareVoiceAttachments).mockImplementationOnce(() => new Promise((resolve) => {
+      finishUpload = resolve;
+    }));
+    const view = await renderOpenPanel();
+    const upload = useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+    await waitFor(() => expect(prepareVoiceAttachments).toHaveBeenCalledOnce());
+    await act(async () => realtimeOptions?.onUserTranscript('不用了', 'cancel-turn'));
+    await act(async () => {
+      finishUpload({
+        conversation_id: 'conv_paper', version: 'version-1',
+        material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+      });
+      await upload;
+    });
+    expect(controller.addAttachmentContext).toHaveBeenCalledOnce();
+    expect(controller.sendUserText).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('retains an undelivered summary for the next turn without uploading again', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+    });
+    controller.sendUserText.mockRejectedValueOnce(new Error('Room unavailable'));
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserTranscript('請摘要這份附件', 'summary-turn'));
+    await act(async () => {
+      const result = await useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+      expect(result?.completed).toBe(true);
+    });
+    await act(async () => realtimeOptions?.onUserTranscript('嗯，好。', 'retry-turn'));
+    expect(controller.sendUserText).toHaveBeenCalledTimes(2);
+    expect(controller.sendUserText).toHaveBeenLastCalledWith(expect.stringContaining('source-grounded summary'));
+    expect(prepareVoiceAttachments).toHaveBeenCalledOnce();
+    act(() => view.unmount());
+  });
+
+  it('does not request speech or persist an upload after context delivery outlives the session', async () => {
+    vi.mocked(prepareVoiceAttachments).mockResolvedValue({
+      conversation_id: 'conv_paper', version: 'version-1',
+      material: { title: 'notes.txt', text: 'cobalt', truncated: false },
+    });
+    let finishDelivery: (value: boolean) => void = () => undefined;
+    controller.addAttachmentContext.mockImplementationOnce(() => new Promise((resolve) => {
+      finishDelivery = resolve;
+    }));
+    const view = await renderOpenPanel();
+    const upload = useLiveTutorStore.getState().sendVoiceMessage?.('', [new File(['cobalt'], 'notes.txt')]);
+    await waitFor(() => expect(controller.addAttachmentContext).toHaveBeenCalledOnce());
+    act(() => view.unmount());
+    finishDelivery(true);
+    await expect(upload).rejects.toThrow('Voice conversation changed during message delivery');
+    expect(controller.sendUserText).not.toHaveBeenCalled();
+    expect(useChatStore.getState().messages.some((item) => item.attachments?.length)).toBe(false);
   });
 
   it('does not attach a late upload to a closed voice session', async () => {
