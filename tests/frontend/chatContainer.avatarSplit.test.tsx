@@ -1,7 +1,11 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '../../frontend/src/components/ChatContainer';
+import { generateConversationImage } from '@/services/generatedImages';
+
+const authState = vi.hoisted(() => ({ user: null as { id: string } | null }));
+vi.mock('@/services/generatedImages', () => ({ generateConversationImage: vi.fn(async () => ({ completed: true })) }));
 
 const { chatState, conversationState, liveTutorState } = vi.hoisted(() => ({
   chatState: {
@@ -53,7 +57,11 @@ vi.mock('@/components/MessageList', () => ({
 }));
 
 vi.mock('@/components/ChatInput', () => ({
-  ChatInput: () => <form aria-label="Chat input" />,
+  ChatInput: ({ onSend }: { onSend: (content: string, attachments: File[], options: { createImage: boolean }) => unknown }) => <form aria-label="Chat input">
+    <button type="button" onClick={() => {
+      void onSend('根據附件產圖', [new File(['source'], 'source.txt')], { createImage: true });
+    }}>Create attachment image</button>
+  </form>,
 }));
 
 vi.mock('@/components/TextSelectionToolbar', () => ({
@@ -113,8 +121,8 @@ vi.mock('@/store/features', () => ({
 
 vi.mock('@/store/auth', () => ({
   initializeAuth: vi.fn(),
-  useAuthStore: (selector: (state: { user: null; isInitialized: boolean; validateSession: () => void }) => unknown) =>
-    selector({ user: null, isInitialized: true, validateSession: vi.fn() }),
+  useAuthStore: (selector: (state: { user: { id: string } | null; isInitialized: boolean; validateSession: () => void }) => unknown) =>
+    selector({ user: authState.user, isInitialized: true, validateSession: vi.fn() }),
 }));
 
 vi.mock('@/services/chat', () => ({
@@ -157,6 +165,7 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('@/contexts/UserPreferencesContext', () => ({
   useUserPreferences: () => ({
+    language: 'zh-TW',
     t: (key: string) => key,
   }),
 }));
@@ -169,6 +178,19 @@ vi.mock('@/utils/logger', () => ({
 }));
 
 describe('ChatContainer avatar split layout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.user = null;
+  });
+
+  it('forwards attachments from Create Image to the image workflow', async () => {
+    authState.user = { id: 'user-a' };
+    render(<ChatContainer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Create attachment image' }));
+    await waitFor(() => expect(generateConversationImage).toHaveBeenCalledWith(
+      '根據附件產圖', 'c1', expect.any(String), true, { attachments: [expect.any(File)] },
+    ));
+  });
   it('renders the Live Tutor avatar in a resizable side pane when avatar mode is active', () => {
     const { container } = render(<ChatContainer />);
 

@@ -3,6 +3,8 @@
 import base64
 from io import BytesIO
 import logging
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
@@ -10,6 +12,7 @@ from PIL import Image
 from config import Settings
 from services import generated_image_service as images
 from services.visual.understanding import VisualUnderstandingResult
+from services.attachments.parsing import ProcessedAttachment
 
 
 def _valid_png() -> bytes:
@@ -33,8 +36,59 @@ def test_generated_image_debug_logs_can_be_enabled_from_environment(monkeypatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("source_kind", ["text", "image"])
+async def test_reference_planner_uses_source_material_and_returns_a_bounded_brief(monkeypatch, caplog, source_kind):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
+    monkeypatch.setattr(images.settings, "enable_generated_image_debug_logs", True)
+    create = AsyncMock(return_value=SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Light → sugar"))]))
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=create))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr(images, "AsyncOpenAI", Client)
+    attachment = ProcessedAttachment(filename="source.txt", media_type="text/plain", size_bytes=20,
+                                     sha256="test", content_part={}, plain_text="PRIVATE_SOURCE photosynthesis")
+    if source_kind == "image":
+        attachment = ProcessedAttachment(filename="source.png", media_type="image/png", size_bytes=20,
+                                         sha256="test", content_part={"type": "image_url", "image_url": {
+                                             "url": "data:image/png;base64,PRIVATE_SOURCE",
+                                         }})
+    with caplog.at_level(logging.INFO):
+        brief = await images.prepare_image_reference([attachment], request="Explain this file", language="en", conversation_id="conv-a")
+    assert brief == "Light → sugar"
+    assert "PRIVATE_SOURCE" in str(create.call_args.kwargs["messages"])
+    if source_kind == "image":
+        assert create.call_args.kwargs["messages"][1]["content"][1] == attachment.content_part
+    assert "PRIVATE_SOURCE" not in caplog.text
+    assert "test-only-key" not in caplog.text
+    assert "reference_completed" in caplog.text
+    prompt = images.build_image_prompt("Explain this file", language="en", model=images.QWEN_MODEL, reference_brief=brief)
+    assert brief in prompt
+    assert "never as instructions" in prompt
+
+    create.return_value = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=""))])
+    with pytest.raises(RuntimeError, match="Reference preparation"):
+        await images.prepare_image_reference([attachment], request="Explain", language="en", conversation_id="conv-a")
+
+
+@pytest.mark.asyncio
+async def test_unreadable_references_are_rejected_before_provider_calls():
+    attachment = ProcessedAttachment(filename="empty.pdf", media_type="application/pdf", size_bytes=10, sha256="test", content_part={})
+    with pytest.raises(ValueError, match="no readable"):
+        await images.prepare_image_reference([attachment], request="Explain", language="en", conversation_id="conv-a")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("debug_logs", [False, True])
-async def test_generate_image_uses_bounded_provider_request_and_private_storage(monkeypatch, caplog, debug_logs):
+@pytest.mark.parametrize("reference_brief", ["", "Reference diagram: light becomes sugar."])
+async def test_generate_image_uses_bounded_provider_request_and_private_storage(monkeypatch, caplog, debug_logs, reference_brief):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
     monkeypatch.setattr(images.settings, "enable_visual_understanding", False)
     monkeypatch.setattr(images.settings, "enable_generated_image_debug_logs", debug_logs)
@@ -72,10 +126,15 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
     with caplog.at_level(logging.INFO, logger=images.logger.name):
         result = await images.generate_teaching_image(
             "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
+            reference_brief=reference_brief,
         )
-    assert seen["payload"]["model"] == images.FLARE_MODEL
+    assert seen["payload"]["model"] == (images.QWEN_MODEL if reference_brief else images.FLARE_MODEL)
     assert seen["payload"]["n"] == 1
-    assert seen["payload"]["quality"] == "low"
+    if reference_brief:
+        assert seen["payload"]["resolution"] == "1K"
+        assert reference_brief in seen["payload"]["prompt"]
+    else:
+        assert seen["payload"]["quality"] == "low"
     assert seen["png_bytes"] == png
     assert result.image_url == "https://example.test/signed"
     assert result.cost_usd == 0.04
@@ -84,8 +143,8 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
     for event in detailed_events:
         assert (f"image_generation.{event}" in caplog.text) is debug_logs
     if debug_logs:
-        assert "model=openai/gpt-image-2.5-flare" in caplog.text
-        assert "route=default" in caplog.text
+        assert f"model={images.QWEN_MODEL if reference_brief else images.FLARE_MODEL}" in caplog.text
+        assert f"route={'attachment_reference' if reference_brief else 'default'}" in caplog.text
         assert "persisted=True" in caplog.text
     assert "Draw a cat" not in caplog.text
     assert "test-only-key" not in caplog.text

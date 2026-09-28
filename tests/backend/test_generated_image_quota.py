@@ -124,3 +124,37 @@ async def _allowed(user_id):
 async def _denied(user_id):
     assert user_id == "user-a"
     return False
+
+
+@pytest.mark.asyncio
+async def test_reference_upload_reuses_parser_and_brief_is_passed_to_image_generation(monkeypatch):
+    app = FastAPI()
+    app.include_router(route.router)
+    app.dependency_overrides[get_current_user] = lambda: "user-a"
+    seen = []
+
+    async def prepare(attachments, **kwargs):
+        assert attachments[0].plain_text == "Light becomes sugar."
+        return "Light → sugar"
+
+    async def generate(*args, **kwargs):
+        seen.append(kwargs)
+        return GeneratedImage(image_url="https://example.test/image.png", model="test/model", caption="source", cost_usd=0.03, transient=False)
+
+    async def allowed(user_id):
+        return True
+
+    monkeypatch.setattr(route, "consume_image_quota", allowed)
+    monkeypatch.setattr(route, "prepare_image_reference", prepare)
+    monkeypatch.setattr(route, "generate_teaching_image", generate)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        prepared = await client.post("/api/v1/images/reference", data={"prompt": "Explain this source", "conversation_id": "conv-a"},
+                                     files={"attachments": ("source.txt", b"Light becomes sugar.", "text/plain")})
+        assert prepared.status_code == 200
+        brief = prepared.json()["reference_brief"]
+        result = await client.post("/api/v1/images/generate", json={"prompt": "Explain this source", "conversation_id": "conv-a", "reference_brief": brief})
+        assert result.status_code == 200
+        assert seen[0]["reference_brief"] == brief
+        assert result.json()["block"]["generationRequest"]["referenceBrief"] == brief
+        invalid = await client.post("/api/v1/images/generate", json={"prompt": "Explain", "conversation_id": "conv-a", "reference_brief": "a" * 4001})
+        assert invalid.status_code == 422

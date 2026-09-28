@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
   }
   const payload = body as Record<string, unknown>;
   if (typeof payload.prompt !== 'string' || payload.prompt.trim().length < 3 || payload.prompt.length > 1800
+    || (payload.reference_brief !== undefined && (typeof payload.reference_brief !== 'string' || payload.reference_brief.length > 4000))
     || typeof payload.conversation_id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(payload.conversation_id)) {
     return NextResponse.json({ error: 'Invalid image request' }, { status: 400 });
   }

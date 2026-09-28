@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateConversationImage } from '@/services/generatedImages';
+import { generateConversationImage, regenerateConversationImage } from '@/services/generatedImages';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { db, getCurrentUserId } from '@/database/db';
 import { messageRepo } from '@/database/repositories/messageRepo';
@@ -19,7 +19,7 @@ vi.mock('@/services/syncService', () => ({
 }));
 
 const storedBlock = {
-  type: 'image_block', imageUrl: 'https://example.test/image.png',
+  type: 'image_block', slotId: 'image-a', imageUrl: 'https://example.test/image.png', safetyStatus: 'pass',
   provider: 'generated_image', transient: false,
 };
 const response = (block = storedBlock) => new Response(JSON.stringify({ block }));
@@ -84,6 +84,76 @@ describe('generated image conversation workflow', () => {
     vi.spyOn(messageRepo, 'add').mockRejectedValueOnce(new Error('storage unavailable'));
     const result = await generateConversationImage('Draw a cat', 'conv-a', 'en', false);
     expect(result.completed).toBe(false);
-    expect(useChatStore.getState().messages.at(-1)?.answerBlocks).toBeUndefined();
+    expect(useChatStore.getState().messages.at(-1)?.answerBlocks?.[0]).toMatchObject({
+      provider: 'generated_image', status: 'error', generationRequest: { prompt: 'Draw a cat' },
+    });
+  });
+
+  it('compiles attachments before generating and keeps the brief for retries', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reference_brief: 'Cells use sunlight to make sugar.' })))
+      .mockResolvedValueOnce(response());
+    const file = new File(['Photosynthesis source'], 'lesson.txt', { type: 'text/plain' });
+    const result = await generateConversationImage('Explain this attachment', 'conv-a', 'en', true, { attachments: [file] });
+    expect(result.completed).toBe(true);
+    expect(authenticatedFetch).toHaveBeenNthCalledWith(1, '/api/images/reference', expect.objectContaining({ body: expect.any(FormData) }));
+    const generationBody = JSON.parse(vi.mocked(authenticatedFetch).mock.calls[1][1]?.body as string);
+    expect(generationBody.reference_brief).toBe('Cells use sunlight to make sugar.');
+    const saved = await db.messages.toArray();
+    expect(saved.find((item) => item.role === 'user')?.attachments?.[0].name).toBe('lesson.txt');
+    expect(saved.find((item) => item.role === 'assistant')?.answerBlocks?.[0]).toMatchObject({
+      generationRequest: { prompt: 'Explain this attachment', referenceBrief: generationBody.reference_brief },
+    });
+  });
+
+  it('does not make an ungrounded image when reference preparation fails', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('{}', { status: 503 }));
+    await expect(generateConversationImage('Explain this attachment', 'conv-a', 'en', true, {
+      attachments: [new File(['source'], 'lesson.txt')],
+    })).rejects.toThrow('reference preparation failed');
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
+    expect(useChatStore.getState().messages).toHaveLength(0);
+  });
+
+  it('ignores regeneration while an image is pending, then regenerates in place using the saved intent', async () => {
+    let finish!: (result: Response) => void;
+    vi.mocked(authenticatedFetch).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const work = generateConversationImage('Draw a cat', 'conv-a', 'en', false, { referenceBrief: 'A cat beside a book.' });
+    const id = useChatStore.getState().messages.at(-1)!.id;
+    await regenerateConversationImage(id);
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
+    finish(response());
+    await work;
+    vi.mocked(authenticatedFetch).mockResolvedValue(response({ ...storedBlock, imageUrl: 'https://example.test/replacement.png' }));
+    await regenerateConversationImage(id);
+    expect(authenticatedFetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(vi.mocked(authenticatedFetch).mock.calls[1][1]?.body as string)).toMatchObject({
+      prompt: 'Draw a cat', reference_brief: 'A cat beside a book.', interface_language: 'en',
+    });
+    expect(useChatStore.getState().messages).toHaveLength(1);
+    expect((await db.messages.toArray())).toHaveLength(1);
+    expect((await db.messages.get(id))?.answerBlocks?.[0]).toMatchObject({ imageUrl: 'https://example.test/replacement.png' });
+  });
+
+  it('retains the previous image if regeneration fails', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(response());
+    await generateConversationImage('Draw a cat', 'conv-a', 'en', false);
+    const original = useChatStore.getState().messages.at(-1)!;
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('{}', { status: 503 }));
+    await expect(regenerateConversationImage(original.id)).rejects.toThrow('failed');
+    expect(useChatStore.getState().messages.at(-1)).toEqual(original);
+    expect((await db.messages.get(original.id))?.answerBlocks?.[0]).toMatchObject({ imageUrl: storedBlock.imageUrl });
+  });
+
+  it('keeps failed requests retryable instead of silently accepting an incomplete 200 response', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response(JSON.stringify({ block: { type: 'image_block' } })));
+    expect((await generateConversationImage('Draw a cat', 'conv-a', 'en', false)).completed).toBe(false);
+    const failed = useChatStore.getState().messages.at(-1)!;
+    expect(failed.content).toContain('could not create');
+    expect(failed.answerBlocks?.[0]).toMatchObject({ status: 'error', generationRequest: { prompt: 'Draw a cat' } });
+    vi.mocked(authenticatedFetch).mockResolvedValue(response());
+    await regenerateConversationImage(failed.id);
+    expect(useChatStore.getState().messages).toHaveLength(1);
+    expect((await db.messages.get(failed.id))?.answerBlocks?.[0]).toMatchObject({ status: 'resolved' });
   });
 });

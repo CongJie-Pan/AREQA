@@ -78,6 +78,12 @@ export interface ImageBlock {
   provider?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | 'pdf_attachment' | string;
   /** Safe provider model identifier for generated images. */
   model?: string;
+  /** Bounded drawing intent and reference brief, retained for image retries without raw files. */
+  generationRequest?: {
+    prompt: string;
+    language: 'zh-TW' | 'zh-CN' | 'en';
+    referenceBrief?: string;
+  };
   tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | 'pdf_attachment' | string;
   license?: string;
   licenseUrl?: string;

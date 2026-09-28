@@ -37,6 +37,7 @@ import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/u
 import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
 import { createReadAloudAudio, prepareReadAloudText } from '@/services/speech/readAloud';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { logger } from '@/utils/logger';
 
 const { TextArea } = Input;
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
@@ -1475,9 +1476,12 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
   const { language, t } = useUserPreferences();
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const [imageRetryCount, setImageRetryCount] = useState(0);
   const [renewedUrl, setRenewedUrl] = useState('');
   const [isRenewing, setIsRenewing] = useState(false);
   const [renewalFailed, setRenewalFailed] = useState(false);
+  const [renewalRetryCount, setRenewalRetryCount] = useState(0);
   const isPdfAttachmentImage = block.provider === 'pdf_attachment';
   const isGeneratedImage = block.provider === 'generated_image';
   const imageUrl = normalizeSupabaseStorageImageUrl(renewedUrl || block.thumbnailUrl || block.imageUrl);
@@ -1498,8 +1502,9 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
 
   React.useEffect(() => {
     if (!isGeneratedImage || !block.storagePath?.startsWith('users/') || !block.storageExpiresAt) return;
-    if (block.storageExpiresAt > Date.now() / 1000 + 300) return;
+    if (renewalRetryCount === 0 && block.storageExpiresAt > Date.now() / 1000 + 300) return;
     let active = true;
+    setRenewalFailed(false);
     setIsRenewing(true);
     void authenticatedFetch('/api/images/refresh', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1515,10 +1520,11 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
       if (active) setIsRenewing(false);
     });
     return () => { active = false; };
-  }, [isGeneratedImage, block.storagePath, block.storageExpiresAt, block.slotId, conversationId]);
+  }, [isGeneratedImage, block.storagePath, block.storageExpiresAt, block.slotId, conversationId, renewalRetryCount]);
 
   React.useEffect(() => {
     setIsImageLoaded(false);
+    setImageLoadFailed(false);
   }, [safeImageUrl]);
 
   React.useEffect(() => {
@@ -1562,7 +1568,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
         <div
           className={styles.answerImagePendingFrame}
           role="status"
-          aria-label="圖片搜尋中"
+          aria-label={isGeneratedImage ? (language === 'en' ? 'Creating image' : '圖片產生中') : '圖片搜尋中'}
           style={imageFrameStyle}
         >
           <div className={styles.answerImageSkeleton} data-testid="answer-image-skeleton" />
@@ -1573,11 +1579,32 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
   }
 
   if (renewalFailed) {
-    return <p role="status">{language === 'en' ? 'The image is temporarily unavailable.' : '圖片目前無法載入。'}</p>;
+    return <div role="status">
+      <p>{language === 'en' ? 'The image is temporarily unavailable.' : '圖片目前無法載入。'}</p>
+      <button type="button" onClick={() => setRenewalRetryCount((count) => count + 1)}>
+        {language === 'en' ? 'Retry loading image' : '重新載入圖片'}
+      </button>
+    </div>;
+  }
+
+  if (visualStatus === 'error') {
+    return <p role="status">{displayCaption || (language === 'en' ? 'Image generation failed. Please try again.' : '產圖失敗，請重新生成。')}</p>;
+  }
+
+  if (imageLoadFailed) {
+    return <div role="status">
+      <p>{language === 'en' ? 'The image could not be loaded.' : '圖片載入失敗。'}</p>
+      <button type="button" onClick={() => {
+        setImageRetryCount((count) => count + 1);
+        if (isGeneratedImage && block.storagePath?.startsWith('users/')) setRenewalRetryCount((count) => count + 1);
+        setImageLoadFailed(false);
+        setIsImageLoaded(false);
+      }}>{language === 'en' ? 'Retry loading image' : '重新載入圖片'}</button>
+    </div>;
   }
 
   if (!safeImageUrl || (!safeSourceUrl && !isPdfAttachmentImage && !isGeneratedImage) || block.safetyStatus !== 'pass') {
-    return null;
+    return isGeneratedImage ? <p role="status">{language === 'en' ? 'The image is unavailable. Please try again.' : '圖片目前無法顯示，請重新生成。'}</p> : null;
   }
 
   return (
@@ -1600,11 +1627,16 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
           )}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            key={imageRetryCount}
             src={safeImageUrl}
             alt={displayCaption}
             className={`${styles.answerImage} ${isImageLoaded ? styles.answerImageLoaded : ''}`}
             loading="lazy"
             onLoad={() => setIsImageLoaded(true)}
+            onError={() => {
+              setImageLoadFailed(true);
+              if (isGeneratedImage) logger.warn('image_generation_display_failed', { conversationId, imageId: block.slotId });
+            }}
           />
         </button>
         <figcaption className={`${styles.answerImageCaption} ${isImageLoaded ? styles.answerImageCaptionVisible : ''}`}>
@@ -1909,6 +1941,9 @@ export const MessageItem = memo(function MessageItem({
   );
   const displayContent = isUser ? legacyMessage.content : message.content;
   const hasAnswerBlocks = Boolean(message.answerBlocks && message.answerBlocks.length > 0);
+  const isImageGenerationPending = Boolean(message.answerBlocks?.some((block) => (
+    block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending'
+  )));
   const liveImageSlots = message.streamImageSlots ?? [];
   const answerBlockImageCount = React.useMemo(
     () => (message.answerBlocks ?? []).filter((block) => block.type === 'image_block').length,
@@ -1919,6 +1954,10 @@ export const MessageItem = memo(function MessageItem({
   const shouldUseLiveOrderedAnswer =
     hasLiveStreamed && liveImageSlots.length > 0 && (isStreaming || hasCompleteLiveImageSlots);
   const shouldUseStructuredAnswerBlocks = hasAnswerBlocks && !shouldUseLiveOrderedAnswer;
+  const generatedImageStatusContent = shouldUseStructuredAnswerBlocks
+    && message.answerBlocks?.every((block) => block.type === 'image_block' && block.provider === 'generated_image')
+    && !message.answerBlocks.some((block) => block.type === 'image_block' && block.caption === message.content)
+    ? message.content : '';
   const displayAttachments = React.useMemo(() => {
     if (message.attachments && message.attachments.length > 0) return message.attachments;
     return createLegacyAttachmentMetadata(legacyMessage.legacyCount);
@@ -2565,6 +2604,7 @@ export const MessageItem = memo(function MessageItem({
                   className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}
                   data-streaming-content={isStreaming && !thinking?.isThinking ? 'true' : undefined}
                 >
+                  {generatedImageStatusContent && <StreamingMarkdown content={generatedImageStatusContent} markdownComponents={markdownComponents} />}
                   {shouldUseLiveOrderedAnswer ? (
                     <LiveOrderedAnswerRenderer
                       conversationId={message.conversationId}
@@ -2666,7 +2706,7 @@ export const MessageItem = memo(function MessageItem({
                   </button>
                 </Tooltip>
               )}
-              {onEdit && !isStreaming && (
+              {onEdit && !isStreaming && !isImageGenerationPending && (
                 <Tooltip title={t('editMessage')}>
                   <button
                     aria-label={t('editMessage')}
@@ -2728,7 +2768,7 @@ export const MessageItem = memo(function MessageItem({
                   </span>
                 </>
               )}
-              {onRegenerate && !isStreaming && (
+              {onRegenerate && !isStreaming && !isImageGenerationPending && (
                 <Tooltip title={t('regenerate')}>
                   <button
                     className={styles.actionButton}
@@ -2739,7 +2779,7 @@ export const MessageItem = memo(function MessageItem({
                   </button>
                 </Tooltip>
               )}
-              {onDeleteLatestTurn && !isStreaming && (
+              {onDeleteLatestTurn && !isStreaming && !isImageGenerationPending && (
                 <Tooltip title={t('deleteLatestConversationTurn')}>
                   <button
                     className={styles.actionButton}

@@ -13,6 +13,7 @@ vi.mock('next/server', () => ({
 import { POST as generate } from '@/app/api/images/generate/route';
 import { POST as refresh } from '@/app/api/images/refresh/route';
 import { POST as download } from '@/app/api/images/download/route';
+import { POST as reference } from '@/app/api/images/reference/route';
 
 const request = (body: unknown, authorized = true) => ({
   headers: new Headers(authorized ? { authorization: 'Bearer user-token' } : {}),
@@ -54,5 +55,25 @@ describe('image route proxies', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-disposition')).toContain('attachment');
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain('/api/v1/images/download');
+  });
+
+  it('authenticates and forwards reference attachments without a JSON content type', async () => {
+    const form = new FormData();
+    form.set('prompt', 'Explain the source');
+    form.set('conversation_id', 'conv-a');
+    form.append('attachments', new File(['source'], 'lesson.txt', { type: 'text/plain' }));
+    expect((await reference(request({}, false) as never)).status).toBe(401);
+    const response = await reference({ ...request({}), formData: async () => form } as never);
+    expect(response.status).toBe(200);
+    const [url, options] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain('/api/v1/images/reference');
+    expect(options?.body).toBe(form);
+    expect(new Headers(options?.headers).has('content-type')).toBe(false);
+  });
+
+  it('rejects oversized reference briefs before forwarding generation', async () => {
+    const response = await generate(request({ prompt: 'Draw a cat', conversation_id: 'conv-a', reference_brief: 'a'.repeat(4001) }) as never);
+    expect(response.status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

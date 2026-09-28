@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { syncService } from '@/services/syncService';
 import { db } from '@/database/db';
 import { supabase } from '@/lib/supabase';
-import type { Message } from '@/database/schema';
+import type { ImageBlock, Message } from '@/database/schema';
 
 // Mock dependencies
 const mockReload = vi.fn();
@@ -164,6 +164,22 @@ describe('syncService - pullFromCloud', () => {
     expect(mockReload).not.toHaveBeenCalled();
     const convs = await db.conversations.toArray();
     expect(convs).toHaveLength(0);
+  });
+
+  it('keeps the image retry brief when sending to and restoring from cloud history', async () => {
+    const block: ImageBlock = {
+      type: 'image_block', slotId: 'image-a', topic: 'Light', purpose: 'diagram',
+      imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: 'Light',
+      provider: 'generated_image', safetyStatus: 'pass', matchConfidence: 1,
+      generationRequest: { prompt: 'Explain this source', language: 'en', referenceBrief: 'Light becomes sugar.' },
+    };
+    await syncService.pushMessage({ id: 'image-message', userId: 'user_123', conversationId: 'conv_1',
+      role: 'assistant', content: 'Image ready', answerBlocks: [block], createdAt: new Date() });
+    expect(mockMessageUpsert).toHaveBeenCalledWith(expect.objectContaining({ answer_blocks: [block] }));
+    mockSupabaseMsgResponse = { data: [{ id: 'image-message', user_id: 'user_123', conversation_id: 'conv_1',
+      role: 'assistant', content: 'Image ready', answer_blocks: [block], created_at: new Date().toISOString() }], error: null };
+    await syncService.pullConversationMessages('conv_1', 'user_123');
+    expect((await db.messages.get('image-message'))?.answerBlocks?.[0]).toMatchObject({ generationRequest: block.generationRequest });
   });
 
   it('keeps pending local edits and deletion markers while reconciling a cloud snapshot', async () => {

@@ -7,14 +7,14 @@ import re
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
 from config import settings
 from services.attachments.storage import AttachmentImageStorageService
 from services.generated_image_quota import consume_image_quota
-from services.generated_image_service import generate_teaching_image
+from services.generated_image_service import generate_teaching_image, prepare_image_reference
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,6 +27,34 @@ class GenerateImageRequest(BaseModel):
     prompt: str = Field(min_length=3, max_length=1800)
     conversation_id: str = Field(min_length=1, max_length=128)
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
+    reference_brief: str = Field(default="", max_length=4000)
+
+
+@router.post("/api/v1/images/reference")
+async def prepare_image_reference_endpoint(
+    prompt: str = Form(..., min_length=3, max_length=1800),
+    conversation_id: str = Form(..., min_length=1, max_length=128),
+    interface_language: Literal["zh-TW", "zh-CN", "en"] = Form("zh-TW"),
+    attachments: list[UploadFile] = File(...),
+    current_user_id: str = Depends(get_current_user),
+) -> dict[str, str]:
+    """Reuse validated attachment parsing before any paid image request."""
+    from services.attachment_service import process_attachments
+
+    if not SAFE_ID.fullmatch(conversation_id):
+        raise HTTPException(status_code=400, detail="Invalid conversation identifier")
+    if not await consume_image_quota(f"{current_user_id}:reference"):
+        raise HTTPException(status_code=429, detail="Image reference rate limit exceeded")
+    processed = await process_attachments(attachments, conversation_id=conversation_id)
+    if settings.enable_generated_image_debug_logs:
+        logger.info("image_generation.reference_received conversation_id=%s attachment_count=%s", conversation_id, len(processed))
+    try:
+        brief = await prepare_image_reference(processed, request=prompt, language=interface_language, conversation_id=conversation_id)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail="The attachments contain no readable reference material") from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail="Image reference preparation is unavailable") from error
+    return {"reference_brief": brief}
 
 
 @router.post("/api/v1/images/generate")
@@ -50,8 +78,8 @@ async def generate_image_endpoint(
         raise HTTPException(status_code=400, detail="Invalid conversation identifier")
     if settings.enable_generated_image_debug_logs:
         logger.info(
-            "image_generation.request_received conversation_id=%s language=%s request_chars=%s",
-            payload.conversation_id, payload.interface_language, len(payload.prompt),
+            "image_generation.request_received conversation_id=%s language=%s request_chars=%s reference_chars=%s",
+            payload.conversation_id, payload.interface_language, len(payload.prompt), len(payload.reference_brief),
         )
     if not await consume_image_quota(current_user_id):
         if settings.enable_generated_image_debug_logs:
@@ -62,11 +90,12 @@ async def generate_image_endpoint(
         result = await generate_teaching_image(
             payload.prompt, language=payload.interface_language,
             user_id=current_user_id, conversation_id=payload.conversation_id, image_id=image_id,
+            reference_brief=payload.reference_brief,
         )
     except (RuntimeError, ValueError) as error:
         logger.warning(
-            "image_generation.request_failed conversation_id=%s user_id=%s reason=%s",
-            payload.conversation_id, current_user_id, type(error).__name__,
+            "image_generation.request_failed conversation_id=%s reason=%s",
+            payload.conversation_id, type(error).__name__,
         )
         raise HTTPException(status_code=503, detail="Image generation is unavailable") from error
 
@@ -77,6 +106,10 @@ async def generate_image_endpoint(
             "thumbnailUrl": result.image_url, "sourceUrl": "",
             "sourceDomain": "", "caption": result.caption,
             "provider": "generated_image",
+            "generationRequest": {
+                "prompt": payload.prompt, "language": payload.interface_language,
+                "referenceBrief": payload.reference_brief,
+            },
             "safetyStatus": "pass", "matchConfidence": 1.0,
             "transient": result.transient,
             "storageBucket": result.storage_bucket,

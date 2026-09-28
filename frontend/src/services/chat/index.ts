@@ -29,6 +29,7 @@ import { filesToAttachmentMetadata } from '@/utils/attachments';
 import { answerBlocksForEditedContent, persistentAnswerBlocks } from '@/utils/answerBlocks';
 import { logger } from '@/utils/logger';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { regenerateConversationImage } from '@/services/generatedImages';
 
 /**
  * Active abort controller for the current stream
@@ -1132,6 +1133,11 @@ export async function initializeChatService(userId?: string): Promise<void> {
  * @param messageId - The AI message ID to regenerate
  */
 export async function regenerateMessage(messageId: string): Promise<void> {
+  const imageMessage = useChatStore.getState().messages.find((message) => message.id === messageId);
+  if (imageMessage?.answerBlocks?.some((block) => block.type === 'image_block' && block.provider === 'generated_image')) {
+    await regenerateConversationImage(messageId);
+    return;
+  }
   // Cancel any ongoing stream
   if (currentAbortController) {
     currentAbortController.abort();

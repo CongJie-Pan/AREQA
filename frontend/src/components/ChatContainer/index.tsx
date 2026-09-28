@@ -341,15 +341,18 @@ export function ChatContainer({ className }: ChatContainerProps) {
     async function retryableSend(content: string, attachments: File[] = [], options: { createImage?: boolean } = {}) {
       try {
         if (options.createImage) {
-          if (attachments.length > 0) {
-            antMessageApi.error('Create Image 目前尚不支援參考附件。');
-            return { completed: false };
-          }
           if (!user) {
             setShowAuthPrompt(true);
             return { completed: false };
           }
-          return await generateConversationImage(content, activeConversationId || undefined, language);
+          const dismissLoading = attachments.length
+            ? antMessageApi.loading(language === 'en' ? 'Preparing image references…' : '正在整理附件並產生圖片…', 0)
+            : undefined;
+          try {
+            return await generateConversationImage(content, activeConversationId || undefined, language, true, { attachments });
+          } finally {
+            dismissLoading?.();
+          }
         }
         const voiceMessage = useLiveTutorStore.getState().isOpen;
         const result = voiceMessage

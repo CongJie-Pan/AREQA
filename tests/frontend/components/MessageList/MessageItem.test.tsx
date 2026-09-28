@@ -716,6 +716,44 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
   });
 
+  it('shows pending generation and hides regenerate until the image completes', () => {
+    render(<MessageItem onRegenerate={vi.fn()} onDeleteLatestTurn={vi.fn()} message={{
+      ...baseMessage, isStreaming: false, content: '', answerBlocks: [{
+        type: 'image_block', slotId: 'pending-a', topic: '圖', purpose: 'diagram',
+        imageUrl: '', sourceUrl: '', sourceDomain: '', caption: '正在產生圖片…',
+        provider: 'generated_image', status: 'pending', safetyStatus: 'pass', matchConfidence: 1,
+      }],
+    }} />);
+    expect(screen.getByText('正在產生圖片…')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重新生成訊息' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '刪除對話' })).not.toBeInTheDocument();
+  });
+
+  it('shows an image load error and renews the stored URL when retrying', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response(JSON.stringify({ imageUrl: 'https://example.test/renewed.png' })));
+    render(<MessageItem message={{ ...baseMessage, conversationId: 'conv-a', answerBlocks: [{
+      type: 'image_block', slotId: 'image-a', topic: '圖', purpose: 'diagram',
+      imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: '解說圖',
+      provider: 'generated_image', status: 'resolved', safetyStatus: 'pass', matchConfidence: 1,
+      storagePath: 'users/owner/image.png', storageExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+    }] }} />);
+    fireEvent.error(screen.getByAltText('解說圖'));
+    expect(screen.getByText('圖片載入失敗。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重新載入圖片' }));
+    await waitFor(() => expect(screen.getByAltText('解說圖')).toHaveAttribute('src', 'https://example.test/renewed.png'));
+    expect(authenticatedFetch).toHaveBeenCalledWith('/api/images/refresh', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('renders a failed image request visibly and keeps its regenerate action', () => {
+    render(<MessageItem onRegenerate={vi.fn()} message={{ ...baseMessage, content: '', answerBlocks: [{
+      type: 'image_block', slotId: 'error-a', topic: '圖', purpose: 'diagram', imageUrl: '',
+      sourceUrl: '', sourceDomain: '', caption: '目前無法產生圖片，請稍後重試。',
+      provider: 'generated_image', status: 'error', safetyStatus: 'pass', matchConfidence: 1,
+    }] }} />);
+    expect(screen.getByText('目前無法產生圖片，請稍後重試。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新生成訊息' })).toBeInTheDocument();
+  });
+
   it('renews an expired generated image URL when reopening a conversation', async () => {
     vi.mocked(authenticatedFetch).mockResolvedValue(new Response(JSON.stringify({
       imageUrl: 'https://example.com/renewed.png', storageExpiresAt: Math.floor(Date.now() / 1000) + 3600,

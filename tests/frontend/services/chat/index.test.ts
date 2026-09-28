@@ -9,6 +9,9 @@ import { getCurrentUserId } from '@/database/db';
 import { syncService } from '@/services/syncService';
 import { logger } from '@/utils/logger';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { regenerateConversationImage } from '@/services/generatedImages';
+
+vi.mock('@/services/generatedImages', () => ({ regenerateConversationImage: vi.fn() }));
 
 vi.mock('@/store/chat', () => ({
   useChatStore: {
@@ -701,6 +704,15 @@ describe('Chat Service', () => {
   });
 
   describe('regenerateMessage', () => {
+    it('routes generated images to image regeneration instead of a text stream', async () => {
+      mockChatStore.messages = [{ id: 'image-reply', role: 'assistant', content: '',
+        answerBlocks: [{ type: 'image_block', provider: 'generated_image', status: 'pending' }],
+      }];
+      await regenerateMessage('image-reply');
+      expect(regenerateConversationImage).toHaveBeenCalledWith('image-reply');
+      expect(createChatStream).not.toHaveBeenCalled();
+      expect(mockChatStore.startStreaming).not.toHaveBeenCalled();
+    });
     it('should regenerate successfully (happy path)', async () => {
       // Arrange
       const TARGET_MSG_ID = 'msg-1';
