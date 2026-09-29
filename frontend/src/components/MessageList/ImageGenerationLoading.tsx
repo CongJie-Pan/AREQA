@@ -34,7 +34,7 @@ export function ImageGenerationLoading({ caption, frameStyle = { aspectRatio: '1
     : language === 'en' ? 'You can stop generation at any time.' : language === 'zh-CN' ? '你可以随时停止生成。' : '你可以隨時停止生成。';
 
   return (
-    <figure className={styles.answerImageCard} aria-label={label}>
+    <figure className={`${styles.answerImageCard} ${styles.generatedImageCard}`} aria-label={label}>
       <div className={styles.generatedImagePendingFrame} style={frameStyle} role="status" aria-label={label} aria-live="polite">
         <div className={styles.generatedImageShimmer} aria-hidden="true" data-testid="answer-image-skeleton" />
         <div className={styles.generatedImagePendingContent}>

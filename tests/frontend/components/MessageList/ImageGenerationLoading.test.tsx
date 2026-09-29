@@ -12,6 +12,7 @@ describe('ImageGenerationLoading', () => {
   it('reserves a visible preview and announces the current preparation stage', () => {
     render(<ImageGenerationLoading caption="正在整理參考附件…" />);
     expect(screen.getByRole('status', { name: '圖片產生中' })).toHaveStyle({ aspectRatio: '16 / 9' });
+    expect(screen.getByRole('figure')).toHaveStyle({ marginInline: '0' });
     expect(screen.getByText('正在整理參考附件…')).toBeInTheDocument();
     expect(screen.getByTestId('answer-image-skeleton')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByText('你可以隨時停止生成。')).toBeInTheDocument();

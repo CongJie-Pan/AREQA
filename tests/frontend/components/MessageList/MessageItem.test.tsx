@@ -44,6 +44,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       messageAttachmentDropdownIcon: 'messageAttachmentDropdownIcon',
       messageAttachmentDropdownName: 'messageAttachmentDropdownName',
       answerImageCard: 'answerImageCard',
+      generatedImageCard: 'generatedImageCard',
       answerImageExplanation: 'answerImageExplanation',
       answerImageButton: 'answerImageButton',
       answerImageSkeleton: 'answerImageSkeleton',
@@ -710,6 +711,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       }} />,
     );
     expect(screen.getByAltText('請畫細胞結構')).toHaveAttribute('src', 'https://example.com/generated.png');
+    expect(screen.getByAltText('請畫細胞結構').closest('figure')).toHaveClass('generatedImageCard');
     expect(screen.queryByText('請畫細胞結構')).not.toBeInTheDocument();
     expect(screen.getByText('AI 生成')).toBeInTheDocument();
     expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
@@ -732,6 +734,29 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByRole('button', { name: '刪除對話' })).not.toBeInTheDocument();
     expect(screen.getByText('你可以隨時停止生成。')).toBeInTheDocument();
     expect(screen.getByTestId('answer-image-skeleton')).toBeInTheDocument();
+    expect(screen.getByTestId('answer-image-skeleton').closest('figure')).toHaveClass('generatedImageCard');
+  });
+
+  it.each(['Here is the image I created.', '這是為你產生的圖片。'])(
+    'hides legacy completion text when reopening an image reply (%s)', (content) => {
+      render(<MessageItem message={{ ...baseMessage, content, answerBlocks: [{
+        type: 'image_block', slotId: 'legacy-image', topic: '統計', purpose: 'diagram',
+        imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: '統計教學图',
+        provider: 'generated_image', status: 'resolved', safetyStatus: 'pass', matchConfidence: 1,
+      }] }} />);
+      expect(screen.queryByText(content)).not.toBeInTheDocument();
+      expect(screen.getByAltText('統計教學图')).toBeInTheDocument();
+    },
+  );
+
+  it('keeps download warnings visible for generated images that could not be saved', () => {
+    const content = 'The image is ready, but could not be saved. Please download it now.';
+    render(<MessageItem message={{ ...baseMessage, content, answerBlocks: [{
+      type: 'image_block', slotId: 'unsaved-image', topic: '統計', purpose: 'diagram',
+      imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: '統計教學圖',
+      provider: 'generated_image', status: 'resolved', safetyStatus: 'pass', matchConfidence: 1,
+    }] }} />);
+    expect(screen.getByText(content)).toBeInTheDocument();
   });
 
   it('shows an image load error and renews the stored URL when retrying', async () => {

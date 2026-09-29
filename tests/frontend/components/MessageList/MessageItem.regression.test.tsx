@@ -15,6 +15,21 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
 }));
 
 describe('MessageItem Quote Alignment Regression', () => {
+  it('left-aligns a generated image card and its bitmap using the real styles', () => {
+    render(<App><MessageItem message={{
+      id: 'generated-left', userId: 'user-a', conversationId: 'conv-a', role: 'assistant',
+      content: 'Here is the image I created.', createdAt: new Date(), answerBlocks: [{
+        type: 'image_block', slotId: 'generated-left', topic: '統計', purpose: 'diagram',
+        imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: '統計教學圖',
+        provider: 'generated_image', safetyStatus: 'pass', matchConfidence: 1,
+      }],
+    }} /></App>);
+    const image = screen.getByAltText('統計教學圖');
+    expect(image.closest('figure')).toHaveStyle({ marginInline: '0' });
+    expect(image).toHaveStyle({ objectPosition: 'left center' });
+    expect(screen.queryByText('Here is the image I created.')).not.toBeInTheDocument();
+  });
+
   it('opens assistant rich edit mode without exposing Markdown source syntax', () => {
     render(
       <App>

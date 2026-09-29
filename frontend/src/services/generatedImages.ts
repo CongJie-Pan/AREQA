@@ -226,7 +226,7 @@ export async function generateConversationImage(
     const block = { ...payload.block, generationRequest, status: 'resolved' as const };
     const content = block.transient
       ? language === 'en' ? 'The image is ready, but could not be saved. Please download it now.' : '圖片已完成，但目前無法儲存。請先下載圖片。'
-      : language === 'en' ? 'Here is the image I created.' : '這是為你產生的圖片。';
+      : '';
     useChatStore.getState().updateAssistantMessage(assistantId, { content, answerBlocks: [block], isStreaming: false });
     // Once the result is published, Stop must not race its persistence.
     clearImageRequest(requestId);

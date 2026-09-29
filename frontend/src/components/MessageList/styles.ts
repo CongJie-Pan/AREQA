@@ -1227,6 +1227,14 @@ quoteBlockContent: css`
     }
   `,
 
+  generatedImageCard: css`
+    margin-inline: 0;
+
+    img {
+      object-position: left center;
+    }
+  `,
+
   answerImageExplanation: css`
     margin: 12px 0 10px;
     color: var(--areqa-message-text);

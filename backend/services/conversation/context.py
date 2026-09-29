@@ -115,12 +115,17 @@ def _explicit_language_request(text: str) -> str | None:
     return None
 
 
-def resolve_answer_language(interface_language: str, latest_user_message: str) -> str:
+def resolve_answer_language(
+    interface_language: str, latest_user_message: str, *, prefer_query_language: bool = False,
+) -> str:
     """Resolve final answer language from explicit request, query language, and UI.
 
     Args:
         interface_language: Persisted UI language sent by the frontend.
         latest_user_message: Current user-authored message.
+        prefer_query_language: Use the request's detected language before the UI
+            fallback for image generation. Existing chat callers retain their
+            Chinese-interface preference by default.
 
     Returns:
         Human-readable language label for prompt instructions.
@@ -132,6 +137,8 @@ def resolve_answer_language(interface_language: str, latest_user_message: str) -
     if explicit_language:
         return ANSWER_LANGUAGE_RULES[explicit_language]
     query_language = _detect_query_language(latest_user_message)
+    if prefer_query_language and query_language:
+        return ANSWER_LANGUAGE_RULES[query_language]
     if query_language in {"zh-TW", "zh-CN"}:
         return ANSWER_LANGUAGE_RULES[query_language]
     if interface_language in {"zh-TW", "zh-CN"}:

@@ -210,6 +210,17 @@ describe('generated image conversation workflow', () => {
     expect(useChatStore.getState().messages.at(-1)?.content).toContain('could not be saved');
   });
 
+  it('saves successful image replies without a completion preamble and retains the generation intent', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce(response());
+    const result = await generateConversationImage('畫一張統計教學圖', 'conv-a', 'en', false);
+    expect(result.completed).toBe(true);
+    const message = useChatStore.getState().messages.at(-1)!;
+    expect(message.content).toBe('');
+    const saved = await db.messages.get(message.id);
+    expect(saved?.content).toBe('');
+    expect(saved?.answerBlocks?.[0]).toMatchObject({ generationRequest: { prompt: '畫一張統計教學圖' } });
+  });
+
   it('records provider failure even if saving the error message also fails', async () => {
     vi.mocked(authenticatedFetch).mockResolvedValue(new Response('{}', { status: 503 }));
     vi.spyOn(messageRepo, 'add').mockRejectedValueOnce(new Error('storage unavailable'));

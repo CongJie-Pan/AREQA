@@ -42,6 +42,10 @@ import { logger } from '@/utils/logger';
 
 const { TextArea } = Input;
 const STREAMING_MARKDOWN_FLUSH_MS = 56;
+const LEGACY_IMAGE_COMPLETION_TEXT = new Set([
+  'Here is the image I created.',
+  '這是為你產生的圖片。',
+]);
 const STREAMDOWN_MATH_PLUGIN = createMathPlugin({ singleDollarTextMath: true });
 const STREAMDOWN_PLUGINS = {
   math: {
@@ -1619,7 +1623,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
       {displayExplanatoryCaption && (
         <p className={styles.answerImageExplanation}>{displayExplanatoryCaption}</p>
       )}
-      <figure className={styles.answerImageCard}>
+      <figure className={`${styles.answerImageCard} ${isGeneratedImage ? styles.generatedImageCard : ''}`}>
         <button
           type="button"
           className={styles.answerImageButton}
@@ -1963,6 +1967,7 @@ export const MessageItem = memo(function MessageItem({
   const shouldUseStructuredAnswerBlocks = hasAnswerBlocks && !shouldUseLiveOrderedAnswer;
   const generatedImageStatusContent = shouldUseStructuredAnswerBlocks
     && message.answerBlocks?.every((block) => block.type === 'image_block' && block.provider === 'generated_image')
+    && !LEGACY_IMAGE_COMPLETION_TEXT.has(message.content.trim())
     && !message.answerBlocks.some((block) => block.type === 'image_block' && block.caption === message.content)
     ? message.content : '';
   const displayAttachments = React.useMemo(() => {
