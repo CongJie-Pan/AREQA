@@ -30,7 +30,7 @@ from services.visual.understanding import VisualUnderstandingAgent
 
 logger = logging.getLogger(__name__)
 IMAGE_API_URL = "https://openrouter.ai/api/v1/images"
-SUNBURST_MODEL = "openai/gpt-image-2.5-sunburst"
+FLARE_MODEL = "openai/gpt-image-2.5-flare"
 QWEN_MODEL = "qwen/qwen-image-3-pro"
 COMPLEX_VISUAL_PATTERN = re.compile(
     r"(流程圖|流程图|資訊圖|信息图|示意圖|示意图|架構圖|架构图|多步驟|多步骤|"
@@ -56,7 +56,7 @@ class GeneratedImage:
 
 
 def choose_image_model(request: str) -> str:
-    """Choose the precision-oriented default, escalating structured diagrams to Qwen.
+    """Choose the Flare default, escalating structured diagrams to Qwen.
 
     Args:
         request: Bounded user drawing request.
@@ -65,7 +65,7 @@ def choose_image_model(request: str) -> str:
         One of the two supported OpenRouter model identifiers.
     """
 
-    return QWEN_MODEL if COMPLEX_VISUAL_PATTERN.search(request) else SUNBURST_MODEL
+    return QWEN_MODEL if COMPLEX_VISUAL_PATTERN.search(request) else FLARE_MODEL
 
 
 @lru_cache(maxsize=1)
@@ -204,7 +204,7 @@ async def generate_teaching_image(
         "prompt": build_image_prompt(request, language=language, model=model, reference_brief=reference_brief),
         "n": 1,
         "aspect_ratio": "4:3",
-        **({"quality": "high"} if model == SUNBURST_MODEL else {"resolution": "1K"}),
+        **({"quality": "high"} if model == FLARE_MODEL else {"resolution": "1K"}),
     }
     started = time.monotonic()
     if debug_logs:
@@ -213,7 +213,7 @@ async def generate_teaching_image(
             conversation_id, image_id, model,
             "attachment_reference" if reference_brief else "structured_visual" if model == QWEN_MODEL else "default",
             language, label_language, len(request), len(payload["prompt"]),
-            "high" if model == SUNBURST_MODEL else "1K",
+            "high" if model == FLARE_MODEL else "1K",
         )
     try:
         async with client_factory(timeout=100.0) as client:

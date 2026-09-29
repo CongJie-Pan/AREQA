@@ -22,8 +22,8 @@ def _valid_png() -> bytes:
 
 
 def test_image_model_routing_and_prompt_contract():
-    assert images.SUNBURST_MODEL == "openai/gpt-image-2.5-sunburst"
-    assert images.choose_image_model("A cat reading a book") == images.SUNBURST_MODEL
+    assert images.FLARE_MODEL == "openai/gpt-image-2.5-flare"
+    assert images.choose_image_model("A cat reading a book") == images.FLARE_MODEL
     assert images.choose_image_model("畫一張血液循環流程圖") == images.QWEN_MODEL
     prompt = images.build_image_prompt("血液循環流程圖", language="zh-TW", model=images.QWEN_MODEL)
     assert "Traditional Chinese" in prompt
@@ -40,14 +40,14 @@ def test_image_model_routing_and_prompt_contract():
     ("123 ⚪", "zh-TW", "Traditional Chinese"),
 ])
 def test_image_text_language_follows_the_drawing_request(drawing_request, interface_language, label_language):
-    prompt = images.build_image_prompt(drawing_request, language=interface_language, model=images.SUNBURST_MODEL)
+    prompt = images.build_image_prompt(drawing_request, language=interface_language, model=images.FLARE_MODEL)
     assert f"Default image text language: {label_language}." in prompt
     assert prompt.endswith(f"Drawing request: {drawing_request}")
 
 
 def test_image_prompt_preserves_requested_style_and_no_text_requirement():
     request = "畫一幅深色背景的油畫，不要文字，不要箭頭，保留豐富細節。"
-    prompt = images.build_image_prompt(request, language="en", model=images.SUNBURST_MODEL)
+    prompt = images.build_image_prompt(request, language="en", model=images.FLARE_MODEL)
     assert prompt.endswith(request)
     assert "including requests for no text" in prompt
     assert "Create one clear educational visual" not in prompt
@@ -159,14 +159,14 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
             "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
             reference_brief=reference_brief,
         )
-    assert seen["payload"]["model"] == (images.QWEN_MODEL if reference_brief else images.SUNBURST_MODEL)
+    assert seen["payload"]["model"] == (images.QWEN_MODEL if reference_brief else images.FLARE_MODEL)
     assert seen["payload"]["n"] == 1
     if reference_brief:
         assert "quality" not in seen["payload"]
         assert seen["payload"]["resolution"] == "1K"
         assert reference_brief in seen["payload"]["prompt"]
     else:
-        assert seen["payload"]["model"] == "openai/gpt-image-2.5-sunburst"
+        assert seen["payload"]["model"] == "openai/gpt-image-2.5-flare"
         assert "resolution" not in seen["payload"]
         assert seen["payload"]["quality"] == "high"
     assert seen["png_bytes"] == png
@@ -177,7 +177,7 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
     for event in detailed_events:
         assert (f"image_generation.{event}" in caplog.text) is debug_logs
     if debug_logs:
-        assert f"model={images.QWEN_MODEL if reference_brief else images.SUNBURST_MODEL}" in caplog.text
+        assert f"model={images.QWEN_MODEL if reference_brief else images.FLARE_MODEL}" in caplog.text
         assert f"route={'attachment_reference' if reference_brief else 'default'}" in caplog.text
         assert "persisted=True" in caplog.text
     assert "Draw a cat" not in caplog.text
