@@ -1501,7 +1501,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
   // PDF planner metadata and generated-image prompts are not visible captions.
   // Keep generated intent available for accessibility and regeneration only.
   const displayExplanatoryCaption = isPdfAttachmentImage || isGeneratedImage ? '' : block.explanatoryCaption;
-  const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : isGeneratedImage ? 'AI 生成' : block.sourceDomain || 'source';
+  const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : isGeneratedImage ? '' : block.sourceDomain || 'source';
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
 
@@ -1546,6 +1546,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
   }, [isLightboxOpen]);
 
   const handleGeneratedDownload = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.stopPropagation();
     if (!block.storagePath?.startsWith('users/')) return;
     event.preventDefault();
     try {
@@ -1651,7 +1652,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
             }}
           />
         </button>
-        <figcaption className={`${styles.answerImageCaption} ${isImageLoaded ? styles.answerImageCaptionVisible : ''}`}>
+        {!isGeneratedImage && <figcaption className={`${styles.answerImageCaption} ${isImageLoaded ? styles.answerImageCaptionVisible : ''}`}>
           {!isGeneratedImage && <span className={styles.answerImageCaptionText}>{displayCaption}</span>}
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
@@ -1671,7 +1672,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
               </a>
             )}
           </span>
-        </figcaption>
+        </figcaption>}
       </figure>
       {isLightboxOpen && createPortal(
         <div
@@ -1689,6 +1690,20 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
           >
             <ArrowLeft size={24} aria-hidden="true" />
           </button>
+          {isGeneratedImage && (
+            <a
+              href={safeFullImageUrl}
+              download="areqa-image.png"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={language === 'en' ? 'Download image' : '下載圖片'}
+              title={language === 'en' ? 'Download image' : '下載圖片'}
+              className={`${styles.answerImageLightboxClose} ${styles.answerImageLightboxDownload}`}
+              onClick={handleGeneratedDownload}
+            >
+              <Download size={20} aria-hidden="true" />
+            </a>
+          )}
           <button
             type="button"
             className={styles.answerImageLightboxClose}
@@ -1722,7 +1737,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
               />
             )}
           </div>
-          <div className={styles.answerImageLightboxMeta} onClick={(event) => event.stopPropagation()}>
+          {!isGeneratedImage && <div className={styles.answerImageLightboxMeta} onClick={(event) => event.stopPropagation()}>
             {!isGeneratedImage && <p className={styles.answerImageLightboxCaption}>{displayCaption}</p>}
             {displayExplanatoryCaption && <p>{displayExplanatoryCaption}</p>}
             {(block.attributionString || block.creator) && (
@@ -1730,19 +1745,6 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
             )}
             <div className={styles.answerImageLightboxSourceLine}>
               <span>{sourceLabel}</span>
-              {isGeneratedImage && (
-                <a
-                  href={safeFullImageUrl}
-                  download="areqa-image.png"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.answerImageLightboxSource}
-                  onClick={handleGeneratedDownload}
-                >
-                  <Download size={14} aria-hidden="true" />
-                  {language === 'en' ? 'Download image' : '下載圖片'}
-                </a>
-              )}
               {isPdfAttachmentImage ? (
                 <span>{t('uploadedAttachmentBadge')}</span>
               ) : isGeneratedImage ? null : safeSourceUrl ? (
@@ -1758,7 +1760,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
                 </a>
               ) : null}
             </div>
-          </div>
+          </div>}
         </div>
         ,
         document.body

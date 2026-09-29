@@ -32,6 +32,7 @@ const response = (block = storedBlock) => new Response(JSON.stringify({ block })
 describe('generated image conversation workflow', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.spyOn(useConversationStore.getState(), 'generateTitle').mockResolvedValue();
     vi.mocked(getCurrentUserId).mockReturnValue('user-a');
     await db.open();
     await db.messages.clear();
@@ -39,6 +40,34 @@ describe('generated image conversation workflow', () => {
     useChatStore.getState().clearMessages();
     useChatStore.getState().resetStreamingState();
     useConversationStore.setState({ activeConversationId: null, conversations: [] });
+  });
+
+  it('generates a title from the first image prompt but not subsequent images or regeneration', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation(async () => response());
+    vi.mocked(databaseService.conversation.create).mockResolvedValue({
+      id: 'new-image-conv', userId: 'user-a', title: 'New Chat', createdAt: new Date(), updatedAt: new Date(), messageCount: 0,
+    });
+    expect((await generateConversationImage('請畫細胞結構', undefined, 'zh-TW')).completed).toBe(true);
+    expect(useConversationStore.getState().generateTitle).toHaveBeenCalledExactlyOnceWith(
+      'new-image-conv', [{ role: 'user', content: '請畫細胞結構' }],
+    );
+    const assistantId = useChatStore.getState().messages.at(-1)!.id;
+    await regenerateConversationImage(assistantId);
+    await generateConversationImage('請畫另一張細胞圖', 'new-image-conv', 'zh-TW');
+    expect(useConversationStore.getState().generateTitle).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a completed image when background title generation fails', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(response());
+    vi.mocked(useConversationStore.getState().generateTitle).mockRejectedValueOnce(new Error('Title unavailable'));
+    expect(await generateConversationImage('Draw a cat', 'conv-a', 'en')).toMatchObject({ completed: true, persisted: true });
+    expect(useChatStore.getState().messages.at(-1)?.answerBlocks?.[0]).toMatchObject({ status: 'resolved' });
+  });
+
+  it('does not title failed image generations', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
+    await generateConversationImage('Draw a cat', 'conv-a', 'en');
+    expect(useConversationStore.getState().generateTitle).not.toHaveBeenCalled();
   });
 
   it('renders a preparation card and marks the composer busy before user persistence completes', async () => {

@@ -128,6 +128,7 @@ export async function generateConversationImage(
   let assistantId = options.assistantMessageId;
   if (assistantId) activeImageRequests.add(assistantId);
   let createdAt: Date | undefined;
+  let isFirstTurn = false;
   let referenceBrief = options.attachments?.length ? '' : options.referenceBrief || '';
   let generationRequest: NonNullable<ImageBlock['generationRequest']> = {
     prompt, language, referenceBrief,
@@ -162,6 +163,9 @@ export async function generateConversationImage(
       conversations.selectConversation(id);
     }
     if (ownerChanged()) return { completed: false, conversationId: id };
+    isFirstTurn = persistUserTurn && !previousMessage && !useChatStore.getState().messages.some(
+      (message) => message.conversationId === id,
+    );
     const attachments = filesToAttachmentMetadata(options.attachments || []);
     const userId = persistUserTurn ? useChatStore.getState().addUserMessage(prompt, id, attachments) : undefined;
     const userCreatedAt = useChatStore.getState().messages.find((message) => message.id === userId)?.createdAt;
@@ -237,6 +241,13 @@ export async function generateConversationImage(
       const messageData = { role: 'assistant' as const, content, answerBlocks: [savedBlock] };
       if (previousMessage) await databaseService.message.update(assistantId, messageData);
       else await databaseService.message.add(id, { id: assistantId, createdAt, ...messageData });
+      if (isFirstTurn && !block.transient && !ownerChanged()) {
+        // Reuse title persistence without delaying image completion or regeneration.
+        logger.info('image_generation_title_started', { conversationId: id, assistantId });
+        void useConversationStore.getState().generateTitle(id, [{ role: 'user', content: prompt }]).catch((titleError) => {
+          logger.warn('image_generation_title_failed', { conversationId: id, reason: titleError instanceof Error ? titleError.name : 'UnknownError' });
+        });
+      }
       logger.info('image_generation_completed', { conversationId: id, assistantId, requestId, persisted: !block.transient });
       return { completed: true, conversationId: id, block, persisted: !block.transient };
     } catch (error) {

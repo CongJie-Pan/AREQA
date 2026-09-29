@@ -1524,6 +1524,11 @@ quoteBlockContent: css`
     }
   `,
 
+  answerImageLightboxDownload: css`
+    right: calc(max(22px, env(safe-area-inset-right)) + 48px);
+    text-decoration: none;
+  `,
+
   answerImageLightboxStage: css`
     display: flex;
     align-items: center;

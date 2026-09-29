@@ -55,6 +55,7 @@ vi.mock('../../../../frontend/src/components/MessageList/styles', () => ({
       answerImageLicense: 'answerImageLicense',
       answerImageSource: 'answerImageSource',
       answerImageLightbox: 'answerImageLightbox',
+      answerImageLightboxDownload: 'answerImageLightboxDownload',
       answerImageLightboxBody: 'answerImageLightboxBody',
       answerImageLightboxImage: 'answerImageLightboxImage',
       answerImageLightboxMeta: 'answerImageLightboxMeta',
@@ -713,12 +714,16 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByAltText('請畫細胞結構')).toHaveAttribute('src', 'https://example.com/generated.png');
     expect(screen.getByAltText('請畫細胞結構').closest('figure')).toHaveClass('generatedImageCard');
     expect(screen.queryByText('請畫細胞結構')).not.toBeInTheDocument();
-    expect(screen.getByText('AI 生成')).toBeInTheDocument();
+    expect(screen.queryByText('AI 生成')).not.toBeInTheDocument();
     expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
     expect(screen.queryByText('來源')).not.toBeInTheDocument();
     fireEvent.click(screen.getByAltText('請畫細胞結構').closest('button')!);
     expect(screen.queryByText('請畫細胞結構')).not.toBeInTheDocument();
     expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
+    expect(screen.queryByText('AI 生成')).not.toBeInTheDocument();
+    const download = screen.getByRole('link', { name: '下載圖片' });
+    expect(download).toHaveClass('answerImageLightboxDownload');
+    expect(download.nextElementSibling).toHaveAttribute('aria-label', '關閉圖片檢視');
   });
 
   it('shows pending generation and hides regenerate until the image completes', () => {
@@ -819,7 +824,8 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       }],
     }} />);
     fireEvent.click(screen.getByAltText('細胞圖').closest('button')!);
-    fireEvent.click(screen.getByText('下載圖片'));
+    fireEvent.click(screen.getByRole('link', { name: '下載圖片' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
     await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledWith('/api/images/download', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ conversation_id: 'conv-a', image_id: 'image-a' }),
     })));
