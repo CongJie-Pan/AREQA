@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,11 +26,18 @@ class ToolBudgetTracker:
     external_calls: int = 0
     consecutive_failures: int = 0
     total_tool_latency_ms: int = 0
+    scopes: dict[str, "ToolBudgetTracker"] = field(default_factory=dict)
+
+    def scoped(self, name: str, limits: ToolBudget) -> "ToolBudgetTracker":
+        """Share a named capability budget for one run without charging retrieval latency."""
+        if name not in self.scopes:
+            self.scopes[name] = ToolBudgetTracker(limits)
+        return self.scopes[name]
 
     def authorize(self, *, external: bool) -> None:
         if self.total_tool_latency_ms > self.limits.max_total_tool_latency_ms:
             raise ToolBudgetExceeded("total tool latency budget exhausted")
-        if self.tool_calls >= self.limits.max_tool_calls_per_run:
+        if self.tool_calls + sum(scope.tool_calls for scope in self.scopes.values()) >= self.limits.max_tool_calls_per_run:
             raise ToolBudgetExceeded("tool call budget exhausted")
         if external and self.external_calls >= self.limits.max_external_calls:
             raise ToolBudgetExceeded("external call budget exhausted")

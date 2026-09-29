@@ -280,7 +280,7 @@ function formatAttachmentContext(attachments: AttachmentMetadata[] | undefined):
 function messageContentForAPI(message: DisplayMessage): string {
   const generatedContext = (message.answerBlocks ?? []).flatMap((block) =>
     block.type === 'image_block' && block.provider === 'generated_image' && block.imageUrl
-      ? [`[Generated image context] ${block.visionSummary || block.generationRequest?.prompt || ''}`]
+      ? [`[Generated image context id=${block.slotId}] ${block.visionSummary || block.generationRequest?.prompt || ''}`]
       : []
   ).join('\n');
   return `${message.content}${formatAttachmentContext(message.attachments)}${generatedContext ? `\n${generatedContext}` : ''}`;
@@ -594,8 +594,10 @@ export async function sendMessage(
         if (abortSignal.aborted) return;
         answerBlocksPayload = blocks;
         if (blocks.some((block) => block.type === 'image_block' && block.provider === 'generated_image')) {
-          answerContent = blocks.some((block) => block.type === 'image_block' && block.provider === 'generated_image' && block.transient)
+          const paragraphs = blocks.flatMap((block) => block.type === 'paragraph' ? [block.text] : []).join('\n\n');
+          const transientWarning = blocks.some((block) => block.type === 'image_block' && block.provider === 'generated_image' && block.transient)
             ? '圖片已產生，但暫時無法儲存；請先下載。' : '';
+          answerContent = [paragraphs, transientWarning].filter(Boolean).join('\n\n');
           chatStore.endThinking();
           chatStore.setRagStatus('generating');
           chatStore.updateMessageContent(assistantMessageId, answerContent);

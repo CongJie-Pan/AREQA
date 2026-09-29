@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List
 
@@ -520,7 +521,7 @@ class ConversationStreamService:
                 delta = chunk.choices[0].delta
                 if getattr(delta, "tool_calls", None):
                     for call in delta.tool_calls:
-                        entry = tool_calls.setdefault(getattr(call, "index", 0), {"name": "", "arguments": ""})
+                        entry = tool_calls.setdefault(getattr(call, "index", 0), {"name": "", "arguments": "", "id": getattr(call, "id", None) or uuid.uuid4().hex})
                         function = getattr(call, "function", None)
                         if function:
                             entry["name"] += getattr(function, "name", None) or ""
@@ -609,16 +610,28 @@ class ConversationStreamService:
 
         for call in tool_calls.values():
             if call["name"] == "generate_image" and not generated_blocks:
-                accumulator = ""
+                try:
+                    image_arguments = json.loads(call["arguments"])
+                except (ValueError, TypeError):
+                    image_arguments = {}
+                if isinstance(image_arguments, dict) and image_arguments.get("presentation", "image_only") == "image_only":
+                    accumulator = ""
+                elif not accumulator and isinstance(image_arguments, dict):
+                    explanation = image_arguments.get("explanation", "")
+                    if isinstance(explanation, str) and len(explanation) <= 4000:
+                        accumulator = explanation
                 async for block in stream_generated_image(
                     arguments=call["arguments"], user_id=user_id, conversation_id=conversation_id,
                     language=interface_language, attachments=image_attachments or [], request=request,
-                    latest_request=last_user_msg,
+                    latest_request=last_user_msg, registry=self.tool_registry, budget=tool_budget,
+                    tool_call_id=call["id"],
                 ):
-                    if block.get("heartbeat"):
+                    if block.get("tool_state"):
+                        yield f"event: tool_state\ndata: {json.dumps(block['tool_state'], ensure_ascii=False)}\n\n"
+                    elif block.get("heartbeat"):
                         yield ": heartbeat\n\n"
                     else:
-                        generated_blocks = [block]
+                        generated_blocks = ([{"type": "paragraph", "text": accumulator}] if accumulator else []) + [block]
                         yield f"event: answer_blocks\ndata: {json.dumps(generated_blocks, ensure_ascii=False)}\n\n"
             elif call["name"] == "send_epistolary_letter":
                 tool_call_name, tool_call_args = call["name"], call["arguments"]

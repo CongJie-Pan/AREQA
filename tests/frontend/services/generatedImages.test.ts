@@ -321,6 +321,27 @@ describe('generated image conversation workflow', () => {
     expect((await db.messages.get(original.id))?.answerBlocks?.[0]).toMatchObject({ imageUrl: storedBlock.imageUrl });
   });
 
+  it.each([true, false])('retains mixed analysis when retrying a failed image (success=%s)', async (success) => {
+    const id = useChatStore.getState().addAssistantMessage('conv-a');
+    const paragraph = { type: 'paragraph' as const, text: '統計顯著不代表效果重要。' };
+    const image = { ...storedBlock, type: 'image_block' as const, safetyStatus: 'pass' as const,
+      status: 'error' as const, imageUrl: '', generationRequest: { prompt: 'Draw a cat', language: 'en' as const } };
+    useChatStore.getState().updateAssistantMessage(id, { content: paragraph.text, answerBlocks: [paragraph, image] });
+    await messageRepo.add('conv-a', { id, role: 'assistant', content: paragraph.text, answerBlocks: [paragraph, image] });
+    vi.mocked(authenticatedFetch).mockImplementationOnce(async () => {
+      const pending = useChatStore.getState().messages.find((message) => message.id === id)!;
+      expect(pending.content).toBe(paragraph.text);
+      expect(pending.answerBlocks).toEqual([paragraph, expect.objectContaining({ status: 'pending' })]);
+      return success ? response() : new Response('{}', { status: 503 });
+    });
+    await regenerateConversationImage(id);
+    const visible = useChatStore.getState().messages.find((message) => message.id === id)!;
+    expect(visible.content).toContain(paragraph.text);
+    expect(visible.answerBlocks).toEqual([paragraph, expect.objectContaining({ status: success ? 'resolved' : 'error' })]);
+    expect((await db.messages.get(id))?.answerBlocks).toEqual(visible.answerBlocks);
+    expect(useChatStore.getState().messages).toHaveLength(1);
+  });
+
   it('keeps failed requests retryable instead of silently accepting an incomplete 200 response', async () => {
     vi.mocked(authenticatedFetch).mockResolvedValue(new Response(JSON.stringify({ block: { type: 'image_block' } })));
     expect((await generateConversationImage('Draw a cat', 'conv-a', 'en', false)).completed).toBe(false);

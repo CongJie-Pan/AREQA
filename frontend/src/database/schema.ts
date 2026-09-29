@@ -107,6 +107,8 @@ export interface ImageBlock {
   storageExpiresAt?: number;
   transient?: boolean;
   status?: 'pending' | 'resolved' | 'error';
+  /** Backend phase; percentages are never inferred from elapsed time. */
+  generationState?: 'accepted' | 'preparing_reference' | 'generating' | 'storing';
   width?: number;
   height?: number;
   safetyStatus: 'pass' | 'flagged' | 'unavailable';

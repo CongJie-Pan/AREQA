@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
-import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
@@ -15,7 +14,7 @@ from config import settings
 from services.attachments.storage import AttachmentImageStorageService
 from services.generated_image_quota import consume_image_quota
 from services.message_intent_service import MessageIntentRequest, MessageIntent, classify_message_intent
-from services.generated_image_service import generate_teaching_image, prepare_image_reference, generated_image_block
+from services.generated_image_service import prepare_image_reference
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ async def prepare_image_reference_endpoint(
 
 @router.post("/api/v1/images/generate")
 async def generate_image_endpoint(
-    payload: GenerateImageRequest, current_user_id: str = Depends(get_current_user),
+    payload: GenerateImageRequest, request: Request, current_user_id: str = Depends(get_current_user),
 ) -> dict[str, object]:
     """Generate one image without exposing OpenRouter or storage credentials.
 
@@ -95,28 +94,24 @@ async def generate_image_endpoint(
             "image_generation.request_received conversation_id=%s language=%s request_chars=%s reference_chars=%s",
             payload.conversation_id, payload.interface_language, len(payload.prompt), len(payload.reference_brief),
         )
-    if not await consume_image_quota(current_user_id):
-        if settings.enable_generated_image_debug_logs:
-            logger.info("image_generation.quota_rejected conversation_id=%s", payload.conversation_id)
-        raise HTTPException(status_code=429, detail="Image rate limit exceeded")
-    image_id = uuid.uuid4().hex
-    try:
-        result = await generate_teaching_image(
-            payload.prompt, language=payload.interface_language,
-            user_id=current_user_id, conversation_id=payload.conversation_id, image_id=image_id,
-            reference_brief=payload.reference_brief,
-        )
-    except (RuntimeError, ValueError) as error:
-        logger.warning(
-            "image_generation.request_failed conversation_id=%s reason=%s",
-            payload.conversation_id, type(error).__name__,
-        )
-        raise HTTPException(status_code=503, detail="Image generation is unavailable") from error
+    from core import ToolBudget, ToolBudgetTracker
+    from tools import ToolRegistry
+    from services.conversation.image_generation import image_tool_definition
 
-    return {
-        "block": generated_image_block(result, image_id=image_id, prompt=payload.prompt, language=payload.interface_language, reference_brief=payload.reference_brief),
-        "cost_usd": result.cost_usd,
-    }
+    registry = ToolRegistry()
+    registry.register(image_tool_definition())
+    result = await registry.execute("generate_image", {
+        "payload": {"prompt": payload.prompt, "reference": "none"},
+        "user_id": current_user_id, "conversation_id": payload.conversation_id,
+        "language": payload.interface_language, "reference_brief": payload.reference_brief,
+        "request": request,
+    }, ToolBudgetTracker(ToolBudget()))
+    if result.status != "ok":
+        if result.content.get("reason") == "PermissionError" and settings.enable_generated_image_debug_logs:
+            logger.info("image_generation.quota_rejected conversation_id=%s", payload.conversation_id)
+        status = 429 if result.content.get("reason") == "PermissionError" else 503
+        raise HTTPException(status_code=status, detail="Image generation is unavailable")
+    return {"block": result.content["block"], "cost_usd": result.content.get("cost_usd")}
 
 
 class RefreshImageRequest(BaseModel):

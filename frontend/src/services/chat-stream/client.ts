@@ -260,6 +260,11 @@ export async function createChatStream(
             continue;
           }
 
+          if (eventType === 'tool_state') {
+            // Lifecycle identity stays in the image block; heartbeat/progress is not model text.
+            continue;
+          }
+
           if (eventType === 'answer_blocks') {
             callbacks.onAnswerBlocks?.(chunk); // chunk is an array of structured display blocks
             continue;

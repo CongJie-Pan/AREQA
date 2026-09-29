@@ -10,6 +10,7 @@ from app.routes import generated_images as route
 from auth import get_current_user
 from services import generated_image_quota as quota
 from services.generated_image_service import GeneratedImage
+from services.conversation import image_generation as image_handler
 
 
 @pytest.mark.asyncio
@@ -52,8 +53,8 @@ async def test_image_route_requires_auth_and_enforces_backend_quota(monkeypatch,
         seen.append(kwargs)
         return GeneratedImage(image_url="https://example.test/image.png", model="test/model", caption="cat", cost_usd=0.01, transient=False)
 
-    monkeypatch.setattr(route, "generate_teaching_image", generate)
-    monkeypatch.setattr(route, "consume_image_quota", lambda user_id: _allowed(user_id))
+    monkeypatch.setattr(image_handler, "generate_teaching_image", generate)
+    monkeypatch.setattr(image_handler, "consume_image_quota", lambda user_id: _allowed(user_id))
     request = {"prompt": "Draw a cat", "conversation_id": "conv-a", "interface_language": "en"}
     with caplog.at_level(logging.INFO, logger=route.logger.name):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -65,7 +66,7 @@ async def test_image_route_requires_auth_and_enforces_backend_quota(monkeypatch,
             assert valid.json()["block"]["provider"] == "generated_image"
             assert "model" not in valid.json()["block"]
             assert len(seen) == 1
-            monkeypatch.setattr(route, "consume_image_quota", lambda user_id: _denied(user_id))
+            monkeypatch.setattr(image_handler, "consume_image_quota", lambda user_id: _denied(user_id))
             limited = await client.post("/api/v1/images/generate", json=request)
             assert limited.status_code == 429
             assert len(seen) == 1
@@ -145,8 +146,9 @@ async def test_reference_upload_reuses_parser_and_brief_is_passed_to_image_gener
         return True
 
     monkeypatch.setattr(route, "consume_image_quota", allowed)
+    monkeypatch.setattr(image_handler, "consume_image_quota", allowed)
     monkeypatch.setattr(route, "prepare_image_reference", prepare)
-    monkeypatch.setattr(route, "generate_teaching_image", generate)
+    monkeypatch.setattr(image_handler, "generate_teaching_image", generate)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         prepared = await client.post("/api/v1/images/reference", data={"prompt": "Explain this source", "conversation_id": "conv-a"},
                                      files={"attachments": ("source.txt", b"Light becomes sugar.", "text/plain")})

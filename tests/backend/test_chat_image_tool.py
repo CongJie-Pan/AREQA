@@ -9,6 +9,7 @@ import pytest
 from services.conversation.stream import ConversationStreamService
 from services.conversation import image_generation as image_tool
 from services.generated_image_service import GeneratedImage
+from tools import ToolRegistry
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ async def collect(chat_request, **kwargs):
     defaults = dict(arguments=json.dumps({'prompt': '教學圖：效果量'}), user_id='u1', conversation_id='conv1',
                     language='zh-TW', attachments=[], latest_request='請根據附件產圖', request=chat_request)
     defaults.update(kwargs)
-    return [block async for block in image_tool.stream_generated_image(**defaults)]
+    return [block async for block in image_tool.stream_generated_image(**defaults) if block.get("type") == "image_block"]
 
 
 @pytest.mark.asyncio
@@ -111,7 +112,7 @@ async def test_main_chat_model_owns_operation_without_classifier(chat_request, p
             yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='這是文字分析', tool_calls=None))])
     client = MagicMock()
     client.chat.completions.create = AsyncMock(return_value=chunks())
-    service = ConversationStreamService(client, MagicMock())
+    service = ConversationStreamService(client, ToolRegistry())
     events = [event async for event in service.stream(user_id='u1', conversation_id='conv1',
         last_user_msg='請解釋這張圖或依需求產圖', messages=[{'role': 'user', 'content': 'same input'}],
         force_think=False, max_tokens=100, temperature=0.7, top_p=0.9, repetition_penalty=1,
@@ -136,3 +137,87 @@ async def test_contextual_drawing_spec_is_not_truncated_by_long_source(chat_requ
     specification = '教學圖需呈現統計限制、效果量，以及最後的批判精神'
     await collect(chat_request, latest_request=source, arguments=json.dumps({'prompt': specification}))
     assert provider.generate.call_args.args[0] == specification
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure', [False, True])
+async def test_mixed_tool_preserves_analysis_and_sse_identity(chat_request, provider, failure):
+    payload = json.dumps({'prompt': '教學圖片', 'presentation': 'text_and_image', 'explanation': '分析結果', 'reference': 'none'})
+    if failure:
+        provider.generate.side_effect = RuntimeError('provider down')
+    async def chunks():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=[
+            SimpleNamespace(index=0, id='mixed_call', function=SimpleNamespace(name='generate_image', arguments=payload))]))])
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(return_value=chunks())
+    service = ConversationStreamService(client, ToolRegistry())
+    events = [event async for event in service.stream(user_id='u1', conversation_id='conv1', last_user_msg='先分析再產圖',
+        messages=[], force_think=False, max_tokens=100, temperature=0.7, top_p=0.9, repetition_penalty=1, request=chat_request)]
+    final = json.loads(events[-1].split('data: ', 1)[1])
+    assert final['accumulator'] == '分析結果'
+    assert final['generated_blocks'][0] == {'type': 'paragraph', 'text': '分析結果'}
+    block_events = [json.loads(event.split('data: ', 1)[1]) for event in events if event.startswith('event: answer_blocks')]
+    slot_id = final['generated_blocks'][1]['slotId']
+    assert all(blocks[1]['slotId'] == slot_id for blocks in block_events)
+    assert slot_id != 'mixed_call'
+    assert '"tool_call_id": "mixed_call"' in ''.join(events)
+    assert ('event: tool_state' in ''.join(events))
+    if failure:
+        assert final['generated_blocks'][1]['status'] == 'error'
+
+
+@pytest.mark.asyncio
+async def test_storage_ids_are_server_owned_even_when_provider_call_ids_repeat(chat_request, provider):
+    first = await collect(chat_request, tool_call_id='../provider/call')
+    second = await collect(chat_request, tool_call_id='../provider/call')
+    assert first[-1]['imageUrl'] and second[-1]['imageUrl']
+    assert first[-1]['slotId'] != second[-1]['slotId']
+    assert image_tool.SAFE_ID.fullmatch(first[-1]['slotId'])
+    assert provider.generate.call_args.kwargs['image_id'] == second[-1]['slotId']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('payload', [
+    {'prompt': 'valid prompt', 'user_id': 'someone-else'},
+    {'prompt': 'valid prompt', 'reference_image_id': '../private'},
+    {'prompt': 'valid prompt', 'reference': 'current_attachments'},
+    {'prompt': 'valid prompt', 'presentation': 'unknown'},
+])
+async def test_invalid_context_and_reference_never_reach_paid_provider(chat_request, provider, payload):
+    blocks = await collect(chat_request, arguments=json.dumps(payload))
+    assert blocks[-1]['status'] == 'error'
+    provider.generate.assert_not_awaited()
+    provider.quota.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_historical_image_reference_is_loaded_only_with_authenticated_scope(chat_request, provider, monkeypatch):
+    from services.attachments.storage import AttachmentImageStorageService
+    download = AsyncMock(return_value=b'private image bytes')
+    monkeypatch.setattr(AttachmentImageStorageService, 'download_generated_image', download)
+    await collect(chat_request, arguments=json.dumps({'prompt': '修改上圖標題', 'reference': 'conversation_image', 'reference_image_id': 'previous-image'}))
+    download.assert_awaited_once_with(user_id='u1', conversation_id='conv1', image_id='previous-image')
+    assert provider.reference.call_args.args[0][0].media_type == 'image/png'
+    assert provider.generate.call_args.kwargs['reference_brief'] == 'bounded attachment facts'
+    download.return_value = None
+    provider.generate.reset_mock()
+    blocks = await collect(chat_request, arguments=json.dumps({'prompt': '修改其他對話的圖片', 'reference': 'conversation_image', 'reference_image_id': 'other-image'}))
+    assert blocks[-1]['status'] == 'error'
+    provider.generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_explicit_image_api_uses_same_handler_and_charges_once(provider):
+    from fastapi import FastAPI
+    from httpx import AsyncClient, ASGITransport
+    from app.routes.generated_images import router
+    from auth import get_current_user
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: 'u1'
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.post('/api/v1/images/generate', json={'prompt': '產生教學圖', 'conversation_id': 'conv1'})
+    assert response.status_code == 200
+    assert response.json()['block']['provider'] == 'generated_image'
+    provider.quota.assert_awaited_once_with('u1')
+    provider.generate.assert_awaited_once()

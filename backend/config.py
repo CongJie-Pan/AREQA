@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     enable_visual_understanding: bool = True
     # Safe stage diagnostics for image generation; provider failures stay visible when disabled.
     enable_generated_image_debug_logs: bool = False
+    generated_image_tool_timeout_seconds: float = 180.0
     visual_understanding_timeout_seconds: float = 4.0
     enable_pdf_attachment_visuals: bool = True
     pdf_attachment_visual_max_candidates: int = 4

@@ -672,6 +672,20 @@ describe('Chat Service', () => {
       expect(mockChatStore.tutorProfile).toBe('general');
     });
 
+    it('preserves analysis through pending, completion, and persistence of a mixed image reply', async () => {
+      mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '先分析再產圖', conversationId: 'test-conv-id' }];
+      const paragraph = { type: 'paragraph' as const, text: '統計顯著不代表重要。' };
+      const image = { type: 'image_block' as const, provider: 'generated_image', imageUrl: '', slotId: 'image-1' };
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onAnswerBlocks?.([paragraph, { ...image, status: 'pending' }]);
+        expect(mockChatStore.updateMessageContent).toHaveBeenLastCalledWith('assistant-msg-id', paragraph.text);
+        callbacks.onAnswerBlocks?.([paragraph, { ...image, imageUrl: 'https://example.com/image.png' }]);
+        await callbacks.onDone();
+      });
+      await sendMessage('先分析再產圖', 'test-conv-id');
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({ content: paragraph.text, answerBlocks: [paragraph, expect.objectContaining({ provider: 'generated_image' })] }));
+    });
+
     it('persists an image-only tool reply and generates a first-turn title without a text preamble', async () => {
       mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '請產生一張圖', conversationId: 'test-conv-id' }];
       const block = { type: 'image_block' as const, provider: 'generated_image', imageUrl: 'https://example.com/image.png', slotId: 'image-1' };

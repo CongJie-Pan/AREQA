@@ -16,6 +16,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from typing import Callable
 from functools import lru_cache
 from pathlib import Path
 
@@ -174,6 +175,7 @@ async def prepare_image_reference(attachments: list, *, request: str, language: 
 async def generate_teaching_image(
     request: str, *, language: str, user_id: str, conversation_id: str, image_id: str,
     client_factory=httpx.AsyncClient, reference_brief: str = "",
+    on_state: Callable[[str], None] | None = None,
 ) -> GeneratedImage:
     """Generate and privately store one image, falling back to transient bytes.
 
@@ -263,6 +265,8 @@ async def generate_teaching_image(
             "image_generation.image_validated conversation_id=%s image_id=%s width=%s height=%s bytes=%s cost_usd=%s",
             conversation_id, image_id, width, height, len(image_bytes), cost_usd,
         )
+    if on_state:
+        on_state("storing")
     storage = AttachmentImageStorageService()
     storage_started = time.monotonic()
     stored = await storage.persist_generated_image(

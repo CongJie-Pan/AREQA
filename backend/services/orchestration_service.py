@@ -125,4 +125,6 @@ class OrchestrationService(
             external=False,
             handler=self.delayed_mail_tool.execute,
         ))
+        from services.conversation.image_generation import image_tool_definition
+        self.tool_registry.register(image_tool_definition())
         self.stream_service = ConversationStreamService(client, self.tool_registry)

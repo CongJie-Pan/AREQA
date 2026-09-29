@@ -1572,7 +1572,13 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
     if (isGeneratedImage) {
       const caption = isRenewing
         ? language === 'en' ? 'Loading image…' : '正在載入圖片…'
-        : displayCaption;
+        : block.generationState === 'preparing_reference'
+          ? language === 'en' ? 'Reading reference…' : '正在準備參考資料…'
+          : block.generationState === 'storing'
+            ? language === 'en' ? 'Saving image…' : '正在儲存圖片…'
+            : block.generationState === 'generating'
+              ? language === 'en' ? 'Creating image…' : '正在產生圖片…'
+              : displayCaption;
       return <ImageGenerationLoading caption={caption} frameStyle={imageFrameStyle} canStop={!isRenewing} />;
     }
     return (

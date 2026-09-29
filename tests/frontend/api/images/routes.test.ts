@@ -47,11 +47,13 @@ describe('image route proxies', () => {
   });
 
   it('forwards bounded generation fields and the bearer token', async () => {
-    const response = await generate(request({ prompt: 'Draw a cat', conversation_id: 'conv-a', interface_language: 'en' }) as never);
+    const incoming = request({ prompt: 'Draw a cat', conversation_id: 'conv-a', interface_language: 'en' });
+    const response = await generate(incoming as never);
     expect(response.status).toBe(200);
     const [url, options] = vi.mocked(fetch).mock.calls[0];
     expect(url).toContain('/api/v1/images/generate');
     expect(new Headers(options?.headers).get('authorization')).toBe('Bearer user-token');
+    expect(options?.signal).toBe(incoming.signal);
   });
 
   it('rejects invalid refresh identifiers before calling the backend', async () => {

@@ -300,7 +300,13 @@ class ConversationContextService:
         system_prompt += _answer_language_instruction(interface_language, last_user_msg)
         system_prompt += render_tutor_profile_prompt(tutor_profile)
         system_prompt += _example_instruction(interface_language, last_user_msg)
-        system_prompt += "\n【工具使用規則】你必須先完整回答使用者的問題，再選擇性提出已授權的工具請求。嚴禁只呼叫工具而不輸出任何文字回應。"
+        system_prompt += (
+            "\n【工具使用規則】依使用者的需求選擇回答、澄清或已授權的工具。"
+            "使用者只需要圖片時，可直接呼叫產圖工具，不要先輸出宣告或完成字樣。"
+            "使用者要求分析並產圖時，保留完整分析，選用 text_and_image；"
+            "分析可先回答，或放在工具的 explanation 欄位。不要把分析當成產圖後可刪除的前言。"
+            "其他工具仍須完成使用者所要求的回答；不確定操作時先澄清。"
+        )
         system_prompt += "\n【記憶使用規則】請自然地運用記憶區塊中的資訊，嚴禁在回覆中輸出「【retrieved_memory】」、「【working_memory】」或類似的引註標記。記憶是你自身認知的一部分，無需引註。"
         system_prompt += (
             "\n【使用者狀態規則】除非有獨立且已驗證的學習證據，否則將使用者的理解程度視為 unknown；"

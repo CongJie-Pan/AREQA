@@ -116,6 +116,12 @@ export async function generateConversationImage(
   if (options.assistantMessageId && (!previousMessage || activeImageRequests.has(options.assistantMessageId))) {
     return { completed: false, conversationId: id };
   }
+  // Regeneration replaces the image capability's output, retaining requested analysis.
+  const retainedBlocks = (previousMessage?.answerBlocks ?? []).filter(
+    (block) => !(block.type === 'image_block' && block.provider === 'generated_image'),
+  );
+  const retainedText = retainedBlocks.flatMap((block) => block.type === 'paragraph' ? [block.text] : []).join('\n\n');
+  const withStatus = (status: string) => [retainedText, status].filter(Boolean).join('\n\n');
 
   const requestId = generateUUID();
   const controller = new AbortController();
@@ -143,7 +149,7 @@ export async function generateConversationImage(
   };
   const showPending = () => {
     if (assistantId) useChatStore.getState().updateAssistantMessage(assistantId, {
-      content: pendingBlock.caption, createdAt, isStreaming: false, answerBlocks: [{ ...pendingBlock }],
+      content: retainedText || pendingBlock.caption, createdAt, isStreaming: false, answerBlocks: [...retainedBlocks, { ...pendingBlock }],
     });
   };
   const ownerChanged = () => {
@@ -228,17 +234,18 @@ export async function generateConversationImage(
     }
     if (ownerChanged()) return { completed: false, conversationId: id };
     const block = { ...payload.block, generationRequest, status: 'resolved' as const };
-    const content = block.transient
+    const warning = block.transient
       ? language === 'en' ? 'The image is ready, but could not be saved. Please download it now.' : '圖片已完成，但目前無法儲存。請先下載圖片。'
       : '';
-    useChatStore.getState().updateAssistantMessage(assistantId, { content, answerBlocks: [block], isStreaming: false });
+    const content = withStatus(warning);
+    useChatStore.getState().updateAssistantMessage(assistantId, { content, answerBlocks: [...retainedBlocks, block], isStreaming: false });
     // Once the result is published, Stop must not race its persistence.
     clearImageRequest(requestId);
     try {
       const savedBlock = block.transient
-        ? { ...block, imageUrl: '', thumbnailUrl: '', transient: false, status: 'error' as const, caption: content }
+        ? { ...block, imageUrl: '', thumbnailUrl: '', transient: false, status: 'error' as const, caption: warning }
         : block;
-      const messageData = { role: 'assistant' as const, content, answerBlocks: [savedBlock] };
+      const messageData = { role: 'assistant' as const, content, answerBlocks: [...retainedBlocks, savedBlock] };
       if (previousMessage) await databaseService.message.update(assistantId, messageData);
       else await databaseService.message.add(id, { id: assistantId, createdAt, ...messageData });
       if (isFirstTurn && !block.transient && !ownerChanged()) {
@@ -254,7 +261,7 @@ export async function generateConversationImage(
       const unsavedContent = language === 'en'
         ? 'The image is ready, but could not be saved. Please download it now.'
         : '圖片已完成，但目前無法儲存。請先下載圖片。';
-      if (!ownerChanged()) useChatStore.getState().updateAssistantMessage(assistantId, { content: unsavedContent });
+      if (!ownerChanged()) useChatStore.getState().updateAssistantMessage(assistantId, { content: withStatus(unsavedContent) });
       logger.warn('image_generation_persistence_failed', { conversationId: id, assistantId, requestId, reason: error instanceof Error ? error.name : 'UnknownError' });
       return { completed: true, conversationId: id, block, persisted: false };
     }
@@ -276,9 +283,10 @@ export async function generateConversationImage(
       if (!cancelled) throw error;
     } else if (assistantId && id) {
       const errorBlock: ImageBlock = { ...pendingBlock, status: 'error', caption: content };
-      useChatStore.getState().updateAssistantMessage(assistantId, { content, answerBlocks: [errorBlock], isStreaming: false });
+      const failureContent = withStatus(content);
+      useChatStore.getState().updateAssistantMessage(assistantId, { content: failureContent, answerBlocks: [...retainedBlocks, errorBlock], isStreaming: false });
       try {
-        const messageData = { role: 'assistant' as const, content, answerBlocks: [errorBlock] };
+        const messageData = { role: 'assistant' as const, content: failureContent, answerBlocks: [...retainedBlocks, errorBlock] };
         if (previousMessage) await databaseService.message.update(assistantId, messageData);
         else await databaseService.message.add(id, { id: assistantId, createdAt, ...messageData });
       } catch (persistenceError) {
