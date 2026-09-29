@@ -33,6 +33,7 @@ import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
 import { db } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { resolveMessageRoute } from '@/services/messageIntent';
 import { cancelConversationImage, generateConversationImage } from '@/services/generatedImages';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
@@ -141,6 +142,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
+  const [isRoutingMessage, setIsRoutingMessage] = useState(false);
+  const routingController = useRef<AbortController | null>(null);
+  useEffect(() => () => routingController.current?.abort(), []);
   const imageGenerationRequests = useChatStore((state) => state.imageGenerationRequests);
   const error = useChatStore((state) => state.error);
   const setError = useChatStore((state) => state.setError);
@@ -163,12 +167,13 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const activeConversationId = useConversationStore(
     (state) => state.activeConversationId
   );
+  useEffect(() => { routingController.current?.abort(); }, [activeConversationId]);
   const activeImageRequest = Object.values(imageGenerationRequests ?? {}).find((request) => (
     request.userId === user?.id && request.conversationId === activeConversationId
   ));
   const isGeneratingImage = Boolean(activeImageRequest);
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
-  const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading && !isGeneratingImage;
+  const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading && !isGeneratingImage && !isRoutingMessage;
   const landingPromptSent = useRef(false);
 
   const toggleLiveTutorMute = useCallback(() => {
@@ -345,13 +350,25 @@ export function ChatContainer({ className }: ChatContainerProps) {
   // Handle sending message with improved error handling
   const handleSend = useCallback(
     async function retryableSend(content: string, attachments: File[] = [], options: { createImage?: boolean } = {}) {
+      if (routingController.current) return { completed: false };
+      const controller = new AbortController();
+      routingController.current = controller;
       try {
-        if (options.createImage) {
+        const route = options.createImage || !user
+          ? { createImage: Boolean(options.createImage), attachments, referenceBrief: undefined }
+          : await (async () => {
+            setIsRoutingMessage(true);
+            return resolveMessageRoute(content, activeConversationId, attachments, controller.signal);
+          })();
+        controller.signal.throwIfAborted();
+        setIsRoutingMessage(false);
+        routingController.current = null;
+        if (route.createImage) {
           if (!user) {
             setShowAuthPrompt(true);
             return { completed: false };
           }
-          return await generateConversationImage(content, activeConversationId || undefined, language, true, { attachments });
+          return await generateConversationImage(content, activeConversationId || undefined, language, true, { attachments: route.attachments, referenceBrief: route.referenceBrief });
         }
         const voiceMessage = useLiveTutorStore.getState().isOpen;
         const result = voiceMessage
@@ -365,7 +382,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
         }
         return result;
       } catch (err) {
-        console.error('Failed to send message:', err);
+        if (controller.signal.aborted) return { completed: false, cancelled: true };
+        logger.warn('message_send_failed', { reason: err instanceof Error ? err.name : 'UnknownError' });
 
         // Get user-friendly error message
         const { message: errorMsg, isRetryable } = getErrorMessage(err);
@@ -379,7 +397,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                 <button
                   onClick={() => {
                     antMessageApi.destroy('send-error');
-                    void retryableSend(content, attachments).catch(() => undefined); // Retry with the same request
+                    void retryableSend(content, attachments, options).catch(() => undefined); // Retry with the same request
                   }}
                   style={{
                     marginLeft: '12px',
@@ -407,6 +425,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
         }
 
         throw err;
+      } finally {
+        if (routingController.current === controller) {
+          routingController.current = null;
+          setIsRoutingMessage(false);
+        }
       }
     },
     [activeConversationId, antMessageApi, language, t, user]
@@ -513,6 +536,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   // Image cancellation must not interrupt the independently owned voice/text stream.
   const handleStop = useCallback(async () => {
+    if (routingController.current) {
+      routingController.current.abort();
+      return;
+    }
     if (cancelConversationImage(activeConversationId) || isGeneratingImage) return;
     await cancelCurrentStream();
   }, [activeConversationId, isGeneratingImage]);
@@ -770,6 +797,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     hideLiveTutorMessages && !isGeneratingImage && styles.messageAreaLiveTutorEmpty,
                   )}
                 >
+                  {isRoutingMessage && <p role="status">{language === 'en' ? 'Understanding your request…' : language === 'zh-CN' ? '正在理解你的请求…' : '正在理解你的要求…'}</p>}
                   {activeImageRequest && !activeImageRequest.assistantMessageId ? (
                     <ImageGenerationLoading caption={language === 'en' ? 'Preparing image…' : language === 'zh-CN' ? '正在准备图片…' : '正在準備圖片…'} />
                   ) : !isEmptyLiveTutor && (
@@ -793,14 +821,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   <ChatInput
                     key={activeConversationId ?? 'new'}
                     onSend={handleSend}
-                    disabled={(isStreaming && !isLiveTutorOpen) || isGeneratingImage}
+                    disabled={(isStreaming && !isLiveTutorOpen) || isGeneratingImage || isRoutingMessage}
                     placeholder={
                       isStreaming
                         ? t('thinkingPlaceholder')
                         : t('askPlaceholder')
                     }
                     isStreaming={isStreaming}
-                    isGeneratingImage={isGeneratingImage}
+                    isGeneratingImage={isGeneratingImage || isRoutingMessage}
                     onStop={handleStop}
                     onOpenLiveTutor={openLiveTutor}
                     isLiveVoiceActive={isLiveTutorOpen}

@@ -14,6 +14,7 @@ from auth import get_current_user
 from config import settings
 from services.attachments.storage import AttachmentImageStorageService
 from services.generated_image_quota import consume_image_quota
+from services.message_intent_service import MessageIntentRequest, MessageIntent, classify_message_intent
 from services.generated_image_service import generate_teaching_image, prepare_image_reference
 
 router = APIRouter()
@@ -28,6 +29,19 @@ class GenerateImageRequest(BaseModel):
     conversation_id: str = Field(min_length=1, max_length=128)
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
     reference_brief: str = Field(default="", max_length=4000)
+
+
+@router.post("/api/v1/images/intent")
+async def message_intent_endpoint(
+    payload: MessageIntentRequest, current_user_id: str = Depends(get_current_user),
+) -> MessageIntent:
+    """Classify an authenticated send with a separate per-user spending quota."""
+    if not await consume_image_quota(f"{current_user_id}:intent", limit=30):
+        raise HTTPException(status_code=429, detail="Message routing rate limit exceeded")
+    try:
+        return await classify_message_intent(payload)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Message routing unavailable") from None
 
 
 @router.post("/api/v1/images/reference")

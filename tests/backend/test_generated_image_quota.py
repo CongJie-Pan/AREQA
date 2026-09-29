@@ -158,3 +158,13 @@ async def test_reference_upload_reuses_parser_and_brief_is_passed_to_image_gener
         assert result.json()["block"]["generationRequest"]["referenceBrief"] == brief
         invalid = await client.post("/api/v1/images/generate", json={"prompt": "Explain", "conversation_id": "conv-a", "reference_brief": "a" * 4001})
         assert invalid.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_routing_quota_is_independent_and_does_not_reduce_image_allowance(monkeypatch):
+    quota._fallback_counts.clear()
+    monkeypatch.setattr(quota, "get_redis", lambda: (_ for _ in ()).throw(ConnectionError()))
+    monkeypatch.setattr(quota.time, "time", lambda: 120.0)
+    assert [await quota.consume_image_quota("user-a:intent", limit=30) for _ in range(31)] == [True] * 30 + [False]
+    assert [await quota.consume_image_quota("user-a") for _ in range(7)] == [True] * 6 + [False]
+    quota._fallback_counts.clear()

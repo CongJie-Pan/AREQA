@@ -10,6 +10,7 @@ vi.mock('next/server', () => ({
   NextResponse: { json: (body: unknown, init?: ResponseInit) => new Response(JSON.stringify(body), init) },
 }));
 
+import { POST as intent } from '@/app/api/images/intent/route';
 import { POST as generate } from '@/app/api/images/generate/route';
 import { POST as refresh } from '@/app/api/images/refresh/route';
 import { POST as download } from '@/app/api/images/download/route';
@@ -26,6 +27,16 @@ describe('image route proxies', () => {
     vi.clearAllMocks();
     vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 5, limit: 6, resetIn: 60 });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ imageUrl: 'https://example.test/new.png' }))));
+  });
+
+  it('authenticates and validates semantic routing requests before forwarding', async () => {
+    const body = { prompt: '幫我產圖', attachment_count: 1, context: [] };
+    expect((await intent(request(body, false) as never)).status).toBe(401);
+    expect((await intent(request({ ...body, context: [{ content: 'bad' }] }) as never)).status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
+    expect((await intent(request(body) as never)).status).toBe(200);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toContain('/api/v1/images/intent');
+    expect(new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers).get('authorization')).toBe('Bearer user-token');
   });
 
   it('does not call the provider proxy without a bearer token', async () => {

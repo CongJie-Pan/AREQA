@@ -15,10 +15,11 @@ _fallback_counts: dict[str, int] = {}
 _fallback_lock = asyncio.Lock()
 
 
-async def consume_image_quota(user_id: str) -> bool:
-    """Reserve one of six requests in the current minute for an authenticated user.
+async def consume_image_quota(user_id: str, *, limit: int = _IMAGE_LIMIT_PER_MINUTE) -> bool:
+    """Reserve a request in the current minute for an authenticated quota namespace.
 
-    Redis provides a shared limit. A bounded process-local counter protects the
+    The default preserves the six-image limit; intent routing supplies its own
+    limit and namespace. Redis provides a shared limit. A bounded process-local counter protects the
     provider when Redis is unavailable; it does not replace a shared limit.
     """
 
@@ -30,7 +31,7 @@ async def consume_image_quota(user_id: str) -> bool:
         count = int(await asyncio.wait_for(redis.incr(key), timeout=1.5))
         if count == 1:
             await asyncio.wait_for(redis.expire(key, 120), timeout=1.5)
-        return count <= _IMAGE_LIMIT_PER_MINUTE
+        return count <= limit
     except Exception as error:
         logger.warning("image_generation.quota_fallback reason=%s", type(error).__name__)
         async with _fallback_lock:
@@ -39,4 +40,4 @@ async def consume_image_quota(user_id: str) -> bool:
                     del _fallback_counts[old_key]
             count = _fallback_counts.get(key, 0) + 1
             _fallback_counts[key] = count
-            return count <= _IMAGE_LIMIT_PER_MINUTE
+            return count <= limit
