@@ -27,13 +27,8 @@ import {
 } from 'lucide-react';
 import { Dropdown, message, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import remarkGfm from 'remark-gfm';
-import rehypeKatex from 'rehype-katex';
 import { useChatStore } from '@/store/chat';
 import { useStyles } from './styles';
-import { normalizeDisplayMathBlocks, rehypeMathSource } from '@/utils/markdownMath';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { transcribeSpeech } from '@/services/speech/transcription';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
@@ -462,7 +457,6 @@ export function ChatInput({
   const setTutorProfile = useChatStore((state) => state.setTutorProfile);
 
   const isOverLimit = value.length > maxLength;
-  const hasMath = /(?:\$\$?[\s\S]+?\$\$?|\\\(|\\\[)/.test(value);
   const shouldUseExpandedShape = attachmentPreviews.length > 0
     || Boolean(quotedText)
     || tutorProfile === 'english'
@@ -1148,17 +1142,6 @@ export function ChatInput({
         aria-label={t('chooseAttachment')}
       />
 
-      {hasMath && (
-        <div className={cx('areqa-chat-input-math-preview', styles.mathPreview)} aria-label={t('latexPreview')}>
-          <div className={cx('areqa-chat-input-math-preview-label', styles.mathPreviewLabel)}>{t('formulaPreview')}</div>
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
-          >
-            {normalizeDisplayMathBlocks(value)}
-          </ReactMarkdown>
-        </div>
-      )}
 
     </div>
     </>

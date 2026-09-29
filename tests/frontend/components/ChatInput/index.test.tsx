@@ -252,16 +252,34 @@ describe('ChatInput', () => {
     expect(input.closest('.areqa-chat-input-shell-expanded')).toBeInTheDocument();
   });
 
-  it('should render a LaTeX preview without changing the submitted source', async () => {
-    render(<ChatInput onSend={mockOnSend} />);
+  it.each([
+    '$$x^2 + y^2 = z^2$$',
+    '請幫我根據此產出教學圖\n\n### 統計判讀\n**顯著不等於重要**：$p < .05$\n- 比較效果量 $R^2$\n- 檢查樣本偏誤',
+  ])('keeps Markdown and LaTeX as plain draft text and submits the original source (%#)', (draft) => {
+    const { container } = render(<ChatInput onSend={mockOnSend} />);
     const input = screen.getByPlaceholderText(/提問AREQA/i);
 
-    fireEvent.change(input, { target: { value: '$$x^2 + y^2 = z^2$$' } });
+    fireEvent.change(input, { target: { value: draft } });
 
-    expect(await screen.findByLabelText('LaTeX 預覽')).toBeInTheDocument();
-    expect(screen.getByLabelText('LaTeX 預覽').querySelector('.katex')).toBeInTheDocument();
+    expect(input).toHaveValue(draft);
+    expect(screen.queryByLabelText('LaTeX 預覽')).not.toBeInTheDocument();
+    expect(container.querySelector('.areqa-chat-input-math-preview')).not.toBeInTheDocument();
+    expect(container.querySelector('.katex')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '統計判讀' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
-    expect(mockOnSend).toHaveBeenCalledWith('$$x^2 + y^2 = z^2$$');
+    expect(mockOnSend).toHaveBeenCalledWith(draft);
+  });
+
+  it('submits the original Markdown and math source in Create Image mode without rendering a preview', async () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const draft = '### 教學圖\n**統計顯著性**：$p < .05$';
+    fireEvent.click(screen.getByLabelText('新增'));
+    fireEvent.click(await screen.findByText('Create Image'));
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: draft } });
+    expect(screen.getByLabelText('訊息輸入框')).toHaveValue(draft);
+    expect(screen.queryByLabelText('LaTeX 預覽')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    expect(mockOnSend).toHaveBeenCalledWith(draft, [], { createImage: true });
   });
 
   it('should clear the text input immediately while send is still pending', async () => {
