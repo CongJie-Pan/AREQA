@@ -11,6 +11,11 @@ export interface MessageRoute {
   referenceBrief?: string;
 }
 
+// These conservative cues only protect fallback behavior during an outage.
+// Normal routing always uses the semantic decision, never keyword generation.
+const VISUAL_CUES = /圖|图|畫|画|繪|绘|水彩|素描|海報|海报|照片|插畫|一張|一张|\b(?:image|picture|photo|draw|drawing|illustration|illustrate|poster|diagram|infographic|sketch|paint|painting|watercolou?r|render|logo|icon)\b/i;
+const VISUAL_FOLLOW_UP = /改|換|换|變|变|再來|再来|重做|\b(?:change|modify|make|convert|turn|another|again|redo)\b/i;
+
 /** Resolve a send using only current-account, same-conversation reference hints.
  *
  * Args:
@@ -19,9 +24,11 @@ export interface MessageRoute {
  *   attachments: Current uploads; only forwarded when selected as references.
  *   signal: Cancels classification and reference downloads before execution.
  * Returns:
- *   Image execution inputs or a normal chat decision.
+ *   Image execution inputs or a normal chat decision. Ordinary text can
+ *   continue when the optional classifier is unavailable; visual requests
+ *   remain explicit failures instead of silently changing the requested action.
  * Raises:
- *   Errors for unavailable routing, invalid references, or required clarification.
+ *   Errors for unavailable visual routing, invalid references, or required clarification.
  * Side Effects:
  *   Calls authenticated proxies; logs only intent/reference metadata.
  */
@@ -36,14 +43,39 @@ export async function resolveMessageRoute(
     const image = message.answerBlocks?.find((block): block is ImageBlock => block.type === 'image_block' && block.provider === 'generated_image' && Boolean(block.imageUrl));
     return { id: message.id, role: message.role, content: (image?.generationRequest?.prompt || message.content).slice(0, 1800), has_image: Boolean(image) };
   });
-  const response = await authenticatedFetch('/api/images/intent', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
-    body: JSON.stringify({ prompt: content, attachment_count: attachments.length, context }),
-  });
-  signal.throwIfAborted();
-  if (getCurrentUserId() !== ownerId) throw new Error('Message owner changed');
-  if (!response.ok) throw new Error(`無法判斷此次訊息的操作，請稍後重試（${response.status}）。`);
-  const result = await response.json() as { intent?: string; reference?: string; reference_message_id?: string | null };
+  let status: number | undefined;
+  let result: { intent: string; reference: string; reference_message_id?: string | null };
+  try {
+    const response = await authenticatedFetch('/api/images/intent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+      body: JSON.stringify({ prompt: content, attachment_count: attachments.length, context }),
+    });
+    signal.throwIfAborted();
+    if (getCurrentUserId() !== ownerId) throw new Error('Message owner changed');
+    status = response.status;
+    if (!response.ok) throw new Error(`無法判斷此次訊息的操作，請稍後重試（${status}）。`);
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== 'object') throw new Error('訊息操作判斷無效，請重試。');
+    const value = payload as Record<string, unknown>;
+    if (!['chat', 'generate_image', 'clarify'].includes(String(value.intent))
+      || !['none', 'attachments', 'conversation'].includes(String(value.reference))
+      || (value.reference_message_id != null && typeof value.reference_message_id !== 'string')) {
+      throw new Error('訊息操作判斷無效，請重試。');
+    }
+    result = value as typeof result;
+  } catch (error) {
+    // Cancellation/account changes and auth/input errors must never become a send.
+    signal.throwIfAborted();
+    if (getCurrentUserId() !== ownerId) throw new Error('Message owner changed');
+    const unavailable = status === undefined || status === 200 || status === 404 || status === 429 || status >= 500;
+    const hasRecentImage = context.some((item) => item.has_image);
+    const visualRequestPossible = VISUAL_CUES.test(content) || (hasRecentImage && VISUAL_FOLLOW_UP.test(content));
+    if (unavailable && !visualRequestPossible) {
+      logger.warn('message_route_chat_fallback', { status, reason: error instanceof Error ? error.name : 'UnknownError', conversationId });
+      return { createImage: false, attachments };
+    }
+    throw error;
+  }
   signal.throwIfAborted();
   if (getCurrentUserId() !== ownerId) throw new Error('Message owner changed');
   if (result.intent === 'clarify') throw new Error('請說明想畫的內容，或重新附上要參考的圖片。');

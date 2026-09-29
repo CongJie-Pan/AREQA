@@ -6,7 +6,7 @@ import { getCurrentUserId } from '@/database/db';
 
 vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 vi.mock('@/database/db', () => ({ getCurrentUserId: vi.fn(() => 'user-a') }));
-vi.mock('@/utils/logger', () => ({ logger: { info: vi.fn() } }));
+vi.mock('@/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn() } }));
 const decision = (intent: string, reference = 'none', reference_message_id: string | null = null) => new Response(JSON.stringify({ intent, reference, reference_message_id }));
 const run = (text = '幫我產圖', files: File[] = [], signal = new AbortController().signal) => resolveMessageRoute(text, 'conv-a', files, signal);
 
@@ -66,6 +66,47 @@ describe('semantic send routing contract', () => {
   it.each([decision('clarify'), decision('generate_image', 'conversation', 'missing'), decision('invalid')])('rejects ambiguous or invalid decisions instead of silently sending text', async (response) => {
     vi.mocked(authenticatedFetch).mockResolvedValue(response);
     await expect(run()).rejects.toThrow();
+  });
+
+  it.each([404, 429, 500, 502, 503, 504])('continues ordinary text when optional classification returns %s', async (status) => {
+    const file = new File(['lesson'], 'lesson.txt', { type: 'text/plain' });
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status }));
+    expect(await run('你好，請解釋什麼是效果量', [file])).toEqual({ createImage: false, attachments: [file] });
+  });
+
+  it('continues ordinary text after a classifier network failure', async () => {
+    vi.mocked(authenticatedFetch).mockRejectedValue(new TypeError('Failed to fetch'));
+    expect(await run('請說明統計顯著性的意思')).toEqual({ createImage: false, attachments: [] });
+  });
+
+  it('continues ordinary text after a malformed classifier response', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('invalid json'));
+    expect(await run('你好')).toEqual({ createImage: false, attachments: [] });
+  });
+
+  it.each([400, 401, 403])('does not bypass authentication or validation failures (%s)', async (status) => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status }));
+    await expect(run('你好')).rejects.toThrow(String(status));
+  });
+
+  it('never falls back to sending after cancellation during classifier failure', async () => {
+    const controller = new AbortController();
+    vi.mocked(authenticatedFetch).mockImplementation(async () => { controller.abort(); throw new TypeError('Failed to fetch'); });
+    await expect(run('你好', [], controller.signal)).rejects.toThrow();
+  });
+
+  it('never falls back to sending after an account switch during classifier failure', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation(async () => { vi.mocked(getCurrentUserId).mockReturnValue('user-b'); throw new TypeError('Failed to fetch'); });
+    await expect(run('你好')).rejects.toThrow('owner changed');
+  });
+
+  it('keeps an implicit image modification explicit during classifier failure', async () => {
+    useChatStore.setState({ messages: [{ id: 'image-turn', userId: 'user-a', conversationId: 'conv-a', role: 'assistant', content: '', createdAt: new Date(), answerBlocks: [{
+      type: 'image_block', slotId: 'image-a', topic: 'cat', purpose: 'diagram', imageUrl: 'https://example.test/image.png',
+      sourceUrl: '', sourceDomain: '', caption: 'cat', safetyStatus: 'pass', matchConfidence: 1, provider: 'generated_image',
+    }] }] });
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
+    await expect(run('改成紅色')).rejects.toThrow('503');
   });
 
   it('surfaces unavailable routing instead of executing a different action', async () => {

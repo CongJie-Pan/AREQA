@@ -4,7 +4,14 @@ import { runInNewContext } from 'node:vm';
 import React from 'react';
 import { createRequire } from 'node:module';
 import type * as TS from 'typescript';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolveMessageRoute } from '@/services/messageIntent';
+import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { useChatStore } from '@/store/chat';
+
+vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
+vi.mock('@/database/db', () => ({ getCurrentUserId: () => 'user-a' }));
+vi.mock('@/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn() } }));
 
 const ts = createRequire(resolve(process.cwd(), 'package.json'))('typescript') as typeof TS;
 
@@ -40,6 +47,30 @@ function setup() {
 }
 
 describe('ChatContainer executable send boundary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useChatStore.setState({ messages: [] });
+  });
+
+  it('sends ordinary text through the actual fallback resolver when classification returns 503', async () => {
+    const { scope, send } = setup();
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    scope.resolveMessageRoute.mockImplementation(resolveMessageRoute);
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
+    expect(await send('你好，請解釋效果量', [file])).toEqual({ completed: true });
+    expect(scope.sendMessage).toHaveBeenCalledWith('你好，請解釋效果量', 'conv-a', [file]);
+    expect(scope.generateConversationImage).not.toHaveBeenCalled();
+    expect(scope.antMessageApi.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps image requests explicit when the actual classifier is unavailable', async () => {
+    const { scope, send } = setup();
+    scope.resolveMessageRoute.mockImplementation(resolveMessageRoute);
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
+    await expect(send('幫我產圖')).rejects.toThrow('503');
+    expect(scope.sendMessage).not.toHaveBeenCalled();
+    expect(scope.generateConversationImage).not.toHaveBeenCalled();
+  });
   it('dispatches an untagged upload generation decision to the existing image lifecycle', async () => {
     const { scope, send } = setup();
     const file = new File(['png'], 'source.png', { type: 'image/png' });
