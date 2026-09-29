@@ -1,200 +1,42 @@
-2026-09-27T12:06:06.171233583Z 2026-09-27 12:06:06 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_switch_requested context={"component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "previousActiveConversationId": "05517cf4-4c97-4800-9838-0e03a0a39cae"}
-2026-09-27T12:06:06.17158212Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:06:06.171758554Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:06:06.245270578Z 2026-09-27 12:06:06 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:06:06.275938252Z 2026-09-27 12:06:06 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:06:06.317165326Z 2026-09-27 12:06:06 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:06:06.343817774Z 2026-09-27 12:06:06 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:06:06.465473891Z 2026-09-27 12:06:06 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_switch_completed context={"activeConversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "displayMessageCount": 10, "durationMs": 212}
-2026-09-27T12:06:06.465516331Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:06:06.477020211Z 2026-09-27 12:06:06 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:06:06.529157251Z 2026-09-27 12:06:06 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_local_messages_read context={"assistantMessageCount": 4, "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "deletionMarkerCount": 0, "durationMs": 143, "latestMessageUpdatedAt": "2026-09-27T03:50:07.658Z", "latestQueuedAt": null, "messageCount": 10, "pendingSyncCount": 0, "userMessageCount": 6}
-2026-09-27T12:06:06.529441027Z 2026-09-27 12:06:06 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_sidebar_selection_finished context={"activeConversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "component": "ConversationList", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97"}
-2026-09-27T12:06:06.529724593Z 2026-09-27 12:06:06 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_cloud_hydration_finished context={"assistantMessageCount": 4, "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "deletionMarkerCount": 0, "durationMs": 142, "latestMessageUpdatedAt": "2026-09-27T03:50:07.658Z", "latestQueuedAt": null, "messageCount": 10, "pendingSyncCount": 0, "userMessageCount": 6}
-2026-09-27T12:06:06.530309546Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:06:06.530459139Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:06:06.530608642Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:06:06.582049087Z 2026-09-27 12:06:06 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_messages_committed context={"assistantMessageCount": 4, "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "deletionMarkerCount": 0, "displayMessageCount": 10, "durationMs": 143, "latestMessageUpdatedAt": "2026-09-27T03:50:07.658Z", "latestQueuedAt": null, "messageCount": 10, "pendingSyncCount": 0, "userMessageCount": 6}
-2026-09-27T12:06:06.582482677Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:14:08.866846618Z ==> Deploying...
-2026-09-27T12:14:09.154010127Z ==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
-2026-09-27T12:14:40.02115324Z ==> Running 'python -m uvicorn main:app --host 0.0.0.0 --port $PORT'
-2026-09-27T12:14:46.333939416Z INFO:     Started server process [63]
-2026-09-27T12:14:46.333959097Z INFO:     Waiting for application startup.
-2026-09-27T12:14:46.344789049Z 2026-09-27 12:14:46 [INFO] redis_client: Successfully connected to Redis.
-2026-09-27T12:14:46.400259322Z 2026-09-27 12:14:46 [INFO] redis_client: system.redis_open_status status=open endpoint=rediss://ace-moray-116600.upstash.io:6379/0
-2026-09-27T12:14:46.411133236Z 2026-09-27 12:14:46 [INFO] backend.main: background.worker_task_started name=proactive_scheduler_loop
-2026-09-27T12:14:46.411154638Z 2026-09-27 12:14:46 [INFO] backend.main: background.worker_task_started name=daily_scheduler_loop
-2026-09-27T12:14:46.411167398Z 2026-09-27 12:14:46 [INFO] backend.main: background.worker_task_started name=delayed_mail_worker
-2026-09-27T12:14:46.411219401Z 2026-09-27 12:14:46 [INFO] backend.main: background.worker_task_started name=agent_job_worker
-2026-09-27T12:14:50.560584617Z 2026-09-27 12:14:50 [INFO] persistqueue.serializers.pickle: Selected pickle protocol: '4'
-2026-09-27T12:14:50.563878052Z 2026-09-27 12:14:50 [INFO] persistqueue: Async queues not available, may need to install aiofiles and aiosqlite: No module named 'aiofiles'
-2026-09-27T12:14:50.572492669Z 2026-09-27 12:14:50 [INFO] persistqueue: DBUtils may not be installed, install via 'pip install persist-queue[extra]'
-2026-09-27T12:14:50.577182424Z 2026-09-27 12:14:50 [INFO] backend.main: background.worker_task_started name=reflection_loop
-2026-09-27T12:14:50.577336073Z 2026-09-27 12:14:50 [INFO] services.compeer_scheduler: compeer.scheduler_started
-2026-09-27T12:14:50.577526694Z 2026-09-27 12:14:50 [INFO] mailbox_store: mailbox.worker_starting worker_id=mailbox-e6058421fa3f45fdb7fadc89663af2e8
-2026-09-27T12:14:50.577541234Z 2026-09-27 12:14:50 [INFO] mailbox_store: mailbox.worker_disabled worker_id=mailbox-e6058421fa3f45fdb7fadc89663af2e8
-2026-09-27T12:14:50.779468081Z INFO:     Application startup complete.
-2026-09-27T12:14:50.7796331Z 2026-09-27 12:14:50 [WARNING] backend.main: background.worker_task_stopped name=delayed_mail_worker
-2026-09-27T12:14:50.77981153Z INFO:     Uvicorn running on http://0.0.0.0:10000 (Press CTRL+C to quit)
-2026-09-27T12:14:51.404898891Z Memory Store initialized successfully.
-2026-09-27T12:14:51.404920693Z Mailbox Store initialized successfully.
-2026-09-27T12:14:51.404923593Z Agent Job Store initialized successfully.
-2026-09-27T12:14:51.404925663Z Redis RAG Cache initialized successfully.
-2026-09-27T12:14:51.404927613Z INFO:     127.0.0.1:45018 - "HEAD / HTTP/1.1" 404 Not Found
-2026-09-27T12:14:59.9621581Z ==> Your service is live 🎉
-2026-09-27T12:15:00.140255236Z INFO:     34.83.207.104:0 - "GET / HTTP/1.1" 404 Not Found
-2026-09-27T12:15:00.212149487Z ==> 
-2026-09-27T12:15:00.214963584Z ==> ///////////////////////////////////////////////////////////
-2026-09-27T12:15:00.217734298Z ==> 
-2026-09-27T12:15:00.220336824Z ==> Available at your primary URL https://areqa-backend-v9ln.onrender.com
-2026-09-27T12:15:00.222699758Z ==> 
-2026-09-27T12:15:00.225051132Z ==> ///////////////////////////////////////////////////////////
-2026-09-27T12:15:59.099188662Z INFO:     Shutting down
-2026-09-27T12:15:59.199688593Z INFO:     Waiting for application shutdown.
-2026-09-27T12:15:59.199961889Z INFO:     Application shutdown complete.
-2026-09-27T12:15:59.200039871Z INFO:     Finished server process [60]
-2026-09-27T12:18:15.327844622Z 2026-09-27 12:18:15 [INFO] backend.main: features.runtime_served mailbox=False compeer=False compeer_telemetry=False conversation_history_debug_logs=True
-2026-09-27T12:18:15.328314759Z INFO:     111.185.1.50:0 - "GET /api/v1/features HTTP/1.1" 200 OK
-2026-09-27T12:18:21.567903882Z INFO:     111.185.1.50:0 - "OPTIONS /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:21.572881443Z INFO:     111.185.1.50:0 - "OPTIONS /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:21.586740006Z INFO:     111.185.1.50:0 - "OPTIONS /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.035478568Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.061427914Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.101956843Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.177734452Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.203863758Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.284915515Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.365965443Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.396131236Z 2026-09-27 12:18:22 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:22.48383781Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_sidebar_selected context={"activeConversationId": null, "component": "ConversationList", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97"}
-2026-09-27T12:18:22.486121188Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.518817895Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_switch_requested context={"component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "previousActiveConversationId": null}
-2026-09-27T12:18:22.519341475Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.534412536Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_cloud_hydration_finished context={"assistantMessageCount": 4, "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "deletionMarkerCount": 0, "durationMs": 222, "latestMessageUpdatedAt": "2026-09-27T03:50:07.658Z", "latestQueuedAt": null, "messageCount": 10, "pendingSyncCount": 0, "userMessageCount": 6}
-2026-09-27T12:18:22.534863001Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.53873167Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_sidebar_selection_finished context={"activeConversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "component": "ConversationList", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97"}
-2026-09-27T12:18:22.539060578Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.562631529Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_messages_committed context={"assistantMessageCount": 4, "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "deletionMarkerCount": 0, "displayMessageCount": 10, "durationMs": 227, "latestMessageUpdatedAt": "2026-09-27T03:50:07.658Z", "latestQueuedAt": null, "messageCount": 10, "pendingSyncCount": 0, "userMessageCount": 6}
-2026-09-27T12:18:22.563062184Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_local_messages_read context={"assistantMessageCount": 4, "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "deletionMarkerCount": 0, "durationMs": 226, "latestMessageUpdatedAt": "2026-09-27T03:50:07.658Z", "latestQueuedAt": null, "messageCount": 10, "pendingSyncCount": 0, "userMessageCount": 6}
-2026-09-27T12:18:22.563810616Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_switch_completed context={"activeConversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97", "displayMessageCount": 10, "durationMs": 315}
-2026-09-27T12:18:22.564329765Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.564522606Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.565022675Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:22.570113072Z 2026-09-27 12:18:22 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_load_started context={"clearBeforeLoad": false, "component": "chatService", "conversationId": "e72c0e43-abbc-4142-a0f2-0a282c583f97"}
-2026-09-27T12:18:22.570397168Z INFO:     111.185.1.50:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
-2026-09-27T12:18:32.420000268Z 2026-09-27 12:18:32 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:32.52221601Z 2026-09-27 12:18:32 [INFO] backend.main: realtime.debug.session_config_built conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 model=gpt-realtime-2.1-mini voice=marin interface_language=en output_modalities=audio input_transcription_model=gpt-4o-mini-transcribe turn_detection_type=semantic_vad tool_count=1 tool_names=get_areqa_context
-2026-09-27T12:18:32.522241452Z 2026-09-27 12:18:32 [INFO] backend.main: realtime.session_create_started conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 authenticated=True model=gpt-realtime-2.1-mini voice=marin interface_language=en tutor_profile=general
-2026-09-27T12:18:32.522258703Z 2026-09-27 12:18:32 [INFO] backend.main: realtime.debug.upstream_request_prepared conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 authenticated=True has_safety_identifier=True timeout_seconds=15.0
-2026-09-27T12:18:33.508704473Z 2026-09-27 12:18:33 [INFO] backend.main: realtime.debug.upstream_response_received conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 status=200 elapsed_ms=986
-2026-09-27T12:18:33.508804228Z 2026-09-27 12:18:33 [INFO] backend.main: realtime.debug.client_secret_issued conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 expires_at_present=True client_secret_present=True
-2026-09-27T12:18:33.50882627Z 2026-09-27 12:18:33 [INFO] backend.main: realtime.session_create_completed conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 model=gpt-realtime-2.1-mini interface_language=en elapsed_ms=986
-2026-09-27T12:18:33.509240993Z INFO:     74.220.52.32:0 - "POST /api/v1/realtime/session HTTP/1.1" 200 OK
-2026-09-27T12:18:35.836822564Z 2026-09-27 12:18:35 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:35.940586504Z 2026-09-27 12:18:35 [INFO] backend.main: live_tutor.debug.context_request_received conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 authenticated=True supplied_message_count=0 interface_language=zh-TW
-2026-09-27T12:18:35.94565802Z 2026-09-27 12:18:35 [WARNING] persistqueue.queue: Default tempdir '/tmp/tmp1ydbg3nw' is not on the same filesystem with queue path '/opt/render/project/src/data/gum_data/39bcc4a1-6be9-4817-80ae-9f5257721717/batches/queue',defaulting to '/opt/render/project/src/data/gum_data/39bcc4a1-6be9-4817-80ae-9f5257721717/batches/queue'.
-2026-09-27T12:18:36.22682996Z 2026-09-27 12:18:36 [INFO] backend.main: live_tutor.debug.memory_context_loaded conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 memory_count=2
-2026-09-27T12:18:36.226850051Z 2026-09-27 12:18:36 [INFO] backend.main: realtime.context_served conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 authenticated=True message_count=0 memory_count=2 parts_context=True
-2026-09-27T12:18:36.226860201Z 2026-09-27 12:18:36 [INFO] backend.main: live_tutor.debug.context_response_built conversation_id=3a24aad0-3794-4b5d-b9b8-d2f59cfe1dc1 recent_message_count=0 memory_count=2 parts_context=True elapsed_ms=286
-2026-09-27T12:18:36.227402452Z [GUM] Initializing new GUM instance for user 39bcc4a1-6be9-4817-80ae-9f5257721717...
-2026-09-27T12:18:36.227419173Z INFO:     74.220.52.32:0 - "POST /api/v1/realtime/context HTTP/1.1" 200 OK
-2026-09-27T12:18:41.884394585Z INFO:     74.220.52.32:0 - "POST /api/v1/generate-title HTTP/1.1" 200 OK
-2026-09-27T12:18:42.611093208Z 2026-09-27 12:18:42 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:18:42.711662907Z 2026-09-27 12:18:42 [INFO] backend.main: live_tutor.debug.context_request_received conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b authenticated=True supplied_message_count=2 interface_language=en
-2026-09-27T12:18:42.748280145Z 2026-09-27 12:18:42 [INFO] backend.main: live_tutor.debug.memory_context_loaded conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b memory_count=2
-2026-09-27T12:18:42.74837645Z 2026-09-27 12:18:42 [INFO] backend.main: realtime.context_served conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b authenticated=True message_count=2 memory_count=2 parts_context=True
-2026-09-27T12:18:42.74838397Z 2026-09-27 12:18:42 [INFO] backend.main: live_tutor.debug.context_response_built conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b recent_message_count=2 memory_count=2 parts_context=True elapsed_ms=36
-2026-09-27T12:18:42.748919681Z INFO:     74.220.52.32:0 - "POST /api/v1/realtime/context HTTP/1.1" 200 OK
-2026-09-27T12:18:42.811644473Z 2026-09-27 12:18:42 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:19:00.349853453Z 2026-09-27 12:19:00 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:19:00.458536199Z 2026-09-27 12:19:00 [INFO] backend.services.attachment_service: attachment.processing_started count=1
-2026-09-27T12:19:00.460766345Z 2026-09-27 12:19:00 [INFO] backend.services.attachment_service: attachment.processed filename=Software with Taste with Geoffrey Litt AM Podcast _7 _English _auto-generated__ _DownloadYoutubeSubtitles.com_ _1_.txt declared_type=text/plain media_type=text/plain size_bucket=lt_100kb sha256_prefix=e0f3084a2e48
-2026-09-27T12:19:00.584444199Z 2026-09-27 12:19:00 [INFO] services.speaking_material_service: speaking_material.saved chars=40000
-2026-09-27T12:19:00.584495932Z 2026-09-27 12:19:00 [INFO] backend.main: realtime.attachments_ready conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b count=1 excerpt_chars=12000 truncated=True
-2026-09-27T12:19:00.585046903Z INFO:     74.220.52.32:0 - "POST /api/v1/realtime/attachments HTTP/1.1" 200 OK
-2026-09-27T12:19:59.675259188Z ==> Detected service running on port 10000
-2026-09-27T12:20:00.065089476Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
-2026-09-27T12:22:37.317767516Z 2026-09-27 12:22:37 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:22:41.302571015Z 2026-09-27 12:22:41 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:22:41.361325306Z 2026-09-27 12:22:41 [INFO] backend.main: stream.request_accepted conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b response_mode=text tutor_profile=general message_count=17 upload_count=0
-2026-09-27T12:22:41.499743249Z INFO:     74.220.52.32:0 - "POST /api/v1/stream HTTP/1.1" 200 OK
-2026-09-27T12:22:41.504806985Z 2026-09-27 12:22:41 [INFO] backend.services.orchestration_service: orchestration.turn_plan_selected run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b route=GENERAL_CHAT enabled=True reason=GENERAL_CHAT max_foreground_model_calls=2
-2026-09-27T12:22:41.575267097Z 2026-09-27 12:22:41 [INFO] memory_store: [MemoryStore] Updated working memory for user 39bcc4a1-6be9-4817-80ae-9f5257721717: ['current_focus', 'current_focus_conversation_id']
-2026-09-27T12:22:41.575334591Z 2026-09-27 12:22:41 [INFO] services.memory_ingestion.rules: memory.ingestion_decided user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 message_id=fcbdbe41e37189f2fad4b6e9 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b candidate_id=none state=working_context_only reason=ordinary_user_message_for_current_turn category=current_focus promoted=False
-2026-09-27T12:22:41.575408115Z 2026-09-27 12:22:41 [INFO] services.turn_intake_service: orchestration.memory_ingestion_dispatched run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b outcome=working_context_only reason=ordinary_user_message_for_current_turn
-2026-09-27T12:22:42.279644726Z 2026-09-27 12:22:42 [WARNING] backend.services.orchestration_service: orchestration.dialogue_policy_timeout conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b fallback=NORMAL
-2026-09-27T12:22:42.279820356Z 2026-09-27 12:22:42 [INFO] backend.services.orchestration_service: orchestration.response_policy_applied conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b source=timeout_fallback metadata={"answer_depth": "SCAFFOLDED", "attachment_reason": "NO_ATTACHMENT", "attachment_task": "NONE", "evidence_mode": "NONE", "followup_mode": "OPTIONAL", "learning_mode": "LEARN", "learning_technique": "NONE", "legacy_policy": "NORMAL", "pedagogical_action": "EXPLAIN_PREREQ", "structure": "STEP_BY_STEP", "task_intent": "GENERAL_QA", "tone": "TUTORING", "visual_reason": "NOT_NEEDED", "visual_support": "NONE"}
-2026-09-27T12:22:42.280167356Z 2026-09-27 12:22:42 [INFO] services.orchestration.prompting: parts_context.rewrite_gate conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b enabled=False route=GENERAL_CHAT grounded=False allow_ungrounded=False
-2026-09-27T12:22:42.280286422Z 2026-09-27 12:22:42 [INFO] services.conversation.parts: parts_context.rewrite_skipped route=GENERAL_CHAT reason=disabled_or_unavailable metadata={"confidence": "medium", "has_act": true, "has_composed_instruction": true, "has_persona": true, "has_recipient": true, "has_structure": true, "has_theme": true, "missing_field_count": 1}
-2026-09-27T12:22:42.285411182Z 2026-09-27 12:22:42 [INFO] services.conversation.context: orchestration.long_term_memory_skipped reason=GENERAL_CHAT memory_reason=SUBSTANTIVE_QUERY
-2026-09-27T12:22:42.285453395Z 2026-09-27 12:22:42 [INFO] services.orchestration.prompting: orchestration.context_prepared conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b learner_understanding=unknown retrieved_memory=False tutor_profile=general
-2026-09-27T12:22:42.285507768Z 2026-09-27 12:22:42 [INFO] backend.services.orchestration_service: paper.auto_explain_policy_selected conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b enabled=True applied=False task=NONE reason=NO_ATTACHMENT pdf_count=0
-2026-09-27T12:22:42.285582352Z 2026-09-27 12:22:42 [INFO] backend.services.orchestration_service: visual.preflight_policy_gate conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b allowed=True blocking_allowed=True trigger=explicit_visual_request visual_support=NONE visual_reason=NOT_NEEDED explicit_visual=True known_affordance=False max_images=2 has_attachment_visual_sources=False
-2026-09-27T12:22:42.285671627Z 2026-09-27 12:22:42 [INFO] services.visual_answer_service: visual.preflight_query_rewritten conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b rule=generic_non_english_visual_query
-2026-09-27T12:22:42.94359966Z 2026-09-27 12:22:42 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:22:43.463259134Z 2026-09-27 12:22:43 [INFO] services.visual.grounding: visual.brief_planned conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b visual_type=process_flowchart source=agent reject_count=5 task_intent=general_qa answer_depth=scaffolded turn_route=general_chat
-2026-09-27T12:22:43.463299736Z 2026-09-27 12:22:43 [INFO] services.visual_answer_service: visual.preflight_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b slot_count=1 visual_type=process_flowchart brief_source=agent
-2026-09-27T12:22:43.463410852Z 2026-09-27 12:22:43 [INFO] services.visual_answer_service: visual.slot_resolution_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b slot_id=img_1
-2026-09-27T12:22:43.464497864Z 2026-09-27 12:22:43 [INFO] services.visual_answer_service: visual.cache_scope_selected conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b scope=preflight visual_type=process_flowchart
-2026-09-27T12:22:43.515226082Z 2026-09-27 12:22:43 [INFO] services.visual_answer.cache: visual.cache_miss conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b
-2026-09-27T12:22:43.516496304Z 2026-09-27 12:22:43 [INFO] services.visual_answer.providers: visual.parallel_provider_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider_count=5
-2026-09-27T12:22:43.573857807Z 2026-09-27 12:22:43 [INFO] services.visual_answer.provider_clients: visual.provider_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=perplexity_images timeout_seconds=4.5
-2026-09-27T12:22:43.601151141Z 2026-09-27 12:22:43 [INFO] services.visual_answer.provider_clients: visual.provider_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=wikimedia timeout_seconds=3.0
-2026-09-27T12:22:43.681825803Z 2026-09-27 12:22:43 [INFO] services.visual_answer.provider_clients: visual.provider_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=openverse timeout_seconds=3.0
-2026-09-27T12:22:43.70583696Z 2026-09-27 12:22:43 [INFO] services.visual_answer.provider_clients: visual.provider_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=tavily_images timeout_seconds=3.0
-2026-09-27T12:22:43.780004874Z 2026-09-27 12:22:43 [INFO] services.visual_answer.provider_clients: visual.provider_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=serpapi_images timeout_seconds=3.0
-2026-09-27T12:22:44.080881697Z 2026-09-27 12:22:44 [INFO] services.visual_answer.provider_clients: visual.provider_failed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=perplexity_images reason=HTTPStatusError status_code=401
-2026-09-27T12:22:44.081244678Z 2026-09-27 12:22:44 [INFO] services.visual_answer.providers: visual.parallel_provider_completed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=perplexity_images candidate_count=0
-2026-09-27T12:22:44.081269899Z 2026-09-27 12:22:44 [INFO] services.visual_answer.providers: visual.parallel_candidates_merged conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider_count=1 candidate_count=0 pending_provider_count=4
-2026-09-27T12:22:45.196882581Z 2026-09-27 12:22:45 [INFO] services.visual_answer.provider_clients: visual.provider_completed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=wikimedia candidate_count=8
-2026-09-27T12:22:45.197093453Z 2026-09-27 12:22:45 [INFO] services.visual_answer.providers: visual.parallel_provider_completed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=wikimedia candidate_count=8
-2026-09-27T12:22:45.197106244Z 2026-09-27 12:22:45 [INFO] services.visual_answer.providers: visual.parallel_candidates_merged conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider_count=2 candidate_count=8 pending_provider_count=3
-2026-09-27T12:22:45.198168484Z 2026-09-27 12:22:45 [INFO] services.visual_answer.selection: visual.candidate_top_scored conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=wikimedia candidate_count=8 safe_candidate_count=8 top_score=1.00 threshold=0.40 source_domain=commons.wikimedia.org license=Public domain dimension_bucket=large
-2026-09-27T12:22:45.930930728Z 2026-09-27 12:22:45 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:22:46.074281774Z 2026-09-27 12:22:46 [INFO] services.visual.grounding: visual.grounding_checked conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b accepted=False expected_type=process_flowchart candidate_type=document_scan reason=document_scan_mismatch
-2026-09-27T12:22:46.074315276Z 2026-09-27 12:22:46 [INFO] services.visual_answer.selection: visual.candidate_rejected conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=wikimedia reason=grounding_document_scan_mismatch expected_type=process_flowchart candidate_type=document_scan
-2026-09-27T12:22:46.206057145Z 2026-09-27 12:22:46 [INFO] services.visual_answer.provider_clients: visual.provider_completed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=openverse candidate_count=0
-2026-09-27T12:22:46.777480236Z 2026-09-27 12:22:46 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:22:46.828770996Z 2026-09-27 12:22:46 [INFO] services.visual_answer.provider_clients: visual.provider_failed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=serpapi_images reason=ReadTimeout status_code=unknown
-2026-09-27T12:22:47.250224807Z 2026-09-27 12:22:47 [INFO] services.visual_answer.provider_clients: visual.provider_failed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=tavily_images reason=ReadTimeout status_code=unknown
-2026-09-27T12:22:47.57549943Z 2026-09-27 12:22:47 [INFO] services.visual.grounding: visual.grounding_checked conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b accepted=False expected_type=process_flowchart candidate_type=document_scan reason=document_scan_not_allowed
-2026-09-27T12:22:47.575514861Z 2026-09-27 12:22:47 [INFO] services.visual_answer.selection: visual.candidate_rejected conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=wikimedia reason=grounding_document_scan_not_allowed expected_type=process_flowchart candidate_type=document_scan
-2026-09-27T12:22:48.12920883Z 2026-09-27 12:22:48 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:22:48.360240664Z 2026-09-27 12:22:48 [INFO] services.visual.understanding: visual.understanding_client_shape conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b model=google/gemini-3.1-flash-lite client_type=AsyncOpenAI has_chat=True has_completions=True has_create=True
-2026-09-27T12:22:48.927975636Z 2026-09-27 12:22:48 [INFO] services.visual.grounding: visual.grounding_checked conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b accepted=False expected_type=process_flowchart candidate_type=document_scan reason=document_scan_mismatch
-2026-09-27T12:22:48.927998947Z 2026-09-27 12:22:48 [INFO] services.visual_answer.selection: visual.candidate_rejected conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b provider=wikimedia reason=grounding_document_scan_mismatch expected_type=process_flowchart candidate_type=document_scan
-2026-09-27T12:22:49.46425485Z 2026-09-27 12:22:49 [INFO] services.visual_answer_service: visual.preflight_timeout conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b timeout_seconds=6.0
-2026-09-27T12:22:49.464630221Z 2026-09-27 12:22:49 [INFO] services.visual_answer_service: visual.preflight_completed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b resolved_image_count=0
-2026-09-27T12:22:49.464692805Z 2026-09-27 12:22:49 [INFO] backend.services.orchestration_service: visual.preverified_inventory_ready conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b available_image_count=0 has_attachment_visual_sources=False
-2026-09-27T12:22:49.465016453Z 2026-09-27 12:22:49 [INFO] services.conversation.stream: orchestration.stream_started conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b model=google/gemini-3.8-flash attachment_parser=False image_slot_cap=2 openrouter_session=True latency_routing=True
-2026-09-27T12:22:51.309053634Z 2026-09-27 12:22:51 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:22:52.175630724Z 2026-09-27 12:22:52 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:22:52.361090491Z 2026-09-27 12:22:52 [INFO] services.visual.understanding: visual.understanding_unavailable conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b model=google/gemini-3.1-flash-lite source_domain=hualwtskrtbkgvnidckr.supabase.co stage=provider_call reason=TimeoutError
-2026-09-27T12:22:52.361398249Z 2026-09-27 12:22:52 [INFO] services.generated_image_service: image_generation.completed model=openai/gpt-image-2.5-flare conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b bytes=1364543 cost_usd=0.006825 stored=True elapsed_ms=14770
-2026-09-27T12:22:52.36283321Z INFO:     74.220.52.32:0 - "POST /api/v1/images/generate HTTP/1.1" 200 OK
-2026-09-27T12:23:00.937790403Z 2026-09-27 12:23:00 [WARNING] services.conversation.stream: orchestration.response_boundary_blocked conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b reason=unsupported_mastery
-2026-09-27T12:23:01.092932732Z 2026-09-27 12:23:01 [INFO] services.conversation.stream: orchestration.stream_completed conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b elapsed_ms=11627
-2026-09-27T12:23:01.093294762Z 2026-09-27 12:23:01 [INFO] services.visual_answer_service: visual.slots_planned conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b slot_count=2 reason=policy_or_explicit_visual
-2026-09-27T12:23:01.093315214Z 2026-09-27 12:23:01 [INFO] services.visual_answer_service: visual.preverified_available conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b available_image_count=0 planned_image_slot_count=0
-2026-09-27T12:23:01.093327864Z 2026-09-27 12:23:01 [INFO] services.visual_answer_service: visual.preverified_unused conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b available_image_count=0
-2026-09-27T12:23:01.093392368Z 2026-09-27 12:23:01 [INFO] backend.services.orchestration_service: visual.answer_blocks_skipped conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b planned_image_slot_count=0 preverified_image_count=0
-2026-09-27T12:23:01.093638492Z 2026-09-27 12:23:01 [INFO] services.suggestion_service: suggestions.requested language=繁體中文 model=google/gemini-2.5-flash-lite context_count=0
-2026-09-27T12:23:01.792310312Z 2026-09-27 12:23:01 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:23:01.993495963Z 2026-09-27 12:23:01 [INFO] services.suggestion_service: suggestions.model_returned language=繁體中文 response_chars=86
-2026-09-27T12:23:01.993527535Z 2026-09-27 12:23:01 [INFO] services.suggestion_service: suggestions.json_parsed language=繁體中文 candidate_count=3
-2026-09-27T12:23:01.99450626Z 2026-09-27 12:23:01 [INFO] services.suggestion_service: suggestions.filtered language=繁體中文 candidate_count=3 accepted_count=3
-2026-09-27T12:23:01.994623957Z 2026-09-27 12:23:01 [INFO] services.post_turn_service: orchestration.suggestions_generated run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b language=en count=3
-2026-09-27T12:23:01.994692141Z 2026-09-27 12:23:01 [INFO] services.post_turn_service: orchestration.suggestions_emitted run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b count=3
-2026-09-27T12:23:01.99538262Z 2026-09-27 12:23:01 [INFO] backend.services.orchestration_service: orchestration.post_turn_queued run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b
-2026-09-27T12:23:01.995610883Z 2026-09-27 12:23:01 [INFO] backend.services.orchestration_service: orchestration.turn_trace_completed run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b trace={'run_id': '35be2a3be42a4f909ecda4b784bbbe26', 'conversation_id': '7d0e2acc-2b94-4908-a54f-a0c78de9e21b', 'elapsed_ms': 20496, 'phases': [{'name': 'request_accepted', 'elapsed_ms': 0, 'occurrence': 1}, {'name': 'search_routing_started', 'elapsed_ms': 2, 'occurrence': 1}, {'name': 'search_routing_finished', 'elapsed_ms': 3, 'occurrence': 1}, {'name': 'turn_plan_general_chat', 'elapsed_ms': 4, 'occurrence': 1}, {'name': 'turn_intake_started', 'elapsed_ms': 5, 'occurrence': 1}, {'name': 'turn_intake_finished', 'elapsed_ms': 79, 'occurrence': 1}, {'name': 'policy_classifier_started', 'elapsed_ms': 80, 'occurrence': 1}, {'name': 'rag_skipped', 'elapsed_ms': 80, 'occurrence': 1}, {'name': 'policy_classifier_timeout', 'elapsed_ms': 780, 'occurrence': 1}, {'name': 'prompt_assembly_started', 'elapsed_ms': 781, 'occurrence': 1}, {'name': 'parts_context_started', 'elapsed_ms': 781, 'occurrence': 1}, {'name': 'parts_context_finished', 'elapsed_ms': 781, 'occurrence': 1}, {'name': 'hot_memory_snapshot_started', 'elapsed_ms': 781, 'occurrence': 1}, {'name': 'hot_memory_snapshot_finished', 'elapsed_ms': 785, 'occurrence': 1}, {'name': 'prompt_assembly_finished', 'elapsed_ms': 786, 'occurrence': 1}, {'name': 'visual_preflight_started', 'elapsed_ms': 786, 'occurrence': 1}, {'name': 'visual_preflight_finished', 'elapsed_ms': 7965, 'occurrence': 1}, {'name': 'main_model_started', 'elapsed_ms': 7966, 'occurrence': 1}, {'name': 'main_model_provider_request_started', 'elapsed_ms': 7966, 'occurrence': 1}, {'name': 'main_model_provider_stream_received', 'elapsed_ms': 10676, 'occurrence': 1}, {'name': 'first_answer_delta', 'elapsed_ms': 12567, 'occurrence': 1}, {'name': 'main_model_finished', 'elapsed_ms': 19594, 'occurrence': 1}, {'name': 'suggestions_started', 'elapsed_ms': 19594, 'occurrence': 1}, {'name': 'suggestions_finished', 'elapsed_ms': 20495, 'occurrence': 1}, {'name': 'post_turn_queued', 'elapsed_ms': 20496, 'occurrence': 1}, {'name': 'terminal_sent', 'elapsed_ms': 20496, 'occurrence': 1}], 'model_calls': {'main_answer': 1, 'policy_classifier': 1, 'suggestions': 1}, 'tool_calls': {'hot_memory': 1}, 'cache_statuses': {'hot_memory:not_applicable': 1}}
-2026-09-27T12:23:01.995710489Z 2026-09-27 12:23:01 [INFO] backend.services.orchestration_service: orchestration.turn_trace_summary run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b summary={"cache_statuses": {"hot_memory:not_applicable": 1}, "conversation_id": "7d0e2acc-2b94-4908-a54f-a0c78de9e21b", "elapsed_ms": 20496, "is_slow": true, "main_model_started_ms": 7966, "model_calls": {"main_answer": 1, "policy_classifier": 1, "suggestions": 1}, "phase_durations_ms": {"hot_memory_snapshot": 4, "main_model": 11628, "parts_context": 0, "policy_classifier": 700, "prompt_assembly": 5, "search_routing": 1, "suggestions": 901, "turn_intake": 74, "visual_preflight": 7179}, "provider_first_token_ms": 4601, "run_id": "35be2a3be42a4f909ecda4b784bbbe26", "slow_reasons": ["total_elapsed", "time_to_first_answer", "top_phase:main_model"], "terminal_sent_ms": 20496, "time_to_first_answer_ms": 12567, "tool_calls": {"hot_memory": 1}, "top_phase_durations": [{"duration_ms": 11628, "name": "main_model"}, {"duration_ms": 7179, "name": "visual_preflight"}, {"duration_ms": 901, "name": "suggestions"}, {"duration_ms": 700, "name": "policy_classifier"}, {"duration_ms": 74, "name": "turn_intake"}]}
-2026-09-27T12:23:01.995769042Z 2026-09-27 12:23:01 [WARNING] backend.services.orchestration_service: orchestration.turn_trace_slow run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b summary={"cache_statuses": {"hot_memory:not_applicable": 1}, "conversation_id": "7d0e2acc-2b94-4908-a54f-a0c78de9e21b", "elapsed_ms": 20496, "is_slow": true, "main_model_started_ms": 7966, "model_calls": {"main_answer": 1, "policy_classifier": 1, "suggestions": 1}, "phase_durations_ms": {"hot_memory_snapshot": 4, "main_model": 11628, "parts_context": 0, "policy_classifier": 700, "prompt_assembly": 5, "search_routing": 1, "suggestions": 901, "turn_intake": 74, "visual_preflight": 7179}, "provider_first_token_ms": 4601, "run_id": "35be2a3be42a4f909ecda4b784bbbe26", "slow_reasons": ["total_elapsed", "time_to_first_answer", "top_phase:main_model"], "terminal_sent_ms": 20496, "time_to_first_answer_ms": 12567, "tool_calls": {"hot_memory": 1}, "top_phase_durations": [{"duration_ms": 11628, "name": "main_model"}, {"duration_ms": 7179, "name": "visual_preflight"}, {"duration_ms": 901, "name": "suggestions"}, {"duration_ms": 700, "name": "policy_classifier"}, {"duration_ms": 74, "name": "turn_intake"}]}
-2026-09-27T12:23:01.996109341Z 2026-09-27 12:23:01 [INFO] services.post_turn_service: orchestration.post_turn_dispatched run_id=35be2a3be42a4f909ecda4b784bbbe26 conversation_id=7d0e2acc-2b94-4908-a54f-a0c78de9e21b reflection_durable=False evaluation_durable=False
-2026-09-27T12:23:03.433461983Z 2026-09-27 12:23:03 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:23:03.776859802Z 2026-09-27 12:23:03 [INFO] memory_store: [MemoryStore] Published learner state snapshot v525 for user 39bcc4a1-6be9-4817-80ae-9f5257721717
-2026-09-27T12:23:06.261623345Z 2026-09-27 12:23:06 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:23:08.041916801Z 2026-09-27 12:23:08 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:23:36.938921549Z 2026-09-27 12:23:36 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:23:39.320000133Z 2026-09-27 12:23:39 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-2026-09-27T12:23:41.182458717Z 2026-09-27 12:23:41 [INFO] httpx2: HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+==> Your service is live 🎉
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://areqa-backend-v9ln.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+2026-09-29 07:28:21 [INFO] backend.main: features.runtime_served mailbox=False compeer=False compeer_telemetry=False conversation_history_debug_logs=True
+INFO:     140.122.76.210:0 - "GET /api/v1/features HTTP/1.1" 200 OK
+INFO:     140.122.76.210:0 - "OPTIONS /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+INFO:     140.122.76.210:0 - "OPTIONS /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+INFO:     140.122.76.210:0 - "OPTIONS /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:23 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_switch_requested context={"component": "chatService", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64", "previousActiveConversationId": null}
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+2026-09-29 07:28:23 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_load_started context={"clearBeforeLoad": false, "component": "chatService", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64"}
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+2026-09-29 07:28:23 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_sidebar_selected context={"activeConversationId": null, "component": "ConversationList", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64"}
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:23 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_switch_completed context={"activeConversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64", "component": "chatService", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64", "displayMessageCount": 2, "durationMs": 673}
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+2026-09-29 07:28:23 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:24 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_sidebar_selection_finished context={"activeConversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64", "component": "ConversationList", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64"}
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+2026-09-29 07:28:24 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_cloud_hydration_finished context={"assistantMessageCount": 1, "component": "chatService", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64", "deletionMarkerCount": 0, "durationMs": 540, "latestMessageUpdatedAt": "2026-09-29T07:04:11.496Z", "latestQueuedAt": null, "messageCount": 2, "pendingSyncCount": 0, "userMessageCount": 1}
+2026-09-29 07:28:24 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_local_messages_read context={"assistantMessageCount": 1, "component": "chatService", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64", "deletionMarkerCount": 0, "durationMs": 542, "latestMessageUpdatedAt": "2026-09-29T07:04:11.496Z", "latestQueuedAt": null, "messageCount": 2, "pendingSyncCount": 0, "userMessageCount": 1}
+2026-09-29 07:28:24 [INFO] backend.main: conversation_history.backend_debug user_id=39bcc4a1-6be9-4817-80ae-9f5257721717 event=chat_history_messages_committed context={"assistantMessageCount": 1, "component": "chatService", "conversationId": "2fbfc953-ac3b-46f2-bbd5-5ea91aeceb64", "deletionMarkerCount": 0, "displayMessageCount": 2, "durationMs": 543, "latestMessageUpdatedAt": "2026-09-29T07:04:11.496Z", "latestQueuedAt": null, "messageCount": 2, "pendingSyncCount": 0, "userMessageCount": 1}
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+INFO:     140.122.76.210:0 - "POST /api/v1/conversation-history/debug-log HTTP/1.1" 200 OK
+2026-09-29 07:28:30 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:30 [WARNING] services.message_intent_service: message_intent.failed reason=AttributeError
+INFO:     74.220.52.215:0 - "POST /api/v1/images/intent HTTP/1.1" 503 Service Unavailable
+2026-09-29 07:28:34 [INFO] auth: JWT successfully verified for user_id: 39bcc4a1-6be9-4817-80ae-9f5257721717
+2026-09-29 07:28:34 [WARNING] services.message_intent_service: message_intent.failed reason=AttributeError
+INFO:     74.220.52.215:0 - "POST /api/v1/images/intent HTTP/1.1" 503 Service Unavailable
