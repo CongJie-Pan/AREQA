@@ -16,6 +16,7 @@ vi.mock('@/services/generatedImages', () => ({ regenerateConversationImage: vi.f
 vi.mock('@/store/chat', () => ({
   useChatStore: {
     getState: vi.fn(),
+    setState: vi.fn(),
   },
 }));
 
@@ -669,6 +670,88 @@ describe('Chat Service', () => {
         expect.objectContaining({ tutorProfile: 'english' }),
       );
       expect(mockChatStore.tutorProfile).toBe('general');
+    });
+
+    it('persists an image-only tool reply and generates a first-turn title without a text preamble', async () => {
+      mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '請產生一張圖', conversationId: 'test-conv-id' }];
+      const block = { type: 'image_block' as const, provider: 'generated_image', imageUrl: 'https://example.com/image.png', slotId: 'image-1' };
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('Here is the image I created.');
+        callbacks.onAnswerBlocks?.([{ ...block, imageUrl: '', status: 'pending' }]);
+        callbacks.onAnswerBlocks?.([block]);
+        await callbacks.onDone();
+      });
+      expect(await sendMessage('請產生一張圖', 'test-conv-id')).toEqual({ completed: true });
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({ role: 'assistant', content: '', answerBlocks: [block] }));
+      expect(mockChatStore.updateMessageContent).toHaveBeenCalledWith('assistant-msg-id', '');
+      expect(mockConversationStore.generateTitle).toHaveBeenCalled();
+    });
+
+    it('keeps transient images visible but persists only a retryable failure without inline image data', async () => {
+      mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '請產圖', conversationId: 'test-conv-id' }];
+      const block = { type: 'image_block' as const, provider: 'generated_image', imageUrl: 'data:image/png;base64,private', slotId: 'image-1', transient: true };
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onAnswerBlocks?.([block]);
+        await callbacks.onDone();
+      });
+      await sendMessage('請產圖', 'test-conv-id');
+      expect(mockChatStore.setAnswerBlocks).toHaveBeenCalledWith([block]);
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({
+        content: expect.stringContaining('請先下載'),
+        answerBlocks: [expect.objectContaining({ imageUrl: '', transient: false, status: 'error' })],
+      }));
+      expect(JSON.stringify(vi.mocked(databaseService.message.add).mock.calls)).not.toContain('base64,private');
+    });
+
+    it('replaces a pending image card when the stream connection fails', async () => {
+      mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '請產圖', conversationId: 'test-conv-id' }];
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onAnswerBlocks?.([{ type: 'image_block', provider: 'generated_image', imageUrl: '', slotId: 'image-1', status: 'pending', safetyStatus: 'unavailable', matchConfidence: 0, topic: '', purpose: 'diagram', sourceUrl: '', sourceDomain: '', caption: '' }]);
+        callbacks.onError(new Error('connection interrupted'));
+      });
+      await sendMessage('請產圖', 'test-conv-id');
+      expect(mockChatStore.setAnswerBlocks).toHaveBeenLastCalledWith([expect.objectContaining({ status: 'error' })]);
+    });
+
+    it('ignores late image resolution and completion after the user stops the stream', async () => {
+      mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '請產圖', conversationId: 'test-conv-id' }];
+      mockChatStore.currentStreamingId = 'assistant-msg-id';
+      mockChatStore.currentContent = '';
+      mockChatStore.thinkingContent = '';
+      mockChatStore.setAnswerBlocks.mockImplementation((blocks) => { mockChatStore.currentAnswerBlocks = blocks; });
+      const block = { type: 'image_block' as const, provider: 'generated_image', imageUrl: '', slotId: 'image-1', status: 'pending' as const, safetyStatus: 'unavailable' as const, matchConfidence: 0, topic: '', purpose: 'diagram' as const, sourceUrl: '', sourceDomain: '', caption: '' };
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onAnswerBlocks?.([block]);
+        await cancelCurrentStream();
+        callbacks.onAnswerBlocks?.([{ ...block, status: 'resolved', imageUrl: 'https://example.com/late.png' }]);
+        await callbacks.onDone();
+      });
+      expect(await sendMessage('請產圖', 'test-conv-id')).toEqual({ completed: false });
+      expect(mockChatStore.setAnswerBlocks).toHaveBeenLastCalledWith([expect.objectContaining({ status: 'error' })]);
+      expect(mockConversationStore.generateTitle).not.toHaveBeenCalled();
+    });
+
+    it('keeps generated image facts in follow-up context without forwarding private storage URLs', async () => {
+      mockChatStore.messages = [
+        { id: 'previous-user', role: 'user', content: '產圖', conversationId: 'test-conv-id' },
+        { id: 'previous-image', role: 'assistant', content: '', conversationId: 'test-conv-id', answerBlocks: [{ type: 'image_block', provider: 'generated_image', imageUrl: 'https://example.com/private?token=secret', visionSummary: '效果量與樣本數的關係' }] },
+        { id: 'followup', role: 'user', content: '修改上圖的標題', conversationId: 'test-conv-id' },
+      ];
+      await sendMessage('修改上圖的標題', 'test-conv-id');
+      const messages = vi.mocked(createChatStream).mock.calls[0][0];
+      expect(messages).toContainEqual(expect.objectContaining({ role: 'assistant', content: expect.stringContaining('效果量與樣本數的關係') }));
+      expect(JSON.stringify(messages)).not.toContain('token=secret');
+    });
+
+    it('ends a pending generated image on cancellation rather than leaving a loading card', async () => {
+      mockChatStore.currentStreamingId = 'assistant-image';
+      mockChatStore.currentContent = '';
+      mockChatStore.thinkingContent = '';
+      mockChatStore.currentAnswerBlocks = [{ type: 'image_block', provider: 'generated_image', status: 'pending', slotId: 'image-1' }];
+      await cancelCurrentStream();
+      expect(mockChatStore.setAnswerBlocks).toHaveBeenCalledWith([expect.objectContaining({ status: 'error', caption: '圖片生成已停止' })]);
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({ answerBlocks: [expect.objectContaining({ status: 'error' })] }));
+      expect(mockChatStore.resetStreamingState).toHaveBeenCalled();
     });
 
     it('removes an empty streaming assistant placeholder when cancellation happens before content', async () => {

@@ -238,6 +238,7 @@ async def stream_endpoint(
                 ),
             }] if saved_material and not processed_attachments else []),
             attachment_visual_sources=attachment_visual_sources,
+            image_attachments=processed_attachments,
         )
 
     return StreamingResponse(

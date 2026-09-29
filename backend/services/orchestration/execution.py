@@ -35,7 +35,8 @@ class OrchestrationExecutionMixin:
                       tutor_profile: str = "general",
                       response_mode: str = "text",
                       attachments: Optional[List[Dict[str, Any]]] = None,
-                      attachment_visual_sources: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
+                      attachment_visual_sources: Optional[List[Dict[str, Any]]] = None,
+                      image_attachments: Optional[List[Any]] = None) -> AsyncGenerator[str, None]:
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
         request_id_header = request.headers.get("x-request-id") if request and request.headers else None
@@ -581,12 +582,16 @@ class OrchestrationExecutionMixin:
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
         planned_image_slots: list[dict[str, Any]] = []
-        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace, max_image_slots=max_image_slots):
+        generated_blocks: list[dict[str, Any]] = []
+        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace, max_image_slots=max_image_slots, image_attachments=image_attachments, interface_language=interface_language):
             if event.startswith("event: accumulator\n"):
                 try:
                     data_line = next(line for line in event.splitlines() if line.startswith("data: "))
                     accumulator_payload = json.loads(data_line[6:])
                     answer_content_accumulator = accumulator_payload.get("accumulator", "")
+                    generated_payload = accumulator_payload.get("generated_blocks", [])
+                    if isinstance(generated_payload, list):
+                        generated_blocks = [block for block in generated_payload if isinstance(block, dict)]
                     image_slots_payload = accumulator_payload.get("image_slots", [])
                     if isinstance(image_slots_payload, list):
                         planned_image_slots = [
@@ -605,7 +610,7 @@ class OrchestrationExecutionMixin:
             )
 
         # Node 7: Post-generation
-        answer_blocks = await self.visual_answer_service.build_answer_blocks(
+        answer_blocks = generated_blocks or await self.visual_answer_service.build_answer_blocks(
             answer_text=answer_content_accumulator,
             user_msg=last_user_msg,
             response_policy=response_policy,

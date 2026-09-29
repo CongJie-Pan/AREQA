@@ -2067,3 +2067,34 @@ async def test_orchestration_routing_allow(mock_router, mock_rag, mock_suggestio
         # Since we are in Gate 1A, it yields dummy processing and OK messages
         assert any("generating" in e for e in events) or any("status" in e for e in events)
         assert "data: [DONE]" in events[-1]
+
+
+@pytest.mark.asyncio
+async def test_generated_chat_tool_blocks_are_not_replaced_by_visual_search(
+    mock_router, mock_rag, mock_suggestion, mock_client
+):
+    """Forward validated uploads to the tool and retain its final image in SSE."""
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+    request = MagicMock()
+    attachments = [object()]
+    block = {'type': 'image_block', 'provider': 'generated_image', 'imageUrl': 'https://example.com/private.png'}
+    observed = {}
+    async def llm_stream(*args, **kwargs):
+        observed.update(kwargs)
+        yield 'event: answer_blocks\ndata: ' + json.dumps([block]) + '\n\n'
+        yield 'event: accumulator\ndata: ' + json.dumps({'accumulator': '', 'generated_blocks': [block]}) + '\n\n'
+    service._node_llm_stream = llm_stream
+    with patch('memory_store.get_global_store', return_value=None), \
+         patch('services.compeer_scheduler.set_last_interaction_time', new_callable=AsyncMock), \
+         patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock), \
+         patch('backend.services.orchestration_service.classify_dialogue_policy', new_callable=AsyncMock, return_value=ResponsePolicy(task_intent=TaskIntent.ANSWER_EXAM, answer_depth=AnswerDepth.DIRECT, tone=ResponseTone.PLAIN, structure=ResponseStructure.SHORT, followup_mode=FollowupMode.NONE, legacy_policy='NORMAL')), \
+         patch.object(service, '_node_prompt_assembly', new_callable=AsyncMock, return_value=[]), \
+         patch.object(service.visual_answer_service, 'build_answer_blocks', new_callable=AsyncMock) as visual_search:
+        events = [event async for event in service.execute(
+            [{'role': 'user', 'content': '請幫我製作教學圖片'}], 'tool-integration', False, False, False,
+            100, 0.7, 0.9, 1.0, request, 'u1', image_attachments=attachments, interface_language='zh-TW')]
+    assert observed['image_attachments'] is attachments
+    assert observed['interface_language'] == 'zh-TW'
+    assert 'private.png' in ''.join(events)
+    assert 'data: [DONE]' in ''.join(events)
+    visual_search.assert_not_awaited()

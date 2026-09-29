@@ -2557,7 +2557,7 @@ export const MessageItem = memo(function MessageItem({
           {/* Bubble Wrapper */}
           <div className={cx(styles.bubbleWrapper, 'bubbleWrapper')}>
             {/* RAG Status Panel - Should be at the top and only visible before thinking or content starts */}
-            {ragInfo && ragInfo.status !== 'idle' && ragInfo.status !== 'done' && !thinking?.isThinking && !thinking?.content && !message.content && (
+            {!isImageGenerationPending && ragInfo && ragInfo.status !== 'idle' && ragInfo.status !== 'done' && !thinking?.isThinking && !thinking?.content && !message.content && (
               <RAGStatusPanel ragInfo={ragInfo} />
             )}
 

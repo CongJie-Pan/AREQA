@@ -322,3 +322,26 @@ async def generate_teaching_image(
         caption=caption, cost_usd=cost_usd, transient=True,
         vision_summary=summary, how_to_read=how_to_read,
     )
+
+
+def generated_image_block(result: GeneratedImage, *, image_id: str, prompt: str, language: str, reference_brief: str = "") -> dict:
+    """Use the same private-storage display contract for all generation entry points."""
+    return {
+        "type": "image_block", "slotId": image_id, "topic": result.caption,
+        "purpose": "diagram", "imageUrl": result.image_url,
+        "thumbnailUrl": result.image_url, "sourceUrl": "",
+        "sourceDomain": "", "caption": result.caption,
+        "provider": "generated_image",
+        "generationRequest": {
+            "prompt": prompt, "language": language,
+            "referenceBrief": reference_brief,
+        },
+        "safetyStatus": "pass", "matchConfidence": 1.0,
+        "transient": result.transient,
+        "storageBucket": result.storage_bucket,
+        "storagePath": result.storage_path,
+        "storageExpiresAt": result.storage_expires_at,
+        "visionSummary": result.vision_summary,
+        "howToRead": list(result.how_to_read),
+        "explanatoryCaption": result.vision_summary,
+    }

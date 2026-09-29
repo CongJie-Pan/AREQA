@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 InterfaceLanguage = str
 
 class OrchestrationStreamingMixin:
-    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None, trace: Optional[TurnLatencyTrace] = None, max_image_slots: int = 2) -> AsyncGenerator[str, None]:
+    async def _node_llm_stream(self, user_id: str, conversation_id: str, last_user_msg: str, messages: List[Dict[str, Any]], force_think: bool, max_tokens: int, temperature: float, top_p: float, repetition_penalty: float, request: Request, tool_budget=None, trace: Optional[TurnLatencyTrace] = None, max_image_slots: int = 2, image_attachments=None, interface_language: str = "zh-TW") -> AsyncGenerator[str, None]:
         """
         Execute the main LLM generation stream, handling tool calls and yielding tokens.
 
@@ -73,6 +73,8 @@ class OrchestrationStreamingMixin:
             tool_budget=tool_budget,
             trace=trace,
             max_image_slots=max_image_slots,
+            image_attachments=image_attachments,
+            interface_language=interface_language,
         ):
             yield event
 

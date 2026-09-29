@@ -11,6 +11,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List
 
+from services.conversation.image_generation import IMAGE_TOOL, stream_generated_image
+from services.conversation_context_service import resolve_answer_language
 from core import PublicAnswerFilter
 from services.response_boundary_validator import StreamingResponseBoundaryFilter
 
@@ -377,6 +379,8 @@ class ConversationStreamService:
         tool_budget: Any = None,
         trace: Any = None,
         max_image_slots: int = 2,
+        image_attachments: list[Any] | None = None,
+        interface_language: str = "zh-TW",
     ) -> AsyncGenerator[str, None]:
         """Yield filtered answer deltas and typed metadata events.
 
@@ -438,7 +442,17 @@ class ConversationStreamService:
         if force_think:
             extra_body["reasoning"] = {"enabled": True, "max_tokens": 512}
 
-        tools = [{
+        image_tool = {
+            **IMAGE_TOOL,
+            "function": {
+                **IMAGE_TOOL["function"],
+                "description": IMAGE_TOOL["function"]["description"] + (
+                    " For this turn, preserve the full source content when compiling the drawing specification. "
+                    "Image label language: " + resolve_answer_language(interface_language, last_user_msg, prefer_query_language=True) + "."
+                ),
+            },
+        }
+        tools = [image_tool, {
             "type": "function",
             "function": {
                 "name": "send_epistolary_letter",
@@ -461,6 +475,8 @@ class ConversationStreamService:
         boundary_filter = StreamingResponseBoundaryFilter()
         tool_call_name = ""
         tool_call_args = ""
+        tool_calls: dict[int, dict[str, str]] = {}
+        generated_blocks: list[dict] = []
         logger.info(
             "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s image_slot_cap=%s openrouter_session=%s latency_routing=%s",
             conversation_id,
@@ -503,10 +519,12 @@ class ConversationStreamService:
                     continue
                 delta = chunk.choices[0].delta
                 if getattr(delta, "tool_calls", None):
-                    function = getattr(delta.tool_calls[0], "function", None)
-                    if function:
-                        tool_call_name = getattr(function, "name", None) or tool_call_name
-                        tool_call_args += getattr(function, "arguments", None) or ""
+                    for call in delta.tool_calls:
+                        entry = tool_calls.setdefault(getattr(call, "index", 0), {"name": "", "arguments": ""})
+                        function = getattr(call, "function", None)
+                        if function:
+                            entry["name"] += getattr(function, "name", None) or ""
+                            entry["arguments"] += getattr(function, "arguments", None) or ""
                     continue
                 content = getattr(delta, "content", None) or ""
                 if content:
@@ -589,6 +607,24 @@ class ConversationStreamService:
         if trace:
             trace.mark_once("main_model_finished")
 
+        for call in tool_calls.values():
+            if call["name"] == "generate_image" and not generated_blocks:
+                accumulator = ""
+                async for block in stream_generated_image(
+                    arguments=call["arguments"], user_id=user_id, conversation_id=conversation_id,
+                    language=interface_language, attachments=image_attachments or [], request=request,
+                    latest_request=last_user_msg,
+                ):
+                    if block.get("heartbeat"):
+                        yield ": heartbeat\n\n"
+                    else:
+                        generated_blocks = [block]
+                        yield f"event: answer_blocks\ndata: {json.dumps(generated_blocks, ensure_ascii=False)}\n\n"
+            elif call["name"] == "send_epistolary_letter":
+                tool_call_name, tool_call_args = call["name"], call["arguments"]
+        if await request.is_disconnected():
+            return
+
         if tool_call_name == "send_epistolary_letter" and tool_call_args:
             try:
                 arguments = json.loads(tool_call_args)
@@ -618,7 +654,7 @@ class ConversationStreamService:
                     )
             except Exception as exc:
                 logger.warning("orchestration.mail_tool_failed reason=%s", type(exc).__name__)
-        yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator, 'image_slots': [slot.to_payload() for slot in image_marker_filter.slots]}, ensure_ascii=False)}\n\n"
+        yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator, 'image_slots': [slot.to_payload() for slot in image_marker_filter.slots], 'generated_blocks': generated_blocks}, ensure_ascii=False)}\n\n"
 
 
 def _openrouter_session_id(conversation_id: str) -> str:

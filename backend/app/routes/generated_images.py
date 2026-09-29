@@ -15,7 +15,7 @@ from config import settings
 from services.attachments.storage import AttachmentImageStorageService
 from services.generated_image_quota import consume_image_quota
 from services.message_intent_service import MessageIntentRequest, MessageIntent, classify_message_intent
-from services.generated_image_service import generate_teaching_image, prepare_image_reference
+from services.generated_image_service import generate_teaching_image, prepare_image_reference, generated_image_block
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -114,25 +114,7 @@ async def generate_image_endpoint(
         raise HTTPException(status_code=503, detail="Image generation is unavailable") from error
 
     return {
-        "block": {
-            "type": "image_block", "slotId": image_id, "topic": result.caption,
-            "purpose": "diagram", "imageUrl": result.image_url,
-            "thumbnailUrl": result.image_url, "sourceUrl": "",
-            "sourceDomain": "", "caption": result.caption,
-            "provider": "generated_image",
-            "generationRequest": {
-                "prompt": payload.prompt, "language": payload.interface_language,
-                "referenceBrief": payload.reference_brief,
-            },
-            "safetyStatus": "pass", "matchConfidence": 1.0,
-            "transient": result.transient,
-            "storageBucket": result.storage_bucket,
-            "storagePath": result.storage_path,
-            "storageExpiresAt": result.storage_expires_at,
-            "visionSummary": result.vision_summary,
-            "howToRead": list(result.how_to_read),
-            "explanatoryCaption": result.vision_summary,
-        },
+        "block": generated_image_block(result, image_id=image_id, prompt=payload.prompt, language=payload.interface_language, reference_brief=payload.reference_brief),
         "cost_usd": result.cost_usd,
     }
 

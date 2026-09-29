@@ -278,7 +278,12 @@ function formatAttachmentContext(attachments: AttachmentMetadata[] | undefined):
 }
 
 function messageContentForAPI(message: DisplayMessage): string {
-  return `${message.content}${formatAttachmentContext(message.attachments)}`;
+  const generatedContext = (message.answerBlocks ?? []).flatMap((block) =>
+    block.type === 'image_block' && block.provider === 'generated_image' && block.imageUrl
+      ? [`[Generated image context] ${block.visionSummary || block.generationRequest?.prompt || ''}`]
+      : []
+  ).join('\n');
+  return `${message.content}${formatAttachmentContext(message.attachments)}${generatedContext ? `\n${generatedContext}` : ''}`;
 }
 
 function prepareMessagesForAPI(
@@ -289,7 +294,7 @@ function prepareMessagesForAPI(
   const mappedMessages = messages
     .filter((msg) => !excludeMessageId || msg.id !== excludeMessageId)
     .filter((msg) => !conversationId || msg.conversationId === conversationId)
-    .filter((msg) => !(msg.role === 'assistant' && msg.content.trim() === ''))
+    .filter((msg) => !(msg.role === 'assistant' && messageContentForAPI(msg).trim() === ''))
     .map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: messageContentForAPI(msg),
@@ -516,7 +521,11 @@ export async function sendMessage(
     if (thinkingContent) messageData.reasoning = { content: thinkingContent, duration: thinkingDuration };
     if (citations.length > 0) messageData.citations = citations;
     if (sourcesPayload.length > 0) messageData.sources = sourcesPayload;
-    const answerBlocksForPersistence = persistentAnswerBlocks(answerBlocksPayload);
+    const answerBlocksForPersistence = persistentAnswerBlocks(answerBlocksPayload.map((block): AnswerBlock =>
+      block.type === 'image_block' && block.provider === 'generated_image' && block.transient
+        ? { ...block, imageUrl: '', thumbnailUrl: '', transient: false, status: 'error', caption: '圖片未永久儲存，請重新生成' }
+        : block
+    ));
     if (answerBlocksForPersistence) messageData.answerBlocks = answerBlocksForPersistence;
     if (suggestionsList.length > 0) messageData.suggestions = suggestionsList;
     if (shouldPersist) {
@@ -526,7 +535,7 @@ export async function sendMessage(
       });
     }
     if (shouldPersist) updateConversationPreviewInStore(conversationIdForSave, answerContent, 2);
-    if (shouldPersist && messages.length === 1 && answerContent) {
+    if (shouldPersist && messages.length === 1 && (answerContent || answerBlocksPayload.some((block) => block.type === 'image_block' && block.provider === 'generated_image'))) {
       useConversationStore.getState().generateTitle(conversationIdForSave, [
         ...messages, { role: 'assistant', content: answerContent },
       ]);
@@ -582,7 +591,16 @@ export async function sendMessage(
       },
 
       onAnswerBlocks: (blocks: AnswerBlock[]) => {
+        if (abortSignal.aborted) return;
         answerBlocksPayload = blocks;
+        if (blocks.some((block) => block.type === 'image_block' && block.provider === 'generated_image')) {
+          answerContent = blocks.some((block) => block.type === 'image_block' && block.provider === 'generated_image' && block.transient)
+            ? '圖片已產生，但暫時無法儲存；請先下載。' : '';
+          chatStore.endThinking();
+          chatStore.setRagStatus('generating');
+          chatStore.updateMessageContent(assistantMessageId, answerContent);
+          useChatStore.setState({ currentContent: answerContent });
+        }
         chatStore.setAnswerBlocks(blocks);
       },
 
@@ -596,6 +614,7 @@ export async function sendMessage(
       },
 
       onDone: async (suggestions?: string[]) => {
+        if (abortSignal.aborted) return;
         completed = true;
         if (suggestions && suggestions.length > 0) {
           suggestionsList = suggestions;
@@ -609,6 +628,14 @@ export async function sendMessage(
       },
 
       onError: (error: Error) => {
+        if (answerBlocksPayload.some((block) => block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending')) {
+          answerBlocksPayload = answerBlocksPayload.map((block): AnswerBlock =>
+            block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending'
+              ? { ...block, status: 'error', caption: '圖片生成連線中斷，請稍後重試' }
+              : block
+          );
+          chatStore.setAnswerBlocks(answerBlocksPayload);
+        }
         chatStore.setError(error);
         chatStore.endStreaming();
         currentAbortController = null;
@@ -737,7 +764,13 @@ export async function cancelCurrentStream(): Promise<void> {
   const thinkingContent = chatStore.thinkingContent;
   const thinkingStartTime = chatStore.thinkingStartTime;
   const currentContent = chatStore.currentContent;
-  const hasAssistantContent = Boolean(currentContent || thinkingContent);
+  const cancelledBlocks = (chatStore.currentAnswerBlocks ?? []).map((block): AnswerBlock =>
+    block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending'
+      ? { ...block, status: 'error', caption: '圖片生成已停止' }
+      : block
+  );
+  const hasAssistantContent = Boolean(currentContent || thinkingContent || cancelledBlocks.length);
+  if (cancelledBlocks.length) chatStore.setAnswerBlocks(cancelledBlocks);
 
   // If we're in thinking phase, save the accumulated thinking content to the message
   if (hasThinkingContent) {
@@ -758,6 +791,7 @@ export async function cancelCurrentStream(): Promise<void> {
       const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
         role: 'assistant',
         content: currentContent || '',
+        answerBlocks: persistentAnswerBlocks(cancelledBlocks),
       };
 
       // Include thinking/reasoning if we have it

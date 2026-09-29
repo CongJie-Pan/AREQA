@@ -5,7 +5,6 @@ import React from 'react';
 import { createRequire } from 'node:module';
 import type * as TS from 'typescript';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveMessageRoute } from '@/services/messageIntent';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { useChatStore } from '@/store/chat';
 
@@ -52,80 +51,36 @@ describe('ChatContainer executable send boundary', () => {
     useChatStore.setState({ messages: [] });
   });
 
-  it('sends ordinary text through the actual fallback resolver when classification returns 503', async () => {
-    const { scope, send } = setup();
-    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
-    scope.resolveMessageRoute.mockImplementation(resolveMessageRoute);
-    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
-    expect(await send('你好，請解釋效果量', [file])).toEqual({ completed: true });
-    expect(scope.sendMessage).toHaveBeenCalledWith('你好，請解釋效果量', 'conv-a', [file]);
-    expect(scope.generateConversationImage).not.toHaveBeenCalled();
-    expect(scope.antMessageApi.error).not.toHaveBeenCalled();
+  it('does not insert routing status as a sibling of the message list', () => {
+    const source = readFileSync(filename, 'utf8');
+    expect(source).not.toContain('Understanding your request');
+    expect(source).not.toContain('isRoutingMessage && <p');
   });
 
-  it('delivers typed chat to the voice session after classifier failure', async () => {
+  it.each(['', '請解釋這張圖', '請分析附件', '幫我產圖', '隨便一句包含圖的文字'])('sends every untagged request through the same chat pipeline: %s', async (content) => {
+    const { scope, send } = setup();
+    const file = new File(['source'], 'source.png', { type: 'image/png' });
+    expect(await send(content, [file])).toEqual({ completed: true });
+    expect(scope.sendMessage).toHaveBeenCalledWith(content, 'conv-a', [file]);
+    expect(scope.resolveMessageRoute).not.toHaveBeenCalled();
+    expect(authenticatedFetch).not.toHaveBeenCalled();
+    expect(scope.generateConversationImage).not.toHaveBeenCalled();
+  });
+
+  it('delivers typed chat to the independently owned voice session', async () => {
     const { scope, send } = setup();
     const voiceSend = vi.fn().mockResolvedValue({ completed: true });
     scope.useLiveTutorStore.getState = () => ({ isOpen: true, sendVoiceMessage: voiceSend });
-    scope.resolveMessageRoute.mockImplementation(resolveMessageRoute);
-    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
     expect(await send('你好')).toEqual({ completed: true });
     expect(voiceSend).toHaveBeenCalledWith('你好', []);
-    expect(scope.sendMessage).not.toHaveBeenCalled();
-    expect(scope.generateConversationImage).not.toHaveBeenCalled();
+    expect(scope.resolveMessageRoute).not.toHaveBeenCalled();
   });
 
-  it('keeps image requests explicit when the actual classifier is unavailable', async () => {
-    const { scope, send } = setup();
-    scope.resolveMessageRoute.mockImplementation(resolveMessageRoute);
-    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
-    await expect(send('幫我產圖')).rejects.toThrow('503');
-    expect(scope.sendMessage).not.toHaveBeenCalled();
-    expect(scope.generateConversationImage).not.toHaveBeenCalled();
-  });
-  it('dispatches an untagged upload generation decision to the existing image lifecycle', async () => {
-    const { scope, send } = setup();
-    const file = new File(['png'], 'source.png', { type: 'image/png' });
-    scope.resolveMessageRoute.mockResolvedValue({ createImage: true, attachments: [file] });
-    await send('幫我產圖', [file]);
-    expect(scope.generateConversationImage).toHaveBeenCalledWith('幫我產圖', 'conv-a', 'zh-TW', true, { attachments: [file], referenceBrief: undefined });
-    expect(scope.sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('keeps text decisions and attachments in the normal chat pipeline', async () => {
-    const { scope, send } = setup();
-    const file = new File(['png'], 'source.png', { type: 'image/png' });
-    scope.resolveMessageRoute.mockResolvedValue({ createImage: false, attachments: [file] });
-    await send('請解釋這張圖', [file]);
-    expect(scope.sendMessage).toHaveBeenCalledWith('請解釋這張圖', 'conv-a', [file]);
-    expect(scope.generateConversationImage).not.toHaveBeenCalled();
-  });
-
-  it('bypasses semantic classification for an explicit image tag', async () => {
+  it('keeps the explicit image tag on its existing image lifecycle', async () => {
     const { scope, send } = setup();
     await send('畫一隻貓', [], { createImage: true });
     expect(scope.resolveMessageRoute).not.toHaveBeenCalled();
-    expect(scope.generateConversationImage).toHaveBeenCalledOnce();
-  });
-
-  it('does not execute a late image decision after cancellation', async () => {
-    const { scope, send } = setup();
-    scope.resolveMessageRoute.mockImplementation(async () => {
-      scope.routingController.current?.abort();
-      return { createImage: true, attachments: [] };
-    });
-    expect(await send('畫一隻貓')).toEqual({ completed: false, cancelled: true });
-    expect(scope.generateConversationImage).not.toHaveBeenCalled();
+    expect(scope.generateConversationImage).toHaveBeenCalledWith('畫一隻貓', 'conv-a', 'zh-TW', true, { attachments: [] });
     expect(scope.sendMessage).not.toHaveBeenCalled();
-    expect(scope.routingController.current).toBeNull();
-  });
-
-  it('surfaces classifier failure and never silently falls back to text', async () => {
-    const { scope, send } = setup();
-    scope.resolveMessageRoute.mockRejectedValue(new Error('Routing unavailable'));
-    await expect(send('幫我產圖')).rejects.toThrow('Routing unavailable');
-    expect(scope.sendMessage).not.toHaveBeenCalled();
-    expect(scope.generateConversationImage).not.toHaveBeenCalled();
-    expect(scope.antMessageApi.error).toHaveBeenCalledOnce();
   });
 });
