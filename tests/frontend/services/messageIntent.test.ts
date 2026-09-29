@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveMessageRoute } from '@/services/messageIntent';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { useChatStore } from '@/store/chat';
@@ -11,6 +11,7 @@ const decision = (intent: string, reference = 'none', reference_message_id: stri
 const run = (text = '幫我產圖', files: File[] = [], signal = new AbortController().signal) => resolveMessageRoute(text, 'conv-a', files, signal);
 
 describe('semantic send routing contract', () => {
+  afterEach(() => { vi.useRealTimers(); });
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(getCurrentUserId).mockReturnValue('user-a');
@@ -107,6 +108,39 @@ describe('semantic send routing contract', () => {
     }] }] });
     vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
     await expect(run('改成紅色')).rejects.toThrow('503');
+  });
+
+  it('releases ordinary text after four seconds even if classification never settles', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: Response) => void;
+    vi.mocked(authenticatedFetch).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const work = run('你好');
+    const requestSignal = vi.mocked(authenticatedFetch).mock.calls[0][1]?.signal;
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(await work).toEqual({ createImage: false, attachments: [] });
+    expect(requestSignal?.aborted).toBe(true);
+    finish(decision('generate_image'));
+    await Promise.resolve();
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('settles cancellation immediately when the classifier ignores abort', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const work = run('你好', [], controller.signal);
+    controller.abort();
+    await expect(work).rejects.toThrow();
+  });
+
+  it('bounds image classification without changing it into a text send', async () => {
+    vi.useFakeTimers();
+    vi.mocked(authenticatedFetch).mockImplementation(() => new Promise(() => {}));
+    const work = run('幫我產圖');
+    const assertion = expect(work).rejects.toThrow('逾時');
+    await vi.advanceTimersByTimeAsync(15000);
+    await assertion;
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('surfaces unavailable routing instead of executing a different action', async () => {

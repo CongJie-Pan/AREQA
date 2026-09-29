@@ -63,6 +63,18 @@ describe('ChatContainer executable send boundary', () => {
     expect(scope.antMessageApi.error).not.toHaveBeenCalled();
   });
 
+  it('delivers typed chat to the voice session after classifier failure', async () => {
+    const { scope, send } = setup();
+    const voiceSend = vi.fn().mockResolvedValue({ completed: true });
+    scope.useLiveTutorStore.getState = () => ({ isOpen: true, sendVoiceMessage: voiceSend });
+    scope.resolveMessageRoute.mockImplementation(resolveMessageRoute);
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response('', { status: 503 }));
+    expect(await send('你好')).toEqual({ completed: true });
+    expect(voiceSend).toHaveBeenCalledWith('你好', []);
+    expect(scope.sendMessage).not.toHaveBeenCalled();
+    expect(scope.generateConversationImage).not.toHaveBeenCalled();
+  });
+
   it('keeps image requests explicit when the actual classifier is unavailable', async () => {
     const { scope, send } = setup();
     scope.resolveMessageRoute.mockImplementation(resolveMessageRoute);

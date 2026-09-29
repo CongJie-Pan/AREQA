@@ -16,6 +16,34 @@ export interface MessageRoute {
 const VISUAL_CUES = /圖|图|畫|画|繪|绘|水彩|素描|海報|海报|照片|插畫|一張|一张|\b(?:image|picture|photo|draw|drawing|illustration|illustrate|poster|diagram|infographic|sketch|paint|painting|watercolou?r|render|logo|icon)\b/i;
 const VISUAL_FOLLOW_UP = /改|換|换|變|变|再來|再来|重做|\b(?:change|modify|make|convert|turn|another|again|redo)\b/i;
 
+/** Bound the whole classifier operation, including auth, network and response body.
+ * Cancellation settles immediately even if a transport ignores its abort signal.
+ */
+async function withRoutingDeadline<T>(
+  operation: (signal: AbortSignal) => Promise<T>, signal: AbortSignal, timeoutMs: number,
+): Promise<T> {
+  signal.throwIfAborted();
+  const controller = new AbortController();
+  let rejectDeadline!: (reason: unknown) => void;
+  const deadline = new Promise<never>((_, reject) => { rejectDeadline = reject; });
+  const cancel = () => {
+    controller.abort(signal.reason);
+    rejectDeadline(signal.reason);
+  };
+  signal.addEventListener('abort', cancel, { once: true });
+  const timer = setTimeout(() => {
+    const error = new Error('訊息操作判斷逾時，請重試或選擇 Create Image。');
+    controller.abort(error);
+    rejectDeadline(error);
+  }, timeoutMs);
+  try {
+    return await Promise.race([operation(controller.signal), deadline]);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', cancel);
+  }
+}
+
 /** Resolve a send using only current-account, same-conversation reference hints.
  *
  * Args:
@@ -43,33 +71,35 @@ export async function resolveMessageRoute(
     const image = message.answerBlocks?.find((block): block is ImageBlock => block.type === 'image_block' && block.provider === 'generated_image' && Boolean(block.imageUrl));
     return { id: message.id, role: message.role, content: (image?.generationRequest?.prompt || message.content).slice(0, 1800), has_image: Boolean(image) };
   });
+  const hasRecentImage = context.some((item) => item.has_image);
+  const visualRequestPossible = VISUAL_CUES.test(content) || (hasRecentImage && VISUAL_FOLLOW_UP.test(content));
   let status: number | undefined;
   let result: { intent: string; reference: string; reference_message_id?: string | null };
   try {
-    const response = await authenticatedFetch('/api/images/intent', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
-      body: JSON.stringify({ prompt: content, attachment_count: attachments.length, context }),
-    });
-    signal.throwIfAborted();
-    if (getCurrentUserId() !== ownerId) throw new Error('Message owner changed');
-    status = response.status;
-    if (!response.ok) throw new Error(`無法判斷此次訊息的操作，請稍後重試（${status}）。`);
-    const payload: unknown = await response.json();
-    if (!payload || typeof payload !== 'object') throw new Error('訊息操作判斷無效，請重試。');
-    const value = payload as Record<string, unknown>;
-    if (!['chat', 'generate_image', 'clarify'].includes(String(value.intent))
-      || !['none', 'attachments', 'conversation'].includes(String(value.reference))
-      || (value.reference_message_id != null && typeof value.reference_message_id !== 'string')) {
-      throw new Error('訊息操作判斷無效，請重試。');
-    }
-    result = value as typeof result;
+    result = await withRoutingDeadline(async (requestSignal) => {
+      const response = await authenticatedFetch('/api/images/intent', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: requestSignal,
+        body: JSON.stringify({ prompt: content, attachment_count: attachments.length, context }),
+      });
+      signal.throwIfAborted();
+      if (getCurrentUserId() !== ownerId) throw new Error('Message owner changed');
+      status = response.status;
+      if (!response.ok) throw new Error(`無法判斷此次訊息的操作，請稍後重試（${status}）。`);
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== 'object') throw new Error('訊息操作判斷無效，請重試。');
+      const value = payload as Record<string, unknown>;
+      if (!['chat', 'generate_image', 'clarify'].includes(String(value.intent))
+        || !['none', 'attachments', 'conversation'].includes(String(value.reference))
+        || (value.reference_message_id != null && typeof value.reference_message_id !== 'string')) {
+        throw new Error('訊息操作判斷無效，請重試。');
+      }
+      return value as typeof result;
+    }, signal, visualRequestPossible ? 15000 : 4000);
   } catch (error) {
     // Cancellation/account changes and auth/input errors must never become a send.
     signal.throwIfAborted();
     if (getCurrentUserId() !== ownerId) throw new Error('Message owner changed');
     const unavailable = status === undefined || status === 200 || status === 404 || status === 429 || status >= 500;
-    const hasRecentImage = context.some((item) => item.has_image);
-    const visualRequestPossible = VISUAL_CUES.test(content) || (hasRecentImage && VISUAL_FOLLOW_UP.test(content));
     if (unavailable && !visualRequestPossible) {
       logger.warn('message_route_chat_fallback', { status, reason: error instanceof Error ? error.name : 'UnknownError', conversationId });
       return { createImage: false, attachments };
