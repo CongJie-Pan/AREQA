@@ -703,16 +703,19 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
         answerBlocks: [{
           type: 'image_block', slotId: 'generated-1', topic: '細胞', purpose: 'diagram',
           imageUrl: 'https://example.com/generated.png', sourceUrl: '', sourceDomain: '',
-          caption: '細胞結構', provider: 'generated_image', model: 'qwen/qwen-image-3-pro',
+          caption: '細胞結構', attributionCaption: '請畫細胞結構', explanatoryCaption: '請畫細胞結構',
+          provider: 'generated_image', model: 'qwen/qwen-image-3-pro',
           safetyStatus: 'pass', matchConfidence: 1,
         }],
       }} />,
     );
-    expect(screen.getByAltText('細胞結構')).toHaveAttribute('src', 'https://example.com/generated.png');
+    expect(screen.getByAltText('請畫細胞結構')).toHaveAttribute('src', 'https://example.com/generated.png');
+    expect(screen.queryByText('請畫細胞結構')).not.toBeInTheDocument();
     expect(screen.getByText('AI 生成')).toBeInTheDocument();
     expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
     expect(screen.queryByText('來源')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByAltText('細胞結構').closest('button')!);
+    fireEvent.click(screen.getByAltText('請畫細胞結構').closest('button')!);
+    expect(screen.queryByText('請畫細胞結構')).not.toBeInTheDocument();
     expect(screen.queryByText('qwen/qwen-image-3-pro')).not.toBeInTheDocument();
   });
 
@@ -727,6 +730,8 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('正在產生圖片…')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重新生成訊息' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '刪除對話' })).not.toBeInTheDocument();
+    expect(screen.getByText('你可以隨時停止生成。')).toBeInTheDocument();
+    expect(screen.getByTestId('answer-image-skeleton')).toBeInTheDocument();
   });
 
   it('shows an image load error and renews the stored URL when retrying', async () => {

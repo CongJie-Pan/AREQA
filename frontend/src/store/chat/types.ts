@@ -59,6 +59,12 @@ export interface ChatState {
   // Streaming state
   /** Whether currently receiving streamed response */
   isStreaming: boolean;
+  /** Transient image jobs, isolated from text and voice streaming state. */
+  imageGenerationRequests: Record<string, {
+    userId: string;
+    conversationId: string | null;
+    assistantMessageId: string | null;
+  }>;
   /** ID of message currently being streamed */
   currentStreamingId: string | null;
 

@@ -507,6 +507,41 @@ describe('ChatInput', () => {
     expect(onStop).toHaveBeenCalledTimes(1);
   });
 
+  it('shows Stop for image preparation and prevents Enter from sending another turn', () => {
+    const onStop = vi.fn();
+    render(<ChatInput onSend={mockOnSend} isGeneratingImage onStop={onStop} />);
+    expect(screen.queryByLabelText('發送訊息')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '另一個請求' } });
+    fireEvent.keyDown(screen.getByLabelText('訊息輸入框'), { key: 'Enter' });
+    expect(mockOnSend).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText('停止生成'));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it('stops the image instead of closing live voice when both are active', () => {
+    const onStop = vi.fn();
+    const onCloseLiveVoice = vi.fn();
+    render(<ChatInput onSend={mockOnSend} isGeneratingImage onStop={onStop} isLiveVoiceActive onCloseLiveVoice={onCloseLiveVoice} />);
+    fireEvent.click(screen.getByLabelText('停止生成'));
+    expect(onStop).toHaveBeenCalledOnce();
+    expect(onCloseLiveVoice).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('結束語音')).not.toBeInTheDocument();
+  });
+
+  it('does not restore an intentionally cancelled image draft over the next turn', async () => {
+    let finish!: (result: { completed: boolean; cancelled: boolean }) => void;
+    mockOnSend.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    render(<ChatInput onSend={mockOnSend} />);
+    fireEvent.click(screen.getByLabelText('新增'));
+    fireEvent.click(await screen.findByText('Create Image'));
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '畫一張細胞圖' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '新的草稿' } });
+    finish({ completed: false, cancelled: true });
+    await waitFor(() => expect(screen.getByLabelText('訊息輸入框')).toHaveValue('新的草稿'));
+    expect(screen.queryByLabelText('Cancel Create Image')).not.toBeInTheDocument();
+  });
+
   it('should replace the voice and send controls while live voice is active', () => {
     const onToggleLiveVoiceMute = vi.fn();
     const onToggleLiveVoiceAvatar = vi.fn();

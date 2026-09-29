@@ -15,6 +15,7 @@ import { useConversationStore, conversationSelectors } from '@/store/conversatio
 import { sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage, editAssistantMessage, deleteLatestConversationTurn } from '@/services/chat';
 import { ConversationList } from '@/components/ConversationList';
 import { MessageList } from '@/components/MessageList';
+import { ImageGenerationLoading } from '@/components/MessageList/ImageGenerationLoading';
 import { ChatInput } from '@/components/ChatInput';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
@@ -32,7 +33,7 @@ import { syncService } from '@/services/syncService';
 import { databaseService } from '@/services/database';
 import { db } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import { generateConversationImage } from '@/services/generatedImages';
+import { cancelConversationImage, generateConversationImage } from '@/services/generatedImages';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
@@ -140,6 +141,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   // Get state from stores
   const isStreaming = useChatStore((state) => state.isStreaming);
+  const imageGenerationRequests = useChatStore((state) => state.imageGenerationRequests);
   const error = useChatStore((state) => state.error);
   const setError = useChatStore((state) => state.setError);
   const messages = useChatStore(chatSelectors.displayMessages);
@@ -161,8 +163,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const activeConversationId = useConversationStore(
     (state) => state.activeConversationId
   );
+  const activeImageRequest = Object.values(imageGenerationRequests ?? {}).find((request) => (
+    request.userId === user?.id && request.conversationId === activeConversationId
+  ));
+  const isGeneratingImage = Boolean(activeImageRequest);
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
-  const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading;
+  const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading && !isGeneratingImage;
   const landingPromptSent = useRef(false);
 
   const toggleLiveTutorMute = useCallback(() => {
@@ -345,14 +351,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
             setShowAuthPrompt(true);
             return { completed: false };
           }
-          const dismissLoading = attachments.length
-            ? antMessageApi.loading(language === 'en' ? 'Preparing image references…' : '正在整理附件並產生圖片…', 0)
-            : undefined;
-          try {
-            return await generateConversationImage(content, activeConversationId || undefined, language, true, { attachments });
-          } finally {
-            dismissLoading?.();
-          }
+          return await generateConversationImage(content, activeConversationId || undefined, language, true, { attachments });
         }
         const voiceMessage = useLiveTutorStore.getState().isOpen;
         const result = voiceMessage
@@ -512,10 +511,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
     setShowAuthPrompt(false);
   }, []);
 
-  // Handle stop streaming
+  // Image cancellation must not interrupt the independently owned voice/text stream.
   const handleStop = useCallback(async () => {
+    if (cancelConversationImage(activeConversationId) || isGeneratingImage) return;
     await cancelCurrentStream();
-  }, []);
+  }, [activeConversationId, isGeneratingImage]);
 
   // Handle regenerate message
   const handleRegenerate = useCallback(async (messageId: string) => {
@@ -767,10 +767,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     isLiveTutorOpen && 'areqa-chat-message-area-live-tutor',
                     styles.messageArea,
                     isLiveTutorOpen && styles.messageAreaLiveTutor,
-                    hideLiveTutorMessages && styles.messageAreaLiveTutorEmpty,
+                    hideLiveTutorMessages && !isGeneratingImage && styles.messageAreaLiveTutorEmpty,
                   )}
                 >
-                  {!isEmptyLiveTutor && (
+                  {activeImageRequest && !activeImageRequest.assistantMessageId ? (
+                    <ImageGenerationLoading caption={language === 'en' ? 'Preparing image…' : language === 'zh-CN' ? '正在准备图片…' : '正在準備圖片…'} />
+                  ) : !isEmptyLiveTutor && (
                     <MessageList
                       liveVoice={isLiveTutorOpen}
                       onRegenerate={handleRegenerate}
@@ -791,13 +793,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   <ChatInput
                     key={activeConversationId ?? 'new'}
                     onSend={handleSend}
-                    disabled={isStreaming && !isLiveTutorOpen}
+                    disabled={(isStreaming && !isLiveTutorOpen) || isGeneratingImage}
                     placeholder={
                       isStreaming
                         ? t('thinkingPlaceholder')
                         : t('askPlaceholder')
                     }
                     isStreaming={isStreaming}
+                    isGeneratingImage={isGeneratingImage}
                     onStop={handleStop}
                     onOpenLiveTutor={openLiveTutor}
                     isLiveVoiceActive={isLiveTutorOpen}

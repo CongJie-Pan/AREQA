@@ -30,6 +30,7 @@ import type {
   MessageFeedbackReason,
 } from '@/database/schema';
 import { useStyles } from './styles';
+import { ImageGenerationLoading } from './ImageGenerationLoading';
 import { normalizeDisplayMathBlocks, normalizeLooseStrongMarkers, rehypeMathSource } from '@/utils/markdownMath';
 import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
@@ -1493,9 +1494,9 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
   const displayCaption = isPdfAttachmentImage
     ? localizePdfAttachmentCaption(rawDisplayCaption, language, t)
     : rawDisplayCaption;
-  // PDF planner captions can contain model-authored English metadata; the main
-  // answer text already explains the attachment visual in the user's language.
-  const displayExplanatoryCaption = isPdfAttachmentImage ? '' : block.explanatoryCaption;
+  // PDF planner metadata and generated-image prompts are not visible captions.
+  // Keep generated intent available for accessibility and regeneration only.
+  const displayExplanatoryCaption = isPdfAttachmentImage || isGeneratedImage ? '' : block.explanatoryCaption;
   const sourceLabel = isPdfAttachmentImage ? t('pdfAttachmentSource') : isGeneratedImage ? 'AI 生成' : block.sourceDomain || 'source';
   const visualStatus = block.status || (block.imageUrl ? 'resolved' : 'pending');
   const imageFrameStyle = getImageAspectRatio(block);
@@ -1563,6 +1564,12 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
   };
 
   if (visualStatus === 'pending' || isRenewing) {
+    if (isGeneratedImage) {
+      const caption = isRenewing
+        ? language === 'en' ? 'Loading image…' : '正在載入圖片…'
+        : displayCaption;
+      return <ImageGenerationLoading caption={caption} frameStyle={imageFrameStyle} canStop={!isRenewing} />;
+    }
     return (
       <figure className={styles.answerImageCard} aria-label="圖片載入中">
         <div
@@ -1640,7 +1647,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
           />
         </button>
         <figcaption className={`${styles.answerImageCaption} ${isImageLoaded ? styles.answerImageCaptionVisible : ''}`}>
-          <span className={styles.answerImageCaptionText}>{displayCaption}</span>
+          {!isGeneratedImage && <span className={styles.answerImageCaptionText}>{displayCaption}</span>}
           <span className={styles.answerImageMetaLine}>
             <span>{sourceLabel}</span>
             {isPdfAttachmentImage ? (
@@ -1711,7 +1718,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
             )}
           </div>
           <div className={styles.answerImageLightboxMeta} onClick={(event) => event.stopPropagation()}>
-            <p className={styles.answerImageLightboxCaption}>{displayCaption}</p>
+            {!isGeneratedImage && <p className={styles.answerImageLightboxCaption}>{displayCaption}</p>}
             {displayExplanatoryCaption && <p>{displayExplanatoryCaption}</p>}
             {(block.attributionString || block.creator) && (
               <p>{block.attributionString || block.creator}</p>

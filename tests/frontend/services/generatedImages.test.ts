@@ -1,10 +1,12 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateConversationImage, regenerateConversationImage } from '@/services/generatedImages';
+import { cancelConversationImage, generateConversationImage, regenerateConversationImage } from '@/services/generatedImages';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { db, getCurrentUserId } from '@/database/db';
 import { messageRepo } from '@/database/repositories/messageRepo';
 import { useChatStore } from '@/store/chat';
+import { useConversationStore } from '@/store/conversation';
+import { databaseService } from '@/services/database';
 
 vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 vi.mock('@/database/db', async (importOriginal) => ({
@@ -12,7 +14,10 @@ vi.mock('@/database/db', async (importOriginal) => ({
   getCurrentUserId: vi.fn(() => 'user-a'),
 }));
 vi.mock('@/services/database', async () => ({
-  databaseService: { message: (await import('@/database/repositories/messageRepo')).messageRepo },
+  databaseService: {
+    message: (await import('@/database/repositories/messageRepo')).messageRepo,
+    conversation: { create: vi.fn() },
+  },
 }));
 vi.mock('@/services/syncService', () => ({
   syncService: { pushMessage: vi.fn(async () => true), pushConversation: vi.fn(async () => true) },
@@ -32,14 +37,140 @@ describe('generated image conversation workflow', () => {
     await db.messages.clear();
     await db.conversations.clear();
     useChatStore.getState().clearMessages();
+    useChatStore.getState().resetStreamingState();
+    useConversationStore.setState({ activeConversationId: null, conversations: [] });
+  });
+
+  it('renders a preparation card and marks the composer busy before user persistence completes', async () => {
+    let saveUser!: () => void;
+    const originalAdd = messageRepo.add.bind(messageRepo);
+    vi.spyOn(messageRepo, 'add').mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => { saveUser = resolve; });
+      return originalAdd(...args);
+    });
+    vi.mocked(authenticatedFetch).mockResolvedValue(response());
+    useChatStore.setState({ isStreaming: true, currentStreamingId: 'text-stream' });
+    const work = generateConversationImage('Draw a cat', 'conv-a', 'en');
+    expect(useChatStore.getState().messages.at(-1)).toMatchObject({
+      content: 'Preparing image…', isStreaming: false, answerBlocks: [{ status: 'pending' }],
+    });
+    expect(Object.values(useChatStore.getState().imageGenerationRequests)).toEqual([
+      expect.objectContaining({ conversationId: 'conv-a', userId: 'user-a' }),
+    ]);
+    expect(authenticatedFetch).not.toHaveBeenCalled();
+    saveUser();
+    expect((await work).completed).toBe(true);
+    expect(useChatStore.getState().imageGenerationRequests).toEqual({});
+    expect(useChatStore.getState()).toMatchObject({ isStreaming: true, currentStreamingId: 'text-stream' });
+  });
+
+  it('stops a request immediately and never publishes or saves a late provider result', async () => {
+    let finish!: (result: Response) => void;
+    vi.mocked(authenticatedFetch).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const work = generateConversationImage('Draw a cat', 'conv-a', 'en', false);
+    const signal = vi.mocked(authenticatedFetch).mock.calls[0][1]?.signal;
+    expect(cancelConversationImage('conv-a')).toBe(true);
+    expect(signal?.aborted).toBe(true);
+    expect(useChatStore.getState().imageGenerationRequests).toEqual({});
+    expect(await work).toMatchObject({ completed: false, cancelled: true });
+    const stopped = useChatStore.getState().messages.at(-1)!;
+    expect(stopped).toMatchObject({ content: 'Image generation stopped.', answerBlocks: [{ status: 'error', imageUrl: '' }] });
+    finish(response());
+    await Promise.resolve();
+    expect(useChatStore.getState().messages.at(-1)).toEqual(stopped);
+    expect((await db.messages.get(stopped.id))?.answerBlocks?.[0]).toMatchObject({ status: 'error', imageUrl: '' });
+  });
+
+  it('can stop while preparing a new conversation without selecting its late result', async () => {
+    let finish!: (conversation: Awaited<ReturnType<typeof databaseService.conversation.create>>) => void;
+    vi.mocked(databaseService.conversation.create).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const work = generateConversationImage('Draw a cat', undefined, 'en');
+    expect(Object.values(useChatStore.getState().imageGenerationRequests)).toEqual([
+      { userId: 'user-a', conversationId: null, assistantMessageId: null },
+    ]);
+    expect(cancelConversationImage(null)).toBe(true);
+    expect(await work).toMatchObject({ completed: false, cancelled: true });
+    finish({ id: 'late-conv', userId: 'user-a', title: 'New', createdAt: new Date(), updatedAt: new Date(), messageCount: 0 });
+    await Promise.resolve();
+    expect(useConversationStore.getState().activeConversationId).toBeNull();
+    expect(useChatStore.getState().messages).toEqual([]);
+    expect(authenticatedFetch).not.toHaveBeenCalled();
+  });
+
+  it('stops attachment preparation without generating an image from late reference data', async () => {
+    let finish!: (result: Response) => void;
+    vi.mocked(authenticatedFetch).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const work = generateConversationImage('Explain this attachment', 'conv-a', 'en', false, {
+      attachments: [new File(['source'], 'lesson.txt')],
+    });
+    expect(useChatStore.getState().messages.at(-1)?.content).toBe('Preparing image references…');
+    expect(cancelConversationImage('conv-a')).toBe(true);
+    expect(await work).toMatchObject({ cancelled: true });
+    finish(new Response(JSON.stringify({ reference_brief: 'Late reference' })));
+    await Promise.resolve();
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
+    const stopped = useChatStore.getState().messages.at(-1)!;
+    await expect(regenerateConversationImage(stopped.id)).rejects.toThrow('reference attachments');
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
+  });
+
+  it('cancels only the selected conversation and does not clear another active job', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation(() => new Promise(() => {}));
+    const first = generateConversationImage('Draw a cat', 'conv-a', 'en', false);
+    const second = generateConversationImage('Draw a dog', 'conv-b', 'en', false);
+    vi.mocked(getCurrentUserId).mockReturnValue('user-b');
+    expect(cancelConversationImage('conv-a')).toBe(false);
+    vi.mocked(getCurrentUserId).mockReturnValue('user-a');
+    expect(cancelConversationImage('conv-a')).toBe(true);
+    await first;
+    expect(Object.values(useChatStore.getState().imageGenerationRequests)).toEqual([
+      expect.objectContaining({ conversationId: 'conv-b' }),
+    ]);
+    expect(cancelConversationImage('conv-b')).toBe(true);
+    await second;
+    expect(useChatStore.getState().imageGenerationRequests).toEqual({});
+  });
+
+  it('preserves the original image when regeneration is stopped', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce(response());
+    await generateConversationImage('Draw a cat', 'conv-a', 'en', false);
+    const original = useChatStore.getState().messages.at(-1)!;
+    let finish!: (result: Response) => void;
+    vi.mocked(authenticatedFetch).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const work = regenerateConversationImage(original.id);
+    expect(cancelConversationImage('conv-a')).toBe(true);
+    await work;
+    finish(response({ ...storedBlock, imageUrl: 'https://example.test/late.png' }));
+    await Promise.resolve();
+    expect(useChatStore.getState().messages.at(-1)).toEqual(original);
+    expect((await db.messages.get(original.id))?.answerBlocks?.[0]).toMatchObject({ imageUrl: storedBlock.imageUrl });
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     await db.messages.clear();
     await db.messageSyncQueue.clear();
     await db.conversationSyncQueue.clear();
     await db.conversations.clear();
+  });
+
+  it('preserves user-before-image ordering when both placeholders are created in the same millisecond', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-29T00:00:00Z'));
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce(response());
+    await generateConversationImage('Draw a cat', 'conv-a', 'en');
+    const saved = await messageRepo.getByConversationId('conv-a', 'user-a');
+    expect(saved.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(saved[1].createdAt.getTime()).toBeGreaterThan(saved[0].createdAt.getTime());
+  });
+
+  it('releases preparation state and surfaces conversation creation failure to the caller', async () => {
+    vi.mocked(databaseService.conversation.create).mockRejectedValueOnce(new Error('storage unavailable'));
+    await expect(generateConversationImage('Draw a cat', undefined, 'en')).rejects.toThrow('storage unavailable');
+    expect(useChatStore.getState().imageGenerationRequests).toEqual({});
+    expect(useChatStore.getState().messages).toEqual([]);
+    expect(authenticatedFetch).not.toHaveBeenCalled();
   });
 
   it('does not save a result under a different account when sign-in changes during generation', async () => {
@@ -108,11 +239,16 @@ describe('generated image conversation workflow', () => {
 
   it('does not make an ungrounded image when reference preparation fails', async () => {
     vi.mocked(authenticatedFetch).mockResolvedValue(new Response('{}', { status: 503 }));
-    await expect(generateConversationImage('Explain this attachment', 'conv-a', 'en', true, {
+    const result = await generateConversationImage('Explain this attachment', 'conv-a', 'en', true, {
       attachments: [new File(['source'], 'lesson.txt')],
-    })).rejects.toThrow('reference preparation failed');
+    });
+    expect(result.completed).toBe(false);
     expect(authenticatedFetch).toHaveBeenCalledOnce();
-    expect(useChatStore.getState().messages).toHaveLength(0);
+    const failed = useChatStore.getState().messages.at(-1)!;
+    expect(failed.answerBlocks?.[0]).toMatchObject({ status: 'error' });
+    expect(useChatStore.getState().imageGenerationRequests).toEqual({});
+    await expect(regenerateConversationImage(failed.id)).rejects.toThrow('reference attachments');
+    expect(authenticatedFetch).toHaveBeenCalledOnce();
   });
 
   it('ignores regeneration while an image is pending, then regenerates in place using the saved intent', async () => {

@@ -5,6 +5,10 @@
 
 import { createStyles, keyframes } from 'antd-style';
 
+const imageGenerationSpin = keyframes`
+  to { transform: rotate(360deg); }
+`;
+
 const fadeIn = keyframes`
   from {
     opacity: 0;
@@ -1250,6 +1254,71 @@ quoteBlockContent: css`
       outline: 2px solid ${token.colorPrimary};
       outline-offset: 3px;
     }
+  `,
+
+  generatedImagePendingFrame: css`
+    position: relative;
+    width: 100%;
+    min-height: 220px;
+    overflow: hidden;
+    border: 1px solid ${token.colorBorderSecondary};
+    border-radius: 18px;
+    background: ${token.colorFillTertiary};
+  `,
+
+  generatedImageShimmer: css`
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      110deg,
+      ${token.colorFillQuaternary} 20%,
+      ${token.colorFillSecondary} 45%,
+      ${token.colorFillQuaternary} 70%
+    );
+    background-size: 400% 100%;
+    animation: ${imageSkeletonShimmer} 1.8s ease-in-out infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  `,
+
+  generatedImagePendingContent: css`
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 20px;
+    color: ${token.colorText};
+    text-align: center;
+  `,
+
+  generatedImagePendingTitle: css`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.5;
+  `,
+
+  generatedImagePendingSpinner: css`
+    flex-shrink: 0;
+    animation: ${imageGenerationSpin} 1.4s linear infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  `,
+
+  generatedImagePendingHint: css`
+    color: ${token.colorTextSecondary};
+    font-size: 12px;
+    line-height: 1.5;
   `,
 
   answerImagePendingFrame: css`

@@ -1,15 +1,20 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '../../frontend/src/components/ChatContainer';
-import { generateConversationImage } from '@/services/generatedImages';
+import { cancelConversationImage, generateConversationImage } from '@/services/generatedImages';
+import { cancelCurrentStream } from '@/services/chat';
 
 const authState = vi.hoisted(() => ({ user: null as { id: string } | null }));
-vi.mock('@/services/generatedImages', () => ({ generateConversationImage: vi.fn(async () => ({ completed: true })) }));
+vi.mock('@/services/generatedImages', () => ({
+  generateConversationImage: vi.fn(async () => ({ completed: true })),
+  cancelConversationImage: vi.fn(() => true),
+}));
 
 const { chatState, conversationState, liveTutorState } = vi.hoisted(() => ({
   chatState: {
     isStreaming: false,
+    imageGenerationRequests: {} as Record<string, { userId: string; conversationId: string | null; assistantMessageId: string | null }>,
     error: null,
     messages: [{ id: 'm1', role: 'assistant', content: 'System response', createdAt: new Date() }],
     setError: vi.fn(),
@@ -18,7 +23,7 @@ const { chatState, conversationState, liveTutorState } = vi.hoisted(() => ({
     setQuotedText: vi.fn(),
   },
   conversationState: {
-    activeConversationId: 'c1',
+    activeConversationId: 'c1' as string | null,
     isMessageHandoffLoading: false,
     clearState: vi.fn(),
     clearActiveConversation: vi.fn(),
@@ -56,8 +61,18 @@ vi.mock('@/components/MessageList', () => ({
   MessageList: () => <main>System response</main>,
 }));
 
+vi.mock('@/components/MessageList/ImageGenerationLoading', () => ({
+  ImageGenerationLoading: ({ caption }: { caption: string }) => <div role="status">{caption}</div>,
+}));
+
 vi.mock('@/components/ChatInput', () => ({
-  ChatInput: ({ onSend }: { onSend: (content: string, attachments: File[], options: { createImage: boolean }) => unknown }) => <form aria-label="Chat input">
+  ChatInput: ({ onSend, isGeneratingImage, disabled, onStop }: {
+    onSend: (content: string, attachments: File[], options: { createImage: boolean }) => unknown;
+    isGeneratingImage: boolean;
+    disabled: boolean;
+    onStop: () => void;
+  }) => <form aria-label="Chat input" data-image-busy={isGeneratingImage} data-disabled={disabled}>
+    {isGeneratingImage && <button type="button" onClick={onStop}>Stop image</button>}
     <button type="button" onClick={() => {
       void onSend('根據附件產圖', [new File(['source'], 'source.txt')], { createImage: true });
     }}>Create attachment image</button>
@@ -126,7 +141,7 @@ vi.mock('@/store/auth', () => ({
 }));
 
 vi.mock('@/services/chat', () => ({
-  initializeChatService: vi.fn(),
+  initializeChatService: vi.fn(async () => {}),
   sendMessage: vi.fn(),
   cancelCurrentStream: vi.fn(),
   regenerateMessage: vi.fn(),
@@ -135,7 +150,7 @@ vi.mock('@/services/chat', () => ({
 
 vi.mock('@/services/syncService', () => ({
   syncService: {
-    pullFromCloud: vi.fn(),
+    pullFromCloud: vi.fn(async () => {}),
   },
 }));
 
@@ -181,11 +196,59 @@ describe('ChatContainer avatar split layout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authState.user = null;
+    chatState.imageGenerationRequests = {};
+    conversationState.activeConversationId = 'c1';
+  });
+
+  it('connects selected image job state and Stop without cancelling the voice/text stream', async () => {
+    authState.user = { id: 'user-a' };
+    chatState.imageGenerationRequests = {
+      request: { userId: 'user-a', conversationId: 'c1', assistantMessageId: 'image-message' },
+    };
+    await act(async () => { render(<ChatContainer />); });
+    expect(screen.getByRole('form', { name: 'Chat input' })).toHaveAttribute('data-image-busy', 'true');
+    expect(screen.getByRole('form', { name: 'Chat input' })).toHaveAttribute('data-disabled', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Stop image' }));
+    await waitFor(() => expect(cancelConversationImage).toHaveBeenCalledWith('c1'));
+    expect(cancelCurrentStream).not.toHaveBeenCalled();
+  });
+
+  it('does not show Stop for another conversation or account', async () => {
+    authState.user = { id: 'user-a' };
+    chatState.imageGenerationRequests = {
+      otherConversation: { userId: 'user-a', conversationId: 'c2', assistantMessageId: 'image-a' },
+      otherAccount: { userId: 'user-b', conversationId: 'c1', assistantMessageId: 'image-b' },
+    };
+    await act(async () => { render(<ChatContainer />); });
+    expect(screen.getByRole('form', { name: 'Chat input' })).toHaveAttribute('data-image-busy', 'false');
+    expect(screen.queryByRole('button', { name: 'Stop image' })).not.toBeInTheDocument();
+  });
+
+  it('does not cancel voice/text if an image completes just before Stop is clicked', async () => {
+    authState.user = { id: 'user-a' };
+    chatState.imageGenerationRequests = {
+      request: { userId: 'user-a', conversationId: 'c1', assistantMessageId: 'image-message' },
+    };
+    vi.mocked(cancelConversationImage).mockReturnValueOnce(false);
+    await act(async () => { render(<ChatContainer />); });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop image' }));
+    expect(cancelCurrentStream).not.toHaveBeenCalled();
+  });
+
+  it('shows a preparation card before a new conversation and assistant message exist', async () => {
+    authState.user = { id: 'user-a' };
+    conversationState.activeConversationId = null;
+    chatState.imageGenerationRequests = {
+      request: { userId: 'user-a', conversationId: null, assistantMessageId: null },
+    };
+    await act(async () => { render(<ChatContainer />); });
+    expect(screen.getByRole('status')).toHaveTextContent('正在準備圖片…');
+    expect(screen.getByRole('button', { name: 'Stop image' })).toBeInTheDocument();
   });
 
   it('forwards attachments from Create Image to the image workflow', async () => {
     authState.user = { id: 'user-a' };
-    render(<ChatContainer />);
+    await act(async () => { render(<ChatContainer />); });
     fireEvent.click(screen.getByRole('button', { name: 'Create attachment image' }));
     await waitFor(() => expect(generateConversationImage).toHaveBeenCalledWith(
       '根據附件產圖', 'c1', expect.any(String), true, { attachments: [expect.any(File)] },

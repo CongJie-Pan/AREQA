@@ -35,6 +35,7 @@ const FRONTEND_VISIBLE_RAG_STATUSES: ReadonlySet<ChatStore['ragStatus']> = new S
 const initialState = {
   messages: [] as DisplayMessage[],
   isStreaming: false,
+  imageGenerationRequests: {} as ChatStore['imageGenerationRequests'],
   currentStreamingId: null as string | null,
   thinkingContent: '',
   thinkingStartTime: null as number | null,

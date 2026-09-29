@@ -83,6 +83,8 @@ export interface ImageBlock {
     prompt: string;
     language: 'zh-TW' | 'zh-CN' | 'en';
     referenceBrief?: string;
+    /** Failed/cancelled attachment preparation must be retried with the files. */
+    requiresReference?: boolean;
   };
   tier?: 'wikimedia' | 'openverse' | 'og_image' | 'cache' | 'tavily_images' | 'serpapi_images' | 'perplexity_images' | 'pdf_attachment' | string;
   license?: string;

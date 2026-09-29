@@ -283,8 +283,8 @@ export interface ChatInputProps {
   /** Callback when message is sent */
   onSend: (message: string, attachments?: File[], options?: { createImage?: boolean }) =>
     | void
-    | { completed: boolean }
-    | Promise<void | { completed: boolean }>;
+    | { completed: boolean; cancelled?: boolean }
+    | Promise<void | { completed: boolean; cancelled?: boolean }>;
   /** Whether input is disabled */
   disabled?: boolean;
   /** Placeholder text */
@@ -295,6 +295,8 @@ export interface ChatInputProps {
   maxLength?: number;
   /** Whether AI is currently streaming response */
   isStreaming?: boolean;
+  /** Whether an image job is preparing or generating independently of streaming. */
+  isGeneratingImage?: boolean;
   /** Callback when stop button is clicked */
   onStop?: () => void;
   /** Callback when the live voice tutor button is clicked. */
@@ -414,6 +416,7 @@ export function ChatInput({
   className,
   maxLength = MAX_MESSAGE_LENGTH,
   isStreaming = false,
+  isGeneratingImage = false,
   onStop,
   onOpenLiveTutor,
   isLiveVoiceActive = false,
@@ -603,7 +606,7 @@ export function ChatInput({
       return;
     }
 
-    if (disabled) return;
+    if (disabled || isGeneratingImage) return;
 
     // Check message length
     if (trimmedValue.length > maxLength) {
@@ -649,7 +652,7 @@ export function ChatInput({
           ? await onSend(finalMessage, filesToSend)
           : await onSend(finalMessage);
 
-      if (result && 'completed' in result && !result.completed) {
+      if (result && 'completed' in result && !result.completed && !result.cancelled) {
         restoreDraft();
         if (sendingAsImage && composerVersionRef.current === composerVersionAtSend) setCreateImage(true);
         return;
@@ -664,7 +667,7 @@ export function ChatInput({
       if (sendingAsImage && composerVersionRef.current === composerVersionAtSend) setCreateImage(true);
       return;
     }
-  }, [value, attachmentPreviews, createImage, disabled, onSend, maxLength, quotedText, setQuotedText, t]);
+  }, [value, attachmentPreviews, createImage, disabled, isGeneratingImage, onSend, maxLength, quotedText, setQuotedText, t]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -706,7 +709,8 @@ export function ChatInput({
     setAttachmentPreviews((current) => current.filter((preview) => preview !== target));
   }, []);
 
-  const canSend = (value.trim().length > 0 || attachmentPreviews.length > 0) && !disabled && !isOverLimit;
+  const canSend = (value.trim().length > 0 || attachmentPreviews.length > 0) && !disabled && !isGeneratingImage && !isOverLimit;
+  const showStop = onStop && (isGeneratingImage || (isStreaming && !(isLiveVoiceActive && onCloseLiveVoice)));
   const hasComposerContent = value.trim().length > 0 || attachmentPreviews.length > 0 || Boolean(quotedText);
   const addMenuItems: MenuProps['items'] = [
     {
@@ -1091,7 +1095,16 @@ export function ChatInput({
             </button>
           </Tooltip>
         ) : null}
-        {dictationState !== 'idle' ? null : isLiveVoiceActive && onCloseLiveVoice ? (
+        {dictationState !== 'idle' ? null : showStop ? (
+          <button
+            type="button"
+            className={cx('areqa-chat-input-send-button', styles.iconButton, styles.sendButton, styles.stopButton)}
+            onClick={onStop}
+            aria-label={t('stopGenerating')}
+          >
+            <Square size={16} fill="currentColor" />
+          </button>
+        ) : isLiveVoiceActive && onCloseLiveVoice ? (
           <Tooltip title={liveVoiceLabels.close} color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
@@ -1102,15 +1115,6 @@ export function ChatInput({
               <X size={20} />
             </button>
           </Tooltip>
-        ) : isStreaming && onStop ? (
-          <button
-            type="button"
-            className={cx('areqa-chat-input-send-button', styles.iconButton, styles.sendButton, styles.stopButton)}
-            onClick={onStop}
-            aria-label={t('stopGenerating')}
-          >
-            <Square size={16} fill="currentColor" />
-          </button>
         ) : canSend || !onOpenLiveTutor ? (
           <button
             type="button"
