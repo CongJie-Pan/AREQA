@@ -1627,7 +1627,8 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
         <button
           type="button"
           className={styles.answerImageButton}
-          style={imageFrameStyle}
+          // Generated images use their intrinsic ratio, including when metadata is missing.
+          style={isGeneratedImage ? undefined : imageFrameStyle}
           onClick={() => setIsLightboxOpen(true)}
           aria-label={t('expandImage', { caption: displayCaption })}
         >
@@ -1641,7 +1642,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
             key={imageRetryCount}
             src={safeImageUrl}
             alt={displayCaption}
-            className={`${styles.answerImage} ${isImageLoaded ? styles.answerImageLoaded : ''}`}
+            className={`${styles.answerImage} ${isGeneratedImage ? styles.generatedImage : ''} ${isImageLoaded ? styles.answerImageLoaded : ''}`}
             loading="lazy"
             onLoad={() => setIsImageLoaded(true)}
             onError={() => {

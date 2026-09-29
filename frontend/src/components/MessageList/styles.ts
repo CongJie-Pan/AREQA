@@ -1391,6 +1391,11 @@ quoteBlockContent: css`
     transition: opacity 260ms ease, transform 260ms ease;
   `,
 
+  generatedImage: css`
+    height: auto;
+    background: transparent;
+  `,
+
   answerImageLoaded: css`
     opacity: 1;
     transform: scale(1);

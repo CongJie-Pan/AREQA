@@ -15,18 +15,21 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
 }));
 
 describe('MessageItem Quote Alignment Regression', () => {
-  it('left-aligns a generated image card and its bitmap using the real styles', () => {
+  it.each([undefined, { width: 1200, height: 1600 }, { width: 1600, height: 900 }])('preserves intrinsic generated image sizing with metadata %j', (dimensions) => {
     render(<App><MessageItem message={{
       id: 'generated-left', userId: 'user-a', conversationId: 'conv-a', role: 'assistant',
       content: 'Here is the image I created.', createdAt: new Date(), answerBlocks: [{
         type: 'image_block', slotId: 'generated-left', topic: '統計', purpose: 'diagram',
         imageUrl: 'https://example.test/image.png', sourceUrl: '', sourceDomain: '', caption: '統計教學圖',
         provider: 'generated_image', safetyStatus: 'pass', matchConfidence: 1,
+        ...dimensions,
       }],
     }} /></App>);
     const image = screen.getByAltText('統計教學圖');
     expect(image.closest('figure')).toHaveStyle({ marginInline: '0' });
     expect(image).toHaveStyle({ objectPosition: 'left center' });
+    expect(image).toHaveStyle({ width: '100%', height: 'auto', background: 'transparent' });
+    expect(image.closest('button')?.style.aspectRatio).toBe('');
     expect(screen.queryByText('Here is the image I created.')).not.toBeInTheDocument();
   });
 
