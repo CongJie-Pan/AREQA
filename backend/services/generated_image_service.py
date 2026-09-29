@@ -135,10 +135,12 @@ async def prepare_image_reference(attachments: list, *, request: str, language: 
         "drawing_request": request[:1800], "language": label_language,
         "source_text": material["text"] if material else "",
     }, ensure_ascii=False)}, *image_parts]
+    stage = "provider_call"
     try:
-        async with asyncio.timeout(30):
+        # Keep reference preparation compatible with Python 3.10 deployments.
+        async def request_brief():
             async with AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=key) as client:
-                response = await client.chat.completions.create(
+                return await client.chat.completions.create(
                     model=settings.model_visual_understanding,
                     messages=[
                         {"role": "system", "content": (
@@ -151,11 +153,13 @@ async def prepare_image_reference(attachments: list, *, request: str, language: 
                         {"role": "user", "content": content},
                     ], temperature=0, max_tokens=1600,
                 )
+        response = await asyncio.wait_for(request_brief(), timeout=30)
+        stage = "response_validation"
         brief = response.choices[0].message.content
         if not isinstance(brief, str) or not brief.strip() or len(brief.strip()) > 4000:
             raise ValueError("Reference planner returned an invalid brief")
     except Exception as error:
-        logger.warning("image_generation.reference_failed conversation_id=%s reason=%s", conversation_id, type(error).__name__)
+        logger.warning("image_generation.reference_failed conversation_id=%s stage=%s reason=%s", conversation_id, stage, type(error).__name__)
         raise RuntimeError("Reference preparation is unavailable") from error
     if settings.enable_generated_image_debug_logs:
         logger.info(

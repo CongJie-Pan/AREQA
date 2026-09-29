@@ -127,3 +127,29 @@ def test_intent_endpoint_provider_failure_is_explicit(intent_api):
     response = client.post('/api/v1/images/intent', json={"prompt": "畫貓"})
     assert response.status_code == 503
     assert 'PRIVATE' not in response.text
+
+
+@pytest.mark.asyncio
+async def test_classifier_works_without_python_311_timeout_api(classifier, monkeypatch):
+    monkeypatch.delattr(intents.asyncio, "timeout", raising=False)
+    classifier.return_value = reply({"intent": "generate_image", "reference": "none"})
+    result = await intents.classify_message_intent(intents.MessageIntentRequest(prompt="請根據以下內容產出教學圖：統計顯著不等於實際重要。"))
+    assert result.intent == "generate_image"
+    classifier.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_timeout_remains_bounded_and_reports_safe_failure_stage(classifier, monkeypatch, caplog):
+    deadlines = []
+    async def expire(operation, *, timeout):
+        deadlines.append(timeout)
+        operation.close()
+        raise intents.asyncio.TimeoutError()
+    monkeypatch.setattr(intents.asyncio, "wait_for", expire)
+    with caplog.at_level(logging.WARNING), pytest.raises(RuntimeError):
+        await intents.classify_message_intent(intents.MessageIntentRequest(prompt="PRIVATE_PROMPT"))
+    assert deadlines == [12]
+    assert "stage=provider_call" in caplog.text
+    assert "python_version=" in caplog.text
+    assert "PRIVATE_PROMPT" not in caplog.text
+    classifier.assert_not_awaited()

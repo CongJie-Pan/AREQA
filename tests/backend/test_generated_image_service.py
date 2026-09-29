@@ -68,6 +68,7 @@ def test_generated_image_debug_logs_can_be_enabled_from_environment(monkeypatch)
 async def test_reference_planner_uses_source_material_and_returns_a_bounded_brief(
     monkeypatch, caplog, source_kind, drawing_request, label_language,
 ):
+    monkeypatch.delattr(images.asyncio, "timeout", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
     monkeypatch.setattr(images.settings, "enable_generated_image_debug_logs", True)
     create = AsyncMock(return_value=SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Light → sugar"))]))

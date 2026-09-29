@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from typing import Literal
 
 from openai import AsyncOpenAI
@@ -69,18 +70,24 @@ async def classify_message_intent(payload: MessageIntentRequest) -> MessageInten
         RuntimeError: Provider unavailable, timeout, or invalid routing output.
     """
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    stage = "configuration"
     try:
         if not key:
             raise ValueError("Missing classifier configuration")
-        async with asyncio.timeout(12):
+        stage = "provider_call"
+        # wait_for preserves the deadline on the deployed Python 3.10 runtime.
+        async def request_decision():
             async with AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=key) as client:
-                response = await client.chat.completions.create(
+                return await client.chat.completions.create(
                     model=settings.model_policy_classifier,
                     messages=[{"role": "system", "content": INTENT_RULES},
                               {"role": "user", "content": payload.model_dump_json()}],
                     response_format={"type": "json_object"}, temperature=0, max_tokens=180,
                 )
+        response = await asyncio.wait_for(request_decision(), timeout=12)
+        stage = "response_validation"
         result = MessageIntent.model_validate_json(response.choices[0].message.content)
+        stage = "reference_validation"
         if result.intent != "generate_image":
             if result.reference != "none" or result.reference_message_id is not None:
                 raise ValueError("Invalid non-image reference")
@@ -96,5 +103,6 @@ async def classify_message_intent(payload: MessageIntentRequest) -> MessageInten
                     result.intent, result.reference, payload.attachment_count, len(payload.context))
         return result
     except Exception as error:
-        logger.warning("message_intent.failed reason=%s", type(error).__name__)
+        logger.warning("message_intent.failed stage=%s reason=%s python_version=%s",
+                       stage, type(error).__name__, ".".join(map(str, sys.version_info[:3])))
         raise RuntimeError("Message intent routing unavailable") from None
