@@ -226,8 +226,8 @@ class VisualAnswerProviderHelperMixin:
             height=cls._optional_int(item.get("original_height") or item.get("height")),
         )
 
-    @staticmethod
-    def _visual_search_query(user_msg: str) -> tuple[str, str]:
+    @classmethod
+    def _visual_search_query(cls, user_msg: str) -> tuple[str, str]:
         """Rewrite a user prompt into image-provider metadata language.
 
         Open image providers primarily match titles, captions, and filenames.
@@ -247,7 +247,7 @@ class VisualAnswerProviderHelperMixin:
                 return rewritten_query, rule_name
         if normalized and not normalized.isascii():
             return (
-                VisualAnswerService._generic_visual_search_query(normalized),
+                cls._generic_visual_search_query(normalized),
                 "generic_non_english_visual_query",
             )
         fallback = normalized[:120] if normalized else "educational diagram"

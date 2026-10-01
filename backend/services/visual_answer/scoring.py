@@ -55,8 +55,8 @@ class VisualAnswerScoringMixin:
         )
         return min(max(score, 0.0), 1.0)
 
-    @staticmethod
-    def _source_quality_score(candidate: ImageCandidate) -> float:
+    @classmethod
+    def _source_quality_score(cls, candidate: ImageCandidate) -> float:
         """Score source-domain reliability using provider metadata only.
 
         Returns:
@@ -71,7 +71,7 @@ class VisualAnswerScoringMixin:
         if any(source in domain for source in _LOW_QUALITY_SOURCE_DOMAINS):
             return -0.25
         if any(
-            VisualAnswerService._domain_matches_source_quality_pattern(domain, source)
+            cls._domain_matches_source_quality_pattern(domain, source)
             for source in _TRUSTED_SOURCE_DOMAINS
         ):
             return 0.18
@@ -85,8 +85,8 @@ class VisualAnswerScoringMixin:
             return domain.endswith(pattern)
         return domain == pattern or domain.endswith(f".{pattern}") or pattern in domain
 
-    @staticmethod
-    def _pedagogical_score(candidate: ImageCandidate) -> float:
+    @classmethod
+    def _pedagogical_score(cls, candidate: ImageCandidate) -> float:
         """Score cheap metadata signals for instructional usefulness."""
 
         metadata = f"{candidate.title} {candidate.caption} {candidate.attribution_string}".lower()
@@ -116,7 +116,7 @@ class VisualAnswerScoringMixin:
             score += 0.15
         if len(candidate.caption) >= 80:
             score += 0.1
-        if VisualAnswerService._has_useful_dimensions(candidate):
+        if cls._has_useful_dimensions(candidate):
             score += 0.1
         return min(score, 1.0)
 
@@ -192,12 +192,12 @@ class VisualAnswerScoringMixin:
             return False
         return True
 
-    @staticmethod
-    def _display_image_url(candidate: ImageCandidate) -> str:
+    @classmethod
+    def _display_image_url(cls, candidate: ImageCandidate) -> str:
         """Return the best browser-displayable image URL for a candidate."""
 
         for url in (candidate.thumbnail_url, candidate.image_url):
-            if VisualAnswerService._is_browser_display_image_url(url):
+            if cls._is_browser_display_image_url(url):
                 return url
         return ""
 

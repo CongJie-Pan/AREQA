@@ -20,12 +20,14 @@ logger = logging.getLogger("backend.services.orchestration_service")
 InterfaceLanguage = str
 
 
-def _orchestration_facade():
-    return (
-        sys.modules.get("backend.services.orchestration_service")
-        or sys.modules.get("services.orchestration_service")
-        or importlib.import_module("services.orchestration_service")
-    )
+
+from typing import Any, AsyncGenerator, Dict, List, Optional
+from fastapi import Request
+from services.orchestration.routing import plan_search
+from services.orchestration.response_policy import resolve_response_policy
+from services.orchestration.answer_preparation import prepare_answer
+from services.orchestration.completion import complete_answer
+
 
 class OrchestrationExecutionMixin:
     async def execute(self, messages: List[Dict[str, str]], conversation_id: str, use_rag: bool, use_web_search: bool,
@@ -147,75 +149,13 @@ class OrchestrationExecutionMixin:
             3,
         ))
 
-        trace.mark("search_routing_started")
-        if effective_search_mode == SearchMode.AUTO and has_attachments:
-            # In AUTO mode the uploaded document is the primary source. Generic
-            # search would answer from the filename/query instead of file content.
-            search_decision = SearchDecision(False, SearchReason.ATTACHMENT_CONTEXT_PRIORITY)
-        elif effective_search_mode == SearchMode.AUTO and auto_routing_enabled:
-            trace.increment_model_call("search_routing")
-            search_decision = await self.tutor_agent.decide_search(
-                last_user_msg,
-                run_context,
-                client=self.client,
-                model=settings.model_policy_classifier,
-                timeout_seconds=1.5,
-            )
-        elif effective_search_mode == SearchMode.AUTO:
-            search_decision = self.tutor_agent.search_policy.evaluate(
-                last_user_msg, effective_search_mode
-            )
-        else:
-            search_decision = self.tutor_agent.search_policy.evaluate(
-                last_user_msg, effective_search_mode
-            )
-        trace.mark("search_routing_finished")
+        search_decision, turn_plan, use_rag = await plan_search(
+            self, last_user_msg=last_user_msg, run_context=run_context, trace=trace,
+            effective_search_mode=effective_search_mode, has_attachments=has_attachments,
+            auto_routing_enabled=auto_routing_enabled, use_rag=use_rag, attachments=attachments,
+        )
         use_web_search = search_decision.should_search
-        if has_attachments and effective_search_mode == SearchMode.AUTO:
-            use_rag = False
-            attachment_types = [
-                part.get("type", "unknown")
-                for part in attachments or []
-                if isinstance(part, dict)
-            ]
-            logger.info(
-                "orchestration.attachment_routing conversation_id=%s count=%s types=%s",
-                conversation_id,
-                len(attachment_types),
-                attachment_types,
-            )
-
-        turn_plan = self.turn_plan_service.plan(
-            user_message=last_user_msg,
-            use_rag=use_rag,
-            has_attachments=has_attachments,
-            search_decision=search_decision,
-            settings=settings,
-        )
         turn_plan_enabled = bool(settings.enable_turn_plan_runtime)
-        trace.mark(f"turn_plan_{turn_plan.route.value.lower()}")
-        logger.info(
-            "orchestration.turn_plan_selected run_id=%s conversation_id=%s route=%s enabled=%s reason=%s max_foreground_model_calls=%s",
-            run_context.run_id,
-            run_context.conversation_id,
-            turn_plan.route.value,
-            turn_plan_enabled,
-            turn_plan.reason_code,
-            turn_plan.max_foreground_model_calls,
-        )
-
-        if settings.enable_tutor_shadow_routing and not auto_routing_enabled and last_user_msg and not has_attachments:
-            shadow_task = asyncio.create_task(
-                self.tutor_agent.evaluate_search_shadow(
-                    last_user_msg,
-                    run_context,
-                    client=self.client,
-                    model=settings.model_policy_classifier,
-                )
-            )
-            shadow_task.add_done_callback(
-                lambda task: task.exception() if not task.cancelled() else None
-            )
 
         yield sse_adapter.encode(AgentEvent(
             EventType.ACTION,
@@ -238,19 +178,6 @@ class OrchestrationExecutionMixin:
             run_context.run_id,
             5,
         ))
-
-        # Node 1: Intent Routing (DISABLED BY USER REQUEST)
-        denied = False
-        # async for event in self._node_intent_routing(last_user_msg):
-        #     if event == "event: REFUSED\n\n":
-        #         denied = True
-        #         continue
-        #     yield event
-
-        # if denied:
-        #     yield "data: [DONE]\n\n"
-        #     return
-
 
         if last_user_msg:
             if self.turn_intake_service.store_available():
@@ -307,7 +234,7 @@ class OrchestrationExecutionMixin:
             trace.mark("policy_classifier_started")
             trace.increment_model_call("policy_classifier")
             policy_task = asyncio.create_task(
-                _orchestration_facade().classify_dialogue_policy(
+                self.classify_dialogue_policy(
                     self.client,
                     settings.model_policy_classifier,
                     last_user_msg,
@@ -334,7 +261,7 @@ class OrchestrationExecutionMixin:
                     run_context.run_id,
                 )
                 trace.increment_model_call("query_decomposition")
-                rag_queries = await _orchestration_facade().parse_and_decompose_query(last_user_msg, self.client)
+                rag_queries = await self.parse_and_decompose_query(last_user_msg, self.client)
             else:
                 rag_queries = None
         else:
@@ -366,49 +293,14 @@ class OrchestrationExecutionMixin:
                 yield sse_adapter.encode_legacy(event, run_context.run_id)
 
         # Node 5: Prompt Assembly
-        response_policy = default_response_policy()
-        response_policy_source = "default"
-        policy = response_policy.legacy_policy
-        if policy_task:
-            try:
-                policy_timeout_seconds = (
-                    max(int(getattr(settings, "policy_classifier_timeout_ms", 700)), 1)
-                    / 1000
-                )
-                policy_result = await asyncio.wait_for(
-                    policy_task,
-                    timeout=policy_timeout_seconds,
-                )
-                if (hasattr(policy_result, "legacy_policy")
-                        and callable(getattr(policy_result, "safe_log_metadata", None))
-                        and not policy_result.__class__.__module__.startswith("unittest.mock")):
-                    response_policy = policy_result
-                    response_policy_source = "classifier"
-                elif isinstance(policy_result, str):
-                    response_policy = response_policy_from_legacy(policy_result)
-                    response_policy_source = "legacy"
-                else:
-                    response_policy = default_response_policy()
-                    response_policy_source = "invalid_fallback"
-                policy = response_policy.legacy_policy
-                trace.mark("policy_classifier_finished")
-                logger.info(
-                    "orchestration.dialogue_policy_selected conversation_id=%s policy=%s",
-                    conversation_id,
-                    policy,
-                )
-            except asyncio.TimeoutError:
-                policy_task.cancel()
-                response_policy_source = "timeout_fallback"
-                trace.mark("policy_classifier_timeout")
-                logger.warning(
-                    "orchestration.dialogue_policy_timeout conversation_id=%s fallback=NORMAL",
-                    conversation_id,
-                )
-                yield sse_adapter.encode_legacy(
-                    f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '✅ 已完成基本分析，正在組織回答'}, ensure_ascii=False)}\n\n",
-                    run_context.run_id,
-                )
+        response_policy, response_policy_source, policy_timed_out = await resolve_response_policy(
+            policy_task, trace, conversation_id,
+        )
+        if policy_timed_out:
+            yield sse_adapter.encode_legacy(
+                f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '✅ 已完成基本分析，正在組織回答'}, ensure_ascii=False)}\n\n",
+                run_context.run_id,
+            )
 
         response_policy = apply_pdf_auto_explain_guardrail(
             response_policy,
@@ -432,154 +324,17 @@ class OrchestrationExecutionMixin:
             run_context.run_id,
         )
 
-        trace.mark("prompt_assembly_started")
-        final_messages = await self._node_prompt_assembly(
-            user_id,
-            conversation_id,
-            messages,
-            use_rag,
-            use_web_search,
-            force_think,
-            context_results_obj,
-            last_user_msg,
-            context_prompt=run_state.context_prompt,
-            trace=trace,
-            turn_plan=turn_plan if turn_plan_enabled else None,
-            response_policy=response_policy,
-            interface_language=interface_language,
-            tutor_profile=tutor_profile,
-            response_mode=response_mode,
-            has_attachments=has_attachments,
+        final_messages, effective_max_tokens, max_image_slots, preverified_image_blocks = await prepare_answer(
+            self, user_id=user_id, conversation_id=conversation_id, messages=messages,
+            use_rag=use_rag, use_web_search=use_web_search, force_think=force_think,
+            context_results_obj=context_results_obj, last_user_msg=last_user_msg,
+            run_state=run_state, trace=trace, turn_plan=turn_plan,
+            turn_plan_enabled=turn_plan_enabled, response_policy=response_policy,
+            interface_language=interface_language, tutor_profile=tutor_profile,
+            response_mode=response_mode, has_attachments=has_attachments,
+            attachments=attachments, attachment_visual_sources=attachment_visual_sources,
+            pdf_attachment_count=pdf_attachment_count, max_tokens=max_tokens,
         )
-        trace.mark("prompt_assembly_finished")
-        final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
-        if has_attachments:
-            final_messages = self._add_attachment_grounding_instruction(final_messages)
-        else:
-            final_messages, missing_visual_guard_applied = self._add_missing_visual_attachment_instruction(
-                final_messages,
-                last_user_msg,
-            )
-            if missing_visual_guard_applied:
-                logger.info(
-                    "orchestration.missing_visual_attachment_guard_applied conversation_id=%s",
-                    conversation_id,
-                )
-        should_auto_explain_paper = (
-            settings.enable_pdf_paper_auto_explain
-            and getattr(response_policy.attachment_task, "value", response_policy.attachment_task)
-            == AttachmentTask.PAPER_AUTO_EXPLAIN.value
-        )
-        logger.info(
-            "paper.auto_explain_policy_selected conversation_id=%s enabled=%s applied=%s task=%s reason=%s pdf_count=%s",
-            conversation_id,
-            settings.enable_pdf_paper_auto_explain,
-            should_auto_explain_paper,
-            response_policy.attachment_task.value,
-            response_policy.attachment_reason.value,
-            pdf_attachment_count,
-        )
-        if should_auto_explain_paper:
-            final_messages = self._add_paper_auto_explain_instruction(final_messages)
-        max_image_slots = 4 if should_auto_explain_paper else 2
-
-        preverified_image_blocks = None
-        if settings.enable_visual_preflight:
-            trace.mark("visual_preflight_started")
-            visual_preflight_decision = self.visual_answer_service.preflight_decision(
-                response_policy,
-                last_user_msg,
-                turn_plan if turn_plan_enabled else None,
-            )
-            logger.info(
-                "visual.preflight_policy_gate conversation_id=%s allowed=%s blocking_allowed=%s trigger=%s visual_support=%s visual_reason=%s explicit_visual=%s known_affordance=%s max_images=%s has_attachment_visual_sources=%s",
-                conversation_id,
-                visual_preflight_decision.allowed,
-                visual_preflight_decision.blocking_allowed,
-                visual_preflight_decision.trigger,
-                visual_preflight_decision.visual_support,
-                visual_preflight_decision.visual_reason,
-                visual_preflight_decision.explicit_visual_request,
-                visual_preflight_decision.known_visual_affordance,
-                visual_preflight_decision.max_images,
-                bool(attachment_visual_sources),
-            )
-            visual_preflight_allowed = bool(
-                visual_preflight_decision.blocking_allowed
-                or attachment_visual_sources
-            )
-            if attachment_visual_sources and visual_preflight_allowed:
-                attachment_visual_candidates = await self._extract_attachment_visual_candidates(
-                    attachment_visual_sources,
-                    conversation_id,
-                    model_client=self.client,
-                    use_paper_visual_planner=should_auto_explain_paper,
-                )
-                preverified_image_blocks = await self.output_image_service.prepare_attachment_image_blocks(
-                    candidates=attachment_visual_candidates,
-                    user_msg=last_user_msg,
-                    conversation_id=conversation_id,
-                    model_client=self.client,
-                )
-            elif attachment_visual_sources:
-                logger.info(
-                    "visual.attachment_preflight_skipped conversation_id=%s reason=policy_gate source_count=%s",
-                    conversation_id,
-                    len(attachment_visual_sources),
-                )
-                preverified_image_blocks = {}
-            if preverified_image_blocks is None:
-                if visual_preflight_allowed:
-                    preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
-                        visual_answer_service=self.visual_answer_service,
-                        user_msg=last_user_msg,
-                        response_policy=response_policy,
-                        existing_web_results=run_state.web_search_results,
-                        tool_registry=self.tool_registry,
-                        tool_budget=run_state.tool_budget,
-                        user_id=user_id,
-                        conversation_id=conversation_id,
-                        model_client=self.client,
-                        turn_plan=turn_plan if turn_plan_enabled else None,
-                    )
-                else:
-                    logger.info(
-                        "visual.preflight_blocking_skipped conversation_id=%s trigger=%s visual_support=%s explicit_visual=%s known_affordance=%s",
-                        conversation_id,
-                        visual_preflight_decision.trigger,
-                        visual_preflight_decision.visual_support,
-                        visual_preflight_decision.explicit_visual_request,
-                        visual_preflight_decision.known_visual_affordance,
-                    )
-                    preverified_image_blocks = {}
-            logger.info(
-                "visual.preverified_inventory_ready conversation_id=%s available_image_count=%s has_attachment_visual_sources=%s",
-                conversation_id,
-                len(preverified_image_blocks),
-                bool(attachment_visual_sources),
-            )
-            trace.mark("visual_preflight_finished")
-            final_messages = self._add_verified_visual_instruction(
-                final_messages,
-                preverified_image_blocks,
-                response_policy=response_policy,
-            )
-
-        effective_max_tokens = max_tokens
-        if policy in ["PROBE_UNDERSTANDING", "SUGGEST_ACTION"]:
-            effective_max_tokens = 1500
-        elif (use_rag or use_web_search) and max_tokens == 2048:
-            effective_max_tokens = 2500
-
-        if force_think:
-            effective_max_tokens = 3200
-        if response_mode == "voice":
-            effective_max_tokens = min(effective_max_tokens, 420)
-            logger.info(
-                "orchestration.voice_token_budget_applied conversation_id=%s max_tokens=%s",
-                conversation_id,
-                effective_max_tokens,
-            )
 
         # Node 6: Main LLM Stream
         answer_content_accumulator = ""
@@ -611,83 +366,15 @@ class OrchestrationExecutionMixin:
                 len(planned_image_slots),
             )
 
-        # Node 7: Post-generation
-        answer_blocks = generated_blocks or await self.visual_answer_service.build_answer_blocks(
-            answer_text=answer_content_accumulator,
-            user_msg=last_user_msg,
-            response_policy=response_policy,
-            planned_image_slots=planned_image_slots,
-            tool_registry=self.tool_registry,
-            tool_budget=run_state.tool_budget,
-            existing_web_results=run_state.web_search_results,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            model_client=self.client,
-            preverified_image_blocks=preverified_image_blocks,
-        )
-        if answer_blocks:
-            resolved_image_block_count = sum(
-                1
-                for block in answer_blocks
-                if block.get("type") == "image_block" and block.get("status", "resolved") == "resolved"
-            )
-            pending_image_slot_count = sum(
-                1
-                for block in answer_blocks
-                if block.get("type") == "image_block" and block.get("status") == "pending"
-            )
-            logger.info(
-                "visual.answer_blocks_emitted conversation_id=%s block_count=%s resolved_image_block_count=%s pending_image_slot_count=%s",
-                conversation_id,
-                len(answer_blocks),
-                resolved_image_block_count,
-                pending_image_slot_count,
-            )
-            yield sse_adapter.encode_legacy(
-                f"event: answer_blocks\ndata: {json.dumps(answer_blocks, ensure_ascii=False)}\n\n",
-                run_context.run_id,
-            )
-        else:
-            logger.info(
-                "visual.answer_blocks_skipped conversation_id=%s planned_image_slot_count=%s preverified_image_count=%s",
-                conversation_id,
-                len(planned_image_slots),
-                len(preverified_image_blocks or {}),
-            )
-
-        async for event in self._node_post_generation(
-            last_user_msg,
-            answer_content_accumulator,
-            context_results_obj,
-            use_rag,
-            use_web_search,
-            trace=trace,
-            interface_language=interface_language,
+        async for event in complete_answer(
+            self, user_id=user_id, conversation_id=conversation_id, last_user_msg=last_user_msg,
+            messages=messages, answer_content_accumulator=answer_content_accumulator,
+            generated_blocks=generated_blocks, planned_image_slots=planned_image_slots,
+            response_policy=response_policy, preverified_image_blocks=preverified_image_blocks,
+            context_results_obj=context_results_obj, use_rag=use_rag, use_web_search=use_web_search,
+            interface_language=interface_language, session=session, trace=trace,
         ):
-            yield sse_adapter.encode_legacy(event, run_context.run_id)
-
-        if last_user_msg and self.client:
-            try:
-                from gum_integration import push_reflection_observation
-            except ModuleNotFoundError:
-                from backend.gum_integration import push_reflection_observation
-
-            self.post_turn_service.queue_post_turn_work(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                run_id=run_context.run_id,
-                messages=messages,
-                model=settings.model_policy_classifier,
-                client=self.client,
-                reflection_fallback=push_reflection_observation,
-                evaluation_fallback=_orchestration_facade().async_evaluate_and_update_state,
-            )
-            logger.info(
-                "orchestration.post_turn_queued run_id=%s conversation_id=%s",
-                run_context.run_id,
-                conversation_id,
-            )
-            trace.mark("post_turn_queued")
+            yield event
 
         trace.mark("terminal_sent")
         log_trace()

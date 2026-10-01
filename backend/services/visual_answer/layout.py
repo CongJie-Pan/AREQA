@@ -17,8 +17,9 @@ from services.visual_answer.models import ImageBlock, PlannedImageSlot
 class VisualAnswerLayoutMixin:
     """Validate planned slots and interleave visual blocks into paragraphs."""
 
-    @staticmethod
+    @classmethod
     def _planned_slots_from_payload(
+        cls,
         payload: list[dict[str, Any]],
         *,
         require_query: bool = True,
@@ -45,12 +46,12 @@ class VisualAnswerLayoutMixin:
         bounded_max_slots = max(0, min(int(max_slots or 0), 4))
         for index, item in enumerate(payload[:bounded_max_slots]):
             slot_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(item.get("slot_id") or f"img_{index + 1}"))[:40]
-            query = VisualAnswerService._clean_text(str(item.get("query") or ""))[:120]
+            query = cls._clean_text(str(item.get("query") or ""))[:120]
             if not slot_id or slot_id in seen or (require_query and not query):
                 continue
             seen.add(slot_id)
-            caption_hint = VisualAnswerService._clean_text(str(item.get("caption_hint") or ""))[:180]
-            anchor_after_paragraph = max(0, VisualAnswerService._optional_int(item.get("anchor_after_paragraph")) or 0)
+            caption_hint = cls._clean_text(str(item.get("caption_hint") or ""))[:180]
+            anchor_after_paragraph = max(0, cls._optional_int(item.get("anchor_after_paragraph")) or 0)
             slots.append(
                 PlannedImageSlot(
                     slot_id=slot_id,
@@ -80,14 +81,15 @@ class VisualAnswerLayoutMixin:
             "status": "pending",
         }
 
-    @staticmethod
-    def _interleave_pending_slots(paragraphs: list[str], planned_slots: list[PlannedImageSlot]) -> list[dict[str, Any]]:
+    @classmethod
+    def _interleave_pending_slots(cls, paragraphs: list[str], planned_slots: list[PlannedImageSlot]) -> list[dict[str, Any]]:
         """Interleave pending image placeholders at planned paragraph anchors."""
 
-        return VisualAnswerService._interleave_blocks_at_planned_slots(paragraphs, planned_slots, {})
+        return cls._interleave_blocks_at_planned_slots(paragraphs, planned_slots, {})
 
-    @staticmethod
+    @classmethod
     def _interleave_blocks_at_planned_slots(
+        cls,
         paragraphs: list[str],
         planned_slots: list[PlannedImageSlot],
         image_blocks: dict[str, ImageBlock],
@@ -109,7 +111,7 @@ class VisualAnswerLayoutMixin:
                 if block:
                     output.append(block.to_frontend())
                 elif include_pending:
-                    output.append(VisualAnswerService._pending_block(slot))
+                    output.append(cls._pending_block(slot))
         return output
 
     @staticmethod

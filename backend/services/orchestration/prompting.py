@@ -41,12 +41,6 @@ logger = logging.getLogger(__name__)
 InterfaceLanguage = str
 
 
-def _orchestration_facade():
-    return (
-        sys.modules.get("backend.services.orchestration_service")
-        or sys.modules.get("services.orchestration_service")
-        or importlib.import_module("services.orchestration_service")
-    )
 
 
 class OrchestrationPromptingMixin:
@@ -133,7 +127,7 @@ class OrchestrationPromptingMixin:
             last_user_msg=last_user_msg,
             context_prompt=context_prompt,
             client=self.client,
-            snapshot_loader=_orchestration_facade().get_hot_memory_snapshot,
+            snapshot_loader=self.snapshot_loader,
             store=get_global_store(),
             chat_avatar_key=_chat_avatar_key(conversation_id),
             trace=trace,

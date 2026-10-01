@@ -279,8 +279,8 @@ class VisualAnswerCacheMixin:
 
         return True
 
-    @staticmethod
-    def _image_block_from_frontend(payload: dict[str, Any]) -> ImageBlock:
+    @classmethod
+    def _image_block_from_frontend(cls, payload: dict[str, Any]) -> ImageBlock:
         """Convert cached frontend payload back into an ImageBlock."""
 
         return ImageBlock(
@@ -299,33 +299,33 @@ class VisualAnswerCacheMixin:
             attribution_string=str(payload.get("attributionString") or ""),
             attribution_caption=str(payload.get("attributionCaption") or ""),
             explanatory_caption=str(payload.get("explanatoryCaption") or ""),
-            width=VisualAnswerService._optional_int(payload.get("width")),
-            height=VisualAnswerService._optional_int(payload.get("height")),
+            width=cls._optional_int(payload.get("width")),
+            height=cls._optional_int(payload.get("height")),
             safety_status=str(payload.get("safetyStatus") or "pass"),
             match_confidence=float(payload.get("matchConfidence") or 0.0),
             heuristic_score=float(payload.get("heuristicScore") or 0.0),
             pedagogical_score=float(payload.get("pedagogicalScore") or 0.0),
             vision_summary=str(payload.get("visionSummary") or ""),
-            visible_elements=VisualAnswerService._string_tuple(payload.get("visibleElements"), 10, 140),
-            how_to_read=VisualAnswerService._string_tuple(payload.get("howToRead"), 8, 180),
+            visible_elements=cls._string_tuple(payload.get("visibleElements"), 10, 140),
+            how_to_read=cls._string_tuple(payload.get("howToRead"), 8, 180),
             vision_confidence=str(payload.get("visionConfidence") or "unknown"),
-            vision_limitations=VisualAnswerService._string_tuple(payload.get("visionLimitations"), 6, 160),
+            vision_limitations=cls._string_tuple(payload.get("visionLimitations"), 6, 160),
             vision_source=str(payload.get("visionSource") or "unavailable"),
             storage_bucket=str(payload.get("storageBucket") or ""),
             storage_path=str(payload.get("storagePath") or ""),
-            storage_expires_at=VisualAnswerService._optional_int(payload.get("storageExpiresAt")),
+            storage_expires_at=cls._optional_int(payload.get("storageExpiresAt")),
             transient=bool(payload.get("transient")),
         )
 
-    @staticmethod
-    def _string_tuple(value: Any, max_items: int, max_length: int) -> tuple[str, ...]:
+    @classmethod
+    def _string_tuple(cls, value: Any, max_items: int, max_length: int) -> tuple[str, ...]:
         """Convert cached list payloads into bounded string tuples."""
 
         if not isinstance(value, list):
             return ()
         output: list[str] = []
         for item in value[:max_items]:
-            text = VisualAnswerService._clean_text(str(item or ""))[:max_length]
+            text = cls._clean_text(str(item or ""))[:max_length]
             if text:
                 output.append(text)
         return tuple(output)
@@ -349,11 +349,11 @@ class VisualAnswerCacheMixin:
 
         return re.sub(r"\s+", " ", text).strip()
 
-    @staticmethod
-    def _clean_html(text: str) -> str:
+    @classmethod
+    def _clean_html(cls, text: str) -> str:
         """Remove simple HTML tags frequently returned by provider metadata."""
 
-        return VisualAnswerService._clean_text(re.sub(r"<[^>]+>", "", text))
+        return cls._clean_text(re.sub(r"<[^>]+>", "", text))
 
     @staticmethod
     def _metadata_value(metadata: dict[str, Any], key: str) -> str:
