@@ -15,6 +15,25 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
 }));
 
 describe('MessageItem Quote Alignment Regression', () => {
+  it('keeps the user message editor as wide as its message row', () => {
+    render(
+      <App>
+        <MessageItem
+          message={{ id: 'msg-user-edit-width', role: 'user', content: 'Edit this message', createdAt: Date.now() }}
+          onEdit={vi.fn()}
+        />
+      </App>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit message' }));
+    const editor = screen.getByRole('textbox', { name: 'Edit message' });
+    const bubble = editor.parentElement;
+
+    expect(bubble).not.toBeNull();
+    expect(getComputedStyle(bubble!).width).toBe('100%');
+    expect(getComputedStyle(bubble!).maxWidth).toBe('100%');
+  });
+
   it.each([undefined, { width: 1200, height: 1600 }, { width: 1600, height: 900 }])('preserves intrinsic generated image sizing with metadata %j', (dimensions) => {
     render(<App><MessageItem message={{
       id: 'generated-left', userId: 'user-a', conversationId: 'conv-a', role: 'assistant',

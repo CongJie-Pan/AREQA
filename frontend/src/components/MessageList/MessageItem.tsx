@@ -2398,7 +2398,7 @@ export const MessageItem = memo(function MessageItem({
           {isEditing ? (
             /* Edit Mode */
             <div className={styles.editModeContainer}>
-              <div className={cx(styles.bubble, styles.userBubble)}>
+              <div className={cx(styles.bubble, styles.userBubble, styles.userEditBubble)}>
                 <textarea
                   aria-label={t('editMessage')}
                   autoFocus

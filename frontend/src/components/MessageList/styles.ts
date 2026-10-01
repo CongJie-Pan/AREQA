@@ -2084,6 +2084,13 @@ quoteBlockContent: css`
     width: 100%;
   `,
 
+  userEditBubble: css`
+    align-self: stretch;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+  `,
+
   // Edit textarea
   editTextarea: css`
     width: 100%;
