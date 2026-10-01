@@ -81,7 +81,7 @@ class TurnIntakeService:
     def store_available() -> bool:
         """Return whether intake persistence is configured for this process."""
 
-        from memory_store import get_global_store
+        from services.memory.store.service import get_global_store
 
         return get_global_store() is not None
 
@@ -96,9 +96,9 @@ class TurnIntakeService:
     ) -> TurnIntakeResult:
         """Persist interaction, trusted evidence, and scoped roleplay state."""
 
-        from memory_store import get_global_store
+        from services.memory.store.service import get_global_store
         from services.compeer_scheduler import set_last_interaction_time
-        from services.memory_ingestion_service import (
+        from services.memory.ingestion.service import (
             build_user_evidence,
             create_memory_ingestion_service,
         )
@@ -147,7 +147,7 @@ class TurnIntakeService:
                 hot_memory = await store.get_hot_memory(user_id)
                 key = chat_avatar_key(conversation_id)
                 if key in hot_memory:
-                    from services.hot_memory_service import remove_typed_entry
+                    from services.memory.hot import remove_typed_entry
 
                     remove_typed_entry(hot_memory, key)
                     await store.redis.set(

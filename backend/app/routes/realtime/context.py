@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from auth import get_optional_current_user
-from fastapi import Depends
-from services.realtime.models import RealtimeContextRequest
 from typing import Any
+
+from auth import get_optional_current_user
+from fastapi import APIRouter, Depends
 from services.realtime import context
+from services.realtime.models import RealtimeContextRequest
 
 router = APIRouter()
 

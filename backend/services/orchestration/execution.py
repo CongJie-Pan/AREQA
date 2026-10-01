@@ -1,32 +1,32 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import json
 import logging
-import sys
 
 from config import settings
-from memory_gate import classify_user_message
 from core import AgentEvent, EventType, SearchMode
-from policies import CapabilityPolicy, SearchDecision, SearchReason
-from services.query_policy_service import AttachmentTask, apply_pdf_auto_explain_guardrail, count_pdf_attachments
-from services.query_policy_service import default_response_policy, response_policy_from_legacy
-from services.turn_latency_trace import TurnLatencyTrace
+from policies import CapabilityPolicy
+from services.memory.gate import classify_user_message
 from services.orchestration.intake import record_interaction_timestamp
 from services.orchestration.utils import _localized_greeting_reply
+from services.query_policy.classifier import (
+    apply_pdf_auto_explain_guardrail,
+    count_pdf_attachments,
+)
+from services.turn_latency_trace import TurnLatencyTrace
 
 logger = logging.getLogger("backend.services.orchestration_service")
 InterfaceLanguage = str
 
 
-
 from typing import Any, AsyncGenerator, Dict, List, Optional
+
 from fastapi import Request
-from services.orchestration.routing import plan_search
-from services.orchestration.response_policy import resolve_response_policy
 from services.orchestration.answer_preparation import prepare_answer
 from services.orchestration.completion import complete_answer
+from services.orchestration.response_policy import resolve_response_policy
+from services.orchestration.routing import plan_search
 
 
 class OrchestrationExecutionMixin:
@@ -307,7 +307,6 @@ class OrchestrationExecutionMixin:
             user_msg=last_user_msg,
             has_pdf_attachment=has_pdf_attachment,
         )
-        policy = response_policy.legacy_policy
         logger.info(
             "orchestration.response_policy_applied conversation_id=%s source=%s metadata=%s",
             conversation_id,

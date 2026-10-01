@@ -206,7 +206,7 @@ async def agent_job_worker() -> None:
             continue
         try:
             if job.job_type == "reflection_observation":
-                from gum_integration import push_reflection_observation
+                from services.memory.gum.runtime import push_reflection_observation
 
                 await push_reflection_observation(
                     job.user_id,
@@ -214,7 +214,7 @@ async def agent_job_worker() -> None:
                     conversation_id=job.payload.get("conversation_id", ""),
                 )
             elif job.job_type == "session_reflection":
-                from gum_integration import run_reflection
+                from services.memory.gum.runtime import run_reflection
 
                 await run_reflection(
                     job.user_id,
@@ -222,7 +222,7 @@ async def agent_job_worker() -> None:
                 )
             elif job.job_type == "edf_evaluation":
                 from config import settings
-                from gum_integration import async_evaluate_and_update_state
+                from services.memory.gum.runtime import async_evaluate_and_update_state
                 from openai import AsyncOpenAI
 
                 api_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -242,7 +242,7 @@ async def agent_job_worker() -> None:
                     ingest_memory=job.payload.get("ingest_memory", False),
                 )
             elif job.job_type == "memory_compaction":
-                from gum_integration import run_compaction
+                from services.memory.gum.runtime import run_compaction
 
                 await run_compaction(job.user_id)
             else:

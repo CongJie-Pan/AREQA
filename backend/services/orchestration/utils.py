@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from openai import AsyncOpenAI
 
-from services.query_policy_service import (
+from services.query_policy.classifier import (
     classify_response_policy_impl,
     parse_and_decompose_query_impl,
 )

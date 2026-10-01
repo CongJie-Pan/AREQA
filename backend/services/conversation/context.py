@@ -8,29 +8,30 @@ understanding as unknown.
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Mapping
-from dataclasses import dataclass
-import json
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List
 
-from memory_gate import is_sensitive_context_query, requests_recent_working_context_recall
-from services.answer_style_service import render_response_strategy_style_reminder
-from services.query_policy_service import (
-    AnswerDepth,
-    FollowupMode,
+from services.conversation import context_instructions
+from services.conversation.language import (
+    _answer_language_instruction,
+    _example_instruction,
+)
+from services.conversation.language import (
+    resolve_answer_language as resolve_answer_language,
+)
+from services.conversation.memory_context import _query_long_term_memory
+from services.conversation.parts import PartsContext, format_parts_context
+from services.memory.gate import (
+    is_sensitive_context_query,
+    requests_recent_working_context_recall,
+)
+from services.query_policy.classifier import (
     ResponsePolicy,
-    ResponseStructure,
-    ResponseTone,
-    TaskIntent,
-    VisualSupport,
     default_response_policy,
 )
-from services.parts_context_service import PartsContext, format_parts_context
 from services.tutor_profile_service import render_tutor_profile_prompt
-
 
 logger = logging.getLogger(__name__)
 SnapshotLoader = Callable[..., Awaitable[str]]
@@ -44,9 +45,6 @@ class ConversationContext:
     retrieved_memory: bool
 
 
-from services.conversation.language import resolve_answer_language, _answer_language_instruction, _example_instruction
-from services.conversation import context_instructions
-from services.conversation.memory_context import _query_long_term_memory
 
 
 class ConversationContextService:
@@ -122,14 +120,15 @@ class ConversationContextService:
             Finalized messages plus explicit learner-understanding metadata.
         """
         from config import settings
+
         from main import (
+            EVIDENCE_MODE_OVERLAYS,
+            LEARNING_TECHNIQUE_OVERLAYS,
+            RESPONSE_POLICY_OVERLAYS,
             SYSTEM_PROMPT_FORCE_THINK,
             SYSTEM_PROMPT_NORMAL,
             SYSTEM_PROMPT_WITH_RAG,
             SYSTEM_PROMPT_WITH_RAG_THINK,
-            EVIDENCE_MODE_OVERLAYS,
-            LEARNING_TECHNIQUE_OVERLAYS,
-            RESPONSE_POLICY_OVERLAYS,
         )
 
         new_messages = [message.copy() for message in messages]
@@ -280,9 +279,6 @@ class ConversationContextService:
 
         new_messages.insert(0, {"role": "system", "content": system_prompt})
         return ConversationContext(new_messages, "unknown", retrieved_memory)
-
-
-
 
 
     _response_policy_instruction = staticmethod(context_instructions._response_policy_instruction)

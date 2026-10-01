@@ -364,7 +364,7 @@ async def db_error_recovery_middleware(request: Request, call_next):
         err_msg = str(e).lower()
         if "disk i/o error" in err_msg or "i/o error" in err_msg:
             print("MIDDLEWARE CAUGHT DISK I/O ERROR. Attempting emergency engine reset...")
-            from gum_integration import gum_instances
+            from services.memory.gum.runtime import gum_instances
             for gum_instance in list(gum_instances.values()):
                 if gum_instance and hasattr(gum_instance, "engine"):
                     await gum_instance.engine.dispose()
@@ -384,7 +384,7 @@ async def db_error_recovery_middleware(request: Request, call_next):
         err_msg = str(e).lower()
         if "disk i/o error" in err_msg or "i/o error" in err_msg:
             print("MIDDLEWARE CAUGHT DISK I/O ERROR. Attempting emergency engine reset...")
-            from gum_integration import gum_instances
+            from services.memory.gum.runtime import gum_instances
             for gum_instance in list(gum_instances.values()):
                 if gum_instance and hasattr(gum_instance, "engine"):
                     await gum_instance.engine.dispose()
@@ -413,7 +413,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    from memory_store import init_global_store
+    from services.memory.store.service import init_global_store
     from mailbox_store import init_mailbox_store
     from job_store import init_agent_job_store
     from redis_client import log_redis_open_status
@@ -460,7 +460,7 @@ async def startup_event():
         "agent_job_worker",
         asyncio.create_task(agent_job_worker()),
     )
-    from gum_integration import run_reflection_loop
+    from services.memory.gum.runtime import run_reflection_loop
     app.state.reflection_task = _track_background_task(
         "reflection_loop",
         asyncio.create_task(run_reflection_loop()),
@@ -468,7 +468,7 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    from gum_integration import stop_gum_instance
+    from services.memory.gum.runtime import stop_gum_instance
 
     await stop_gum_instance()
     if hasattr(app.state, 'proactive_task'):

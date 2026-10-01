@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from memory_gate import (
+from services.memory.gate import (
     classify_user_message,
     is_sensitive_context_query,
     requests_cross_conversation_recall,

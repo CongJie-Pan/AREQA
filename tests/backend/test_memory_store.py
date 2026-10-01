@@ -399,3 +399,18 @@ async def test_temporary_goal_completion_with_no_candidate_is_safely_blocked(
     assert result is None
     assert "memory.temporary_goal_completion_blocked" in caplog.text
     assert "完成目標" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_hot_observation_pruning_removes_matching_typed_metadata(memory_store):
+    """Pruning the 51st observation must remove both its value and provenance."""
+    from services.memory.hot import TYPED_ENTRIES_KEY
+
+    for index in range(51):
+        await memory_store.update_hot_memory("user-prune", f"obs_{index:03d}", f"value-{index}")
+    memory = await memory_store.get_hot_memory("user-prune")
+    assert "obs_000" not in memory
+    assert "obs_000" not in memory[TYPED_ENTRIES_KEY]
+    assert memory["obs_050"] == "value-50"
+    assert len([key for key in memory if key.startswith("obs_")]) == 50
+    assert len(memory[TYPED_ENTRIES_KEY]) == 50

@@ -22,10 +22,9 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
         Prepared messages, token budget, slot limit and verified image inventory.
         All mutable data belongs to the current run.
     """
-    self = service
     policy = response_policy.legacy_policy
     trace.mark("prompt_assembly_started")
-    final_messages = await self._node_prompt_assembly(
+    final_messages = await service._node_prompt_assembly(
         user_id,
         conversation_id,
         messages,
@@ -44,11 +43,11 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
         has_attachments=has_attachments,
     )
     trace.mark("prompt_assembly_finished")
-    final_messages = self._attach_to_latest_user_message(final_messages, attachments or [])
+    final_messages = service._attach_to_latest_user_message(final_messages, attachments or [])
     if has_attachments:
-        final_messages = self._add_attachment_grounding_instruction(final_messages)
+        final_messages = service._add_attachment_grounding_instruction(final_messages)
     else:
-        final_messages, missing_visual_guard_applied = self._add_missing_visual_attachment_instruction(
+        final_messages, missing_visual_guard_applied = service._add_missing_visual_attachment_instruction(
             final_messages,
             last_user_msg,
         )
@@ -72,13 +71,13 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
         pdf_attachment_count,
     )
     if should_auto_explain_paper:
-        final_messages = self._add_paper_auto_explain_instruction(final_messages)
+        final_messages = service._add_paper_auto_explain_instruction(final_messages)
     max_image_slots = 4 if should_auto_explain_paper else 2
 
     preverified_image_blocks = None
     if settings.enable_visual_preflight:
         trace.mark("visual_preflight_started")
-        visual_preflight_decision = self.visual_answer_service.preflight_decision(
+        visual_preflight_decision = service.visual_answer_service.preflight_decision(
             response_policy,
             last_user_msg,
             turn_plan if turn_plan_enabled else None,
@@ -101,17 +100,17 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
             or attachment_visual_sources
         )
         if attachment_visual_sources and visual_preflight_allowed:
-            attachment_visual_candidates = await self._extract_attachment_visual_candidates(
+            attachment_visual_candidates = await service._extract_attachment_visual_candidates(
                 attachment_visual_sources,
                 conversation_id,
-                model_client=self.client,
+                model_client=service.client,
                 use_paper_visual_planner=should_auto_explain_paper,
             )
-            preverified_image_blocks = await self.output_image_service.prepare_attachment_image_blocks(
+            preverified_image_blocks = await service.output_image_service.prepare_attachment_image_blocks(
                 candidates=attachment_visual_candidates,
                 user_msg=last_user_msg,
                 conversation_id=conversation_id,
-                model_client=self.client,
+                model_client=service.client,
             )
         elif attachment_visual_sources:
             logger.info(
@@ -122,16 +121,16 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
             preverified_image_blocks = {}
         if preverified_image_blocks is None:
             if visual_preflight_allowed:
-                preverified_image_blocks = await self.output_image_service.prepare_preflight_image_blocks(
-                    visual_answer_service=self.visual_answer_service,
+                preverified_image_blocks = await service.output_image_service.prepare_preflight_image_blocks(
+                    visual_answer_service=service.visual_answer_service,
                     user_msg=last_user_msg,
                     response_policy=response_policy,
                     existing_web_results=run_state.web_search_results,
-                    tool_registry=self.tool_registry,
+                    tool_registry=service.tool_registry,
                     tool_budget=run_state.tool_budget,
                     user_id=user_id,
                     conversation_id=conversation_id,
-                    model_client=self.client,
+                    model_client=service.client,
                     turn_plan=turn_plan if turn_plan_enabled else None,
                 )
             else:
@@ -151,7 +150,7 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
             bool(attachment_visual_sources),
         )
         trace.mark("visual_preflight_finished")
-        final_messages = self._add_verified_visual_instruction(
+        final_messages = service._add_verified_visual_instruction(
             final_messages,
             preverified_image_blocks,
             response_policy=response_policy,

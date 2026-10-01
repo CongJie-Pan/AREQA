@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from openai import AsyncOpenAI
@@ -192,7 +192,7 @@ async def classify_dialogue_policy(
         stays in one service module.
     """
 
-    from services.query_policy_service import classify_dialogue_policy_impl
+    from services.query_policy.classifier import classify_dialogue_policy_impl
 
     return await classify_dialogue_policy_impl(
         client,
@@ -304,7 +304,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
         req.action_type,
     )
 
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
     store = get_global_store()
     if req.action_type == "compeer_cooldown_reset":
         from config import settings
@@ -317,7 +317,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
         return {"status": "ok", "cooldown_deleted": deleted}
 
     if store:
-        from memory_gate import apply_action_gate
+        from services.memory.gate import apply_action_gate
         asyncio.create_task(apply_action_gate(store, current_user_id, req.action_type, req.context))
 
     if req.action_type == "scroll":
@@ -338,7 +338,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
 @router.get("/api/v1/proactive-check")
 async def proactive_check_endpoint(current_user_id: str = Depends(get_current_user)):
     user_id = current_user_id
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
     store = get_global_store()
     if store:
         alert_content = await store.get_and_clear_pending_alert(user_id)

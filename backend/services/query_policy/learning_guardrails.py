@@ -7,9 +7,6 @@ import logging
 import re
 from dataclasses import replace
 
-logger = logging.getLogger(__name__)
-
-
 from services.query_policy.models import (
     AnswerDepth,
     EvidenceMode,
@@ -24,6 +21,10 @@ from services.query_policy.models import (
     VisualReason,
     VisualSupport,
 )
+
+logger = logging.getLogger(__name__)
+
+
 
 _LEARNING_TECHNIQUE_PATTERNS: tuple[tuple[LearningTechnique, tuple[re.Pattern[str], ...]], ...] = (
     (

@@ -1,10 +1,4 @@
-"""Plan semantically useful visuals for automatic PDF paper explanations.
-
-The planner reads a bounded structural map of an uploaded PDF and decides which
-pages should be rendered as answer visuals. It may use a model for semantic
-selection, but rendering and cropping remain owned by ``PdfVisualExtractionService``
-so untrusted model output cannot directly control pixels or file system writes.
-"""
+"""Validate model visual plans against available pages and bounded metadata."""
 
 from __future__ import annotations
 
@@ -19,7 +13,6 @@ from services.paper_visual.constants import (
 from services.paper_visual.models import PaperVisualPlanItem, _PaperPageContext
 
 logger = logging.getLogger(__name__)
-
 
 
 def _sanitize_plan_items(

@@ -1,10 +1,4 @@
-"""Provider retrieval mixin for visual answer enrichment.
-
-The mixin owns external image-provider calls and candidate parsing while the
-main service facade owns high-level answer orchestration. Provider logs must use
-safe metadata such as provider names, counts, status buckets, and conversation
-ids; raw user text, prompts, credentials, and image URLs must not be logged.
-"""
+"""Resolve independent image providers concurrently within the preflight deadline."""
 
 from __future__ import annotations
 

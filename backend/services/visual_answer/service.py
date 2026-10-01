@@ -7,7 +7,6 @@ or image URLs. Public output is limited to verified display metadata.
 """
 
 from __future__ import annotations
-
 import asyncio
 import hashlib
 import json
@@ -18,17 +17,12 @@ import time
 from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urljoin, urlparse
-
 import httpx
 import redis.asyncio as aioredis
-
 from config import settings
-from services.query_policy_service import AttachmentTask, ResponsePolicy, VisualSupport
+from services.query_policy.classifier import AttachmentTask, ResponsePolicy, VisualSupport
 from services.visual_affordance_registry import match_visual_affordance
 from services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
-
-logger = logging.getLogger(__name__)
-
 from services.visual_answer.constants import (
     _INACCESSIBLE_IMAGE_DOMAIN_CACHE,
     _NEGATIVE_CACHE_SENTINEL,
@@ -50,6 +44,9 @@ from services.visual_answer.providers import VisualAnswerProviderMixin
 from services.visual_answer.scoring import VisualAnswerScoringMixin
 from services.visual_answer.selection import VisualAnswerSelectionMixin
 from services.visual_answer.slots import VisualAnswerSlotMixin
+
+logger = logging.getLogger(__name__)
+
 
 class VisualAnswerService(
     VisualAnswerCacheMixin,
@@ -98,7 +95,6 @@ class VisualAnswerService(
         """Return whether this turn should attempt visual enrichment."""
 
         return self._should_attempt_preflight(response_policy, user_msg, None)
-
 
 
     async def build_answer_blocks(
@@ -266,8 +262,6 @@ class VisualAnswerService(
             return []
 
         return self._interleave_blocks(paragraphs, image_blocks)
-
-
 
 
     def preflight_decision(self, response_policy, user_msg, turn_plan=None):

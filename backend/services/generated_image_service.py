@@ -25,7 +25,7 @@ from PIL import Image, UnidentifiedImageError
 
 from config import settings
 from services.attachments.storage import AttachmentImageStorageService
-from services.conversation_context_service import resolve_answer_language
+from services.conversation.language import resolve_answer_language
 from services.visual.understanding import VisualUnderstandingAgent
 
 logger = logging.getLogger(__name__)

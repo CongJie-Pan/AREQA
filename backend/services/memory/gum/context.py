@@ -1,29 +1,11 @@
-"""Context, cold-memory, EDF, and letter-generation helpers for GUM.
-
-These functions are re-exported from ``gum_integration.py`` for compatibility.
-They preserve existing fail-soft behavior and avoid adding new structured logs
-that might expose raw prompts, user text, generated letters, or credentials.
-"""
+"""Build prompt-safe memory context and bounded learner-state or scaffolding requests."""
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import re
-import importlib
-import sys
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-
-def _integration_module():
-    return (
-        sys.modules.get("backend.gum_integration")
-        or sys.modules.get("gum_integration")
-        or importlib.import_module("gum_integration")
-    )
 
 async def get_hot_memory_snapshot(
     user_id: str = "default_user",
@@ -31,8 +13,9 @@ async def get_hot_memory_snapshot(
     conversation_id: str = "",
     include_cross_conversation_focus: bool = True,
 ) -> str:
-    from memory_store import get_global_store
     import json
+
+    from services.memory.store.service import get_global_store
     store = get_global_store()
     if not store:
         return ""
@@ -98,6 +81,7 @@ async def get_hot_memory_snapshot(
 
     return "\n\n".join(parts)
 
+
 async def generate_zpd_query_via_llm(client, model, original_query, learner_state):
     prompt = f"""You are an educational AI converting a student's question into a ZPD-aligned search query.
 Student's current learning state: {learner_state}
@@ -116,8 +100,9 @@ Return ONLY the refined query string without any quotes or explanations."""
         )
         return rsp.choices[0].message.content.strip()
     except Exception as e:
-        print(f"[ZPD Query Gen] Error: {e}")
+        logger.warning("gum.context_failed reason=%s", type(e).__name__)
         return original_query
+
 
 async def query_cold_memory_for_context(
     user_id: str,
@@ -129,12 +114,13 @@ async def query_cold_memory_for_context(
 ) -> str:
     """Return prompt-safe cold memory context with optional safe trace metadata."""
 
-    from cold_memory import ColdMemoryRetriever
-    from memory_store import get_global_store
     import os
     from pathlib import Path
 
-    db_path = str(Path(__file__).resolve().parents[1] / "data" / "gum_data" / "gum.db")
+    from cold_memory import ColdMemoryRetriever
+    from services.memory.store.service import get_global_store
+
+    db_path = str(Path(__file__).resolve().parents[3] / "data" / "gum_data" / "gum.db")
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
         return ""
@@ -182,8 +168,9 @@ async def query_cold_memory_for_context(
 
         return "\n".join(parts)
     except Exception as e:
-        print(f"[GUM] Error querying cold memory: {e}")
+        logger.warning("gum.context_failed reason=%s", type(e).__name__)
         return ""
+
 
 async def async_evaluate_and_update_state(
     client,
@@ -200,7 +187,7 @@ async def async_evaluate_and_update_state(
     ``TurnIntakeService`` and ``MemoryIngestionService``.
     """
     from compaction import evaluate_student_state
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
 
     state_res = await evaluate_student_state(client, model, chat_history)
     store = get_global_store()
@@ -215,12 +202,12 @@ async def async_evaluate_and_update_state(
         # Conversation-scoped roleplay is handled only by explicit chat commands in OrchestrationService.
         if state_res.get("trigger_proactive"):
             # We flag this for ComPeer to pick up or log it
-            print(f"[ComPeer] Proactive trigger needed: {state_res}")
+            logger.info("gum.proactive_trigger_requested")
 
         # EDF evaluates the learner state only. It must never promote an
         # assistant-generated inference into durable user memory.
         if state_res.get("memory_operations"):
-            print("[EDF-LOG] Ignored legacy memory_operations from state evaluation")
+            logger.info("gum.derived_memory_operations_ignored")
 
         if ingest_memory:
             logger.warning(
@@ -230,16 +217,16 @@ async def async_evaluate_and_update_state(
             )
 
 
-async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str) -> dict:
+async def detect_proactive_event_via_llm(runtime, user_id: str, hot_memory_snapshot: str) -> dict:
     """
     Analyze hot memory snapshot to determine if a proactive intervention is warranted.
     """
-    gum_instance, _ = await _integration_module().get_gum_instance(user_id)
+    gum_instance, _ = await runtime.get_gum_instance(user_id)
     if not gum_instance:
         return {"has_event": False, "event_summary": "", "importance": 0.0}
 
-    from pydantic import BaseModel
     from gum.schemas import get_schema
+    from pydantic import BaseModel
 
     class EventDetectSchema(BaseModel):
         has_event: bool
@@ -267,11 +254,11 @@ async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str)
         import json as _json
         return _json.loads(rsp.choices[0].message.content)
     except Exception as e:
-        print(f"[ComPeer] detect_proactive_event_via_llm failed: {e}")
+        logger.warning("gum.context_failed reason=%s", type(e).__name__)
         return {"has_event": False, "event_summary": "", "importance": 0.0}
 
 
-async def generate_scaffolding_message_via_llm(
+async def generate_scaffolding_message_via_llm(runtime, 
     user_id: str,
     hot_memory_snapshot: str,
     cold_memory_context: str,
@@ -284,7 +271,7 @@ async def generate_scaffolding_message_via_llm(
     """
     Generate a personalized scaffolding message for proactive ComPeer intervention.
     """
-    gum_instance, _ = await _integration_module().get_gum_instance(user_id)
+    gum_instance, _ = await runtime.get_gum_instance(user_id)
     if not gum_instance:
         return "你學習狀況還好嗎？有任何問題都可以問我。"
 
@@ -339,166 +326,5 @@ async def generate_scaffolding_message_via_llm(
         )
         return rsp.choices[0].message.content.strip()
     except Exception as e:
-        print(f"[ComPeer] generate_scaffolding_message_via_llm failed: {e}")
+        logger.warning("gum.context_failed reason=%s", type(e).__name__)
         return "你學習狀況還好嗎？有任何問題都可以問我。"
-
-async def generate_epistolary_letter_via_llm(
-    user_id: str,
-    active_avatar: str,
-    hot_memory_snapshot: str,
-    cold_memory_context: str
-) -> str:
-    gum_instance, _ = await _integration_module().get_gum_instance(user_id)
-    if not gum_instance:
-        return "系統發生錯誤，無法寫信。"
-
-    prompt = f"""你現在是「{active_avatar}」。請以第一人稱，寫一封信給正在與你進行思想交流的學習者（User）。
-這不是一般的即時對話，而是一封跨時空的信件，因此語氣要具有沉澱感、哲學反思與歷史厚度。
-
-【當前學習行為與近期探討（Hot Memory）】
-{hot_memory_snapshot}
-
-【歷史學習背景（Cold Memory）】
-{cold_memory_context}
-
-要求：
-1. 必須回傳一個 JSON 格式，包含兩個欄位："subject"（信件主旨）與 "content"（信件內容）。
-2. "subject" 請擬定一個吸引人且具有哲理的簡短標題。
-3. "content" 長度控制在 300 到 500 字之間。針對使用者在對話中展現的疑惑、掙扎或深刻見解，給予回應與更深一層的提問。
-4. 充分展現「{active_avatar}」的歷史背景與口吻，不可像 AI 機器人。
-5. 排版支援 Markdown，請善用段落讓信件便於閱讀。
-6. 結尾請署名，並留下一個發人深省的問題等待對方的回信。
-
-請務必只回傳 JSON 格式，不要包含其他無關的文字。
-"""
-    try:
-        from config import settings
-        from pydantic import BaseModel
-
-        class LetterSchema(BaseModel):
-            subject: str
-            content: str
-
-        rsp = await gum_instance.client.chat.completions.create(
-            model=settings.model_gum,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_schema", "json_schema": {"name": "letter_schema", "schema": LetterSchema.model_json_schema()}},
-            max_tokens=800,
-            temperature=0.8
-        )
-        response_text = rsp.choices[0].message.content.strip()
-
-        import json
-        import re
-        match = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if match:
-            response_text = match.group(0)
-
-        data = json.loads(response_text)
-
-        subject = data.get("subject", "一封來自遠方的信")
-        if not subject or subject.strip() == "":
-            subject = "來自遠方的思考"
-
-        content = data.get("content", "信件內容未能解碼。")
-
-        if isinstance(content, list):
-            content = "\n".join(str(c) for c in content)
-
-        return subject, content
-    except Exception as e:
-        print(f"[Mailbox] generate_epistolary_letter_via_llm failed: {e}")
-        return "一封未知的信", f"來自{active_avatar}的一封信，因時空亂流未能完整送達。"
-
-
-async def generate_areqa_care_letter_via_llm(
-    user_id: str,
-    hot_memory_snapshot: str,
-    cold_memory_context: str,
-    learner_state: str,
-    edf_policy: str,
-    event_summary: str = "",
-    last_compeer_message: str = "",
-    allow_topic_specific: bool = False,
-) -> tuple[str, str]:
-    gum_instance, _ = await _integration_module().get_gum_instance(user_id)
-    if not gum_instance:
-        return "給你的學習小箋", "我注意到你最近可能有些卡住。先不用急著解決全部問題，回到一個最小的段落或概念就好。你願意告訴我，現在最困住你的是哪一句或哪個想法嗎？"
-
-    safe_cold_memory_context = cold_memory_context if allow_topic_specific else ""
-    last_msg_hint = f"\n【避免重複】上一封主動關懷已提過：「{last_compeer_message}」，這封信不得重複同一個問法。" if last_compeer_message else ""
-    topic_policy = (
-        "【主題證據政策】系統已確認有足夠的近期語意證據。你可以提及 Hot Memory、觸發原因、或相關 Cold Memory 中明確出現的具體學習主題，但不可超出這些證據。"
-        if allow_topic_specific
-        else (
-            "【主題證據政策】系統沒有足夠的近期語意證據支撐具體學習主題。"
-            "你必須寫成中性的低壓力關懷短箋，不得提及或暗示任何特定文本、學科、角色、章節或概念。"
-            "尤其禁止自行輸出「文言文」、「判詞」、「紅樓夢」、任何角色名，或「昨天你在讀 X」這類具體化時間敘述。"
-        )
-    )
-    prompt = f"""你是 AREQA，一位溫暖、克制、專業的學習陪伴者。請根據學生最近的狀態寫一封非同步關懷信。
-
-【近期學習狀態（Hot Memory）】
-{hot_memory_snapshot}
-
-【長期學習背景（Cold Memory，僅供參考）】
-{safe_cold_memory_context}
-
-【目前 learner_state】{learner_state}
-【目前教學策略】{edf_policy}
-【觸發原因】{event_summary or "系統偵測到學生可能需要低壓力關懷"}{last_msg_hint}
-{topic_policy}
-
-要求：
-1. 寄件人固定是 AREQA，不要扮演任何歷史人物或虛構角色。
-2. 必須像 5 分鐘後送達的一封短箋，而不是即時聊天室插話。
-3. 內容要回應學生最近卡住、焦慮或長時間停留的狀態；只有在主題證據政策允許時，才可提及具體主題。
-4. 長度 120 到 220 字，繁體中文，溫柔但不肉麻，不說教。
-5. 結尾只問一個低壓力問題，讓學生可以回信。
-6. 嚴格回傳 JSON，包含 "subject" 與 "content"。
-"""
-    try:
-        from config import settings
-        from pydantic import BaseModel
-
-        class CareLetterSchema(BaseModel):
-            subject: str
-            content: str
-
-        rsp = await gum_instance.client.chat.completions.create(
-            model=settings.model_gum,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_schema", "json_schema": {"name": "care_letter_schema", "schema": CareLetterSchema.model_json_schema()}},
-            max_tokens=500,
-            temperature=0.6,
-        )
-        response_text = rsp.choices[0].message.content.strip()
-        import json
-        import re
-        match = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if match:
-            response_text = match.group(0)
-        data = json.loads(response_text)
-        subject = data.get("subject") or "給你的學習小箋"
-        content = data.get("content") or "我注意到你最近可能有些卡住。你願意回信告訴我，現在最困住你的是哪一小段嗎？"
-        return subject, content
-    except Exception as e:
-        print(f"[Mailbox] generate_areqa_care_letter_via_llm failed: {e}")
-        return "給你的學習小箋", "我注意到你最近可能有些卡住。先不用急著解決全部問題，我們可以只從一個最小的地方開始。你願意回信告訴我，現在最困住你的是哪一句或哪個想法嗎？"
-
-async def delayed_reply_writer(user_id: str, mail_id: str, reply_content: str, active_avatar: str, delay_seconds: int = 300):
-    print(f"[Mailbox] delayed_reply_writer started for mail_id {mail_id}, scheduling in {delay_seconds} seconds...")
-    try:
-        from mailbox_store import get_mailbox_store
-        store = get_mailbox_store()
-
-        await store.schedule_delayed_mail(user_id, {
-            "reply_to_mail_id": mail_id,
-            "reply_content": reply_content,
-            "active_avatar": active_avatar,
-            "conversation_id": mail_id
-        }, delay_seconds)
-
-        print(f"[Mailbox] delayed_reply_writer completed, scheduled new mail from {active_avatar} in response to {mail_id}.")
-    except Exception as e:
-        print(f"[Mailbox] delayed_reply_writer failed for {mail_id}: {e}")

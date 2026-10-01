@@ -13,7 +13,6 @@ _IMAGE_REQUEST_END = "]]"
 _IMAGE_REQUEST_PATTERN = re.compile(r"\[\[AREQA_IMAGE_REQUEST(?P<body>.*?)\]\]", re.DOTALL)
 _VERIFIED_IMAGE_PATTERN = re.compile(r"\[\[AREQA_VERIFIED_IMAGE(?P<body>.*?)\]\]", re.DOTALL)
 _IMAGE_SLOT_PATTERN = re.compile(r"<AREQA_IMAGE_SLOT(?P<body>.*?)/?>", re.DOTALL)
-_OPENROUTER_SESSION_ID_PATTERN = re.compile(r"[^A-Za-z0-9_.:-]+")
 _IMAGE_REQUEST_ATTR_PATTERN = re.compile(
     r"""(?P<key>id|query|caption_hint|caption|alt)\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
     re.DOTALL,

@@ -6,7 +6,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from policies.memory_policy import MemoryDecision
-from services.memory_retrieval_trace import MemoryRetrievalTrace
+from services.memory.retrieval_trace import MemoryRetrievalTrace
 
 from .registry import ToolResult
 

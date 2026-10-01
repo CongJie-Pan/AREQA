@@ -13,7 +13,6 @@ from typing import Any
 
 from config import settings
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +50,7 @@ def create_memory_ingestion_service_impl(
         and settings.memory_semantic_external_processing_acknowledged
         and client is not None
     ):
-        from services.memory_extraction_agent import OpenRouterMemoryExtractionAgent
+        from services.memory.extraction import OpenRouterMemoryExtractionAgent
 
         extraction_agent = OpenRouterMemoryExtractionAgent(
             client,
@@ -67,7 +66,7 @@ def create_memory_ingestion_service_impl(
             client is not None,
         )
     elif settings.memory_extraction_agent_enabled:
-        from services.memory_extraction_agent import LocalMemoryExtractionAgent
+        from services.memory.extraction import LocalMemoryExtractionAgent
 
         extraction_agent = LocalMemoryExtractionAgent()
         logger.debug(
@@ -87,7 +86,7 @@ def create_memory_ingestion_service_impl(
         )
 
     if semantic_enabled and client is not None:
-        from services.memory_semantic_analyzer import OpenRouterMemorySemanticAnalyzer
+        from services.memory.semantic_analysis import OpenRouterMemorySemanticAnalyzer
 
         analyzer = OpenRouterMemorySemanticAnalyzer(
             client,

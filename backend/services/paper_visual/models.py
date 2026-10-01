@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True, slots=True)
 class PaperVisualPlanItem:
     """One model- or fallback-selected visual target for a PDF paper answer.

@@ -8,21 +8,25 @@ and model reasoning must not be logged.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from config import settings
-from services.memory_extraction_agent import MemoryCandidateDraft
-from services.memory_ingestion.constants import (
+from services.memory.extraction import MemoryCandidateDraft
+from services.memory.ingestion.constants import (
     _ABSTRACT_CONCEPT_MARKERS,
     _CONCRETE_ABSTRACT_PREFERENCE_KEY,
     _CONCRETE_EXAMPLE_MARKERS,
     _GOAL_MATCH_NOISE,
     _NEGATIVE_PREFERENCE_MARKERS,
 )
-from services.memory_ingestion.models import MemoryEligibilityState, MemoryIngestionResult, UserEvidence
+from services.memory.ingestion.models import (
+    MemoryEligibilityState,
+    MemoryIngestionResult,
+    UserEvidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +86,7 @@ class MemoryIngestionRulesMixin:
 
         if category != "passive_preference":
             return ""
-        normalized = MemoryIngestionService._normalize_candidate(text)
+        normalized = MemoryIngestionRulesMixin._normalize_candidate(text)
         if any(marker in normalized for marker in _NEGATIVE_PREFERENCE_MARKERS):
             return ""
         if not any(marker in normalized for marker in _CONCRETE_EXAMPLE_MARKERS):
@@ -97,7 +101,7 @@ class MemoryIngestionRulesMixin:
     def _normalize_goal_topic(text: str) -> str:
         """Remove lifecycle boilerplate while preserving a goal's topic."""
 
-        normalized = MemoryIngestionService._normalize_candidate(text)
+        normalized = MemoryIngestionRulesMixin._normalize_candidate(text)
         for marker in _GOAL_MATCH_NOISE:
             normalized = normalized.replace(marker, "")
         return normalized

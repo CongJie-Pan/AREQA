@@ -1,10 +1,4 @@
-"""Build structured visual blocks for illustrated assistant answers.
-
-This module owns the privacy boundary for visual answer enrichment. It may use
-the latest user message to query a search provider, but structured logs emitted
-here never include raw user text, generated answer text, prompts, credentials,
-or image URLs. Public output is limited to verified display metadata.
-"""
+"""Apply visual policy gates and prepare grounded images before answer generation."""
 
 from __future__ import annotations
 
@@ -13,7 +7,7 @@ import logging
 from typing import Any
 
 from config import settings
-from services.query_policy_service import ResponsePolicy, VisualSupport
+from services.query_policy.classifier import ResponsePolicy, VisualSupport
 from services.visual_affordance_registry import match_visual_affordance
 
 logger = logging.getLogger(__name__)

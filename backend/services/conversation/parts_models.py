@@ -2,7 +2,9 @@
 
 from dataclasses import dataclass
 from typing import Any
+
 from services.answer_style_service import render_learnlm_teaching_rules
+
 
 @dataclass(frozen=True, slots=True)
 class PartsContext:

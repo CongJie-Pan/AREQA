@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 from redis_client import get_redis
-from services.hot_memory_service import remove_typed_entry
+from services.memory.hot import remove_typed_entry
 
 logger = logging.getLogger("services.compeer_scheduler")
 
@@ -104,7 +104,7 @@ async def tick_proactive_schedule(user_id: str):
             if not await _facade().is_in_cooldown(user_id):
                 passed = await _facade().evaluate_importance_gate(event)
                 if passed:
-                    from memory_store import get_global_store
+                    from services.memory.store.service import get_global_store
                     store = get_global_store()
                     if store:
                         content = event.get("Content", "學習狀況還好嗎？")
@@ -114,7 +114,7 @@ async def tick_proactive_schedule(user_id: str):
                         )
                         learner_state = await store.get_learner_state(user_id) if store else "default"
                         edf_policy = await store.get_current_strategy(user_id) if store else "default"
-                        from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
+                        from services.memory.gum.runtime import get_hot_memory_snapshot, query_cold_memory_for_context
                         snapshot = await get_hot_memory_snapshot(user_id)
                         allow_topic_specific = _facade().should_allow_topic_specific_care(
                             snapshot,
@@ -157,7 +157,7 @@ async def initialize_daily_schedule(user_id: str, reflection_outputs: list):
         reflection_outputs (list): A list of insights generated from the previous day's reflections.
     """
     try:
-        from gum_integration import get_gum_instance
+        from services.memory.gum.runtime import get_gum_instance
         gum_instance, _ = await get_gum_instance(user_id)
         if not gum_instance:
             return
@@ -206,7 +206,7 @@ async def run_reflection_and_initialization(user_id: str):
         user_id (str): The unique identifier for the user.
     """
     try:
-        from gum_integration import run_reflection
+        from services.memory.gum.runtime import run_reflection
         insights = await run_reflection(user_id)
 
         if not insights:
@@ -234,7 +234,7 @@ async def daily_scheduler_loop():
 
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
-            from memory_store import get_global_store
+            from services.memory.store.service import get_global_store
             store = get_global_store()
             if store:
                 redis = store.redis
@@ -257,7 +257,7 @@ async def daily_scheduler_loop():
                         if last_attempt.startswith(today_str):
                             continue
                         if now.hour >= 23 or last_reflection is None:
-                            from gum_integration import run_reflection
+                            from services.memory.gum.runtime import run_reflection
                             await store.update_hot_memory_async(
                                 user_id,
                                 "last_reflection_attempt_at",

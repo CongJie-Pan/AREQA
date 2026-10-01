@@ -153,7 +153,7 @@ async def generate_title_endpoint(request: Request, title_req: TitleRequest):
             timeout=30.0
         )
 
-        from services.conversation_context_service import resolve_answer_language
+        from services.conversation.language import resolve_answer_language
 
         title_language = resolve_answer_language("zh-TW", first_user_message_content(title_req.messages))
         system_prompt = build_title_system_prompt(title_language)

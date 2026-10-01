@@ -10,27 +10,24 @@ unless the explicit sensitive-debug flag is enabled for controlled diagnosis.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import json
 import logging
 import re
 from typing import Any
 
-from services.answer_style_service import render_learnlm_teaching_rules
-from services.query_policy_service import (
-    AnswerDepth,
-    FollowupMode,
+from services.conversation import parts_validation
+from services.conversation.parts_models import PartsContext
+from services.conversation.parts_models import (
+    format_parts_context as format_parts_context,
+)
+from services.query_policy.classifier import (
     ResponsePolicy,
-    ResponseStructure,
     TaskIntent,
     default_response_policy,
 )
 
-
 logger = logging.getLogger(__name__)
 
-from services.conversation.parts_models import PartsContext, format_parts_context
-from services.conversation import parts_validation
 
 
 class PartsContextService:
@@ -331,12 +328,6 @@ Latest user request:
         return parsed
 
 
-
-
-
-
-
-
     @staticmethod
     def _log_sensitive_debug(
         *,
@@ -383,7 +374,6 @@ Latest user request:
                 sort_keys=True,
             ),
         )
-
 
 
     clean_recent_conversation_context = staticmethod(parts_validation.clean_recent_conversation_context)

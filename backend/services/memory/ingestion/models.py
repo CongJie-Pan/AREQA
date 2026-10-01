@@ -7,10 +7,11 @@ represent exact user-authored evidence and sanitized ingestion outcomes.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-import hashlib
+
 
 class MemoryEligibilityState(str, Enum):
     """Describe the server-owned outcome of one evidence ingestion."""

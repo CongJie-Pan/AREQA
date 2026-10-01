@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 from redis_client import get_redis
-from services.hot_memory_service import remove_typed_entry
+from services.memory.hot import remove_typed_entry
 
 logger = logging.getLogger("services.compeer_scheduler")
 

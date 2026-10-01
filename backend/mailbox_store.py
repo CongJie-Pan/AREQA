@@ -537,7 +537,7 @@ async def _deliver_claimed_mail(store: MailboxStore, task: Dict[str, Any], task_
     content = task.get("content") or ""
 
     if not content:
-        from gum_integration import (
+        from services.memory.gum.runtime import (
             generate_epistolary_letter_via_llm,
             get_hot_memory_snapshot,
             query_cold_memory_for_context,
@@ -646,7 +646,7 @@ async def run_delayed_mail_iteration(
                 try:
                     _, active_avatar, user_id = await _deliver_claimed_mail(store, task, task_id)
                     if task.get("kind") == "compeer_care":
-                        from memory_store import get_global_store
+                        from services.memory.store.service import get_global_store
 
                         memory_store = get_global_store()
                         if memory_store:

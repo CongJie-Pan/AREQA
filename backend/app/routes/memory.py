@@ -36,12 +36,12 @@ def _main_module():
     )
 
 async def push_observation(user_id: str, text: str):
-    from gum_integration import push_observation as _push_observation
+    from services.memory.gum.runtime import push_observation as _push_observation
 
     return await _push_observation(user_id, text)
 
 async def get_all_memory(user_id: str = "default_user"):
-    from gum_integration import get_all_memory
+    from services.memory.gum.runtime import get_all_memory
 
     return await get_all_memory(user_id)
 
@@ -57,7 +57,7 @@ async def build_memory_view(user_id: str) -> list[dict]:
     props = [item for item in await memory_loader(user_id) if item.get("memory_type") == "cold_memory"]
     store = None
     try:
-        from memory_store import get_global_store
+        from services.memory.store.service import get_global_store
         store = get_global_store()
     except Exception as exc:
         logger.warning("[MemoryView] Store unavailable for %s: %s", user_id, exc)
@@ -195,8 +195,8 @@ async def get_memory_summary(current_user_id: str = Depends(get_current_user)):
 
 @router.get("/api/v1/memory/debug")
 async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)):
-    from gum_integration import get_hot_memory_snapshot, get_pending_observation_count
-    from memory_store import get_global_store
+    from services.memory.gum.runtime import get_hot_memory_snapshot, get_pending_observation_count
+    from services.memory.store.service import get_global_store
 
     store = get_global_store()
     if not store:
@@ -327,7 +327,7 @@ async def _get_candidate_by_memory_id(store: Any, user_id: str, memory_id: str) 
 
 @router.post("/api/v1/memory/candidates/{memory_id}/confirm")
 async def confirm_candidate_memory_endpoint(memory_id: str, current_user_id: str = Depends(get_current_user)):
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
 
     store = get_global_store()
     if not store:
@@ -347,7 +347,7 @@ async def confirm_candidate_memory_endpoint(memory_id: str, current_user_id: str
 
 @router.post("/api/v1/memory/candidates/{memory_id}/reject")
 async def reject_candidate_memory_endpoint(memory_id: str, current_user_id: str = Depends(get_current_user)):
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
 
     store = get_global_store()
     if not store:
@@ -360,7 +360,7 @@ async def reject_candidate_memory_endpoint(memory_id: str, current_user_id: str 
 
 @router.delete("/api/v1/memory/working")
 async def clear_working_memory_endpoint(current_user_id: str = Depends(get_current_user)):
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
 
     store = get_global_store()
     if not store:
@@ -373,7 +373,7 @@ async def clear_working_memory_endpoint(current_user_id: str = Depends(get_curre
 @router.post("/api/v1/memory/flush")
 async def flush_memory_endpoint(current_user_id: str = Depends(get_current_user)):
     """Flush a partial observation batch and reflect it into durable propositions."""
-    from gum_integration import get_pending_observation_count, run_reflection
+    from services.memory.gum.runtime import get_pending_observation_count, run_reflection
 
     pending_before = await get_pending_observation_count(current_user_id)
     insights = await run_reflection(current_user_id)
@@ -386,8 +386,8 @@ async def flush_memory_endpoint(current_user_id: str = Depends(get_current_user)
 
 @router.delete("/api/v1/memory/{mem_id}")
 async def delete_memory_endpoint(mem_id: str, current_user_id: str = Depends(get_current_user)):
-    from gum_integration import get_gum_instance
-    from memory_store import get_global_store
+    from services.memory.gum.runtime import get_gum_instance
+    from services.memory.store.service import get_global_store
 
     if mem_id.startswith("profile:explicit:"):
         store = get_global_store()
@@ -435,8 +435,8 @@ async def batch_delete_memory_endpoint(req: DeleteBatchRequest, current_user_id:
 
 @router.put("/api/v1/memory/{mem_id}")
 async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user_id: str = Depends(get_current_user)):
-    from gum_integration import get_gum_instance
-    from memory_store import get_global_store
+    from services.memory.gum.runtime import get_gum_instance
+    from services.memory.store.service import get_global_store
 
     if mem_id.startswith("profile:explicit:"):
         store = get_global_store()
@@ -518,9 +518,9 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user
 @router.delete("/api/v1/memory")
 async def clear_memory_endpoint(current_user_id: str = Depends(get_current_user)):
     """Clear all hot memory and cold GUM memory"""
-    from gum_integration import clear_gum_memory
+    from services.memory.gum.runtime import clear_gum_memory
 
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
     store = get_global_store()
     if store:
         await store.clear_all_memory(current_user_id)

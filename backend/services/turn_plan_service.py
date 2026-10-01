@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from memory_gate import classify_user_message
+from services.memory.gate import classify_user_message
 from policies.memory_policy import MemoryDecision, MemoryPolicy, MemoryScope
 from policies.search_policy import SearchDecision
 

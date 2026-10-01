@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 from redis_client import get_redis
-from services.hot_memory_service import remove_typed_entry
+from services.memory.hot import remove_typed_entry
 
 logger = logging.getLogger("services.compeer_scheduler")
 
@@ -202,9 +202,9 @@ async def schedule_areqa_care_letter(
     Returns:
         str: The task ID of the scheduled letter.
     """
-    from gum_integration import generate_areqa_care_letter_via_llm
+    from services.memory.gum.runtime import generate_areqa_care_letter_via_llm
     from mailbox_store import get_mailbox_store
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
     from config import settings
 
     if not settings.enable_mailbox_sending:
@@ -263,7 +263,7 @@ async def _schedule_areqa_care_letter_safely(**kwargs):
             user_id,
             type(exc).__name__,
         )
-        from memory_store import get_global_store
+        from services.memory.store.service import get_global_store
 
         store = get_global_store()
         if store:

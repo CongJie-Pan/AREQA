@@ -18,28 +18,19 @@ if str(backend_dir) not in sys.path:
 
 from config import settings
 
-try:
-    from gum_integration import (
-        async_evaluate_and_update_state,
-        get_hot_memory_snapshot,
-        push_observation,
-        query_cold_memory_for_context,
-        query_memory_for_context,
-    )
-except ModuleNotFoundError:
-    from backend.gum_integration import (
-        async_evaluate_and_update_state,
-        get_hot_memory_snapshot,
-        push_observation,
-        query_cold_memory_for_context,
-        query_memory_for_context,
-    )
+from services.memory.gum.runtime import (
+    async_evaluate_and_update_state,
+    get_hot_memory_snapshot,
+    push_observation,
+    query_cold_memory_for_context,
+    query_memory_for_context,
+)
 from core import ConversationRuntime
 from agents import TutorAgent
 from policies import MemoryPolicy
 from tools import DelayedMailTool, MemoryQueryTool, ToolDefinition, ToolRegistry, WebSearchTool
-from services.conversation_context_service import ConversationContextService
-from services.conversation_stream_service import ConversationStreamService
+from services.conversation.context import ConversationContextService
+from services.conversation.stream import ConversationStreamService
 from services.orchestration import (
     OrchestrationExecutionMixin,
     OrchestrationPromptingMixin,
@@ -55,7 +46,7 @@ from services.orchestration.utils import (
     reorder_for_attention,
 )
 from services.output_image_service import OutputImageService
-from services.parts_context_service import PartsContextService
+from services.conversation.parts import PartsContextService
 from services.post_turn_service import PostTurnService
 from services.turn_intake_service import TurnIntakeService
 from services.turn_intake_service import (
@@ -65,7 +56,7 @@ from services.turn_intake_service import (
     normalize_avatar_name as _normalize_avatar_name,
 )
 from services.turn_plan_service import TurnPlanService
-from services.visual_answer_service import VisualAnswerService
+from services.visual_answer.service import VisualAnswerService
 
 InterfaceLanguage = str
 

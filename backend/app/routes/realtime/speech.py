@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from auth import get_optional_current_user
-from fastapi import Depends
-from fastapi import File
-from fastapi import Form
-from fastapi import UploadFile
-from fastapi.responses import Response
-from services.realtime.models import SpeechReadRequest
 from typing import Literal
+
+from auth import get_optional_current_user
+from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.responses import Response
 from services.realtime import speech
+from services.realtime.models import SpeechReadRequest
 
 router = APIRouter()
 

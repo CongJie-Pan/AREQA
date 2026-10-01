@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from config import settings
+from services.paper_visual import fallback, validation
 from services.paper_visual.constants import (
     _ABLATION_CAPTION_TERMS,
     _DATASET_CAPTION_TERMS,
@@ -32,11 +33,9 @@ from services.paper_visual.constants import (
 )
 from services.paper_visual.models import PaperVisualPlanItem, _PaperPageContext
 
-
 logger = logging.getLogger(__name__)
 
 
-from services.paper_visual import fallback, validation
 
 
 class PaperVisualPlannerService:
@@ -251,21 +250,6 @@ class PaperVisualPlannerService:
             lines.append(line)
             used_chars += len(line)
         return "\n".join(lines)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     @staticmethod

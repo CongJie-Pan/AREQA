@@ -18,7 +18,6 @@ async def plan_search(service, *, last_user_msg, run_context, trace, effective_s
     Returns:
         Search decision, turn plan, and effective RAG flag for this run.
     """
-    self = service
     conversation_id = run_context.conversation_id
     trace.mark("search_routing_started")
     if effective_search_mode == SearchMode.AUTO and has_attachments:
@@ -27,23 +26,22 @@ async def plan_search(service, *, last_user_msg, run_context, trace, effective_s
         search_decision = SearchDecision(False, SearchReason.ATTACHMENT_CONTEXT_PRIORITY)
     elif effective_search_mode == SearchMode.AUTO and auto_routing_enabled:
         trace.increment_model_call("search_routing")
-        search_decision = await self.tutor_agent.decide_search(
+        search_decision = await service.tutor_agent.decide_search(
             last_user_msg,
             run_context,
-            client=self.client,
+            client=service.client,
             model=settings.model_policy_classifier,
             timeout_seconds=1.5,
         )
     elif effective_search_mode == SearchMode.AUTO:
-        search_decision = self.tutor_agent.search_policy.evaluate(
+        search_decision = service.tutor_agent.search_policy.evaluate(
             last_user_msg, effective_search_mode
         )
     else:
-        search_decision = self.tutor_agent.search_policy.evaluate(
+        search_decision = service.tutor_agent.search_policy.evaluate(
             last_user_msg, effective_search_mode
         )
     trace.mark("search_routing_finished")
-    use_web_search = search_decision.should_search
     if has_attachments and effective_search_mode == SearchMode.AUTO:
         use_rag = False
         attachment_types = [
@@ -58,7 +56,7 @@ async def plan_search(service, *, last_user_msg, run_context, trace, effective_s
             attachment_types,
         )
 
-    turn_plan = self.turn_plan_service.plan(
+    turn_plan = service.turn_plan_service.plan(
         user_message=last_user_msg,
         use_rag=use_rag,
         has_attachments=has_attachments,
@@ -79,10 +77,10 @@ async def plan_search(service, *, last_user_msg, run_context, trace, effective_s
 
     if settings.enable_tutor_shadow_routing and not auto_routing_enabled and last_user_msg and not has_attachments:
         shadow_task = asyncio.create_task(
-            self.tutor_agent.evaluate_search_shadow(
+            service.tutor_agent.evaluate_search_shadow(
                 last_user_msg,
                 run_context,
-                client=self.client,
+                client=service.client,
                 model=settings.model_policy_classifier,
             )
         )

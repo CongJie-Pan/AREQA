@@ -6,23 +6,22 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 import time
 import uuid
-from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, List
 
-from services.conversation.image_generation import IMAGE_TOOL, stream_generated_image
-from services.conversation_context_service import resolve_answer_language
 from core import PublicAnswerFilter
+from services.conversation.image_generation import stream_generated_image
+from services.conversation.image_markers import ImageRequestMarkerFilter
+from services.conversation.image_markers import ImageRequestSlot as ImageRequestSlot
+from services.conversation.stream_request import (
+    _openrouter_session_id as _openrouter_session_id,
+)
+from services.conversation.stream_request import build_stream_request
 from services.response_boundary_validator import StreamingResponseBoundaryFilter
-
 
 logger = logging.getLogger(__name__)
 
-from services.conversation.image_markers import ImageRequestSlot, ImageRequestMarkerFilter
-
-_OPENROUTER_SESSION_ID_PATTERN = re.compile(r"[^A-Za-z0-9_.:-]+")
 
 
 def letter_task_id(
@@ -98,56 +97,12 @@ class ConversationStreamService:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': '[System Error] OPENROUTER_API_KEY is missing.'}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             return
 
-        from config import settings
-
         started_at = time.time()
-        target_model = settings.model_main_thinking if force_think else settings.model_main_instruct
-        extra_body = {"repetition_penalty": repetition_penalty}
-        session_id = _openrouter_session_id(conversation_id)
-        if settings.enable_openrouter_main_session_id and session_id:
-            extra_body["session_id"] = session_id
-        if settings.enable_openrouter_main_latency_routing:
-            extra_body["provider"] = {
-                "preferred_max_latency": {
-                    "p90": settings.openrouter_main_preferred_latency_p90_seconds,
-                }
-            }
-        has_pdf = any(
-            isinstance(message.get("content"), list)
-            and any(
-                part.get("type") == "file"
-                for part in message["content"]
-                if isinstance(part, dict)
-            )
-            for message in messages
+        target_model, extra_body, tools, has_pdf = build_stream_request(
+            force_think=force_think, repetition_penalty=repetition_penalty,
+            conversation_id=conversation_id, messages=messages,
+            interface_language=interface_language, last_user_msg=last_user_msg,
         )
-        if has_pdf:
-            extra_body["plugins"] = [{"id": "file-parser", "pdf": {"engine": "native"}}]
-        if force_think:
-            extra_body["reasoning"] = {"enabled": True, "max_tokens": 512}
-
-        image_tool = {
-            **IMAGE_TOOL,
-            "function": {
-                **IMAGE_TOOL["function"],
-                "description": IMAGE_TOOL["function"]["description"] + (
-                    " For this turn, preserve the full source content when compiling the drawing specification. "
-                    "Image label language: " + resolve_answer_language(interface_language, last_user_msg, prefer_query_language=True) + "."
-                ),
-            },
-        }
-        tools = [image_tool, {
-            "type": "function",
-            "function": {
-                "name": "send_epistolary_letter",
-                "description": "Schedule a requested avatar letter after answering the user in chat.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"avatar_name": {"type": "string"}},
-                    "required": ["avatar_name"],
-                },
-            },
-        }]
         if tool_budget is None:
             from core import ToolBudget, ToolBudgetTracker
 
@@ -356,21 +311,3 @@ class ConversationStreamService:
             except Exception as exc:
                 logger.warning("orchestration.mail_tool_failed reason=%s", type(exc).__name__)
         yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator, 'image_slots': [slot.to_payload() for slot in image_marker_filter.slots], 'generated_blocks': generated_blocks}, ensure_ascii=False)}\n\n"
-
-
-def _openrouter_session_id(conversation_id: str) -> str:
-    """Return a stable OpenRouter session id without exposing raw user content.
-
-    Args:
-        conversation_id: Conversation-scoped correlation identifier. This value
-            is already used in safe operational logs and should not contain raw
-            user text.
-
-    Returns:
-        A provider-safe session id suitable for OpenRouter sticky routing. Empty
-        or malformed inputs fall back to an empty string so callers can skip the
-        optional optimization without failing the stream.
-    """
-
-    normalized = _OPENROUTER_SESSION_ID_PATTERN.sub("_", str(conversation_id or "").strip())
-    return normalized[:128]

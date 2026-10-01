@@ -1,7 +1,7 @@
 import inspect
 
 from backend.compaction import generate_stitch_tags
-from backend.gum_integration import run_compaction
+from services.memory.gum.compaction import run_compaction
 
 
 def test_stitch_prompt_example_uses_domain_neutral_content():

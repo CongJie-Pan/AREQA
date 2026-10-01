@@ -2,45 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-import importlib
-import json
 import logging
-import os
-import re
-import sys
-import time
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import Request
-
-from config import settings
-from memory_gate import classify_user_message
-from core import AgentEvent, ConversationRunState, EventType, SearchMode
-from policies import CapabilityPolicy, SearchDecision, SearchReason
-from services.query_policy_service import (
+from services.query_policy.classifier import (
     AttachmentTask,
-    apply_pdf_auto_explain_guardrail,
-    count_pdf_attachments,
-    default_response_policy,
-    paper_auto_explain_instruction,
-    response_policy_from_legacy,
 )
+from services.turn_intake_service import chat_avatar_key as _chat_avatar_key
 from services.turn_latency_trace import TurnLatencyTrace
 from services.turn_plan_service import TurnPlan
-from services.turn_intake_service import chat_avatar_key as _chat_avatar_key
-from services.orchestration.utils import (
-    _build_valid_web_sources,
-    _localized_greeting_reply,
-    classify_dialogue_policy,
-    parse_and_decompose_query,
-    reorder_for_attention,
-)
 
 logger = logging.getLogger(__name__)
 InterfaceLanguage = str
-
-
 
 
 class OrchestrationPromptingMixin:
@@ -70,7 +43,7 @@ class OrchestrationPromptingMixin:
             List[Dict[str, str]]: The finalized list of messages ready to be sent to the LLM.
         """
         from config import settings
-        from memory_store import get_global_store
+        from services.memory.store.service import get_global_store
 
         parts_context = None
         if settings.enable_parts_prompt_context:

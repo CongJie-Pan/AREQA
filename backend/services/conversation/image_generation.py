@@ -2,20 +2,25 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
 import re
 import uuid
-import base64
-import hashlib
 from typing import Any, AsyncGenerator, Literal, Mapping
-from pydantic import BaseModel, ConfigDict, Field
 
 from config import settings
 from core import ToolBudget, ToolBudgetTracker
-from tools import ToolDefinition, ToolRegistry
+from pydantic import BaseModel, ConfigDict, Field
 from services.generated_image_quota import consume_image_quota
-from services.generated_image_service import generated_image_block, generate_teaching_image, prepare_image_reference
+from services.generated_image_service import (
+    generate_teaching_image,
+    generated_image_block,
+    prepare_image_reference,
+)
+
+from tools import ToolDefinition, ToolRegistry
 
 logger = logging.getLogger(__name__)
 SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -107,8 +112,8 @@ async def stream_image_tool_events(arguments: Mapping[str, Any]) -> AsyncGenerat
         elif payload.get("reference") == "current_attachments" and not attachments:
             raise ValueError("Missing attachments")
         elif payload.get("reference") == "conversation_image":
-            from services.attachments.storage import AttachmentImageStorageService
             from services.attachments.parsing import ProcessedAttachment
+            from services.attachments.storage import AttachmentImageStorageService
             reference_id = payload.get("reference_image_id")
             if not reference_id:
                 raise ValueError("Missing image reference")

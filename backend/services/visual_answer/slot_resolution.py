@@ -1,10 +1,4 @@
-"""Build structured visual blocks for illustrated assistant answers.
-
-This module owns the privacy boundary for visual answer enrichment. It may use
-the latest user message to query a search provider, but structured logs emitted
-here never include raw user text, generated answer text, prompts, credentials,
-or image URLs. Public output is limited to verified display metadata.
-"""
+"""Resolve planned image slots using the shared cache, providers and grounding rules."""
 
 from __future__ import annotations
 

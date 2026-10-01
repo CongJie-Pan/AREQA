@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 from redis_client import get_redis
-from services.hot_memory_service import remove_typed_entry
+from services.memory.hot import remove_typed_entry
 
 logger = logging.getLogger("services.compeer_scheduler")
 
@@ -240,7 +240,7 @@ async def set_cooldown(user_id: str, state: str = "default") -> None:
     )
 
     # Also persist to hot_memory
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
     store = get_global_store()
     if store:
         try:

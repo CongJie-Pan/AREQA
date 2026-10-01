@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.pdf_visual.constants import PDF_ATTACHMENT_IMAGE_PROVIDER, PDF_ATTACHMENT_SOURCE_DOMAIN
-from services.visual_answer_service import ImageBlock
+from services.visual_answer.service import ImageBlock
 
 @dataclass(frozen=True, slots=True)
 class PdfVisualCandidate:

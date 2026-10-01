@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from config import settings
 from services.attachments.storage import AttachmentImageStorageService
-from services.visual_answer_service import ImageBlock, VisualAnswerService
+from services.visual_answer.service import ImageBlock, VisualAnswerService
 from services.visual.input import VisualInputService
 from services.visual.understanding import (
     VisualUnderstandingAgent,

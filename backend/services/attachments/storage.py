@@ -24,7 +24,7 @@ import httpx
 from config import settings
 from services.attachments.parsing import MAX_ATTACHMENT_BYTES
 from services.pdf_visual_extraction_service import PDF_ATTACHMENT_IMAGE_PROVIDER
-from services.visual_answer_service import ImageBlock
+from services.visual_answer.service import ImageBlock
 
 
 logger = logging.getLogger(__name__)

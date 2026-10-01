@@ -13,10 +13,10 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from fastapi import Request
 
 from config import settings
-from memory_gate import classify_user_message
+from services.memory.gate import classify_user_message
 from core import AgentEvent, ConversationRunState, EventType, SearchMode
 from policies import CapabilityPolicy, SearchDecision, SearchReason
-from services.query_policy_service import (
+from services.query_policy.classifier import (
     AttachmentTask,
     apply_pdf_auto_explain_guardrail,
     count_pdf_attachments,
@@ -242,7 +242,7 @@ class OrchestrationVisualMixin:
             )
             return []
 
-        from services.paper_visual_planner_service import PaperVisualPlannerService
+        from services.paper_visual.planner import PaperVisualPlannerService
         from services.pdf_visual_extraction_service import PdfVisualExtractionService
 
         async def extract_one(source: Dict[str, Any]) -> List[Any]:

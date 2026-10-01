@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 from redis_client import get_redis
-from services.hot_memory_service import remove_typed_entry
+from services.memory.hot import remove_typed_entry
 
 logger = logging.getLogger("services.compeer_scheduler")
 
@@ -69,7 +69,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
             logger.info("compeer.avatar_mail_disabled user_id=%s", user_id)
             return
 
-        from gum_integration import (
+        from services.memory.gum.runtime import (
             generate_epistolary_letter_via_llm,
             get_hot_memory_snapshot,
             query_cold_memory_for_context,
@@ -159,7 +159,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
             await _facade().tick_proactive_schedule(user_id)
             return
 
-        from gum_integration import get_hot_memory_snapshot, query_cold_memory_for_context
+        from services.memory.gum.runtime import get_hot_memory_snapshot, query_cold_memory_for_context
 
         snapshot = await get_hot_memory_snapshot(user_id)
         event_summary = f"EDF 系統偵測到使用者遭遇學習瓶頸 (狀態: {learner_state})"
@@ -335,7 +335,7 @@ async def _process_proactive_user(store, user_id: str) -> None:
         )
         return
 
-    from gum_integration import (
+    from services.memory.gum.runtime import (
         detect_proactive_event_via_llm,
         get_hot_memory_snapshot,
         query_cold_memory_for_context,
@@ -470,7 +470,7 @@ async def proactive_scheduler_loop():
                 continue
 
             async with _facade()._send_lock:
-                from memory_store import get_global_store
+                from services.memory.store.service import get_global_store
                 store = get_global_store()
                 if store:
                     redis = store.redis

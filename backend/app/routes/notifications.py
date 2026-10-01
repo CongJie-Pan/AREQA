@@ -13,7 +13,7 @@ from services.connection_manager import ws_manager
 
 @router.post("/api/v1/ws/ticket")
 async def generate_ws_ticket(current_user_id: str = Depends(get_current_user)):
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
     import secrets
     store = get_global_store()
     if not store:
@@ -33,7 +33,7 @@ async def ws_notifications(websocket: WebSocket, ticket: str):
         await websocket.close(code=4001)  # Policy Violation
         return
 
-    from memory_store import get_global_store
+    from services.memory.store.service import get_global_store
     store = get_global_store()
     if not store:
         await websocket.close(code=1011)

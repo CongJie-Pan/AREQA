@@ -18,20 +18,19 @@ async def complete_answer(service, *, user_id, conversation_id, last_user_msg, m
     Yields:
         Legacy-compatible SSE events; the caller owns the terminal event.
     """
-    self = service
     run_context, run_state, sse_adapter = session.context, session.state, session.transport
     # Node 7: Post-generation
-    answer_blocks = generated_blocks or await self.visual_answer_service.build_answer_blocks(
+    answer_blocks = generated_blocks or await service.visual_answer_service.build_answer_blocks(
         answer_text=answer_content_accumulator,
         user_msg=last_user_msg,
         response_policy=response_policy,
         planned_image_slots=planned_image_slots,
-        tool_registry=self.tool_registry,
+        tool_registry=service.tool_registry,
         tool_budget=run_state.tool_budget,
         existing_web_results=run_state.web_search_results,
         user_id=user_id,
         conversation_id=conversation_id,
-        model_client=self.client,
+        model_client=service.client,
         preverified_image_blocks=preverified_image_blocks,
     )
     if answer_blocks:
@@ -64,7 +63,7 @@ async def complete_answer(service, *, user_id, conversation_id, last_user_msg, m
             len(preverified_image_blocks or {}),
         )
 
-    async for event in self._node_post_generation(
+    async for event in service._node_post_generation(
         last_user_msg,
         answer_content_accumulator,
         context_results_obj,
@@ -75,21 +74,18 @@ async def complete_answer(service, *, user_id, conversation_id, last_user_msg, m
     ):
         yield sse_adapter.encode_legacy(event, run_context.run_id)
 
-    if last_user_msg and self.client:
-        try:
-            from gum_integration import push_reflection_observation
-        except ModuleNotFoundError:
-            from backend.gum_integration import push_reflection_observation
+    if last_user_msg and service.client:
+        from services.memory.gum.runtime import push_reflection_observation
 
-        self.post_turn_service.queue_post_turn_work(
+        service.post_turn_service.queue_post_turn_work(
             user_id=user_id,
             conversation_id=conversation_id,
             run_id=run_context.run_id,
             messages=messages,
             model=settings.model_policy_classifier,
-            client=self.client,
+            client=service.client,
             reflection_fallback=push_reflection_observation,
-            evaluation_fallback=self.evaluate_state,
+            evaluation_fallback=service.evaluate_state,
         )
         logger.info(
             "orchestration.post_turn_queued run_id=%s conversation_id=%s",

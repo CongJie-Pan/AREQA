@@ -182,7 +182,7 @@ async def stream_endpoint(
             timeout=120.0
         )
 
-    from services.orchestration_service import OrchestrationService
+    from services.orchestration.service import OrchestrationService
     orchestrator = OrchestrationService(
         router_service=_main_module().router_service,
         rag_service=_main_module().init_rag_service() if chat_req.use_rag else None,

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+
 class TaskIntent(str, Enum):
     """Supported user-task intents for EDF response shaping."""
 

@@ -33,7 +33,7 @@ async def _query_long_term_memory(
 
     is_explicit_recall = decision.reason_code == "EXPLICIT_RECALL_REQUEST"
     if is_explicit_recall and cache_enabled:
-        from services.explicit_memory_cache import explicit_memory_cache
+        from services.memory.recall_cache import explicit_memory_cache
 
         cache_key = explicit_memory_cache.make_key(
             user_id=user_id,
@@ -57,7 +57,7 @@ async def _query_long_term_memory(
     if trace:
         trace.mark("long_term_memory_started")
 
-    from services.memory_retrieval_trace import MemoryRetrievalTrace
+    from services.memory.retrieval_trace import MemoryRetrievalTrace
 
     retrieval_trace = MemoryRetrievalTrace(route_reason=decision.reason_code)
 
@@ -128,7 +128,7 @@ async def _query_long_term_memory(
         ),
     }
     if is_explicit_recall and cache_enabled and (content["cold"] or content["working"]):
-        from services.explicit_memory_cache import explicit_memory_cache
+        from services.memory.recall_cache import explicit_memory_cache
 
         explicit_memory_cache.set(
             explicit_memory_cache.make_key(

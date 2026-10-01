@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from services.query_policy_service import AttachmentTask, ResponsePolicy
+from services.query_policy.classifier import AttachmentTask, ResponsePolicy
 from services.visual_answer.models import ImageBlock, PlannedImageSlot
 
 logger = logging.getLogger(__name__)

@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Any, List
+
 from auth import get_optional_current_user
-from fastapi import Depends
-from fastapi import File
-from fastapi import Form
-from fastapi import UploadFile
-from typing import Any
-from typing import List
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from services.realtime import attachments as attachment_service
 
 router = APIRouter()

@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import HTTPException
 from services.answer_style_service import AREQA_TEACHING_V1
 from services.conversation.parts import PartsContext, PartsContextService
-from services.query_policy_service import default_response_policy
+from services.query_policy.classifier import default_response_policy
 from services.realtime.constants import (
     REALTIME_ALLOWED_MODELS,
     REALTIME_ALLOWED_VOICES,

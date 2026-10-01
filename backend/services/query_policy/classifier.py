@@ -8,11 +8,9 @@ import re
 from dataclasses import replace
 from typing import Any, Dict, List
 
-
-
-logger = logging.getLogger(__name__)
-
-
+from services.query_policy.learning_guardrails import (
+    _apply_learning_and_evidence_guardrails,
+)
 from services.query_policy.models import (
     ALLOWED_LEGACY_POLICIES,
     AnswerDepth,
@@ -20,8 +18,8 @@ from services.query_policy.models import (
     AttachmentTask,
     EvidenceMode,
     FollowupMode,
-    LearningTechnique,
     LearningMode,
+    LearningTechnique,
     PedagogicalAction,
     ResponsePolicy,
     ResponseStructure,
@@ -43,8 +41,11 @@ from services.query_policy.pdf_guardrails import (
     paper_auto_explain_instruction,
 )
 
+logger = logging.getLogger(__name__)
 
-from services.query_policy.learning_guardrails import _apply_learning_and_evidence_guardrails
+
+
+
 
 
 async def parse_and_decompose_query_impl(

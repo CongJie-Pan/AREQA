@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from auth import get_optional_current_user
-from fastapi import Depends
-from services.realtime.models import LiveKitAvatarSessionRequest
-from services.realtime.models import LiveKitAvatarSessionResponse
-from services.realtime.models import RealtimeSessionRequest
 from typing import Any
-from services.realtime import livekit_session
-from services.realtime import openai_session
+
+from auth import get_optional_current_user
+from fastapi import APIRouter, Depends
+from services.realtime import livekit_session, openai_session
+from services.realtime.models import (
+    LiveKitAvatarSessionRequest,
+    LiveKitAvatarSessionResponse,
+    RealtimeSessionRequest,
+)
 
 router = APIRouter()
 
