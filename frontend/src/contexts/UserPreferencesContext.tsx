@@ -249,10 +249,10 @@ const SUPPORTED_LANGUAGES: readonly InterfaceLanguage[] = ['zh-TW', 'zh-CN', 'en
 const defaultPreferences: UserPreferencesContextValue = {
   theme: 'system',
   resolvedTheme: 'dark',
-  language: 'zh-TW',
+  language: 'en',
   setTheme: () => undefined,
   setLanguage: () => undefined,
-  t: (key, params) => translate('zh-TW', key, params),
+  t: (key, params) => translate('en', key, params),
 };
 
 const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = {

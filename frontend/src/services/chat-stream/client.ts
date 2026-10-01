@@ -23,11 +23,11 @@ const LANGUAGE_STORAGE_KEY = 'areqa:interface-language';
 const SUPPORTED_INTERFACE_LANGUAGES = new Set(['zh-TW', 'zh-CN', 'en']);
 
 function readInterfaceLanguage(): 'zh-TW' | 'zh-CN' | 'en' {
-  if (typeof window === 'undefined') return 'zh-TW';
+  if (typeof window === 'undefined') return 'en';
   const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
   return SUPPORTED_INTERFACE_LANGUAGES.has(storedLanguage ?? '')
     ? (storedLanguage as 'zh-TW' | 'zh-CN' | 'en')
-    : 'zh-TW';
+    : 'en';
 }
 
 /**

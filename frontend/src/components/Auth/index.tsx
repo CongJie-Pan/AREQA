@@ -53,6 +53,54 @@ const LANGUAGE_OPTIONS: Array<{
   { value: 'en', label: '英文' },
 ];
 
+const AUTH_LOCALIZATIONS = {
+  en: { variables: {} },
+  'zh-TW': {
+    variables: {
+      sign_in: {
+        email_label: '電子郵件', password_label: '密碼',
+        email_input_placeholder: '您的電子郵件', password_input_placeholder: '您的密碼',
+        button_label: '登入', loading_button_label: '登入中...',
+        social_provider_text: '使用 {{provider}} 登入', link_text: '還沒有帳號嗎？註冊',
+      },
+      sign_up: {
+        email_label: '電子郵件', password_label: '密碼',
+        email_input_placeholder: '您的電子郵件', password_input_placeholder: '您的密碼',
+        button_label: '註冊', loading_button_label: '註冊中...',
+        social_provider_text: '使用 {{provider}} 註冊', link_text: '已經有帳號了嗎？登入',
+        confirmation_text: '請檢查您的信箱以確認註冊。',
+      },
+      forgotten_password: {
+        link_text: '忘記密碼？', email_label: '電子郵件',
+        email_input_placeholder: '您的電子郵件', button_label: '發送密碼重設信',
+        loading_button_label: '發送中...', confirmation_text: '請檢查您的信箱以重設密碼。',
+      },
+    },
+  },
+  'zh-CN': {
+    variables: {
+      sign_in: {
+        email_label: '电子邮箱', password_label: '密码',
+        email_input_placeholder: '您的电子邮箱', password_input_placeholder: '您的密码',
+        button_label: '登录', loading_button_label: '登录中...',
+        social_provider_text: '使用 {{provider}} 登录', link_text: '还没有账号？注册',
+      },
+      sign_up: {
+        email_label: '电子邮箱', password_label: '密码',
+        email_input_placeholder: '您的电子邮箱', password_input_placeholder: '您的密码',
+        button_label: '注册', loading_button_label: '注册中...',
+        social_provider_text: '使用 {{provider}} 注册', link_text: '已有账号？登录',
+        confirmation_text: '请检查您的邮箱以确认注册。',
+      },
+      forgotten_password: {
+        link_text: '忘记密码？', email_label: '电子邮箱',
+        email_input_placeholder: '您的电子邮箱', button_label: '发送密码重置信',
+        loading_button_label: '发送中...', confirmation_text: '请检查您的邮箱以重置密码。',
+      },
+    },
+  },
+};
+
 export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
   const user = useAuthStore((state) => state.user);
   const {
@@ -176,6 +224,15 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
   if (!user) {
     return (
       <>
+        <label className="areqa-guest-language">
+          <Languages size={16} aria-hidden="true" />
+          <span>{t('language')}</span>
+          <select value={language} onChange={(event) => setLanguage(event.target.value as InterfaceLanguage)}>
+            <option value="en">English</option>
+            <option value="zh-TW">繁體中文</option>
+            <option value="zh-CN">简体中文</option>
+          </select>
+        </label>
         <div 
           onClick={() => setIsModalOpen(true)}
           style={{
@@ -223,39 +280,7 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
               theme={authTheme}
               providers={['google']}
               redirectTo={authRedirectTo}
-              localization={{
-                variables: {
-                  sign_in: {
-                    email_label: '電子郵件',
-                    password_label: '密碼',
-                    email_input_placeholder: '您的電子郵件',
-                    password_input_placeholder: '您的密碼',
-                    button_label: '登入',
-                    loading_button_label: '登入中...',
-                    social_provider_text: '使用 {{provider}} 登入',
-                    link_text: '已經有帳號了嗎？登入'
-                  },
-                  sign_up: {
-                    email_label: '電子郵件',
-                    password_label: '密碼',
-                    email_input_placeholder: '您的電子郵件',
-                    password_input_placeholder: '您的密碼',
-                    button_label: '註冊',
-                    loading_button_label: '註冊中...',
-                    social_provider_text: '使用 {{provider}} 註冊',
-                    link_text: '還沒有帳號嗎？註冊',
-                    confirmation_text: '請檢查您的信箱以確認註冊。'
-                  },
-                  forgotten_password: {
-                    link_text: '忘記密碼？',
-                    email_label: '電子郵件',
-                    email_input_placeholder: '您的電子郵件',
-                    button_label: '發送密碼重設信',
-                    loading_button_label: '發送中...',
-                    confirmation_text: '請檢查您的信箱以重設密碼。'
-                  }
-                }
-              }}
+              localization={AUTH_LOCALIZATIONS[language]}
             />
           </div>
         </Modal>
@@ -542,7 +567,7 @@ export interface AuthPromptProps {
  */
 export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
   const user = useAuthStore((state) => state.user);
-  const { resolvedTheme, t } = useUserPreferences();
+  const { resolvedTheme, language, t } = useUserPreferences();
   const [authView, setAuthView] = useState<'sign_in' | 'sign_up' | null>(null);
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
   const authTheme = resolvedTheme === 'dark' ? 'dark' : 'default';
@@ -585,31 +610,7 @@ export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
             theme={authTheme}
             providers={['google']}
             redirectTo={authRedirectTo}
-            localization={{
-              variables: {
-                sign_in: {
-                  email_label: '電子郵件',
-                  password_label: '密碼',
-                  email_input_placeholder: '您的電子郵件',
-                  password_input_placeholder: '您的密碼',
-                  button_label: '登入',
-                  loading_button_label: '登入中...',
-                  social_provider_text: '使用 {{provider}} 登入',
-                  link_text: '還沒有帳號嗎？註冊',
-                },
-                sign_up: {
-                  email_label: '電子郵件',
-                  password_label: '密碼',
-                  email_input_placeholder: '您的電子郵件',
-                  password_input_placeholder: '您的密碼',
-                  button_label: '註冊',
-                  loading_button_label: '註冊中...',
-                  social_provider_text: '使用 {{provider}} 註冊',
-                  link_text: '已經有帳號了嗎？登入',
-                  confirmation_text: '請檢查您的信箱以確認註冊。',
-                },
-              },
-            }}
+            localization={AUTH_LOCALIZATIONS[language]}
           />
         </div>
       ) : (

@@ -854,6 +854,27 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
   line-height: 22px;
 }
 
+.areqa-guest-language {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--areqa-account-muted-text);
+  font-size: 14px;
+}
+
+.areqa-guest-language select {
+  min-width: 0;
+  margin-left: auto;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
 .areqa-account-preference-summary {
   color: var(--muted-foreground);
   font-size: 12px;

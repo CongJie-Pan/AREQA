@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthPrompt } from '@/components/Auth';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { supabase } from '@/lib/supabase';
 
 let authStateCallback: ((event: string, session: unknown) => void) | null = null;
@@ -25,15 +26,20 @@ vi.mock('@supabase/auth-ui-react', () => ({
 vi.mock('@supabase/auth-ui-shared', () => ({ ThemeSupa: {} }));
 
 describe('AuthPrompt', () => {
+  const renderPrompt = (onDismiss: () => void) => render(
+    <UserPreferencesProvider><AuthPrompt open onDismiss={onDismiss} /></UserPreferencesProvider>,
+  );
+
   beforeEach(() => {
     authStateCallback = null;
     vi.clearAllMocks();
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as never);
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
   });
 
   it('shows the guest prompt actions', async () => {
     const onDismiss = vi.fn();
-    render(<AuthPrompt open onDismiss={onDismiss} />);
+    renderPrompt(onDismiss);
 
     expect(await screen.findByText('歡迎來到 AREQA')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '登入' })).toBeInTheDocument();
@@ -43,7 +49,7 @@ describe('AuthPrompt', () => {
 
   it('opens the selected authentication view and dismisses on guest choice', async () => {
     const onDismiss = vi.fn();
-    render(<AuthPrompt open onDismiss={onDismiss} />);
+    renderPrompt(onDismiss);
 
     fireEvent.click(await screen.findByRole('button', { name: '登入' }));
     expect(screen.getByTestId('supabase-auth-sign_in')).toBeInTheDocument();
@@ -55,7 +61,7 @@ describe('AuthPrompt', () => {
 
   it('dismisses immediately when Supabase reports a signed-in session', async () => {
     const onDismiss = vi.fn();
-    render(<AuthPrompt open onDismiss={onDismiss} />);
+    renderPrompt(onDismiss);
 
     await screen.findByText('歡迎來到 AREQA');
     await act(async () => {

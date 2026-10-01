@@ -8,6 +8,7 @@ import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 
 const supabaseMocks = vi.hoisted(() => ({
   insertFeedback: vi.fn(),
+  authUiProps: vi.fn(),
 }));
 
 const matchMediaListeners = new Map<string, (event: MediaQueryListEvent) => void>();
@@ -61,7 +62,10 @@ vi.mock('@/lib/supabase', () => {
 });
 
 vi.mock('@supabase/auth-ui-react', () => ({
-  Auth: () => <div data-testid="supabase-auth">Mocked Auth</div>
+  Auth: (props: unknown) => {
+    supabaseMocks.authUiProps(props);
+    return <div data-testid="supabase-auth">Mocked Auth</div>;
+  }
 }));
 
 vi.mock('@stitches/core', () => ({
@@ -80,7 +84,7 @@ vi.mock('@supabase/auth-ui-shared', () => ({
 // Mock window.location.reload
 const mockReload = vi.fn();
 Object.defineProperty(window, 'location', {
-  value: { reload: mockReload },
+  value: { href: 'http://localhost/', origin: 'http://localhost', reload: mockReload },
   writable: true
 });
 
@@ -97,6 +101,7 @@ describe('UserAuthUI Component', () => {
     vi.clearAllMocks();
     supabaseMocks.insertFeedback.mockResolvedValue({ error: null });
     window.localStorage.clear();
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
     document.documentElement.removeAttribute('data-interface-theme');
     document.documentElement.removeAttribute('data-interface-theme-choice');
     document.documentElement.lang = 'en';
@@ -105,6 +110,34 @@ describe('UserAuthUI Component', () => {
   it('shows login button when not authenticated', async () => {
     renderUserAuthUI();
     expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
+  });
+
+  it('defaults new guests to English and lets them change the language before logging in', async () => {
+    window.localStorage.removeItem('areqa:interface-language');
+    renderUserAuthUI();
+
+    expect(screen.getByText('Log in / Sign up')).toBeInTheDocument();
+    const languageSelect = screen.getByRole('combobox', { name: 'Language' });
+    expect(languageSelect).toHaveValue('en');
+    expect(document.documentElement.lang).toBe('en');
+
+    fireEvent.click(screen.getByText('Log in / Sign up'));
+    expect(supabaseMocks.authUiProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ localization: { variables: {} } }),
+    );
+
+    fireEvent.change(languageSelect, { target: { value: 'zh-CN' } });
+    expect(window.localStorage.getItem('areqa:interface-language')).toBe('zh-CN');
+    expect(document.documentElement.lang).toBe('zh-CN');
+    expect(supabaseMocks.authUiProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        localization: expect.objectContaining({
+          variables: expect.objectContaining({
+            sign_in: expect.objectContaining({ button_label: '登录' }),
+          }),
+        }),
+      }),
+    );
   });
 
   it('updates the user display on SIGNED_IN event', async () => {
