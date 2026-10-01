@@ -174,7 +174,7 @@ async def stream_image_tool_events(arguments: Mapping[str, Any]) -> AsyncGenerat
         code = getattr(exc, "code", None) or ("IMAGE_QUOTA_OR_AUTH_ERROR" if isinstance(exc, PermissionError) else "IMAGE_GENERATION_FAILED")
         logger.warning("chat.image_tool_failed conversation_id=%s reason=%s code=%s", conversation_id, type(exc).__name__, code)
         yield {"state": "failed", "reason": type(exc).__name__, "code": code,
-               "block": {**block, "status": "error", "caption": f"圖片未完成（{code}）。"}}
+               "block": {**block, "status": "error", "caption": code}}
     finally:
         pending = [item for item in (task, phase_task) if item is not None]
         for item in pending:
@@ -201,7 +201,7 @@ async def stream_generated_image(*, arguments: str, user_id: str, conversation_i
     call_id = tool_call_id or uuid.uuid4().hex
     # Provider call IDs correlate events; only server-minted IDs enter storage paths.
     image_id = uuid.uuid4().hex
-    last_block = {"type": "image_block", "slotId": image_id, "provider": "generated_image", "imageUrl": "", "status": "error", "caption": "圖片未完成，請稍後重試。"}
+    last_block = {"type": "image_block", "slotId": image_id, "provider": "generated_image", "imageUrl": "", "status": "error", "caption": "IMAGE_GENERATION_FAILED"}
     try:
         payload = json.loads(arguments)
     except (ValueError, TypeError):
@@ -221,4 +221,4 @@ async def stream_generated_image(*, arguments: str, user_id: str, conversation_i
             last_block = event["block"]
             yield last_block
         elif state == "failed":
-            yield {**last_block, "status": "error", "caption": "圖片未完成，請稍後重試。"}
+            yield {**last_block, "status": "error", "caption": "IMAGE_GENERATION_FAILED"}

@@ -686,6 +686,26 @@ describe('Chat Service', () => {
       expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({ content: paragraph.text, answerBlocks: [paragraph, expect.objectContaining({ provider: 'generated_image' })] }));
     });
 
+    it('removes streamed prose when image generation ends with an error code', async () => {
+      mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '請產生 ICAP 圖', conversationId: 'test-conv-id' }];
+      const failure = { type: 'image_block' as const, provider: 'generated_image', imageUrl: '',
+        slotId: 'image-1', status: 'error' as const, caption: 'IMAGE_PROVIDER_HTTP_402' };
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        callbacks.onContent('Here is the conceptual diagram and explanation.');
+        callbacks.onAnswerBlocks?.([{ type: 'paragraph', text: 'Here is the conceptual diagram.' },
+          { ...failure, status: 'pending' }]);
+        callbacks.onAnswerBlocks?.([failure]);
+        await callbacks.onDone();
+      });
+
+      await sendMessage('請產生 ICAP 圖', 'test-conv-id');
+
+      expect(mockChatStore.updateMessageContent).toHaveBeenLastCalledWith('assistant-msg-id', '');
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({
+        content: '', answerBlocks: [failure],
+      }));
+    });
+
     it('persists an image-only tool reply and generates a first-turn title without a text preamble', async () => {
       mockChatStore.messages = [{ id: 'user-image', role: 'user', content: '請產生一張圖', conversationId: 'test-conv-id' }];
       const block = { type: 'image_block' as const, provider: 'generated_image', imageUrl: 'https://example.com/image.png', slotId: 'image-1' };
@@ -724,7 +744,8 @@ describe('Chat Service', () => {
         callbacks.onError(new Error('connection interrupted'));
       });
       await sendMessage('請產圖', 'test-conv-id');
-      expect(mockChatStore.setAnswerBlocks).toHaveBeenLastCalledWith([expect.objectContaining({ status: 'error' })]);
+      expect(mockChatStore.setAnswerBlocks).toHaveBeenLastCalledWith([expect.objectContaining({ status: 'error', caption: 'IMAGE_STREAM_INTERRUPTED' })]);
+      expect(mockChatStore.updateMessageContent).toHaveBeenLastCalledWith('assistant-msg-id', '');
     });
 
     it('ignores late image resolution and completion after the user stops the stream', async () => {

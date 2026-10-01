@@ -310,7 +310,7 @@ export async function generateConversationImage(
       useChatStore.getState().updateAssistantMessage(assistantId!, previousMessage);
       if (!cancelled) throw error;
     } else if (assistantId && id) {
-      const errorBlock: ImageBlock = { ...pendingBlock, status: 'error', caption: content };
+      const errorBlock: ImageBlock = { ...pendingBlock, status: 'error', caption: cancelled ? content : code };
       const failureContent = cancelled ? withStatus(content) : retainedText;
       useChatStore.getState().updateAssistantMessage(assistantId, { content: failureContent, answerBlocks: [...retainedBlocks, errorBlock], isStreaming: false });
       try {

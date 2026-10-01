@@ -91,7 +91,7 @@ describe('generated image conversation workflow', () => {
     await generateConversationImage('Draw a cat', 'conv-a', 'en');
     const failure = useChatStore.getState().messages.at(-1)!;
     expect(failure.content).toBe('');
-    expect(failure.answerBlocks?.[0]).toMatchObject({ status: 'error', caption: 'Image generation failed (IMAGE_PROVIDER_HTTP_402).' });
+    expect(failure.answerBlocks?.[0]).toMatchObject({ status: 'error', caption: 'IMAGE_PROVIDER_HTTP_402' });
   });
 
   it('renders a preparation card and marks the composer busy before user persistence completes', async () => {
@@ -371,7 +371,7 @@ describe('generated image conversation workflow', () => {
     expect((await generateConversationImage('Draw a cat', 'conv-a', 'en', false)).completed).toBe(false);
     const failed = useChatStore.getState().messages.at(-1)!;
     expect(failed.content).toBe('');
-    expect(failed.answerBlocks?.[0]).toMatchObject({ status: 'error', caption: 'Image generation failed (IMAGE_GENERATION_FAILED).',
+    expect(failed.answerBlocks?.[0]).toMatchObject({ status: 'error', caption: 'IMAGE_GENERATION_FAILED',
       generationRequest: { prompt: 'Draw a cat' } });
     vi.mocked(authenticatedFetch).mockResolvedValue(response());
     await regenerateConversationImage(failed.id);

@@ -631,12 +631,16 @@ export async function sendMessage(
 
       onError: (error: Error) => {
         if (answerBlocksPayload.some((block) => block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending')) {
-          answerBlocksPayload = answerBlocksPayload.map((block): AnswerBlock =>
-            block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending'
-              ? { ...block, status: 'error', caption: '圖片生成連線中斷，請稍後重試' }
-              : block
-          );
+          answerBlocksPayload = answerBlocksPayload
+            .filter((block): block is ImageBlock => block.type === 'image_block' && block.provider === 'generated_image')
+            .map((block): AnswerBlock => ({ ...block, status: 'error', caption: 'IMAGE_STREAM_INTERRUPTED' }));
+          answerContent = '';
+          chatStore.updateMessageContent(assistantMessageId, '');
+          useChatStore.setState({ currentContent: '' });
           chatStore.setAnswerBlocks(answerBlocksPayload);
+          chatStore.endStreaming();
+          currentAbortController = null;
+          return;
         }
         chatStore.setError(error);
         chatStore.endStreaming();
