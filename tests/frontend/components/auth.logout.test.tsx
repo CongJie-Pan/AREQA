@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { UserAuthUI } from '@/components/Auth';
 import { supabase } from '@/lib/supabase';
@@ -117,18 +117,20 @@ describe('UserAuthUI Component', () => {
     renderUserAuthUI();
 
     expect(screen.getByText('Log in / Sign up')).toBeInTheDocument();
-    const languageSelect = screen.getByRole('combobox', { name: 'Language' });
-    expect(languageSelect).toHaveValue('en');
+    expect(screen.queryByRole('group', { name: 'Language' })).not.toBeInTheDocument();
     expect(document.documentElement.lang).toBe('en');
 
     fireEvent.click(screen.getByText('Log in / Sign up'));
+    const languageGroup = screen.getByRole('group', { name: 'Language' });
+    expect(within(languageGroup).getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
     expect(supabaseMocks.authUiProps).toHaveBeenLastCalledWith(
       expect.objectContaining({ localization: { variables: {} } }),
     );
 
-    fireEvent.change(languageSelect, { target: { value: 'zh-CN' } });
+    fireEvent.click(within(languageGroup).getByRole('button', { name: '简体中文' }));
     expect(window.localStorage.getItem('areqa:interface-language')).toBe('zh-CN');
     expect(document.documentElement.lang).toBe('zh-CN');
+    expect(within(screen.getByRole('group', { name: '语言' })).getByRole('button', { name: '简体中文' })).toHaveAttribute('aria-pressed', 'true');
     expect(supabaseMocks.authUiProps).toHaveBeenLastCalledWith(
       expect.objectContaining({
         localization: expect.objectContaining({

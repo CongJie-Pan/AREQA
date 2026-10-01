@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthPrompt } from '@/components/Auth';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
@@ -45,6 +45,17 @@ describe('AuthPrompt', () => {
     expect(screen.getByRole('button', { name: '登入' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '註冊' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '維持登出狀態' })).toBeInTheDocument();
+  });
+
+  it('lets guests choose a language from the sign-in prompt', () => {
+    window.localStorage.removeItem('areqa:interface-language');
+    renderPrompt(vi.fn());
+
+    const languageGroup = screen.getByRole('group', { name: 'Language' });
+    fireEvent.click(within(languageGroup).getByRole('button', { name: '繁體中文' }));
+
+    expect(window.localStorage.getItem('areqa:interface-language')).toBe('zh-TW');
+    expect(screen.getByRole('button', { name: '登入' })).toBeInTheDocument();
   });
 
   it('opens the selected authentication view and dismisses on guest choice', async () => {
