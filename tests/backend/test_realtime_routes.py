@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
 import backend.app.routes.realtime as realtime_routes
+from services.realtime import livekit_metadata, livekit_session
 from backend.app.routes.realtime import (
     RealtimeContextMessage,
     RealtimeContextRequest,
@@ -207,7 +208,7 @@ def test_livekit_dispatch_includes_server_authored_english_tutor_rules():
 
 
 def test_livekit_dispatch_rejects_oversized_tutor_rules_for_voice_fallback(monkeypatch):
-    monkeypatch.setattr(realtime_routes, "render_tutor_profile_prompt", lambda _profile: "x" * 6001)
+    monkeypatch.setattr(livekit_metadata, "render_tutor_profile_prompt", lambda _profile: "x" * 6001)
 
     with pytest.raises(HTTPException) as exc:
         _livekit_avatar_agent_metadata(LiveKitAvatarSessionRequest(tutor_profile="english"))
@@ -312,7 +313,7 @@ async def test_create_livekit_avatar_session_mints_dispatch_token_without_loggin
     async def fake_memory_items(current_user_id: str | None, conversation_id: str) -> list[str]:
         return ["learner prefers Mandarin explanations"] if current_user_id else []
 
-    monkeypatch.setattr(realtime_routes, "_livekit_avatar_memory_items", fake_memory_items)
+    monkeypatch.setattr(livekit_session, "_livekit_avatar_memory_items", fake_memory_items)
 
     with caplog.at_level(logging.INFO):
         response = await create_livekit_avatar_session(
