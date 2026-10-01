@@ -29,67 +29,8 @@ from services.query_policy_service import (
 
 logger = logging.getLogger(__name__)
 
-_CONFIDENCE_VALUES = {"low", "medium", "high"}
-_MAX_FIELD_CHARS = 80
-_MAX_THEME_CHARS = 56
-_MAX_INSTRUCTION_CHARS = 360
-_MAX_MISSING_FIELDS = 5
-_MAX_RECENT_CONVERSATION_CONTEXT_CHARS = 3600
-
-
-@dataclass(frozen=True, slots=True)
-class PartsContext:
-    """A compact per-turn PARTS task card.
-
-    Args:
-        persona: The role AREQA should use for this answer turn.
-        act: The concrete action the main model should perform.
-        recipient: The learner or audience context, without unsupported mastery
-            or ability assumptions.
-        theme: A short topic summary derived from the latest user message.
-        structure: The visible answer shape expected for this turn.
-        composed_instruction: A natural-language instruction generated from
-            PARTS. The main answer model should follow this instruction instead
-            of treating PARTS labels as output headings.
-        confidence: Rewrite confidence. Must be one of ``low``, ``medium``, or
-            ``high``.
-        missing_fields: PARTS fields that remain underspecified. These are safe
-            identifiers, not raw user text.
-
-    Compatibility:
-        This object is internal prompt context only. It does not authorize tool
-        use, memory recall, citations, attachment claims, or learner-state
-        assertions.
-    """
-
-    persona: str
-    act: str
-    recipient: str
-    theme: str
-    structure: str
-    composed_instruction: str
-    confidence: str
-    missing_fields: tuple[str, ...] = ()
-
-    def safe_log_metadata(self) -> dict[str, Any]:
-        """Return privacy-safe metadata for structured logs.
-
-        Returns:
-            A dictionary containing only counts and categorical values. It never
-            includes raw user text, prompt text, model output, or PARTS field
-            values because those may derive from user content.
-        """
-
-        return {
-            "confidence": self.confidence,
-            "missing_field_count": len(self.missing_fields),
-            "has_persona": bool(self.persona),
-            "has_act": bool(self.act),
-            "has_recipient": bool(self.recipient),
-            "has_theme": bool(self.theme),
-            "has_structure": bool(self.structure),
-            "has_composed_instruction": bool(self.composed_instruction),
-        }
+from services.conversation.parts_models import PartsContext, format_parts_context
+from services.conversation import parts_validation
 
 
 class PartsContextService:
@@ -389,155 +330,12 @@ Latest user request:
             raise ValueError("non_object_parts_payload")
         return parsed
 
-    @classmethod
-    def clean_recent_conversation_context(cls, value: Any) -> str:
-        """Strip citation noise from recent conversation text for rewrite context.
 
-        Args:
-            value: A formatted recent conversation string. The orchestration
-                service owns selecting the message window and labeling roles.
 
-        Returns:
-            A bounded string that preserves role labels, headings, numbered
-            lists, and bold subheadings while removing citation markers and
-            source-list sections.
-        """
 
-        text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-        if not text:
-            return ""
 
-        citation_heading_pattern = (
-            r"(?:^|\n)\s*(?:#{1,6}\s*)?"
-            r"(?:文獻來源|參考文獻|資料來源|References|Sources)\b"
-            r".*?(?=\n\n(?:User|Assistant):|\Z)"
-        )
-        text = re.sub(citation_heading_pattern, "", text, flags=re.IGNORECASE | re.DOTALL)
-        text = re.sub(r"【文獻\s*\d+(?:\s*[,，、]\s*\d+)*】", "", text)
-        text = re.sub(r"\[(?:文獻\s*)?\d+(?:\s*[,，]\s*\d+)*\]", "", text)
-        text = re.sub(r"[ \t]+", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text).strip()
-        if len(text) <= _MAX_RECENT_CONVERSATION_CONTEXT_CHARS:
-            return text
 
-        head_chars = _MAX_RECENT_CONVERSATION_CONTEXT_CHARS // 2
-        tail_chars = _MAX_RECENT_CONVERSATION_CONTEXT_CHARS - head_chars
-        return f"{text[:head_chars]} ... {text[-tail_chars:]}"
 
-    def _context_from_payload(
-        self,
-        payload: dict[str, Any],
-        fallback: PartsContext,
-        user_message: str,
-    ) -> PartsContext:
-        """Validate and sanitize untrusted rewrite output."""
-
-        confidence = str(payload.get("confidence") or fallback.confidence).strip().lower()
-        if confidence not in _CONFIDENCE_VALUES:
-            confidence = fallback.confidence
-        missing_fields = payload.get("missing_fields")
-        safe_missing_fields: tuple[str, ...] = ()
-        if isinstance(missing_fields, list):
-            values = []
-            for item in missing_fields[:_MAX_MISSING_FIELDS]:
-                cleaned = re.sub(r"[^a-zA-Z0-9_:-]", "", str(item))[:40]
-                if cleaned:
-                    values.append(cleaned)
-            safe_missing_fields = tuple(values)
-
-        theme = self._clean_field(payload.get("theme"), fallback.theme, _MAX_THEME_CHARS)
-        if self._looks_like_raw_user_message(theme, user_message):
-            theme = fallback.theme
-        persona = self._clean_field(payload.get("persona"), fallback.persona)
-        act = self._clean_field(payload.get("act"), fallback.act)
-        recipient = self._clean_field(payload.get("recipient"), fallback.recipient)
-        structure = self._clean_field(payload.get("structure"), fallback.structure)
-        composed_instruction = self._clean_field(
-            payload.get("composed_instruction"),
-            "",
-            _MAX_INSTRUCTION_CHARS,
-        )
-        if not composed_instruction:
-            composed_instruction = self._compose_instruction(
-                persona=persona,
-                act=act,
-                recipient=recipient,
-                theme=theme,
-                structure=structure,
-            )
-
-        return PartsContext(
-            persona=persona,
-            act=act,
-            recipient=recipient,
-            theme=theme,
-            structure=structure,
-            composed_instruction=composed_instruction,
-            confidence=confidence,
-            missing_fields=safe_missing_fields or fallback.missing_fields,
-        )
-
-    @staticmethod
-    def _clean_field(value: Any, fallback: str, max_chars: int = _MAX_FIELD_CHARS) -> str:
-        """Collapse untrusted text into one short prompt field."""
-
-        cleaned = re.sub(r"\s+", " ", str(value or "")).strip()
-        if not cleaned:
-            return fallback
-        return cleaned[:max_chars]
-
-    @staticmethod
-    def _looks_like_raw_user_message(theme: str, user_message: str) -> bool:
-        """Return whether a theme appears to copy too much of the raw request."""
-
-        normalized_theme = re.sub(r"\s+", "", theme)
-        normalized_user = re.sub(r"\s+", "", user_message)
-        if not normalized_theme or not normalized_user:
-            return False
-        if normalized_theme == normalized_user:
-            return True
-        return len(normalized_theme) > 40 and normalized_theme in normalized_user
-
-    @staticmethod
-    def _route_name(turn_plan: Any) -> str:
-        """Return a safe route name without depending on concrete plan classes."""
-
-        route = getattr(turn_plan, "route", None)
-        value = getattr(route, "value", route)
-        return str(value or "UNKNOWN")
-
-    @staticmethod
-    def _structure_for_policy(policy: ResponsePolicy) -> str:
-        """Map current EDF structure and follow-up policy into compact wording."""
-
-        learning_mode = getattr(getattr(policy, "learning_mode", None), "value", "")
-        if learning_mode == "PRACTICE":
-            return "短回應 + 一個最小提示或診斷問題"
-        if policy.answer_depth == AnswerDepth.DIRECT or policy.followup_mode == FollowupMode.NONE:
-            return "短回答 + 必要理由，不加引導問題"
-        if policy.structure == ResponseStructure.SHORT:
-            return "短回答 + 必要補充"
-        if policy.structure == ResponseStructure.NOTE_DRAFT:
-            return "可保存的筆記段落或列點"
-        if policy.structure == ResponseStructure.ARGUMENT:
-            return "核心判斷 + 理由 + 取捨"
-        return "分步解釋 + 最多一個診斷性追問"
-
-    @staticmethod
-    def _compose_instruction(
-        *,
-        persona: str,
-        act: str,
-        recipient: str,
-        theme: str,
-        structure: str,
-    ) -> str:
-        """Compose a natural prompt instruction from PARTS fields."""
-
-        return (
-            f"你現在的角色是「{persona}」。請為「{recipient}」{act}，"
-            f"本回合主題聚焦於「{theme}」。請使用「{structure}」的方式回答。"
-        )
 
     @staticmethod
     def _log_sensitive_debug(
@@ -587,34 +385,11 @@ Latest user request:
         )
 
 
-def format_parts_context(parts_context: PartsContext) -> str:
-    """Render a ``PartsContext`` into a compact Traditional Chinese prompt block.
 
-    Args:
-        parts_context: Validated PARTS task context for the current turn.
-
-    Returns:
-        A prompt block that may be appended to the system prompt. The block
-        explicitly states its lower priority than citation, grounding, memory,
-        learner-state, tool, and safety boundaries.
-    """
-
-    missing = ", ".join(parts_context.missing_fields) if parts_context.missing_fields else "none"
-    return (
-        "\n\n【PARTS 任務上下文】"
-        f"\nP: {parts_context.persona}"
-        f"\nA: {parts_context.act}"
-        f"\nR: {parts_context.recipient}"
-        f"\nT: {parts_context.theme}"
-        f"\nS: {parts_context.structure}"
-        f"\nconfidence: {parts_context.confidence}"
-        f"\nmissing_fields: {missing}"
-        "\n\n【由 PARTS 生成的本回合任務指令】"
-        f"\n{parts_context.composed_instruction}"
-        "\n請遵循「本回合任務指令」回答，但不要輸出 P/A/R/T/S 標籤。"
-        "\n\n【LearnLM 教學互動規則】"
-        f"{render_learnlm_teaching_rules()}"
-        "\n若 missing_fields 會實質影響回答品質，最多提出一個簡短澄清問題；否則先回答。"
-        "\n【PARTS 優先權邊界】PARTS 只控制回答角色、任務、對象、主題與格式。"
-        "不得覆蓋文獻引用、檔案 grounding、記憶安全邊界、使用者狀態規則、工具授權或安全規則。"
-    )
+    clean_recent_conversation_context = staticmethod(parts_validation.clean_recent_conversation_context)
+    _context_from_payload = staticmethod(parts_validation._context_from_payload)
+    _clean_field = staticmethod(parts_validation._clean_field)
+    _looks_like_raw_user_message = staticmethod(parts_validation._looks_like_raw_user_message)
+    _route_name = staticmethod(parts_validation._route_name)
+    _structure_for_policy = staticmethod(parts_validation._structure_for_policy)
+    _compose_instruction = staticmethod(parts_validation._compose_instruction)
