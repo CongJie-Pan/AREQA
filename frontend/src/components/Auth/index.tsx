@@ -265,7 +265,6 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
                 style={{ objectFit: 'contain', margin: '0 auto', display: 'block' }} 
               />
             </div>
-            <GuestLanguageSelector language={language} onLanguageChange={setLanguage} />
             <SupabaseAuth 
               supabaseClient={supabase}
               appearance={{ theme: ThemeSupa }}
@@ -388,38 +387,6 @@ interface AccountPreferenceControlsProps {
   selectedLanguage: InterfaceLanguage;
   onThemeChange: (theme: InterfaceTheme) => void;
   onLanguageChange: (language: InterfaceLanguage) => void;
-}
-
-function GuestLanguageSelector({
-  language,
-  onLanguageChange,
-}: {
-  language: InterfaceLanguage;
-  onLanguageChange: (language: InterfaceLanguage) => void;
-}) {
-  const { t } = useUserPreferences();
-
-  return (
-    <fieldset className="areqa-auth-language">
-      <legend>{t('language')}</legend>
-      <div className="areqa-auth-language-options">
-        {([
-          { value: 'en', label: 'English' },
-          { value: 'zh-TW', label: '繁體中文' },
-          { value: 'zh-CN', label: '简体中文' },
-        ] as const).map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={language === option.value}
-            onClick={() => onLanguageChange(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </fieldset>
-  );
 }
 
 /**
@@ -591,7 +558,7 @@ export interface AuthPromptProps {
  */
 export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
   const user = useAuthStore((state) => state.user);
-  const { resolvedTheme, language, setLanguage, t } = useUserPreferences();
+  const { resolvedTheme, language, t } = useUserPreferences();
   const [authView, setAuthView] = useState<'sign_in' | 'sign_up' | null>(null);
   const authRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
   const authTheme = resolvedTheme === 'dark' ? 'dark' : 'default';
@@ -622,7 +589,6 @@ export function AuthPrompt({ open, onDismiss }: AuthPromptProps) {
       centered
       title={t('welcomeAreqa')}
     >
-      <GuestLanguageSelector language={language} onLanguageChange={setLanguage} />
       {authView ? (
         <div style={{ paddingTop: '8px' }}>
           <Button type="link" onClick={() => setAuthView(null)}>

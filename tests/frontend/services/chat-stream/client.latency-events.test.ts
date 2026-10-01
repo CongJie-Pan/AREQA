@@ -83,7 +83,7 @@ describe('chat stream visible latency events', () => {
     const payload = JSON.parse(String(request.body));
     expect(payload.search_mode).toBe('never');
     expect(payload.use_web_search).toBe(false);
-    expect(payload.interface_language).toBe('zh-TW');
+    expect(payload.interface_language).toBe('en');
     expect(payload.tutor_profile).toBe('general');
     expect(payload.response_mode).toBe('text');
     expect(onStatus).toHaveBeenCalledWith('retrieving', '正在整理相關脈絡');
@@ -161,7 +161,7 @@ describe('chat stream visible latency events', () => {
   });
 
   it('sends the selected interface language with stream requests', async () => {
-    window.localStorage.setItem('areqa:interface-language', 'en');
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
 
     await createChatStream(
@@ -174,7 +174,7 @@ describe('chat stream visible latency events', () => {
 
     const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
     const payload = JSON.parse(String(request.body));
-    expect(payload.interface_language).toBe('en');
+    expect(payload.interface_language).toBe('zh-TW');
   });
 
   it('uses FormData when the request includes attachments', async () => {
@@ -199,7 +199,7 @@ describe('chat stream visible latency events', () => {
     expect(request.body).toBeInstanceOf(FormData);
     expect((request.body as FormData).getAll('attachments')).toEqual([attachment]);
     expect((request.body as FormData).get('messages')).toContain('請摘要附件');
-    expect((request.body as FormData).get('messages')).toContain('"interface_language":"zh-TW"');
+    expect((request.body as FormData).get('messages')).toContain('"interface_language":"en"');
     expect((request.body as FormData).get('messages')).toContain('"tutor_profile":"general"');
   });
 

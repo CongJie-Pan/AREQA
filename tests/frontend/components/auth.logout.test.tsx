@@ -1,10 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { UserAuthUI } from '@/components/Auth';
 import { supabase } from '@/lib/supabase';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
+import { useAuthStore } from '@/store/auth';
 
 const supabaseMocks = vi.hoisted(() => ({
   insertFeedback: vi.fn(),
@@ -99,6 +100,7 @@ function renderUserAuthUI(props?: React.ComponentProps<typeof UserAuthUI>) {
 describe('UserAuthUI Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.setState({ user: null, isInitialized: false });
     supabaseMocks.insertFeedback.mockResolvedValue({ error: null });
     window.localStorage.clear();
     window.localStorage.setItem('areqa:interface-language', 'zh-TW');
@@ -112,7 +114,7 @@ describe('UserAuthUI Component', () => {
     expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
   });
 
-  it('defaults new guests to English and lets them change the language before logging in', async () => {
+  it('uses English by default without offering language selection before sign-in', async () => {
     window.localStorage.removeItem('areqa:interface-language');
     renderUserAuthUI();
 
@@ -121,28 +123,24 @@ describe('UserAuthUI Component', () => {
     expect(document.documentElement.lang).toBe('en');
 
     fireEvent.click(screen.getByText('Log in / Sign up'));
-    const languageGroup = screen.getByRole('group', { name: 'Language' });
-    expect(within(languageGroup).getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
-    expect(supabaseMocks.authUiProps).toHaveBeenLastCalledWith(
-      expect.objectContaining({ localization: { variables: {} } }),
-    );
+    expect(screen.queryByRole('group', { name: 'Language' })).not.toBeInTheDocument();
+    expect(supabaseMocks.authUiProps.mock.lastCall?.[0]).toHaveProperty('localization', { variables: {} });
+    expect(window.localStorage.getItem('areqa:interface-language')).toBeNull();
+  });
 
-    fireEvent.click(within(languageGroup).getByRole('button', { name: '简体中文' }));
-    expect(window.localStorage.getItem('areqa:interface-language')).toBe('zh-CN');
-    expect(document.documentElement.lang).toBe('zh-CN');
-    expect(within(screen.getByRole('group', { name: '语言' })).getByRole('button', { name: '简体中文' })).toHaveAttribute('aria-pressed', 'true');
-    expect(supabaseMocks.authUiProps).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        localization: expect.objectContaining({
-          variables: expect.objectContaining({
-            sign_in: expect.objectContaining({ button_label: '登录' }),
-          }),
-        }),
-      }),
+  it('keeps a language explicitly selected earlier without a guest selector', async () => {
+    renderUserAuthUI();
+
+    expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('登入 / 註冊'));
+    expect(screen.queryByRole('group', { name: '語言' })).not.toBeInTheDocument();
+    expect(supabaseMocks.authUiProps.mock.lastCall?.[0]).toHaveProperty(
+      'localization.variables.sign_in.button_label', '登入',
     );
   });
 
   it('updates the user display on SIGNED_IN event', async () => {
+    window.localStorage.removeItem('areqa:interface-language');
     vi.mocked(supabase.auth.getUser).mockResolvedValueOnce({
       data: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any,
       error: null,
@@ -160,6 +158,7 @@ describe('UserAuthUI Component', () => {
     // After signed in, it should display username
     await waitFor(() => {
       expect(screen.getByText('testuser')).toBeInTheDocument();
+      expect(document.documentElement.lang).toBe('en');
     });
 
   });
@@ -193,6 +192,13 @@ describe('UserAuthUI Component', () => {
       expect(supabase.auth.signOut).toHaveBeenCalledOnce();
       expect(mockReload).not.toHaveBeenCalled();
     });
+    await act(async () => {
+      // @ts-ignore - test-only auth event helper exposed by the Supabase mock.
+      supabase._triggerAuthStateChange('SIGNED_OUT', null);
+    });
+    expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe('zh-TW');
+    expect(window.localStorage.getItem('areqa:interface-language')).toBe('zh-TW');
   });
 
   it('submits contact feedback from the account dropdown', async () => {

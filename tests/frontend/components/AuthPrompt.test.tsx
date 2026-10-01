@@ -1,9 +1,10 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthPrompt } from '@/components/Auth';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/store/auth';
 
 let authStateCallback: ((event: string, session: unknown) => void) | null = null;
 
@@ -33,27 +34,26 @@ describe('AuthPrompt', () => {
   beforeEach(() => {
     authStateCallback = null;
     vi.clearAllMocks();
+    useAuthStore.setState({ user: null, isInitialized: false });
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null } } as never);
-    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
+    window.localStorage.removeItem('areqa:interface-language');
   });
 
   it('shows the guest prompt actions', async () => {
     const onDismiss = vi.fn();
     renderPrompt(onDismiss);
 
-    expect(await screen.findByText('歡迎來到 AREQA')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '登入' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '註冊' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '維持登出狀態' })).toBeInTheDocument();
+    expect(await screen.findByText('Welcome to AREQA')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign up' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stay signed out' })).toBeInTheDocument();
   });
 
-  it('lets guests choose a language from the sign-in prompt', () => {
-    window.localStorage.removeItem('areqa:interface-language');
+  it('keeps a previously selected language without offering guest selection', () => {
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
     renderPrompt(vi.fn());
 
-    const languageGroup = screen.getByRole('group', { name: 'Language' });
-    fireEvent.click(within(languageGroup).getByRole('button', { name: '繁體中文' }));
-
+    expect(screen.queryByRole('group', { name: '語言' })).not.toBeInTheDocument();
     expect(window.localStorage.getItem('areqa:interface-language')).toBe('zh-TW');
     expect(screen.getByRole('button', { name: '登入' })).toBeInTheDocument();
   });
@@ -62,11 +62,11 @@ describe('AuthPrompt', () => {
     const onDismiss = vi.fn();
     renderPrompt(onDismiss);
 
-    fireEvent.click(await screen.findByRole('button', { name: '登入' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Log in' }));
     expect(screen.getByTestId('supabase-auth-sign_in')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '返回' }));
-    fireEvent.click(screen.getByRole('button', { name: '維持登出狀態' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stay signed out' }));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
@@ -74,7 +74,7 @@ describe('AuthPrompt', () => {
     const onDismiss = vi.fn();
     renderPrompt(onDismiss);
 
-    await screen.findByText('歡迎來到 AREQA');
+    await screen.findByText('Welcome to AREQA');
     await act(async () => {
       authStateCallback?.('SIGNED_IN', { user: { id: 'user-1' } });
     });
