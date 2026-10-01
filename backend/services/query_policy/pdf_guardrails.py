@@ -13,7 +13,7 @@ import logging
 import re
 from typing import Any
 
-from services.answer_style_service import render_paper_overview_style
+from services.conversation.answer_style import render_paper_overview_style
 from services.query_policy.models import (
     AttachmentReason,
     AttachmentTask,

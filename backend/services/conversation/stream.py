@@ -18,7 +18,7 @@ from services.conversation.stream_request import (
     _openrouter_session_id as _openrouter_session_id,
 )
 from services.conversation.stream_request import build_stream_request
-from services.response_boundary_validator import StreamingResponseBoundaryFilter
+from services.conversation.response_boundary import StreamingResponseBoundaryFilter
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def letter_task_id(
 ) -> str:
     """Build a stable idempotency key without retaining source text."""
 
-    from services.turn_intake_service import normalize_avatar_name
+    from services.orchestration.intake import normalize_avatar_name
 
     source_hash = hashlib.sha256(source_text.strip().encode("utf-8")).hexdigest()[:24]
     raw = f"{user_id}|{conversation_id or ''}|{normalize_avatar_name(avatar_name)}|{source_hash}"

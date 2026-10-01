@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib
 import json
 import logging
 import os
 import random
-import sys
 import time as _time
 import uuid
 from dataclasses import dataclass, replace
@@ -23,17 +21,16 @@ from services.memory.hot import remove_typed_entry
 logger = logging.getLogger("services.compeer_scheduler")
 
 
-def _facade():
-    return (
-        sys.modules.get("services.compeer_scheduler")
-        or sys.modules.get("backend.services.compeer_scheduler")
-        or importlib.import_module("services.compeer_scheduler")
-    )
+def _runtime():
+    """Resolve the single scheduler runtime after module initialization."""
+    from services.compeer import runtime
+
+    return runtime
 
 async def _clear_persisted_trigger(store, user_id: str, trigger_key: str) -> None:
     """Clear a trigger only after its delayed-mail intent is durable."""
 
-    async with _facade()._flag_lock:
+    async with _runtime()._flag_lock:
         hot_memory = await store.get_hot_memory(user_id)
         if not hot_memory.get(trigger_key):
             return
@@ -58,14 +55,14 @@ async def is_in_cooldown(user_id: str) -> bool:
     Returns:
         bool: True if the user is in cooldown, False otherwise.
     """
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     return await redis.exists(f"areqa:cooldown:{user_id}") > 0
 
 
 async def get_cooldown_remaining_seconds(user_id: str) -> int | None:
     """Return the Redis TTL for the ComPeer cooldown key, if it is active."""
 
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     ttl = await redis.ttl(f"areqa:cooldown:{user_id}")
     return ttl if ttl is not None and ttl >= 0 else None
 
@@ -73,7 +70,7 @@ async def get_cooldown_remaining_seconds(user_id: str) -> int | None:
 async def clear_cooldown(user_id: str) -> bool:
     """Clear a user's ComPeer cooldown key for development/manual testing."""
 
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     deleted = await redis.delete(f"areqa:cooldown:{user_id}")
     logger.info(
         "compeer.cooldown_cleared user_id=%s deleted=%s",
@@ -107,7 +104,7 @@ def _seconds_until_next_utc_day(now: datetime | None = None) -> int:
 async def get_daily_proactive_sent_count(user_id: str) -> int:
     """Return how many ComPeer proactive mails have been scheduled today."""
 
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     value = await redis.get(_compeer_daily_counter_key(user_id))
     try:
         return int(value or 0)
@@ -130,7 +127,7 @@ async def has_reached_daily_proactive_limit(user_id: str) -> tuple[bool, int, in
 async def record_daily_proactive_send(user_id: str) -> int:
     """Increment the user's UTC daily proactive-mail counter after durable scheduling."""
 
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     key = _compeer_daily_counter_key(user_id)
     count = await redis.incr(key)
     if count == 1:
@@ -157,7 +154,7 @@ async def get_proactive_mail_interval_remaining_seconds(user_id: str) -> int | N
     if interval_seconds <= 0:
         return None
 
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     ttl_fn = getattr(redis, "ttl", None)
     if ttl_fn is None:
         return None
@@ -179,7 +176,7 @@ async def record_proactive_mail_scheduled(user_id: str) -> None:
     if interval_seconds <= 0:
         return
 
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     key = _compeer_proactive_mail_interval_key(user_id)
     setex_fn = getattr(redis, "setex", None)
     if setex_fn is not None:
@@ -216,7 +213,7 @@ async def set_cooldown(user_id: str, state: str = "default") -> None:
     if settings.compeer_cooldown_override_seconds is not None:
         expire_seconds = max(0, settings.compeer_cooldown_override_seconds)
 
-    redis = _facade().get_redis()
+    redis = _runtime().get_redis()
     if expire_seconds <= 0:
         await redis.delete(f"areqa:cooldown:{user_id}")
         logger.info(

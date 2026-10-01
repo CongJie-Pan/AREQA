@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 import httpx
 
 from config import settings
-from services.visual_affordance_registry import match_visual_affordance
+from services.visual.affordance import match_visual_affordance
 from services.visual_answer.constants import (
     _DEFAULT_VISUAL_USER_AGENT,
     _PROVIDER_PRIORITY,
@@ -27,7 +27,7 @@ from services.visual_answer.constants import (
     _VISUAL_TYPE_HINTS,
 )
 from services.visual_answer.models import ImageCandidate
-from services.visual_grounding_agent import VisualBrief
+from services.visual.grounding import VisualBrief
 
 logger = logging.getLogger(__name__)
 

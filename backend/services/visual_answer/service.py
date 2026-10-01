@@ -21,8 +21,8 @@ import httpx
 import redis.asyncio as aioredis
 from config import settings
 from services.query_policy.classifier import AttachmentTask, ResponsePolicy, VisualSupport
-from services.visual_affordance_registry import match_visual_affordance
-from services.visual_grounding_agent import VisualBrief, VisualGroundingAgent
+from services.visual.affordance import match_visual_affordance
+from services.visual.grounding import VisualBrief, VisualGroundingAgent
 from services.visual_answer.constants import (
     _INACCESSIBLE_IMAGE_DOMAIN_CACHE,
     _NEGATIVE_CACHE_SENTINEL,

@@ -31,7 +31,7 @@ from services.query_policy.classifier import (
     ResponsePolicy,
     default_response_policy,
 )
-from services.tutor_profile_service import render_tutor_profile_prompt
+from services.conversation.tutor_profile import render_tutor_profile_prompt
 
 logger = logging.getLogger(__name__)
 SnapshotLoader = Callable[..., Awaitable[str]]

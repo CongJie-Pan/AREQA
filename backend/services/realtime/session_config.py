@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
-from services.answer_style_service import AREQA_TEACHING_V1
+from services.conversation.answer_style import AREQA_TEACHING_V1
 from services.conversation.parts import PartsContext, PartsContextService
 from services.query_policy.classifier import default_response_policy
 from services.realtime.constants import (
@@ -14,7 +14,7 @@ from services.realtime.constants import (
     REALTIME_DEFAULT_MODEL,
 )
 from services.realtime.models import RealtimeSessionRequest
-from services.tutor_profile_service import (
+from services.conversation.tutor_profile import (
     normalize_tutor_profile,
     render_tutor_profile_prompt,
 )

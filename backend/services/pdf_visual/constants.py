@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from services.attachment_service import MAX_ATTACHMENT_BYTES
+from services.attachments.parsing import MAX_ATTACHMENT_BYTES
 
 PDF_ATTACHMENT_IMAGE_PROVIDER = "pdf_attachment"
 PDF_ATTACHMENT_SOURCE_DOMAIN = "uploaded PDF"

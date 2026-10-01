@@ -45,17 +45,17 @@ from services.orchestration.utils import (
     parse_and_decompose_query,
     reorder_for_attention,
 )
-from services.output_image_service import OutputImageService
+from services.visual.output import OutputImageService
 from services.conversation.parts import PartsContextService
-from services.post_turn_service import PostTurnService
-from services.turn_intake_service import TurnIntakeService
-from services.turn_intake_service import (
+from services.orchestration.post_turn import PostTurnService
+from services.orchestration.intake import TurnIntakeService
+from services.orchestration.intake import (
     chat_avatar_key as _chat_avatar_key,
     extract_explicit_chat_avatar as _extract_explicit_chat_avatar,
     is_stop_roleplay_request as _is_stop_roleplay_request,
     normalize_avatar_name as _normalize_avatar_name,
 )
-from services.turn_plan_service import TurnPlanService
+from services.orchestration.turn_plan import TurnPlanService
 from services.visual_answer.service import VisualAnswerService
 
 InterfaceLanguage = str

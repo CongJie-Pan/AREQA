@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Any
 
 from config import settings
-from services.visual_grounding_agent import VisualBrief
+from services.visual.grounding import VisualBrief
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from config import settings
 from services.visual_answer.models import ImageBlock, ImageCandidate
-from services.visual_grounding_agent import VisualBrief
+from services.visual.grounding import VisualBrief
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ import io
 
 from PIL import Image, UnidentifiedImageError
 
-from services.attachment_service import MAX_IMAGE_PIXELS
+from services.attachments.parsing import MAX_IMAGE_PIXELS
 
 
 class PdfVisualRenderingMixin:

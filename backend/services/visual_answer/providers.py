@@ -19,7 +19,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from config import settings
-from services.visual_affordance_registry import match_visual_affordance
+from services.visual.affordance import match_visual_affordance
 from services.visual_answer.constants import (
     _DEFAULT_VISUAL_USER_AGENT,
     _IMAGE_META_PATTERN,
@@ -28,7 +28,7 @@ from services.visual_answer.constants import (
     _VISUAL_QUERY_REWRITE_RULES,
 )
 from services.visual_answer.models import ImageBlock, ImageCandidate
-from services.visual_grounding_agent import VisualBrief
+from services.visual.grounding import VisualBrief
 
 logger = logging.getLogger(__name__)
 

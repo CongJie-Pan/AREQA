@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.services.tutor_profile_service import render_tutor_profile_prompt
+from services.conversation.tutor_profile import render_tutor_profile_prompt
 
 DEFAULT_DATASET = ROOT / "eval" / "datasets" / "english_tutor_cases_eval.json"
 DEFAULT_RUBRIC = ROOT / "eval" / "rubrics" / "learnlm_pedagogy_rubric.md"

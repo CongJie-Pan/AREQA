@@ -18,7 +18,7 @@ from services.realtime.diagnostics import (
 )
 from services.realtime.models import RealtimeSessionRequest
 from services.realtime.session_config import _build_realtime_session_config
-from services.tutor_profile_service import normalize_tutor_profile
+from services.conversation.tutor_profile import normalize_tutor_profile
 
 logger = logging.getLogger("backend.main")
 

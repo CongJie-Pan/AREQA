@@ -668,7 +668,7 @@ async def run_delayed_mail_iteration(
                     delivery_failed += 1
                     continue
 
-                from services.connection_manager import ws_manager
+                from services.notifications.connections import ws_manager
 
                 try:
                     await ws_manager.broadcast_mail_alert(sender=active_avatar, user_id=user_id)

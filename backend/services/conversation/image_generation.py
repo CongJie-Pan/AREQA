@@ -13,8 +13,8 @@ from typing import Any, AsyncGenerator, Literal, Mapping
 from config import settings
 from core import ToolBudget, ToolBudgetTracker
 from pydantic import BaseModel, ConfigDict, Field
-from services.generated_image_quota import consume_image_quota
-from services.generated_image_service import (
+from services.visual.generation_quota import consume_image_quota
+from services.visual.generation import (
     generate_teaching_image,
     generated_image_block,
     prepare_image_reference,

@@ -14,7 +14,7 @@ from services.query_policy.classifier import (
     apply_pdf_auto_explain_guardrail,
     count_pdf_attachments,
 )
-from services.turn_latency_trace import TurnLatencyTrace
+from services.orchestration.trace import TurnLatencyTrace
 
 logger = logging.getLogger("backend.services.orchestration_service")
 InterfaceLanguage = str

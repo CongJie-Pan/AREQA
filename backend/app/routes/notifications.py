@@ -5,11 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, WebSocket
 
 from auth import get_current_user
-from services.connection_manager import ws_manager
+from services.notifications.connections import ws_manager
 
 router = APIRouter()
 
-from services.connection_manager import ws_manager
+from services.notifications.connections import ws_manager
 
 @router.post("/api/v1/ws/ticket")
 async def generate_ws_ticket(current_user_id: str = Depends(get_current_user)):

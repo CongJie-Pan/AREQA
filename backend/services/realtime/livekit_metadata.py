@@ -19,7 +19,7 @@ from services.realtime.constants import (
 )
 from services.realtime.models import LiveKitAvatarSessionRequest
 from services.realtime.session_config import _build_realtime_parts_context
-from services.tutor_profile_service import (
+from services.conversation.tutor_profile import (
     normalize_tutor_profile,
     render_tutor_profile_prompt,
 )

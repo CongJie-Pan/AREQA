@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Optional
 from services.query_policy.classifier import (
     AttachmentTask,
 )
-from services.turn_intake_service import chat_avatar_key as _chat_avatar_key
-from services.turn_latency_trace import TurnLatencyTrace
-from services.turn_plan_service import TurnPlan
+from services.orchestration.intake import chat_avatar_key as _chat_avatar_key
+from services.orchestration.trace import TurnLatencyTrace
+from services.orchestration.turn_plan import TurnPlan
 
 logger = logging.getLogger(__name__)
 InterfaceLanguage = str

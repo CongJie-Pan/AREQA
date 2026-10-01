@@ -432,7 +432,7 @@ async def startup_event():
     # GUM instances are now initialized lazily per user via get_gum_instance
     
     global rag_cache
-    from services.cache_service import RagCacheService
+    from services.retrieval.cache import RagCacheService
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
     rag_cache = RagCacheService(redis_url)
     print("Redis RAG Cache initialized successfully.")
@@ -440,7 +440,7 @@ async def startup_event():
     # Start ComPeer Scheduler and Mailbox Worker
     import sys
     sys.path.append(str(PROJECT_ROOT / "backend" / "services"))
-    from services.compeer_scheduler import proactive_scheduler_loop, daily_scheduler_loop
+    from services.compeer.runtime import proactive_scheduler_loop, daily_scheduler_loop
     from mailbox_store import delayed_mail_worker
     from job_store import agent_job_worker
     

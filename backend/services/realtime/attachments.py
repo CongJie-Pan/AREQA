@@ -20,8 +20,8 @@ async def upload_realtime_attachments(
 
     if not conversation_id or len(conversation_id) > 128 or not re.fullmatch(r"[A-Za-z0-9_-]+", conversation_id):
         raise HTTPException(status_code=422, detail="Invalid conversation id")
-    from services.attachment_service import process_attachments
-    from services.speaking_material_service import (
+    from services.attachments.parsing import process_attachments
+    from services.realtime.speaking_material import (
         extract_material,
         save_material,
         voice_excerpt,

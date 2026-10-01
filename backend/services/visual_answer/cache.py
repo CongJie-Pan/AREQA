@@ -28,7 +28,7 @@ from services.visual_answer.constants import (
     _TITLE_PATTERN,
 )
 from services.visual_answer.models import ImageBlock
-from services.visual_grounding_agent import VisualBrief
+from services.visual.grounding import VisualBrief
 
 logger = logging.getLogger(__name__)
 

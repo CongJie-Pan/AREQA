@@ -528,4 +528,4 @@ async def clear_memory_endpoint(current_user_id: str = Depends(get_current_user)
     await clear_gum_memory(current_user_id)
     return {"status": "ok", "message": "Memory cleared successfully"}
 
-from services.connection_manager import ws_manager
+from services.notifications.connections import ws_manager

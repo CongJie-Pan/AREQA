@@ -24,9 +24,9 @@ from services.query_policy.classifier import (
     paper_auto_explain_instruction,
     response_policy_from_legacy,
 )
-from services.turn_latency_trace import TurnLatencyTrace
-from services.turn_plan_service import TurnPlan
-from services.turn_intake_service import chat_avatar_key as _chat_avatar_key
+from services.orchestration.trace import TurnLatencyTrace
+from services.orchestration.turn_plan import TurnPlan
+from services.orchestration.intake import chat_avatar_key as _chat_avatar_key
 from services.orchestration.utils import (
     _build_valid_web_sources,
     _localized_greeting_reply,
@@ -243,7 +243,7 @@ class OrchestrationVisualMixin:
             return []
 
         from services.paper_visual.planner import PaperVisualPlannerService
-        from services.pdf_visual_extraction_service import PdfVisualExtractionService
+        from services.pdf_visual.extraction import PdfVisualExtractionService
 
         async def extract_one(source: Dict[str, Any]) -> List[Any]:
             filename = str(source.get("filename") or "attachment.pdf")

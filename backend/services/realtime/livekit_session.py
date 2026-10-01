@@ -20,7 +20,7 @@ from services.realtime.models import (
     LiveKitAvatarSessionRequest,
     LiveKitAvatarSessionResponse,
 )
-from services.tutor_profile_service import normalize_tutor_profile
+from services.conversation.tutor_profile import normalize_tutor_profile
 
 logger = logging.getLogger("backend.main")
 

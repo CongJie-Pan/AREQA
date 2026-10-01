@@ -8,7 +8,7 @@ from typing import Any
 
 from config import settings
 from services.query_policy.classifier import ResponsePolicy, VisualSupport
-from services.visual_affordance_registry import match_visual_affordance
+from services.visual.affordance import match_visual_affordance
 
 logger = logging.getLogger(__name__)
 

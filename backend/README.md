@@ -22,6 +22,9 @@ backend/
   tools/                  Authorized tool boundaries
   prompts/                Shared prompt assets
   services/
+    _compat/              Legacy flat import aliases only
+    notifications/        WebSocket connection management
+    retrieval/            Retrieval cache
     conversation/         Context, PARTS, language and model streaming
     orchestration/        Composition root and conversation execution stages
     realtime/             Voice/provider session and speech services
@@ -36,7 +39,7 @@ backend/
 ```
 
 Legacy files such as `gum_integration.py`, `memory_store.py` and selected flat
-`*_service.py` modules contain compatibility imports only. The actual state and
+`services/_compat/*_service.py` modules contain compatibility imports only. The actual state and
 implementation live in domain packages. Keep these aliases until downstream
 imports and test patch paths no longer need them.
 
@@ -50,9 +53,13 @@ The domain reorganization was checked with the existing behavior tests plus
 regressions for import identity, GUM initialization/shutdown, HTTP dispatch,
 stream marker boundaries, database location, and observation metadata pruning.
 
-- Focused regression set: **392 passed, 6 skipped**.
+- Initial domain regression set: **392 passed, 6 skipped**.
+- Service layout/import contracts: **14 passed**, including all 35 legacy
+  aliases in three fresh-process import orders and image prompt asset loading.
 - Full `tests/backend` and `tests/unit` run using `--import-mode=importlib`:
-  **917 passed, 7 skipped, 6 failed**.
+  **920 passed, 7 skipped, 6 failed** (after the service-root cleanup).
+  The immediate pre-cleanup baseline was **917 passed, 7 skipped, 6 failed**;
+  the failing test names are unchanged.
 - Changed Python files compile successfully. Ruff's `F821`, `F822`, `F823` and
   `E9` checks pass; these are targeted correctness checks, not a claim that the
   whole repository passes every lint rule.

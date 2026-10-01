@@ -17,7 +17,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from auth import get_optional_current_user
-from services.tutor_profile_service import normalize_tutor_profile
+from services.conversation.tutor_profile import normalize_tutor_profile
 
 router = APIRouter()
 logger = logging.getLogger("backend.main")
@@ -121,7 +121,7 @@ async def stream_endpoint(
 
     processed_attachments = []
     if uploads:
-        from services.attachment_service import process_attachments
+        from services.attachments.parsing import process_attachments
 
         processed_attachments = await process_attachments(
             uploads,
@@ -130,7 +130,7 @@ async def stream_endpoint(
 
     material = None
     if processed_attachments or tutor_profile == "english":
-        from services.speaking_material_service import extract_material, extract_pasted_material, save_material
+        from services.realtime.speaking_material import extract_material, extract_pasted_material, save_material
 
         material = extract_material(processed_attachments) if processed_attachments else extract_pasted_material(
             next((item.get("content", "") for item in reversed(chat_req.messages) if item.get("role") == "user"), "")
@@ -146,7 +146,7 @@ async def stream_endpoint(
 
     saved_material = None
     if tutor_profile == "english" and chat_req.speaking_practice:
-        from services.speaking_material_service import load_material
+        from services.realtime.speaking_material import load_material
 
         saved_material = material or await load_material(current_user_id, chat_req.conversation_id)
         if not saved_material:

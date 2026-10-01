@@ -46,7 +46,7 @@ async def get_realtime_context(
         for item in payload.messages[-MAX_CONTEXT_MESSAGES:]
         if item.content.strip()
     ]
-    from services.speaking_material_service import load_material, voice_excerpt
+    from services.realtime.speaking_material import load_material, voice_excerpt
 
     speaking_material = voice_excerpt(await load_material(current_user_id, payload.conversation_id))
     memory_items: list[str] = []

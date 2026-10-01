@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.answer_style_service import render_response_strategy_style_reminder
+from services.conversation.answer_style import render_response_strategy_style_reminder
 from services.query_policy.models import (
     AnswerDepth,
     FollowupMode,

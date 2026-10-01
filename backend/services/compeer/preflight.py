@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib
 import json
 import logging
 import os
 import random
-import sys
 import time as _time
 import uuid
 from dataclasses import dataclass, replace
@@ -23,12 +21,11 @@ from services.memory.hot import remove_typed_entry
 logger = logging.getLogger("services.compeer_scheduler")
 
 
-def _facade():
-    return (
-        sys.modules.get("services.compeer_scheduler")
-        or sys.modules.get("backend.services.compeer_scheduler")
-        or importlib.import_module("services.compeer_scheduler")
-    )
+def _runtime():
+    """Resolve the single scheduler runtime after module initialization."""
+    from services.compeer import runtime
+
+    return runtime
 
 def _auto_proactive_enabled() -> bool:
     """Return whether automatic ComPeer proactive scheduling may run."""
@@ -169,7 +166,7 @@ def _log_proactive_preflight(
     if (
         preflight.block_reason
         in {"absent_trigger", "inactivity_threshold", "insufficient_scroll_evidence"}
-        and preflight.scroll_count < _facade().PROACTIVE_SCROLL_SIGNAL_THRESHOLD
+        and preflight.scroll_count < _runtime().PROACTIVE_SCROLL_SIGNAL_THRESHOLD
         and not preflight.trigger_present
         and not preflight.avatar_pending
         and not preflight.existing_pending_task

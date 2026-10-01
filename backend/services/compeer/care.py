@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib
 import json
 import logging
 import os
 import random
-import sys
 import time as _time
 import uuid
 from dataclasses import dataclass, replace
@@ -23,12 +21,11 @@ from services.memory.hot import remove_typed_entry
 logger = logging.getLogger("services.compeer_scheduler")
 
 
-def _facade():
-    return (
-        sys.modules.get("services.compeer_scheduler")
-        or sys.modules.get("backend.services.compeer_scheduler")
-        or importlib.import_module("services.compeer_scheduler")
-    )
+def _runtime():
+    """Resolve the single scheduler runtime after module initialization."""
+    from services.compeer import runtime
+
+    return runtime
 
 def has_current_learning_evidence(hot_memory_snapshot: str) -> bool:
     """
@@ -69,7 +66,7 @@ def is_generic_event_summary(event_summary: str) -> bool:
     text = (event_summary or "").strip()
     if not text:
         return True
-    return any(marker in text for marker in _facade()._GENERIC_EVENT_MARKERS)
+    return any(marker in text for marker in _runtime()._GENERIC_EVENT_MARKERS)
 
 
 def should_allow_topic_specific_care(
@@ -224,7 +221,7 @@ async def schedule_areqa_care_letter(
     )
 
     date_bucket = datetime.now().strftime("%Y-%m-%d")
-    task_id = _facade()._stable_task_id("compeer", user_id, event_summary, date_bucket)
+    task_id = _runtime()._stable_task_id("compeer", user_id, event_summary, date_bucket)
     mb_store = get_mailbox_store()
     await mb_store.schedule_delayed_mail(
         user_id=user_id,
@@ -256,7 +253,7 @@ async def _schedule_areqa_care_letter_safely(**kwargs):
 
     user_id = kwargs.get("user_id", "")
     try:
-        return await _facade().schedule_areqa_care_letter(**kwargs)
+        return await _runtime().schedule_areqa_care_letter(**kwargs)
     except Exception as exc:
         logger.exception(
             "compeer.schedule_failed user_id=%s reason=%s trigger_retained=true",

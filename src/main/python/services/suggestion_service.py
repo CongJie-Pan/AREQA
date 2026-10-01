@@ -7,7 +7,7 @@ import opencc
 from openai import AsyncOpenAI
 
 from config import settings
-from services.conversation_context_service import resolve_answer_language
+from services.conversation.context import resolve_answer_language
 
 logger = logging.getLogger(__name__)
 

@@ -311,7 +311,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
 
         if not settings.enable_compeer_dev_controls:
             raise HTTPException(status_code=403, detail="ComPeer dev controls are disabled")
-        import services.compeer_scheduler as compeer
+        import services.compeer.runtime as compeer
 
         deleted = await compeer.clear_cooldown(current_user_id)
         return {"status": "ok", "cooldown_deleted": deleted}
@@ -324,7 +324,7 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
         # Pure UI telemetry belongs to behavior_signals only; it must not enter prompt memory.
         pass
     elif req.action_type == "compeer_rejected":
-        import services.compeer_scheduler as compeer
+        import services.compeer.runtime as compeer
         target_user = current_user_id
         learner_state = await store.get_learner_state(target_user) if store else "default"
         await compeer.set_cooldown(target_user, state=learner_state)

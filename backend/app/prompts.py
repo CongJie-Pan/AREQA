@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from services.answer_style_service import (
+from services.conversation.answer_style import (
     evidence_mode_overlays,
     learning_technique_overlays,
     render_base_persona,

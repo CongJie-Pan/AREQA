@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib
 import json
 import logging
 import os
 import random
-import sys
 import time as _time
 import uuid
 from dataclasses import dataclass, replace
@@ -23,12 +21,11 @@ from services.memory.hot import remove_typed_entry
 logger = logging.getLogger("services.compeer_scheduler")
 
 
-def _facade():
-    return (
-        sys.modules.get("services.compeer_scheduler")
-        or sys.modules.get("backend.services.compeer_scheduler")
-        or importlib.import_module("services.compeer_scheduler")
-    )
+def _runtime():
+    """Resolve the single scheduler runtime after module initialization."""
+    from services.compeer import runtime
+
+    return runtime
 
 async def evaluate_importance_gate(event: dict) -> bool:
     """
@@ -41,7 +38,7 @@ async def evaluate_importance_gate(event: dict) -> bool:
         bool: True if the event passes the gate, False otherwise.
     """
     importance = float(event.get("importance", 0.5))
-    passed = _facade().random.random() < importance
+    passed = _runtime().random.random() < importance
     logger.info(
         "compeer.importance_evaluated importance=%s passed=%s",
         importance,
@@ -69,7 +66,7 @@ async def tick_proactive_schedule(user_id: str):
         )
         return
 
-    project_root = _facade().Path(__file__).resolve().parents[2]
+    project_root = _runtime().Path(__file__).resolve().parents[2]
     schedule_path = project_root / "data" / "gum_data" / f"schedule_{user_id}.json"
 
     if not os.path.exists(schedule_path):
@@ -101,8 +98,8 @@ async def tick_proactive_schedule(user_id: str):
 
         # 2-minute window
         if abs((now_dt - event_dt).total_seconds()) <= 120:
-            if not await _facade().is_in_cooldown(user_id):
-                passed = await _facade().evaluate_importance_gate(event)
+            if not await _runtime().is_in_cooldown(user_id):
+                passed = await _runtime().evaluate_importance_gate(event)
                 if passed:
                     from services.memory.store.service import get_global_store
                     store = get_global_store()
@@ -116,14 +113,14 @@ async def tick_proactive_schedule(user_id: str):
                         edf_policy = await store.get_current_strategy(user_id) if store else "default"
                         from services.memory.gum.runtime import get_hot_memory_snapshot, query_cold_memory_for_context
                         snapshot = await get_hot_memory_snapshot(user_id)
-                        allow_topic_specific = _facade().should_allow_topic_specific_care(
+                        allow_topic_specific = _runtime().should_allow_topic_specific_care(
                             snapshot,
                             content,
                             trust_event_summary=True,
                         )
                         cold_ctx = await query_cold_memory_for_context(user_id, content) if allow_topic_specific else ""
                         hot_mem = await store.get_hot_memory(user_id)
-                        task_id = await _facade().schedule_areqa_care_letter(
+                        task_id = await _runtime().schedule_areqa_care_letter(
                             user_id=user_id,
                             learner_state=learner_state,
                             edf_policy=edf_policy,
@@ -139,7 +136,7 @@ async def tick_proactive_schedule(user_id: str):
                                 user_id,
                             )
                             continue
-                        await _facade().set_cooldown(user_id, state=learner_state)
+                        await _runtime().set_cooldown(user_id, state=learner_state)
 
             event["fired"] = True
             changed = True
@@ -190,7 +187,7 @@ async def initialize_daily_schedule(user_id: str, reflection_outputs: list):
         data = json.loads(content)
         events = data.get("events", [])
 
-        project_root = _facade().Path(__file__).resolve().parents[2]
+        project_root = _runtime().Path(__file__).resolve().parents[2]
         schedule_path = project_root / "data" / "gum_data" / f"schedule_{user_id}.json"
         with open(schedule_path, "w", encoding="utf-8") as f:
             json.dump(events, f, ensure_ascii=False, indent=2)
@@ -212,7 +209,7 @@ async def run_reflection_and_initialization(user_id: str):
         if not insights:
             return
 
-        await _facade().initialize_daily_schedule(user_id, insights)
+        await _runtime().initialize_daily_schedule(user_id, insights)
 
     except Exception as e:
         print(f"[Daily Scheduler] run_reflection_and_initialization failed: {e}")
@@ -227,9 +224,9 @@ async def daily_scheduler_loop():
     """
     while True:
         try:
-            if not _facade()._auto_proactive_enabled():
+            if not _runtime()._auto_proactive_enabled():
                 logger.debug("compeer.daily_scheduler_disabled reason=auto_proactive_disabled")
-                await _facade().asyncio.sleep(60)
+                await _runtime().asyncio.sleep(60)
                 continue
 
             now = datetime.now()
@@ -265,13 +262,13 @@ async def daily_scheduler_loop():
                             )
                             insights = await run_reflection(user_id)
                             if insights:
-                                await _facade().initialize_daily_schedule(user_id, insights)
+                                await _runtime().initialize_daily_schedule(user_id, insights)
                                 await store.update_hot_memory_async(
                                     user_id,
                                     "last_reflection_date",
                                     today_str,
                                 )
 
-            await _facade().asyncio.sleep(60)
+            await _runtime().asyncio.sleep(60)
         except Exception as e:
-            await _facade().asyncio.sleep(60)
+            await _runtime().asyncio.sleep(60)

@@ -11,8 +11,10 @@ not start providers or workers.
 | Package | Responsibility and entry point |
 | --- | --- |
 | `attachments/` | Parsing, validation and attachment storage. |
-| `compeer/` | Proactive scheduling, care messages and background loops. |
+| `compeer/` | `runtime.py` owns scheduler locks and dependencies; care, state, preflight and background loops have separate modules. |
 | `conversation/` | `context.py` assembles prompts; `parts.py` builds task cards; `stream.py` owns streaming. Language, instruction rendering, memory recall, PARTS validation, image markers and provider request options have independent modules. |
+| `notifications/` | WebSocket connection ownership in `connections.py`. |
+| `retrieval/` | Retrieval caching in `cache.py`. |
 | `memory/` | Memory eligibility (`gate.py`), typed hot entries (`hot.py`), extraction, semantic analysis, recall cache and retrieval tracing. |
 | `memory/ingestion/` | `service.py` owns evidence eligibility and persistence order. `goals.py` completes uniquely matched goals; `preferences.py` validates extracted preferences. Rules, models and provider construction remain separate. |
 | `memory/store/` | `service.py` owns the Redis store and process singleton; `behavior.py` and `candidates.py` own their existing Redis contracts. |
@@ -22,7 +24,7 @@ not start providers or workers.
 | `pdf_visual/` | PDF geometry, extraction and rendering. |
 | `query_policy/` | `classifier.py` owns model classification; `learning_guardrails.py` and `pdf_guardrails.py` enforce deterministic policy. |
 | `realtime/` | Session configuration, OpenAI sessions, LiveKit token/dispatch, speech, attachments and bounded context. HTTP route registration lives in `app/routes/realtime/`. |
-| `visual/` | Visual input, grounding, understanding and output coordination. |
+| `visual/` | Visual input, grounding, understanding and output coordination; `generation.py` owns image generation and `generation_quota.py` owns spending guards. |
 | `visual_answer/` | `service.py` coordinates answer blocks. `preflight.py`, `slot_resolution.py` and `provider_preflight.py` own distinct retrieval workflows; clients, cache, scoring and layout retain their existing boundaries. |
 
 ## Dependency and state rules
@@ -44,6 +46,13 @@ not start providers or workers.
   never include raw user text, prompts, provider output or credentials.
 
 ## Compatibility imports
+
+All 35 old flat service names now live in [`_compat/`](./_compat/README.md).
+The lightweight package initializer extends the normal Python search path to
+that folder and preserves the shared `src/main/python/services` namespace,
+including when application bootstrap adds that source root later. Aliases load
+on demand; package initialization does not start providers or workers.
+
 
 The following legacy modules are aliases to the canonical implementation module,
 so old and new imports share class identity, monkeypatches and mutable state:
@@ -76,9 +85,9 @@ The unused helper packages `gum_parts/`, `memory_store_parts/` and
 under `services/memory/`.
 
 Do not add business logic to compatibility modules. Remove an alias only after
-all callers, tests and documented patch paths have migrated. Small cross-domain
-services such as answer styling, turn tracing and connection management can
-remain flat until they acquire a clear domain owner.
+all callers, tests and documented patch paths have migrated. Keep the service root limited to this guide, `__init__.py` and domain folders.
+Answer styling belongs to `conversation/`, turn tracing to `orchestration/`,
+and connection management to `notifications/`.
 
 ## Size and validation
 
@@ -89,11 +98,13 @@ solely to meet a line count. Do not create catch-all `utils` or `common` package
 Run focused tests first, then the backend regression suite:
 
 ```bash
-backend/.venv/bin/python -m pytest tests/backend/test_domain_refactor_contracts.py
+backend/.venv/bin/python -m pytest tests/backend/test_domain_refactor_contracts.py tests/backend/test_service_import_compatibility.py
 backend/.venv/bin/python -m pytest tests/backend tests/unit --import-mode=importlib
 ```
 
 `importlib` mode avoids existing duplicate test filenames across the two suites.
+Fresh-process service import tests cover all 35 aliases in three import orders,
+the shared source namespace, lazy package loading and the image prompt asset.
 The domain contract tests cover shared legacy/canonical state, concurrent GUM
 initialization and shutdown, HTTP route validation/dispatch, and incremental
 image-marker parsing. Provider tests use mocks; passing them does not establish

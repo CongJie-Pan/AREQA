@@ -12,9 +12,9 @@ from pydantic import BaseModel, Field
 from auth import get_current_user
 from config import settings
 from services.attachments.storage import AttachmentImageStorageService
-from services.generated_image_quota import consume_image_quota
-from services.message_intent_service import MessageIntentRequest, MessageIntent, classify_message_intent
-from services.generated_image_service import prepare_image_reference
+from services.visual.generation_quota import consume_image_quota
+from services.orchestration.message_intent import MessageIntentRequest, MessageIntent, classify_message_intent
+from services.visual.generation import prepare_image_reference
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ async def prepare_image_reference_endpoint(
     current_user_id: str = Depends(get_current_user),
 ) -> dict[str, str]:
     """Reuse validated attachment parsing before any paid image request."""
-    from services.attachment_service import process_attachments
+    from services.attachments.parsing import process_attachments
 
     if not SAFE_ID.fullmatch(conversation_id):
         raise HTTPException(status_code=400, detail="Invalid conversation identifier")
