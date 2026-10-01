@@ -47,13 +47,15 @@ describe('image route proxies', () => {
   });
 
   it('forwards bounded generation fields and the bearer token', async () => {
-    const incoming = request({ prompt: 'Draw a cat', conversation_id: 'conv-a', interface_language: 'en' });
+    const incoming = request({ prompt: 'Draw a cat', conversation_id: 'conv-a', interface_language: 'en',
+      conversation_context: 'user: The cat sits beside a blue book.' });
     const response = await generate(incoming as never);
     expect(response.status).toBe(200);
     const [url, options] = vi.mocked(fetch).mock.calls[0];
     expect(url).toContain('/api/v1/images/generate');
     expect(new Headers(options?.headers).get('authorization')).toBe('Bearer user-token');
     expect(options?.signal).toBe(incoming.signal);
+    expect(JSON.parse(options?.body as string).conversation_context).toContain('blue book');
   });
 
   it('rejects invalid refresh identifiers before calling the backend', async () => {
@@ -88,5 +90,21 @@ describe('image route proxies', () => {
     const response = await generate(request({ prompt: 'Draw a cat', conversation_id: 'conv-a', reference_brief: 'a'.repeat(4001) }) as never);
     expect(response.status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized conversation context before forwarding generation', async () => {
+    const response = await generate(request({ prompt: 'Draw a cat', conversation_id: 'conv-a',
+      conversation_context: 'a'.repeat(2001) }) as never);
+    expect(response.status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('forwards a safe image provider error code', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: { code: 'IMAGE_PROVIDER_HTTP_402' },
+    }), { status: 402 })));
+    const result = await generate(request({ prompt: 'Draw a cat', conversation_id: 'conv-a' }) as never);
+    expect(result.status).toBe(402);
+    expect(await result.json()).toMatchObject({ code: 'IMAGE_PROVIDER_HTTP_402' });
   });
 });

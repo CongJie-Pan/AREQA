@@ -28,6 +28,7 @@ class GenerateImageRequest(BaseModel):
     conversation_id: str = Field(min_length=1, max_length=128)
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
     reference_brief: str = Field(default="", max_length=4000)
+    conversation_context: str = Field(default="", max_length=2000)
 
 
 @router.post("/api/v1/images/intent")
@@ -91,8 +92,9 @@ async def generate_image_endpoint(
         raise HTTPException(status_code=400, detail="Invalid conversation identifier")
     if settings.enable_generated_image_debug_logs:
         logger.info(
-            "image_generation.request_received conversation_id=%s language=%s request_chars=%s reference_chars=%s",
+            "image_generation.request_received conversation_id=%s language=%s request_chars=%s reference_chars=%s context_chars=%s",
             payload.conversation_id, payload.interface_language, len(payload.prompt), len(payload.reference_brief),
+            len(payload.conversation_context),
         )
     from core import ToolBudget, ToolBudgetTracker
     from tools import ToolRegistry
@@ -104,13 +106,17 @@ async def generate_image_endpoint(
         "payload": {"prompt": payload.prompt, "reference": "none"},
         "user_id": current_user_id, "conversation_id": payload.conversation_id,
         "language": payload.interface_language, "reference_brief": payload.reference_brief,
+        "conversation_context": payload.conversation_context,
         "request": request,
     }, ToolBudgetTracker(ToolBudget()))
     if result.status != "ok":
         if result.content.get("reason") == "PermissionError" and settings.enable_generated_image_debug_logs:
             logger.info("image_generation.quota_rejected conversation_id=%s", payload.conversation_id)
-        status = 429 if result.content.get("reason") == "PermissionError" else 503
-        raise HTTPException(status_code=status, detail="Image generation is unavailable")
+        code = result.content.get("code", "IMAGE_GENERATION_FAILED")
+        status = (429 if result.content.get("reason") == "PermissionError"
+                  else 402 if code == "IMAGE_PROVIDER_HTTP_402" else 503)
+        raise HTTPException(status_code=status, detail={"message": "Image generation is unavailable",
+                                                        "code": code})
     return {"block": result.content["block"], "cost_usd": result.content.get("cost_usd")}
 
 

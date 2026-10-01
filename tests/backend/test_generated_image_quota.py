@@ -154,12 +154,40 @@ async def test_reference_upload_reuses_parser_and_brief_is_passed_to_image_gener
                                      files={"attachments": ("source.txt", b"Light becomes sugar.", "text/plain")})
         assert prepared.status_code == 200
         brief = prepared.json()["reference_brief"]
-        result = await client.post("/api/v1/images/generate", json={"prompt": "Explain this source", "conversation_id": "conv-a", "reference_brief": brief})
+        result = await client.post("/api/v1/images/generate", json={"prompt": "Explain this source", "conversation_id": "conv-a", "reference_brief": brief,
+                                                                     "conversation_context": "user: Use the earlier photosynthesis lesson."})
         assert result.status_code == 200
         assert seen[0]["reference_brief"] == brief
+        assert seen[0]["conversation_context"] == "user: Use the earlier photosynthesis lesson."
         assert result.json()["block"]["generationRequest"]["referenceBrief"] == brief
         invalid = await client.post("/api/v1/images/generate", json={"prompt": "Explain", "conversation_id": "conv-a", "reference_brief": "a" * 4001})
         assert invalid.status_code == 422
+        oversized_context = await client.post("/api/v1/images/generate", json={"prompt": "Explain", "conversation_id": "conv-a",
+                                                                                 "conversation_context": "x" * 2001})
+        assert oversized_context.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_exposes_safe_image_error_code(monkeypatch):
+    from services.generated_image_service import ImageProviderError
+
+    app = FastAPI()
+    app.include_router(route.router)
+    app.dependency_overrides[get_current_user] = lambda: "user-a"
+
+    async def allowed(_user_id):
+        return True
+
+    async def fail(*args, **kwargs):
+        raise ImageProviderError("IMAGE_PROVIDER_HTTP_402")
+
+    monkeypatch.setattr(image_handler, "consume_image_quota", allowed)
+    monkeypatch.setattr(image_handler, "generate_teaching_image", fail)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        result = await client.post("/api/v1/images/generate", json={"prompt": "Draw a cat", "conversation_id": "conv-a"})
+    assert result.status_code == 402
+    assert result.json()["detail"]["code"] == "IMAGE_PROVIDER_HTTP_402"
+    assert "402" in result.json()["detail"]["code"]
 
 
 @pytest.mark.asyncio

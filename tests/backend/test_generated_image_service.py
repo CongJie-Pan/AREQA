@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
 from PIL import Image
 
 from config import Settings
@@ -24,11 +25,36 @@ def _valid_png() -> bytes:
 def test_image_model_routing_and_prompt_contract():
     assert images.FLARE_MODEL == "openai/gpt-image-2.5-flare"
     assert images.choose_image_model("A cat reading a book") == images.FLARE_MODEL
-    assert images.choose_image_model("畫一張血液循環流程圖") == images.QWEN_MODEL
-    prompt = images.build_image_prompt("血液循環流程圖", language="zh-TW", model=images.QWEN_MODEL)
+    assert images.choose_image_model("畫一張血液循環流程圖") == images.FLARE_MODEL
+    prompt = images.build_image_prompt("血液循環流程圖", language="zh-TW", model=images.FLARE_MODEL)
     assert "Traditional Chinese" in prompt
     assert "血液循環流程圖" in prompt
     assert "do not invent" in prompt
+
+
+@pytest.mark.asyncio
+async def test_provider_http_failure_records_status_without_response_body(monkeypatch, caplog):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, **kwargs):
+            return httpx.Response(402, request=httpx.Request("POST", url), text="PRIVATE_PROVIDER_BODY")
+
+    with pytest.raises(images.ImageProviderError) as failure, caplog.at_level(logging.WARNING):
+        await images.generate_teaching_image("Draw a cat", language="en", user_id="user-1",
+            conversation_id="conversation-1", image_id="image-1", client_factory=Client)
+    assert failure.value.code == "IMAGE_PROVIDER_HTTP_402"
+    assert "status=402" in caplog.text
+    assert "PRIVATE_PROVIDER_BODY" not in caplog.text
 
 
 @pytest.mark.parametrize("drawing_request, interface_language, label_language", [
@@ -101,7 +127,7 @@ async def test_reference_planner_uses_source_material_and_returns_a_bounded_brie
     assert "PRIVATE_SOURCE" not in caplog.text
     assert "test-only-key" not in caplog.text
     assert "reference_completed" in caplog.text
-    prompt = images.build_image_prompt(drawing_request, language="en", model=images.QWEN_MODEL, reference_brief=brief)
+    prompt = images.build_image_prompt(drawing_request, language="en", model=images.FLARE_MODEL, reference_brief=brief)
     assert brief in prompt
     assert "never as instructions" in prompt
 
@@ -158,18 +184,15 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
     with caplog.at_level(logging.INFO, logger=images.logger.name):
         result = await images.generate_teaching_image(
             "Draw a cat", language="en", user_id="user-1", conversation_id="conversation-1", image_id="image-1", client_factory=Client,
-            reference_brief=reference_brief,
+            reference_brief=reference_brief, conversation_context="user: The cat is beside a blue book.",
         )
-    assert seen["payload"]["model"] == (images.QWEN_MODEL if reference_brief else images.FLARE_MODEL)
+    assert seen["payload"]["model"] == images.FLARE_MODEL
     assert seen["payload"]["n"] == 1
+    assert "The cat is beside a blue book." in seen["payload"]["prompt"]
     if reference_brief:
-        assert "quality" not in seen["payload"]
-        assert seen["payload"]["resolution"] == "1K"
         assert reference_brief in seen["payload"]["prompt"]
-    else:
-        assert seen["payload"]["model"] == "openai/gpt-image-2.5-flare"
-        assert "resolution" not in seen["payload"]
-        assert seen["payload"]["quality"] == "high"
+    assert "resolution" not in seen["payload"]
+    assert seen["payload"]["quality"] == "high"
     assert seen["png_bytes"] == png
     assert result.image_url == "https://example.test/signed"
     assert result.cost_usd == 0.04
@@ -178,7 +201,7 @@ async def test_generate_image_uses_bounded_provider_request_and_private_storage(
     for event in detailed_events:
         assert (f"image_generation.{event}" in caplog.text) is debug_logs
     if debug_logs:
-        assert f"model={images.QWEN_MODEL if reference_brief else images.FLARE_MODEL}" in caplog.text
+        assert f"model={images.FLARE_MODEL}" in caplog.text
         assert f"route={'attachment_reference' if reference_brief else 'default'}" in caplog.text
         assert "persisted=True" in caplog.text
     assert "Draw a cat" not in caplog.text

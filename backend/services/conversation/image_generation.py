@@ -145,6 +145,7 @@ async def stream_image_tool_events(arguments: Mapping[str, Any]) -> AsyncGenerat
             phases.put_nowait("generating")
             result = await generate_teaching_image(prompt.strip(), language=language, user_id=user_id,
                 conversation_id=conversation_id, image_id=image_id, reference_brief=brief,
+                conversation_context=arguments.get("conversation_context", ""),
                 on_state=phases.put_nowait)
             resolved = generated_image_block(result, image_id=image_id, prompt=prompt.strip(), language=language, reference_brief=brief)
             return {"state": "completed", "block": resolved, "cost_usd": result.cost_usd}
@@ -170,8 +171,10 @@ async def stream_image_tool_events(arguments: Mapping[str, Any]) -> AsyncGenerat
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        logger.warning("chat.image_tool_failed conversation_id=%s reason=%s", conversation_id, type(exc).__name__)
-        yield {"state": "failed", "reason": type(exc).__name__, "block": {**block, "status": "error", "caption": "圖片未完成，請確認登入狀態或稍後重試。"}}
+        code = getattr(exc, "code", None) or ("IMAGE_QUOTA_OR_AUTH_ERROR" if isinstance(exc, PermissionError) else "IMAGE_GENERATION_FAILED")
+        logger.warning("chat.image_tool_failed conversation_id=%s reason=%s code=%s", conversation_id, type(exc).__name__, code)
+        yield {"state": "failed", "reason": type(exc).__name__, "code": code,
+               "block": {**block, "status": "error", "caption": f"圖片未完成（{code}）。"}}
     finally:
         pending = [item for item in (task, phase_task) if item is not None]
         for item in pending:

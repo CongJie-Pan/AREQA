@@ -69,11 +69,25 @@ interface ImageGenerationOptions {
   attachments?: File[];
   assistantMessageId?: string;
   referenceBrief?: string;
+  conversationContext?: string;
+  replaceExistingText?: boolean;
+}
+
+function imageConversationContext(messages: DisplayMessage[], conversationId: string): string {
+  return messages
+    .filter((message) => message.conversationId === conversationId
+      && (message.role === 'user' || message.role === 'assistant')
+      && !message.isStreaming && message.content.trim())
+    .slice(-6)
+    .map((message) => `${message.role}: ${message.content.trim().slice(0, 280)}`)
+    .join('\n')
+    .slice(-2000);
 }
 
 export interface GeneratedImageResult {
   completed: boolean;
   cancelled?: boolean;
+  errorCode?: string;
   conversationId?: string;
   block?: ImageBlock;
   persisted?: boolean;
@@ -117,7 +131,7 @@ export async function generateConversationImage(
     return { completed: false, conversationId: id };
   }
   // Regeneration replaces the image capability's output, retaining requested analysis.
-  const retainedBlocks = (previousMessage?.answerBlocks ?? []).filter(
+  const retainedBlocks = (options.replaceExistingText ? [] : previousMessage?.answerBlocks ?? []).filter(
     (block) => !(block.type === 'image_block' && block.provider === 'generated_image'),
   );
   const retainedText = retainedBlocks.flatMap((block) => block.type === 'paragraph' ? [block.text] : []).join('\n\n');
@@ -136,8 +150,9 @@ export async function generateConversationImage(
   let createdAt: Date | undefined;
   let isFirstTurn = false;
   let referenceBrief = options.attachments?.length ? '' : options.referenceBrief || '';
+  let conversationContext = options.conversationContext || '';
   let generationRequest: NonNullable<ImageBlock['generationRequest']> = {
-    prompt, language, referenceBrief,
+    prompt, language, referenceBrief, conversationContext,
     ...(options.attachments?.length ? { requiresReference: true } : {}),
   };
   const pendingBlock: ImageBlock = {
@@ -169,6 +184,11 @@ export async function generateConversationImage(
       conversations.selectConversation(id);
     }
     if (ownerChanged()) return { completed: false, conversationId: id };
+    if (!options.assistantMessageId) {
+      conversationContext = imageConversationContext(useChatStore.getState().messages, id);
+      generationRequest = { ...generationRequest, conversationContext };
+      pendingBlock.generationRequest = generationRequest;
+    }
     isFirstTurn = persistUserTurn && !previousMessage && !useChatStore.getState().messages.some(
       (message) => message.conversationId === id,
     );
@@ -222,9 +242,15 @@ export async function generateConversationImage(
     const response = await awaitImageOperation(authenticatedFetch('/api/images/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
       body: JSON.stringify({ prompt, conversation_id: id, interface_language: language,
+        ...(conversationContext ? { conversation_context: conversationContext } : {}),
         ...(referenceBrief ? { reference_brief: referenceBrief } : {}) }),
     }), signal);
-    if (!response.ok) throw new Error(`Image generation failed (${response.status})`);
+    if (!response.ok) {
+      const failure = await response.json().catch(() => null) as { code?: unknown } | null;
+      const code = typeof failure?.code === 'string' && /^IMAGE_[A-Z0-9_]+$/.test(failure.code)
+        ? failure.code : `IMAGE_HTTP_${response.status}`;
+      throw Object.assign(new Error(`Image generation failed (${code})`), { code });
+    }
     const payload = await awaitImageOperation(response.json(), signal) as { block?: ImageBlock };
     signal.throwIfAborted();
     if (!payload.block || payload.block.type !== 'image_block' || typeof payload.block.imageUrl !== 'string' || !payload.block.imageUrl
@@ -268,9 +294,11 @@ export async function generateConversationImage(
   } catch (error) {
     if (ownerChanged()) return { completed: false, conversationId: id };
     const cancelled = signal.aborted;
+    const code = error instanceof Error && 'code' in error && typeof error.code === 'string'
+      ? error.code : 'IMAGE_GENERATION_FAILED';
     const content = cancelled
       ? language === 'en' ? 'Image generation stopped.' : language === 'zh-CN' ? '已停止生成图片。' : '已停止生成圖片。'
-      : language === 'en' ? 'I could not create the image. Please try again.' : '目前無法產生圖片，請稍後重試。';
+      : language === 'en' ? `Image generation failed (${code}).` : `產圖失敗（${code}）。`;
     clearImageRequest(requestId);
     logger[cancelled ? 'info' : 'warn'](cancelled ? 'image_generation_cancelled' : 'image_generation_failed', {
       conversationId: id, assistantId, requestId, reason: cancelled ? 'AbortError' : error instanceof Error ? error.name : 'UnknownError',
@@ -283,7 +311,7 @@ export async function generateConversationImage(
       if (!cancelled) throw error;
     } else if (assistantId && id) {
       const errorBlock: ImageBlock = { ...pendingBlock, status: 'error', caption: content };
-      const failureContent = withStatus(content);
+      const failureContent = cancelled ? withStatus(content) : retainedText;
       useChatStore.getState().updateAssistantMessage(assistantId, { content: failureContent, answerBlocks: [...retainedBlocks, errorBlock], isStreaming: false });
       try {
         const messageData = { role: 'assistant' as const, content: failureContent, answerBlocks: [...retainedBlocks, errorBlock] };
@@ -293,7 +321,7 @@ export async function generateConversationImage(
         logger.warn('image_generation_failure_persistence_failed', { conversationId: id, assistantId, requestId, reason: persistenceError instanceof Error ? persistenceError.name : 'UnknownError' });
       }
     }
-    return { completed: false, conversationId: id, ...(cancelled ? { cancelled: true } : {}) };
+    return { completed: false, conversationId: id, ...(cancelled ? { cancelled: true } : { errorCode: code }) };
   } finally {
     if (assistantId) activeImageRequests.delete(assistantId);
     imageRequestControllers.delete(requestId);
@@ -327,5 +355,6 @@ export async function regenerateConversationImage(assistantMessageId: string): P
   if (!prompt) throw new Error('Original image request is unavailable');
   await generateConversationImage(prompt, target.conversationId, request?.language || 'zh-TW', false, {
     assistantMessageId, referenceBrief: request?.referenceBrief,
+    conversationContext: request?.conversationContext,
   });
 }

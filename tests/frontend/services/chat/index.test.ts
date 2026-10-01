@@ -9,9 +9,9 @@ import { getCurrentUserId } from '@/database/db';
 import { syncService } from '@/services/syncService';
 import { logger } from '@/utils/logger';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import { regenerateConversationImage } from '@/services/generatedImages';
+import { generateConversationImage, regenerateConversationImage } from '@/services/generatedImages';
 
-vi.mock('@/services/generatedImages', () => ({ regenerateConversationImage: vi.fn() }));
+vi.mock('@/services/generatedImages', () => ({ generateConversationImage: vi.fn(), regenerateConversationImage: vi.fn() }));
 
 vi.mock('@/store/chat', () => ({
   useChatStore: {
@@ -978,6 +978,43 @@ describe('Chat Service', () => {
   });
 
   describe('editUserMessage', () => {
+    it('regenerates an edited image through the image capability instead of chat', async () => {
+      mockChatStore.messages = [
+        { id: 'user-1', role: 'user', content: 'old drawing', conversationId: 'test-conv-id' },
+        { id: 'image-1', role: 'assistant', content: '', conversationId: 'test-conv-id', answerBlocks: [{
+          type: 'image_block', provider: 'generated_image', imageUrl: 'https://example.test/image.png',
+          generationRequest: { language: 'en', referenceBrief: 'A factual source', conversationContext: 'user: blue book' },
+        }] },
+        { id: 'later-1', role: 'user', content: 'later turn', conversationId: 'test-conv-id' },
+      ];
+      vi.mocked(generateConversationImage).mockResolvedValueOnce({ completed: true, persisted: true });
+
+      await editUserMessage('user-1', 'draw a blue book');
+
+      expect(generateConversationImage).toHaveBeenCalledWith('draw a blue book', 'test-conv-id', 'en', false,
+        expect.objectContaining({ assistantMessageId: 'image-1', referenceBrief: 'A factual source',
+          conversationContext: 'user: blue book', replaceExistingText: true }));
+      expect(createChatStream).not.toHaveBeenCalled();
+      expect(databaseService.message.update).toHaveBeenCalledWith('user-1', expect.objectContaining({ content: 'draw a blue book' }));
+      expect(databaseService.message.deleteManyByConversationId).toHaveBeenCalledWith('test-conv-id', ['later-1']);
+    });
+
+    it('keeps the original image branch when edited image generation fails', async () => {
+      const original = [
+        { id: 'user-1', role: 'user' as const, content: 'old drawing', conversationId: 'test-conv-id' },
+        { id: 'image-1', role: 'assistant' as const, content: '', conversationId: 'test-conv-id', answerBlocks: [{
+          type: 'image_block' as const, provider: 'generated_image', imageUrl: 'https://example.test/image.png',
+        }] },
+      ];
+      mockChatStore.messages = original;
+      vi.mocked(generateConversationImage).mockResolvedValueOnce({ completed: false });
+
+      await expect(editUserMessage('user-1', 'draw a blue book')).rejects.toThrow('Edited image generation failed');
+      expect(mockChatStore.setMessages).toHaveBeenCalledWith(original);
+      expect(createChatStream).not.toHaveBeenCalled();
+      expect(databaseService.message.update).not.toHaveBeenCalled();
+    });
+
     it('commits a regenerated branch only after the edited response completes', async () => {
       mockChatStore.messages = [
         { id: 'user-1', role: 'user', content: 'old question', conversationId: 'test-conv-id' },

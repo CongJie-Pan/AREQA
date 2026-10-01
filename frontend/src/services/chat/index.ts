@@ -22,14 +22,14 @@ import { syncService } from '@/services/syncService';
 import { ValidationError, normalizeError } from '@/utils/error';
 import { sanitizeMessagesForAPI } from '@/utils/sanitizer';
 import type { ChatMessage } from '@/services/chat-stream/types';
-import type { AnswerBlock, AttachmentMetadata, Message } from '@/database/schema';
+import type { AnswerBlock, AttachmentMetadata, ImageBlock, Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
 import { answerBlocksForEditedContent, persistentAnswerBlocks } from '@/utils/answerBlocks';
 import { logger } from '@/utils/logger';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
-import { regenerateConversationImage } from '@/services/generatedImages';
+import { generateConversationImage, regenerateConversationImage } from '@/services/generatedImages';
 
 /**
  * Active abort controller for the current stream
@@ -1434,6 +1434,45 @@ export async function editUserMessage(
   const activeConversationId = conversationStore.activeConversationId;
   if (!activeConversationId) {
     throw new Error('No active conversation');
+  }
+
+  const originalImageReply = messages[messageIndex + 1];
+  const originalImageBlock = originalImageReply?.role === 'assistant' && originalImageReply.conversationId === activeConversationId
+    ? originalImageReply.answerBlocks?.find((block): block is ImageBlock => block.type === 'image_block' && block.provider === 'generated_image')
+    : undefined;
+  if (originalImageReply && originalImageBlock) {
+    const originalMessagesSnapshot = [...messages];
+    const laterIds = messages.slice(messageIndex + 2).map((message) => message.id);
+    const generationRequest = originalImageBlock.generationRequest;
+    if (targetMessage.attachments?.length && !generationRequest?.referenceBrief) {
+      throw new Error('Please resend the image with its reference attachments');
+    }
+    try {
+      const result = await generateConversationImage(sanitizedContent, activeConversationId,
+        generationRequest?.language || 'zh-TW', false, {
+          assistantMessageId: originalImageReply.id,
+          referenceBrief: generationRequest?.referenceBrief,
+          conversationContext: generationRequest?.conversationContext,
+          replaceExistingText: true,
+        });
+      if (!result.completed || !result.persisted) {
+        throw new Error(`Edited image generation failed (${result.errorCode || 'IMAGE_GENERATION_FAILED'})`);
+      }
+      if (shouldPersist) {
+        await databaseService.message.update(messageId, { content: sanitizedContent, updatedAt: new Date() });
+        if (laterIds.length) await databaseService.message.deleteManyByConversationId(activeConversationId, laterIds);
+      }
+      chatStore.updateMessageContent(messageId, sanitizedContent);
+      for (const id of laterIds) chatStore.removeMessage(id);
+      logger.info('chat_image_message_edit_completed', { component: 'chatService', conversationId: activeConversationId,
+        messageId, removedMessageCount: laterIds.length });
+      return;
+    } catch (error) {
+      chatStore.setMessages(originalMessagesSnapshot);
+      logger.warn('chat_image_message_edit_failed', { component: 'chatService', conversationId: activeConversationId,
+        messageId, reason: error instanceof Error ? error.name : 'UnknownError' });
+      throw error;
+    }
   }
 
   // IMPORTANT: Build API messages array BEFORE any store updates to avoid timing issues

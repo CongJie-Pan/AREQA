@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
   const payload = body as Record<string, unknown>;
   if (typeof payload.prompt !== 'string' || payload.prompt.trim().length < 3 || payload.prompt.length > 1800
     || (payload.reference_brief !== undefined && (typeof payload.reference_brief !== 'string' || payload.reference_brief.length > 4000))
+    || (payload.conversation_context !== undefined && (typeof payload.conversation_context !== 'string' || payload.conversation_context.length > 2000))
     || typeof payload.conversation_id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(payload.conversation_id)) {
     return NextResponse.json({ error: 'Invalid image request' }, { status: 400 });
   }
@@ -40,11 +41,15 @@ export async function POST(request: NextRequest) {
     });
     if (!upstream.ok) {
       logger.warn('image_generation_proxy_failed', { status: upstream.status, clientId });
-      return NextResponse.json({ error: 'Image generation is unavailable' }, { status: upstream.status });
+      const failure = await upstream.json().catch(() => null) as { detail?: { code?: unknown } } | null;
+      const code = failure?.detail?.code;
+      return NextResponse.json({ error: 'Image generation is unavailable',
+        code: typeof code === 'string' && /^IMAGE_[A-Z0-9_]+$/.test(code) ? code : 'IMAGE_GENERATION_FAILED' },
+      { status: upstream.status });
     }
     return NextResponse.json(await upstream.json());
   } catch (error) {
     logger.error('image_generation_proxy_network_failed', error instanceof Error ? error : new Error(String(error)), { clientId });
-    return NextResponse.json({ error: 'Image generation is unavailable' }, { status: 503 });
+    return NextResponse.json({ error: 'Image generation is unavailable', code: 'IMAGE_PROXY_NETWORK_ERROR' }, { status: 503 });
   }
 }

@@ -538,7 +538,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
       }
     } catch (err) {
       console.error('Failed to edit message:', err);
-      antMessageApi.error('編輯訊息失敗，請稍後再試');
+      const imageCode = err instanceof Error ? err.message.match(/IMAGE_[A-Z0-9_]+/)?.[0] : undefined;
+      antMessageApi.error(imageCode ? `產圖失敗（${imageCode}）` : '編輯訊息失敗，請稍後再試');
       throw err;
     }
   }, [antMessageApi]);

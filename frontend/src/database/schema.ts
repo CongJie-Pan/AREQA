@@ -83,6 +83,7 @@ export interface ImageBlock {
     prompt: string;
     language: 'zh-TW' | 'zh-CN' | 'en';
     referenceBrief?: string;
+    conversationContext?: string;
     /** Failed/cancelled attachment preparation must be retried with the files. */
     requiresReference?: boolean;
   };
