@@ -65,7 +65,7 @@ vi.mock('@/services/database', () => ({
 const controller = {
   setMuted: vi.fn(),
   cancelSpeech: vi.fn(),
-  speakText: vi.fn(() => true),
+  speakText: vi.fn((_text: string, _requestId?: string) => true),
   requestResponse: vi.fn(),
   addAttachmentContext: vi.fn(async () => true),
   sendUserText: vi.fn(async () => true),
@@ -812,9 +812,9 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
       }),
     ));
     expect(finalizeVoiceResponse).toHaveBeenCalledWith('深度回答');
-    expect(controller.speakText).toHaveBeenNthCalledWith(1, '我先整理一下重點，等我一下。');
-    expect(controller.speakText).toHaveBeenNthCalledWith(2, '深度回答');
-    expect(controller.cancelSpeech).toHaveBeenCalled();
+    expect(controller.speakText).toHaveBeenCalledTimes(1);
+    expect(controller.speakText).toHaveBeenCalledWith('深度回答', expect.any(String));
+    expect(controller.cancelSpeech).not.toHaveBeenCalled();
     expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: '' }),
     ]));
@@ -843,7 +843,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
       realtimeOptions?.onPlaybackState?.('stopped');
     });
 
-    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith('深度回答'));
+    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith('深度回答', expect.any(String)));
     expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'assistant', content: '朗讀字幕' }),
     ]));
@@ -866,7 +866,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     act(() => view.unmount());
   });
 
-  it('keeps a delegated deep answer current while its hold speech opens a realtime response', async () => {
+  it('suppresses an unsolicited response during backend routing without replacing the pending answer', async () => {
     const finalizeVoiceResponse = vi.fn().mockResolvedValue(undefined);
     let resolveDeepAnswer: (value: Awaited<ReturnType<typeof sendMessage>>) => void = () => undefined;
     vi.mocked(sendMessage).mockImplementation(() => new Promise((resolve) => {
@@ -898,8 +898,8 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     });
 
     await waitFor(() => expect(finalizeVoiceResponse).toHaveBeenCalledWith('深度回答'));
-    expect(controller.speakText).toHaveBeenNthCalledWith(1, '我先整理一下重點，等我一下。');
-    expect(controller.speakText).toHaveBeenNthCalledWith(2, '深度回答');
+    expect(controller.speakText).toHaveBeenCalledTimes(1);
+    expect(controller.speakText).toHaveBeenCalledWith('深度回答', expect.any(String));
     expect(useChatStore.getState().messages).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'assistant', content: '等待朗讀字幕' }),
     ]));
@@ -933,7 +933,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
       realtimeOptions?.onUserTranscript('請詳細解釋這篇論文的方法');
     });
 
-    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith('深度回答'));
+    await waitFor(() => expect(controller.speakText).toHaveBeenCalledWith('深度回答', expect.any(String)));
     expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'assistant-deep', voicePlayback: 'finished' }),
     ]));
@@ -1101,7 +1101,7 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     await waitFor(() => expect(startRealtimeClient).toHaveBeenCalledOnce());
     expect(vi.mocked(startLiveKitAvatarClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
     expect(vi.mocked(startRealtimeClient).mock.calls[0]?.[0].tutorProfile).toBe('english');
-    expect(screen.getByText('虛擬角色啟動失敗，已切回語音模式。')).toBeInTheDocument();
+    expect(screen.getByText('Avatar could not start. Switched back to voice mode.')).toBeInTheDocument();
     expect(useLiveTutorStore.getState().avatarEnabled).toBe(false);
     act(() => view.unmount());
   });
@@ -1235,4 +1235,62 @@ describe('LiveTutorPanel realtime-primary voice integration', () => {
     });
     act(() => view.unmount());
   });
+
+  it('routes a general turn once and ignores a duplicated final transcript', async () => {
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserTranscript('Hello there', 'single-turn'));
+    await waitFor(() => expect(controller.requestResponse).toHaveBeenCalledOnce());
+    await act(async () => realtimeOptions?.onUserTranscript('Hello there', 'single-turn'));
+    expect(controller.requestResponse).toHaveBeenCalledOnce();
+    expect(sendMessage).not.toHaveBeenCalled();
+    act(() => view.unmount());
+  });
+
+  it('keeps done-only captions waiting until audio actually starts', async () => {
+    const view = await renderOpenPanel();
+    await act(async () => {
+      realtimeOptions?.onAssistantResponseStarted?.('r1');
+      realtimeOptions?.onAssistantTranscriptDone('Ready before audio.', 'r1');
+    });
+    await waitFor(() => expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: 'Ready before audio.', voicePlayback: 'waiting' }),
+    ])));
+    act(() => view.unmount());
+  });
+
+  it('streams sentence readback before backend completion and freezes captions on interruption', async () => {
+    let finish: (value: Awaited<ReturnType<typeof sendMessage>>) => void = () => undefined;
+    vi.mocked(sendMessage).mockImplementation((_text, conversationId, _files, options) => {
+      const id = useChatStore.getState().addAssistantMessage(conversationId!);
+      options?.onVoiceMessageStarted?.(id);
+      options?.onVoiceContentChunk?.('First sentence. Second sentence. ');
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    const view = await renderOpenPanel();
+    await act(async () => realtimeOptions?.onUserTranscript('Explain this paper in detail', 'deep-stream'));
+    await waitFor(() => expect(controller.speakText).toHaveBeenCalledTimes(1));
+    expect(controller.requestResponse).not.toHaveBeenCalled();
+    expect(controller.cancelSpeech).not.toHaveBeenCalled();
+    const requestId = controller.speakText.mock.calls[0][1];
+    await act(async () => {
+      realtimeOptions?.onAssistantResponseStarted?.('sentence-1', requestId);
+      realtimeOptions?.onPlaybackState?.('started', 'sentence-1');
+      realtimeOptions?.onAssistantResponseDone?.('sentence-1', 'completed');
+    });
+    expect(controller.speakText).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ voiceCaption: 'First sentence.', voicePlayback: 'playing' }),
+    ]));
+    await act(async () => realtimeOptions?.onUserSpeechStarted?.('new-turn'));
+    await act(async () => {
+      realtimeOptions?.onPlaybackState?.('stopped', 'sentence-1');
+      finish({ completed: true, answerContent: 'First sentence. Second sentence.' });
+    });
+    expect(controller.speakText).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ voiceCaption: 'First sentence.', voicePlayback: 'interrupted' }),
+    ]));
+    act(() => view.unmount());
+  });
+
 });

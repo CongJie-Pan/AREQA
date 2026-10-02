@@ -19,6 +19,7 @@ const AVATAR_VIDEO_READY_TIMEOUT_MS = 45_000;
 const ASSISTANT_TRANSCRIPT_DONE_DEBOUNCE_MS = 900;
 const LIVEKIT_TRANSCRIPTION_TOPIC = 'lk.transcription';
 const AREQA_BACKEND_SPEECH_TOPIC = 'areqa.backend_speech';
+const AREQA_SPEECH_STATE_TOPIC = 'areqa.speech_state';
 
 interface LiveKitAvatarSessionResponse {
   livekit_url: string;
@@ -279,6 +280,7 @@ export async function startLiveKitAvatarClient(
       discardedChars,
     });
   };
+  let nativeSpeaking = false;
   const assistantTranscript: AssistantTranscriptCoordinator = {
     append: (chunk: string, generation: number) => {
       if (generation !== assistantTranscriptGeneration) return;
@@ -286,6 +288,7 @@ export async function startLiveKitAvatarClient(
       if (!assistantResponseOpen) {
         assistantResponseOpen = true;
         options.onAssistantResponseStarted?.();
+        if (nativeSpeaking) options.onPlaybackState?.('started');
       }
       pendingAssistantTranscript += chunk;
       options.onAssistantTranscriptDelta(chunk);
@@ -330,6 +333,36 @@ export async function startLiveKitAvatarClient(
     sessionIdForDiagnostics = session.session_id || 'unknown';
     const livekit = await liveKitClientLoader();
     room = new livekit.Room();
+    room.registerTextStreamHandler?.(AREQA_SPEECH_STATE_TOPIC, (reader, participantInfo) => {
+      if (participantInfo.identity === session.participant_identity) return;
+      void (async () => {
+        let payload = '';
+        for await (const chunk of reader) {
+          payload += chunk;
+          if (payload.length > 1000) return;
+        }
+        const event = JSON.parse(payload) as { state?: string; request_id?: string };
+        if (!event.request_id) return;
+        const id = event.request_id;
+        if (id === 'native') {
+          if (event.state === 'user_started') options.onUserSpeechStarted?.();
+          if (event.state === 'started' || event.state === 'stopped') {
+            nativeSpeaking = event.state === 'started';
+            options.onPlaybackState?.(event.state);
+          }
+          return;
+        }
+        if (event.state === 'created') options.onAssistantResponseStarted?.(id, id);
+        if (event.state === 'started') options.onPlaybackState?.('started', id);
+        if (event.state === 'stopped') {
+          options.onAssistantResponseDone?.(id, 'completed');
+          options.onPlaybackState?.('stopped', id);
+        }
+        if (event.state === 'interrupted' || event.state === 'failed') options.onAssistantResponseDone?.(id, 'cancelled');
+      })().catch((error) => logger.warn('livekit.playback_event_failed', {
+        conversationId, errorName: error instanceof Error ? error.name : 'UnknownError',
+      }));
+    });
     room.registerTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC, (reader, participantInfo) => {
       void handleLiveKitTranscriptionStream(
         reader,
@@ -459,10 +492,10 @@ export async function startLiveKitAvatarClient(
             errorName: error instanceof Error ? error.name : 'UnknownError',
           }));
       },
-      speakText: (text: string) => {
+      speakText: (text: string, requestId?: string) => {
         if (!room?.localParticipant.sendText || !text.trim()) return false;
         void room.localParticipant.sendText(
-          JSON.stringify({ action: 'speak', text: text.trim().slice(0, 6000) }),
+          JSON.stringify({ action: 'speak', text: text.trim().slice(0, 6000), ...(requestId ? { request_id: requestId } : {}) }),
           { topic: AREQA_BACKEND_SPEECH_TOPIC },
         ).catch((error: unknown) => logger.warn('livekit.backend_speech_failed', {
           conversationId,
@@ -475,6 +508,7 @@ export async function startLiveKitAvatarClient(
         clearAssistantTranscript('disconnect');
         options.onRemoteVideoStream?.(null);
         room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
+        room?.unregisterTextStreamHandler?.(AREQA_SPEECH_STATE_TOPIC);
         room?.disconnect();
         room = null;
       },
@@ -483,6 +517,7 @@ export async function startLiveKitAvatarClient(
     if (avatarVideoReadyTimeout) window.clearTimeout(avatarVideoReadyTimeout);
     flushAssistantTranscript();
     room?.unregisterTextStreamHandler?.(LIVEKIT_TRANSCRIPTION_TOPIC);
+        room?.unregisterTextStreamHandler?.(AREQA_SPEECH_STATE_TOPIC);
     room?.disconnect();
     const nextError = error instanceof Error ? error : new Error(String(error));
     logger.error('livekit.avatar_session_failed', nextError, { conversationId });

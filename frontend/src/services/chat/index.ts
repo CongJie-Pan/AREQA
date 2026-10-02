@@ -48,6 +48,8 @@ export interface SendMessageOptions {
   responseMode?: SendMessageResponseMode;
   /** Called with speech-safe AREQA text chunks before the visible voice subtitle is revealed. */
   onVoiceContentChunk?: (chunk: string) => void;
+  /** Bind playback before streamed sentences can start. */
+  onVoiceMessageStarted?: (messageId: string) => void;
   /** Optional per-turn RAG override for delegated surfaces such as Live Tutor. */
   useRag?: boolean;
   /** Optional per-turn search routing override without mutating the chat store. */
@@ -433,6 +435,10 @@ export async function sendMessage(
 
   // Add assistant message placeholder
   const assistantMessageId = chatStore.addAssistantMessage(activeConversationId);
+  if (isVoiceResponse) {
+    chatStore.updateAssistantMessage(assistantMessageId, { voicePlayback: 'waiting', voiceCaption: '' });
+    options.onVoiceMessageStarted?.(assistantMessageId);
+  }
 
   // Start streaming
   chatStore.startStreaming(assistantMessageId);
@@ -569,6 +575,9 @@ export async function sendMessage(
       onContent: (chunk: string) => {
         answerContent += chunk;
         if (isVoiceResponse) {
+          // Retain generated text for cancellation/history; voiceCaption gates display.
+          chatStore.updateMessageContent(assistantMessageId, answerContent);
+          useChatStore.setState({ currentContent: answerContent });
           options.onVoiceContentChunk?.(chunk);
           return;
         }
@@ -1770,6 +1779,7 @@ export async function editAssistantMessage(
     streamImageSlots: undefined,
     isStreaming: false,
     voicePlayback: undefined,
+    voiceCaption: undefined,
     updatedAt: updatedMessage.updatedAt,
   });
   patchConversationPreviewIfLatest(message, sanitizedContent);

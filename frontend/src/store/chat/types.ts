@@ -24,6 +24,8 @@ export interface StreamingImageSlot {
  * Extends database Message with streaming state
  */
 export interface DisplayMessage extends Message {
+  /** Ephemeral sentence captions released at playback start, never persisted. */
+  voiceCaption?: string;
   /** Transient caption timing, never stored as conversation content. */
   voicePlayback?: 'waiting' | 'playing' | 'finished' | 'interrupted';
   /** Whether this message is currently being streamed */

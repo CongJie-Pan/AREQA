@@ -1180,4 +1180,20 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByAltText('Figure 3 caption')).toBeInTheDocument();
     expect(screen.getByAltText('Figure 4 caption')).toBeInTheDocument();
   });
+
+  it('gates structured voice answers behind playback captions until speech finishes', async () => {
+    const message = {
+      ...baseMessage,
+      content: 'Spoken sentence. Future sentence.',
+      voicePlayback: 'playing' as const,
+      voiceCaption: 'Spoken sentence.',
+      answerBlocks: [{ type: 'paragraph' as const, text: 'Future sentence.' }],
+    };
+    const { rerender, container } = render(<MessageItem message={message} />);
+    expect(container.querySelector('[data-role="assistant-bubble"]')).toHaveTextContent('Spoken sentence.');
+    expect(container.querySelector('[data-role="assistant-bubble"]')).not.toHaveTextContent('Future sentence.');
+    rerender(<MessageItem message={{ ...message, voicePlayback: 'finished', voiceCaption: undefined }} />);
+    expect(await screen.findByText('Future sentence.')).toBeInTheDocument();
+  });
+
 });

@@ -302,12 +302,37 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
             turn_detection=openai_realtime_types.realtime_audio_input_turn_detection.SemanticVad(
                 type="semantic_vad",
                 eagerness="low",
-                create_response=metadata["tutor_profile"] != "english",
-                interrupt_response=metadata["tutor_profile"] != "english",
+                create_response=False,
+                interrupt_response=True,
             ),
         )
     )
     session_ready = asyncio.Event()
+    active_readback_id: str | None = None
+
+    async def publish_playback(state: str, request_id: str) -> None:
+        """Publish bounded readback lifecycle metadata, never speech content."""
+        try:
+            await ctx.room.local_participant.send_text(
+                json.dumps({"state": state, "request_id": request_id}),
+                topic="areqa.speech_state",
+                destination_identities=[metadata["participant_identity"]],
+            )
+        except Exception as exc:
+            logger.warning("livekit_agent.playback_event_failed reason=%s", type(exc).__name__)
+
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(event: Any) -> None:
+        if event.new_state == "speaking":
+            asyncio.create_task(publish_playback("started", active_readback_id or "native"))
+        elif event.old_state == "speaking" and not active_readback_id:
+            asyncio.create_task(publish_playback("stopped", "native"))
+
+    @session.on("user_state_changed")
+    def on_user_state_changed(event: Any) -> None:
+        if event.new_state == "speaking":
+            asyncio.create_task(publish_playback("user_started", "native"))
+
     tutor = AreqaLiveTutor(
         interface_language=metadata["interface_language"],
         recent_messages=metadata["recent_messages"],
@@ -317,6 +342,8 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
     )
 
     async def handle_backend_speech(reader: Any, participant_identity: str) -> None:
+        nonlocal active_readback_id
+        request_id = ""
         try:
             if participant_identity != metadata["participant_identity"]:
                 logger.warning("livekit_agent.backend_speech_sender_rejected")
@@ -324,6 +351,7 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
             payload = json.loads((await reader.read_all())[:20_000])
             await session_ready.wait()
             action = payload.get("action")
+            request_id = str(payload.get("request_id") or "")[:100]
             if action == "cancel":
                 await session.interrupt()
                 return
@@ -353,10 +381,30 @@ async def areqa_live_tutor(ctx: agents.JobContext) -> None:
                 return
             text = str(payload.get("text") or "").strip()[:6000]
             if action == "speak" and text:
-                await session.interrupt()
-                session.say(text, allow_interruptions=True)
-                logger.info("livekit_agent.backend_speech_started chars=%s", len(text))
+                if not request_id:
+                    await session.interrupt()
+                    session.generate_reply(instructions="Read this text aloud exactly, without additions:\n" + text, tool_choice="none", allow_interruptions=True)
+                    return
+                if active_readback_id:
+                    await publish_playback("failed", request_id)
+                    return
+                active_readback_id = request_id
+                await publish_playback("created", request_id)
+                # Realtime owns audio generation; say(text) requires a separate TTS.
+                handle = session.generate_reply(
+                    instructions="Read this text aloud exactly, without additions:\n" + text,
+                    tool_choice="none",
+                    allow_interruptions=True,
+                )
+                logger.info("livekit_agent.backend_speech_started chars=%s request_id=%s", len(text), request_id)
+                await handle.wait_for_playout()
+                # Release the slot before the browser can request its next sentence.
+                active_readback_id = None
+                await publish_playback("interrupted" if handle.interrupted else "stopped", request_id)
         except Exception as exc:
+            if request_id and active_readback_id == request_id:
+                active_readback_id = None
+                await publish_playback("failed", request_id)
             logger.warning("livekit_agent.backend_speech_failed reason=%s", type(exc).__name__)
 
     ctx.room.register_text_stream_handler(

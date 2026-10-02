@@ -1425,13 +1425,15 @@ function StreamingMarkdown({
   markdownComponents,
   animate = false,
   voicePlayback,
+  voiceCaption,
 }: {
   content: string;
   markdownComponents: Components;
   animate?: boolean;
   voicePlayback?: import('@/store/chat').DisplayMessage['voicePlayback'];
+  voiceCaption?: string;
 }) {
-  const visibleContent = useVoiceReveal(content, voicePlayback);
+  const visibleContent = useVoiceReveal(content, voicePlayback, voiceCaption);
   const isVoicePlayback = Boolean(voicePlayback);
   const throttledContent = useThrottledValue(visibleContent, STREAMING_MARKDOWN_FLUSH_MS);
   const deferredContent = React.useDeferredValue((isVoicePlayback || !animate) ? visibleContent : throttledContent);
@@ -1971,9 +1973,10 @@ export const MessageItem = memo(function MessageItem({
   );
   const hasCompleteLiveImageSlots =
     !hasAnswerBlocks || answerBlockImageCount === 0 || liveImageSlots.length >= answerBlockImageCount;
+  const hasActiveVoiceCaption = Boolean(message.voicePlayback && message.voicePlayback !== 'finished');
   const shouldUseLiveOrderedAnswer =
-    hasLiveStreamed && liveImageSlots.length > 0 && (isStreaming || hasCompleteLiveImageSlots);
-  const shouldUseStructuredAnswerBlocks = hasAnswerBlocks && !shouldUseLiveOrderedAnswer;
+    !hasActiveVoiceCaption && hasLiveStreamed && liveImageSlots.length > 0 && (isStreaming || hasCompleteLiveImageSlots);
+  const shouldUseStructuredAnswerBlocks = !hasActiveVoiceCaption && hasAnswerBlocks && !shouldUseLiveOrderedAnswer;
   const generatedImageStatusContent = shouldUseStructuredAnswerBlocks
     && message.answerBlocks?.every((block) => block.type === 'image_block' && block.provider === 'generated_image')
     && !LEGACY_IMAGE_COMPLETION_TEXT.has(message.content.trim())
@@ -2648,6 +2651,7 @@ export const MessageItem = memo(function MessageItem({
                       content={message.content}
                       animate={(isStreaming && hasLiveStreamed) || message.voicePlayback === 'waiting' || message.voicePlayback === 'playing'}
                       voicePlayback={message.voicePlayback}
+                      voiceCaption={message.voiceCaption}
                       markdownComponents={markdownComponents}
                     />
                   )}

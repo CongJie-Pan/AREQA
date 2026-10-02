@@ -464,4 +464,28 @@ describe('LiveKit avatar client', () => {
     expect(lastRoom?.disconnect).toHaveBeenCalled();
     controller.disconnect();
   });
+
+  it('forwards identified worker playback boundaries without inferring completion from media subscription', async () => {
+    mockAvatarSession();
+    const onAssistantResponseDone = vi.fn();
+    const options = livekitOptions({ onAssistantResponseDone });
+    const pending = startLiveKitAvatarClient(options);
+    await resolveAvatarVideoTrack();
+    const controller = await pending;
+    controller.speakText('A sentence.', 'turn:1');
+    expect(lastRoom?.localParticipant.sendText).toHaveBeenLastCalledWith(
+      JSON.stringify({ action: 'speak', text: 'A sentence.', request_id: 'turn:1' }),
+      { topic: 'areqa.backend_speech' },
+    );
+    for (const state of ['created', 'started', 'stopped']) {
+      lastRoom?.emitTextStream('areqa.speech_state', [JSON.stringify({ state, request_id: 'turn:1' })], 'agent');
+      await flushAsyncWork();
+    }
+    expect(options.onAssistantResponseStarted).toHaveBeenCalledWith('turn:1', 'turn:1');
+    expect(options.onPlaybackState).toHaveBeenCalledWith('started', 'turn:1');
+    expect(options.onPlaybackState).toHaveBeenCalledWith('stopped', 'turn:1');
+    expect(onAssistantResponseDone).toHaveBeenCalledWith('turn:1', 'completed');
+    controller.disconnect();
+  });
+
 });

@@ -604,6 +604,8 @@ describe('Chat Service', () => {
         { responseMode: 'voice' },
       );
       expect(onVoiceContentChunk).toHaveBeenCalledWith('口語回答');
+      expect(mockChatStore.updateMessageContent).toHaveBeenCalledWith('assistant-msg-id', '口語回答');
+      expect(mockChatStore.updateAssistantMessage).toHaveBeenCalledWith('assistant-msg-id', { voicePlayback: 'waiting', voiceCaption: '' });
       expect(mockChatStore.appendContent).not.toHaveBeenCalled();
       expect(mockChatStore.appendThinkingContent).not.toHaveBeenCalled();
       expect(mockChatStore.endStreaming).not.toHaveBeenCalled();

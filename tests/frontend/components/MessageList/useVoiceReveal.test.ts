@@ -22,10 +22,31 @@ describe('voice caption playback', () => {
     const { result, rerender } = renderHook(({ state }) => useVoiceReveal('第一段接著第二段', state), {
       initialProps: { state: 'playing' as 'playing' | 'interrupted' },
     });
-    act(() => vi.advanceTimersByTime(80));
+    act(() => vi.advanceTimersByTime(200));
     expect(result.current).toBe('第');
     rerender({ state: 'interrupted' });
     act(() => vi.advanceTimersByTime(5000));
     expect(result.current).toBe('第');
   });
+});
+
+it('does not reveal captions until playback starts, even after a long wait', () => {
+  vi.useFakeTimers();
+  const { result, rerender } = renderHook(({ state }) => useVoiceReveal('尚未播放的文字', state), {
+    initialProps: { state: 'waiting' as 'waiting' | 'playing' },
+  });
+  act(() => vi.advanceTimersByTime(10_000));
+  expect(result.current).toBe('');
+  rerender({ state: 'playing' });
+  act(() => vi.advanceTimersByTime(200));
+  expect(result.current).toBe('尚');
+});
+
+it('shows only sentences released by playback while retaining the complete answer', () => {
+  const { result, rerender } = renderHook(({ caption }) => useVoiceReveal('First. Second.', 'playing', caption), {
+    initialProps: { caption: '' },
+  });
+  expect(result.current).toBe('');
+  rerender({ caption: 'First.' });
+  expect(result.current).toBe('First.');
 });

@@ -22,7 +22,15 @@ class FakeAgentSession:
         self.llm = llm
         self.spoken = []
         self.reply_count = 0
+        self.events = {}
+        self.reply_options = []
         FakeAgentSession.last_instance = self
+
+    def on(self, event):
+        def register(callback):
+            self.events[event] = callback
+            return callback
+        return register
 
     async def start(self, *, room, agent, room_options):
         FakeAgentSession.last_started_room_options = room_options
@@ -33,8 +41,9 @@ class FakeAgentSession:
     def say(self, text, *, allow_interruptions):
         self.spoken.append(text)
 
-    def generate_reply(self):
+    def generate_reply(self, **kwargs):
         self.reply_count += 1
+        self.reply_options.append(kwargs)
 
 
 class FakeRoomOptions:
@@ -205,10 +214,14 @@ async def test_livekit_worker_reads_backend_answer_through_avatar_audio(monkeypa
 
     task = handler(Reader(), "learner")
     await task
-    assert FakeAgentSession.last_instance.spoken == ["Try the same idea once more."]
+    assert FakeAgentSession.last_instance.reply_count == 1
+    assert FakeAgentSession.last_instance.reply_options[0]["tool_choice"] == "none"
+    assert FakeAgentSession.last_instance.reply_options[0]["instructions"].endswith("Try the same idea once more.")
 
     await handler(Reader(), "another-participant")
-    assert FakeAgentSession.last_instance.spoken == ["Try the same idea once more."]
+    assert FakeAgentSession.last_instance.reply_count == 1
+    assert FakeAgentSession.last_instance.reply_options[0]["tool_choice"] == "none"
+    assert FakeAgentSession.last_instance.reply_options[0]["instructions"].endswith("Try the same idea once more.")
 
 
 @pytest.mark.asyncio
@@ -225,7 +238,7 @@ async def test_livekit_general_voice_uses_patient_turn_detection(monkeypatch):
     turn_detection = FakeAgentSession.last_instance.llm["kwargs"]["turn_detection"]
     assert turn_detection.type == "semantic_vad"
     assert turn_detection.eagerness == "low"
-    assert turn_detection.create_response is True
+    assert turn_detection.create_response is False
     assert turn_detection.interrupt_response is True
 
 
@@ -264,3 +277,42 @@ async def test_livekit_worker_adds_uploaded_file_context_before_reply(monkeypatc
 
     assert captured == ["File: notes.txt. Cobalt is the answer.", "Please continue"]
     assert FakeAgentSession.last_instance.reply_count == 2
+
+@pytest.mark.asyncio
+async def test_queued_readback_reports_completion_only_after_playout(monkeypatch):
+    import asyncio
+
+    playout = asyncio.Event()
+    events = []
+
+    class QueuedSession(FakeAgentSession):
+        def generate_reply(self, **kwargs):
+            super().generate_reply(**kwargs)
+            self.events["agent_state_changed"](SimpleNamespace(old_state="thinking", new_state="speaking"))
+            return SimpleNamespace(wait_for_playout=playout.wait, interrupted=False)
+
+    async def send_text(text, **kwargs):
+        events.append(json.loads(text))
+
+    monkeypatch.setattr(agent_module, "ANAM_AVATAR_ID", "")
+    monkeypatch.setattr(agent_module, "AgentSession", QueuedSession)
+    monkeypatch.setattr(agent_module.openai, "realtime", SimpleNamespace(RealtimeModel=lambda **kwargs: {"kwargs": kwargs}))
+    monkeypatch.setattr(agent_module.room_io, "RoomOptions", FakeRoomOptions)
+    ctx = fake_job_context()
+    ctx.room.local_participant = SimpleNamespace(send_text=send_text)
+    ctx.job.metadata = json.dumps({"conversation_id": "conv_test", "participant_identity": "learner"})
+    await agent_module.areqa_live_tutor(ctx)
+
+    class Reader:
+        async def read_all(self):
+            return json.dumps({"action": "speak", "text": "A sentence.", "request_id": "turn:1"})
+
+    task = ctx.room.handlers[agent_module.BACKEND_SPEECH_TOPIC](Reader(), "learner")
+    for _ in range(4):
+        await asyncio.sleep(0)
+    assert events == [{"state": "created", "request_id": "turn:1"}, {"state": "started", "request_id": "turn:1"}]
+    assert not task.done()
+    assert FakeAgentSession.last_instance.spoken == []
+    playout.set()
+    await task
+    assert events[-1] == {"state": "stopped", "request_id": "turn:1"}

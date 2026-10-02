@@ -15,7 +15,6 @@ from services.realtime.constants import (
 )
 from services.realtime.models import RealtimeSessionRequest
 from services.conversation.tutor_profile import (
-    normalize_tutor_profile,
     render_tutor_profile_prompt,
 )
 
@@ -214,21 +213,13 @@ def _build_realtime_session_config(payload: RealtimeSessionRequest) -> dict[str,
             },
             "input": {
                 "transcription": _build_realtime_transcription_config(payload.interface_language),
-                "turn_detection": (
-                    {
-                        "type": "semantic_vad",
-                        "eagerness": "low",
-                        "create_response": False,
-                        "interrupt_response": True,
-                    }
-                    if normalize_tutor_profile(payload.tutor_profile) == "english"
-                    else {
-                        "type": "semantic_vad",
-                        "eagerness": "low",
-                        "create_response": True,
-                        "interrupt_response": True,
-                    }
-                ),
+                # The browser routes each finalized turn before requesting a reply.
+                "turn_detection": {
+                    "type": "semantic_vad",
+                    "eagerness": "low",
+                    "create_response": False,
+                    "interrupt_response": True,
+                },
             },
         },
         "tools": [

@@ -220,12 +220,12 @@ describe('Realtime client lifecycle', () => {
     send({ type: 'input_audio_buffer.committed', item_id: 'turn1' });
     send({ type: 'output_audio_buffer.started' });
     send({ type: 'response.done' });
-    expect(onPlaybackState.mock.calls).toEqual([['started']]);
+    expect(onPlaybackState.mock.calls).toEqual([['started', undefined]]);
     send({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'turn1', transcript: '問題' });
     expect(options.onUserTranscript).toHaveBeenCalledWith('問題', 'turn1');
     expect(onUserTurnCommitted).toHaveBeenCalledWith('turn1');
     send({ type: 'output_audio_buffer.stopped' });
-    expect(onPlaybackState).toHaveBeenLastCalledWith('stopped');
+    expect(onPlaybackState).toHaveBeenLastCalledWith('stopped', undefined);
     controller.disconnect();
   });
 
@@ -585,7 +585,7 @@ describe('Realtime client lifecycle', () => {
     lastWebSocket?.receive({ type: 'response.output_audio_transcript.done', transcript: '你好' });
 
     await vi.waitFor(() => expect(onAssistantTranscriptDone).toHaveBeenCalledWith('你好'));
-    expect(onPlaybackState).toHaveBeenCalledWith('started');
+    expect(onPlaybackState).toHaveBeenCalledWith('started', 'resp_ws');
     expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('你好');
     controller.disconnect();
   });
@@ -1152,6 +1152,67 @@ describe('Realtime client lifecycle', () => {
     });
 
     expect(onError).not.toHaveBeenCalled();
+  });
+
+
+  it('serializes identified readback and reports playback separately from generation', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onAssistantResponseDone = vi.fn();
+    const onAssistantResponseStarted = vi.fn();
+    const onPlaybackState = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({ onAssistantResponseDone, onAssistantResponseStarted, onPlaybackState }));
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+    expect(controller.speakText('First sentence.', 'turn:1')).toBe(true);
+    expect(controller.speakText('Second sentence.', 'turn:2')).toBe(false);
+    send({ type: 'response.created', response: { id: 'r1', metadata: { areqa_speech_id: 'turn:1' } } });
+    send({ type: 'output_audio_buffer.started', response_id: 'r1' });
+    send({ type: 'response.done', response: { id: 'r1', status: 'completed' } });
+    expect(onAssistantResponseStarted).toHaveBeenCalledWith('r1', 'turn:1');
+    expect(onAssistantResponseDone).toHaveBeenCalledWith('r1', 'completed');
+    expect(controller.speakText('Second sentence.', 'turn:2')).toBe(false);
+    send({ type: 'output_audio_buffer.stopped', response_id: 'r1' });
+    expect(controller.speakText('Second sentence.', 'turn:2')).toBe(true);
+    send({ type: 'response.created', response: { id: 'r2', metadata: { areqa_speech_id: 'turn:2' } } });
+    send({ type: 'output_audio_buffer.started', response_id: 'r2' });
+    onPlaybackState.mockClear();
+    send({ type: 'output_audio_buffer.cleared', response_id: 'r1' });
+    expect(onPlaybackState).not.toHaveBeenCalled();
+    const events = lastPeerConnection?.channel.send.mock.calls.map(([body]) => JSON.parse(body));
+    expect(events?.some((event) => event.type === 'response.cancel')).toBe(false);
+    controller.disconnect();
+  });
+
+  it('resumes a context tool after normal generation completion without treating it as cancellation', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    let resolveContext: (response: Response) => void = () => undefined;
+    vi.mocked(authenticatedFetch).mockImplementationOnce(() => new Promise((resolve) => { resolveContext = resolve; }));
+    const controller = await startRealtimeClient(realtimeOptions());
+    const send = (event: object) => lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify(event) });
+    send({ type: 'response.created', response: { id: 'tool-r1' } });
+    send({ type: 'response.function_call_arguments.done', response_id: 'tool-r1', call_id: 'tool-1', name: 'get_areqa_context' });
+    send({ type: 'response.done', response: { id: 'tool-r1', status: 'completed' } });
+    resolveContext(new Response(JSON.stringify({ recent_messages: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await vi.waitFor(() => expect(lastPeerConnection?.channel.send).toHaveBeenCalledWith(expect.stringContaining('function_call_output')));
+    expect(lastPeerConnection?.channel.send).toHaveBeenLastCalledWith(expect.stringContaining('response.create'));
+    controller.disconnect();
+  });
+
+
+  it('rejects a queued sentence that starts after cancellation even without another input epoch', async () => {
+    installMicrophone();
+    mockRealtimeSession();
+    const onAssistantResponseStarted = vi.fn();
+    const controller = await startRealtimeClient(realtimeOptions({ onAssistantResponseStarted }));
+    controller.speakText('Pending sentence.', 'turn:1');
+    controller.cancelSpeech();
+    lastPeerConnection?.channel.onmessage?.({ data: JSON.stringify({
+      type: 'response.created', response: { id: 'late', metadata: { areqa_turn_epoch: '0', areqa_speech_id: 'turn:1' } },
+    }) });
+    expect(onAssistantResponseStarted).not.toHaveBeenCalled();
+    expect(lastPeerConnection?.channel.send).toHaveBeenLastCalledWith(JSON.stringify({ type: 'response.cancel', response_id: 'late' }));
+    controller.disconnect();
   });
 
 });

@@ -77,7 +77,7 @@ def test_realtime_session_config_uses_allowed_mvp_model_as_live_agent():
     assert config["audio"]["input"]["turn_detection"] == {
         "type": "semantic_vad",
         "eagerness": "low",
-        "create_response": True,
+        "create_response": False,
         "interrupt_response": True,
     }
     assert config["tools"][0]["name"] == "get_areqa_context"
