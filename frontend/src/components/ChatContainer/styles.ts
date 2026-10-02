@@ -21,9 +21,10 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   sidebar: css`
-    width: 280px;
-    flex: 0 0 280px;
-    transition: all 0.2s ${token.motionEaseOut};
+    position: relative;
+    width: var(--areqa-sidebar-width, 280px);
+    flex: 0 0 var(--areqa-sidebar-width, 280px);
+    transition: transform 0.2s ${token.motionEaseOut};
     background: var(--areqa-sidebar-background);
     border-right: 1px solid var(--areqa-subtle-border);
     overflow: hidden;
@@ -35,6 +36,26 @@ export const useStyles = createStyles(({ css, token }) => ({
       height: 100%;
       z-index: 100;
       transform: translateX(-100%);
+      width: min(280px, calc(100vw - 48px));
+    }
+  `,
+
+  sidebarResizeHandle: css`
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 1;
+
+    &:hover, &:focus-visible {
+      background: ${token.colorPrimary};
+    }
+
+    @media (max-width: 768px) {
+      display: none;
     }
   `,
 

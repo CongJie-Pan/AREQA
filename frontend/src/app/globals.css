@@ -176,8 +176,8 @@ html[lang='en'] body {
 }
 
 .areqa-chat-sidebar {
-  width: 280px;
-  flex: 0 0 280px;
+  width: var(--areqa-sidebar-width, 280px);
+  flex: 0 0 var(--areqa-sidebar-width, 280px);
   min-width: 0;
   overflow: hidden;
   background: var(--areqa-sidebar-background);

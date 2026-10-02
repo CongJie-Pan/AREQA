@@ -134,6 +134,7 @@ export type TranslationKey =
   | 'renameSuccess'
   | 'renameFailed'
   | 'closeSidebar'
+  | 'resizeSidebar'
   | 'tableActions'
   | 'copyTable'
   | 'downloadTableCsv'
@@ -377,6 +378,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     renameSuccess: '已重新命名對話',
     renameFailed: '重新命名失敗，請稍後再試',
     closeSidebar: '關閉側邊欄',
+    resizeSidebar: '調整側邊欄寬度',
     tableActions: '表格操作',
     copyTable: '複製表格',
     downloadTableCsv: '下載表格為CSV',
@@ -590,6 +592,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     renameSuccess: '已重新命名对话',
     renameFailed: '重新命名失败，请稍后再试',
     closeSidebar: '关闭侧边栏',
+    resizeSidebar: '调整侧边栏宽度',
     tableActions: '表格操作',
     copyTable: '复制表格',
     downloadTableCsv: '下载表格为CSV',
@@ -803,6 +806,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     renameSuccess: 'Conversation renamed',
     renameFailed: 'Rename failed. Please try again later.',
     closeSidebar: 'Close sidebar',
+    resizeSidebar: 'Resize sidebar',
     tableActions: 'Table actions',
     copyTable: 'Copy table',
     downloadTableCsv: 'Download table as CSV',

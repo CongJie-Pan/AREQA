@@ -35,6 +35,7 @@ import { db } from '@/database/db';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { cancelConversationImage, generateConversationImage } from '@/services/generatedImages';
 import { useStyles } from './styles';
+import { useSidebarResize } from './useSidebarResize';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 
@@ -99,6 +100,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const { message: antMessageApi } = App.useApp();
   const { t, language } = useUserPreferences();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarResize = useSidebarResize();
+  const sidebarWidth = sidebarResize.width;
+  const stopSidebarResize = sidebarResize.stopResize;
+  useEffect(() => { stopSidebarResize(); }, [sidebarOpen, stopSidebarResize]);
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -458,8 +463,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     const resizeState = avatarResizeStateRef.current;
     if (!resizeState) return;
 
-    const sidebarWidth = sidebarOpen ? 0 : 280;
-    const availableWidth = Math.max(window.innerWidth - sidebarWidth, 0);
+    const availableWidth = Math.max(window.innerWidth - (sidebarOpen ? 0 : sidebarWidth), 0);
     const minAvatarWidth = AVATAR_PANE_MIN_WIDTH;
     const maxAvatarWidth = Math.max(
       minAvatarWidth,
@@ -467,7 +471,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     );
     const nextWidth = resizeState.startWidth + resizeState.startX - event.clientX;
     setAvatarPaneWidth(Math.min(Math.max(nextWidth, minAvatarWidth), maxAvatarWidth));
-  }, [sidebarOpen]);
+  }, [sidebarOpen, sidebarWidth]);
 
   const stopAvatarPaneResize = useCallback(() => {
     avatarResizeStateRef.current = null;
@@ -635,7 +639,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
       )}
 
       {/* Sidebar */}
-      <div className={cx('areqa-chat-sidebar', styles.sidebar, sidebarOpen && styles.sidebarOpen)}>
+      <div
+        className={cx('areqa-chat-sidebar', styles.sidebar, sidebarOpen && styles.sidebarOpen)}
+        style={{ '--areqa-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+      >
         <ConversationList
           onSelect={handleConversationSelect}
           onNew={handleNewConversation}
@@ -645,6 +652,20 @@ export function ChatContainer({ className }: ChatContainerProps) {
             setSidebarOpen(false); // Close sidebar on mobile when opening panel
           }}
         />
+        {!sidebarOpen && (
+          <div
+            className={styles.sidebarResizeHandle}
+            role="separator"
+            aria-label={t('resizeSidebar')}
+            aria-orientation="vertical"
+            aria-valuemin={sidebarResize.minWidth}
+            aria-valuemax={sidebarResize.maxWidth}
+            aria-valuenow={sidebarWidth}
+            tabIndex={0}
+            onPointerDown={sidebarResize.startResize}
+            onKeyDown={sidebarResize.onKeyDown}
+          />
+        )}
       </div>
 
       {/* Main Content */}

@@ -54,7 +54,9 @@ vi.mock('antd', () => ({
 }));
 
 vi.mock('@/components/ConversationList', () => ({
-  ConversationList: () => <nav aria-label="Sidebar" />,
+  ConversationList: ({ onToggleSidebar }: { onToggleSidebar: () => void }) => (
+    <nav aria-label="Sidebar"><button onClick={onToggleSidebar}>Close sidebar</button></nav>
+  ),
 }));
 
 vi.mock('@/components/MessageList', () => ({
@@ -274,5 +276,18 @@ describe('ChatContainer avatar split layout', () => {
     fireEvent.keyDown(separator, { key: 'ArrowLeft' });
 
     expect(separator).toHaveAttribute('aria-valuenow', '344');
+  });
+
+  it('wires sidebar resizing into the layout and preserves its width across toggles', () => {
+    const { container } = render(<ChatContainer />);
+    const separator = screen.getByRole('separator', { name: 'resizeSidebar' });
+    fireEvent.keyDown(separator, { key: 'ArrowRight' });
+    expect(separator).toHaveAttribute('aria-valuenow', '296');
+    expect((container.querySelector('.areqa-chat-sidebar') as HTMLElement).style
+      .getPropertyValue('--areqa-sidebar-width')).toBe('296px');
+    fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }));
+    expect(screen.queryByRole('separator', { name: 'resizeSidebar' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('openSidebar'));
+    expect(screen.getByRole('separator', { name: 'resizeSidebar' })).toHaveAttribute('aria-valuenow', '296');
   });
 });
