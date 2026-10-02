@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { App } from 'antd';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +7,7 @@ import { ConversationList } from '@/components/ConversationList';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
 import type { Conversation } from '@/database/schema';
+import { databaseService } from '@/services/database';
 
 vi.mock('next/image', () => ({
   default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
@@ -36,6 +37,7 @@ vi.mock('@/services/database', () => ({
   databaseService: {
     conversation: {
       update: vi.fn(),
+      getAll: vi.fn(),
     },
   },
 }));
@@ -129,6 +131,51 @@ describe('ConversationList title states', () => {
       ragMessage: '',
       ragSources: [],
     });
+  });
+
+  it('keeps existing rows mounted while a delayed background refresh updates their titles', async () => {
+    const existing = conversation({ title: 'Existing title' });
+    useConversationStore.setState({ conversations: [existing] });
+    let finish!: (rows: Conversation[]) => void;
+    vi.mocked(databaseService.conversation.getAll).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const { container } = renderConversationList();
+    const row = container.querySelector('.areqa-conversation-item');
+    let pending!: Promise<void>;
+    act(() => { pending = useConversationStore.getState().loadConversations('user-1'); });
+    expect(screen.getByText('Existing title')).toBeInTheDocument();
+    expect(container.querySelector('.areqa-conversation-loading')).toBeNull();
+    expect(container.querySelector('.areqa-conversation-item')).toBe(row);
+    await act(async () => { finish([{ ...existing, title: 'Refreshed title' }]); await pending; });
+    expect(screen.getByText('Refreshed title')).toBeInTheDocument();
+    expect(container.querySelector('.areqa-conversation-item')).toBe(row);
+  });
+
+  it('keeps existing rows visible when a background refresh fails', async () => {
+    useConversationStore.setState({ conversations: [conversation({ title: 'Cached title' })] });
+    let fail!: (error: Error) => void;
+    vi.mocked(databaseService.conversation.getAll).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    const { container } = renderConversationList();
+    const row = container.querySelector('.areqa-conversation-item');
+    let pending!: Promise<void>;
+    act(() => { pending = useConversationStore.getState().loadConversations('user-1'); });
+    expect(container.querySelector('.areqa-conversation-item')).toBe(row);
+    await act(async () => { fail(new Error('Fixture refresh failure')); await pending; });
+    expect(screen.getByText('Cached title')).toBeInTheDocument();
+    expect(container.querySelector('.areqa-conversation-item')).toBe(row);
+    expect(useConversationStore.getState().isLoading).toBe(false);
+  });
+
+  it('shows loading for an empty initial history and hides another account’s existing rows', async () => {
+    useConversationStore.setState({ conversations: [conversation({ title: 'Previous account title' })] });
+    let finish!: (rows: Conversation[]) => void;
+    vi.mocked(databaseService.conversation.getAll).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const { container } = renderConversationList();
+    let pending!: Promise<void>;
+    act(() => { pending = useConversationStore.getState().loadConversations('user-2'); });
+    expect(screen.queryByText('Previous account title')).not.toBeInTheDocument();
+    expect(container.querySelector('.areqa-conversation-loading')).toBeInTheDocument();
+    await act(async () => { finish([]); await pending; });
+    expect(screen.getByText('No conversations')).toBeInTheDocument();
   });
 
   it('localizes legacy default conversation titles instead of showing persisted Chinese text', () => {

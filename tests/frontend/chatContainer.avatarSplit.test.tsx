@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '../../frontend/src/components/ChatContainer';
 import { cancelConversationImage, generateConversationImage } from '@/services/generatedImages';
-import { cancelCurrentStream } from '@/services/chat';
+import { cancelCurrentStream, initializeChatService } from '@/services/chat';
+import { syncService } from '@/services/syncService';
 
 const authState = vi.hoisted(() => ({ user: null as { id: string } | null }));
 vi.mock('@/services/generatedImages', () => ({
@@ -200,6 +201,56 @@ describe('ChatContainer avatar split layout', () => {
     authState.user = null;
     chatState.imageGenerationRequests = {};
     conversationState.activeConversationId = 'c1';
+  });
+
+  it('does not reload history when the same account receives a new session user object', async () => {
+    authState.user = { id: 'user-a' };
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<ChatContainer />); });
+    expect(initializeChatService).toHaveBeenCalledTimes(2);
+    expect(syncService.pullFromCloud).toHaveBeenCalledTimes(1);
+
+    authState.user = { id: 'user-a' };
+    await act(async () => { view.rerender(<ChatContainer />); });
+    expect(initializeChatService).toHaveBeenCalledTimes(2);
+    expect(syncService.pullFromCloud).toHaveBeenCalledTimes(1);
+    expect(conversationState.clearState).not.toHaveBeenCalled();
+  });
+
+  it('clears old history on account changes and logout while still loading the new account', async () => {
+    authState.user = { id: 'user-a' };
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<ChatContainer />); });
+    vi.clearAllMocks();
+
+    authState.user = { id: 'user-b' };
+    await act(async () => { view.rerender(<ChatContainer />); });
+    expect(conversationState.clearState).toHaveBeenCalledTimes(1);
+    expect(chatState.clearMessages).toHaveBeenCalledTimes(1);
+    expect(initializeChatService).toHaveBeenCalledTimes(2);
+    expect(initializeChatService).toHaveBeenCalledWith('user-b');
+    expect(syncService.pullFromCloud).toHaveBeenCalledWith('user-b');
+    vi.clearAllMocks();
+
+    authState.user = null;
+    await act(async () => { view.rerender(<ChatContainer />); });
+    expect(conversationState.clearState).toHaveBeenCalledTimes(1);
+    expect(chatState.clearMessages).toHaveBeenCalledTimes(1);
+    expect(initializeChatService).not.toHaveBeenCalled();
+    expect(syncService.pullFromCloud).not.toHaveBeenCalled();
+  });
+
+  it('does not start cloud synchronization for an account whose initial load finishes after logout', async () => {
+    let finish!: () => void;
+    vi.mocked(initializeChatService).mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+    authState.user = { id: 'user-a' };
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<ChatContainer />); });
+    authState.user = null;
+    await act(async () => { view.rerender(<ChatContainer />); });
+    await act(async () => { finish(); });
+    expect(syncService.pullFromCloud).not.toHaveBeenCalled();
+    expect(initializeChatService).toHaveBeenCalledTimes(1);
   });
 
   it('connects selected image job state and Stop without cancelling the voice/text stream', async () => {

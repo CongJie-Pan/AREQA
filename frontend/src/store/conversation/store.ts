@@ -8,10 +8,12 @@ import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
 import type { Conversation } from '@/database/schema';
 import type { ConversationStore } from './types';
+import { logger } from '@/utils/logger';
 
 const GENERATED_TITLE_MAX_LENGTH = 18;
 const GENERATED_ENGLISH_TITLE_MAX_LENGTH = 48;
 const CONVERSATION_LOAD_TIMEOUT_MS = 7000;
+let conversationLoadSequence = 0;
 
 function withTimeout<T>(operation: PromiseLike<T>, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -64,17 +66,50 @@ export const useConversationStore = create<ConversationStore>((set) => ({
   ...initialState,
 
   loadConversations: async (userId: string) => {
-    set({ isLoading: true, error: null });
+    const sequence = ++conversationLoadSequence;
+    const startedAt = performance.now();
+    let retainedCount = 0;
+    set((state) => {
+      const conversations = state.conversations.filter((conversation) => conversation.userId === userId);
+      retainedCount = conversations.length;
+      const removedForeignHistory = conversations.length !== state.conversations.length;
+      return {
+        conversations,
+        activeConversationId: removedForeignHistory && !conversations.some((conversation) => conversation.id === state.activeConversationId)
+          ? null : state.activeConversationId,
+        streamingTitles: removedForeignHistory ? {} : state.streamingTitles,
+        isLoading: true,
+        error: null,
+      };
+    });
+    logger.info('chat_history_reload_started', {
+      component: 'useConversationStore', sequence,
+      mode: retainedCount > 0 ? 'refresh' : 'initial', retainedCount,
+    });
     try {
       const conversations = await withTimeout(
         databaseService.conversation.getAll(userId),
         'Conversation history load',
       );
+      // A later load or account reset owns the state once this request is stale.
+      if (sequence !== conversationLoadSequence) {
+        logger.info('chat_history_reload_discarded', { component: 'useConversationStore', sequence });
+        return;
+      }
       set({ conversations, isLoading: false });
+      logger.info('chat_history_reload_completed', {
+        component: 'useConversationStore', sequence, count: conversations.length,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
     } catch (error) {
+      if (sequence !== conversationLoadSequence) return;
       set({
         error: error instanceof Error ? error : new Error(String(error)),
         isLoading: false,
+      });
+      logger.info('chat_history_reload_failed', {
+        component: 'useConversationStore', sequence, retainedCount,
+        durationMs: Math.round(performance.now() - startedAt),
       });
     }
   },
@@ -128,6 +163,7 @@ export const useConversationStore = create<ConversationStore>((set) => ({
   },
 
   clearState: () => {
+    conversationLoadSequence += 1;
     set({
       conversations: [],
       activeConversationId: null,

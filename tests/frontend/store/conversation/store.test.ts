@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useConversationStore } from '@/store/conversation/store';
 import { databaseService } from '@/services/database';
+import type { Conversation } from '@/database/schema';
+
+function historyRow(userId: string, id = 'fixture-conversation'): Conversation {
+  return { id, userId, title: 'Fixture title', createdAt: new Date(), updatedAt: new Date(), messageCount: 0 };
+}
 
 vi.mock('@/services/database', () => ({
   databaseService: {
@@ -36,6 +41,55 @@ describe('Conversation Store', () => {
     await useConversationStore.getState().loadConversations('user-1');
 
     expect(databaseService.conversation.getAll).toHaveBeenCalledWith('user-1');
+  });
+
+  it('retains same-account history and selection when a refresh fails', async () => {
+    const existing = historyRow('user-a');
+    useConversationStore.setState({ conversations: [existing], activeConversationId: existing.id });
+    vi.mocked(databaseService.conversation.getAll).mockRejectedValueOnce(new Error('Fixture load failure'));
+    await useConversationStore.getState().loadConversations('user-a');
+    expect(useConversationStore.getState()).toMatchObject({
+      conversations: [existing], activeConversationId: existing.id, isLoading: false,
+    });
+  });
+
+  it('preserves a selected source conversation while its history has not loaded yet', async () => {
+    useConversationStore.setState({ activeConversationId: 'source-conversation' });
+    vi.mocked(databaseService.conversation.getAll).mockResolvedValueOnce([historyRow('user-a', 'source-conversation')]);
+    await useConversationStore.getState().loadConversations('user-a');
+    expect(useConversationStore.getState().activeConversationId).toBe('source-conversation');
+  });
+
+  it.each(['success', 'failure'])('ignores an old account’s late %s without interrupting the new load', async (outcome) => {
+    const oldRow = historyRow('user-a');
+    const newRow = historyRow('user-b', 'new-conversation');
+    useConversationStore.setState({ conversations: [oldRow], activeConversationId: oldRow.id });
+    let finishOld!: (rows: Conversation[]) => void;
+    let failOld!: (error: Error) => void;
+    let finishNew!: (rows: Conversation[]) => void;
+    vi.mocked(databaseService.conversation.getAll)
+      .mockReturnValueOnce(new Promise((resolve, reject) => { finishOld = resolve; failOld = reject; }))
+      .mockReturnValueOnce(new Promise((resolve) => { finishNew = resolve; }));
+    const oldLoad = useConversationStore.getState().loadConversations('user-a');
+    const newLoad = useConversationStore.getState().loadConversations('user-b');
+    expect(useConversationStore.getState()).toMatchObject({ conversations: [], activeConversationId: null, isLoading: true });
+    if (outcome === 'success') finishOld([oldRow]);
+    else failOld(new Error('Fixture stale failure'));
+    await oldLoad;
+    expect(useConversationStore.getState()).toMatchObject({ conversations: [], isLoading: true, error: null });
+    finishNew([newRow]);
+    await newLoad;
+    expect(useConversationStore.getState()).toMatchObject({ conversations: [newRow], isLoading: false, error: null });
+  });
+
+  it('does not restore history when a pending load completes after the store is cleared', async () => {
+    let finish!: (rows: Conversation[]) => void;
+    vi.mocked(databaseService.conversation.getAll).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = useConversationStore.getState().loadConversations('user-a');
+    useConversationStore.getState().clearState();
+    finish([historyRow('user-a')]);
+    await pending;
+    expect(useConversationStore.getState()).toMatchObject({ conversations: [], activeConversationId: null, isLoading: false });
   });
 
   it('clears the loading state when conversation history load stalls', async () => {

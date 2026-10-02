@@ -117,6 +117,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const compeerEnabled = useFeatureStore((state) => state.compeer);
   const fetchFeatures = useFeatureStore((state) => state.fetchFeatures);
   const user = useAuthStore((state) => state.user);
+  const historyUserId = user?.id ?? null;
+  const previousHistoryUserIdRef = useRef(historyUserId);
   const failedMessageSyncCount = useLiveQuery(
     () => user
       ? db.messageSyncQueue.where('userId').equals(user.id)
@@ -269,8 +271,23 @@ export function ChatContainer({ className }: ChatContainerProps) {
     let cancelled = false;
     setIsChatReady(false);
 
+    const accountChanged = previousHistoryUserIdRef.current !== historyUserId;
+    previousHistoryUserIdRef.current = historyUserId;
+    if (accountChanged && historyUserId) {
+      // Never retain the previous account's visible history during a refresh.
+      useConversationStore.getState().clearState();
+      useChatStore.getState().clearMessages();
+      useChatStore.getState().resetStreamingState();
+      useNotesStore.setState({ notes: [], loading: false, error: null });
+    }
+    logger.info('chat_history_initialization_started', {
+      component: 'ChatContainer',
+      reason: accountChanged ? 'account_changed' : 'auth_ready',
+      authenticated: Boolean(historyUserId),
+    });
+
     const loadAuthenticatedHistory = async () => {
-      if (!user) {
+      if (!historyUserId) {
         useConversationStore.getState().clearState();
         useChatStore.getState().clearMessages();
         useChatStore.getState().resetStreamingState();
@@ -288,10 +305,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
       }
 
       try {
-        if (user) setShowAuthPrompt(false);
+        setShowAuthPrompt(false);
         const localLoadStartedAt = performance.now();
-        await initializeChatService(user.id);
-        await loadNotes(user.id);
+        await initializeChatService(historyUserId);
+        if (cancelled) return;
+        await loadNotes(historyUserId);
+        if (cancelled) return;
         logger.info('chat_history_local_cache_loaded', {
           component: 'ChatContainer',
           durationMs: Math.round(performance.now() - localLoadStartedAt),
@@ -300,11 +319,13 @@ export function ChatContainer({ className }: ChatContainerProps) {
         if (!cancelled) setIsChatReady(true);
 
         const cloudSyncStartedAt = performance.now();
-        void syncService.pullFromCloud(user.id)
+        void syncService.pullFromCloud(historyUserId)
           .then(async () => {
             if (cancelled) return;
-            await initializeChatService(user.id);
-            await loadNotes(user.id);
+            await initializeChatService(historyUserId);
+            if (cancelled) return;
+            await loadNotes(historyUserId);
+            if (cancelled) return;
             logger.info('chat_history_cloud_sync_finished', {
               component: 'ChatContainer',
               durationMs: Math.round(performance.now() - cloudSyncStartedAt),
@@ -331,7 +352,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthInitialized, loadNotes, user]);
+  }, [isAuthInitialized, loadNotes, historyUserId]);
 
   // Load messages when conversation changes
   useEffect(() => {

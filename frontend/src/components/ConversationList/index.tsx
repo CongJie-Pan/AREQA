@@ -347,7 +347,7 @@ export function ConversationList({
 
       {/* List Area */}
       <div className={cx('areqa-conversation-scroll-list', styles.list)}>
-        {isLoading ? (
+        {isLoading && conversations.length === 0 ? (
           <div className={cx('areqa-conversation-loading', styles.loading)}>
             <Spin size="small" />
           </div>
