@@ -22,6 +22,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useNotesStore } from '@/store/notes';
+import { useConversationStore } from '@/store/conversation';
 import { useAuthStore } from '@/store/auth';
 import { switchConversation } from '@/services/chat';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
@@ -83,7 +84,18 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
   const { message } = App.useApp();
   const { t } = useUserPreferences();
   const user = useAuthStore((state) => state.user);
-  const { notes, loading, loadNotes, updateNoteMetadata, updateNoteContent, deleteNote } = useNotesStore();
+  const { notes: savedNotes, loading, loadNotes, updateNoteMetadata, updateNoteContent, deleteNote } = useNotesStore();
+  const conversations = useConversationStore((state) => state.conversations);
+  const notes = useMemo(() => {
+    const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]));
+    return savedNotes.map((note) => {
+      const conversation = note.conversationId ? conversationsById.get(note.conversationId) : undefined;
+      // Keep the saved title as a fallback when the source is unavailable.
+      return conversation && conversation.userId === note.userId
+        ? { ...note, conversationTitle: conversation.title }
+        : note;
+    });
+  }, [savedNotes, conversations]);
   const [query, setQuery] = useState('');
   const [selectedConversationId, setSelectedConversationId] = useState('all');
   const [selectedTag, setSelectedTag] = useState('all');

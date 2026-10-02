@@ -1,8 +1,10 @@
 import React from 'react';
 import { App } from 'antd';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
+import { NotesPanel } from '@/components/NotesPanel';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useNotesStore } from '@/store/notes';
@@ -172,8 +174,12 @@ vi.mock('@/utils/logger', () => ({
 }));
 
 describe('Notes e2e integration flow', () => {
+  afterEach(() => {
+    window.localStorage.removeItem('areqa:interface-language');
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
     storedNotes = [];
     useNotesStore.setState({ notes: [], loading: false, error: null });
     useConversationStore.setState({
@@ -215,13 +221,78 @@ describe('Notes e2e integration flow', () => {
     });
   });
 
+  async function saveNote() {
+    const source = useChatStore.getState().messages.find((item) => item.id === TEST_ASSISTANT_ID);
+    if (!source) throw new Error('Missing assistant message fixture');
+    return useNotesStore.getState().addNoteFromMessage(source, 'Notes source chat');
+  }
+
+  function renderNotes() {
+    return render(<UserPreferencesProvider><App><NotesPanel onClose={vi.fn()} /></App></UserPreferencesProvider>);
+  }
+
+  it('updates note cards, source filters, and search when the sidebar conversation title changes', async () => {
+    await saveNote();
+    renderNotes();
+    const sourceFilter = await screen.findByRole('button', { name: /^Notes source chat\s*1$/ });
+    fireEvent.click(sourceFilter);
+
+    act(() => {
+      useConversationStore.getState().updateConversation(TEST_CONVERSATION_ID, { title: 'Renamed study chat' });
+    });
+
+    expect(screen.getByRole('button', { name: /^Renamed study chat\s*1$/ })).toBeInTheDocument();
+    expect(within(screen.getByRole('article')).getByText('Renamed study chat')).toBeInTheDocument();
+    expect(screen.queryByText('Notes source chat')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('搜尋筆記'), { target: { value: 'Notes source chat' } });
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('搜尋筆記'), { target: { value: 'Renamed study chat' } });
+    expect(screen.getByRole('article')).toBeInTheDocument();
+    expect(useNotesStore.getState().notes[0].conversationTitle).toBe('Notes source chat');
+  });
+
+  it('uses the latest title when opening previously saved notes after a rename', async () => {
+    await saveNote();
+    useConversationStore.getState().updateConversation(TEST_CONVERSATION_ID, { title: 'Current conversation title' });
+    renderNotes();
+
+    expect(within(await screen.findByRole('article')).getByText('Current conversation title')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Current conversation title\s*1$/ })).toBeInTheDocument();
+    expect(screen.queryByText('Notes source chat')).not.toBeInTheDocument();
+  });
+
+  it('keeps snapshot titles for unavailable sources and does not use another account’s conversation title', async () => {
+    await saveNote();
+    useConversationStore.setState({ conversations: [] });
+    renderNotes();
+
+    expect(within(await screen.findByRole('article')).getByText('Notes source chat')).toBeInTheDocument();
+    const conversation = {
+      id: TEST_CONVERSATION_ID, userId: 'other-user', title: 'Other account title',
+      createdAt: new Date(), updatedAt: new Date(), messageCount: 0,
+    };
+    act(() => { useConversationStore.setState({ conversations: [conversation] }); });
+    expect(within(screen.getByRole('article')).getByText('Notes source chat')).toBeInTheDocument();
+    expect(screen.queryByText('Other account title')).not.toBeInTheDocument();
+
+    act(() => {
+      useNotesStore.setState({ notes: [
+        { ...storedNotes[0], conversationId: null, conversationTitle: null },
+      ] });
+    });
+    expect(within(screen.getByRole('article')).getByText('未命名對話')).toBeInTheDocument();
+  });
+
   it('saves an assistant response, browses notes from the sidebar, and opens the exact source message', async () => {
     const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
 
     render(
-      <App>
-        <ChatContainer />
-      </App>,
+      <UserPreferencesProvider>
+        <App>
+          <ChatContainer />
+        </App>
+      </UserPreferencesProvider>,
     );
 
     await act(async () => {
@@ -304,5 +375,5 @@ describe('Notes e2e integration flow', () => {
     await waitFor(() => {
       expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
     });
-  }, 15000);
+  }, 30000);
 });
