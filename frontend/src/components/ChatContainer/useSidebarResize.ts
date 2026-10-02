@@ -3,6 +3,7 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 
 const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 220;
+const MAX_WIDTH = 420;
 const CHAT_MIN_WIDTH = 420;
 
 export function useSidebarResize() {
@@ -25,7 +26,7 @@ export function useSidebarResize() {
   }, []);
 
   useEffect(() => {
-    const getMaxWidth = () => Math.max(MIN_WIDTH, window.innerWidth - CHAT_MIN_WIDTH);
+    const getMaxWidth = () => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, window.innerWidth - CHAT_MIN_WIDTH));
     const onResize = () => {
       stopResize();
       setMaxWidth(getMaxWidth());

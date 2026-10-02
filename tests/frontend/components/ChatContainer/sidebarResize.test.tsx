@@ -5,7 +5,7 @@ import { useSidebarResize } from '@/components/ChatContainer/useSidebarResize';
 
 function Harness() {
   const resize = useSidebarResize();
-  return <div role="separator" aria-valuenow={resize.width}
+  return <div role="separator" aria-valuenow={resize.width} aria-valuemax={resize.maxWidth}
     onPointerDown={resize.startResize} onKeyDown={resize.onKeyDown} />;
 }
 
@@ -36,7 +36,7 @@ describe('sidebar resizing', () => {
     pointer(window, 'pointermove', 400);
     expect(handle).toHaveAttribute('aria-valuenow', '400');
     pointer(window, 'pointermove', 10000);
-    expect(handle).toHaveAttribute('aria-valuenow', '780');
+    expect(handle).toHaveAttribute('aria-valuenow', '420');
     pointer(window, 'pointermove', -100);
     expect(handle).toHaveAttribute('aria-valuenow', '220');
     pointer(window, 'pointerup', -100);
@@ -69,13 +69,20 @@ describe('sidebar resizing', () => {
     fireEvent.keyDown(handle, { key: 'ArrowLeft' });
     expect(handle).toHaveAttribute('aria-valuenow', '280');
     fireEvent.keyDown(handle, { key: 'End' });
-    expect(handle).toHaveAttribute('aria-valuenow', '780');
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 });
+    expect(handle).toHaveAttribute('aria-valuenow', '420');
+    expect(handle).toHaveAttribute('aria-valuemax', '420');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 });
     act(() => { window.dispatchEvent(new Event('resize')); });
-    expect(handle).toHaveAttribute('aria-valuenow', '480');
+    expect(handle).toHaveAttribute('aria-valuenow', '380');
+    expect(handle).toHaveAttribute('aria-valuemax', '380');
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 });
     act(() => { window.dispatchEvent(new Event('resize')); });
-    expect(handle).toHaveAttribute('aria-valuenow', '780');
+    expect(handle).toHaveAttribute('aria-valuenow', '420');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 2560 });
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(handle).toHaveAttribute('aria-valuenow', '420');
+    expect(handle).toHaveAttribute('aria-valuemax', '420');
     fireEvent.keyDown(handle, { key: 'Home' });
     expect(handle).toHaveAttribute('aria-valuenow', '220');
   });
