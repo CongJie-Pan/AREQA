@@ -152,7 +152,7 @@
 ## 三、教學流程
 
 | 階段與時間 | 學習活動 | 理論對應與設計目的 |
-|---|---|---|
+| --- | --- | --- |
 | 引起注意與喚起先備知識：5 分鐘 | 呈現殖民地地圖，提問：「如果政府要求你繳稅，但你無法參與決策，你會如何反應？」學生先用簡短英文或中文回答。 | 引導注意，讓新主題與學生已有的公平及參與概念產生連結。 |
 | 關鍵詞彙準備：5 分鐘 | 以簡短英文定義與情境介紹五個關鍵詞。學生用自己的話解釋 taxation 和 representation，可選擇口說或文字輸入。 | 先處理必要詞彙，減少後續閱讀時同時處理多種陌生資訊的負擔。 |
 | 分段閱讀與回想：15 分鐘 | 依序閱讀三段約 80–100 字的英文教材：課稅與代表權爭議、抗議與衝突發展、獨立宣告與戰爭結果。每讀完一段，先隱藏文本，再回答一個重點問題。 | 控制每次輸入量，並透過立即回想確認學生是否掌握內容。 |
@@ -164,17 +164,11 @@
 
 ## 四、AI 導師的具體作用
 
-AI 導師每次提出一個問題，讓學生先嘗試回答。例如：
+AI 導師每次提出一個問題，讓學生先嘗試回答。例如：Why did some colonists oppose British taxation?
 
-> Why did some colonists oppose British taxation?
+如果學生只回答「They did not like paying taxes」，AI 可以追問：What role did political representation play in their objection?
 
-如果學生只回答「They did not like paying taxes」，AI 可以追問：
-
-> What role did political representation play in their objection?
-
-如果學生混淆 1776 與 1783，AI 可以先提示：
-
-> Which event declared independence, and which agreement recognized it?
+如果學生混淆 1776 與 1783，AI 可以先提示：Which event declared independence, and which agreement recognized it?
 
 學生再次嘗試後，系統才提供完整說明。回饋應以教師審核過的教材為依據，並將歷史概念錯誤與英文表達錯誤分開處理，避免學生因語法不熟練而被誤判為不理解歷史。
 
@@ -184,12 +178,10 @@ AI 導師每次提出一個問題，讓學生先嘗試回答。例如：
 
 評量分成兩個面向：
 
-- **歷史理解：**事件順序是否正確、能否解釋課稅與代表權的關係，以及是否區分獨立宣告與戰爭結果。
-- **英文表達：**能否適當使用關鍵詞彙與因果連接詞，清楚傳達自己的理解。
+- 歷史理解：事件順序是否正確、能否解釋課稅與代表權的關係，以及是否區分獨立宣告與戰爭結果。
+- 英文表達：能否適當使用關鍵詞彙與因果連接詞，清楚傳達自己的理解。
 
-兩天後安排一次簡短的無提示測驗，例如：
-
-> A student says, “The war ended when the Declaration of Independence was adopted in 1776.” How would you correct this statement?
+兩天後安排一次簡短的無提示測驗，例如：A student says, “The war ended when the Declaration of Independence was adopted in 1776.” How would you correct this statement?
 
 這能提供學生是否保留概念、能否運用概念的線索。延後測驗是本教案的補充設計；一次答對仍不足以證明知識已穩固存入長期記憶。課程時間、教材長度與題數均為本教案的規劃，實際教學時需依學生程度調整。
 
@@ -198,3 +190,23 @@ AI 導師每次提出一個問題，讓學生先嘗試回答。例如：
 這份教案讓我將資訊處理理論應用於英語與歷史整合學習。分段閱讀讓學生有時間處理資訊；時間軸與事件關係協助組織及編碼；英文解釋則要求學生主動提取與重組知識。我希望學生最後能用自己的話解釋美國獨立運動，而課程效果仍需要透過實際作答與延後評量確認。
 
 # References
+
+Atkinson, R. C., & Shiffrin, R. M. (1968). Human memory: A proposed system and its control processes. In K. W. Spence & J. T. Spence (Eds.), _The Psychology of Learning and Motivation_ (Vol. 2, pp. 89–195). Academic Press. [https://doi.org/10.1016/S0079-7421(08)60422-3](https://doi.org/10.1016/S0079-7421%2808%2960422-3)
+
+Baddeley, A. D., & Hitch, G. (1974). Working memory. In G. H. Bower (Ed.), _The Psychology of Learning and Motivation_ (Vol. 8, pp. 47–89). Academic Press. [https://doi.org/10.1016/S0079-7421(08)60452-1](https://doi.org/10.1016/S0079-7421%2808%2960452-1)
+
+Craik, F. I., & Lockhart, R. S. (1972). Levels of processing: A framework for memory research. _Journal of Verbal Learning and Verbal Behavior_, 11(6), 671–684. [https://doi.org/10.1016/S0022-5371(72)80001-X](https://doi.org/10.1016/S0022-5371%2872%2980001-X)
+
+Mayer, R. E. (2020). _Multimedia learning_ (3rd ed.). Cambridge University Press. https://doi.org/10.1017/9781316941355
+
+Miller, G. A. (1956). The magical number seven, plus or minus two: Some limits on our capacity for processing information. _Psychological Review_, 63(2), 81–97. https://doi.org/10.1037/h0043158
+
+National Archives and Records Administration. (n.d.). _The Declaration of Independence_. U.S. National Archives. https://www.archives.gov/founding-docs/declaration-transcript
+
+National Archives and Records Administration. (n.d.). _Treaty of Paris (1783)_. U.S. National Archives. https://www.archives.gov/milestone-documents/treaty-of-paris
+
+National Park Service. (n.d.). _Teaching the American Revolution_. U.S. Department of the Interior. [https://www.nps.gov/teachers/classrooms/american-revolution.htm](https://www.google.com/search?q=https://www.nps.gov/teachers/classrooms/american-revolution.htm)
+
+Paivio, A. (1986). _Mental representations: A dual coding approach_. Oxford University Press.
+
+Sweller, J. (1988). Cognitive load during problem solving: Effects on learning\[cite: 5\]. _Cognitive Science_, 12(2), 257–285\[cite: 5\]. https://doi.org/10.1207/s15516709cog1202_4
