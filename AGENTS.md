@@ -1,5 +1,18 @@
 # AREQA Agent Notes
 
+## pstack Development Routing
+
+- For nontrivial software implementation, bug fixes, refactoring, or performance work, use the installed pstack `poteto-mode` skill and its Codex platform mapping. Read the task-relevant principles and skills before applying them.
+- Read `.agents/playbooks/areqa-development.md` as the project workflow. It is a standalone project playbook, so use its steps instead of also running a bundled implementation playbook. Use a bundled workflow for requests outside its scope or when the user explicitly requests one.
+- Before applying project playbooks, run pstack's `skills/poteto-mode/scripts/check-playbooks.mjs` from the repository root. Resolve the installed plugin root from Codex's plugin inventory rather than hard-coding a cache version.
+- Keep this repository's architecture constraints, validation gates, safe logging, and completion requirements in force. A plugin does not authorize deployments, merges, messages, or unrelated changes.
+- Reuse the existing project skills for task-specific investigation, implementation, tests, and checks. Choose one owner for each step and avoid duplicate investigations or competing plans.
+- Use the configured pstack role overrides. `inherit-parent` retains the current session model and reasoning effort. Same-model reviewers do not provide model diversity.
+- Use delegation only when allowed by the current session. If a workflow requires independent review and none can run, report the blocked review gate. Do not describe self-review or passing tests as independent review.
+- For questions, academic research, documentation-only tasks, and trivial edits, use the relevant existing workflow without the full implementation playbook. Explicit requests for individual pstack skills still apply.
+- If pstack is unavailable, say so and follow the Default Implementation Workflow below. Do not block ordinary development on plugin installation.
+- Setup, usage examples, and verification commands are in `docs/tech_docs/pstack-workflow.md`.
+
 ## Default Implementation Workflow
 
 When implementing code in this repository, use this workflow by default.

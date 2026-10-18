@@ -1,0 +1,18 @@
+---
+extends:
+when: Implementing nontrivial software features, bug fixes, refactors, or performance changes in AREQA.
+---
+
+# AREQA development
+
+This standalone playbook combines pstack's task routing with the repository's implementation requirements. Read `AGENTS.md` and the installed `poteto-mode` skill before using it. Explicit user instructions and higher-priority session instructions take precedence.
+
+1. **Inspect and scope.** Write the task TODO list before edits. Check git status and preserve unrelated changes. Read the relevant source, tests, and project conventions. Use Drift context when available for unfamiliar architecture. State the expected behavior, the smallest safe change boundary, and the checks that will prove completion.
+2. **Establish evidence.** For a bug, reproduce the failure before changing production code. Use `how` and `why` when tracing behavior or design history is necessary. For performance work, read `benchmark-checklist` and measure a baseline. For a refactor, identify behavior that must stay unchanged. For a feature, identify observable acceptance criteria. Record unavailable runtime prerequisites rather than inventing results.
+3. **Choose the design.** Name the relevant data shapes and ownership boundaries. Read the applicable pstack principles. Use architecture exploration when the change crosses ownership or function boundaries and the full workflow calls for it. Reuse project planning skills when a phase-based plan is warranted. Keep design effort proportional to the task. Record skipped exploration and its reason, and preserve any required independent review gate.
+4. **Implement and test.** Use existing project patterns and task-specific skills. Make scoped changes and keep optional integrations fail-soft. Keep secrets server-side and logs free of raw user content and credentials. Add focused behavior tests proportional to risk. For a regression test, observe the intended failure before the fix and success afterward. Skip tests only with a task-specific reason, such as documentation-only work.
+5. **Verify the artifact.** Run focused tests first. For frontend changes, run the relevant Vitest files and `npm run check:report:strict`. Run backend or worker checks when those components change. Inspect or drive the actual changed artifact where possible. Keep test results separate from manual observations and unexecuted checks. Report unrelated failures with their file or test names.
+6. **Review the change.** Inspect the final diff for scope, compatibility, security, unnecessary abstractions, and redundant comments. Read `deslop` before committing. Use `interrogate` for a requested adversarial review or a contested design. Respect the current host's delegation and model rules. Independent review requires another reviewer. If a required reviewer cannot run, record `BLOCKED: independent review` and keep shipping and merge-ready claims closed.
+7. **Commit and report.** After applicable validation and review gates pass, commit only task files unless the user directs otherwise. Do not open a PR, merge, publish, or deploy solely because a bundled workflow includes that step. Report changed behavior, files, validation evidence, limitations, and the commit. Include the learning recap and questions required by `AGENTS.md`.
+
+Maintain the checklist in the session's task tracker. If none is available, use a task-specific uncommitted checklist under `.audit/` and keep it out of the task commit. Mark inapplicable steps with a concrete reason. Use more detailed bundled playbooks only when the task needs them, without duplicating already-completed work.
