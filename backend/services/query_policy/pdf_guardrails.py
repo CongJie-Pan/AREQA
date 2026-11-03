@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from services.conversation.answer_style import render_paper_overview_style
+from services.prompt_skills import load_prompt_skill
 from services.query_policy.models import (
     AttachmentReason,
     AttachmentTask,
@@ -99,8 +100,12 @@ def paper_auto_explain_instruction() -> str:
         the user's preferred language.
 
     Side Effects:
-        None. The caller owns structured logging before this prompt is applied.
+        Uses a process-cached skill payload. The caller owns policy logging.
     """
+
+    payload = load_prompt_skill("paper-auto-explain")
+    if payload is not None:
+        return render_paper_overview_style() + payload["instruction"]
 
     return (
         "【PDF 論文自動解說任務】本回合使用者上傳 PDF，且 policy classifier 判定使用者"

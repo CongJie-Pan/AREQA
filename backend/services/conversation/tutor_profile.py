@@ -7,8 +7,10 @@ memory, language, safety, or tool permissions.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
+
+from services.prompt_skills import load_prompt_skill
 
 TutorProfileId = Literal["general", "english"]
 
@@ -83,7 +85,12 @@ def normalize_tutor_profile(value: object) -> TutorProfileId:
 def get_tutor_profile(value: object) -> TutorProfile:
     """Resolve a raw profile id to a prompt profile."""
 
-    return _PROFILES[normalize_tutor_profile(value)]
+    profile = _PROFILES[normalize_tutor_profile(value)]
+    if profile.profile_id == "english":
+        payload = load_prompt_skill("english-tutor")
+        if payload is not None:
+            return replace(profile, rules=payload["rules"])
+    return profile
 
 
 def render_tutor_profile_prompt(value: object) -> str:

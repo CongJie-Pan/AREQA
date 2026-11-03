@@ -8,15 +8,17 @@ detect accidental drift between normal answers, PARTS-guided turns, and paper
 overview turns.
 
 The human-maintained source specification lives in
-``backend/prompts/skills/pedagogy_tutor_skill.md``. Runtime code keeps a compact
-rendered contract here so prompt assembly stays deterministic and does not depend
-on filesystem reads during chat turns.
+``backend/prompts/skills/pedagogy_tutor_skill.md``. Its marked JSON payload is
+loaded once and replaces the fallback contract below. Renderers share the same
+immutable contract without reading files during chat turns.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
+
+from services.prompt_skills import load_prompt_skill
 
 
 AREQA_TEACHING_PROFILE_VERSION = "AREQA_TEACHING_V1"
@@ -92,6 +94,16 @@ AREQA_TEACHING_V1 = AnswerStyleContract(
     ),
     visual_rule="圖文並茂：當圖像、地圖、流程圖或示意圖能實質幫助理解時，依系統圖片規則使用已授權的圖片請求或圖片引用標記；若沒有可用圖片，不要輸出失敗文字或假裝已插圖。",
 )
+
+
+def _load_teaching_contract(fallback: AnswerStyleContract) -> AnswerStyleContract:
+    """Apply the cached pedagogy payload while preserving contract identifiers."""
+
+    payload = load_prompt_skill("pedagogy-tutor")
+    return replace(fallback, **payload) if payload is not None else fallback
+
+
+AREQA_TEACHING_V1 = _load_teaching_contract(AREQA_TEACHING_V1)
 
 
 def _enum_value(value: Any) -> str:

@@ -19,13 +19,12 @@ Use this file as the reusable task specification alongside
 [pedagogy_tutor_skill.md](pedagogy_tutor_skill.md). Preserve the shared
 `AREQA_TEACHING_V1` style rather than creating a separate teaching persona.
 
-Treat this file as a repository prompt specification. Adding it does not register
-a personal ChatGPT skill or make the backend load Markdown at runtime. The
-current executable overview prompt remains `paper_auto_explain_instruction()`
-in `backend/services/query_policy/pdf_guardrails.py`; its style adapter remains
-`render_paper_overview_style()` in
-`backend/services/conversation/answer_style.py`. Keep this specification aligned
-with those implementations when changing the behavior.
+Use the marked runtime payload below as the executable paper-task instruction.
+Keep the remaining workflow and implementation map as maintainer reference only.
+The backend validates and caches this payload at process startup; restart the
+backend after changing it. The shared teaching style is composed separately by
+`render_paper_overview_style()`. Python retains the prior prompt as a fallback
+when this file is missing or invalid.
 
 ## Inputs and routing
 
@@ -169,3 +168,19 @@ explanation.
 | Extract and render selected PDF visuals | `backend/services/pdf_visual/extraction.py` |
 | Prepare verified attachment image blocks | `backend/services/visual/output.py`: `prepare_attachment_image_blocks()` |
 | Render Markdown text and image blocks | `frontend/src/components/MessageList/MessageItem.tsx`: `AnswerBlocksRenderer()` |
+
+## Runtime prompt payload
+
+Edit the JSON below to change the executable prompt. The backend reads only this
+marked payload, validates it, and caches it for the process lifetime. Restart the
+backend to apply changes. Prose outside the markers is maintainer reference and
+is not sent to the model. Preserve the payload keys and the existing language,
+learning-mode, evidence, and tool boundaries. Python retains the legacy fallback.
+
+<!-- AREQA_RUNTIME_PROMPT_BEGIN -->
+```json
+{
+  "instruction": "【PDF 論文自動解說任務】本回合使用者上傳 PDF，且 policy classifier 判定使用者是在要求一般性的論文導讀，沒有指定更細的任務。請把它視為一篇需要導讀的論文或技術文件，根據實際可讀取的 PDF 內容，回答必須自然覆蓋以下導讀要點：\n1. 研究動機與目的：說明作者想解決什麼問題、為什麼重要。\n2. 研究方法與模型架構：說明核心方法、模型、資料、流程或理論設計。\n3. 實驗設計與資料集：說明資料集、比較基準、實驗設計、評估指標或分析流程。\n4. 實驗結果與消融分析：整理主要發現、圖表或數據代表的意思；若有消融分析，說明它驗證了哪些設計選擇。\n5. 研究結論：說明作者最後主張什麼、貢獻是什麼。\n6. 局限與可延伸方向：若 PDF 有提到 limitation/future work，請整理；若沒有足夠資訊，明確說「PDF 中沒有足夠資訊」。\n回答語氣請以一般回答模式的白話教學感為底，不要寫成正式審稿報告或僵硬摘要。第 2、3、4 節請維持段落文字為主：每節先用 1-2 句白話直覺帶路，再補 1-2 句論文術語、流程或數據；接著放對應圖，圖後再用 1-3 句解釋圖如何支撐剛才的段落。列點與表格只能作為輔助摘要，不可取代正文說明。\n不得根據檔名、metadata 或常識補齊 PDF 沒有支持的內容；資訊不足時要說明不確定，而不是猜測。"
+}
+```
+<!-- AREQA_RUNTIME_PROMPT_END -->

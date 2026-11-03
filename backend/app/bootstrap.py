@@ -70,4 +70,7 @@ def create_app() -> FastAPI:
         A FastAPI app with the legacy title preserved for clients and tests.
     """
 
+    from services.prompt_skills import preload_prompt_skills
+
+    preload_prompt_skills()
     return FastAPI(title="XiaoHong Ancient Chinese QA - RAG Backend API")
