@@ -2,7 +2,9 @@ name: Render Service Schedule
 
 on:
   schedule:
-    # Asia/Taipei 00:00 = UTC 16:00
+    # Resume at Asia/Taipei 09:00 on 2026-11-04 through 2026-11-13.
+    - cron: '0 1 4-13 11 *'
+    # Keep the existing daily suspension: Asia/Taipei 00:00 = UTC 16:00
     - cron: '0 16 * * *'
   workflow_dispatch:
     inputs:
@@ -22,15 +24,41 @@ jobs:
     steps:
       - name: Resolve action
         id: action
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE_CRON: ${{ github.event.schedule }}
+          MANUAL_ACTION: ${{ inputs.action }}
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ inputs.action }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            action="$MANUAL_ACTION"
+          elif [ "$SCHEDULE_CRON" = "0 1 4-13 11 *" ]; then
+            # Cron has no year field; limit automatic resume to this date window.
+            taipei_date=$(TZ=Asia/Taipei date +%F)
+            taipei_hour=$(TZ=Asia/Taipei date +%H)
+            if [[ "$taipei_date" < "2026-11-04" || "$taipei_date" > "2026-11-13" || "$taipei_hour" < "09" ]]; then
+              echo "Skipping automatic resume outside the requested window."
+              echo "value=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            action=resume
+          elif [ "$SCHEDULE_CRON" = "0 16 * * *" ]; then
+            action=suspend
           else
-            echo "value=suspend" >> "$GITHUB_OUTPUT"
+            echo "::error::Unexpected scheduled event."
+            exit 1
           fi
 
+          case "$action" in
+            resume|suspend) ;;
+            *) echo "::error::Unsupported Render action."; exit 1 ;;
+          esac
+          echo "value=$action" >> "$GITHUB_OUTPUT"
+
       - name: Apply action to backend and frontend
+        if: steps.action.outputs.value != 'skip'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_BACKEND_SERVICE_ID: ${{ secrets.RENDER_BACKEND_SERVICE_ID }}
