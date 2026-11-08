@@ -472,10 +472,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     min-width: 180px;
     max-width: 320px;
     padding: 8px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.13);
+    border: 1px solid color-mix(in srgb, var(--foreground) 13%, transparent);
     border-radius: 12px;
-    background: rgba(0, 0, 0, 0.16);
-    color: rgba(255, 255, 255, 0.9);
+    background: var(--card);
+    color: color-mix(in srgb, var(--foreground) 90%, transparent);
   `,
 
   messageAttachmentIcon: css`
@@ -486,7 +486,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     width: 30px;
     height: 30px;
     border-radius: 9px;
-    background: rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
     color: #d8a25c;
   `,
 
@@ -506,7 +506,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   messageAttachmentMeta: css`
     margin-top: 2px;
-    color: rgba(255, 255, 255, 0.48);
+    color: color-mix(in srgb, var(--foreground) 48%, transparent);
     font-size: 11px;
   `,
 
@@ -524,18 +524,18 @@ export const useStyles = createStyles(({ css, token }) => ({
     gap: 10px;
     min-height: 48px;
     padding: 7px 14px 7px 8px;
-    border: 1px solid rgba(255, 255, 255, 0.11);
+    border: 1px solid color-mix(in srgb, var(--foreground) 11%, transparent);
     border-radius: 14px;
-    background: #1b1b1d;
-    color: rgba(255, 255, 255, 0.72);
+    background: var(--card);
+    color: color-mix(in srgb, var(--foreground) 72%, transparent);
     cursor: pointer;
     font-size: 17px;
     line-height: 1;
     transition: border-color 0.2s ease, background 0.2s ease;
 
     &:hover {
-      border-color: rgba(255, 255, 255, 0.2);
-      background: #222225;
+      border-color: color-mix(in srgb, var(--foreground) 20%, transparent);
+      background: var(--muted);
     }
   `,
 
@@ -546,12 +546,12 @@ export const useStyles = createStyles(({ css, token }) => ({
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.8);
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    color: color-mix(in srgb, var(--foreground) 80%, transparent);
   `,
 
   messageAttachmentToggleChevron: css`
-    color: rgba(255, 255, 255, 0.48);
+    color: color-mix(in srgb, var(--foreground) 48%, transparent);
     transition: transform 0.2s ease;
   `,
 
@@ -571,10 +571,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     max-height: min(560px, calc(100vh - 96px));
     overflow-y: auto;
     padding: 14px 18px;
-    border: 1px solid rgba(255, 255, 255, 0.13);
+    border: 1px solid color-mix(in srgb, var(--foreground) 13%, transparent);
     border-radius: 16px;
-    background: #19191a;
-    color: rgba(255, 255, 255, 0.88);
+    background: var(--card);
+    color: color-mix(in srgb, var(--foreground) 88%, transparent);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
   `,
 
@@ -586,7 +586,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     padding: 9px 0;
 
     & + & {
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      border-top: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
     }
   `,
 
@@ -596,7 +596,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     justify-content: center;
     width: 22px;
-    color: rgba(255, 255, 255, 0.78);
+    color: color-mix(in srgb, var(--foreground) 78%, transparent);
   `,
 
   messageAttachmentDropdownName: css`

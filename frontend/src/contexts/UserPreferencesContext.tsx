@@ -14,6 +14,15 @@ export type InterfaceTheme = 'light' | 'dark' | 'system';
 export type ResolvedInterfaceTheme = 'light' | 'dark';
 export type InterfaceLanguage = 'zh-TW' | 'zh-CN' | 'en';
 export type TranslationKey =
+  | 'citationSources'
+  | 'citationSourceFallback'
+  | 'citationShowSources'
+  | 'citationHideSources'
+  | 'citationDetails'
+  | 'citationOpenSource'
+  | 'citationSourceUrl'
+  | 'citationIdentifier'
+  | 'citationExcerptNote'
   | 'appearance'
   | 'theme.light'
   | 'theme.dark'
@@ -258,6 +267,15 @@ const defaultPreferences: UserPreferencesContextValue = {
 
 const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = {
   'zh-TW': {
+    citationSources: '文獻來源',
+    citationSourceFallback: '文獻來源',
+    citationShowSources: '顯示 {count} 個文獻來源',
+    citationHideSources: '隱藏 {count} 個文獻來源',
+    citationDetails: '文獻原文詳情',
+    citationOpenSource: '在新分頁開啟原文',
+    citationSourceUrl: '來源: {url}',
+    citationIdentifier: '識別碼: {id}',
+    citationExcerptNote: '* 以上內容為 RAG 檢索之原文片段',
     appearance: '介面外觀',
     'theme.light': '明亮',
     'theme.dark': '深色',
@@ -472,6 +490,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     retry: '重試',
   },
   'zh-CN': {
+    citationSources: '文献来源',
+    citationSourceFallback: '文献来源',
+    citationShowSources: '显示 {count} 个文献来源',
+    citationHideSources: '隐藏 {count} 个文献来源',
+    citationDetails: '文献原文详情',
+    citationOpenSource: '在新分页打开原文',
+    citationSourceUrl: '来源: {url}',
+    citationIdentifier: '标识符: {id}',
+    citationExcerptNote: '* 以上内容为 RAG 检索的原文片段',
     appearance: '界面外观',
     'theme.light': '明亮',
     'theme.dark': '深色',
@@ -686,6 +713,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     retry: '重试',
   },
   en: {
+    citationSources: 'Sources',
+    citationSourceFallback: 'Source',
+    citationShowSources: 'Show {count} sources',
+    citationHideSources: 'Hide {count} sources',
+    citationDetails: 'Source details',
+    citationOpenSource: 'Open source in a new tab',
+    citationSourceUrl: 'Source: {url}',
+    citationIdentifier: 'Identifier: {id}',
+    citationExcerptNote: '* This is an original excerpt retrieved by RAG.',
     appearance: 'Appearance',
     'theme.light': 'Light',
     'theme.dark': 'Dark',

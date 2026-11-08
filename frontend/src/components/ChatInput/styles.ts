@@ -16,10 +16,10 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     gap: 0;
     padding: 8px 12px;
-    background: #242424;
+    background: var(--areqa-chat-input-background);
     border-width: 1px;
     border-style: solid;
-    border-color: rgba(255, 255, 255, 0.08);
+    border-color: var(--border);
     border-radius: 999px;
     max-width: 800px;
     width: min(90%, 800px);
@@ -33,13 +33,13 @@ export const useStyles = createStyles(({ css, token }) => ({
       border-radius: 999px;
       border-width: 1px;
       border-style: solid;
-      border-color: rgba(255, 255, 255, 0.08);
+      border-color: var(--border);
       padding: 7px 10px;
     }
 
     &:focus-within {
-      border-color: rgba(255, 255, 255, 0.18);
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 22px rgba(0, 0, 0, 0.28);
+      border-color: color-mix(in srgb, var(--foreground) 24%, transparent);
+      box-shadow: 0 0 0 1px var(--border), 0 10px 22px rgba(0, 0, 0, 0.28);
     }
   `,
 
@@ -254,14 +254,14 @@ export const useStyles = createStyles(({ css, token }) => ({
     height: 20px;
     border: 0;
     border-radius: 999px;
-    background: rgba(16, 16, 18, 0.76);
-    color: rgba(255, 255, 255, 0.92);
+    background: color-mix(in srgb, var(--card) 90%, transparent);
+    color: color-mix(in srgb, var(--foreground) 92%, transparent);
     cursor: pointer;
     backdrop-filter: blur(8px);
 
     &:hover {
-      background: rgba(16, 16, 18, 0.92);
-      color: #ffffff;
+      background: var(--muted);
+      color: var(--foreground);
     }
   `,
 
@@ -293,7 +293,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: block;
     border-radius: inherit;
     object-fit: cover;
-    background: rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
   `,
 
   attachmentFileIcon: css`
@@ -372,7 +372,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     border: none;
     border-radius: 50%;
     background: transparent;
-    color: rgba(255, 255, 255, 0.9);
+    color: color-mix(in srgb, var(--foreground) 90%, transparent);
     cursor: pointer;
     transition: all 0.2s;
 
@@ -389,7 +389,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   attachmentButtonActive: css`
     background: color-mix(in srgb, #d8a25c 18%, transparent);
-    color: #f4c47a;
+    color: var(--foreground);
   `,
 
   addMenuTutorItem: css`
@@ -399,7 +399,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     gap: 2px;
 
     small {
-      color: rgba(255, 255, 255, 0.58);
+      color: color-mix(in srgb, var(--foreground) 58%, transparent);
       font-size: 11px;
       line-height: 14px;
     }
@@ -420,7 +420,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     border: 1px solid color-mix(in srgb, #d8a25c 28%, transparent);
     border-radius: 999px;
     background: color-mix(in srgb, #d8a25c 16%, transparent);
-    color: #f2d19d;
+    color: var(--foreground);
     font-size: 12px;
     line-height: 16px;
 
@@ -444,7 +444,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   recordingInactiveControl: css`
-    color: rgba(255, 255, 255, 0.28);
+    color: color-mix(in srgb, var(--foreground) 28%, transparent);
 
     &:disabled {
       opacity: 1;
@@ -479,21 +479,21 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   dictationButton: css`
     background: transparent;
-    color: rgba(255, 255, 255, 0.92);
+    color: color-mix(in srgb, var(--foreground) 92%, transparent);
 
     &:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.08);
-      color: #ffffff;
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--foreground);
     }
   `,
 
   webSearchButton: css`
     background: transparent;
-    color: rgba(255, 255, 255, 0.72);
+    color: color-mix(in srgb, var(--foreground) 72%, transparent);
 
     &:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.08);
-      color: #ffffff;
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--foreground);
     }
   `,
 
@@ -521,17 +521,17 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   avatarButton: css`
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.94);
+    background: color-mix(in srgb, var(--foreground) 10%, transparent);
+    color: color-mix(in srgb, var(--foreground) 94%, transparent);
 
     &:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.16);
-      color: #ffffff;
+      background: color-mix(in srgb, var(--foreground) 16%, transparent);
+      color: var(--foreground);
     }
   `,
 
   avatarButtonInactive: css`
-    color: rgba(255, 255, 255, 0.58);
+    color: color-mix(in srgb, var(--foreground) 58%, transparent);
   `,
 
   // Circular send button aligned in the toolbar
@@ -582,19 +582,19 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   cancelDictationButton: css`
     background: transparent;
-    color: #ffffff;
+    color: var(--foreground);
 
     &:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.08);
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
     }
   `,
 
   confirmDictationButton: css`
     background: transparent;
-    color: #ffffff;
+    color: var(--foreground);
 
     &:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.08);
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
     }
   `,
 
@@ -623,7 +623,7 @@ export const useStyles = createStyles(({ css, token }) => ({
       height: 24px;
       flex: 0 0 clamp(2px, 0.36vw, 4px);
       border-radius: 999px;
-      background: rgba(255, 255, 255, calc(0.28 + var(--wave-level) * 0.58));
+      background: color-mix(in srgb, var(--foreground) calc(28% + var(--wave-level) * 58%), transparent);
       transform-origin: center;
       transform: scaleY(calc(0.16 + var(--wave-level) * 0.84));
       transition:
@@ -641,7 +641,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     span:nth-child(n + 13):nth-child(-n + 22) {
-      background: rgba(255, 255, 255, calc(0.48 + var(--wave-level) * 0.48));
+      background: color-mix(in srgb, var(--foreground) calc(48% + var(--wave-level) * 48%), transparent);
     }
 
     @media (max-width: 560px) {
@@ -657,30 +657,30 @@ export const useStyles = createStyles(({ css, token }) => ({
     gap: 5px;
     padding: 4px 12px;
     height: 32px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid color-mix(in srgb, var(--foreground) 20%, transparent);
     border-radius: 16px;
     background: transparent;
-    color: rgba(255, 255, 255, 0.65);
+    color: color-mix(in srgb, var(--foreground) 65%, transparent);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
     white-space: nowrap;
     &:hover {
-      color: #ffffff !important;
-      background: #3a3a3a !important;
-      border-color: rgba(255, 255, 255, 0.4) !important;
+      color: var(--foreground) !important;
+      background: var(--muted) !important;
+      border-color: color-mix(in srgb, var(--foreground) 40%, transparent) !important;
     }
 `,
 
 toggleButtonActive: css`
-color: #ffffff;
+color: var(--foreground);
 border-color: #d8a25c;
 background: rgba(216, 162, 92, 0.15);
 font-weight: 500;
 
 &:hover {
   background: rgba(216, 162, 92, 0.25) !important;
-  color: #ffffff !important;
+  color: var(--foreground) !important;
   border-color: #e2b478 !important;
 }
 `,

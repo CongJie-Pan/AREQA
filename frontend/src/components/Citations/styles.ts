@@ -106,11 +106,11 @@ export const useStyles = createStyles(({ css, token }) => ({
       height: 6px;
     }
     &::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.5);
+      background: color-mix(in srgb, var(--foreground) 50%, transparent);
       border-radius: 4px;
     }
     &::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.05);
+      background: color-mix(in srgb, var(--foreground) 5%, transparent);
       border-radius: 4px;
     }
     `,
@@ -125,15 +125,15 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-direction: column;
     gap: 10px;
     padding: 14px;
-    background: #1e1826;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--card);
+    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
     border-radius: ${token.borderRadiusLG}px;
     transition: all 0.2s;
     cursor: pointer;
 
     &:hover {
-      background: #282133;
-      border-color: rgba(255, 255, 255, 0.2);
+      background: var(--muted);
+      border-color: color-mix(in srgb, var(--foreground) 20%, transparent);
     }
   `,
 
@@ -149,7 +149,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     min-width: 0;
     font-size: 16px;
     font-weight: 600;
-    color: #ffffff;
+    color: var(--foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -165,7 +165,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     a {
-      color: #ffffff;
+      color: var(--foreground);
       text-decoration: underline;
       text-underline-offset: 2px;
     }
@@ -179,7 +179,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   sourceSnippet: css`
     font-size: 15px;
-    color: rgba(255, 255, 255, 0.7);
+    color: color-mix(in srgb, var(--foreground) 70%, transparent);
     line-height: 1.6;
 
     p,
@@ -217,29 +217,29 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     li::marker {
-      color: rgba(255, 255, 255, 0.62);
+      color: color-mix(in srgb, var(--foreground) 62%, transparent);
       font-weight: 600;
     }
 
     strong {
-      color: rgba(255, 255, 255, 0.88);
+      color: color-mix(in srgb, var(--foreground) 88%, transparent);
       font-weight: 700;
     }
 
     em {
-      color: rgba(255, 255, 255, 0.82);
+      color: color-mix(in srgb, var(--foreground) 82%, transparent);
     }
 
     code {
       padding: 1px 4px;
       border-radius: ${token.borderRadiusXS}px;
-      background: rgba(255, 255, 255, 0.08);
-      color: rgba(255, 255, 255, 0.9);
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: color-mix(in srgb, var(--foreground) 90%, transparent);
       font-size: 0.92em;
     }
 
     a {
-      color: #8cc8ff;
+      color: ${token.colorLink};
       text-decoration: underline;
       text-underline-offset: 2px;
     }
@@ -247,7 +247,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   modalSourceTitle: css`
     margin: 0;
-    color: #ffffff;
+    color: var(--foreground);
     font-size: 20px;
     font-weight: 600;
     line-height: 1.45;
@@ -261,7 +261,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     a {
-      color: #ffffff;
+      color: var(--foreground);
       text-decoration: underline;
       text-underline-offset: 2px;
     }
@@ -270,7 +270,7 @@ export const useStyles = createStyles(({ css, token }) => ({
   modalSourceSnippet: css`
     position: relative;
     z-index: 1;
-    color: #f0f0f0;
+    color: var(--foreground);
     font-size: 16px;
     line-height: 1.8;
 
@@ -306,7 +306,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
 
     li::marker {
-      color: rgba(255, 255, 255, 0.72);
+      color: color-mix(in srgb, var(--foreground) 72%, transparent);
       font-weight: 600;
     }
 
@@ -314,24 +314,24 @@ export const useStyles = createStyles(({ css, token }) => ({
       margin: 0 0 10px;
       padding-left: 12px;
       border-left: 3px solid rgba(255, 77, 79, 0.5);
-      color: rgba(255, 255, 255, 0.82);
+      color: color-mix(in srgb, var(--foreground) 82%, transparent);
     }
 
     strong {
-      color: #ffffff;
+      color: var(--foreground);
       font-weight: 700;
     }
 
     code {
       padding: 2px 5px;
       border-radius: ${token.borderRadiusXS}px;
-      background: rgba(255, 255, 255, 0.08);
-      color: #ffffff;
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--foreground);
       font-size: 0.92em;
     }
 
     a {
-      color: #8cc8ff;
+      color: ${token.colorLink};
       text-decoration: underline;
       text-underline-offset: 2px;
     }

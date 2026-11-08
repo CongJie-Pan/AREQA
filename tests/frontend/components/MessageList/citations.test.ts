@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { Citations } from '@/components/Citations';
 import { normalizeCitationMarkers } from '@/components/MessageList/MessageItem';
 
@@ -40,7 +40,7 @@ describe('Citations structured sources', () => {
     }));
 
     expect(screen.getByText('NASA Starship Reference')).toBeInTheDocument();
-    const link = screen.getByTitle('在新分頁開啟原文');
+    const link = screen.getByTitle('Open source in a new tab');
     expect(link).toHaveAttribute('href', 'https://example.com/source');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
@@ -99,7 +99,7 @@ describe('Citations structured sources', () => {
 
     fireEvent.click(screen.getByText('Markdown List Source'));
 
-    expect(await screen.findByText('文獻原文詳情')).toBeInTheDocument();
+    expect(await screen.findByText('Source details')).toBeInTheDocument();
     expect(screen.getAllByRole('list')).toHaveLength(4);
     expect(screen.getAllByRole('list')[2].tagName).toBe('UL');
     expect(screen.getAllByRole('list')[3].tagName).toBe('OL');
@@ -116,15 +116,15 @@ describe('Citations structured sources', () => {
     await act(async () => {
       window.dispatchEvent(new CustomEvent('open-citation-msg-2', { detail: { index: 2 } }));
     });
-    expect(screen.queryByText('來源: https://example.com/source')).not.toBeInTheDocument();
+    expect(screen.queryByText('Source: https://example.com/source')).not.toBeInTheDocument();
 
     await act(async () => {
       window.dispatchEvent(new CustomEvent('open-citation-msg-2', { detail: { index: 1 } }));
     });
-    expect(await screen.findByText('來源: https://example.com/source')).toBeInTheDocument();
+    expect(await screen.findByText('Source: https://example.com/source')).toBeInTheDocument();
     const modalSourceLink = await screen.findByTitle('https://example.com/source');
     expect(modalSourceLink).toHaveAttribute('href', 'https://example.com/source');
-    const modalOpenButton = await screen.findByTitle('在新分頁開啟文獻原文');
+    const modalOpenButton = within(screen.getByRole('dialog')).getByRole('link', { name: 'Open source in a new tab' });
     expect(modalOpenButton).toHaveAttribute('href', 'https://example.com/source');
   });
 });

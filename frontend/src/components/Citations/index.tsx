@@ -11,6 +11,7 @@ import remarkGfm from 'remark-gfm';
 import { ChevronRight, ExternalLink, BookOpen, Quote } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Modal, Divider } from 'antd';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { useStyles } from './styles';
 
 export interface CitationSource {
@@ -148,6 +149,7 @@ export function Citations({
   className,
 }: CitationsProps) {
   const { styles, cx } = useStyles();
+  const { t } = useUserPreferences();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [selectedSource, setSelectedSource] = useState<CitationSource | null>(null);
 
@@ -210,7 +212,7 @@ export function Citations({
         role="button"
         tabIndex={0}
         aria-expanded={isExpanded}
-        aria-label={`${isExpanded ? 'Hide' : 'Show'} ${count} sources`}
+        aria-label={t(isExpanded ? 'citationHideSources' : 'citationShowSources', { count })}
       >
         <ChevronRight
           size={14}
@@ -218,7 +220,7 @@ export function Citations({
           aria-hidden="true"
         />
         <BookOpen size={14} className={styles.icon} aria-hidden="true" />
-        <span>文獻來源</span>
+        <span>{t('citationSources')}</span>
         <span className={styles.count}>({count})</span>
       </div>
 
@@ -256,7 +258,7 @@ export function Citations({
                         )}
                         <CitationMarkdown
                           className={styles.sourceTitle}
-                          content={src.title || domain || '文獻來源'}
+                          content={src.title || domain || t('citationSourceFallback')}
                         />
                         {sourceUrl && (
                           <a
@@ -271,20 +273,20 @@ export function Citations({
                               width: '24px',
                               height: '24px',
                               borderRadius: '50%',
-                              background: 'rgba(255, 255, 255, 0.1)',
-                              color: 'rgba(255, 255, 255, 0.65)',
+                              background: 'color-mix(in srgb, var(--foreground) 10%, transparent)',
+                              color: 'color-mix(in srgb, var(--foreground) 65%, transparent)',
                               transition: 'all 0.2s',
                               marginLeft: 'auto'
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
-                              e.currentTarget.style.color = '#ffffff';
+                              e.currentTarget.style.background = 'color-mix(in srgb, var(--foreground) 20%, transparent)';
+                              e.currentTarget.style.color = 'var(--foreground)';
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.65)';
+                              e.currentTarget.style.background = 'color-mix(in srgb, var(--foreground) 10%, transparent)';
+                              e.currentTarget.style.color = 'color-mix(in srgb, var(--foreground) 65%, transparent)';
                             }}
-                            title="在新分頁開啟原文"
+                            title={t('citationOpenSource')}
                           >
                             <ExternalLink size={12} />
                           </a>
@@ -336,7 +338,7 @@ export function Citations({
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BookOpen size={18} style={{ color: '#ff4d4f' }} />
-            <span style={{ color: '#ffffff' }}>文獻原文詳情</span>
+            <span style={{ color: 'var(--foreground)' }}>{t('citationDetails')}</span>
           </div>
         }
         open={!!selectedSource}
@@ -348,26 +350,26 @@ export function Citations({
           mask: { backdropFilter: 'blur(4px)' },
           container: {
             borderRadius: '16px',
-            background: '#262626',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
             padding: 0,
             overflow: 'hidden'
           },
           body: {
-            background: '#262626',
+            background: 'var(--card)',
             padding: '20px',
             margin: 0,
             maxHeight: '70vh',
             overflowY: 'auto'
           },
           header: {
-            background: '#262626',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+            background: 'var(--card)',
+            borderBottom: '1px solid var(--areqa-subtle-border)',
             padding: '16px 20px',
             margin: 0
           },
           footer: {
-            background: '#262626',
+            background: 'var(--card)',
             margin: 0,
             padding: 0,
             border: 'none'
@@ -381,7 +383,7 @@ export function Citations({
               <div style={{ marginBottom: '16px' }}>
                 <CitationMarkdown
                   className={styles.modalSourceTitle}
-                  content={selectedSource.title || '文獻來源'}
+                  content={selectedSource.title || t('citationSourceFallback')}
                 />
                 <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                   {selectedSourceUrl ? (
@@ -393,7 +395,7 @@ export function Citations({
                         title={selectedSourceUrl}
                         style={{
                           minWidth: 0,
-                          color: 'rgba(255, 255, 255, 0.62)',
+                          color: 'color-mix(in srgb, var(--foreground) 62%, transparent)',
                           fontSize: '12px',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -401,14 +403,14 @@ export function Citations({
                           textDecoration: 'none'
                         }}
                       >
-                        來源: {selectedSourceUrl}
+                        {t('citationSourceUrl', { url: selectedSourceUrl })}
                       </a>
                       <a
                         href={selectedSourceUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="在新分頁開啟文獻原文"
-                        aria-label="在新分頁開啟文獻原文"
+                        title={t('citationOpenSource')}
+                        aria-label={t('citationOpenSource')}
                         style={{
                           flexShrink: 0,
                           display: 'inline-flex',
@@ -417,38 +419,38 @@ export function Citations({
                           width: '24px',
                           height: '24px',
                           borderRadius: '50%',
-                          background: 'rgba(255, 255, 255, 0.08)',
-                          color: 'rgba(255, 255, 255, 0.75)'
+                          background: 'color-mix(in srgb, var(--foreground) 8%, transparent)',
+                          color: 'color-mix(in srgb, var(--foreground) 75%, transparent)'
                         }}
                       >
                         <ExternalLink size={12} />
                       </a>
                     </>
                   ) : (
-                    <span style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: '12px' }}>
-                      識別碼: {selectedSource.chunk_id}
+                    <span style={{ color: 'color-mix(in srgb, var(--foreground) 45%, transparent)', fontSize: '12px' }}>
+                      {t('citationIdentifier', { id: selectedSource.chunk_id })}
                     </span>
                   )}
                 </div>
               </div>
-              <Divider style={{ margin: '12px 0', borderColor: 'rgba(255, 255, 255, 0.05)' }} />
+              <Divider style={{ margin: '12px 0', borderColor: 'color-mix(in srgb, var(--foreground) 5%, transparent)' }} />
 
               <div style={{
                 position: 'relative',
                 padding: '16px 20px',
-                background: '#333333',
+                background: 'var(--muted)',
                 borderRadius: '12px',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: '1px solid var(--border)',
                 lineHeight: 1.8,
                 fontSize: '16px',
-                color: '#f0f0f0'
+                color: 'var(--foreground)'
               }}>
                 <Quote size={24} style={{ position: 'absolute', top: '10px', left: '8px', opacity: 0.2, color: '#ff4d4f' }} />
                 <CitationMarkdown className={styles.modalSourceSnippet} content={selectedSource.snippet} />
               </div>
 
-              <div style={{ marginTop: '20px', textAlign: 'right', fontSize: '12px', color: '#bfbfbf' }}>
-                * 以上內容為 RAG 檢索之原文片段
+              <div style={{ marginTop: '20px', textAlign: 'right', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                {t('citationExcerptNote')}
               </div>
             </div>
           );
