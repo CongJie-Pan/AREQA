@@ -17,7 +17,7 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `MODEL_CONVERSATION_SUMMARY` | `google/gemini-2.5-flash-lite` | Independent summary model; main answer and GUM models are unchanged |
+| `MODEL_CONVERSATION_SUMMARY` | `google/gemini-3.1-flash-lite` | Independent summary model; main answer and GUM models are unchanged |
 | `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conservative total allowance; set at or below the selected model's supported context |
 | `CONVERSATION_SUMMARY_TOKENS` | 1536 | Maximum generated summary tokens |
 | `CONVERSATION_SUMMARY_TIMEOUT_SECONDS` | 20 | Total summary timeout per answer |

@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     model_hyde_decomposer: str = "google/gemini-3.1-flash-lite"
     model_main_instruct: str = "google/gemini-3.8-flash"
     model_main_thinking: str = "google/gemini-3.8-flash"
-    model_conversation_summary: str = "google/gemini-2.5-flash-lite"
+    model_conversation_summary: str = "google/gemini-3.1-flash-lite"
     model_gum: str = "google/gemini-3.1-flash-lite"
     model_zpd_query: str = "google/gemini-3.1-flash-lite"
     model_suggestion: str = "google/gemini-2.5-flash-lite"

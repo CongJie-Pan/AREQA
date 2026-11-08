@@ -13,7 +13,7 @@ async def test_stream_forwards_bounded_history_and_announces_degradation(monkeyp
     import services.conversation.stream as module
     from services.conversation.history import HistoryContext
 
-    monkeypatch.setattr(module.settings, 'model_conversation_summary', 'google/gemini-2.5-flash-lite')
+    monkeypatch.setattr(module.settings, 'model_conversation_summary', 'google/gemini-3.1-flash-lite')
     original = [{'role': 'user', 'content': 'old'}] * 101
     selected = [{'role': 'user', 'content': 'current'}]
     selector = AsyncMock(return_value=HistoryContext(selected, 'context limited'))
@@ -31,7 +31,7 @@ async def test_stream_forwards_bounded_history_and_announces_degradation(monkeyp
         repetition_penalty=1, request=request,
     )]
     assert create.call_args.kwargs['messages'] == selected
-    assert selector.call_args.kwargs['model'] == 'google/gemini-2.5-flash-lite'
+    assert selector.call_args.kwargs['model'] == 'google/gemini-3.1-flash-lite'
     assert create.call_args.kwargs['model'] == module.settings.model_main_instruct
     assert selector.call_args.kwargs['user_id'] == 'alice'
     assert selector.call_args.kwargs['tools'] == create.call_args.kwargs['tools']
