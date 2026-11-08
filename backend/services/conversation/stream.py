@@ -12,6 +12,7 @@ from typing import Any, AsyncGenerator, Dict, List
 
 from config import settings
 from services.conversation.history import prepare_history
+from services.conversation.context_budget import ContextBudgetError, token_bound
 from core import PublicAnswerFilter
 from services.conversation.image_generation import stream_generated_image
 from services.conversation.image_markers import ImageRequestMarkerFilter
@@ -66,6 +67,7 @@ class ConversationStreamService:
         max_image_slots: int = 2,
         image_attachments: list[Any] | None = None,
         interface_language: str = "zh-TW",
+        retrieval_context: str = "",
     ) -> AsyncGenerator[str, None]:
         """Yield filtered answer deltas and typed metadata events.
 
@@ -82,6 +84,7 @@ class ConversationStreamService:
             request: FastAPI request used to detect disconnects.
             tool_budget: Optional foreground tool budget tracker.
             trace: Optional turn latency trace.
+            retrieval_context: Exact request-scoped retrieval prefix supplied by orchestration.
             max_image_slots: Maximum image markers accepted for this turn.
                 General answers keep the legacy cap of two, while paper
                 overviews may allow more preverified PDF figures.
@@ -137,9 +140,20 @@ class ConversationStreamService:
                     summary_tokens=settings.conversation_summary_tokens,
                     timeout_seconds=settings.conversation_summary_timeout_seconds,
                     enabled=settings.enable_conversation_compaction,
+                    retrieval_context=retrieval_context,
                 )
-            except ValueError:
-                logger.warning("history.rejected reason=mandatory_context_too_large")
+            except ValueError as error:
+                reasons = {'output_budget', 'compaction_disabled', 'missing_current_turn',
+                           'current_turn_too_large', 'instructions_too_large', 'retrieval_budget',
+                           'retrieval_prefix_mismatch', 'retrieval_unavailable'}
+                reason = str(error) if str(error) in reasons else 'invalid_context'
+                sizes = error.sizes if isinstance(error, ContextBudgetError) else {}
+                logger.warning(
+                    "history.rejected conversation_id=%s reason=%s budget=%s instructions_bytes=%s "
+                    "current_turn_bytes=%s retrieval_bytes=%s tools_bytes=%d output_tokens=%d",
+                    conversation_id, reason, sizes.get('budget'), sizes.get('instructions_bytes'),
+                    sizes.get('current_turn_bytes'), sizes.get('retrieval_bytes'), token_bound(tools), max_tokens,
+                )
                 content = "本次問題或必要上下文超過可處理容量，請縮短內容或減少附件後重試。"
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0}]}, ensure_ascii=False)}\n\n"
                 return

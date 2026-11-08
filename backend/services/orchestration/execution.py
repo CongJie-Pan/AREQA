@@ -339,7 +339,13 @@ class OrchestrationExecutionMixin:
         answer_content_accumulator = ""
         planned_image_slots: list[dict[str, Any]] = []
         generated_blocks: list[dict[str, Any]] = []
-        async for event in self._node_llm_stream(user_id, conversation_id, last_user_msg, final_messages, force_think, effective_max_tokens, temperature, top_p, repetition_penalty, request, run_state.tool_budget, trace=trace, max_image_slots=max_image_slots, image_attachments=image_attachments, interface_language=interface_language):
+        async for event in self._node_llm_stream(
+            user_id, conversation_id, last_user_msg, final_messages, force_think,
+            effective_max_tokens, temperature, top_p, repetition_penalty, request,
+            run_state.tool_budget, trace=trace, max_image_slots=max_image_slots,
+            image_attachments=image_attachments, interface_language=interface_language,
+            retrieval_context=run_state.context_prompt if context_results_obj and (use_rag or use_web_search) else "",
+        ):
             if event.startswith("event: accumulator\n"):
                 try:
                     data_line = next(line for line in event.splitlines() if line.startswith("data: "))

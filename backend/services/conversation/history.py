@@ -15,6 +15,8 @@ import re
 import time
 from typing import Any
 
+from services.conversation.context_budget import ContextBudgetError, budget_retrieval, token_bound
+
 logger = logging.getLogger(__name__)
 _CACHE: OrderedDict[tuple[str, str, str, str], tuple[float, str]] = OrderedDict()
 _CACHE_TTL = 1800
@@ -44,14 +46,6 @@ _INSTRUCTION = (
     'and constraints. No new recommendations or questions. Record repeated submissions once.'
 )
 
-
-def token_bound(value: Any) -> int:
-    """Return a conservative UTF-8 byte proxy, including message framing.
-
-    This intentionally overestimates ordinary text tokens. Provider-native file/image
-    expansion cannot be measured here and remains subject to provider attachment limits.
-    """
-    return len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) + 16
 
 
 @dataclass(frozen=True)
@@ -84,7 +78,7 @@ async def prepare_history(
     *, messages: list[dict[str, Any]], tools: list[dict[str, Any]], client: Any,
     user_id: str, conversation_id: str, model: str, output_tokens: int,
     context_tokens: int, summary_tokens: int = 1536, timeout_seconds: float = 20,
-    enabled: bool = True,
+    enabled: bool = True, retrieval_context: str = "",
 ) -> HistoryContext:
     """Select complete recent turns, compact older turns and recall matching originals.
 
@@ -100,6 +94,7 @@ async def prepare_history(
         summary_tokens: Maximum generated summary size.
         timeout_seconds: Total wall-clock allowance for compaction.
         enabled: Feature switch; disabled mode rejects oversized contexts safely.
+        retrieval_context: Exact server-injected prefix, budgeted separately from user text.
 
     Returns:
         A new prompt and a notice if summary coverage was degraded.
@@ -117,21 +112,24 @@ async def prepare_history(
     """
     budget = context_tokens - output_tokens - token_bound(tools) - 1024
     if budget <= 0:
-        raise ValueError('output_budget')
+        raise ContextBudgetError('output_budget', budget=budget, tools_bytes=token_bound(tools), output_tokens=output_tokens)
+    messages, retrieval_missing = budget_retrieval(messages, retrieval_context=retrieval_context, budget=budget, conversation_id=conversation_id)
+    retrieval_notice = '本回合沒有可納入的搜尋摘錄，回答無法依據這些來源。' if retrieval_missing else ''
     if token_bound(messages) <= budget:
-        return HistoryContext(list(messages))
+        return HistoryContext(list(messages), retrieval_notice)
     if not enabled:
-        raise ValueError('compaction_disabled')
+        raise ContextBudgetError('compaction_disabled', budget=budget)
 
     instructions = [m for m in messages if m.get('role') in ('system', 'developer')]
     history = [m for m in messages if m.get('role') not in ('system', 'developer')]
     # Turn boundaries preserve assistant/tool groups and never leave orphan results.
     starts = [i for i, m in enumerate(history) if m.get('role') == 'user']
     if not starts:
-        raise ValueError('missing_current_turn')
+        raise ContextBudgetError('missing_current_turn', budget=budget)
     start = starts[-1]
     if token_bound(instructions + history[start:]) > budget:
-        raise ValueError('current_turn_too_large')
+        reason = 'instructions_too_large' if token_bound(instructions) > budget else 'current_turn_too_large'
+        raise ContextBudgetError(reason, budget=budget, instructions_bytes=token_bound(instructions), current_turn_bytes=token_bound(history[start:]))
     reserve = min(summary_tokens * 4 + 1024, max(0, budget // 3))
     for candidate in reversed(starts[:-1]):
         if token_bound(instructions + history[candidate:]) + reserve > budget:
@@ -139,7 +137,7 @@ async def prepare_history(
         start = candidate
     old, recent = history[:start], history[start:]
     if not old:
-        raise ValueError('current_turn_too_large')
+        raise ContextBudgetError('current_turn_too_large', budget=budget, instructions_bytes=token_bound(instructions), current_turn_bytes=token_bound(history[start:]))
 
     prefixes = _prefixes(old)
     scope = (user_id, conversation_id, model)
@@ -236,4 +234,4 @@ async def prepare_history(
     notice = '部分較早對話暫時無法完整納入本次回答；完整聊天紀錄仍保留。' if degraded else ''
     logger.info('history.prepared input_messages=%d selected_messages=%d estimated_tokens=%d degraded=%s summary_model=%s cache_hit=%s',
                 len(messages), len(result), token_bound(result), degraded, model, cache_hit)
-    return HistoryContext(result, notice)
+    return HistoryContext(result, '\n'.join(part for part in (retrieval_notice, notice) if part))

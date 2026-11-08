@@ -53,3 +53,26 @@ async def test_oversized_current_turn_does_not_call_provider(monkeypatch):
     )]
     create.assert_not_called()
     assert '超過可處理容量' in json.loads(chunks[0][6:])['choices'][0]['delta']['content']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('reason', ['instructions_too_large', 'current_turn_too_large', 'output_budget', 'retrieval_prefix_mismatch'])
+async def test_budget_rejection_logs_exact_safe_reason_and_sizes(monkeypatch, caplog, reason):
+    import logging
+    import services.conversation.stream as module
+    from services.conversation.context_budget import ContextBudgetError
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(module, 'prepare_history', AsyncMock(side_effect=ContextBudgetError(
+        reason, budget=1000, instructions_bytes=800, current_turn_bytes=300, retrieval_bytes=2000)))
+    create = AsyncMock()
+    service = ConversationStreamService(SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), None)
+    _ = [chunk async for chunk in service.stream(
+        user_id='test', conversation_id='safe-trace', last_user_msg='PRIVATE USER TEXT', messages=[],
+        force_think=False, max_tokens=500, temperature=0.1, top_p=0.9,
+        repetition_penalty=1, request=SimpleNamespace(),
+    )]
+    create.assert_not_called()
+    assert f'reason={reason}' in caplog.text
+    assert 'conversation_id=safe-trace' in caplog.text
+    assert 'budget=1000 instructions_bytes=800 current_turn_bytes=300 retrieval_bytes=2000' in caplog.text
+    assert 'PRIVATE USER TEXT' not in caplog.text

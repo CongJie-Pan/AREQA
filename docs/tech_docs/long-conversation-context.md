@@ -76,3 +76,54 @@ out of scope. Repetition and explanatory prose are removed before active constra
 uncertain applicability stays labelled by topic. The 450-word instruction and default
 1536-token output limit are unchanged. This prompt revision was checked with focused
 backend tests only; the PDF/model comparison was not rerun at the user's request.
+
+## Retrieval context budget regression
+
+A short question plus large web/RAG results previously failed before compaction:
+retrieval was prepended to the last user message and the entire augmented message
+was treated as mandatory. The observed five-message request with twelve search
+results is now covered by `tests/backend/test_retrieval_budget.py`.
+
+The execution/mixin/stream chain passes the exact request-scoped server retrieval
+prefix to `prepare_history`. `context_budget.py` separates only that known prefix;
+it never guesses from user-authored `<context>` tags. The existing assembly
+contract remains intact. All budget processing happens on copied provider inputs,
+including the actual system overlays, tools, output reserve and attachments.
+
+If the assembled prompt fits, retrieval is unchanged. Otherwise retrieval gets
+at most one third of the input allowance and no more than the space left after
+mandatory instructions and current user content. Excerpts are shortened with
+Unicode-safe boundaries while retaining source labels and URL headers. Headers
+that cannot fit are omitted; remaining sources keep their original citation IDs.
+The UI source inventory is unchanged, and only retained excerpts reach the model.
+An all-omitted result gets an explicit unavailable-evidence marker and visible
+notice; if even that marker cannot fit, the request is rejected safely. Long
+history can still be compacted after retrieval is bounded.
+
+`retrieval.context_budgeted` logs correlation ID, input allowance, mandatory sizes,
+original/selected retrieval sizes, source counts and trimming state. `history.rejected`
+now preserves the actual safe reason code and logs budget/system/current-turn/
+retrieval/tool sizes and completion reservation. These are serialized UTF-8 proxy
+sizes, not provider-native token measurements. Neither event logs source titles,
+URLs, excerpts, user text or credentials.
+
+Regression validation:
+
+```sh
+backend/.venv/bin/python -m pytest tests/backend/test_retrieval_budget.py tests/backend/test_conversation_history.py tests/backend/test_conversation_history_stream.py tests/backend/test_history_transport.py tests/backend/test_orchestration_service.py tests/backend/test_conversation_context_service.py -q
+npm run check:report:strict
+```
+
+Coverage includes real source formatting and prompt constants, web/RAG grounding,
+multimodal attachment preservation, the actual execution-to-stream handoff, budget
+accounting with provider tool schemas, long-history compaction, source omission,
+unavailable evidence and precise rejection diagnostics. Model/search I/O and
+memory persistence are mocked; no PDF replay or paid provider calls are required.
+
+The combined regression gate for this change passed **119 tests**, with **3 skips**:
+one existing PDF visual test requires optional `fitz`/PyMuPDF, and two existing
+router tests are explicitly disabled. `npm run check:report:strict` also passed.
+The five-message/twelve-source regression was observed failing with
+`current_turn_too_large` before the fix, then passing afterward. Production
+browser/provider replay was not performed; the supplied screenshot/logs remain
+private local evidence rather than committed fixtures.
