@@ -17,6 +17,7 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
+| `MODEL_CONVERSATION_SUMMARY` | `google/gemini-2.5-flash-lite` | Independent summary model; main answer and GUM models are unchanged |
 | `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conservative total allowance; set at or below the selected model's supported context |
 | `CONVERSATION_SUMMARY_TOKENS` | 1536 | Maximum generated summary tokens |
 | `CONVERSATION_SUMMARY_TIMEOUT_SECONDS` | 20 | Total summary timeout per answer |
@@ -64,3 +65,7 @@ ESLint/TypeScript strict checks passed. The expanded existing
 missing `opencc` runtime dependency in this workspace; no claim is made that this
 suite or the full backend suite passed. No real-provider browser validation was
 performed in this session.
+
+Summary debug events include `history.summary_started` (model, source count, output limit),
+`history.summary_completed` (elapsed time, provider input/output usage, finish reason),
+and `history.prepared` (summary model, cache hit). They never include transcript or summary text.

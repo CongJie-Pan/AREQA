@@ -132,7 +132,7 @@ class ConversationStreamService:
                 prepared = await prepare_history(
                     messages=messages, tools=tools, client=self.client,
                     user_id=user_id, conversation_id=conversation_id,
-                    model=target_model, output_tokens=max_tokens,
+                    model=settings.model_conversation_summary, output_tokens=max_tokens,
                     context_tokens=settings.conversation_context_tokens,
                     summary_tokens=settings.conversation_summary_tokens,
                     timeout_seconds=settings.conversation_summary_timeout_seconds,

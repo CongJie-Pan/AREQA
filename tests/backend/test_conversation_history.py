@@ -150,3 +150,20 @@ async def test_keeps_tool_calls_and_results_in_the_same_recent_turn():
     ])
     result = await run(messages)
     assert result.messages[-4:] == messages[-4:]
+
+
+@pytest.mark.asyncio
+async def test_summary_debug_logs_use_safe_metadata(caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger='services.conversation.history')
+    c = client('PRIVATE SUMMARY TEXT')
+    c.chat.completions.create.return_value.usage = SimpleNamespace(prompt_tokens=123, completion_tokens=20)
+    await run(history(10), c)
+    assert 'history.summary_started model=test' in caplog.text
+    assert 'history.summary_completed model=test elapsed_ms=' in caplog.text
+    assert 'input_tokens=123 output_tokens=20 finish_reason=stop' in caplog.text
+    assert 'PRIVATE SUMMARY TEXT' not in caplog.text
+    caplog.clear()
+    await run(history(10), c)
+    assert 'cache_hit=True' in caplog.text
+    assert 'history.summary_started' not in caplog.text

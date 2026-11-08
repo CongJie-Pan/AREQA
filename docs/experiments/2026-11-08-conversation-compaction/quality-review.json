@@ -1,0 +1,86 @@
+{
+  "review_type": "same-investigator manual source comparison; neither independent nor blinded",
+  "scope": "strict-prompt complete single-pass outputs; truncated outputs are diagnostic only",
+  "ratings": [
+    {
+      "artifact": "single-0-1/call-001.txt",
+      "model": "2.5",
+      "finish": "length",
+      "latest_goal": "contradicted",
+      "verdict": "fail",
+      "reason": "Labels an earlier securitization question as latest goal; repeats historical material and truncates."
+    },
+    {
+      "artifact": "single-0-2/call-001.txt",
+      "model": "2.5",
+      "finish": "stop",
+      "latest_goal": "contradicted",
+      "verdict": "fail",
+      "reason": "Labels an early securitization-versus-weaponization question as latest; says no research question has been chosen."
+    },
+    {
+      "artifact": "single-0-3/call-001.txt",
+      "model": "2.5",
+      "finish": "length",
+      "latest_goal": "contradicted",
+      "verdict": "fail",
+      "reason": "Truncated output is ineligible; latest-topic preservation is not established."
+    },
+    {
+      "artifact": "single-1-1/call-001.txt",
+      "model": "3.1",
+      "finish": "stop",
+      "latest_goal": "present",
+      "proposal_goal": "present",
+      "qualitative_method": "partial",
+      "two_indicators": "partial",
+      "elite_underbalancing": "partial",
+      "strategic_shirking": "partial",
+      "verdict": "fail_strict_fidelity",
+      "reason": "Correct final topic, but treats process tracing as user-selected; changes indicator wording and omits underbalancing/cohesion detail."
+    },
+    {
+      "artifact": "single-1-2/call-001.txt",
+      "model": "3.1",
+      "finish": "stop",
+      "latest_goal": "present",
+      "proposal_goal": "present",
+      "qualitative_method": "partial",
+      "two_indicators": "absent",
+      "elite_underbalancing": "partial",
+      "strategic_shirking": "contradicted",
+      "verdict": "fail_strict_fidelity",
+      "reason": "Claims buck-passing was superseded and process tracing chosen; user selected the strategic-shirking direction, while process tracing was assistant-suggested."
+    },
+    {
+      "artifact": "single-1-3/call-001.txt",
+      "model": "3.1",
+      "finish": "stop",
+      "latest_goal": "present",
+      "proposal_goal": "present",
+      "qualitative_method": "partial",
+      "two_indicators": "absent",
+      "elite_underbalancing": "partial",
+      "strategic_shirking": "contradicted",
+      "verdict": "fail_strict_fidelity",
+      "reason": "Explicitly says user rejected strategic buck-passing; source instead includes explicit selection. Process tracing again promoted from suggestion to choice."
+    }
+  ],
+  "baseline_review": "2.5 copied JSON rather than summarizing and all three calls truncated; 3.1 answered the final research request with new proposal advice rather than summarizing historical state. Neither passes the intended compaction contract.",
+  "limitations": "No independent reviewer, no downstream answer test, and no general model-ranking inference from one transcript. Early alternative topics need not all survive a small summary; critical contradictions remain failures.",
+  "rolling_final_review": {
+    "2.5": {
+      "covered_prefix_messages": 32,
+      "degraded_user_turns": 39,
+      "total_user_turns": 56,
+      "summary_fidelity": "Incomplete coverage. Final summary retains the two early metrics but does not incorporate the later France/Korea/elite discussions; latest intent remains available in recent originals."
+    },
+    "3.1": {
+      "covered_prefix_messages": 94,
+      "degraded_user_turns": 0,
+      "total_user_turns": 56,
+      "summary_fidelity": "Lifecycle coverage succeeds, but final summary concentrates on the newest framework alternatives and loses earlier explicit two-indicator constraint and application goal. Underbalancing/cohesion survive; latest final topic and strategic model choice are in recent originals."
+    },
+    "verdict": "Neither model earns an unconditional information-retention pass. 3.1 has stronger operational stability for this transcript; zero degradation is not proof of semantic fidelity."
+  }
+}

@@ -1,0 +1,2 @@
+# Install after backend/requirements.txt; optional private-PDF experiment tooling.
+pypdf==7.0.0
