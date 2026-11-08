@@ -28,6 +28,8 @@ import {
 import { Dropdown, message, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { useChatStore } from '@/store/chat';
+import { useConversationStore } from '@/store/conversation';
+import { logSearchDiagnostic } from '@/services/searchDiagnostics';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { transcribeSpeech } from '@/services/speech/transcription';
@@ -640,6 +642,13 @@ export function ChatInput({
 
     try {
       const filesToSend = previewsToSend.map((preview) => preview.file);
+      const searchState = useChatStore.getState();
+      logSearchDiagnostic('send_clicked', {
+        component: 'ChatInput',
+        conversationId: useConversationStore.getState().activeConversationId ?? '',
+        searchMode: searchState.searchMode, useWebSearch: searchState.useWebSearch,
+        useRag: searchState.useRag, attachmentCount: filesToSend.length,
+      });
       const result = createImage
         ? await onSend(finalMessage, filesToSend, { createImage: true })
         : filesToSend.length > 0
@@ -1023,7 +1032,17 @@ export function ChatInput({
                   styles.webSearchButton,
                   useWebSearch && styles.webSearchButtonActive,
                 )}
-                onClick={toggleWebSearch}
+                onClick={() => {
+                  const previousSearchMode = useChatStore.getState().searchMode;
+                  toggleWebSearch();
+                  const state = useChatStore.getState();
+                  logSearchDiagnostic('toggle', {
+                    component: 'ChatInput',
+                    conversationId: useConversationStore.getState().activeConversationId ?? '',
+                    previousSearchMode, searchMode: state.searchMode,
+                    useWebSearch: state.useWebSearch, useRag: state.useRag,
+                  });
+                }}
                 disabled={disabled}
                 aria-label={useWebSearch ? webSearchLabels.disable : webSearchLabels.enable}
                 aria-pressed={useWebSearch}

@@ -7,6 +7,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import sys
 import uuid
 from typing import Any, Dict, List, Literal
@@ -129,13 +130,16 @@ async def stream_endpoint(
     if not chat_req.messages:
         raise HTTPException(status_code=422, detail="At least one message is required")
     tutor_profile = normalize_tutor_profile(chat_req.tutor_profile)
+    request_id = request.headers.get("x-request-id", "")
+    safe_request_id = request_id if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", request_id) else "none"
     logger.info(
-        "stream.request_accepted conversation_id=%s response_mode=%s tutor_profile=%s message_count=%s upload_count=%s",
+        "stream.request_accepted conversation_id=%s response_mode=%s tutor_profile=%s message_count=%s upload_count=%s "
+        "request_id=%s search_mode=%s use_web_search=%s use_rag=%s",
         chat_req.conversation_id,
         chat_req.response_mode,
         tutor_profile,
         len(chat_req.messages),
-        len(uploads),
+        len(uploads), safe_request_id, chat_req.search_mode, chat_req.use_web_search, chat_req.use_rag,
     )
 
     processed_attachments = []

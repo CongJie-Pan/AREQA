@@ -17,6 +17,8 @@ import type { ChatMessage, ChatStreamOptions, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { logger } from '@/utils/logger';
+import { generateUUID } from '@/utils/id';
+import { logSearchDiagnostic } from '@/services/searchDiagnostics';
 
 const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 const LANGUAGE_STORAGE_KEY = 'areqa:interface-language';
@@ -112,6 +114,7 @@ export async function createChatStream(
   }
 
   try {
+    const requestId = generateUUID();
     const requestPayload = {
       messages,
       conversation_id: conversationId,
@@ -124,8 +127,15 @@ export async function createChatStream(
       response_mode: options.responseMode ?? 'text',
       speaking_practice: options.speakingPractice ?? false,
     };
+    const uiState = useChatStore.getState();
+    logSearchDiagnostic('stream_request', {
+      component: 'chatStream', conversationId, requestId,
+      searchMode, useWebSearch: requestPayload.use_web_search, useRag,
+      uiSearchMode: uiState.searchMode, uiUseWebSearch: uiState.useWebSearch,
+      attachmentCount: attachments.length,
+    });
     logger.info('chat.stream_request_started', {
-      conversationId,
+      conversationId, requestId, searchMode, useWebSearch: requestPayload.use_web_search, useRag,
       responseMode: requestPayload.response_mode,
       tutorProfile: requestPayload.tutor_profile,
       messageCount: messages.length,
@@ -144,7 +154,7 @@ export async function createChatStream(
     // Make the request with optional abort signal and timeout
     const fetchOptions: RequestInit = {
       method: 'POST',
-      ...(attachments.length === 0 ? { headers: { 'Content-Type': 'application/json' } } : {}),
+      headers: { 'X-Request-ID': requestId, ...(attachments.length === 0 ? { 'Content-Type': 'application/json' } : {}) },
       body,
     };
 
@@ -256,6 +266,10 @@ export async function createChatStream(
           // IF: Event contains structured search sources
           // Why: Display the verified literature sources used for retrieval.
           if (eventType === 'sources') {
+            logSearchDiagnostic('sources_received', {
+              component: 'chatStream', conversationId, requestId,
+              sourceCount: Array.isArray(chunk) ? chunk.length : 0,
+            });
             callbacks.onSources?.(chunk); // chunk is an array of source objects
             continue;
           }

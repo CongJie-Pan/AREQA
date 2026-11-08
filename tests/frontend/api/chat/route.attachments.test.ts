@@ -44,6 +44,13 @@ describe('chat attachment BFF route', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse()));
   });
 
+  it('preserves the diagnostic request ID through the chat proxy', async () => {
+    const request = jsonRequest({ messages: [{ role: 'user', content: 'hello' }], search_mode: 'always' });
+    request.headers.set('x-request-id', 'search-request-1');
+    await POST(request as any);
+    expect(vi.mocked(fetch).mock.calls[0][1]?.headers).toMatchObject({ 'X-Request-ID': 'search-request-1' });
+  });
+
   it('forwards 101 messages through the real history validator', async () => {
     const real = await vi.importActual<typeof import('@/utils/validation')>('@/utils/validation');
     const utils = await import('@/utils');

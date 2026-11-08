@@ -302,13 +302,16 @@ export async function POST(request: NextRequest) {
     logger.info(`Forwarding chat request to internal backend: ${fastApiUrl}`);
 
     const authHeader = request.headers.get('authorization');
+    const requestId = request.headers.get('x-request-id');
+    const safeRequestId = requestId && /^[A-Za-z0-9_-]{1,64}$/.test(requestId) ? requestId : null;
 
     // Forward request to internal FastAPI backend with the AbortSignal
     const fastApiResponse = await fetch(fastApiUrl, {
       method: 'POST',
       headers: {
         ...(!isAttachmentRequest ? { 'Content-Type': 'application/json' } : {}),
-        ...(authHeader ? { 'Authorization': authHeader } : {})
+        ...(authHeader ? { 'Authorization': authHeader } : {}),
+        ...(safeRequestId ? { 'X-Request-ID': safeRequestId } : {})
       },
       body: outgoingBody,
       // The signal allows cancelling the local FastAPI fetch if the user closes the Next.js connection

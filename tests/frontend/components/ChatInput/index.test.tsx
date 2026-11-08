@@ -1,12 +1,20 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
+import { render as renderWithProviders, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { useChatStore } from '@/store/chat';
+import { logSearchDiagnostic } from '@/services/searchDiagnostics';
 import { transcribeSpeech } from '@/services/speech/transcription';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
+
+vi.mock('@/services/searchDiagnostics', () => ({ logSearchDiagnostic: vi.fn() }));
+vi.mock('@/store/conversation', () => ({ useConversationStore: { getState: () => ({ activeConversationId: 'chat-ui-test' }) } }));
+
+function render(ui: React.ReactNode) {
+  return renderWithProviders(<UserPreferencesProvider>{ui}</UserPreferencesProvider>);
+}
 
 // Mock Zustand store
 vi.mock('@/store/chat', () => ({
@@ -61,6 +69,7 @@ describe('ChatInput', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: createObjectUrlMock,
@@ -85,6 +94,8 @@ describe('ChatInput', () => {
     });
     vi.mocked(transcribeSpeech).mockResolvedValue('語音輸入完成');
     
+    Object.assign(useChatStore, { getState: vi.fn(() => ({ searchMode: 'never', useWebSearch: false, useRag: false })) });
+
     // Default store mock
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {
@@ -105,6 +116,21 @@ describe('ChatInput', () => {
 
   afterEach(() => {
     window.localStorage.clear();
+  });
+
+  it('records the actual toggle and send state without message content', () => {
+    mockToggleWebSearch.mockImplementationOnce(() => {
+      vi.mocked(useChatStore.getState).mockReturnValue({ searchMode: 'always', useWebSearch: true, useRag: false } as ReturnType<typeof useChatStore.getState>);
+    });
+    render(<ChatInput onSend={mockOnSend} />);
+    fireEvent.click(screen.getByLabelText('開啟網路搜尋'));
+    expect(logSearchDiagnostic).toHaveBeenCalledWith('toggle', expect.objectContaining({
+      previousSearchMode: 'never', searchMode: 'always', useWebSearch: true,
+    }));
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: 'PRIVATE QUESTION' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    expect(logSearchDiagnostic).toHaveBeenCalledWith('send_clicked', expect.objectContaining({ searchMode: 'always' }));
+    expect(JSON.stringify(vi.mocked(logSearchDiagnostic).mock.calls)).not.toContain('PRIVATE QUESTION');
   });
 
   it('should render correctly', () => {

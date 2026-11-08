@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createChatStream } from '@/services/chat-stream/client';
+import { logSearchDiagnostic } from '@/services/searchDiagnostics';
+import { useChatStore } from '@/store/chat/store';
+
+vi.mock('@/services/searchDiagnostics', () => ({ logSearchDiagnostic: vi.fn() }));
 
 
 const setTokenUsage = vi.fn();
@@ -41,6 +45,25 @@ describe('chat stream visible latency events', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+  });
+
+  it('correlates UI/payload differences and received-source counts without source text', async () => {
+    vi.mocked(useChatStore.getState).mockReturnValueOnce({ setTokenUsage, searchMode: 'always', useWebSearch: true } as ReturnType<typeof useChatStore.getState>);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([
+      'event: sources\ndata: [{"title":"PRIVATE SOURCE","url":"https://private.example"}]\n\n',
+      'data: [DONE]\n\n',
+    ])));
+    await createChatStream([{ role: 'user', content: 'PRIVATE QUESTION' }], {
+      onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+      onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(), onSources: vi.fn(),
+    }, undefined, false, false, 'never', 'search-diagnostic-test');
+    const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const requestId = new Headers(request.headers).get('x-request-id');
+    expect(logSearchDiagnostic).toHaveBeenCalledWith('stream_request', expect.objectContaining({
+      requestId, searchMode: 'never', useWebSearch: false, uiSearchMode: 'always', uiUseWebSearch: true,
+    }));
+    expect(logSearchDiagnostic).toHaveBeenCalledWith('sources_received', expect.objectContaining({ requestId, sourceCount: 1 }));
+    expect(JSON.stringify(vi.mocked(logSearchDiagnostic).mock.calls)).not.toContain('PRIVATE');
   });
 
   it('keeps metadata invisible and exposes status before answer content', async () => {
@@ -155,6 +178,7 @@ describe('chat stream visible latency events', () => {
     const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
     const payload = JSON.parse(String(request.body));
     expect(payload.conversation_id).toBe('conversation-web-search');
+    expect(new Headers(request.headers).get('x-request-id')).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(payload.search_mode).toBe('always');
     expect(payload.use_web_search).toBe(true);
     expect(payload.use_rag).toBe(false);
@@ -226,6 +250,7 @@ describe('chat stream visible latency events', () => {
     const formData = request.body as FormData;
     const payload = JSON.parse(String(formData.get('messages')));
     expect(formData.getAll('attachments')).toEqual([attachment]);
+    expect(new Headers(request.headers).get('x-request-id')).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(payload.search_mode).toBe('always');
     expect(payload.tutor_profile).toBe('english');
     expect(payload.use_web_search).toBe(true);

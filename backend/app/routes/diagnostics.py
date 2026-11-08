@@ -253,10 +253,20 @@ def _safe_conversation_history_debug_context(context: Dict[str, Any]) -> Dict[st
         "previousActiveConversationId",
         "status",
         "userMessageCount",
+        "requestId", "previousSearchMode", "searchMode", "useWebSearch",
+        "uiSearchMode", "uiUseWebSearch", "useRag", "attachmentCount", "sourceCount", "clientTimestampMs",
     }
     safe: Dict[str, Any] = {}
     for key, value in context.items():
         if key not in allowed_keys:
+            continue
+        if key in {"searchMode", "uiSearchMode", "previousSearchMode"} and value not in ("always", "never", "auto"):
+            continue
+        if key in {"useWebSearch", "uiUseWebSearch", "useRag"} and not isinstance(value, bool):
+            continue
+        if key == "requestId" and (not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value)):
+            continue
+        if key in {"attachmentCount", "sourceCount", "clientTimestampMs"} and (type(value) is not int or value < 0):
             continue
         if isinstance(value, (str, int, float, bool)) or value is None:
             safe[key] = value

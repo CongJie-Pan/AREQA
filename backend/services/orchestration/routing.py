@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from config import settings
 from core import SearchMode
@@ -42,6 +43,14 @@ async def plan_search(service, *, last_user_msg, run_context, trace, effective_s
             last_user_msg, effective_search_mode
         )
     trace.mark("search_routing_finished")
+    request_id = str(getattr(run_context, "request_id", ""))
+    safe_request_id = request_id if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", request_id) else "none"
+    logger.info(
+        "orchestration.search_decision run_id=%s conversation_id=%s request_id=%s "
+        "effective_search_mode=%s should_search=%s reason=%s use_rag=%s has_attachments=%s",
+        run_context.run_id, conversation_id, safe_request_id, effective_search_mode.value,
+        search_decision.should_search, search_decision.reason.value, use_rag, has_attachments,
+    )
     if has_attachments and effective_search_mode == SearchMode.AUTO:
         use_rag = False
         attachment_types = [
