@@ -6,8 +6,9 @@
 /** Maximum allowed message content length (100KB) */
 export const MAX_MESSAGE_LENGTH = 100_000;
 
-/** Maximum allowed messages per request */
-export const MAX_MESSAGES_PER_REQUEST = 100;
+/** Transport safety limits; model context is budgeted independently by the backend. */
+export const MAX_MESSAGES_PER_REQUEST = 10_000;
+export const MAX_HISTORY_BYTES = 4 * 1024 * 1024;
 
 /**
  * Sanitizes user input to prevent XSS attacks
@@ -109,6 +110,14 @@ export function validateMessagesArray(messages: unknown): {
       valid: false,
       error: `Too many messages. Maximum is ${MAX_MESSAGES_PER_REQUEST}`,
     };
+  }
+
+  try {
+    if (new TextEncoder().encode(JSON.stringify(messages)).byteLength > MAX_HISTORY_BYTES) {
+      return { valid: false, error: 'Conversation request exceeds 4 MiB. Please start a new conversation with a summary.' };
+    }
+  } catch {
+    return { valid: false, error: 'Messages must be JSON serializable' };
   }
 
   for (let i = 0; i < messages.length; i++) {

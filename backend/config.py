@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     model_visual_understanding: str = "google/gemini-3.1-flash-lite"
     model_web_search: str = "google/gemini-3.8-flash"
 
+    # Conservative prompt budget shared by history, tools and output.
+    conversation_context_tokens: int = 32_768
+    conversation_summary_tokens: int = 1_536
+    conversation_summary_timeout_seconds: float = 20.0
+    enable_conversation_compaction: bool = True
+
     # RAG Parameters
     rag_max_docs: int = 7
     rag_score_drop_tolerance: float = 0.60

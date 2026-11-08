@@ -44,6 +44,17 @@ describe('chat attachment BFF route', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse()));
   });
 
+  it('forwards 101 messages through the real history validator', async () => {
+    const real = await vi.importActual<typeof import('@/utils/validation')>('@/utils/validation');
+    const utils = await import('@/utils');
+    vi.mocked(utils.validateMessagesArray).mockImplementationOnce(real.validateMessagesArray);
+    const messages = Array.from({ length: 101 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'hello' }));
+    const response = await POST(jsonRequest({ messages }) as any);
+    expect(response.status).toBe(200);
+    const forwarded = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string);
+    expect(forwarded.messages).toHaveLength(101);
+  });
+
   it('validates and forwards multipart attachments without forcing a content type', async () => {
     const formData = new FormData();
     formData.append('messages', JSON.stringify({ messages: [{ role: 'user', content: '請閱讀附件' }] }));

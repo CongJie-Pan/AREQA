@@ -10,6 +10,8 @@ import time
 import uuid
 from typing import Any, AsyncGenerator, Dict, List
 
+from config import settings
+from services.conversation.history import prepare_history
 from core import PublicAnswerFilter
 from services.conversation.image_generation import stream_generated_image
 from services.conversation.image_markers import ImageRequestMarkerFilter
@@ -126,6 +128,24 @@ class ConversationStreamService:
             bool(extra_body.get("provider")),
         )
         try:
+            try:
+                prepared = await prepare_history(
+                    messages=messages, tools=tools, client=self.client,
+                    user_id=user_id, conversation_id=conversation_id,
+                    model=target_model, output_tokens=max_tokens,
+                    context_tokens=settings.conversation_context_tokens,
+                    summary_tokens=settings.conversation_summary_tokens,
+                    timeout_seconds=settings.conversation_summary_timeout_seconds,
+                    enabled=settings.enable_conversation_compaction,
+                )
+            except ValueError:
+                logger.warning("history.rejected reason=mandatory_context_too_large")
+                content = "本次問題或必要上下文超過可處理容量，請縮短內容或減少附件後重試。"
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0}]}, ensure_ascii=False)}\n\n"
+                return
+            messages = prepared.messages
+            if prepared.notice:
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': prepared.notice + chr(10) + chr(10)}, 'index': 0}]}, ensure_ascii=False)}\n\n"
             if trace:
                 trace.increment_model_call("main_answer")
                 trace.mark_once("main_model_started")

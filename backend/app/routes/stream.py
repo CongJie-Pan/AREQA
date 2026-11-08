@@ -49,6 +49,22 @@ class ChatRequest(BaseModel):
     no_repeat_ngram_size: int = 3
 
 
+def _validate_history_transport(messages: Any) -> None:
+    """Bound history transport independently of provider context capacity.
+
+    Args:
+        messages: Untrusted JSON history. Pydantic validates individual records.
+
+    Raises:
+        HTTPException: History exceeds count or UTF-8 payload limits.
+    """
+    if isinstance(messages, list) and (
+        len(messages) > 10_000
+        or len(json.dumps(messages, ensure_ascii=False, separators=(",", ":")).encode()) > 4 * 1024 * 1024
+    ):
+        raise HTTPException(status_code=413, detail="Conversation history exceeds transport capacity")
+
+
 def _parse_bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
@@ -62,7 +78,9 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
     content_type = request.headers.get("content-type", "")
     if not content_type.startswith("multipart/form-data"):
         try:
-            return ChatRequest.model_validate(await request.json()), []
+            payload = await request.json()
+            _validate_history_transport(payload.get("messages") if isinstance(payload, dict) else None)
+            return ChatRequest.model_validate(payload), []
         except (ValueError, TypeError) as error:
             raise HTTPException(status_code=400, detail="Invalid JSON in request body") from error
 
@@ -91,6 +109,7 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
             "max_tokens": payload.get("max_tokens", form.get("max_tokens", 2048)),
             "repetition_penalty": payload.get("repetition_penalty", form.get("repetition_penalty", 1.2)),
         }
+        _validate_history_transport(payload.get("messages"))
         uploads = [item for item in form.getlist("attachments") if hasattr(item, "read")]
         return ChatRequest.model_validate(payload), uploads
     except HTTPException:
