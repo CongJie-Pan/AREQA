@@ -572,12 +572,12 @@ const createMarkdownComponents = (
             window.dispatchEvent(new CustomEvent(`open-citation-${messageId}`, { detail: { index: citeIndex } }));
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(212, 175, 55, 0.3)';
-            e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.6)';
+            e.currentTarget.style.backgroundColor = 'var(--areqa-citation-hover-background)';
+            e.currentTarget.style.borderColor = 'var(--areqa-citation-hover-border)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(212, 175, 55, 0.15)';
-            e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.3)';
+            e.currentTarget.style.backgroundColor = 'var(--areqa-citation-background)';
+            e.currentTarget.style.borderColor = 'var(--areqa-citation-border)';
           }}
           style={{
             display: 'inline-flex',
@@ -588,9 +588,9 @@ const createMarkdownComponents = (
             padding: '0 4px',
             fontSize: '12px',
             fontWeight: 600,
-            color: '#d4af37',
-            backgroundColor: 'rgba(212, 175, 55, 0.15)',
-            border: '1px solid rgba(212, 175, 55, 0.3)',
+            color: 'var(--areqa-citation-color)',
+            backgroundColor: 'var(--areqa-citation-background)',
+            border: '1px solid var(--areqa-citation-border)',
             borderRadius: '4px',
             cursor: 'pointer',
             margin: '0 4px',

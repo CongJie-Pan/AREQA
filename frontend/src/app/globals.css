@@ -22,6 +22,11 @@
   --primary: #f0f0f0;
   --primary-foreground: #130f18;
   --radius: 0.625rem;
+  --areqa-citation-color: #d4af37;
+  --areqa-citation-background: rgba(212, 175, 55, 0.15);
+  --areqa-citation-border: rgba(212, 175, 55, 0.3);
+  --areqa-citation-hover-background: rgba(212, 175, 55, 0.3);
+  --areqa-citation-hover-border: rgba(212, 175, 55, 0.6);
   --areqa-sidebar-background: #1b1622;
   --areqa-subtle-border: rgba(255, 255, 255, 0.08);
   --areqa-scrollbar-track: #130f18;
@@ -57,6 +62,11 @@
 }
 
 html[data-interface-theme='light'] {
+  --areqa-citation-color: #633c0b;
+  --areqa-citation-background: #ead3a1;
+  --areqa-citation-border: #ba8a37;
+  --areqa-citation-hover-background: #dec18a;
+  --areqa-citation-hover-border: #966820;
   --background: #f8fafc;
   --foreground: #111827;
   --card: #ffffff;
