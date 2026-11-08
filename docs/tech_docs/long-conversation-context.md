@@ -69,3 +69,10 @@ performed in this session.
 Summary debug events include `history.summary_started` (model, source count, output limit),
 `history.summary_completed` (elapsed time, provider input/output usage, finish reason),
 and `history.prepared` (summary model, cache hit). They never include transcript or summary text.
+
+The generic summary instruction merges earlier state with new messages and preserves
+still-applicable user decisions/constraints unless explicitly superseded or clearly
+out of scope. Repetition and explanatory prose are removed before active constraints;
+uncertain applicability stays labelled by topic. The 450-word instruction and default
+1536-token output limit are unchanged. This prompt revision was checked with focused
+backend tests only; the PDF/model comparison was not rerun at the user's request.
