@@ -40,7 +40,8 @@ const { chatState, conversationState, liveTutorState } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('antd', () => ({
+vi.mock('antd', async (importOriginal) => ({
+  ...await importOriginal<typeof import('antd')>(),
   App: {
     useApp: () => ({
       message: {
@@ -341,4 +342,39 @@ describe('ChatContainer avatar split layout', () => {
     fireEvent.click(screen.getByLabelText('openSidebar'));
     expect(screen.getByRole('separator', { name: 'resizeSidebar' })).toHaveAttribute('aria-valuenow', '296');
   });
+
+  it('defers the 100-message reminder until streaming ends and uses the existing new-chat action', async () => {
+    authState.user = { id: 'reminder-user' };
+    const previousMessages = chatState.messages;
+    const previousStreaming = chatState.isStreaming;
+    const previousLiveTutor = liveTutorState.isOpen;
+    localStorage.clear();
+    chatState.messages = Array.from({ length: 100 }, (_, index) => ({
+      id: `history-${index}`, role: index % 2 === 0 ? 'user' : 'assistant',
+      content: 'Fixture message', createdAt: new Date(),
+    }));
+    chatState.isStreaming = true;
+    liveTutorState.isOpen = false;
+    try {
+      const view = render(<ChatContainer />);
+      await waitFor(() => expect(initializeChatService).toHaveBeenCalled());
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      chatState.isStreaming = false;
+      view.rerender(<ChatContainer />);
+      await screen.findByRole('dialog');
+      conversationState.clearActiveConversation.mockClear();
+      chatState.clearMessages.mockClear();
+      chatState.resetStreamingState.mockClear();
+      fireEvent.click(screen.getByRole('button', { name: 'newChat' }));
+      expect(conversationState.clearActiveConversation).toHaveBeenCalledOnce();
+      expect(chatState.clearMessages).toHaveBeenCalledOnce();
+      expect(chatState.resetStreamingState).toHaveBeenCalledOnce();
+    } finally {
+      chatState.messages = previousMessages;
+      chatState.isStreaming = previousStreaming;
+      liveTutorState.isOpen = previousLiveTutor;
+      localStorage.clear();
+    }
+  });
+
 });

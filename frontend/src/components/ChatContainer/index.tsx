@@ -36,6 +36,7 @@ import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { cancelConversationImage, generateConversationImage } from '@/services/generatedImages';
 import { useStyles } from './styles';
 import { useSidebarResize } from './useSidebarResize';
+import { LongConversationReminder } from './LongConversationReminder';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 
@@ -890,6 +891,13 @@ export function ChatContainer({ className }: ChatContainerProps) {
       {/* Proactive Polling & Telemetry */}
       {(mailboxEnabled || compeerEnabled) && <ProactiveManager />}
 
+      <LongConversationReminder
+        userId={historyUserId}
+        conversationId={activeConversationId}
+        messageCount={messages.length}
+        blocked={!isChatReady || isStreaming || isGeneratingImage || isMessageHandoffLoading || isLiveTutorOpen}
+        onNewConversation={handleNewConversation}
+      />
       <AuthPrompt open={showAuthPrompt && !user} onDismiss={dismissAuthPrompt} />
     </div>
   );

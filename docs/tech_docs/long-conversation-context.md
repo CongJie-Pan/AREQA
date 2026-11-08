@@ -172,3 +172,17 @@ was replayed, and no live migration was applied in this implementation session.
 The final scoped backend gate passed **135 tests**, with **3 existing skips**
 (one optional PDF visual dependency and two explicitly disabled router tests).
 ESLint and TypeScript strict checks passed.
+
+## Optional new-chat reminder
+
+The chat UI offers a dismissible modal at 100 total displayed messages (user and
+assistant messages combined), then at 103, 106, 109, and so on. This is a UX
+recommendation, not a transport limit or a requirement to leave the conversation.
+It uses the existing new-chat action and preserves the original saved chat.
+
+Reminders wait until history handoff, text/image generation and Live Tutor activity
+have finished. When message counts jump across a threshold, only the latest due
+reminder appears; earlier thresholds are not replayed. Per-account/conversation
+browser-local high-water marks prevent repeats after refresh, chat switching,
+edits and deletions. If localStorage is denied, deduplication lasts for the mounted
+component only. Reminder preferences do not sync between devices/browsers.

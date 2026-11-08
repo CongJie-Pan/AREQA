@@ -124,6 +124,9 @@ export type TranslationKey =
   | 'latexPreview'
   | 'formulaPreview'
   | 'newChat'
+  | 'longConversationTitle'
+  | 'longConversationDescription'
+  | 'longConversationContinue'
   | 'mailbox'
   | 'noConversations'
   | 'today'
@@ -377,6 +380,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     latexPreview: 'LaTeX 預覽',
     formulaPreview: '公式預覽',
     newChat: '新對話',
+    longConversationTitle: '開啟新對話，讓交流更順暢',
+    longConversationDescription: '目前對話已累積 {count} 則訊息（包含你的提問與 AI 回答）。建議開啟新對話，讓後續交流更清楚、流暢。原對話仍會保留，你也可以選擇繼續目前對話。',
+    longConversationContinue: '繼續目前對話',
     mailbox: '信箱',
     noConversations: '尚無對話紀錄',
     today: '今天',
@@ -600,6 +606,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     latexPreview: 'LaTeX 预览',
     formulaPreview: '公式预览',
     newChat: '新对话',
+    longConversationTitle: '开启新对话，让交流更顺畅',
+    longConversationDescription: '当前对话已累积 {count} 条消息（包含你的提问与 AI 回答）。建议开启新对话，让后续交流更清楚、流畅。原对话仍会保留，你也可以选择继续当前对话。',
+    longConversationContinue: '继续当前对话',
     mailbox: '信箱',
     noConversations: '尚无对话纪录',
     today: '今天',
@@ -823,6 +832,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     latexPreview: 'LaTeX preview',
     formulaPreview: 'Formula preview',
     newChat: 'New chat',
+    longConversationTitle: 'Start a fresh conversation',
+    longConversationDescription: 'This conversation has {count} messages, including your questions and AI replies. Consider starting a new chat to keep the conversation clear and focused. This chat will remain saved, and you can also continue here.',
+    longConversationContinue: 'Continue this chat',
     mailbox: 'Mailbox',
     noConversations: 'No conversations yet',
     today: 'Today',
