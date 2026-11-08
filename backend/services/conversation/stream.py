@@ -132,16 +132,34 @@ class ConversationStreamService:
         )
         try:
             try:
-                prepared = await prepare_history(
+                preparation = asyncio.create_task(prepare_history(
                     messages=messages, tools=tools, client=self.client,
                     user_id=user_id, conversation_id=conversation_id,
                     model=settings.model_conversation_summary, output_tokens=max_tokens,
                     context_tokens=settings.conversation_context_tokens,
                     summary_tokens=settings.conversation_summary_tokens,
                     timeout_seconds=settings.conversation_summary_timeout_seconds,
+                    cold_timeout_seconds=settings.conversation_summary_cold_timeout_seconds,
+                    summary_context_tokens=settings.conversation_summary_context_tokens,
                     enabled=settings.enable_conversation_compaction,
                     retrieval_context=retrieval_context,
-                )
+                ))
+                try:
+                    done, _ = await asyncio.wait([preparation], timeout=1.0)
+                    if not done:
+                        yield f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '正在整理較早對話，準備回答'}, ensure_ascii=False)}\n\n"
+                    while not preparation.done():
+                        if await request.is_disconnected():
+                            return
+                        done, _ = await asyncio.wait([preparation], timeout=5.0)
+                        if not done:
+                            yield ": heartbeat\n\n"
+                    prepared = await preparation
+                finally:
+                    if not preparation.done():
+                        preparation.cancel()
+                    # Await cancellation to prevent provider work surviving disconnects.
+                    await asyncio.gather(preparation, return_exceptions=True)
             except ValueError as error:
                 reasons = {'output_budget', 'compaction_disabled', 'missing_current_turn',
                            'current_turn_too_large', 'instructions_too_large', 'retrieval_budget',

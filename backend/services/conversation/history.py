@@ -1,6 +1,6 @@
 """Bound provider context without mutating the browser's complete transcript.
 
-Summaries are an expiring process-local optimization, never authoritative storage.
+Summaries are derived checkpoints, never authoritative transcript storage.
 Content-addressed prefixes make edits, forks and retries safe without shared locks.
 """
 from __future__ import annotations
@@ -16,9 +16,10 @@ import time
 from typing import Any
 
 from services.conversation.context_budget import ContextBudgetError, budget_retrieval, token_bound
+from services.conversation.summary_store import summary_store
 
 logger = logging.getLogger(__name__)
-_CACHE: OrderedDict[tuple[str, str, str, str], tuple[float, str]] = OrderedDict()
+_CACHE: OrderedDict[tuple[str, str, str, str, str], tuple[float, str]] = OrderedDict()
 _CACHE_TTL = 1800
 _CACHE_SIZE = 128
 _INSTRUCTION = (
@@ -50,7 +51,7 @@ _INSTRUCTION = (
 
 @dataclass(frozen=True)
 class HistoryContext:
-    """Provider-only context plus an optional user-visible degradation notice."""
+    """Provider-only context plus an optional retrieval-evidence notice."""
 
     messages: list[dict[str, Any]]
     notice: str = ''
@@ -79,6 +80,7 @@ async def prepare_history(
     user_id: str, conversation_id: str, model: str, output_tokens: int,
     context_tokens: int, summary_tokens: int = 1536, timeout_seconds: float = 20,
     enabled: bool = True, retrieval_context: str = "",
+    summary_context_tokens: int = 524_288, cold_timeout_seconds: float | None = None,
 ) -> HistoryContext:
     """Select complete recent turns, compact older turns and recall matching originals.
 
@@ -95,9 +97,12 @@ async def prepare_history(
         timeout_seconds: Total wall-clock allowance for compaction.
         enabled: Feature switch; disabled mode rejects oversized contexts safely.
         retrieval_context: Exact server-injected prefix, budgeted separately from user text.
+        summary_context_tokens: Independent conservative allowance for the summary model.
+        cold_timeout_seconds: Optional first-summary timeout; warm updates use timeout_seconds.
 
     Returns:
-        A new prompt and a notice if summary coverage was degraded.
+        A new prompt and an optional retrieval-evidence notice. Summary degradation
+        is logged only; it never adds a warning to the user's answer.
 
     Raises:
         ValueError: Mandatory instructions/current turn do not fit, or compaction
@@ -140,7 +145,7 @@ async def prepare_history(
         raise ContextBudgetError('current_turn_too_large', budget=budget, instructions_bytes=token_bound(instructions), current_turn_bytes=token_bound(history[start:]))
 
     prefixes = _prefixes(old)
-    scope = (user_id, conversation_id, model)
+    scope = (user_id, conversation_id, model, hashlib.sha256(_INSTRUCTION.encode()).hexdigest())
     now = time.monotonic()
     for key, (created, _) in list(_CACHE.items()):
         if now - created > _CACHE_TTL:
@@ -149,36 +154,57 @@ async def prepare_history(
     cache_hit = False
     for i in range(len(old), 0, -1):
         key = (*scope, prefixes[i - 1])
-        if key in _CACHE:
+        if key in _CACHE and token_bound(_CACHE[key][1]) <= summary_tokens * 4:
             cache_hit = True
             summary = _CACHE[key][1]
             covered = i
             _CACHE.move_to_end(key)
             break
+    cache_source = 'memory' if cache_hit else 'none'
+    if not cache_hit:
+        for prefix, count, stored in await summary_store.load(scope):
+            if (isinstance(count, int) and covered < count <= len(old)
+                    and prefixes[count - 1] == prefix and isinstance(stored, str)
+                    and stored.strip() and token_bound(stored) <= summary_tokens * 4):
+                summary, covered = stored, count
+                cache_hit, cache_source = True, 'database'
+        if cache_hit:
+            _CACHE[(*scope, prefixes[covered - 1])] = (time.monotonic(), summary)
+            while len(_CACHE) > _CACHE_SIZE:
+                _CACHE.popitem(last=False)
 
     async def compact() -> None:
         nonlocal summary, covered
         while covered < len(old):
             end = covered
             chunk: list[dict[str, Any]] = []
-            limit = min(12_000, max(1024, budget // 2))
+            # Summary capacity is independent of the much smaller answer context.
+            limit = summary_context_tokens - summary_tokens - 1024
+            chunk_size = token_bound([
+                {'role': 'system', 'content': _INSTRUCTION},
+                {'role': 'user', 'content': json.dumps({'previous_summary': summary, 'messages': []}, ensure_ascii=False)},
+            ])
             while end < len(old):
                 record = {'turn': end + 1, **old[end]}
-                if token_bound(chunk + [record]) > limit:
+                # Charge JSON escaping inside the provider's string-valued content too.
+                record_size = token_bound(json.dumps(record, ensure_ascii=False)) + 1
+                if chunk_size + record_size > limit:
                     break
                 chunk.append(record)
+                chunk_size += record_size
                 end += 1
             if not chunk:
                 raise ValueError('summary_source_too_large')
             payload = {'previous_summary': summary, 'messages': chunk}
-            if token_bound(payload) + summary_tokens + token_bound(_INSTRUCTION) + 1024 > context_tokens:
+            summary_messages = [{'role': 'system', 'content': _INSTRUCTION},
+                                {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]
+            if token_bound(summary_messages) > limit:
                 raise ValueError('summary_budget')
             call_started = time.monotonic()
             logger.info('history.summary_started model=%s source_messages=%d output_limit=%d',
                         model, len(chunk), summary_tokens)
             response = await client.chat.completions.create(
-                model=model, messages=[{'role': 'system', 'content': _INSTRUCTION},
-                                       {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}],
+                model=model, messages=summary_messages,
                 max_tokens=summary_tokens, temperature=0.1,
             )
             usage = getattr(response, 'usage', None)
@@ -196,10 +222,14 @@ async def prepare_history(
             _CACHE[(*scope, prefixes[end - 1])] = (time.monotonic(), summary)
             while len(_CACHE) > _CACHE_SIZE:
                 _CACHE.popitem(last=False)
+            await summary_store.save(scope, prefixes[end - 1], covered, summary)
 
     degraded = False
     try:
-        await asyncio.wait_for(compact(), timeout=timeout_seconds)
+        timeout = cold_timeout_seconds if not cache_hit and cold_timeout_seconds is not None else timeout_seconds
+        logger.info('history.compaction_started cache_source=%s covered=%d total=%d summary_context_budget=%d timeout_seconds=%s',
+                    cache_source, covered, len(old), summary_context_tokens, timeout)
+        await asyncio.wait_for(compact(), timeout=timeout)
     except Exception as error:
         degraded = True
         safe_reasons = {'summary_source_too_large', 'summary_budget', 'invalid_summary', 'summary_too_large'}
@@ -231,7 +261,6 @@ async def prepare_history(
         if token_bound(instructions + extra + [reference] + recent) <= budget:
             extra.append(reference)
     result = instructions + extra + recent
-    notice = '部分較早對話暫時無法完整納入本次回答；完整聊天紀錄仍保留。' if degraded else ''
-    logger.info('history.prepared input_messages=%d selected_messages=%d estimated_tokens=%d degraded=%s summary_model=%s cache_hit=%s',
-                len(messages), len(result), token_bound(result), degraded, model, cache_hit)
-    return HistoryContext(result, '\n'.join(part for part in (retrieval_notice, notice) if part))
+    logger.info('history.prepared input_messages=%d selected_messages=%d estimated_tokens=%d degraded=%s summary_model=%s cache_hit=%s cache_source=%s covered=%d total=%d',
+                len(messages), len(result), token_bound(result), degraded, model, cache_hit, cache_source, covered, len(old))
+    return HistoryContext(result, retrieval_notice)

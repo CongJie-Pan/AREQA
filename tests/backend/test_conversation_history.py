@@ -81,7 +81,7 @@ async def test_failure_falls_back_and_logs_no_content(caplog):
     c = client()
     c.chat.completions.create.side_effect = RuntimeError('PRIVATE PROVIDER DATA')
     result = await run(history(), c)
-    assert result.notice
+    assert not result.notice
     assert result.messages[-1]['content'] == 'What was the original constraint?'
     assert 'history.summary_failed' in caplog.text
     assert 'PRIVATE PROVIDER DATA' not in caplog.text
@@ -93,11 +93,11 @@ async def test_timeout_and_truncated_summary_are_not_cached():
     async def slow(**kwargs):
         await asyncio.sleep(10)
     c.chat.completions.create.side_effect = slow
-    assert (await run(history(), c, timeout_seconds=0.01)).notice
+    assert not (await run(history(), c, timeout_seconds=0.01)).notice
     assert not _CACHE
     c = client()
     c.chat.completions.create.return_value.choices[0].finish_reason = 'length'
-    assert (await run(history(), c)).notice
+    assert not (await run(history(), c)).notice
     assert not _CACHE
 
 
@@ -167,3 +167,88 @@ async def test_summary_debug_logs_use_safe_metadata(caplog):
     await run(history(10), c)
     assert 'cache_hit=True' in caplog.text
     assert 'history.summary_started' not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cold_start_110_messages_uses_one_summary_request():
+    import json
+    c = client()
+    messages = history(55)
+    result = await run(messages, c)
+    assert c.chat.completions.create.await_count == 1
+    payload = json.loads(c.chat.completions.create.call_args.kwargs['messages'][1]['content'])
+    assert payload['messages'][0]['turn'] == 1
+    sources = [{key: value for key, value in record.items() if key != 'turn'}
+               for record in payload['messages']]
+    recent = [m for m in result.messages[1:] if not m['content'].startswith('Historical ')]
+    assert sources + recent == messages[1:]
+    assert not result.notice
+
+
+@pytest.mark.asyncio
+async def test_timeout_never_prepends_history_warning(caplog):
+    async def slow(**kwargs):
+        await asyncio.sleep(10)
+    c = client()
+    c.chat.completions.create.side_effect = slow
+    result = await run(history(55), c, timeout_seconds=0.01)
+    assert result.notice == ''
+    assert result.messages[-1] == history(55)[-1]
+    assert 'history.summary_failed' in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_independent_summary_budget_batches_complete_sources():
+    import json
+    c = client()
+    messages = history(30)
+    await run(messages, c, summary_context_tokens=16000)
+    calls = c.chat.completions.create.call_args_list
+    assert 1 < len(calls) < 30
+    turns = []
+    for call in calls:
+        assert token_bound(call.kwargs['messages']) + 256 + 1024 <= 16000
+        payload = json.loads(call.kwargs['messages'][1]['content'])
+        turns.extend(m['turn'] for m in payload['messages'])
+    assert turns == list(range(1, turns[-1] + 1))
+    assert turns[-1] >= 58
+
+
+@pytest.mark.asyncio
+async def test_prompt_and_model_changes_invalidate_checkpoints(monkeypatch):
+    import services.conversation.history as module
+    c = client()
+    messages = history(10)
+    await run(messages, c)
+    monkeypatch.setattr(module, '_INSTRUCTION', module._INSTRUCTION + ' Revised instruction.')
+    await run(messages, c)
+    assert c.chat.completions.create.await_count == 2
+    await prepare_history(messages=messages, tools=[], client=c, user_id='alice',
+                          conversation_id='chat', model='different', output_tokens=500,
+                          context_tokens=8000, summary_tokens=256)
+    assert c.chat.completions.create.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_partial_timeout_checkpoint_is_reused_by_next_request(caplog):
+    import json
+    c = client()
+    valid = c.chat.completions.create.return_value
+    attempts = 0
+
+    async def provider(**kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts > 1:
+            await asyncio.sleep(10)
+        return valid
+
+    c.chat.completions.create.side_effect = provider
+    first = await run(history(15), c, summary_context_tokens=12000, timeout_seconds=0.01)
+    assert not first.notice
+    assert 'covered=0' not in caplog.text
+    c.chat.completions.create.reset_mock(side_effect=True)
+    await run(history(15), c, summary_context_tokens=12000)
+    payload = json.loads(c.chat.completions.create.call_args_list[0].kwargs['messages'][1]['content'])
+    assert payload['previous_summary']
+    assert payload['messages'][0]['turn'] > 1

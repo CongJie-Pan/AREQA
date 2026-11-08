@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     conversation_context_tokens: int = 32_768
     conversation_summary_tokens: int = 1_536
     conversation_summary_timeout_seconds: float = 20.0
+    conversation_summary_cold_timeout_seconds: float = 45.0
+    conversation_summary_context_tokens: int = 524_288
     enable_conversation_compaction: bool = True
 
     # RAG Parameters
@@ -31,6 +33,7 @@ class Settings(BaseSettings):
 
     # Infrastructure
     redis_url: str = "redis://localhost:6379"
+    database_url: str = ""
 
     # Agent rollout flags
     enable_tutor_shadow_routing: bool = False
