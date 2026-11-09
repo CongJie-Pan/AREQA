@@ -39,6 +39,8 @@ export interface ConversationListProps {
   onDelete?: (conversationId: string) => void;
   /** Callback to toggle sidebar visibility */
   onToggleSidebar?: () => void;
+  /** Whether the shell provides the persistent sidebar toggle. */
+  externalSidebarToggle?: boolean;
   /** Callback to open GUM panel */
   onSelectGumPanel?: (type: Exclude<SidePanelType, null>) => void;
   /** Class name for styling */
@@ -53,6 +55,7 @@ export function ConversationList({
   onNew,
   onDelete,
   onToggleSidebar,
+  externalSidebarToggle = false,
   onSelectGumPanel,
   className,
 }: ConversationListProps) {
@@ -295,7 +298,12 @@ export function ConversationList({
   return (
     <div className={cx('areqa-conversation-list', styles.container, className)}>
       {/* Logo & Toggle Area */}
-      <div className={cx('areqa-conversation-logo-row', styles.logoContainer)}>
+      <div className={cx(
+        'areqa-conversation-logo-row',
+        styles.logoContainer,
+        externalSidebarToggle && 'areqa-conversation-logo-row-external-toggle',
+        externalSidebarToggle && styles.logoContainerExternalToggle,
+      )}>
         <div className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}>
           <Image
             src={sidebarLogoSrc}
@@ -308,13 +316,15 @@ export function ConversationList({
             priority
           />
         </div>
-        <button 
-          className={cx('areqa-conversation-toggle-button', styles.toggleButton)} 
-          onClick={onToggleSidebar}
-          title={t('closeSidebar')}
-        >
-          <PanelLeftClose size={20} />
-        </button>
+        {!externalSidebarToggle && (
+          <button
+            className={cx('areqa-conversation-toggle-button', styles.toggleButton)}
+            onClick={onToggleSidebar}
+            title={t('closeSidebar')}
+          >
+            <PanelLeftClose size={20} />
+          </button>
+        )}
       </div>
 
       {/* Action Area */}

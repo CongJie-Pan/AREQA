@@ -7,7 +7,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Menu, X, AlertCircle, MoreHorizontal, FileText, FileImage, FileCode, Share2 } from 'lucide-react';
+import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, MoreHorizontal, FileText, FileImage, FileCode, Share2 } from 'lucide-react';
 import { App, Dropdown } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
@@ -36,6 +36,7 @@ import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { cancelConversationImage, generateConversationImage } from '@/services/generatedImages';
 import { useStyles } from './styles';
 import { useSidebarResize } from './useSidebarResize';
+import { useSidebarState } from './useSidebarState';
 import { LongConversationReminder } from './LongConversationReminder';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
@@ -100,7 +101,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
   const { t, language } = useUserPreferences();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const {
+    isOpen: sidebarOpen, isMobile, desktopCollapsed, mobileOpen,
+    toggle: toggleSidebar, closeMobile: closeSidebar,
+  } = useSidebarState();
+  const sidebarId = React.useId();
   const sidebarResize = useSidebarResize();
   const sidebarWidth = sidebarResize.width;
   const stopSidebarResize = sidebarResize.stopResize;
@@ -457,9 +462,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   // Handle conversation selection
   const handleConversationSelect = useCallback(() => {
-    setSidebarOpen(false);
+    closeSidebar();
     setGumPanelType(null); // Return to chat view
-  }, []);
+  }, [closeSidebar]);
 
   // Handle new conversation
   const handleNewConversation = useCallback(() => {
@@ -467,25 +472,15 @@ export function ChatContainer({ className }: ChatContainerProps) {
     useConversationStore.getState().clearActiveConversation();
     useChatStore.getState().clearMessages();
     useChatStore.getState().resetStreamingState();
-    setSidebarOpen(false);
+    closeSidebar();
     setGumPanelType(null); // Return to chat view
-  }, []);
-
-  // Toggle sidebar
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((prev) => !prev);
-  }, []);
-
-  // Close sidebar
-  const closeSidebar = useCallback(() => {
-    setSidebarOpen(false);
-  }, []);
+  }, [closeSidebar]);
 
   const resizeAvatarPane = useCallback((event: PointerEvent) => {
     const resizeState = avatarResizeStateRef.current;
     if (!resizeState) return;
 
-    const availableWidth = Math.max(window.innerWidth - (sidebarOpen ? 0 : sidebarWidth), 0);
+    const availableWidth = Math.max(window.innerWidth - (!isMobile && sidebarOpen ? sidebarWidth : 0), 0);
     const minAvatarWidth = AVATAR_PANE_MIN_WIDTH;
     const maxAvatarWidth = Math.max(
       minAvatarWidth,
@@ -493,7 +488,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     );
     const nextWidth = resizeState.startWidth + resizeState.startX - event.clientX;
     setAvatarPaneWidth(Math.min(Math.max(nextWidth, minAvatarWidth), maxAvatarWidth));
-  }, [sidebarOpen, sidebarWidth]);
+  }, [isMobile, sidebarOpen, sidebarWidth]);
 
   const stopAvatarPaneResize = useCallback(() => {
     avatarResizeStateRef.current = null;
@@ -656,25 +651,28 @@ export function ChatContainer({ className }: ChatContainerProps) {
   return (
     <div className={cx('areqa-chat-shell', styles.container, className)}>
       {/* Sidebar Overlay (mobile) */}
-      {sidebarOpen && (
+      {mobileOpen && (
         <div className={styles.sidebarOverlay} onClick={closeSidebar} />
       )}
 
       {/* Sidebar */}
       <div
-        className={cx('areqa-chat-sidebar', styles.sidebar, sidebarOpen && styles.sidebarOpen)}
+        id={sidebarId}
+        aria-hidden={!sidebarOpen}
+        inert={!sidebarOpen}
+        className={cx('areqa-chat-sidebar', styles.sidebar, mobileOpen && styles.sidebarOpen, desktopCollapsed && styles.sidebarCollapsed)}
         style={{ '--areqa-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
       >
         <ConversationList
           onSelect={handleConversationSelect}
           onNew={handleNewConversation}
-          onToggleSidebar={toggleSidebar}
+          externalSidebarToggle
           onSelectGumPanel={(type) => {
             setGumPanelType(type);
-            setSidebarOpen(false); // Close sidebar on mobile when opening panel
+            closeSidebar(); // Close sidebar on mobile when opening panel
           }}
         />
-        {!sidebarOpen && (
+        {sidebarOpen && (
           <div
             className={styles.sidebarResizeHandle}
             role="separator"
@@ -695,15 +693,20 @@ export function ChatContainer({ className }: ChatContainerProps) {
         <div className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}>
           <button
             className={cx(
+              'areqa-chat-sidebar-toggle',
               styles.iconActionButton,
               styles.sidebarActionButton,
-              sidebarOpen && styles.sidebarActionButtonVisible,
             )}
             onClick={toggleSidebar}
-            aria-label={t('openSidebar')}
+            aria-label={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
+            aria-expanded={sidebarOpen}
+            aria-controls={sidebarId}
+            data-desktop-collapsed={desktopCollapsed}
+            data-mobile-open={mobileOpen}
             type="button"
           >
-            <Menu size={20} />
+            <PanelLeftOpen size={20} data-sidebar-icon="open" aria-hidden="true" />
+            <PanelLeftClose size={20} data-sidebar-icon="close" aria-hidden="true" />
           </button>
         </div>
 

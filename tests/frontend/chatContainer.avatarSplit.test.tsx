@@ -56,9 +56,7 @@ vi.mock('antd', async (importOriginal) => ({
 }));
 
 vi.mock('@/components/ConversationList', () => ({
-  ConversationList: ({ onToggleSidebar }: { onToggleSidebar: () => void }) => (
-    <nav aria-label="Sidebar"><button onClick={onToggleSidebar}>Close sidebar</button></nav>
-  ),
+  ConversationList: () => <nav aria-label="Sidebar">Conversation history</nav>,
 }));
 
 vi.mock('@/components/MessageList', () => ({
@@ -191,6 +189,7 @@ vi.mock('@/contexts/UserPreferencesContext', () => ({
 
 vi.mock('@/utils/logger', () => ({
   logger: {
+    debug: vi.fn(),
     info: vi.fn(),
     error: vi.fn(),
   },
@@ -330,6 +329,19 @@ describe('ChatContainer avatar split layout', () => {
     expect(separator).toHaveAttribute('aria-valuenow', '344');
   });
 
+  it('keeps one mounted sidebar toggle with an explicit expanded state across repeated clicks', () => {
+    render(<ChatContainer />);
+    const toggle = screen.getByRole('button', { name: 'closeSidebar' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveAttribute('aria-controls');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'openSidebar' })).toBe(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'closeSidebar' })).toBe(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('wires sidebar resizing into the layout and preserves its width across toggles', () => {
     const { container } = render(<ChatContainer />);
     const separator = screen.getByRole('separator', { name: 'resizeSidebar' });
@@ -337,7 +349,7 @@ describe('ChatContainer avatar split layout', () => {
     expect(separator).toHaveAttribute('aria-valuenow', '296');
     expect((container.querySelector('.areqa-chat-sidebar') as HTMLElement).style
       .getPropertyValue('--areqa-sidebar-width')).toBe('296px');
-    fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'closeSidebar' }));
     expect(screen.queryByRole('separator', { name: 'resizeSidebar' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('openSidebar'));
     expect(screen.getByRole('separator', { name: 'resizeSidebar' })).toHaveAttribute('aria-valuenow', '296');

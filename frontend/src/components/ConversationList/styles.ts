@@ -67,6 +67,10 @@ export const useStyles = createStyles(({ css }) => ({
     min-width: 0;
   `,
 
+  logoContainerExternalToggle: css`
+    padding-left: 64px;
+  `,
+
   logo: css`
     width: 150px;
     height: auto;

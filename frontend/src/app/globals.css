@@ -206,6 +206,35 @@ html[lang='en'] body {
   background: var(--background);
 }
 
+.areqa-chat-sidebar-floating-action {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  z-index: 120;
+}
+
+.areqa-chat-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+
+@media (max-width: 768px) {
+  .areqa-chat-sidebar-toggle[data-mobile-open='false'] [data-sidebar-icon='close'],
+  .areqa-chat-sidebar-toggle[data-mobile-open='true'] [data-sidebar-icon='open'] {
+    display: none;
+  }
+}
+
+@media (min-width: 769px) {
+  .areqa-chat-sidebar-toggle[data-desktop-collapsed='true'] [data-sidebar-icon='close'],
+  .areqa-chat-sidebar-toggle[data-desktop-collapsed='false'] [data-sidebar-icon='open'] {
+    display: none;
+  }
+}
+
 .areqa-chat-header {
   display: flex;
   flex: 0 0 auto;
@@ -286,6 +315,10 @@ html[lang='en'] body {
   min-width: 0;
   align-items: center;
   justify-content: flex-start;
+}
+
+.areqa-conversation-logo-row-external-toggle {
+  padding-left: 64px;
 }
 
 .areqa-conversation-logo {

@@ -63,7 +63,9 @@ export const useStyles = createStyles(({ css, token }) => ({
     @media (max-width: 768px) {
       transform: translateX(0);
     }
+  `,
 
+  sidebarCollapsed: css`
     @media (min-width: 769px) {
       width: 0;
       flex-basis: 0;
@@ -138,20 +140,19 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
   sidebarActionButton: css`
-    display: none;
+    display: flex;
 
     @media (max-width: 768px) {
-      display: flex;
+      &[data-mobile-open='false'] [data-sidebar-icon='close'],
+      &[data-mobile-open='true'] [data-sidebar-icon='open'] {
+        display: none;
+      }
     }
-  `,
-
-  sidebarActionButtonVisible: css`
-    @media (max-width: 768px) {
-      display: none;
-    }
-
     @media (min-width: 769px) {
-      display: flex;
+      &[data-desktop-collapsed='true'] [data-sidebar-icon='close'],
+      &[data-desktop-collapsed='false'] [data-sidebar-icon='open'] {
+        display: none;
+      }
     }
   `,
 

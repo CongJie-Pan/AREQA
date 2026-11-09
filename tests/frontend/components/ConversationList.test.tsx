@@ -102,6 +102,13 @@ function renderConversationList(props: Partial<React.ComponentProps<typeof Conve
 }
 
 describe('ConversationList title states', () => {
+  it('reserves logo space and omits the duplicate toggle when the shell owns it', () => {
+    const { container } = render(<App><ConversationList externalSidebarToggle /></App>);
+    expect(screen.queryByTitle('Close sidebar')).not.toBeInTheDocument();
+    expect(container.querySelector('.areqa-conversation-logo-row-external-toggle')).toBeInTheDocument();
+    expect(screen.getByAltText('AREQA Logo')).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     useConversationStore.setState({
       conversations: [],
