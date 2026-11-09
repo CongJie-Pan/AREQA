@@ -175,14 +175,19 @@ ESLint and TypeScript strict checks passed.
 
 ## Optional new-chat reminder
 
-The chat UI offers a dismissible modal at 100 total displayed messages (user and
-assistant messages combined), then at 103, 106, 109, and so on. This is a UX
+The chat UI displays a dismissible inline banner centered at the top of the chat
+area after 100 AI replies, then at 105, 110, 115, and so on. User messages and
+currently streaming assistant messages do not count. The banner uses normal page
+flow, without a modal, backdrop, focus trap, or automatic focus change. This is a UX
 recommendation, not a transport limit or a requirement to leave the conversation.
 It uses the existing new-chat action and preserves the original saved chat.
 
 Reminders wait until history handoff, text/image generation and Live Tutor activity
-have finished. When message counts jump across a threshold, only the latest due
+have finished. When reply counts jump across a threshold, only the latest due
 reminder appears; earlier thresholds are not replayed. Per-account/conversation
 browser-local high-water marks prevent repeats after refresh, chat switching,
 edits and deletions. If localStorage is denied, deduplication lasts for the mounted
 component only. Reminder preferences do not sync between devices/browsers.
+
+The assistant-only cadence uses a separate v2 browser-storage namespace so older
+total-message reminder records cannot suppress the first AI-reply reminder.

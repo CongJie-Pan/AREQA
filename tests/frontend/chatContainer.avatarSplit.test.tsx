@@ -343,7 +343,7 @@ describe('ChatContainer avatar split layout', () => {
     expect(screen.getByRole('separator', { name: 'resizeSidebar' })).toHaveAttribute('aria-valuenow', '296');
   });
 
-  it('defers the 100-message reminder until streaming ends and uses the existing new-chat action', async () => {
+  it('counts only AI replies and offers an inline new-chat action after streaming ends', async () => {
     authState.user = { id: 'reminder-user' };
     const previousMessages = chatState.messages;
     const previousStreaming = chatState.isStreaming;
@@ -353,15 +353,27 @@ describe('ChatContainer avatar split layout', () => {
       id: `history-${index}`, role: index % 2 === 0 ? 'user' : 'assistant',
       content: 'Fixture message', createdAt: new Date(),
     }));
-    chatState.isStreaming = true;
+    chatState.isStreaming = false;
     liveTutorState.isOpen = false;
     try {
-      const view = render(<ChatContainer />);
+      let view!: ReturnType<typeof render>;
+      await act(async () => { view = render(<ChatContainer />); });
       await waitFor(() => expect(initializeChatService).toHaveBeenCalled());
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)); });
+      // 100 total messages contain only 50 AI replies, so no reminder is due.
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      chatState.messages = Array.from({ length: 200 }, (_, index) => ({
+        id: `history-${index}`, role: index % 2 === 0 ? 'user' : 'assistant',
+        content: 'Fixture message', createdAt: new Date(),
+      }));
+      chatState.isStreaming = true;
+      view.rerender(<ChatContainer />);
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
       chatState.isStreaming = false;
       view.rerender(<ChatContainer />);
-      await screen.findByRole('dialog');
+      const reminder = await screen.findByRole('status');
+      expect(reminder.closest('.areqa-chat-main')).not.toBeNull();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       conversationState.clearActiveConversation.mockClear();
       chatState.clearMessages.mockClear();
       chatState.resetStreamingState.mockClear();

@@ -1,20 +1,20 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Modal } from 'antd';
+import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 
 interface LongConversationReminderProps {
   userId: string | null;
   conversationId: string | null;
-  messageCount: number;
+  replyCount: number;
   blocked: boolean;
   onNewConversation: () => void;
 }
 
 /**
- * Offer a fresh chat at 100 messages and every three messages thereafter.
+ * Offer a fresh chat at 100 assistant replies and every five replies thereafter.
  *
  * Crossed thresholds are deferred until the chat is idle, never replayed as a
  * backlog. Browser-local high-water marks isolate accounts/conversations and
@@ -23,30 +23,31 @@ interface LongConversationReminderProps {
  * Only milestone/count/action metadata is logged, never identity or message text.
  */
 export function LongConversationReminder({
-  userId, conversationId, messageCount, blocked, onNewConversation,
+  userId, conversationId, replyCount, blocked, onNewConversation,
 }: LongConversationReminderProps) {
   const { t } = useUserPreferences();
+  const { styles } = useStyles();
   const seen = useRef(new Map<string, number>());
   const [pending, setPending] = useState<{ scope: string; count: number } | null>(null);
   const scope = conversationId
-    ? `areqa:long-conversation-reminder:v1:${userId ?? 'guest'}:${conversationId}`
+    ? `areqa:long-conversation-reminder:v2:assistant:${userId ?? 'guest'}:${conversationId}`
     : null;
   const previousScope = useRef(scope);
 
   useEffect(() => {
     // Schedule browser-storage synchronization outside the render/effect phase.
-    // Cleanup prevents a stale conversation load from opening a late dialog.
+    // Cleanup prevents a stale conversation load from opening a late reminder.
     const timer = window.setTimeout(() => {
       if (previousScope.current !== scope) {
         previousScope.current = scope;
         setPending(null);
       }
-      if (!scope || blocked || messageCount < 100) return;
-      const milestone = 100 + Math.floor((messageCount - 100) / 3) * 3;
+      if (!scope || blocked || replyCount < 100) return;
+      const milestone = 100 + Math.floor((replyCount - 100) / 5) * 5;
       let previous = seen.current.get(scope) ?? 0;
       try {
         const stored = Number(window.localStorage.getItem(scope));
-        if (Number.isSafeInteger(stored) && stored >= 100 && (stored - 100) % 3 === 0) {
+        if (Number.isSafeInteger(stored) && stored >= 100 && (stored - 100) % 5 === 0) {
           previous = Math.max(previous, stored);
         }
       } catch {
@@ -59,33 +60,38 @@ export function LongConversationReminder({
       } catch {
         logger.info('chat.long_conversation_reminder_storage_unavailable');
       }
-      setPending({ scope, count: messageCount });
-      logger.info('chat.long_conversation_reminder_shown', { milestone, messageCount });
+      setPending({ scope, count: replyCount });
+      logger.info('chat.long_conversation_reminder_shown', { milestone, replyCount });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [scope, blocked, messageCount]);
+  }, [scope, blocked, replyCount]);
 
   const dismiss = () => {
     setPending(null);
     logger.info('chat.long_conversation_reminder_action', { action: 'continue' });
   };
 
+  if (!pending || pending.scope !== scope || blocked || replyCount < 100) return null;
+
   return (
-    <Modal
-      title={t('longConversationTitle')}
-      open={Boolean(pending && pending.scope === scope && !blocked)}
-      okText={t('newChat')}
-      cancelText={t('longConversationContinue')}
-      onCancel={dismiss}
-      onOk={() => {
-        if (blocked) return;
-        setPending(null);
-        logger.info('chat.long_conversation_reminder_action', { action: 'new_chat' });
-        onNewConversation();
-      }}
-      centered
-    >
-      <p>{t('longConversationDescription', { count: pending?.count ?? messageCount })}</p>
-    </Modal>
+    <aside className={styles.longConversationReminder} role="status" aria-live="polite">
+      <div>
+        <strong>{t('longConversationTitle')}</strong>
+        <p>{t('longConversationDescription', { count: pending.count })}</p>
+      </div>
+      <div className={styles.longConversationReminderActions}>
+        <button
+          type="button"
+          onClick={() => {
+            setPending(null);
+            logger.info('chat.long_conversation_reminder_action', { action: 'new_chat' });
+            onNewConversation();
+          }}
+        >
+          {t('newChat')}
+        </button>
+        <button type="button" onClick={dismiss}>{t('longConversationContinue')}</button>
+      </div>
+    </aside>
   );
 }

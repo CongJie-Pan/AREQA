@@ -362,6 +362,56 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  longConversationReminder: css`
+    align-self: center;
+    flex-shrink: 0;
+    width: min(720px, calc(100% - 32px));
+    box-sizing: border-box;
+    margin: max(56px, env(safe-area-inset-top)) 16px 8px;
+    padding: 12px 16px;
+    border: 1px solid ${token.colorInfoBorder};
+    border-radius: ${token.borderRadiusLG}px;
+    background: ${token.colorInfoBg};
+    color: ${token.colorText};
+    font-size: 13px;
+    line-height: 1.6;
+
+    p {
+      margin: 4px 0 8px;
+    }
+  `,
+
+  longConversationReminderActions: css`
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+
+    button {
+      padding: 4px 10px;
+      border: 1px solid ${token.colorBorder};
+      border-radius: ${token.borderRadius}px;
+      background: ${token.colorBgContainer};
+      color: ${token.colorText};
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:first-child {
+      color: ${token.colorPrimary};
+      border-color: ${token.colorPrimary};
+    }
+
+    button:hover {
+      background: ${token.colorFillSecondary};
+    }
+
+    button:focus-visible {
+      outline: 2px solid ${token.colorPrimary};
+      outline-offset: 2px;
+    }
+  `,
+
   errorBanner: css`
     padding: 12px 16px;
     background: ${token.colorErrorBg};

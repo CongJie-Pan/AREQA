@@ -707,6 +707,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
           </button>
         </div>
 
+        <LongConversationReminder
+          userId={historyUserId}
+          conversationId={activeConversationId}
+          replyCount={messages.filter((message) => message.role === 'assistant' && !message.isStreaming).length}
+          blocked={!isChatReady || isStreaming || isGeneratingImage || isMessageHandoffLoading || isLiveTutorOpen}
+          onNewConversation={handleNewConversation}
+        />
+
         {/* Error Banner */}
         {error && (
           <div className={styles.errorBanner}>
@@ -891,13 +899,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
       {/* Proactive Polling & Telemetry */}
       {(mailboxEnabled || compeerEnabled) && <ProactiveManager />}
 
-      <LongConversationReminder
-        userId={historyUserId}
-        conversationId={activeConversationId}
-        messageCount={messages.length}
-        blocked={!isChatReady || isStreaming || isGeneratingImage || isMessageHandoffLoading || isLiveTutorOpen}
-        onNewConversation={handleNewConversation}
-      />
       <AuthPrompt open={showAuthPrompt && !user} onDismiss={dismissAuthPrompt} />
     </div>
   );
