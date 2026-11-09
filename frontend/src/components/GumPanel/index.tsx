@@ -161,18 +161,18 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
             {/* Top Section: Hero Card */}
             <div className={styles.heroSection}>
               <div className={styles.heroTitleRow}>
-                <BrainCircuit size={28} style={{ color: '#d4af37' }} />
+                <BrainCircuit size={28} className={styles.accentIcon} />
                 <h2>{t('memoryProfileTitle')}</h2>
               </div>
               <div className={styles.heroSummaryBox}>
                 {loadingSummary ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#aaa' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--muted-foreground)' }}>
                     <Spin size="small" /> {t('memorySummaryLoading')}
                   </div>
                 ) : summary ? (
                   <>
                     <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, marginBottom: 8 }}>{summary.sentence1}</div>
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: 'rgba(255,255,255,0.7)' }}>{summary.sentence2}</div>
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: 'var(--muted-foreground)' }}>{summary.sentence2}</div>
                     {summary.hashtags && summary.hashtags.length > 0 && (
                       <div style={{ marginTop: 4 }}>
                         {summary.hashtags.map((tag, idx) => (
@@ -190,7 +190,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
             {/* Middle Section: Assets */}
             <div>
               <div className={styles.sectionHeader}>
-                <FolderHeart size={18} style={{ color: '#d4af37' }} />
+                <FolderHeart size={18} className={styles.accentIcon} />
                 <h3>{t('memoryAssets')} <span>{t('memoryAssetCount', { count: longTermProps.length })}</span></h3>
               </div>
               <div className={styles.assetsGrid}>
@@ -213,7 +213,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
             <div className={styles.timelineSection}>
               <div className={styles.timelineHeaderRow}>
                 <div className={styles.sectionHeader} style={{ marginBottom: 0 }}>
-                  <Clock size={18} style={{ color: '#d4af37' }} />
+                  <Clock size={18} className={styles.accentIcon} />
                   <h3>{t('memoryTimeline')}</h3>
                 </div>
                 
@@ -244,7 +244,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                   <Spin size="large" />
                 </div>
               ) : longTermProps.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted-foreground)' }}>
                   {t('memoryEmpty')}
                 </div>
               ) : (
@@ -258,7 +258,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                           ? formatUserDate(p.updated_at, { hour: '2-digit', minute: '2-digit', hour12: false })
                           : t('memoryJustNow');
                         return (
-                          <div key={p.id} className={styles.timelineItem} style={{ backgroundColor: selectedIds.has(p.id) ? 'rgba(216, 162, 92, 0.05)' : undefined }}>
+                          <div key={p.id} className={styles.timelineItem} style={{ backgroundColor: selectedIds.has(p.id) ? 'var(--muted)' : undefined }}>
                             <div style={{ marginTop: 4 }}>
                               <Checkbox 
                                 checked={selectedIds.has(p.id)} 
@@ -299,7 +299,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                                     {t('memoryConfidence')}: {Number(p.confidence).toFixed(2)}
                                   </span>
                                 )}
-                                <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} style={{ color: '#aaa' }} />
+                                <Button size="small" type="text" icon={<Edit2 size={14} />} onClick={() => { setEditingId(p.id); setEditText(p.text); }} style={{ color: 'var(--muted-foreground)' }} />
                                 <Popconfirm title={t('memoryDeleteConfirm')} onConfirm={() => deleteMemory(p.id)}>
                                   <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
                                 </Popconfirm>
@@ -351,7 +351,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
           <>
             <div className={styles.heroSection} style={{ marginBottom: 24 }}>
               <div className={styles.heroTitleRow}>
-                <Sparkles size={28} style={{ color: '#d4af37' }} />
+                <Sparkles size={28} className={styles.accentIcon} />
                 <h2>{t('suggestionsPanelTitle')}</h2>
               </div>
               <div className={styles.heroSummaryBox}>
@@ -361,7 +361,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
 
             <div className={styles.timelineHeaderRow}>
               <div className={styles.sectionHeader} style={{ marginBottom: 0 }}>
-                <Sparkles size={18} style={{ color: '#d4af37' }} />
+                <Sparkles size={18} className={styles.accentIcon} />
                 <h3>{t('suggestionsListTitle')}</h3>
               </div>
               <button className={styles.refreshBtn} onClick={() => fetchSuggestions()} disabled={loading}>
@@ -375,7 +375,7 @@ export function GumPanel({ open, type, onClose }: GumPanelProps) {
                 <Spin size="large" />
               </div>
             ) : suggestions.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted-foreground)' }}>
                 {t('suggestionsEmpty')}
               </div>
             ) : (
