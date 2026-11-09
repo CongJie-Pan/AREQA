@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any
 
+from services.conversation.attachment_budget import conversation_view
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,10 +34,10 @@ def token_bound(value: Any) -> int:
         value: JSON-compatible provider content, never logged here.
 
     Returns:
-        Serialized UTF-8 size plus framing. Native file/image expansion is not
-        measured; provider attachment limits still apply.
+        Conversation-only UTF-8 size plus framing. Attachment payloads use a
+        separate reading allowance; this function never rewrites provider input.
     """
-    return len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) + 16
+    return len(json.dumps(conversation_view(value), ensure_ascii=False, separators=(',', ':')).encode('utf-8')) + 16
 
 
 def _shorten_source(source: str, allowance: int) -> str:

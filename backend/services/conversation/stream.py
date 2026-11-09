@@ -161,7 +161,7 @@ class ConversationStreamService:
                     # Await cancellation to prevent provider work surviving disconnects.
                     await asyncio.gather(preparation, return_exceptions=True)
             except ValueError as error:
-                reasons = {'output_budget', 'compaction_disabled', 'missing_current_turn',
+                reasons = {'attachment_context_too_large', 'output_budget', 'compaction_disabled', 'missing_current_turn',
                            'current_turn_too_large', 'instructions_too_large', 'retrieval_budget',
                            'retrieval_prefix_mismatch', 'retrieval_unavailable'}
                 reason = str(error) if str(error) in reasons else 'invalid_context'
@@ -173,6 +173,8 @@ class ConversationStreamService:
                     sizes.get('current_turn_bytes'), sizes.get('retrieval_bytes'), token_bound(tools), max_tokens,
                 )
                 content = "本次問題或必要上下文超過可處理容量，請縮短內容或減少附件後重試。"
+                if reason == 'attachment_context_too_large':
+                    content = "附件解析後的內容超過本次可閱讀容量，請改傳相關頁面、分批上傳，或提供較精簡的附件。"
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0}]}, ensure_ascii=False)}\n\n"
                 return
             messages = prepared.messages

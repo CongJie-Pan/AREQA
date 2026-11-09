@@ -18,7 +18,9 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `MODEL_CONVERSATION_SUMMARY` | `google/gemini-3.1-flash-lite` | Independent summary model; main answer and GUM models are unchanged |
-| `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conservative total allowance; set at or below the selected model's supported context |
+| `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conversation text allowance including tool/output reservations |
+| `CONVERSATION_ATTACHMENT_TOKENS` | 131072 | Separate estimated attachment reading allowance |
+| `CONVERSATION_PROVIDER_CONTEXT_TOKENS` | 262144 | Combined provider allowance; configure at or below the selected answer model context |
 | `CONVERSATION_SUMMARY_TOKENS` | 1536 | Maximum generated summary tokens |
 | `CONVERSATION_SUMMARY_TIMEOUT_SECONDS` | 20 | Total timeout for incremental updates |
 | `CONVERSATION_SUMMARY_COLD_TIMEOUT_SECONDS` | 45 | Total timeout when no compatible checkpoint exists |
@@ -26,8 +28,9 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 | `DATABASE_URL` | unset | Server-only PostgreSQL connection for durable checkpoints |
 | `ENABLE_CONVERSATION_COMPACTION` | true | If false, oversized prompts are rejected rather than sent unbounded |
 
-Token estimates intentionally use serialized UTF-8 bytes plus framing as a
-conservative text proxy. The budget reserves completion tokens, tool schemas and
+Conversation text estimates use serialized UTF-8 bytes plus framing as a
+conservative text proxy, excluding native file/image payloads and server-marked
+uploaded text parts. The budget reserves completion tokens, tool schemas and
 1024 units of safety margin. Native PDF/image expansion is provider-dependent;
 this estimator cannot guarantee the expanded multimodal token count. Tool and
 attachment provider limits continue to apply.
@@ -191,3 +194,29 @@ component only. Reminder preferences do not sync between devices/browsers.
 
 The assistant-only cadence uses a separate v2 browser-storage namespace so older
 total-message reminder records cannot suppress the first AI-reply reminder.
+
+## Attachment budget correction (2026-11-09)
+
+All uploaded PDF/image/TXT/Markdown parts are excluded from the conversation-text
+allowance. A server-owned dict subtype marks uploaded text without adding any
+fields to provider JSON; typed user text remains fully charged. The original
+attachment payload is preserved, including during retrieval trimming.
+
+Attachments have an independent reading estimate: uploaded text uses UTF-8 bytes;
+PDF uses extracted text bytes plus 1024 units per page, including scanned pages;
+images reserve 1024 units per 512-pixel tile. Unknown/unreadable native content
+reserves 65536 units. Local PDF/image inspection runs in a worker thread. These
+are configurable deployment allowances, not exact provider token measurements.
+
+The answer text allowance is reduced if attachment reading cost leaves less room
+under the combined provider cap. Both caps must be set for the deployed model;
+changing the model requires reviewing these settings. Attachment overflow has a
+distinct user-visible message and `attachment_context_too_large` reason.
+`attachment.context_budget` and `attachment.pdf_budget` log counts, estimates,
+page counts and transport size without content, filenames or data URIs.
+
+Validation: 166 scoped backend tests passed, 2 existing tests skipped. Fixtures
+include real PDF and PNG binaries, large TXT/Markdown uploads, first/second turns,
+search retrieval, combined provider capacity and unchanged streaming payloads.
+Provider responses were mocked; the user's original PDF was not replayed. This
+change does not implement document chunking or move visual preprocessing earlier.

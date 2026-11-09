@@ -13,6 +13,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from fastapi import Request
 
 from config import settings
+from services.conversation.attachment_budget import AttachmentPart
 from services.memory.gate import classify_user_message
 from core import AgentEvent, ConversationRunState, EventType, SearchMode
 from policies import CapabilityPolicy, SearchDecision, SearchReason
@@ -148,7 +149,7 @@ class OrchestrationVisualMixin:
                 continue
             content = message.get("content")
             text = content if isinstance(content, str) and content.strip() else "請分析我附加的檔案。"
-            message["content"] = [{"type": "text", "text": text}, *attachments]
+            message["content"] = [{"type": "text", "text": text}, *(AttachmentPart(part) for part in attachments)]
             break
         return messages
 

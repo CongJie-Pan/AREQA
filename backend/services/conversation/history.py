@@ -17,6 +17,8 @@ from typing import Any
 
 from services.conversation.context_budget import ContextBudgetError, budget_retrieval, token_bound
 from services.conversation.summary_store import summary_store
+from services.conversation.attachment_budget import attachment_cost
+from config import settings
 
 logger = logging.getLogger(__name__)
 _CACHE: OrderedDict[tuple[str, str, str, str, str], tuple[float, str]] = OrderedDict()
@@ -115,7 +117,17 @@ async def prepare_history(
         exposes safe reason codes, never transcript text, summaries, credentials
         or arbitrary exception messages.
     """
-    budget = context_tokens - output_tokens - token_bound(tools) - 1024
+    attachment_units, attachment_count = await asyncio.to_thread(attachment_cost, messages)
+    if attachment_count:
+        logger.info('attachment.context_budget count=%d estimated_reading_units=%d attachment_budget=%d provider_budget=%d',
+                    attachment_count, attachment_units, settings.conversation_attachment_tokens,
+                    settings.conversation_provider_context_tokens)
+        if attachment_units > settings.conversation_attachment_tokens:
+            raise ContextBudgetError('attachment_context_too_large', attachment_units=attachment_units)
+    effective_context = min(context_tokens, settings.conversation_provider_context_tokens - attachment_units)
+    budget = effective_context - output_tokens - token_bound(tools) - 1024
+    if budget <= 0 and attachment_count:
+        raise ContextBudgetError('attachment_context_too_large', attachment_units=attachment_units)
     if budget <= 0:
         raise ContextBudgetError('output_budget', budget=budget, tools_bytes=token_bound(tools), output_tokens=output_tokens)
     messages, retrieval_missing = budget_retrieval(messages, retrieval_context=retrieval_context, budget=budget, conversation_id=conversation_id)
