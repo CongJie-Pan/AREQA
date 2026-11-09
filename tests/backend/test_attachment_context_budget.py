@@ -76,7 +76,7 @@ async def test_true_attachment_overflow_has_distinct_reason(monkeypatch):
 @pytest.mark.asyncio
 async def test_combined_provider_capacity_is_enforced(monkeypatch):
     monkeypatch.setattr(settings, 'conversation_provider_context_tokens', 10000)
-    with pytest.raises(ContextBudgetError, match='attachment_context_too_large'):
+    with pytest.raises(ContextBudgetError, match='combined_context_too_large'):
         await prepare_history(messages=[{'role': 'user', 'content': [AttachmentPart(attachment('text'))]}], tools=[], client=None,
                               user_id='test', conversation_id='test', model='test', output_tokens=3200, context_tokens=32768)
 

@@ -80,7 +80,7 @@ def _select_sources(prefix: str, allowance: int) -> tuple[str, int, int]:
 
 def budget_retrieval(
     messages: list[dict[str, Any]], *, retrieval_context: str, budget: int,
-    conversation_id: str = '',
+    conversation_id: str = '', text_budget: int | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Shrink only the exact server-supplied retrieval prefix when context is full.
 
@@ -90,6 +90,7 @@ def budget_retrieval(
             ConversationContextService. User-authored context tags are not parsed.
         budget: Input allowance after tools, completion and safety reservations.
         conversation_id: Safe correlation ID for numeric budget diagnostics.
+        text_budget: Standalone text allowance, before attachment reservation.
 
     Returns:
         Copied messages and whether all source excerpts were omitted, with the
@@ -137,6 +138,8 @@ def budget_retrieval(
     mandatory_size = token_bound(instructions + current)
     if mandatory_size > budget:
         reason = 'instructions_too_large' if token_bound(instructions) > budget else 'current_turn_too_large'
+        if text_budget is not None and mandatory_size <= text_budget:
+            reason = 'combined_context_too_large'
         raise ContextBudgetError(reason, **sizes)
     # Leave room for history/summary rather than letting optional evidence consume it all.
     allowance = (token_bound(retrieval_context) if token_bound(messages) <= budget
@@ -144,9 +147,7 @@ def budget_retrieval(
     selected, source_count, retained_count = _select_sources(retrieval_context, allowance)
     if not selected:
         unavailable = '<context>\nNo source excerpts fit this turn. Do not cite unavailable evidence.\n</context>\n\n'
-        if token_bound(unavailable) > allowance:
-            raise ContextBudgetError('retrieval_unavailable', **sizes)
-        selected = unavailable
+        selected = unavailable if token_bound(unavailable) <= allowance else ''
     if part is not None:
         part['text'] = selected + raw_text
     else:

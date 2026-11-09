@@ -205,7 +205,7 @@ attachment payload is preserved, including during retrieval trimming.
 Attachments have an independent reading estimate: uploaded text uses UTF-8 bytes;
 PDF uses extracted text bytes plus 1024 units per page, including scanned pages;
 images reserve 1024 units per 512-pixel tile. Unknown/unreadable native content
-reserves 65536 units. Local PDF/image inspection runs in a worker thread. These
+reserves 65536 units. Context-budget PDF/image inspection runs in a terminable subprocess. These
 are configurable deployment allowances, not exact provider token measurements.
 
 The answer text allowance is reduced if attachment reading cost leaves less room
@@ -220,3 +220,35 @@ include real PDF and PNG binaries, large TXT/Markdown uploads, first/second turn
 search retrieval, combined provider capacity and unchanged streaming payloads.
 Provider responses were mocked; the user's original PDF was not replayed. This
 change does not implement document chunking or move visual preprocessing earlier.
+
+## Context audit corrections
+
+- Optional retrieval excerpts can be removed entirely without rejecting a valid
+  current question. The user receives a missing-evidence notice; source citation
+  markers are filtered across streaming chunk boundaries when no excerpts remain.
+- TXT/Markdown uploads keep their complete decoded text within the existing upload
+  byte limits. The old 50,000-character prefix cut no longer applies. Full text is
+  independently budgeted, and oversized uploads receive an attachment-specific
+  response rather than an answer based only on their beginning.
+- `combined_context_too_large` distinguishes aggregate provider exhaustion from
+  oversized standalone text or attachments. Logs retain separate numeric sizes.
+- Context-budget native parsing uses `CONVERSATION_ATTACHMENT_TIMEOUT_SECONDS`
+  (default 10 seconds), including waiting for one of two per-loop worker slots.
+  Each Unix child also has a five-second CPU and 1 GiB address-space limit.
+  Timeout/cancellation kills, drains and reaps the process. This deadline applies
+  to reading-cost inspection; it is not an end-to-end deadline for optional visual
+  enrichment, network calls or the whole conversation turn.
+- Explicit provider context errors on HTTP 400/413 allow at most one smaller
+  request, only before any answer or tool delta starts. The retry removes earlier
+  turns and trusted retrieval, retaining instructions, current text, attachments
+  and current-turn tool groups. Unrelated errors, identical requests and partial
+  answers are never retried by this policy. Repeated context rejection produces
+  a specific capacity response. Responses/tasks are closed or cancelled on exit.
+
+Regression fixtures reproduce the original optional-retrieval rejection, text
+tail loss and aggregate misclassification. Tests cover subprocess timeout,
+cancellation and a real killed child; complete uploads through parsing and
+budgeting; context retry before streaming; no retry after output or for unrelated
+errors; unchanged current attachments; and split citation filtering. Model calls
+are mocked. Live-provider context limits still require deployment validation;
+estimated reading units cannot guarantee identical accounting across providers.

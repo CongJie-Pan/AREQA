@@ -6,6 +6,9 @@ import io
 import logging
 import math
 from typing import Any
+from weakref import WeakKeyDictionary
+
+_NATIVE_SLOTS = WeakKeyDictionary()
 
 logger = logging.getLogger(__name__)
 
@@ -86,3 +89,94 @@ def attachment_cost(value: Any) -> tuple[int, int]:
         cost += units
         count += parts
     return cost, count
+
+
+class AttachmentInspectionError(Exception):
+    """Expose only a stable failure reason to the public context boundary."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+async def bounded_attachment_cost(value: Any, *, timeout_seconds: float) -> tuple[int, int]:
+    """Inspect native media in a killable, resource-limited subprocess.
+
+    Text remains in-process; file/image parsing has a wall-clock deadline covering
+    startup and IPC. Timeout or caller cancellation kills and reaps the child.
+    Only numeric estimates cross back to the parent; parser stderr is discarded.
+    """
+    import asyncio
+    import json
+    from pathlib import Path
+    import sys
+
+    parts = []
+
+    def collect(item):
+        if is_attachment(item):
+            parts.append(item)
+        elif isinstance(item, dict):
+            for child in item.values():
+                collect(child)
+        elif isinstance(item, list):
+            for child in item:
+                collect(child)
+
+    collect(value)
+    text_units = sum(reading_cost(p) for p in parts if p.get('type') == 'text')
+    native = [p for p in parts if p.get('type') != 'text']
+    if not native:
+        return text_units, len(parts)
+    process = None
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            loop = asyncio.get_running_loop()
+            gate = _NATIVE_SLOTS.setdefault(loop, asyncio.Semaphore(2))
+            async with gate:
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable, str(Path(__file__).resolve()),
+                    stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                output, _ = await process.communicate(json.dumps(native).encode())
+                if process.returncode != 0:
+                    raise AttachmentInspectionError('attachment_parse_failed')
+                units = json.loads(output)
+                if not isinstance(units, int) or units < 0:
+                    raise AttachmentInspectionError('attachment_parse_failed')
+                logger.info('attachment.inspection_completed native_parts=%d estimated_reading_units=%d', len(native), text_units + units)
+                return text_units + units, len(parts)
+
+    except TimeoutError:
+        logger.warning('attachment.inspection_failed reason=attachment_parse_timeout')
+        raise AttachmentInspectionError('attachment_parse_timeout') from None
+    except (ValueError, OSError):
+        raise AttachmentInspectionError('attachment_parse_failed') from None
+    finally:
+        if process is not None and process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            # Drain pipes after killing; wait alone can stall on a full stdout pipe.
+            await process.communicate()
+            await process.wait()
+
+
+def _inspection_worker():
+    """Read bounded native payloads; constrain parser CPU and address space on Unix."""
+    import json
+    import sys
+    try:
+        import resource
+        resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
+        resource.setrlimit(resource.RLIMIT_AS, (1024 ** 3, 1024 ** 3))
+    except ImportError:
+        pass
+    parts = json.loads(sys.stdin.buffer.read(32 * 1024 * 1024))
+    print(json.dumps(sum(reading_cost(part) for part in parts)))
+
+
+if __name__ == '__main__':
+    _inspection_worker()

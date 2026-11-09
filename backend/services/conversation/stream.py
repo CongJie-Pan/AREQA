@@ -12,6 +12,8 @@ from typing import Any, AsyncGenerator, Dict, List
 
 from config import settings
 from services.conversation.history import prepare_history
+from services.conversation.context_recovery import is_provider_context_error, minimal_retry_context, UnavailableCitationFilter
+from services.conversation.attachment_budget import is_attachment
 from services.conversation.context_budget import ContextBudgetError, token_bound
 from core import PublicAnswerFilter
 from services.conversation.image_generation import stream_generated_image
@@ -113,6 +115,8 @@ class ConversationStreamService:
 
             tool_budget = ToolBudgetTracker(ToolBudget())
 
+        original_messages = messages
+        citation_filter = None
         accumulator = ""
         image_marker_filter = ImageRequestMarkerFilter(max_slots=max_image_slots)
         output_filter = PublicAnswerFilter()
@@ -161,93 +165,143 @@ class ConversationStreamService:
                     # Await cancellation to prevent provider work surviving disconnects.
                     await asyncio.gather(preparation, return_exceptions=True)
             except ValueError as error:
-                reasons = {'attachment_context_too_large', 'output_budget', 'compaction_disabled', 'missing_current_turn',
+                reasons = {'combined_context_too_large', 'attachment_parse_timeout', 'attachment_parse_failed', 'attachment_context_too_large', 'output_budget', 'compaction_disabled', 'missing_current_turn',
                            'current_turn_too_large', 'instructions_too_large', 'retrieval_budget',
                            'retrieval_prefix_mismatch', 'retrieval_unavailable'}
                 reason = str(error) if str(error) in reasons else 'invalid_context'
                 sizes = error.sizes if isinstance(error, ContextBudgetError) else {}
                 logger.warning(
                     "history.rejected conversation_id=%s reason=%s budget=%s instructions_bytes=%s "
-                    "current_turn_bytes=%s retrieval_bytes=%s tools_bytes=%d output_tokens=%d",
+                    "current_turn_bytes=%s retrieval_bytes=%s tools_bytes=%d output_tokens=%d attachment_units=%s",
                     conversation_id, reason, sizes.get('budget'), sizes.get('instructions_bytes'),
-                    sizes.get('current_turn_bytes'), sizes.get('retrieval_bytes'), token_bound(tools), max_tokens,
+                    sizes.get('current_turn_bytes'), sizes.get('retrieval_bytes'), token_bound(tools), max_tokens, sizes.get('attachment_units'),
                 )
                 content = "本次問題或必要上下文超過可處理容量，請縮短內容或減少附件後重試。"
                 if reason == 'attachment_context_too_large':
                     content = "附件解析後的內容超過本次可閱讀容量，請改傳相關頁面、分批上傳，或提供較精簡的附件。"
+                if reason == 'combined_context_too_large':
+                    content = "聊天內容與附件合計超過本次可處理容量，請縮短問題或分批上傳附件。"
+                elif reason in ('attachment_parse_timeout', 'attachment_parse_failed'):
+                    content = "附件解析逾時或無法完成，請改傳相關頁面、較小的檔案，或可複製文字的版本。"
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0}]}, ensure_ascii=False)}\n\n"
                 return
             messages = prepared.messages
             if prepared.notice:
+                citation_filter = UnavailableCitationFilter()
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': prepared.notice + chr(10) + chr(10)}, 'index': 0}]}, ensure_ascii=False)}\n\n"
             if trace:
                 trace.increment_model_call("main_answer")
                 trace.mark_once("main_model_started")
                 trace.mark_once("main_model_provider_request_started")
-            generation = asyncio.create_task(
-                self.client.chat.completions.create(
-                    model=target_model,
-                    messages=messages,
-                    stream=True,
-                    max_tokens=max_tokens,
-                    temperature=temperature if temperature > 0 else 0.001,
-                    top_p=top_p,
-                    extra_body=extra_body,
-                    tools=tools,
-                    tool_choice="auto",
-                )
-            )
-            while not generation.done():
-                done, _ = await asyncio.wait([generation], timeout=5.0)
-                if not done:
-                    yield ": heartbeat\n\n"
-            response = await generation
-            if trace:
-                trace.mark_once("main_model_provider_stream_received")
-            async for chunk in response:
-                if await request.is_disconnected():
-                    logger.info("orchestration.stream_cancelled conversation_id=%s", conversation_id)
-                    break
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                if getattr(delta, "tool_calls", None):
-                    for call in delta.tool_calls:
-                        entry = tool_calls.setdefault(getattr(call, "index", 0), {"name": "", "arguments": "", "id": getattr(call, "id", None) or uuid.uuid4().hex})
-                        function = getattr(call, "function", None)
-                        if function:
-                            entry["name"] += getattr(function, "name", None) or ""
-                            entry["arguments"] += getattr(function, "arguments", None) or ""
-                    continue
-                content = getattr(delta, "content", None) or ""
-                if content:
-                    content = output_filter.feed(content)
-                if content:
-                    content, reasons = boundary_filter.feed(content)
-                    for reason in reasons:
-                        logger.warning(
-                            "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
-                            conversation_id,
-                            reason,
+            for attempt in range(2):
+                provider_started = False
+                generation = None
+                response = None
+                try:
+                    generation = asyncio.create_task(
+                        self.client.chat.completions.create(
+                            model=target_model,
+                            messages=messages,
+                            stream=True,
+                            max_tokens=max_tokens,
+                            temperature=temperature if temperature > 0 else 0.001,
+                            top_p=top_p,
+                            extra_body=extra_body,
+                            tools=tools,
+                            tool_choice="auto",
                         )
-                if content:
-                    content = image_marker_filter.feed(content)
-                if content:
+                    )
+                    while not generation.done():
+                        done, _ = await asyncio.wait([generation], timeout=5.0)
+                        if not done:
+                            yield ": heartbeat\n\n"
+                    response = await generation
                     if trace:
-                        trace.mark_once("first_answer_delta")
-                    accumulator += content
-                    yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
-                for slot in image_marker_filter.drain_new_slots():
-                    yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0)
+                        trace.mark_once("main_model_provider_stream_received")
+                    async for chunk in response:
+                        if await request.is_disconnected():
+                            logger.info("orchestration.stream_cancelled conversation_id=%s", conversation_id)
+                            break
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
+                        if getattr(delta, "tool_calls", None):
+                            provider_started = True
+                            for call in delta.tool_calls:
+                                entry = tool_calls.setdefault(getattr(call, "index", 0), {"name": "", "arguments": "", "id": getattr(call, "id", None) or uuid.uuid4().hex})
+                                function = getattr(call, "function", None)
+                                if function:
+                                    entry["name"] += getattr(function, "name", None) or ""
+                                    entry["arguments"] += getattr(function, "arguments", None) or ""
+                            continue
+                        content = getattr(delta, "content", None) or ""
+                        if content:
+                            provider_started = True
+                        if citation_filter:
+                            content = citation_filter.feed(content)
+                        if content:
+                            content = output_filter.feed(content)
+                        if content:
+                            content, reasons = boundary_filter.feed(content)
+                            for reason in reasons:
+                                logger.warning(
+                                    "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
+                                    conversation_id,
+                                    reason,
+                                )
+                        if content:
+                            content = image_marker_filter.feed(content)
+                        if content:
+                            if trace:
+                                trace.mark_once("first_answer_delta")
+                            accumulator += content
+                            yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+                        for slot in image_marker_filter.drain_new_slots():
+                            yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
+                        await asyncio.sleep(0)
+                    break
+                except Exception as provider_error:
+                    if not is_provider_context_error(provider_error):
+                        raise
+                    reduced, removed_sources = minimal_retry_context(messages, original_messages, retrieval_context)
+                    if attempt == 0 and not provider_started and reduced != messages:
+                        messages = reduced
+                        if removed_sources:
+                            citation_filter = UnavailableCitationFilter()
+                        logger.warning('history.provider_context_retry attempt=1 selected_messages=%d removed_sources=%s', len(messages), removed_sources)
+                        if trace:
+                            trace.increment_model_call("main_answer")
+                        yield 'event: status\ndata: {"status":"routing","message":"正在調整上下文並重新準備回答"}\n\n'
+                        if removed_sources:
+                            notice = "本回合搜尋摘錄已移除，回答無法依據這些來源。\n\n"
+                            yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0}]}, ensure_ascii=False)}\n\n"
+                        continue
+                    has_attachment = any(isinstance(m.get('content'), list) and any(is_attachment(p) for p in m['content']) for m in messages)
+                    raise ContextBudgetError('provider_attachment_context_too_large' if has_attachment else 'provider_context_too_large') from None
+                finally:
+                    if generation is not None and not generation.done():
+                        generation.cancel()
+                        await asyncio.gather(generation, return_exceptions=True)
+                    if response is not None:
+                        close = getattr(response, 'close', None) or getattr(response, 'aclose', None)
+                        if close is not None:
+                            try:
+                                await close()
+                            except Exception as close_error:
+                                logger.warning('orchestration.provider_close_failed error_type=%s', type(close_error).__name__)
+
         except Exception as exc:
             if trace:
                 trace.mark_once("main_model_failed")
-            logger.exception("orchestration.stream_failed reason=%s", type(exc).__name__)
+            logger.warning("orchestration.stream_failed reason=%s", str(exc) if isinstance(exc, ContextBudgetError) else type(exc).__name__)
             error_message = "**[API Error]** 生成回答時發生錯誤，請稍後重試。"
+            if isinstance(exc, ContextBudgetError):
+                error_message = ("模型仍無法容納本次附件與問題，請改傳相關頁面或分批上傳。"
+                                 if str(exc) == 'provider_attachment_context_too_large'
+                                 else "模型仍無法容納本次必要上下文，請精簡問題後重試。")
             yield f"data: {json.dumps({'choices': [{'delta': {'content': error_message}, 'index': 0}]}, ensure_ascii=False)}\n\n"
 
-        trailing = output_filter.finish()
+        trailing = (output_filter.feed(citation_filter.finish()) if citation_filter else '') + output_filter.finish()
         if trailing:
             safe_trailing, reasons = boundary_filter.feed(trailing)
             for reason in reasons:

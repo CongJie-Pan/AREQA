@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # Separate text/attachment allowances, bounded by the configured provider context.
     conversation_context_tokens: int = 32_768
     conversation_attachment_tokens: int = 131_072
+    conversation_attachment_timeout_seconds: float = 10.0
     conversation_provider_context_tokens: int = 262_144
     conversation_summary_tokens: int = 1_536
     conversation_summary_timeout_seconds: float = 20.0
