@@ -688,28 +688,29 @@ export function ChatContainer({ className }: ChatContainerProps) {
         )}
       </div>
 
+      {/* Keep navigation outside the clipped/composited chat content. */}
+      <div className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}>
+        <button
+          className={cx(
+            'areqa-chat-sidebar-toggle',
+            styles.iconActionButton,
+            styles.sidebarActionButton,
+          )}
+          onClick={toggleSidebar}
+          aria-label={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
+          aria-expanded={sidebarOpen}
+          aria-controls={sidebarId}
+          data-desktop-collapsed={desktopCollapsed}
+          data-mobile-open={mobileOpen}
+          type="button"
+        >
+          <PanelLeftOpen size={20} data-sidebar-icon="open" aria-hidden="true" />
+          <PanelLeftClose size={20} data-sidebar-icon="close" aria-hidden="true" />
+        </button>
+      </div>
+
       {/* Main Content */}
       <div className={cx('areqa-chat-main', styles.main)}>
-        <div className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}>
-          <button
-            className={cx(
-              'areqa-chat-sidebar-toggle',
-              styles.iconActionButton,
-              styles.sidebarActionButton,
-            )}
-            onClick={toggleSidebar}
-            aria-label={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
-            aria-expanded={sidebarOpen}
-            aria-controls={sidebarId}
-            data-desktop-collapsed={desktopCollapsed}
-            data-mobile-open={mobileOpen}
-            type="button"
-          >
-            <PanelLeftOpen size={20} data-sidebar-icon="open" aria-hidden="true" />
-            <PanelLeftClose size={20} data-sidebar-icon="close" aria-hidden="true" />
-          </button>
-        </div>
-
         <LongConversationReminder
           userId={historyUserId}
           conversationId={activeConversationId}

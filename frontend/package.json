@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:smoke": "vitest run tests/smoke --reporter=verbose",
+    "test:e2e:sidebar-toggle": "cd .. && node frontend/node_modules/@playwright/test/cli.js test --config tests/e2e/sidebar-toggle/playwright.config.ts",
     "test:e2e:streaming-cascade": "cd .. && node frontend/node_modules/@playwright/test/cli.js test --config tests/e2e/streaming-cascade/playwright.config.ts",
     "test:e2e:image-tools": "cd .. && node frontend/node_modules/@playwright/test/cli.js test --config tests/e2e/image-tools/playwright.config.ts"
   },
