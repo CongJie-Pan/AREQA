@@ -9,7 +9,9 @@ import React, { memo, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown, { Components } from 'react-markdown';
 import { useVoiceReveal } from './useVoiceReveal';
-import { Streamdown, type Components as StreamdownComponents } from 'streamdown';
+import { useStreamingReveal } from './useStreamingReveal';
+import { useStreamingTailFade } from './useStreamingTailFade';
+import { Streamdown, createAnimatePlugin, defaultRehypePlugins, type Components as StreamdownComponents } from 'streamdown';
 import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -41,7 +43,11 @@ import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { logger } from '@/utils/logger';
 
 const { TextArea } = Input;
-const STREAMING_MARKDOWN_FLUSH_MS = 56;
+// Keep character nodes mounted at completion; only native tail fades own timing.
+const STREAMING_REHYPE_PLUGINS = [
+  ...Object.values(defaultRehypePlugins),
+  createAnimatePlugin({ animation: 'fadeIn', sep: 'char', duration: 0, stagger: 0 }).rehypePlugin,
+];
 const LEGACY_IMAGE_COMPLETION_TEXT = new Set([
   'Here is the image I created.',
   '這是為你產生的圖片。',
@@ -222,44 +228,6 @@ function downloadCsvFile(csvText: string, filename: string): void {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(objectUrl);
-}
-
-/**
- * Throttle high-frequency text updates while preserving the final value.
- *
- * Args:
- *   value: Latest streaming value from the chat store.
- *   delayMs: Minimum interval between rendered updates.
- *
- * Returns:
- *   A display value updated at a stable cadence. This keeps markdown parsing
- *   from running on every token packet while still flushing the final packet.
- */
-function useThrottledValue<T>(value: T, delayMs: number): T {
-  const [throttledValue, setThrottledValue] = React.useState(value);
-  const lastFlushRef = React.useRef(0);
-  const pendingValueRef = React.useRef(value);
-
-  React.useEffect(() => {
-    pendingValueRef.current = value;
-    const now = window.performance.now();
-    const elapsed = now - lastFlushRef.current;
-
-    if (elapsed >= delayMs) {
-      lastFlushRef.current = now;
-      setThrottledValue(value);
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => {
-      lastFlushRef.current = window.performance.now();
-      setThrottledValue(pendingValueRef.current);
-    }, delayMs - elapsed);
-
-    return () => window.clearTimeout(timer);
-  }, [delayMs, value]);
-
-  return throttledValue;
 }
 
 /**
@@ -1424,37 +1392,39 @@ function StreamingMarkdown({
   content,
   markdownComponents,
   animate = false,
+  isStreaming = false,
   voicePlayback,
   voiceCaption,
 }: {
   content: string;
   markdownComponents: Components;
   animate?: boolean;
+  isStreaming?: boolean;
   voicePlayback?: import('@/store/chat').DisplayMessage['voicePlayback'];
   voiceCaption?: string;
 }) {
   const visibleContent = useVoiceReveal(content, voicePlayback, voiceCaption);
-  const isVoicePlayback = Boolean(voicePlayback);
-  const throttledContent = useThrottledValue(visibleContent, STREAMING_MARKDOWN_FLUSH_MS);
-  const deferredContent = React.useDeferredValue((isVoicePlayback || !animate) ? visibleContent : throttledContent);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  useStreamingTailFade(rootRef, animate && !voicePlayback);
   const processedContent = React.useMemo(() => {
-    return normalizeMessageMarkdown(normalizeCitationMarkers(deferredContent));
-  }, [deferredContent]);
+    return normalizeMessageMarkdown(normalizeCitationMarkers(visibleContent));
+  }, [visibleContent]);
 
   return (
-    <Streamdown
-      key={animate ? 'animated' : 'static'}
-      components={markdownComponents as StreamdownComponents}
-      controls={false}
-      disallowedElements={['script', 'iframe', 'object', 'embed']}
-      linkSafety={STREAMDOWN_LINK_SAFETY}
-      mode="streaming"
-      isAnimating={animate}
-      animated={animate ? { animation: 'fadeIn', sep: 'char', duration: 260, stagger: 16 } : false}
-      plugins={STREAMDOWN_PLUGINS}
-    >
-      {processedContent}
-    </Streamdown>
+    <div ref={rootRef}>
+      <Streamdown
+        components={markdownComponents as StreamdownComponents}
+        controls={false}
+        disallowedElements={['script', 'iframe', 'object', 'embed']}
+        linkSafety={STREAMDOWN_LINK_SAFETY}
+        mode="streaming"
+        isAnimating={isStreaming || voicePlayback === 'waiting' || voicePlayback === 'playing'}
+        rehypePlugins={animate ? STREAMING_REHYPE_PLUGINS : undefined}
+        plugins={STREAMDOWN_PLUGINS}
+      >
+        {processedContent}
+      </Streamdown>
+    </div>
   );
 }
 
@@ -1886,6 +1856,7 @@ function LiveOrderedAnswerRenderer({
   markdownComponents,
   styles,
   isStreaming,
+  animate,
 }: {
   content: string;
   slots: StreamingImageSlot[];
@@ -1894,8 +1865,9 @@ function LiveOrderedAnswerRenderer({
   markdownComponents: Components;
   styles: ReturnType<typeof useStyles>['styles'];
   isStreaming: boolean;
+  animate: boolean;
 }) {
-  const parts = React.useMemo(() => buildLiveAnswerParts(content, slots), [content, slots]);
+  const parts = React.useMemo(() => buildLiveAnswerParts(content, slots.filter(slot => slot.contentOffset <= content.length)), [content, slots]);
   const imageBlocks = React.useMemo(
     () => new Map(
       blocks
@@ -1908,11 +1880,12 @@ function LiveOrderedAnswerRenderer({
     <>
       {parts.map((part) => {
         if (part.type === 'text') {
-          if (!part.text) return null;
           return (
             <div data-live-answer-part={part.key} key={part.key}>
               <StreamingMarkdown
                 content={part.text}
+                animate={animate}
+                isStreaming={isStreaming}
                 markdownComponents={markdownComponents}
               />
             </div>
@@ -1957,6 +1930,8 @@ export const MessageItem = memo(function MessageItem({
   const { t } = useUserPreferences();
   const isUser = message.role === 'user';
   const hasLiveStreamed = useHasLiveStreamed(isStreaming && !thinking?.isThinking);
+  const reveal = useStreamingReveal(message.content, isStreaming && !thinking?.isThinking, isUser || Boolean(message.voicePlayback));
+  const isDisplayingStream = isStreaming || reveal.isRevealing;
   const legacyMessage = React.useMemo(
     () => splitLegacyAttachmentMarker(message.content),
     [message.content],
@@ -1975,8 +1950,10 @@ export const MessageItem = memo(function MessageItem({
     !hasAnswerBlocks || answerBlockImageCount === 0 || liveImageSlots.length >= answerBlockImageCount;
   const hasActiveVoiceCaption = Boolean(message.voicePlayback && message.voicePlayback !== 'finished');
   const shouldUseLiveOrderedAnswer =
-    !hasActiveVoiceCaption && hasLiveStreamed && liveImageSlots.length > 0 && (isStreaming || hasCompleteLiveImageSlots);
-  const shouldUseStructuredAnswerBlocks = !hasActiveVoiceCaption && hasAnswerBlocks && !shouldUseLiveOrderedAnswer;
+    !hasActiveVoiceCaption && hasLiveStreamed
+    && (liveImageSlots.length > 0 || (reveal.animate && (!hasAnswerBlocks || isDisplayingStream)))
+    && (isDisplayingStream || hasCompleteLiveImageSlots);
+  const shouldUseStructuredAnswerBlocks = !hasActiveVoiceCaption && hasAnswerBlocks && !shouldUseLiveOrderedAnswer && !isDisplayingStream;
   const generatedImageStatusContent = shouldUseStructuredAnswerBlocks
     && message.answerBlocks?.every((block) => block.type === 'image_block' && block.provider === 'generated_image')
     && !LEGACY_IMAGE_COMPLETION_TEXT.has(message.content.trim())
@@ -2625,19 +2602,20 @@ export const MessageItem = memo(function MessageItem({
               >
                 {/* Message Content */}
                 <div
-                  className={cx(styles.content, isStreaming && !thinking?.isThinking && styles.streamingContentReveal)}
-                  data-streaming-content={isStreaming && !thinking?.isThinking ? 'true' : undefined}
+                  className={cx(styles.content, isDisplayingStream && !thinking?.isThinking && styles.streamingContentReveal)}
+                  data-streaming-content={isDisplayingStream && !thinking?.isThinking ? 'true' : undefined}
                 >
                   {generatedImageStatusContent && <StreamingMarkdown content={generatedImageStatusContent} markdownComponents={markdownComponents} />}
                   {shouldUseLiveOrderedAnswer ? (
                     <LiveOrderedAnswerRenderer
                       conversationId={message.conversationId}
-                      content={message.content}
+                      content={reveal.content}
                       slots={liveImageSlots}
                       blocks={message.answerBlocks ?? []}
                       markdownComponents={markdownComponents}
                       styles={styles}
-                      isStreaming={isStreaming && !thinking?.isThinking}
+                      isStreaming={isDisplayingStream && !thinking?.isThinking}
+                      animate={reveal.animate}
                     />
                   ) : shouldUseStructuredAnswerBlocks ? (
                     <AnswerBlocksRenderer
@@ -2648,14 +2626,15 @@ export const MessageItem = memo(function MessageItem({
                     />
                   ) : (
                     <StreamingMarkdown
-                      content={message.content}
-                      animate={(isStreaming && hasLiveStreamed) || message.voicePlayback === 'waiting' || message.voicePlayback === 'playing'}
+                      content={reveal.content}
+                      animate={reveal.animate}
+                      isStreaming={isDisplayingStream}
                       voicePlayback={message.voicePlayback}
                       voiceCaption={message.voiceCaption}
                       markdownComponents={markdownComponents}
                     />
                   )}
-                  {isStreaming && !thinking?.isThinking && (
+                  {isDisplayingStream && !thinking?.isThinking && (
                     <span className={styles.streamingDots} aria-hidden="true">
                       <span className={styles.streamingDot} />
                       <span className={styles.streamingDot} />

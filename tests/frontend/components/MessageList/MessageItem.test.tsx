@@ -833,7 +833,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     linkClick.mockRestore();
   });
 
-  it('uses a container-level reveal for streaming assistant markdown', () => {
+  it('uses a container-level reveal for streaming assistant markdown', async () => {
     const { container } = render(
       <MessageItem
         message={{
@@ -844,7 +844,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(container).toHaveTextContent('串流動畫測試');
+    await waitFor(() => expect(container).toHaveTextContent('串流動畫測試'));
     expect(container.querySelector('[data-streaming-content="true"]')).toBeInTheDocument();
     expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
     expect(container.querySelector('.streamingDots')).toBeInTheDocument();
@@ -941,7 +941,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByRole('dialog', { name: '表格' })).not.toBeInTheDocument();
   });
 
-  it('removes the streaming reveal marker after live streaming ends', () => {
+  it('removes the streaming reveal marker after final text finishes displaying', async () => {
     const { container, rerender } = render(
       <MessageItem
         message={{
@@ -964,11 +964,11 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(container.querySelector('[data-streaming-content="true"]')).not.toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector('[data-streaming-content="true"]')).not.toBeInTheDocument());
     expect(container.querySelector('.streamingDots')).not.toBeInTheDocument();
   });
 
-  it('does not replay output animation when a completed assistant message is edited', () => {
+  it('does not replay output animation when a completed assistant message is edited', async () => {
     const { container, rerender } = render(
       <MessageItem
         message={{
@@ -979,7 +979,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector('[data-sd-animate]')).toBeInTheDocument());
 
     rerender(
       <MessageItem
@@ -993,7 +993,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     );
 
     expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
-    expect(container).toHaveTextContent('編輯後回答');
+    await waitFor(() => expect(container).toHaveTextContent('編輯後回答'));
   });
 
   it('does not replay output animation for finished voice replies after editing', () => {
@@ -1012,7 +1012,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(container).toHaveTextContent('語音回答編輯後');
   });
 
-  it('uses final structured blocks immediately when no live image slot event exists', () => {
+  it('uses final structured blocks after the display drains when no live image slot event exists', async () => {
     const streamedContent = '串流期間已顯示的回答';
     const { container, rerender } = render(
       <MessageItem
@@ -1052,6 +1052,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
+    await waitFor(() => expect(container.querySelectorAll('[data-answer-block-index]')).toHaveLength(3));
     expect(container).not.toHaveTextContent(streamedContent);
     const blocks = Array.from(container.querySelectorAll('[data-answer-block-index]'));
     expect(blocks).toHaveLength(3);
@@ -1061,7 +1062,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('完成後補上的圖片說明。')).toBeInTheDocument();
   });
 
-  it('keeps live text nodes stable while resolving an image at its streamed slot', () => {
+  it('keeps live text nodes stable while resolving an image at its streamed slot', async () => {
     const before = '圖片前段';
     const after = '\n\n圖片後段';
     const content = `${before}${after}`;
@@ -1094,6 +1095,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       <MessageItem message={liveMessage} isStreaming={true} />
     );
 
+    await waitFor(() => expect(container.querySelectorAll('[data-live-answer-part]')).toHaveLength(3));
     const initialParts = Array.from(container.querySelectorAll('[data-live-answer-part]'));
     expect(initialParts.map((part) => part.getAttribute('data-live-answer-part'))).toEqual([
       'live-text-start',
@@ -1135,7 +1137,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(historicalBlocks[2]).toHaveTextContent('圖片後段');
   });
 
-  it('uses complete structured blocks after streaming when live image slots are incomplete', () => {
+  it('uses complete structured blocks after streaming when live image slots are incomplete', async () => {
     const answerBlocks = [
       { type: 'paragraph' as const, text: '第一段' },
       ...[1, 2, 3, 4].map((index) => ({
@@ -1164,7 +1166,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       <MessageItem message={liveMessage} isStreaming={true} />
     );
 
-    expect(container.querySelectorAll('[data-live-answer-part]')).not.toHaveLength(0);
+    await waitFor(() => expect(container.querySelectorAll('[data-live-answer-part]')).not.toHaveLength(0));
 
     rerender(
       <MessageItem
@@ -1173,7 +1175,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    expect(container.querySelectorAll('[data-live-answer-part]')).toHaveLength(0);
+    await waitFor(() => expect(container.querySelectorAll('[data-live-answer-part]')).toHaveLength(0));
     expect(container.querySelectorAll('[data-answer-block-index]')).toHaveLength(6);
     expect(screen.getByAltText('Figure 1 caption')).toBeInTheDocument();
     expect(screen.getByAltText('Figure 2 caption')).toBeInTheDocument();
