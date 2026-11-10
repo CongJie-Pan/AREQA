@@ -2,7 +2,7 @@ import { defineConfig } from '../../../frontend/node_modules/@playwright/test/in
 import { resolve } from 'node:path';
 
 export default defineConfig({
-  testDir: __dirname, testMatch: 'flow.spec.ts', workers: 1,
+  testDir: __dirname, testMatch: ['flow.spec.ts', 'context-limits.spec.ts'], workers: 1,
   timeout: 60_000, expect: { timeout: 15_000 },
   outputDir: '/tmp/areqa-image-tools-playwright',
   use: { baseURL: 'http://127.0.0.1:18101', headless: true, trace: 'retain-on-failure' },

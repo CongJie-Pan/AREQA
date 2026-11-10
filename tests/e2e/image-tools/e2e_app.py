@@ -4,6 +4,7 @@ Never deploy this app. Authentication, cloud memory/sync and provider responses
 are test boundaries. Scenario control is isolated here, not in production routes.
 """
 import asyncio
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -23,7 +24,18 @@ from services.query_policy_service import default_response_policy
 from services.post_turn_service import PostTurnService
 import memory_store
 
+from config import settings
+
+visual_defaults = (settings.enable_visual_preflight, settings.enable_pdf_attachment_visuals)
+
 state = {'scenario': 'text', 'generated': 0, 'references': 0, 'cancelled': 0, 'uploads': 0}
+
+
+class ContextProviderError(Exception):
+    def __init__(self, status_code=400):
+        super().__init__('controlled provider failure')
+        self.status_code = status_code
+        self.body = {'error': {'code': 'context_length_exceeded' if status_code == 400 else 'rate_limit_exceeded'}}
 
 
 class Provider:
@@ -33,7 +45,23 @@ class Provider:
     async def create(self, **kwargs):
         if not kwargs.get('stream'):
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{}'))])
+        if state['scenario'].startswith('context_'):
+            state['main_calls'] += 1
+            state['message_counts'].append(len(kwargs['messages']))
+            serialized = json.dumps(kwargs['messages'])
+            state['tail_preserved'].append('ATTACHMENT_END_MARKER' in serialized)
+            state['native_attachment'].append('file_data' in serialized or 'image_url' in serialized)
+            if state['scenario'] == 'context_repeat' or (state['scenario'] == 'context_retry' and state['main_calls'] == 1):
+                raise ContextProviderError()
+            if state['scenario'] == 'context_rate_limit':
+                raise ContextProviderError(429)
         async def chunks():
+            if state['scenario'].startswith('context_'):
+                content = '部分回答' if state['scenario'] == 'context_partial' else '附件分析完成'
+                yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=content, tool_calls=None))])
+                if state['scenario'] == 'context_partial':
+                    raise ContextProviderError()
+                return
             state['uploads'] = sum(isinstance(item.get('content'), list) for item in kwargs['messages'])
             if state['scenario'] in {'text', 'attachment'}:
                 yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='附件分析完成' if state['scenario'] == 'attachment' else '一般文字回答', tool_calls=None))])
@@ -90,7 +118,12 @@ app.dependency_overrides[get_current_user] = lambda: 'e2e-user'
 
 @app.post('/__test/scenario')
 async def scenario(payload: dict):
-    state.update(scenario=payload['scenario'], generated=0, references=0, cancelled=0, uploads=0)
+    state.update(scenario=payload['scenario'], generated=0, references=0, cancelled=0, uploads=0,
+                 main_calls=0, message_counts=[], tail_preserved=[], native_attachment=[])
+    # Disable only optional visual enrichment; parsing and context inspection stay real.
+    context_test = payload['scenario'].startswith('context_')
+    settings.enable_visual_preflight = False if context_test else visual_defaults[0]
+    settings.enable_pdf_attachment_visuals = False if context_test else visual_defaults[1]
     return state
 
 
@@ -111,3 +144,13 @@ async def image():
 @app.post('/api/title')
 async def title():
     return StreamingResponse(iter(['data: {"content":"效果量教學"}\n\n', 'data: [DONE]\n\n']), media_type='text/event-stream')
+
+
+@app.get('/__test/document.pdf')
+async def document():
+    import fitz
+    import random
+    with fitz.open() as pdf:
+        pdf.new_page().insert_text((72, 72), 'Sample size and effect size.')
+        pdf.embfile_add('padding.bin', random.Random(42).randbytes(400_000))
+        return Response(pdf.tobytes(), media_type='application/pdf')

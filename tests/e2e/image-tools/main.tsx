@@ -9,6 +9,7 @@ import { sendMessage, cancelCurrentStream, startNewConversation, regenerateMessa
 import { generateConversationImage, cancelConversationImage } from '@/services/generatedImages';
 import { db } from '@/database/db';
 
+localStorage.setItem('areqa:interface-language', 'zh-TW');
 localStorage.setItem('sb-e2e-auth-token', JSON.stringify({ user: { id: 'e2e-user' }, access_token: 'e2e-test-token', expires_at: 4102444800 }));
 
 function Harness() {
