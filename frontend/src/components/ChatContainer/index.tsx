@@ -8,7 +8,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, MoreHorizontal, FileText, FileImage, FileCode, Share2 } from 'lucide-react';
-import { App, Dropdown } from 'antd';
+import { App, Dropdown, Tooltip } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
@@ -694,24 +694,29 @@ export function ChatContainer({ className }: ChatContainerProps) {
         data-sidebar-open={sidebarOpen}
         style={{ '--areqa-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
       >
-        <button
-          className={cx(
-            'areqa-chat-sidebar-toggle',
-            styles.iconActionButton,
-            styles.sidebarActionButton,
-          )}
-          onClick={toggleSidebar}
-          aria-label={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
+        <Tooltip
           title={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
-          aria-expanded={sidebarOpen}
-          aria-controls={sidebarId}
-          data-desktop-collapsed={desktopCollapsed}
-          data-mobile-open={mobileOpen}
-          type="button"
+          placement="right"
+          mouseEnterDelay={0.35}
         >
-          <PanelLeftOpen size={20} data-sidebar-icon="open" aria-hidden="true" />
-          <PanelLeftClose size={20} data-sidebar-icon="close" aria-hidden="true" />
-        </button>
+          <button
+            className={cx(
+              'areqa-chat-sidebar-toggle',
+              styles.iconActionButton,
+              styles.sidebarActionButton,
+            )}
+            onClick={toggleSidebar}
+            aria-label={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
+            aria-expanded={sidebarOpen}
+            aria-controls={sidebarId}
+            data-desktop-collapsed={desktopCollapsed}
+            data-mobile-open={mobileOpen}
+            type="button"
+          >
+            <PanelLeftOpen size={20} data-sidebar-icon="open" aria-hidden="true" />
+            <PanelLeftClose size={20} data-sidebar-icon="close" aria-hidden="true" />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Main Content */}

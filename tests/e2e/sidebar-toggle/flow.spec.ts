@@ -59,25 +59,46 @@ test.describe('touch navigation', () => {
   });
 });
 
-test('sidebar control provides hover, press and keyboard focus feedback', async ({ page }) => {
+for (const theme of ['light', 'dark']) {
+  test(`sidebar control provides visible feedback in ${theme} mode`, async ({ page }) => {
+    await page.addInitScript(theme => localStorage.setItem('areqa:interface-theme', theme), theme);
+    await page.setViewportSize({ width: 1100, height: 860 });
+    await page.goto('/');
+    const toggle = page.locator('.areqa-chat-sidebar-toggle');
+    await expect(toggle).toBeVisible();
+    await page.mouse.move(600, 400);
+    const background = await toggle.evaluate(element => getComputedStyle(element).backgroundColor);
+    const shadow = await toggle.evaluate(element => getComputedStyle(element).boxShadow);
+    await expect(toggle).toHaveCSS('border-radius', '10px');
+    await toggle.hover();
+    await expect(page.getByRole('tooltip')).toBeVisible();
+    await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).boxShadow)).not.toBe(shadow);
+    await expect.poll(() => toggle.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).m42)).toBe(-1);
+    await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(background);
+    await page.mouse.down();
+    await expect.poll(() => toggle.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).a)).toBeCloseTo(0.95, 2);
+    await page.mouse.move(600, 400);
+    await page.mouse.up();
+    await toggle.focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(toggle).toBeFocused();
+    await expect(toggle).toHaveCSS('outline-style', 'solid');
+    await page.screenshot({ path: `/tmp/areqa-sidebar-button-${theme}.png` });
+    await toggle.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+}
+
+test('reduced motion keeps hover and press stationary', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1100, height: 860 });
   await page.goto('/');
   const toggle = page.locator('.areqa-chat-sidebar-toggle');
-  await expect(toggle).toBeVisible();
-  await page.mouse.move(600, 400);
-  const background = await toggle.evaluate(element => getComputedStyle(element).backgroundColor);
   await toggle.hover();
-  await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(background);
+  await expect(toggle).toHaveCSS('transform', 'none');
+  await expect(toggle).toHaveCSS('transition-duration', '0s');
   await page.mouse.down();
-  await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).transform)).not.toBe('none');
-  await page.mouse.move(600, 400);
+  await expect(toggle).toHaveCSS('transform', 'none');
   await page.mouse.up();
-  await toggle.focus();
-  await page.keyboard.press('Tab');
-  await page.keyboard.press('Shift+Tab');
-  await expect(toggle).toBeFocused();
-  await expect(toggle).toHaveCSS('outline-style', 'solid');
-  await page.screenshot({ path: '/tmp/areqa-sidebar-design.png' });
-  await toggle.press('Enter');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });
