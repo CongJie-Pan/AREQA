@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { test, expect } from '../../../frontend/node_modules/@playwright/test/index.mjs';
 import type { Page, APIRequestContext } from '../../../frontend/node_modules/@playwright/test';
 
@@ -71,16 +72,17 @@ for (const [name, attempts, answer] of [
   });
 }
 
-test('@smoke oversized attachment ends loading with an actionable error and permits the next turn', async ({ page, request }) => {
+test('@smoke attachment above the old allowance reaches the model and permits the next turn', async ({ page, request }) => {
   await firstTurn(page, request);
   await scenario(request, 'context_ok');
-  await page.getByLabel('選擇附件').setInputFiles({ name: 'large.txt', mimeType: 'text/plain', buffer: Buffer.from('A'.repeat(140_000)) });
+  await page.getByLabel('選擇附件').setInputFiles({ name: 'large.txt', mimeType: 'text/plain', buffer: Buffer.from('A'.repeat(140_000) + 'ATTACHMENT_END_MARKER') });
   await send(page, '請摘要附件');
-  await expect(page.getByText('附件解析後的內容超過本次可閱讀容量', { exact: false })).toBeVisible();
-  await idle(page);
-  expect((await (await request.get('/__test/state')).json()).main_calls).toBe(0);
-  await send(page, '請說明效果量');
   await expect(page.getByText('附件分析完成', { exact: true })).toBeVisible();
+  await idle(page);
+  expect((await (await request.get('/__test/state')).json()).main_calls).toBe(1);
+  expect((await (await request.get('/__test/state')).json()).tail_preserved).toEqual([true]);
+  await send(page, '請說明效果量');
+  await expect(page.getByText('附件分析完成', { exact: true })).toHaveCount(2);
   await idle(page);
 });
 
@@ -105,4 +107,18 @@ test('HTTP multipart accepts more than 100 history messages and emits one termin
   const state = await (await request.get('/__test/state')).json();
   expect(state.main_calls).toBe(1);
   expect(state.tail_preserved).toEqual([true]);
+});
+
+
+test('@smoke A-MEM paper reaches the answer model through file upload', async ({ page, request }) => {
+  await firstTurn(page, request);
+  await scenario(request, 'context_ok');
+  await page.getByLabel('選擇附件').setInputFiles(resolve('docs/paper/memory_work/A-MEM_Agentic Memory for LLM Agents.pdf'));
+  await send(page, '請解釋這篇論文的研究問題、方法、主要結果與限制');
+  await expect(page.getByText('附件分析完成', { exact: true })).toBeVisible();
+  await idle(page);
+  const state = await (await request.get('/__test/state')).json();
+  expect(state.main_calls).toBe(1);
+  expect(state.native_attachment).toEqual([true]);
+  await expect(page.getByText('超過本次可閱讀容量', { exact: false })).toHaveCount(0);
 });

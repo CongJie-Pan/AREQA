@@ -37,12 +37,13 @@ def test_text_attachment_keeps_tail_after_50000_characters():
 
 
 @pytest.mark.asyncio
-async def test_combined_capacity_has_specific_reason(monkeypatch):
+async def test_attachment_estimate_does_not_reduce_instruction_budget(monkeypatch):
     monkeypatch.setattr(settings, 'conversation_provider_context_tokens', 35000)
-    with pytest.raises(ContextBudgetError, match='combined_context_too_large'):
-        await prepare([{'role': 'system', 'content': 's' * 15000},
+    result = await prepare([{'role': 'system', 'content': 's' * 15000},
                        {'role': 'user', 'content': [{'type': 'text', 'text': 'question'},
                          AttachmentPart(type='text', text='a' * 20000)]}])
+    assert result.messages[0]['content'] == 's' * 15000
+    assert result.messages[-1]['content'][-1]['text'] == 'a' * 20000
 
 
 @pytest.mark.asyncio
@@ -186,13 +187,14 @@ async def test_timeout_terminates_real_worker(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_combined_capacity_with_search_keeps_specific_reason(monkeypatch):
+async def test_attachment_estimate_does_not_reduce_search_budget(monkeypatch):
     monkeypatch.setattr(settings, 'conversation_provider_context_tokens', 35000)
     prefix = '<context>\nEvidence\n</context>\n\n'
-    with pytest.raises(ContextBudgetError, match='combined_context_too_large'):
-        await prepare([{'role': 'system', 'content': 's' * 15000},
+    result = await prepare([{'role': 'system', 'content': 's' * 15000},
                        {'role': 'user', 'content': [{'type': 'text', 'text': prefix + 'question'},
                          AttachmentPart(type='text', text='a' * 20000)]}], retrieval_context=prefix)
+    assert result.messages[-1]['content'][0]['text'] == prefix + 'question'
+    assert result.messages[-1]['content'][-1]['text'] == 'a' * 20000
 
 
 @pytest.mark.asyncio
@@ -252,5 +254,5 @@ async def test_full_text_upload_reaches_capacity_check_without_losing_tail():
     assert uploads[0].plain_text == original
     messages = OrchestrationVisualMixin._attach_to_latest_user_message(
         [{'role': 'user', 'content': 'Read the final section'}], [uploads[0].content_part])
-    with pytest.raises(ContextBudgetError, match='attachment_context_too_large'):
-        await prepare(messages)
+    result = await prepare(messages)
+    assert original in result.messages[-1]['content'][-1]['text']

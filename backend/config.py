@@ -15,11 +15,12 @@ class Settings(BaseSettings):
     model_visual_understanding: str = "google/gemini-3.1-flash-lite"
     model_web_search: str = "google/gemini-3.8-flash"
 
-    # Separate text/attachment allowances, bounded by the configured provider context.
+    # Chat history uses its own allowance; providers enforce actual media capacity.
     conversation_context_tokens: int = 32_768
+    # Legacy deployment settings retained for compatibility; not admission limits.
     conversation_attachment_tokens: int = 131_072
-    conversation_attachment_timeout_seconds: float = 10.0
     conversation_provider_context_tokens: int = 262_144
+    conversation_attachment_timeout_seconds: float = 10.0
     conversation_summary_tokens: int = 1_536
     conversation_summary_timeout_seconds: float = 20.0
     conversation_summary_cold_timeout_seconds: float = 45.0

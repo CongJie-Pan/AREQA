@@ -3,6 +3,7 @@ import base64
 from copy import deepcopy
 import io
 import random
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -66,19 +67,19 @@ async def test_large_plain_question_is_still_rejected():
 
 
 @pytest.mark.asyncio
-async def test_true_attachment_overflow_has_distinct_reason(monkeypatch):
+async def test_attachment_above_legacy_allowance_is_preserved(monkeypatch):
     monkeypatch.setattr(settings, 'conversation_attachment_tokens', 1000)
-    with pytest.raises(ContextBudgetError, match='attachment_context_too_large'):
-        await prepare_history(messages=[{'role': 'user', 'content': [AttachmentPart(attachment('text'))]}], tools=[], client=None,
+    result = await prepare_history(messages=[{'role': 'user', 'content': [AttachmentPart(attachment('text'))]}], tools=[], client=None,
                               user_id='test', conversation_id='test', model='test', output_tokens=3200, context_tokens=32768)
+    assert result.messages[-1]['content'][0]['text'] == attachment('text')['text']
 
 
 @pytest.mark.asyncio
-async def test_combined_provider_capacity_is_enforced(monkeypatch):
+async def test_estimated_provider_capacity_does_not_reduce_chat_budget(monkeypatch):
     monkeypatch.setattr(settings, 'conversation_provider_context_tokens', 10000)
-    with pytest.raises(ContextBudgetError, match='combined_context_too_large'):
-        await prepare_history(messages=[{'role': 'user', 'content': [AttachmentPart(attachment('text'))]}], tools=[], client=None,
+    result = await prepare_history(messages=[{'role': 'user', 'content': [AttachmentPart(attachment('text'))]}], tools=[], client=None,
                               user_id='test', conversation_id='test', model='test', output_tokens=3200, context_tokens=32768)
+    assert result.messages[-1]['content'][0]['text'].endswith('source detail ')
 
 
 def test_scan_pages_have_cost_without_text_and_no_raw_data_in_logs(caplog):
@@ -118,10 +119,12 @@ async def test_stream_sends_original_attachment_without_internal_metadata(kind):
 
 
 @pytest.mark.asyncio
-async def test_stream_reports_attachment_specific_failure(monkeypatch):
+async def test_stream_sends_attachment_above_legacy_allowance(monkeypatch):
     from services.conversation.stream import ConversationStreamService
     monkeypatch.setattr(settings, 'conversation_attachment_tokens', 1)
-    create = AsyncMock()
+    async def response():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='Grounded answer', tool_calls=None))])
+    create = AsyncMock(return_value=response())
     service = ConversationStreamService(SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), None)
     output = ''.join([chunk async for chunk in service.stream(
         user_id='test', conversation_id='test', last_user_msg='Explain',
@@ -129,5 +132,38 @@ async def test_stream_reports_attachment_specific_failure(monkeypatch):
         force_think=False, max_tokens=3200, temperature=0.1, top_p=0.9, repetition_penalty=1,
         request=SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
     )])
-    assert '附件解析後的內容超過本次可閱讀容量' in output
-    create.assert_not_awaited()
+    assert 'Grounded answer' in output
+    assert create.await_count == 1
+    assert create.call_args.kwargs['messages'][-1]['content'][0]['text'] == attachment('text')['text']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('paper_source', ['dense', 'a_mem'])
+async def test_paper_reaches_provider_without_payload_changes(paper_source):
+    from services.conversation.stream import ConversationStreamService
+    with pymupdf.open() as doc:
+        for _ in range(30):
+            page = doc.new_page()
+            for line in range(46):
+                page.insert_text((40, 40 + line * 16),
+                                 'Research findings and methods are explained with supporting evidence here.')
+        raw = doc.tobytes()
+    if paper_source == 'a_mem':
+        raw = (Path(__file__).resolve().parents[2] / 'docs/paper/memory_work/A-MEM_Agentic Memory for LLM Agents.pdf').read_bytes()
+    part = {'type': 'file', 'file': {'filename': 'paper.pdf', 'file_data':
+            'data:application/pdf;base64,' + base64.b64encode(raw).decode()}}
+    if paper_source == 'dense':
+        assert attachment_cost(part)[0] > 131072
+    async def response():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='Paper explained', tool_calls=None))])
+    create = AsyncMock(return_value=response())
+    service = ConversationStreamService(SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), None)
+    output = ''.join([chunk async for chunk in service.stream(
+        user_id='test', conversation_id='dense-paper', last_user_msg='Explain',
+        messages=[{'role': 'user', 'content': [{'type': 'text', 'text': 'Explain'}, part]}],
+        force_think=False, max_tokens=3200, temperature=0.1, top_p=0.9, repetition_penalty=1,
+        request=SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
+    )])
+    assert 'Paper explained' in output
+    assert create.await_count == 1
+    assert create.call_args.kwargs['messages'][-1]['content'][-1] == part

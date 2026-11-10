@@ -94,7 +94,7 @@ async def prepare_history(
         conversation_id: Conversation isolation scope, never logged here.
         model: Independently configured summary model; also isolates cache entries.
         output_tokens: Reserved completion budget, including reasoning.
-        context_tokens: Configured conservative total context allowance.
+        context_tokens: Conservative chat-text allowance, excluding attachment payloads.
         summary_tokens: Maximum generated summary size.
         timeout_seconds: Total wall-clock allowance for compaction.
         enabled: Feature switch; disabled mode rejects oversized contexts safely.
@@ -113,7 +113,9 @@ async def prepare_history(
     Side Effects:
         Calls the configured model only for oversized histories. INFO/WARNING
         history.prepared/history.summary_started/history.summary_completed logs
-        expose only model, timing, usage and counts. WARNING history.summary_failed
+        expose only model, timing, usage and counts. attachment.context_budget logs
+        numeric media estimates only; these do not reject or shrink chat capacity.
+        Actual media capacity is enforced by the provider. WARNING history.summary_failed
         exposes safe reason codes, never transcript text, summaries, credentials
         or arbitrary exception messages.
     """
@@ -123,21 +125,15 @@ async def prepare_history(
     except AttachmentInspectionError as error:
         raise ContextBudgetError(error.reason) from None
     if attachment_count:
-        logger.info('attachment.context_budget count=%d estimated_reading_units=%d attachment_budget=%d provider_budget=%d',
-                    attachment_count, attachment_units, settings.conversation_attachment_tokens,
-                    settings.conversation_provider_context_tokens)
-        if attachment_units > settings.conversation_attachment_tokens:
-            raise ContextBudgetError('attachment_context_too_large', attachment_units=attachment_units)
-    effective_context = min(context_tokens, settings.conversation_provider_context_tokens - attachment_units)
-    budget = effective_context - output_tokens - token_bound(tools) - 1024
-    if budget <= 0 and attachment_count:
-        raise ContextBudgetError('combined_context_too_large', attachment_units=attachment_units)
+        # Byte/page estimates are diagnostic only; the provider owns actual media capacity.
+        logger.info('attachment.context_budget count=%d estimated_reading_units=%d enforcement=provider',
+                    attachment_count, attachment_units)
+    budget = context_tokens - output_tokens - token_bound(tools) - 1024
     if budget <= 0:
         raise ContextBudgetError('output_budget', budget=budget, tools_bytes=token_bound(tools), output_tokens=output_tokens)
-    text_budget = context_tokens - output_tokens - token_bound(tools) - 1024
     messages, retrieval_missing = budget_retrieval(
         messages, retrieval_context=retrieval_context, budget=budget,
-        conversation_id=conversation_id, text_budget=text_budget if attachment_count else None)
+        conversation_id=conversation_id)
     retrieval_notice = '本回合沒有可納入的搜尋摘錄，回答無法依據這些來源。' if retrieval_missing else ''
     if token_bound(messages) <= budget:
         return HistoryContext(list(messages), retrieval_notice)
@@ -153,9 +149,6 @@ async def prepare_history(
     start = starts[-1]
     if token_bound(instructions + history[start:]) > budget:
         reason = 'instructions_too_large' if token_bound(instructions) > budget else 'current_turn_too_large'
-        text_budget = context_tokens - output_tokens - token_bound(tools) - 1024
-        if attachment_count and effective_context < context_tokens and token_bound(instructions + history[start:]) <= text_budget:
-            reason = 'combined_context_too_large'
         raise ContextBudgetError(reason, budget=budget, instructions_bytes=token_bound(instructions), current_turn_bytes=token_bound(history[start:]))
     reserve = min(summary_tokens * 4 + 1024, max(0, budget // 3))
     for candidate in reversed(starts[:-1]):
