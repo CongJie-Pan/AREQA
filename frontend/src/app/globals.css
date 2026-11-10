@@ -213,6 +213,16 @@ html[lang='en'] body {
   z-index: 120;
 }
 
+.areqa-chat-sidebar-floating-action[data-sidebar-open='true'] {
+  left: calc(var(--areqa-sidebar-width, 280px) - 52px);
+}
+
+@media (max-width: 768px) {
+  .areqa-chat-sidebar-floating-action[data-sidebar-open='true'] {
+    left: calc(min(280px, 100vw - 48px) - 52px);
+  }
+}
+
 .areqa-chat-sidebar-toggle {
   pointer-events: auto;
   display: inline-flex;
@@ -319,7 +329,7 @@ html[lang='en'] body {
 }
 
 .areqa-conversation-logo-row-external-toggle {
-  padding-left: 64px;
+  padding-right: 64px;
 }
 
 .areqa-conversation-logo {

@@ -68,7 +68,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   logoContainerExternalToggle: css`
-    padding-left: 64px;
+    padding-right: 64px;
   `,
 
   logo: css`

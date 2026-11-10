@@ -689,7 +689,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
       </div>
 
       {/* Keep navigation outside the clipped/composited chat content. */}
-      <div className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}>
+      <div
+        className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}
+        data-sidebar-open={sidebarOpen}
+        style={{ '--areqa-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+      >
         <button
           className={cx(
             'areqa-chat-sidebar-toggle',
@@ -698,6 +702,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
           )}
           onClick={toggleSidebar}
           aria-label={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
+          title={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
           aria-expanded={sidebarOpen}
           aria-controls={sidebarId}
           data-desktop-collapsed={desktopCollapsed}

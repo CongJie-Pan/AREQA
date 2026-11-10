@@ -141,6 +141,27 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   sidebarActionButton: css`
     display: flex;
+    background: var(--areqa-sidebar-background);
+    transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+
+    &:hover {
+      background: var(--areqa-account-hover);
+      color: var(--foreground);
+    }
+
+    &:active {
+      transform: scale(0.96);
+    }
+
+    &:focus-visible {
+      outline: 2px solid ${token.colorPrimary};
+      outline-offset: 3px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+      &:active { transform: none; }
+    }
 
     @media (max-width: 768px) {
       &[data-mobile-open='false'] [data-sidebar-icon='close'],

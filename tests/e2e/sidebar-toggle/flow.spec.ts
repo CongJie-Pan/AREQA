@@ -15,6 +15,13 @@ for (const width of [390, 768, 769, 1100]) {
         const box = element.getBoundingClientRect();
         return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
       })).toBe(true);
+      const open = await toggle.getAttribute('aria-expanded') === 'true';
+      const sidebarBox = await page.locator('.areqa-chat-sidebar').boundingBox();
+      const buttonBox = await toggle.boundingBox();
+      expect(sidebarBox).not.toBeNull();
+      expect(buttonBox).not.toBeNull();
+      const expectedLeft = open ? sidebarBox!.width - 52 : 16;
+      expect(buttonBox!.x).toBeCloseTo(expectedLeft, 0);
       await toggle.click();
       await expect(toggle).toHaveAttribute('aria-expanded', String(count % 2 === 0 ? !initial : initial));
     }
@@ -50,4 +57,27 @@ test.describe('touch navigation', () => {
       await expect(toggle).toHaveAttribute('aria-expanded', String(count % 2 === 0));
     }
   });
+});
+
+test('sidebar control provides hover, press and keyboard focus feedback', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 860 });
+  await page.goto('/');
+  const toggle = page.locator('.areqa-chat-sidebar-toggle');
+  await expect(toggle).toBeVisible();
+  await page.mouse.move(600, 400);
+  const background = await toggle.evaluate(element => getComputedStyle(element).backgroundColor);
+  await toggle.hover();
+  await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(background);
+  await page.mouse.down();
+  await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).transform)).not.toBe('none');
+  await page.mouse.move(600, 400);
+  await page.mouse.up();
+  await toggle.focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveCSS('outline-style', 'solid');
+  await page.screenshot({ path: '/tmp/areqa-sidebar-design.png' });
+  await toggle.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });
