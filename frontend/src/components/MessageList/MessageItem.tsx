@@ -1949,11 +1949,15 @@ export const MessageItem = memo(function MessageItem({
   const hasCompleteLiveImageSlots =
     !hasAnswerBlocks || answerBlockImageCount === 0 || liveImageSlots.length >= answerBlockImageCount;
   const hasActiveVoiceCaption = Boolean(message.voicePlayback && message.voicePlayback !== 'finished');
+  // Tool image lifecycle blocks must remain visible before the chat stream ends.
+  const hasGeneratedImageBlocks = Boolean(message.answerBlocks?.some((block) => (
+    block.type === 'image_block' && block.provider === 'generated_image'
+  )));
   const shouldUseLiveOrderedAnswer =
-    !hasActiveVoiceCaption && hasLiveStreamed
+    !hasGeneratedImageBlocks && !hasActiveVoiceCaption && hasLiveStreamed
     && (liveImageSlots.length > 0 || (reveal.animate && (!hasAnswerBlocks || isDisplayingStream)))
     && (isDisplayingStream || hasCompleteLiveImageSlots);
-  const shouldUseStructuredAnswerBlocks = !hasActiveVoiceCaption && hasAnswerBlocks && !shouldUseLiveOrderedAnswer && !isDisplayingStream;
+  const shouldUseStructuredAnswerBlocks = !hasActiveVoiceCaption && hasAnswerBlocks && !shouldUseLiveOrderedAnswer && (hasGeneratedImageBlocks || !isDisplayingStream);
   const generatedImageStatusContent = shouldUseStructuredAnswerBlocks
     && message.answerBlocks?.every((block) => block.type === 'image_block' && block.provider === 'generated_image')
     && !LEGACY_IMAGE_COMPLETION_TEXT.has(message.content.trim())

@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { ChatInput } from '@/components/ChatInput';
 import { MessageItem } from '@/components/MessageList/MessageItem';
 import { generateConversationImage, regenerateConversationImage } from '@/services/generatedImages';
@@ -10,6 +11,8 @@ import { db } from '@/database/db';
 import { messageRepo } from '@/database/repositories/messageRepo';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
+
+const render: typeof rtlRender = (ui, options) => rtlRender(ui, { wrapper: UserPreferencesProvider, ...options });
 
 vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 vi.mock('@/database/db', async (importOriginal) => ({
@@ -36,6 +39,7 @@ function ImageConversation() {
 }
 
 beforeEach(async () => {
+  window.localStorage.setItem('areqa:interface-language', 'zh-TW');
   vi.clearAllMocks();
   await db.open();
   await db.messages.clear();

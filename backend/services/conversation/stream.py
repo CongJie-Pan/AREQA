@@ -378,8 +378,7 @@ class ConversationStreamService:
                         yield ": heartbeat\n\n"
                     else:
                         if block.get("type") == "image_block" and block.get("status") == "error":
-                            accumulator = ""
-                            generated_blocks = [block]
+                            generated_blocks = ([{"type": "paragraph", "text": accumulator}] if accumulator else []) + [block]
                             yield f"event: answer_blocks\ndata: {json.dumps(generated_blocks, ensure_ascii=False)}\n\n"
                             continue
                         generated_blocks = ([{"type": "paragraph", "text": accumulator}] if accumulator else []) + [block]

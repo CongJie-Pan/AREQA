@@ -1,11 +1,13 @@
 import React from 'react';
 import { App } from 'antd';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
 import { createReadAloudAudio } from '../../../../frontend/src/services/speech/readAloud';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+
+const render: typeof rtlRender = (ui, options) => rtlRender(ui, { wrapper: UserPreferencesProvider, ...options });
 
 vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 
@@ -122,6 +124,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
   };
 
   beforeEach(() => {
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
     vi.clearAllMocks();
     MockAudio.instances = [];
     vi.stubGlobal('Audio', MockAudio as any);
@@ -740,6 +743,26 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('你可以隨時停止生成。')).toBeInTheDocument();
     expect(screen.getByTestId('answer-image-skeleton')).toBeInTheDocument();
     expect(screen.getByTestId('answer-image-skeleton').closest('figure')).toHaveClass('generatedImageCard');
+  });
+
+  it('renders generated image lifecycle blocks while the chat stream is still active', () => {
+    const block = {
+      type: 'image_block' as const, slotId: 'live-generated', topic: '圖', purpose: 'diagram' as const,
+      imageUrl: '', sourceUrl: '', sourceDomain: '', caption: '',
+      provider: 'generated_image', status: 'pending' as const,
+      safetyStatus: 'unavailable' as const, matchConfidence: 0,
+    };
+    const view = render(<MessageItem isStreaming message={{ ...baseMessage, content: '已完成分析',
+      answerBlocks: [{ type: 'paragraph', text: '已完成分析' }, block],
+    }} />);
+    expect(screen.getByRole('status', { name: /Creating image|圖片產生中/ })).toBeInTheDocument();
+    expect(screen.getByText('已完成分析')).toBeInTheDocument();
+    view.rerender(<MessageItem isStreaming message={{ ...baseMessage, content: '已完成分析',
+      answerBlocks: [{ type: 'paragraph', text: '已完成分析' }, { ...block, status: 'resolved',
+        imageUrl: 'https://example.test/live.png', caption: '分析圖', safetyStatus: 'pass' }],
+    }} />);
+    expect(screen.queryByRole('status', { name: /Creating image|圖片產生中/ })).not.toBeInTheDocument();
+    expect(screen.getByAltText('分析圖')).toBeInTheDocument();
   });
 
   it.each(['Here is the image I created.', '這是為你產生的圖片。'])(

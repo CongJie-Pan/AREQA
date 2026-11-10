@@ -73,3 +73,13 @@ OPENROUTER_API_KEY=mock-token backend/.venv/bin/python -m pytest \
 以 `git show HEAD:tests/e2e/image-tools/e2e_app.py` 還原原始模型 fixture，單獨重跑上述四項，也得到相同四項失敗。測試介面固定繁體中文以符合既有 selector；此次新增 context provider 分支不是這四項失敗的必要條件。這是對照證據，尚未完成圖片問題的根因分析。
 
 2026-11-10 接續驗證：`npm run test:smoke --prefix frontend` 單獨執行，5 passed（PDF、TXT、Markdown、PNG，以及附件超額後再提問）。
+
+## 圖片流程修復（2026-11-10）
+
+上述四項失敗已定位到正式程式：`MessageItem` 在串流進行期間優先使用文字／圖片插槽 renderer，並以 `!isDisplayingStream` 阻擋結構化圖片卡片；工具產圖的 pending block 雖已送達 store，載入卡片仍被隱藏。現在含 `generated_image` 的答案在串流期間直接使用結構化 renderer，保留 pending／resolved／error 的即時更新，一般文字與檢索圖片保持原路徑。
+
+同時修正 `ConversationStreamService` 產圖失敗時清空 accumulator 的行為，保留同回覆已完成的分析段落及錯誤圖片區塊。前端單元測試新增 `isStreaming=true` 的 pending → resolved 案例，修改前確實失敗。既有中文元件／圖片整合測試明確提供繁體中文偏好，避免依賴產品預設語言。
+
+驗證：前端元件及圖片整合 43 passed，後端圖片工具及上下文回歸 41 passed；`check:report:strict` 的 ESLint／TypeScript 通過。完整瀏覽器結果見下方更新。
+
+`npm run test:e2e:image-tools --prefix frontend`：17 passed（包含四項原失敗流程、所有上下文案例及五個 smoke 情境）。本次使用可控供應商替身，未呼叫付費模型，未驗證線上部署與真實供應商延遲。

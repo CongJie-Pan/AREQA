@@ -147,7 +147,7 @@ async def test_mixed_tool_preserves_analysis_and_sse_identity(chat_request, prov
         provider.generate.side_effect = RuntimeError('provider down')
     async def chunks():
         if failure:
-            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='Here is the diagram explanation.', tool_calls=None))])
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='Effect size remains important even with statistical significance.', tool_calls=None))])
         yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=[
             SimpleNamespace(index=0, id='mixed_call', function=SimpleNamespace(name='generate_image', arguments=payload))]))])
     client = MagicMock()
@@ -156,21 +156,21 @@ async def test_mixed_tool_preserves_analysis_and_sse_identity(chat_request, prov
     events = [event async for event in service.stream(user_id='u1', conversation_id='conv1', last_user_msg='先分析再產圖',
         messages=[], force_think=False, max_tokens=100, temperature=0.7, top_p=0.9, repetition_penalty=1, request=chat_request)]
     final = json.loads(events[-1].split('data: ', 1)[1])
-    assert final['accumulator'] == ('' if failure else '分析結果')
+    assert final['accumulator'] == ('Effect size remains important even with statistical significance.' if failure else '分析結果')
     if not failure:
         assert final['generated_blocks'][0] == {'type': 'paragraph', 'text': '分析結果'}
     block_events = [json.loads(event.split('data: ', 1)[1]) for event in events if event.startswith('event: answer_blocks')]
-    image_index = 0 if failure else 1
+    image_index = 1
     slot_id = final['generated_blocks'][image_index]['slotId']
     assert all(blocks[-1]['slotId'] == slot_id for blocks in block_events)
     assert slot_id != 'mixed_call'
     assert '"tool_call_id": "mixed_call"' in ''.join(events)
     assert ('event: tool_state' in ''.join(events))
     if failure:
-        assert len(final['generated_blocks']) == 1
-        assert final['generated_blocks'][0]['status'] == 'error'
-        assert final['generated_blocks'][0]['caption'] == 'IMAGE_GENERATION_FAILED'
-        assert 'Here is the diagram explanation.' not in json.dumps(final)
+        assert len(final['generated_blocks']) == 2
+        assert final['generated_blocks'][1]['status'] == 'error'
+        assert final['generated_blocks'][1]['caption'] == 'IMAGE_GENERATION_FAILED'
+        assert final['generated_blocks'][0]['text'] == final['accumulator']
 
 
 @pytest.mark.asyncio
