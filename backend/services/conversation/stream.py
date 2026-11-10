@@ -314,7 +314,16 @@ class ConversationStreamService:
         except Exception as exc:
             if trace:
                 trace.mark_once("main_model_failed")
-            logger.warning("orchestration.stream_failed reason=%s", str(exc) if isinstance(exc, ContextBudgetError) else type(exc).__name__)
+            # Log only the innermost code location, never exception messages or locals.
+            failure_frame = exc.__traceback__
+            while failure_frame is not None and failure_frame.tb_next is not None:
+                failure_frame = failure_frame.tb_next
+            logger.warning(
+                "orchestration.stream_failed conversation_id=%s reason=%s error_function=%s error_line=%s",
+                conversation_id, str(exc) if isinstance(exc, ContextBudgetError) else type(exc).__name__,
+                failure_frame.tb_frame.f_code.co_name if failure_frame else 'unknown',
+                failure_frame.tb_lineno if failure_frame else 0,
+            )
             error_message = "**[API Error]** 生成回答時發生錯誤，請稍後重試。"
             if isinstance(exc, ContextBudgetError):
                 error_message = ("模型仍無法容納本次附件與問題，請改傳相關頁面或分批上傳。"

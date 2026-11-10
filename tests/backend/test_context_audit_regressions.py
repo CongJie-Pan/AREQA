@@ -271,5 +271,7 @@ async def test_provider_context_rejection_logs_safe_correlated_metadata(caplog):
     assert create.await_count == 1
     assert 'history.provider_context_rejected conversation_id=audit' in caplog.text
     assert 'attempt=1 attachment_count=1 answer_started=False' in caplog.text
+    assert 'orchestration.stream_failed conversation_id=audit' in caplog.text
+    assert 'error_function=stream error_line=' in caplog.text
     for secret in ('PRIVATE QUESTION', 'PRIVATE ATTACHMENT', 'PRIVATE PROVIDER TEXT'):
         assert secret not in caplog.text

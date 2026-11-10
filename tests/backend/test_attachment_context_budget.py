@@ -139,9 +139,12 @@ async def test_stream_sends_attachment_above_legacy_allowance(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('paper_source', ['dense', 'a_mem'])
-async def test_paper_reaches_provider_without_payload_changes(paper_source, caplog):
+async def test_paper_reaches_provider_without_payload_changes(paper_source, caplog, monkeypatch):
+    # Match the Python 3.10 API surface used by the Render deployment.
+    import asyncio
     caplog.set_level('INFO')
     from services.conversation.stream import ConversationStreamService
+    monkeypatch.delattr(asyncio, 'timeout', raising=False)
     with pymupdf.open() as doc:
         for _ in range(30):
             page = doc.new_page()

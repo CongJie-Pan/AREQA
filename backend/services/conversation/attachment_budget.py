@@ -105,6 +105,7 @@ async def bounded_attachment_cost(value: Any, *, timeout_seconds: float) -> tupl
     Text remains in-process; file/image parsing has a wall-clock deadline covering
     startup and IPC. Timeout or caller cancellation kills and reaps the child.
     Only numeric estimates cross back to the parent; parser stderr is discarded.
+    Uses wait_for for Python 3.10 compatibility; cancellation still reaps the child.
     """
     import asyncio
     import json
@@ -129,26 +130,30 @@ async def bounded_attachment_cost(value: Any, *, timeout_seconds: float) -> tupl
     if not native:
         return text_units, len(parts)
     process = None
-    try:
-        async with asyncio.timeout(timeout_seconds):
-            loop = asyncio.get_running_loop()
-            gate = _NATIVE_SLOTS.setdefault(loop, asyncio.Semaphore(2))
-            async with gate:
-                process = await asyncio.create_subprocess_exec(
-                    sys.executable, str(Path(__file__).resolve()),
-                    stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                output, _ = await process.communicate(json.dumps(native).encode())
-                if process.returncode != 0:
-                    raise AttachmentInspectionError('attachment_parse_failed')
-                units = json.loads(output)
-                if not isinstance(units, int) or units < 0:
-                    raise AttachmentInspectionError('attachment_parse_failed')
-                logger.info('attachment.inspection_completed native_parts=%d estimated_reading_units=%d', len(native), text_units + units)
-                return text_units + units, len(parts)
 
-    except TimeoutError:
+    async def inspect_native():
+        nonlocal process
+        loop = asyncio.get_running_loop()
+        gate = _NATIVE_SLOTS.setdefault(loop, asyncio.Semaphore(2))
+        async with gate:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, str(Path(__file__).resolve()),
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            output, _ = await process.communicate(json.dumps(native).encode())
+            if process.returncode != 0:
+                raise AttachmentInspectionError('attachment_parse_failed')
+            units = json.loads(output)
+            if not isinstance(units, int) or units < 0:
+                raise AttachmentInspectionError('attachment_parse_failed')
+            logger.info('attachment.inspection_completed native_parts=%d estimated_reading_units=%d', len(native), text_units + units)
+            return text_units + units, len(parts)
+
+    try:
+        # wait_for supports Python 3.10 and covers queueing, startup and IPC.
+        return await asyncio.wait_for(inspect_native(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
         logger.warning('attachment.inspection_failed reason=attachment_parse_timeout')
         raise AttachmentInspectionError('attachment_parse_timeout') from None
     except (ValueError, OSError):
