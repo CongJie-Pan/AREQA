@@ -700,11 +700,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
           mouseEnterDelay={0.35}
         >
           <button
-            className={cx(
-              'areqa-chat-sidebar-toggle',
-              styles.iconActionButton,
-              styles.sidebarActionButton,
-            )}
+            className="areqa-chat-sidebar-toggle"
             onClick={toggleSidebar}
             aria-label={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
             aria-expanded={sidebarOpen}

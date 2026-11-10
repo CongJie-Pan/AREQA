@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { expect, test } from '../../../frontend/node_modules/@playwright/test/index.mjs';
 
 for (const width of [390, 768, 769, 1100]) {
@@ -101,4 +102,27 @@ test('reduced motion keeps hover and press stationary', async ({ page }) => {
   await page.mouse.down();
   await expect(toggle).toHaveCSS('transform', 'none');
   await page.mouse.up();
+});
+
+
+test.describe('sidebar first paint without client scripts', () => {
+  test.use({ javaScriptEnabled: false });
+  for (const theme of ['light', 'dark']) {
+    test(`global CSS renders the complete button in ${theme} mode`, async ({ page }) => {
+      const cssPath = resolve(__dirname, '../../../frontend/src/app/globals.css');
+      await page.route('**/sidebar-first-paint', route => route.fulfill({
+        contentType: 'text/html',
+        body: `<html data-interface-theme="${theme}"><head><meta charset="utf-8"><link rel="stylesheet" href="/@fs${cssPath}?direct"></head><body>
+          <button class="areqa-chat-sidebar-toggle" aria-label="Open sidebar">☰</button>
+        </body></html>`,
+      }));
+      await page.goto('/sidebar-first-paint');
+      const toggle = page.getByRole('button', { name: 'Open sidebar' });
+      await expect(toggle).toHaveCSS('border-radius', '10px');
+      await expect(toggle).toHaveCSS('border-top-width', '1px');
+      await expect(toggle).toHaveCSS('border-top-style', 'solid');
+      await expect(toggle).not.toHaveCSS('box-shadow', 'none');
+      await expect(toggle).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    });
+  }
 });

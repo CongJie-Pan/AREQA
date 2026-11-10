@@ -139,55 +139,6 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
-  sidebarActionButton: css`
-    display: flex;
-    border: 1px solid color-mix(in srgb, var(--foreground) 20%, var(--areqa-sidebar-background));
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--foreground) 6%, var(--areqa-sidebar-background));
-    color: var(--foreground);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    transition: background-color 160ms ease-out, border-color 160ms ease-out,
-      box-shadow 160ms ease-out, transform 160ms ease-out;
-
-    @media (hover: hover) and (pointer: fine) {
-      &:hover {
-        background: color-mix(in srgb, #d7a04a 20%, var(--areqa-sidebar-background));
-        border-color: color-mix(in srgb, #d7a04a 65%, var(--areqa-sidebar-background));
-        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
-        transform: translateY(-1px);
-      }
-    }
-
-    &:active {
-      transform: translateY(0) scale(0.95);
-      background: color-mix(in srgb, #d7a04a 26%, var(--areqa-sidebar-background));
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-    }
-
-    &:focus-visible {
-      outline: 2px solid ${token.colorPrimary};
-      outline-offset: 3px;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      transition: none;
-      &:hover, &:active { transform: none; }
-    }
-
-    @media (max-width: 768px) {
-      &[data-mobile-open='false'] [data-sidebar-icon='close'],
-      &[data-mobile-open='true'] [data-sidebar-icon='open'] {
-        display: none;
-      }
-    }
-    @media (min-width: 769px) {
-      &[data-desktop-collapsed='true'] [data-sidebar-icon='close'],
-      &[data-desktop-collapsed='false'] [data-sidebar-icon='open'] {
-        display: none;
-      }
-    }
-  `,
-
   shareButton: css`
     pointer-events: auto;
     display: inline-flex;
