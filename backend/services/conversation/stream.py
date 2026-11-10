@@ -98,6 +98,10 @@ class ConversationStreamService:
         Side Effects:
             Calls the configured model and optional letter tool, and emits
             bounded structured lifecycle logs without raw prompts or markers.
+            INFO provider_request_started/provider_stream_received record model,
+            conversation ID, attempt and numeric counts. WARNING
+            history.provider_context_rejected records only counts and stream state,
+            never provider error bodies, attachment data or answer text.
         """
 
         if not self.client:
@@ -198,6 +202,16 @@ class ConversationStreamService:
                 generation = None
                 response = None
                 try:
+                    # Count parts only; never serialize media or provider errors into logs.
+                    attachment_count = sum(
+                        is_attachment(part) for message in messages
+                        if isinstance(message.get('content'), list) for part in message['content'])
+                    logger.info(
+                        'orchestration.provider_request_started conversation_id=%s model=%s attempt=%d '
+                        'message_count=%d attachment_count=%d chat_bytes=%d output_tokens=%d',
+                        conversation_id, target_model, attempt + 1, len(messages),
+                        attachment_count, token_bound(messages), max_tokens,
+                    )
                     generation = asyncio.create_task(
                         self.client.chat.completions.create(
                             model=target_model,
@@ -216,6 +230,8 @@ class ConversationStreamService:
                         if not done:
                             yield ": heartbeat\n\n"
                     response = await generation
+                    logger.info('orchestration.provider_stream_received conversation_id=%s model=%s attempt=%d',
+                                conversation_id, target_model, attempt + 1)
                     if trace:
                         trace.mark_once("main_model_provider_stream_received")
                     async for chunk in response:
@@ -263,12 +279,17 @@ class ConversationStreamService:
                 except Exception as provider_error:
                     if not is_provider_context_error(provider_error):
                         raise
+                    logger.warning(
+                        'history.provider_context_rejected conversation_id=%s model=%s attempt=%d '
+                        'attachment_count=%d answer_started=%s',
+                        conversation_id, target_model, attempt + 1, attachment_count, provider_started,
+                    )
                     reduced, removed_sources = minimal_retry_context(messages, original_messages, retrieval_context)
                     if attempt == 0 and not provider_started and reduced != messages:
                         messages = reduced
                         if removed_sources:
                             citation_filter = UnavailableCitationFilter()
-                        logger.warning('history.provider_context_retry attempt=1 selected_messages=%d removed_sources=%s', len(messages), removed_sources)
+                        logger.warning('history.provider_context_retry conversation_id=%s attempt=1 selected_messages=%d removed_sources=%s', conversation_id, len(messages), removed_sources)
                         if trace:
                             trace.increment_model_call("main_answer")
                         yield 'event: status\ndata: {"status":"routing","message":"正在調整上下文並重新準備回答"}\n\n'

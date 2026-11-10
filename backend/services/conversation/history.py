@@ -115,6 +115,8 @@ async def prepare_history(
         history.prepared/history.summary_started/history.summary_completed logs
         expose only model, timing, usage and counts. attachment.context_budget logs
         numeric media estimates only; these do not reject or shrink chat capacity.
+        history.budget_evaluated records conversation ID, chat bytes/budget and
+        whether compaction is needed; no input text or media payload is logged.
         Actual media capacity is enforced by the provider. WARNING history.summary_failed
         exposes safe reason codes, never transcript text, summaries, credentials
         or arbitrary exception messages.
@@ -123,11 +125,14 @@ async def prepare_history(
         attachment_units, attachment_count = await bounded_attachment_cost(
             messages, timeout_seconds=settings.conversation_attachment_timeout_seconds)
     except AttachmentInspectionError as error:
+        logger.warning('attachment.inspection_rejected conversation_id=%s reason=%s',
+                       conversation_id, error.reason)
         raise ContextBudgetError(error.reason) from None
     if attachment_count:
         # Byte/page estimates are diagnostic only; the provider owns actual media capacity.
-        logger.info('attachment.context_budget count=%d estimated_reading_units=%d enforcement=provider',
-                    attachment_count, attachment_units)
+        logger.info('attachment.context_budget conversation_id=%s count=%d estimated_reading_units=%d '
+                    'excluded_from_chat_budget=True enforcement=provider',
+                    conversation_id, attachment_count, attachment_units)
     budget = context_tokens - output_tokens - token_bound(tools) - 1024
     if budget <= 0:
         raise ContextBudgetError('output_budget', budget=budget, tools_bytes=token_bound(tools), output_tokens=output_tokens)
@@ -135,7 +140,11 @@ async def prepare_history(
         messages, retrieval_context=retrieval_context, budget=budget,
         conversation_id=conversation_id)
     retrieval_notice = '本回合沒有可納入的搜尋摘錄，回答無法依據這些來源。' if retrieval_missing else ''
-    if token_bound(messages) <= budget:
+    chat_bytes = token_bound(messages)
+    logger.info('history.budget_evaluated conversation_id=%s chat_bytes=%d chat_budget=%d '
+                'attachment_count=%d compaction_required=%s',
+                conversation_id, chat_bytes, budget, attachment_count, chat_bytes > budget)
+    if chat_bytes <= budget:
         return HistoryContext(list(messages), retrieval_notice)
     if not enabled:
         raise ContextBudgetError('compaction_disabled', budget=budget)

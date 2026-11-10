@@ -256,3 +256,20 @@ async def test_full_text_upload_reaches_capacity_check_without_losing_tail():
         [{'role': 'user', 'content': 'Read the final section'}], [uploads[0].content_part])
     result = await prepare(messages)
     assert original in result.messages[-1]['content'][-1]['text']
+
+
+@pytest.mark.asyncio
+async def test_provider_context_rejection_logs_safe_correlated_metadata(caplog):
+    caplog.set_level('INFO')
+    messages = [{'role': 'user', 'content': [
+        {'type': 'text', 'text': 'PRIVATE QUESTION'},
+        AttachmentPart(type='text', text='PRIVATE ATTACHMENT'),
+    ]}]
+    create = AsyncMock(side_effect=ProviderError())
+    result = await stream(create, messages)
+    assert '模型仍無法容納本次附件' in result
+    assert create.await_count == 1
+    assert 'history.provider_context_rejected conversation_id=audit' in caplog.text
+    assert 'attempt=1 attachment_count=1 answer_started=False' in caplog.text
+    for secret in ('PRIVATE QUESTION', 'PRIVATE ATTACHMENT', 'PRIVATE PROVIDER TEXT'):
+        assert secret not in caplog.text

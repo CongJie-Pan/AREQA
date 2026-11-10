@@ -139,7 +139,8 @@ async def test_stream_sends_attachment_above_legacy_allowance(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('paper_source', ['dense', 'a_mem'])
-async def test_paper_reaches_provider_without_payload_changes(paper_source):
+async def test_paper_reaches_provider_without_payload_changes(paper_source, caplog):
+    caplog.set_level('INFO')
     from services.conversation.stream import ConversationStreamService
     with pymupdf.open() as doc:
         for _ in range(30):
@@ -167,3 +168,14 @@ async def test_paper_reaches_provider_without_payload_changes(paper_source):
     assert 'Paper explained' in output
     assert create.await_count == 1
     assert create.call_args.kwargs['messages'][-1]['content'][-1] == part
+
+    assert 'attachment.context_budget conversation_id=dense-paper' in caplog.text
+    assert 'excluded_from_chat_budget=True enforcement=provider' in caplog.text
+    assert 'history.budget_evaluated conversation_id=dense-paper' in caplog.text
+    assert 'compaction_required=False' in caplog.text
+    assert 'orchestration.provider_request_started conversation_id=dense-paper' in caplog.text
+    assert 'attachment_count=1' in caplog.text
+    assert 'orchestration.provider_stream_received conversation_id=dense-paper' in caplog.text
+    assert part['file']['file_data'] not in caplog.text
+    assert 'Paper explained' not in caplog.text
+    assert 'Research findings and methods' not in caplog.text
