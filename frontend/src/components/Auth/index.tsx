@@ -229,17 +229,17 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
           style={{
             display: 'flex', alignItems: 'center', gap: '8px', padding: '12px',
             marginTop: 'auto', cursor: 'pointer', borderRadius: '8px',
-            transition: 'background 0.2s', color: 'rgba(255, 255, 255, 0.7)'
+            transition: 'background 0.2s', color: 'var(--areqa-account-muted-text)'
           }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--areqa-account-hover)'}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
           <div style={{
             width: '32px', height: '32px', borderRadius: '50%',
-            background: 'rgba(255, 255, 255, 0.1)', display: 'flex',
+            background: 'var(--areqa-account-icon-background)', display: 'flex',
             alignItems: 'center', justifyContent: 'center'
           }}>
-            <User size={16} color="white" />
+            <User size={16} color="currentColor" />
           </div>
           <span style={{ fontSize: '14px', fontWeight: 500 }}>{t('loginSignup')}</span>
         </div>
@@ -253,7 +253,7 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
         >
           <div style={{ padding: '16px' }}>
             <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '12px', color: 'white' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '12px', color: 'var(--foreground)' }}>
                 {t('loginSignupAreqa')}
               </h2>
               <Image 

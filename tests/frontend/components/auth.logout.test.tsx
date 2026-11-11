@@ -114,6 +114,25 @@ describe('UserAuthUI Component', () => {
     expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
   });
 
+  it.each(['light', 'dark'])('keeps the guest account and login heading themed in %s mode', async (theme) => {
+    window.localStorage.setItem('areqa:interface-theme', theme);
+    renderUserAuthUI();
+
+    const trigger = screen.getByText('登入 / 註冊').parentElement!;
+    expect(document.documentElement.dataset.interfaceTheme).toBe(theme);
+    expect(trigger.style.color).toBe('var(--areqa-account-muted-text)');
+    expect(trigger.querySelector('svg')).toHaveAttribute('stroke', 'currentColor');
+    expect(trigger.querySelector('svg')?.parentElement?.style.background).toBe('var(--areqa-account-icon-background)');
+    fireEvent.mouseEnter(trigger);
+    expect(trigger.style.background).toBe('var(--areqa-account-hover)');
+    fireEvent.mouseLeave(trigger);
+    expect(trigger.style.background).toBe('transparent');
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('heading', { name: '登入 / 註冊 AREQA' }).style.color).toBe('var(--foreground)');
+    expect(supabaseMocks.authUiProps.mock.lastCall?.[0]).toHaveProperty('theme', theme === 'dark' ? 'dark' : 'default');
+  });
+
   it('uses English by default without offering language selection before sign-in', async () => {
     window.localStorage.removeItem('areqa:interface-language');
     renderUserAuthUI();
@@ -164,6 +183,7 @@ describe('UserAuthUI Component', () => {
   });
 
   it('signs out without deleting persisted history or reloading the page', async () => {
+    window.localStorage.setItem('areqa:interface-theme', 'light');
     // Start with logged in state
     vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
       data: { session: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any }
@@ -199,6 +219,15 @@ describe('UserAuthUI Component', () => {
     expect(screen.getByText('登入 / 註冊')).toBeInTheDocument();
     expect(document.documentElement.lang).toBe('zh-TW');
     expect(window.localStorage.getItem('areqa:interface-language')).toBe('zh-TW');
+    expect(document.documentElement.dataset.interfaceTheme).toBe('light');
+    expect(window.localStorage.getItem('areqa:interface-theme')).toBe('light');
+    const guestTrigger = screen.getByText('登入 / 註冊').parentElement!;
+    expect(guestTrigger.style.color).toBe('var(--areqa-account-muted-text)');
+    fireEvent.click(guestTrigger);
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '登入 / 註冊 AREQA' })).toBeVisible();
+    });
+    expect(supabaseMocks.authUiProps.mock.lastCall?.[0]).toHaveProperty('theme', 'default');
   });
 
   it('submits contact feedback from the account dropdown', async () => {
