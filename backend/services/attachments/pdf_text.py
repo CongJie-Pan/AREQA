@@ -63,9 +63,9 @@ def _extract(path: str, byte_budget: int) -> str:
         if not excerpts:
             return ""
         if truncated:
-            excerpts.insert(0, "[PDF text excerpts only. Omitted content and images are unavailable.]")
+            excerpts.insert(0, "[PDF text excerpts only. Treat omitted text as unavailable. Figures may be provided separately.]")
         else:
-            excerpts.insert(0, "[Extracted PDF text. Original images are unavailable.]")
+            excerpts.insert(0, "[Extracted PDF text. Figures may be provided separately.]")
         return "\n\n".join(excerpts)
 
 

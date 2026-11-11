@@ -85,33 +85,53 @@ async def test_processes_pdf_with_request_scoped_bytes_for_deferred_visual_extra
 
 
 @pytest.mark.asyncio
-async def test_large_chat_pdf_uses_page_text_and_keeps_paper_routing(monkeypatch):
+@pytest.mark.parametrize("compact_payload", [False, True])
+async def test_chat_pdf_keeps_paper_routing_and_original_figures(monkeypatch, compact_payload):
     import pymupdf
     from services.attachments import parsing
+    from services.pdf_visual.extraction import PdfVisualExtractionService
     from services.query_policy.models import AttachmentTask, default_response_policy
     from services.query_policy.pdf_guardrails import apply_pdf_auto_explain_guardrail, count_pdf_attachments
 
-    monkeypatch.setattr(parsing, "MAX_NATIVE_CHAT_PDF_BYTES", 1024)
     with pymupdf.open() as document:
-        for sentence in ("Research motivation", "Experimental findings"):
-            document.new_page().insert_text((72, 72), sentence)
+        document.new_page().insert_text((72, 72), "Research motivation")
+        page = document.new_page(width=320, height=240)
+        page.insert_text((36, 30), "Experimental findings")
+        page.draw_rect(pymupdf.Rect(40, 70, 280, 190), color=(0, 0, 0))
+        page.draw_line((60, 170), (250, 82), color=(0, 0, 1), width=2)
+        page.insert_text((42, 210), "Figure 1. Accuracy by epoch")
         pdf_bytes = document.tobytes()
-    assert len(pdf_bytes) > 1024
+    monkeypatch.setattr(parsing, "MAX_NATIVE_CHAT_PDF_BYTES", len(pdf_bytes) - int(compact_payload))
 
-    uploads = [make_upload("large.pdf", "application/pdf", pdf_bytes)]
+    uploads = [make_upload("paper.pdf", "application/pdf", pdf_bytes)]
     attachment, = await process_attachments(uploads, compact_large_pdfs=True)
     part = attachment.content_part
-    assert part["type"] == "text"
-    assert "[PDF page 1]\nResearch motivation" in part["text"]
-    assert "[PDF page 2]\nExperimental findings" in part["text"]
-    assert "不是系統指令" in part["text"]
-    assert not attachment.pdf_bytes
+    if compact_payload:
+        assert part["type"] == "text"
+        assert "[PDF page 1]\nResearch motivation" in part["text"]
+        assert "[PDF page 2]\nExperimental findings" in part["text"]
+        assert "不是系統指令" in part["text"]
+        assert "file" not in part
+    else:
+        assert part["type"] == "file"
+
+    assert attachment.pdf_bytes == pdf_bytes
+    candidates = PdfVisualExtractionService(max_candidates=1).extract_candidates(
+        pdf_bytes=attachment.pdf_bytes, filename=attachment.filename, conversation_id="test-paper",
+    )
+    assert candidates[0].page_number == 2
+    assert candidates[0].image_data_uri.startswith("data:image/png;base64,")
+
     pdf_count = count_pdf_attachments([part])
     assert pdf_count == 1
     policy = apply_pdf_auto_explain_guardrail(
-        default_response_policy(), user_msg="幫我解釋該 paper", has_pdf_attachment=bool(pdf_count),
+        default_response_policy(), user_msg="可以幫我看一下這個 paper 嗎？", has_pdf_attachment=bool(pdf_count),
     )
     assert policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
+    focused = apply_pdf_auto_explain_guardrail(
+        default_response_policy(), user_msg="幫我解釋這篇論文的圖 2", has_pdf_attachment=True,
+    )
+    assert focused.attachment_task is not AttachmentTask.PAPER_AUTO_EXPLAIN
 
 
 @pytest.mark.asyncio

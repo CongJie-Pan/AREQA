@@ -213,7 +213,8 @@ async def process_attachments(
                 raise _attachment_error("ATTACHMENT_TOTAL_SIZE_EXCEEDED", "附件總大小不得超過 40 MB。", 413)
 
             media_type = _validate_type(filename, declared_type, data)
-            pdf_bytes = b""
+            # Keep the local visual source independent of the provider payload.
+            pdf_bytes = data if media_type == PDF_TYPE else b""
             plain_text = ""
             if media_type in IMAGE_TYPES:
                 _verify_image(data, media_type)
@@ -248,7 +249,6 @@ async def process_attachments(
                         "file_data": f"data:{PDF_TYPE};base64,{encoded}",
                     },
                 }
-                pdf_bytes = data
             else:
                 content_part = {"type": "text", "text": _decode_text(data, filename)}
                 plain_text = data.decode("utf-8-sig", errors="replace")
