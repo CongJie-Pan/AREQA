@@ -824,6 +824,43 @@ describe('Chat Service', () => {
   });
 
   describe('regenerateMessage', () => {
+    it('resends the original attachment when retrying a failed turn', async () => {
+      const file = new File(['pdf'], 'paper.pdf', { type: 'application/pdf' });
+      mockChatStore.addUserMessage.mockReturnValue('paper-user');
+      vi.mocked(createChatStream).mockImplementationOnce(async (_messages, callbacks) => {
+        callbacks.onError(new Error('Stream interrupted'));
+      });
+      await sendMessage('幫我解釋這篇論文', 'test-conv-id', [file]);
+
+      mockChatStore.messages = [
+        { id: 'paper-user', role: 'user', content: '幫我解釋這篇論文', conversationId: 'test-conv-id',
+          attachments: [{ name: file.name, mediaType: file.type, sizeBytes: file.size }] },
+        { id: 'paper-reply', role: 'assistant', content: '', conversationId: 'test-conv-id' },
+      ];
+      vi.mocked(createChatStream).mockImplementationOnce(async () => {});
+      await regenerateMessage('paper-reply');
+
+      expect(createChatStream).toHaveBeenLastCalledWith(
+        [{ role: 'user', content: '幫我解釋這篇論文' }],
+        expect.any(Object), expect.any(AbortSignal), false, false, 'never',
+        'test-conv-id', [file], expect.any(Object),
+      );
+    });
+
+    it('asks for the original upload when the retry has only attachment metadata', async () => {
+      mockChatStore.messages = [
+        { id: 'saved-user', role: 'user', content: 'Explain this paper', conversationId: 'test-conv-id',
+          attachments: [{ name: 'saved.pdf', mediaType: 'application/pdf', sizeBytes: 100 }] },
+        { id: 'saved-reply', role: 'assistant', content: 'Original answer', conversationId: 'test-conv-id' },
+      ];
+
+      await regenerateMessage('saved-reply');
+
+      expect(createChatStream).not.toHaveBeenCalled();
+      expect(mockChatStore.setError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('重新上傳') }));
+      expect(mockChatStore.updateAssistantMessage).not.toHaveBeenCalled();
+    });
+
     it('routes generated images to image regeneration instead of a text stream', async () => {
       mockChatStore.messages = [{ id: 'image-reply', role: 'assistant', content: '',
         answerBlocks: [{ type: 'image_block', provider: 'generated_image', status: 'pending' }],

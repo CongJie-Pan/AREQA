@@ -21,6 +21,10 @@ class AttachmentPart(dict):
     """
 
 
+class PdfTextPart(AttachmentPart):
+    """A validated PDF represented by extracted text in the provider payload."""
+
+
 def is_attachment(value: Any) -> bool:
     """Identify upload markers and native provider file/image content parts."""
     return isinstance(value, dict) and (

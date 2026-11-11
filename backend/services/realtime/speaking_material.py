@@ -28,7 +28,9 @@ def extract_material(attachments: list[Any]) -> dict[str, Any] | None:
     names: list[str] = []
     for attachment in attachments:
         text = ""
-        if attachment.media_type in {"text/plain", "text/markdown"}:
+        if attachment.media_type in {"text/plain", "text/markdown"} or (
+            attachment.media_type == "application/pdf" and getattr(attachment, "plain_text", "")
+        ):
             text = str(getattr(attachment, "plain_text", "") or "")
         elif attachment.media_type == "application/pdf" and attachment.pdf_bytes:
             try:

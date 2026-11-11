@@ -36,6 +36,13 @@ import { generateConversationImage, regenerateConversationImage } from '@/servic
  * Allows cancellation of ongoing requests
  */
 let currentAbortController: AbortController | null = null;
+// Retain one turn's upload in memory so retry works without persisting file bytes.
+let lastAttachmentUpload: {
+  conversationId: string;
+  messageId: string;
+  userId: string | null;
+  files: File[];
+} | undefined;
 const CONVERSATION_PREVIEW_MAX_LENGTH = 100;
 const ASSISTANT_EDIT_MAX_CONTENT_LENGTH = 750_000;
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
@@ -415,6 +422,14 @@ export async function sendMessage(
 
   // Add user message to store
   const userMessageId = chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata);
+  if (attachments.length > 0) {
+    lastAttachmentUpload = {
+      conversationId: activeConversationId,
+      messageId: userMessageId,
+      userId: getCurrentUserId(),
+      files: [...attachments],
+    };
+  }
 
   // Save user message to database
   if (shouldPersist) {
@@ -1214,11 +1229,25 @@ export async function regenerateMessage(messageId: string): Promise<void> {
     throw new Error('No active conversation');
   }
 
-  const apiMessages = prepareMessagesForAPI(
-    messages.slice(0, messageIndex),
-    undefined,
-    activeConversationId
+  const precedingMessages = messages.slice(0, messageIndex);
+  const sourceMessage = precedingMessages.findLast(
+    (message) => message.role === 'user' && message.conversationId === activeConversationId,
   );
+  const retryUpload = lastAttachmentUpload;
+  const retryFiles = retryUpload
+    && retryUpload.conversationId === activeConversationId
+    && retryUpload.messageId === sourceMessage?.id
+    && retryUpload.userId === getCurrentUserId()
+    ? retryUpload.files : [];
+  if (sourceMessage?.attachments?.length && retryFiles.length === 0) {
+    chatStore.setError(new Error('原附件已無法讀取。請重新上傳檔案並送出問題。'));
+    return;
+  }
+  const apiMessages = prepareMessagesForAPI(precedingMessages, undefined, activeConversationId);
+  if (sourceMessage && retryFiles.length > 0) {
+    const userTurn = apiMessages.findLast((message) => message.role === 'user');
+    if (userTurn) userTurn.content = sourceMessage.content;
+  }
 
   // Safety check: Don't send empty messages to API
   if (apiMessages.length === 0) {
@@ -1394,7 +1423,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
       chatStore.forceThink,
       chatStore.searchMode,
       activeConversationId,
-      [],
+      retryFiles,
       { tutorProfile: latestState.tutorProfile },
     );
   } catch (error) {

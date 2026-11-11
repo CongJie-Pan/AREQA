@@ -149,6 +149,7 @@ async def stream_endpoint(
         processed_attachments = await process_attachments(
             uploads,
             conversation_id=chat_req.conversation_id,
+            compact_large_pdfs=True,
         )
 
     material = None

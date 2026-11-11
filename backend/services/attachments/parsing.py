@@ -6,6 +6,7 @@ chat request. This module never persists file bytes or extracted text.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
@@ -17,11 +18,16 @@ from typing import Any, Iterable
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 
+from services.attachments.pdf_text import extract_pdf_text
+from services.conversation.attachment_budget import PdfTextPart
+
 logger = logging.getLogger("backend.services.attachment_service")
 
 MAX_ATTACHMENT_COUNT = 5
 MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024
 MAX_TOTAL_ATTACHMENT_BYTES = MAX_ATTACHMENT_BYTES
+MAX_NATIVE_CHAT_PDF_BYTES = 10 * 1024 * 1024
+MAX_CHAT_PDF_TEXT_BYTES = 96_000
 # Legacy import compatibility only; upload text is no longer truncated.
 MAX_TEXT_ATTACHMENT_CHARS = 50_000
 MAX_IMAGE_PIXELS = 20_000_000
@@ -172,6 +178,7 @@ async def process_attachments(
     uploads: Iterable[UploadFile],
     *,
     conversation_id: str = "unknown",
+    compact_large_pdfs: bool = False,
 ) -> list[ProcessedAttachment]:
     """Validate uploads and create OpenRouter-ready content parts.
 
@@ -188,6 +195,7 @@ async def process_attachments(
 
     processed: list[ProcessedAttachment] = []
     total_size = 0
+    native_pdf_bytes = 0
     logger.info("attachment.processing_started count=%s", len(upload_list))
     for upload in upload_list:
         filename = sanitize_filename(upload.filename)
@@ -214,7 +222,22 @@ async def process_attachments(
                     "type": "image_url",
                     "image_url": {"url": f"data:{media_type};base64,{encoded}"},
                 }
+            elif media_type == PDF_TYPE and compact_large_pdfs and (
+                native_pdf_bytes + len(data) > MAX_NATIVE_CHAT_PDF_BYTES
+            ):
+                try:
+                    plain_text = await extract_pdf_text(data, MAX_CHAT_PDF_TEXT_BYTES // len(upload_list))
+                except (asyncio.TimeoutError, OSError, ValueError):
+                    raise _attachment_error(
+                        "ATTACHMENT_INVALID_CONTENT",
+                        "無法擷取這份大型 PDF 的文字。請提供含可選取文字的 PDF，或分批上傳相關頁面。",
+                    ) from None
+                content_part = PdfTextPart(
+                    type="text", text=_decode_text(plain_text.encode("utf-8"), filename),
+                )
+                logger.info("attachment.large_pdf_text_ready size_bucket=%s", _size_bucket(len(data)))
             elif media_type == PDF_TYPE:
+                native_pdf_bytes += len(data)
                 encoded = base64.b64encode(data).decode("ascii")
                 content_part = {
                     "type": "file",

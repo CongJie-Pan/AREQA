@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from services.conversation.answer_style import render_paper_overview_style
+from services.conversation.attachment_budget import PdfTextPart
 from services.prompt_skills import load_prompt_skill
 from services.query_policy.models import (
     AttachmentReason,
@@ -41,8 +42,9 @@ _PDF_BROAD_AUTO_EXPLAIN_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?:幫我|請)?(?:解釋|說明|導讀|摘要|總結|閱讀|讀)(?:一下)?"
-        r"(?:這|這篇|這份|此|此篇|本篇|該|該篇)?(?:論文|PDF|文件|文獻)"
+        r"(?:幫我|請)?(?:解釋|解說|說明|介紹|導讀|摘要|總結|閱讀|讀)(?:一下)?"
+        r"\s*(?:這篇|這份|這|此篇|此|本篇|該篇|該)?\s*(?:論文|PDF|文件|文獻|paper\b)",
+        re.IGNORECASE,
     ),
     re.compile(
         r"(?:這|這篇|這份|此|此篇|本篇|該|該篇)?(?:論文|PDF|文件|文獻)(?:在)?"
@@ -78,6 +80,9 @@ def count_pdf_attachments(attachments: list[dict[str, Any]] | None) -> int:
 
     count = 0
     for attachment in attachments or []:
+        if isinstance(attachment, PdfTextPart):
+            count += 1
+            continue
         if not isinstance(attachment, dict) or attachment.get("type") != "file":
             continue
         file_part = attachment.get("file")
@@ -196,7 +201,7 @@ def _is_broad_pdf_auto_explain_request(user_msg: str) -> bool:
     """
 
     normalized = re.sub(r"\s+", " ", str(user_msg or "")).strip()
-    if not normalized:
+    if not normalized or normalized.rstrip("。.!！") == "請分析我附加的檔案":
         return True
     if _PDF_TARGETED_TASK_PATTERN.search(normalized):
         return False
