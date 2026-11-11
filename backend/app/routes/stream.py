@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from auth import get_optional_current_user
 from services.conversation.tutor_profile import normalize_tutor_profile
+from services.memory_diagnostics import log_memory_snapshot
 
 router = APIRouter()
 logger = logging.getLogger("backend.main")
@@ -146,10 +147,27 @@ async def stream_endpoint(
     if uploads:
         from services.attachments.parsing import process_attachments
 
-        processed_attachments = await process_attachments(
-            uploads,
-            conversation_id=chat_req.conversation_id,
-            compact_large_pdfs=True,
+        log_memory_snapshot(
+            "attachment_processing_started", conversation_id=chat_req.conversation_id,
+            request_id=safe_request_id,
+            attachment_bytes=sum(getattr(upload, "size", None) or 0 for upload in uploads),
+        )
+        try:
+            processed_attachments = await process_attachments(
+                uploads,
+                conversation_id=chat_req.conversation_id,
+                compact_large_pdfs=True,
+            )
+        except MemoryError:
+            log_memory_snapshot(
+                "attachment_processing_memory_error", conversation_id=chat_req.conversation_id,
+                request_id=safe_request_id,
+            )
+            raise
+        log_memory_snapshot(
+            "attachment_processing_completed", conversation_id=chat_req.conversation_id,
+            request_id=safe_request_id,
+            attachment_bytes=sum(attachment.size_bytes for attachment in processed_attachments),
         )
 
     material = None

@@ -115,15 +115,18 @@ async def test_large_chat_pdf_uses_page_text_and_keeps_paper_routing(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_unreadable_large_chat_pdf_has_actionable_error(monkeypatch):
+async def test_unreadable_large_chat_pdf_has_actionable_error(monkeypatch, caplog):
     from services.attachments import parsing
 
     monkeypatch.setattr(parsing, "MAX_NATIVE_CHAT_PDF_BYTES", 1)
+    caplog.set_level(logging.INFO, logger="services.memory_diagnostics")
     uploads = [make_upload("bad.pdf", "application/pdf", b"%PDF-1.4\ninvalid")]
     with pytest.raises(HTTPException) as raised:
         await process_attachments(uploads, compact_large_pdfs=True)
     assert raised.value.status_code == 422
     assert "可選取文字" in raised.value.detail["message"]
+    assert "stage=pdf_text_worker_failed" in caplog.text
+    assert "worker_returncode=1" in caplog.text
 
 
 @pytest.mark.asyncio

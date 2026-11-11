@@ -24,6 +24,7 @@ from services.conversation.stream_request import (
 )
 from services.conversation.stream_request import build_stream_request
 from services.conversation.response_boundary import StreamingResponseBoundaryFilter
+from services.memory_diagnostics import log_memory_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +139,8 @@ class ConversationStreamService:
             bool(extra_body.get("session_id")),
             bool(extra_body.get("provider")),
         )
+        if has_pdf or image_attachments:
+            log_memory_snapshot("attachment_context_started", conversation_id=conversation_id)
         try:
             try:
                 preparation = asyncio.create_task(prepare_history(
@@ -173,6 +176,8 @@ class ConversationStreamService:
                            'current_turn_too_large', 'instructions_too_large', 'retrieval_budget',
                            'retrieval_prefix_mismatch', 'retrieval_unavailable'}
                 reason = str(error) if str(error) in reasons else 'invalid_context'
+                if reason in ('attachment_parse_timeout', 'attachment_parse_failed'):
+                    log_memory_snapshot(reason, conversation_id=conversation_id)
                 sizes = error.sizes if isinstance(error, ContextBudgetError) else {}
                 logger.warning(
                     "history.rejected conversation_id=%s reason=%s budget=%s instructions_bytes=%s "
@@ -212,6 +217,8 @@ class ConversationStreamService:
                         conversation_id, target_model, attempt + 1, len(messages),
                         attachment_count, token_bound(messages), max_tokens,
                     )
+                    if attachment_count:
+                        log_memory_snapshot("attachment_provider_request_started", conversation_id=conversation_id)
                     generation = asyncio.create_task(
                         self.client.chat.completions.create(
                             model=target_model,
@@ -230,6 +237,8 @@ class ConversationStreamService:
                         if not done:
                             yield ": heartbeat\n\n"
                     response = await generation
+                    if attachment_count:
+                        log_memory_snapshot("attachment_provider_stream_received", conversation_id=conversation_id)
                     logger.info('orchestration.provider_stream_received conversation_id=%s model=%s attempt=%d',
                                 conversation_id, target_model, attempt + 1)
                     if trace:
@@ -312,6 +321,8 @@ class ConversationStreamService:
                                 logger.warning('orchestration.provider_close_failed error_type=%s', type(close_error).__name__)
 
         except Exception as exc:
+            if isinstance(exc, MemoryError):
+                log_memory_snapshot("stream_memory_error", conversation_id=conversation_id)
             if trace:
                 trace.mark_once("main_model_failed")
             # Log only the innermost code location, never exception messages or locals.

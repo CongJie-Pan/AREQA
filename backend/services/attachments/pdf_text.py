@@ -8,8 +8,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 
-async def extract_pdf_text(data: bytes, byte_budget: int) -> str:
+async def extract_pdf_text(data: bytes, byte_budget: int, *, conversation_id: str = "") -> str:
     """Keep the PDF off the JSON/IPC path and reap the worker on timeout."""
+    from services.memory_diagnostics import log_memory_snapshot
+
     with TemporaryDirectory(prefix="areqa-pdf-") as directory:
         source = Path(directory) / "upload.pdf"
         source.write_bytes(data)
@@ -19,6 +21,11 @@ async def extract_pdf_text(data: bytes, byte_budget: int) -> str:
         )
         try:
             stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+        except asyncio.TimeoutError:
+            log_memory_snapshot(
+                "pdf_text_worker_timeout", conversation_id=conversation_id, attachment_bytes=len(data),
+            )
+            raise
         finally:
             if process.returncode is None:
                 try:
@@ -27,6 +34,10 @@ async def extract_pdf_text(data: bytes, byte_budget: int) -> str:
                     pass
                 await process.communicate()
         if process.returncode or not stdout.strip():
+            log_memory_snapshot(
+                "pdf_text_worker_failed", conversation_id=conversation_id, attachment_bytes=len(data),
+                worker_returncode=process.returncode,
+            )
             raise ValueError("pdf_text_unavailable")
         return stdout.decode("utf-8")
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from config import settings
+from services.memory_diagnostics import log_memory_snapshot
 from services.query_policy.models import (
     AttachmentTask,
 )
@@ -100,6 +101,7 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
             or attachment_visual_sources
         )
         if attachment_visual_sources and visual_preflight_allowed:
+            log_memory_snapshot("pdf_visual_preflight_started", conversation_id=conversation_id)
             attachment_visual_candidates = await service._extract_attachment_visual_candidates(
                 attachment_visual_sources,
                 conversation_id,
@@ -112,6 +114,7 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
                 conversation_id=conversation_id,
                 model_client=service.client,
             )
+            log_memory_snapshot("pdf_visual_preflight_completed", conversation_id=conversation_id)
         elif attachment_visual_sources:
             logger.info(
                 "visual.attachment_preflight_skipped conversation_id=%s reason=policy_gate source_count=%s",

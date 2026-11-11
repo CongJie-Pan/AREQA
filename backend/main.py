@@ -328,6 +328,7 @@ async def get_runtime_features() -> RuntimeFeatureResponse:
     )
 
 from services.attachments.parsing import MAX_TOTAL_ATTACHMENT_BYTES
+from services.memory_diagnostics import log_memory_snapshot
 
 MAX_CHAT_MULTIPART_BYTES = MAX_TOTAL_ATTACHMENT_BYTES + 10 * 1024 * 1024
 
@@ -419,6 +420,7 @@ async def startup_event():
     from mailbox_store import init_mailbox_store
     from job_store import init_agent_job_store
     from redis_client import log_redis_open_status
+    log_memory_snapshot("startup")
     
     # Init store
     store = init_global_store(budget_limit=1000000)
@@ -472,6 +474,7 @@ async def startup_event():
 async def shutdown_event():
     from services.memory.gum.runtime import stop_gum_instance
 
+    log_memory_snapshot("shutdown")
     await stop_gum_instance()
     if hasattr(app.state, 'proactive_task'):
         app.state.proactive_task.cancel()

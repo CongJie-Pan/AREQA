@@ -226,7 +226,9 @@ async def process_attachments(
                 native_pdf_bytes + len(data) > MAX_NATIVE_CHAT_PDF_BYTES
             ):
                 try:
-                    plain_text = await extract_pdf_text(data, MAX_CHAT_PDF_TEXT_BYTES // len(upload_list))
+                    plain_text = await extract_pdf_text(
+                        data, MAX_CHAT_PDF_TEXT_BYTES // len(upload_list), conversation_id=conversation_id,
+                    )
                 except (asyncio.TimeoutError, OSError, ValueError):
                     raise _attachment_error(
                         "ATTACHMENT_INVALID_CONTENT",
