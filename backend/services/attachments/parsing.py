@@ -20,8 +20,8 @@ from PIL import Image, UnidentifiedImageError
 logger = logging.getLogger("backend.services.attachment_service")
 
 MAX_ATTACHMENT_COUNT = 5
-MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
-MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024
+MAX_TOTAL_ATTACHMENT_BYTES = MAX_ATTACHMENT_BYTES
 # Legacy import compatibility only; upload text is no longer truncated.
 MAX_TEXT_ATTACHMENT_CHARS = 50_000
 MAX_IMAGE_PIXELS = 20_000_000
@@ -198,11 +198,11 @@ async def process_attachments(
             if not data:
                 raise _attachment_error("ATTACHMENT_INVALID_CONTENT", "不接受空白附件。")
             if len(data) > MAX_ATTACHMENT_BYTES:
-                raise _attachment_error("ATTACHMENT_TOO_LARGE", "單一附件不得超過 5 MB。", 413)
+                raise _attachment_error("ATTACHMENT_TOO_LARGE", "單一附件不得超過 40 MB。", 413)
 
             total_size += len(data)
             if total_size > MAX_TOTAL_ATTACHMENT_BYTES:
-                raise _attachment_error("ATTACHMENT_TOTAL_SIZE_EXCEEDED", "附件總大小不得超過 20 MB。", 413)
+                raise _attachment_error("ATTACHMENT_TOTAL_SIZE_EXCEEDED", "附件總大小不得超過 40 MB。", 413)
 
             media_type = _validate_type(filename, declared_type, data)
             pdf_bytes = b""

@@ -148,6 +148,31 @@ describe('chat attachment BFF route', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { extraBytes: 0, secondFile: false, status: 200, code: null },
+    { extraBytes: 1, secondFile: false, status: 413, code: 'ATTACHMENT_TOO_LARGE' },
+    { extraBytes: 0, secondFile: true, status: 413, code: 'ATTACHMENT_TOTAL_SIZE_EXCEEDED' },
+  ])('enforces the 40 MB attachment boundary ($code)', async ({ extraBytes, secondFile, status, code }) => {
+    const formData = new FormData();
+    formData.append('messages', JSON.stringify({ messages: [{ role: 'user', content: '請閱讀附件' }] }));
+    formData.append('attachments', new File(
+      [new ArrayBuffer(40 * 1024 * 1024 + extraBytes)], 'large.pdf', { type: 'application/pdf' },
+    ));
+    if (secondFile) {
+      formData.append('attachments', new File(['x'], 'notes.txt', { type: 'text/plain' }));
+    }
+
+    const response = await POST(multipartRequest(formData) as any);
+
+    expect(response.status).toBe(status);
+    if (code) {
+      expect((await response.json()).error.code).toBe(code);
+      expect(fetch).not.toHaveBeenCalled();
+    } else {
+      expect(fetch).toHaveBeenCalledOnce();
+    }
+  });
+
   it('preserves backend attachment validation errors instead of masking them', async () => {
     vi.stubGlobal(
       'fetch',

@@ -22,7 +22,7 @@ import httpx
 from PIL import Image, UnidentifiedImageError
 
 from config import settings
-from services.attachments.parsing import IMAGE_TYPES, MAX_ATTACHMENT_BYTES, MAX_IMAGE_PIXELS
+from services.attachments.parsing import IMAGE_TYPES, MAX_IMAGE_PIXELS
 
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class VisualInputService:
     never full URLs, prompts, raw user text, image bytes, credentials, or tokens.
     """
 
-    def __init__(self, *, timeout_seconds: float = 3.0, max_bytes: int = MAX_ATTACHMENT_BYTES) -> None:
+    def __init__(self, *, timeout_seconds: float = 3.0, max_bytes: int = 5 * 1024 * 1024) -> None:
         """Initialize the input service.
 
         Args:

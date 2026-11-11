@@ -39,8 +39,8 @@ import { normalizeVoiceTranscript } from '@/services/realtime/language';
 const MAX_MESSAGE_LENGTH = 4000;
 /** Maximum number of files that can be staged in one outgoing message. */
 const MAX_ATTACHMENT_COUNT = 5;
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = MAX_ATTACHMENT_BYTES;
 const DICTATION_WAVE_BAR_COUNT = 34;
 const IDLE_DICTATION_WAVE_LEVEL = 0.1;
 const EXPANDED_COMPOSER_MIN_SCROLL_HEIGHT = 34;

@@ -17,8 +17,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_ATTACHMENT_COUNT = 5;
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = MAX_ATTACHMENT_BYTES;
 const SUPPORTED_ATTACHMENT_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -77,22 +77,22 @@ const ATTACHMENT_ERROR_MESSAGES: Record<
     ATTACHMENT_COUNT_EXCEEDED: `每次最多可附加 ${MAX_ATTACHMENT_COUNT} 個檔案。`,
     ATTACHMENT_UNSUPPORTED_TYPE: '僅支援 PNG、JPEG、WEBP、GIF、PDF、TXT 與 Markdown 檔案。',
     ATTACHMENT_INVALID_CONTENT: '不接受空白附件。',
-    ATTACHMENT_TOO_LARGE: '單一附件不得超過 5 MB。',
-    ATTACHMENT_TOTAL_SIZE_EXCEEDED: '附件總大小不得超過 20 MB。',
+    ATTACHMENT_TOO_LARGE: '單一附件不得超過 40 MB。',
+    ATTACHMENT_TOTAL_SIZE_EXCEEDED: '附件總大小不得超過 40 MB。',
   },
   'zh-CN': {
     ATTACHMENT_COUNT_EXCEEDED: `每次最多可附加 ${MAX_ATTACHMENT_COUNT} 个文件。`,
     ATTACHMENT_UNSUPPORTED_TYPE: '仅支持 PNG、JPEG、WEBP、GIF、PDF、TXT 与 Markdown 文件。',
     ATTACHMENT_INVALID_CONTENT: '不接受空白附件。',
-    ATTACHMENT_TOO_LARGE: '单一附件不得超过 5 MB。',
-    ATTACHMENT_TOTAL_SIZE_EXCEEDED: '附件总大小不得超过 20 MB。',
+    ATTACHMENT_TOO_LARGE: '单一附件不得超过 40 MB。',
+    ATTACHMENT_TOTAL_SIZE_EXCEEDED: '附件总大小不得超过 40 MB。',
   },
   en: {
     ATTACHMENT_COUNT_EXCEEDED: `You can attach up to ${MAX_ATTACHMENT_COUNT} files at a time.`,
     ATTACHMENT_UNSUPPORTED_TYPE: 'Only PNG, JPEG, WEBP, GIF, PDF, TXT, and Markdown files are supported.',
     ATTACHMENT_INVALID_CONTENT: 'Empty attachments are not accepted.',
-    ATTACHMENT_TOO_LARGE: 'Each attachment must be 5 MB or smaller.',
-    ATTACHMENT_TOTAL_SIZE_EXCEEDED: 'Total attachment size must be 20 MB or smaller.',
+    ATTACHMENT_TOO_LARGE: 'Each attachment must be 40 MB or smaller.',
+    ATTACHMENT_TOTAL_SIZE_EXCEEDED: 'Total attachment size must be 40 MB or smaller.',
   },
 };
 

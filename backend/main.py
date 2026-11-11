@@ -327,7 +327,9 @@ async def get_runtime_features() -> RuntimeFeatureResponse:
         conversationHistoryDebugLogs=conversation_history_debug_logs,
     )
 
-MAX_CHAT_MULTIPART_BYTES = 30 * 1024 * 1024
+from services.attachments.parsing import MAX_TOTAL_ATTACHMENT_BYTES
+
+MAX_CHAT_MULTIPART_BYTES = MAX_TOTAL_ATTACHMENT_BYTES + 10 * 1024 * 1024
 
 import sqlite3
 import sqlalchemy.exc

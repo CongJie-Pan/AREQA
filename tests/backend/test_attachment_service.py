@@ -48,6 +48,32 @@ async def test_processes_pdf_without_local_parsing():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extra_bytes", "second_attachment", "expected_error"),
+    [
+        (0, False, None),
+        (1, False, "ATTACHMENT_TOO_LARGE"),
+        (0, True, "ATTACHMENT_TOTAL_SIZE_EXCEEDED"),
+    ],
+)
+async def test_pdf_upload_at_40_mb_boundary(extra_bytes, second_attachment, expected_error):
+    size = 40 * 1024 * 1024 + extra_bytes
+    pdf_bytes = b"%PDF-1.4\n".ljust(size, b" ")
+    uploads = [make_upload("large.pdf", "application/pdf", pdf_bytes)]
+    if second_attachment:
+        uploads.append(make_upload("notes.txt", "text/plain", b"x"))
+
+    if expected_error:
+        with pytest.raises(HTTPException) as raised:
+            await process_attachments(uploads)
+        assert raised.value.status_code == 413
+        assert raised.value.detail["code"] == expected_error
+    else:
+        attachments = await process_attachments(uploads)
+        assert attachments[0].size_bytes == size
+
+
+@pytest.mark.asyncio
 async def test_processes_pdf_with_request_scoped_bytes_for_deferred_visual_extraction():
     pdf_bytes = b"%PDF-1.4\nminimal test PDF"
     upload = make_upload("lesson.pdf", "application/pdf", pdf_bytes)
