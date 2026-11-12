@@ -12,11 +12,10 @@ describe('chat surfaces follow the interface theme', () => {
     const lightTheme = globals.match(/html\[data-interface-theme='light'\]\s*{([^}]*)}/)?.[1];
     expect(lightTheme).toContain('--areqa-chat-input-background: #ffffff;');
     expect(globals).toMatch(/\.areqa-chat-input-shell\s*{[^}]*background:\s*var\(--areqa-chat-input-background\);/);
-    expect(source('components/ChatInput/styles.ts')).toMatch(/container:\s*css`[^`]*background:\s*var\(--areqa-chat-input-background\);/);
+    expect(source('components/ChatInput/index.tsx')).toContain("'areqa-chat-input-shell'");
   });
 
   it.each([
-    ['ChatInput/styles.ts', 'container'],
     ['ChatInput/styles.ts', 'imageAttachmentRemove'],
     ['MessageList/styles.ts', 'messageAttachmentCard'],
     ['MessageList/styles.ts', 'messageAttachmentToggle'],

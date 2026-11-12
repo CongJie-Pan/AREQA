@@ -10,59 +10,7 @@
 import { createStyles } from 'antd-style';
 
 export const useStyles = createStyles(({ css, token }) => ({
-  // Outer container: column-flex card that highlights on focus-within
-  container: css`
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    padding: 8px 12px;
-    background: var(--areqa-chat-input-background);
-    border-width: 1px;
-    border-style: solid;
-    border-color: var(--border);
-    border-radius: 999px;
-    max-width: 800px;
-    width: min(90%, 800px);
-    margin: 0 auto 12px;
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
-    transition: none;
-    
-    @media (max-width: 768px) {
-      width: calc(100% - 24px);
-      margin: 0 auto 12px;
-      border-radius: 999px;
-      border-width: 1px;
-      border-style: solid;
-      border-color: var(--border);
-      padding: 7px 10px;
-    }
-
-    &:focus-within {
-      border-color: color-mix(in srgb, var(--foreground) 24%, transparent);
-      box-shadow: 0 0 0 1px var(--border), 0 10px 22px rgba(0, 0, 0, 0.28);
-    }
-  `,
-
-  containerWithAttachments: css`
-    border-radius: 34px;
-    padding: 12px 16px 10px;
-
-    @media (max-width: 768px) {
-      border-radius: 28px;
-      padding: 10px 12px 9px;
-    }
-  `,
-
-  containerExpanded: css`
-    border-radius: 34px;
-    padding: 12px 16px 10px;
-
-    @media (max-width: 768px) {
-      border-radius: 28px;
-      padding: 10px 12px 9px;
-    }
-  `,
-
+  // Composer geometry lives in globals.css so it is available before hydration.
   quotePreview: css`
     display: flex;
     align-items: center;
@@ -121,43 +69,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
-  inputRow: css`
-    display: flex;
-    align-items: center;
-    width: 100%;
-    min-width: 0;
-    min-height: 34px;
-    gap: 8px;
-  `,
-
   inputRowRecording: css`
     gap: 10px;
-  `,
-
-  // Borderless textarea that fills the input row
-  textarea: css`
-    flex: 1 1 auto;
-    width: 0;
-    min-width: 0;
-    min-height: 22px;
-    max-height: 200px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--foreground);
-    font-size: 15px;
-    line-height: 22px;
-    resize: none;
-    outline: none;
-
-    &::placeholder {
-      color: var(--muted-foreground);
-    }
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
   `,
 
   attachmentList: css`

@@ -2,6 +2,8 @@
 
 日期：2026-11-11。基準 commit：`a40a54b`。本次僅研究，未修改產品程式碼。
 
+後續修正與 2026-11-12 驗證結果：[fix-validation.md](./fix-validation.md)。
+
 ## Research Question
 
 為何首頁首次載入時輸入列和 sidebar 按鈕會改變外觀／位置，且手機輸入區疑似短暫出現金色捲軸？

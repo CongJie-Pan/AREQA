@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
+import { cookies } from 'next/headers';
+import { createPreferenceBootstrap, sanitizeInterfacePreferences, THEME_COOKIE, LANGUAGE_COOKIE } from '@/lib/interfacePreferences';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { AppProviders } from './providers';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -38,19 +40,31 @@ export const viewport: Viewport = {
   themeColor: '#d8a25c',
 };
 
-export default function RootLayout({
+/**
+ * Renders the request's validated UI preference snapshot and pre-paint bootstrap.
+ * Reading cookies makes this layout request-specific, preventing shared theme HTML.
+ */
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const initialPreferences = sanitizeInterfacePreferences(
+    cookieStore.get(THEME_COOKIE)?.value,
+    cookieStore.get(LANGUAGE_COOKIE)?.value,
+  );
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={initialPreferences.language} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: createPreferenceBootstrap(initialPreferences) }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ErrorBoundary>
           <AntdRegistry>
-            <AppProviders>
+            <AppProviders initialPreferences={initialPreferences}>
               {children}
               <PwaInstallPrompt />
             </AppProviders>
