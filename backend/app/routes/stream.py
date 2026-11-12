@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
+from services.openrouter_clients import get_chat_client
 from pydantic import BaseModel
 
 from auth import get_optional_current_user
@@ -215,14 +216,8 @@ async def stream_endpoint(
             media_type="text/event-stream"
         )
 
-    client = None
-    if api_key:
-        client_factory = getattr(_main_module(), "AsyncOpenAI", AsyncOpenAI)
-        client = client_factory(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
-            timeout=120.0
-        )
+    client_factory = getattr(_main_module(), "AsyncOpenAI", AsyncOpenAI)
+    client = get_chat_client(request.app, client_factory, api_key)
 
     from services.orchestration.service import OrchestrationService
     orchestrator = OrchestrationService(
@@ -244,9 +239,8 @@ async def stream_endpoint(
         except Exception as exc:
             logger.exception("[SSE] Stream failed before terminal event: %s", exc)
             yield f"data: {json.dumps({'error': 'stream_failed'}, ensure_ascii=False)}\n\n"
-        finally:
-            if not done_sent:
-                yield "data: [DONE]\n\n"
+        if not done_sent:
+            yield "data: [DONE]\n\n"
 
     attachment_visual_sources = [
         {"filename": attachment.filename, "pdf_bytes": attachment.pdf_bytes}

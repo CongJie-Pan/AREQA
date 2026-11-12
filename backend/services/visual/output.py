@@ -296,9 +296,8 @@ class OutputImageService:
             model_client: OpenAI-compatible async client for vision analysis.
 
         Returns:
-            Mapping from slot id to image blocks. When visual understanding is
-            enabled, candidates without usable vision output are omitted so the
-            answer model cannot cite unseen attachment pixels.
+            Mapping from slot id to image blocks, in candidate order. When
+            visual understanding is available, the blocks include its results.
 
         Side Effects:
             May call the configured vision model with in-memory data URI images.
@@ -308,56 +307,69 @@ class OutputImageService:
         if not candidates:
             return {}
 
-        blocks: dict[str, ImageBlock] = {}
-        for candidate in list(candidates)[:4]:
-            if not hasattr(candidate, "to_image_block"):
-                continue
-            block = candidate.to_image_block()
-            attachment_caption = "：".join(
-                part
-                for part in (
-                    str(getattr(candidate, "answer_section", "") or "").strip(),
-                    str(getattr(candidate, "teaching_caption", "") or "").strip(),
+        slots = asyncio.Semaphore(2)
+
+        async def prepare_candidate(candidate: Any) -> ImageBlock | None:
+            async with slots:
+                if not hasattr(candidate, "to_image_block"):
+                    return None
+                block = candidate.to_image_block()
+                attachment_caption = "：".join(
+                    part
+                    for part in (
+                        str(getattr(candidate, "answer_section", "") or "").strip(),
+                        str(getattr(candidate, "teaching_caption", "") or "").strip(),
+                    )
+                    if part
                 )
-                if part
-            )
-            if attachment_caption and not block.explanatory_caption:
-                block = replace(block, explanatory_caption=attachment_caption)
-            if settings.enable_visual_understanding:
+                if attachment_caption and not block.explanatory_caption:
+                    block = replace(block, explanatory_caption=attachment_caption)
+                if settings.enable_visual_understanding:
+                    try:
+                        result = await self.understanding_agent.analyze(
+                            client=model_client,
+                            model=settings.model_visual_understanding,
+                            image_url=block.image_url,
+                            image_part={
+                                "type": "image_url",
+                                "image_url": {"url": block.image_url},
+                            },
+                            user_msg=user_msg,
+                            visual_brief=None,
+                            conversation_id=conversation_id,
+                        )
+                    except Exception as exc:
+                        logger.info(
+                            "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=%s",
+                            conversation_id,
+                            block.slot_id,
+                            type(exc).__name__,
+                        )
+                        result = None
+                    if not self._has_usable_understanding(result):
+                        logger.info(
+                            "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=understanding_unavailable",
+                            conversation_id,
+                            block.slot_id,
+                        )
+                    else:
+                        block = self._apply_understanding(block, result)
                 try:
-                    result = await self.understanding_agent.analyze(
-                        client=model_client,
-                        model=settings.model_visual_understanding,
-                        image_url=block.image_url,
-                        image_part={
-                            "type": "image_url",
-                            "image_url": {"url": block.image_url},
-                        },
-                        user_msg=user_msg,
-                        visual_brief=None,
+                    return await self.attachment_image_storage_service.persist_pdf_image_block(
+                        block=block,
                         conversation_id=conversation_id,
                     )
                 except Exception as exc:
                     logger.info(
-                        "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=%s",
+                        "visual.attachment_storage_failed_soft conversation_id=%s slot_id=%s reason=%s",
                         conversation_id,
                         block.slot_id,
                         type(exc).__name__,
                     )
-                    result = None
-                if not self._has_usable_understanding(result):
-                    logger.info(
-                        "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=understanding_unavailable",
-                        conversation_id,
-                        block.slot_id,
-                    )
-                else:
-                    block = self._apply_understanding(block, result)
-            block = await self.attachment_image_storage_service.persist_pdf_image_block(
-                block=block,
-                conversation_id=conversation_id,
-            )
-            blocks[block.slot_id] = block
+                    return block
+
+        prepared = await asyncio.gather(*(prepare_candidate(candidate) for candidate in candidates[:4]))
+        blocks = {block.slot_id: block for block in prepared if block is not None}
 
         logger.info(
             "visual.attachment_images_prepared conversation_id=%s candidate_count=%s selected_image_count=%s understanding_enabled=%s",

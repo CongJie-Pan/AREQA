@@ -473,8 +473,10 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     from services.memory.gum.runtime import stop_gum_instance
+    from services.openrouter_clients import close_chat_clients
 
     log_memory_snapshot("shutdown")
+    await close_chat_clients(app)
     await stop_gum_instance()
     if hasattr(app.state, 'proactive_task'):
         app.state.proactive_task.cancel()

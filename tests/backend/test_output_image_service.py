@@ -351,3 +351,55 @@ def test_output_image_service_preserves_only_explicit_explanatory_caption():
 
     assert enriched.explanatory_caption == "這張圖呈現各研究的效果量。"
     assert enriched.vision_summary == "An internal English summary."
+
+
+@pytest.mark.asyncio
+async def test_pdf_images_overlap_network_work_and_keep_candidate_order(monkeypatch):
+    from types import SimpleNamespace
+    from config import settings
+
+    monkeypatch.setattr(settings, "enable_visual_understanding", True)
+    second_started = asyncio.Event()
+    first_persisted = asyncio.Event()
+    in_flight = 0
+    peak_in_flight = 0
+
+    class Vision:
+        async def analyze(self, *, image_url, **kwargs):
+            nonlocal in_flight, peak_in_flight
+            in_flight += 1
+            peak_in_flight = max(peak_in_flight, in_flight)
+            try:
+                if image_url.endswith("/1"):
+                    await second_started.wait()
+                if image_url.endswith("/2"):
+                    second_started.set()
+                return await _FakeUnderstandingAgent().analyze(**kwargs)
+            finally:
+                in_flight -= 1
+
+    class Storage:
+        async def persist_pdf_image_block(self, *, block, conversation_id):
+            if block.slot_id == "pdf_1":
+                first_persisted.set()
+            if block.slot_id == "pdf_2":
+                await first_persisted.wait()
+                raise RuntimeError("storage unavailable")
+            return block
+
+    blocks = [
+        ImageBlock(
+            slot_id=f"pdf_{index}", topic="PDF diagram", purpose="diagram",
+            image_url=f"https://example.edu/{index}", thumbnail_url="",
+            source_url="", source_domain="attachment", caption="PDF figure",
+        )
+        for index in range(1, 6)
+    ]
+    service = OutputImageService(understanding_agent=Vision(), attachment_image_storage_service=Storage())
+    result = await asyncio.wait_for(service.prepare_attachment_image_blocks(
+        candidates=[SimpleNamespace(to_image_block=lambda block=block: block) for block in blocks],
+        user_msg="Explain the paper", conversation_id="test-paper",
+    ), timeout=1)
+    assert peak_in_flight == 2
+    assert list(result) == ["pdf_1", "pdf_2", "pdf_3", "pdf_4"]
+    assert all(block.vision_summary for block in result.values())
