@@ -13,7 +13,7 @@ from services.query_policy.models import (
 
 logger = logging.getLogger("backend.services.orchestration_service")
 
-async def resolve_response_policy(policy_task, trace, conversation_id):
+async def resolve_response_policy(policy_task, trace, conversation_id, *, timeout_ms=None):
     """Return policy, provenance and timeout status without writing SSE events."""
     timed_out = False
     response_policy = default_response_policy()
@@ -21,10 +21,8 @@ async def resolve_response_policy(policy_task, trace, conversation_id):
     policy = response_policy.legacy_policy
     if policy_task:
         try:
-            policy_timeout_seconds = (
-                max(int(getattr(settings, "policy_classifier_timeout_ms", 700)), 1)
-                / 1000
-            )
+            configured_timeout_ms = timeout_ms if timeout_ms is not None else settings.policy_classifier_timeout_ms
+            policy_timeout_seconds = max(configured_timeout_ms, 1) / 1000
             policy_result = await asyncio.wait_for(
                 policy_task,
                 timeout=policy_timeout_seconds,

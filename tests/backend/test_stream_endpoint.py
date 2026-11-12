@@ -649,7 +649,12 @@ async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, labe
         pdf_bytes = document.tobytes()
 
     client = MagicMock()
-    post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": label}}})
+    async def jev_response(*args, **kwargs):
+        # The PDF budget must outlast the general dialogue budget.
+        await asyncio.sleep(0.025)
+        return {"answers": {"paper_intent": {"choice": label}}}
+
+    post = AsyncMock(side_effect=jev_response)
     client.with_options.return_value.post = post
     answer_prompts = []
 
@@ -664,6 +669,8 @@ async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, labe
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock) as gemini, \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("services.speaking_material_service.save_material", new_callable=AsyncMock), \
+         patch.object(settings, "policy_classifier_timeout_ms", 10), \
+         patch.object(settings, "pdf_intent_classifier_timeout_ms", 250), \
          patch.object(settings, "enable_visual_preflight", False), \
          patch.object(settings, "enable_parts_llm_rewrite", False), \
          patch.object(OrchestrationService, "_node_llm_stream", stream_answer):

@@ -70,9 +70,13 @@ async def classify_pdf_response_policy(
     try:
         label = await asyncio.wait_for(
             classify_jev(client, message, context if isinstance(context, str) else ""),
-            timeout=max(settings.policy_classifier_timeout_ms, 1) / 1000,
+            timeout=max(settings.pdf_intent_classifier_timeout_ms, 1) / 1000,
         )
     except asyncio.TimeoutError:
+        logger.warning(
+            "paper.intent_jev_timeout conversation_id=%s duration_ms=%.1f",
+            conversation_id, (perf_counter() - started_at) * 1000,
+        )
         raise
     except Exception as exc:
         logger.warning("paper.intent_jev_failed reason=%s", type(exc).__name__)

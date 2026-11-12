@@ -318,6 +318,7 @@ class OrchestrationExecutionMixin:
         else:
             response_policy, response_policy_source, policy_timed_out = await resolve_response_policy(
                 policy_task, trace, conversation_id,
+                timeout_ms=settings.pdf_intent_classifier_timeout_ms if has_pdf_attachment else None,
             )
         if policy_timed_out:
             yield sse_adapter.encode_legacy(

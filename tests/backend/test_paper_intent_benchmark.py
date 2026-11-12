@@ -77,7 +77,7 @@ async def test_pdf_policy_maps_jev_output_and_falls_back_on_invalid_label(label,
 
 @pytest.mark.asyncio
 async def test_jev_timeout_does_not_retry_or_call_gemini(monkeypatch):
-    monkeypatch.setattr(settings, "policy_classifier_timeout_ms", 10)
+    monkeypatch.setattr(settings, "pdf_intent_classifier_timeout_ms", 10)
     client = MagicMock()
 
     async def slow_response(*args, **kwargs):
