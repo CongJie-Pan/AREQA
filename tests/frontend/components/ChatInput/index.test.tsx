@@ -1,7 +1,7 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { render as renderWithProviders, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
+import { render as renderWithProviders, screen, fireEvent, waitFor, createEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { useChatStore } from '@/store/chat';
@@ -49,16 +49,33 @@ describe('ChatInput', () => {
   const mockOnSend = vi.fn();
   const mockSetQuotedText = vi.fn();
 
-  it('keeps the input shell layout from animating during initial style overrides', () => {
-    const chatInputStyles = readFileSync(
-      path.resolve(__dirname, '../../../../frontend/src/components/ChatInput/styles.ts'),
-      'utf8',
+  it('keeps the input shell layout from animating during startup', () => {
+    const globals = readFileSync(
+      path.resolve(__dirname, '../../../../frontend/src/app/globals.css'), 'utf8',
     );
+    const shell = globals.match(/\.areqa-chat-input-shell\s*{([^}]*)}/)?.[1];
+    expect(shell).toContain('transition: none;');
+  });
 
-    const containerRule = chatInputStyles.match(/container:\s*css`(?<rule>[\s\S]*?)`,\n\n\s*containerWithAttachments:/);
+  it('enables textarea scrolling only beyond the maximum height and remeasures on resize', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const input = screen.getByLabelText('訊息輸入框') as HTMLTextAreaElement;
+    expect(input.style.overflowY).toBe('hidden');
+    let contentHeight = 440;
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => contentHeight });
+    fireEvent.change(input, { target: { value: 'Long draft' } });
+    expect(input.style.height).toBe('200px');
+    expect(input.style.overflowY).toBe('auto');
 
-    expect(containerRule?.groups?.rule ?? '').toContain('transition: none;');
-    expect(containerRule?.groups?.rule ?? '').not.toContain('transition: all');
+    contentHeight = 66;
+    act(() => window.dispatchEvent(new Event('resize')));
+    expect(input.style.height).toBe('66px');
+    expect(input.style.overflowY).toBe('hidden');
+
+    contentHeight = 22;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.style.height).toBe('22px');
+    expect(input.closest('.areqa-chat-input-shell-expanded')).not.toBeInTheDocument();
   });
   const mockToggleWebSearch = vi.fn();
   const mockSetTutorProfile = vi.fn();

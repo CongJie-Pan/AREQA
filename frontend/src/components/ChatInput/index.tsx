@@ -5,7 +5,7 @@
  * Text input for sending messages with validation
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   ArrowUp,
   AudioLines,
@@ -466,15 +466,41 @@ export function ChatInput({
     || value.includes('\n')
     || value.length > EXPANDED_COMPOSER_MIN_CHARS;
 
-  // Auto-resize textarea
-  useEffect(() => {
+  // Measure before paint; width/font changes can wrap text without changing value.
+  useLayoutEffect(() => {
     const textarea = textareaRef.current;
-    if (textarea) {
+    if (!textarea) return;
+    let disposed = false;
+    let lastWidth = textarea.clientWidth;
+    const resize = () => {
+      if (disposed) return;
+      textarea.style.overflowY = 'hidden';
       textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-      setIsTextareaMultiline(textarea.scrollHeight > EXPANDED_COMPOSER_MIN_SCROLL_HEIGHT);
-    }
-  }, [value]);
+      const contentHeight = Math.max(22, textarea.scrollHeight);
+      textarea.style.height = `${Math.min(contentHeight, 200)}px`;
+      textarea.style.overflowY = contentHeight > 200 ? 'auto' : 'hidden';
+      setIsTextareaMultiline(contentHeight > EXPANDED_COMPOSER_MIN_SCROLL_HEIGHT);
+    };
+    resize();
+    const frame = requestAnimationFrame(resize);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      const width = textarea.clientWidth;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      resize();
+    });
+    observer?.observe(textarea);
+    window.addEventListener('resize', resize);
+    document.fonts?.addEventListener('loadingdone', resize);
+    void document.fonts?.ready.then(resize);
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener('resize', resize);
+      document.fonts?.removeEventListener('loadingdone', resize);
+    };
+  }, [value, dictationState, language]);
 
   // Focus textarea when quotedText changes
   useEffect(() => {
@@ -847,9 +873,6 @@ export function ChatInput({
         'areqa-chat-input-shell',
         attachmentPreviews.length > 0 && 'areqa-chat-input-shell-has-attachments',
         shouldUseExpandedShape && 'areqa-chat-input-shell-expanded',
-        styles.container,
-        shouldUseExpandedShape && styles.containerExpanded,
-        attachmentPreviews.length > 0 && styles.containerWithAttachments,
         className,
       )}
     >
@@ -944,7 +967,6 @@ export function ChatInput({
       <div
         className={cx(
           'areqa-chat-input-row',
-          styles.inputRow,
           dictationState !== 'idle' && styles.inputRowRecording,
         )}
         role="group"
@@ -1012,7 +1034,7 @@ export function ChatInput({
           <>
             <textarea
               ref={textareaRef}
-              className={cx('areqa-chat-input-textarea', styles.textarea)}
+              className="areqa-chat-input-textarea"
               value={value}
               onChange={handleChange}
               onKeyDown={handleKeyDown}

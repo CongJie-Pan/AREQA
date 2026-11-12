@@ -692,6 +692,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
       <div
         className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}
         data-sidebar-open={sidebarOpen}
+        data-mobile-open={mobileOpen}
+        data-desktop-collapsed={desktopCollapsed}
         style={{ '--areqa-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
       >
         <Tooltip

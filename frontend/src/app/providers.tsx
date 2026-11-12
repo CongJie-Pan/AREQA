@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import type { InterfacePreferences } from '@/lib/interfacePreferences';
 import { ConfigProvider, theme, App } from 'antd';
 import { StyleProvider } from 'antd-style';
 import {
@@ -10,6 +11,7 @@ import {
 
 interface AppProvidersProps {
   children: ReactNode;
+  initialPreferences?: InterfacePreferences;
 }
 
 interface ThemedAppProvidersProps {
@@ -24,10 +26,10 @@ interface ThemedAppProvidersProps {
  * collection. Keeping these providers behind a client boundary preserves the
  * existing theme setup while allowing global critical CSS to cover first paint.
  */
-export function AppProviders({ children }: AppProvidersProps) {
+export function AppProviders({ children, initialPreferences }: AppProvidersProps) {
   return (
     <StyleProvider hashPriority="high">
-      <UserPreferencesProvider>
+      <UserPreferencesProvider initialPreferences={initialPreferences}>
         <ThemedAppProviders>{children}</ThemedAppProviders>
       </UserPreferencesProvider>
     </StyleProvider>
