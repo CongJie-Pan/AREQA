@@ -1911,29 +1911,19 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
 
 
 @pytest.mark.asyncio
-async def test_pdf_auto_explain_guardrail_survives_policy_classifier_timeout(
+async def test_explicit_pdf_overview_skips_policy_classifier(
     mock_router,
     mock_rag,
     mock_suggestion,
     mock_client,
     caplog,
 ):
-    """Classifier timeout must not bypass deterministic PDF overview routing."""
+    """An explicit paper request uses local routing before any classifier call."""
 
     service = OrchestrationService(mock_router, mock_rag, None, mock_client)
     request = MagicMock()
     captured_messages = []
     caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
-
-    async def slow_policy(*args, **kwargs):
-        await asyncio.sleep(2)
-        return ResponsePolicy(
-            task_intent=TaskIntent.EXPLAIN_TEXT,
-            answer_depth=AnswerDepth.SCAFFOLDED,
-            tone=ResponseTone.TUTORING,
-            structure=ResponseStructure.STEP_BY_STEP,
-            followup_mode=FollowupMode.OPTIONAL,
-        )
 
     async def llm_stream(*args, **kwargs):
         captured_messages.extend(args[3])
@@ -1952,15 +1942,15 @@ async def test_pdf_auto_explain_guardrail_survives_policy_classifier_timeout(
     with patch("memory_store.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
-         patch("backend.services.orchestration_service.classify_dialogue_policy", side_effect=slow_policy), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock) as mock_policy, \
          patch.object(service, "_extract_attachment_visual_candidates", new_callable=AsyncMock, side_effect=fake_extract) as mock_extract, \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
              {"role": "system", "content": "base prompt"},
-             {"role": "user", "content": "Please help me explain this paper."},
+             {"role": "user", "content": "請幫我解釋這一篇論文"},
          ]):
         _ = [event async for event in service.execute(
-            [{"role": "user", "content": "Please help me explain this paper."}],
-            "attachment-timeout-conv",
+            [{"role": "user", "content": "請幫我解釋這一篇論文"}],
+            "local-paper-overview-conv",
             True,
             False,
             False,
@@ -1975,6 +1965,8 @@ async def test_pdf_auto_explain_guardrail_survives_policy_classifier_timeout(
             attachment_visual_sources=attachment_visual_sources,
         )]
 
+    mock_policy.assert_not_awaited()
+    assert "source=local_pdf_overview" in caplog.text
     assert mock_extract.await_count == 1
     assert "PDF 論文自動解說任務" in captured_messages[0]["content"]
     assert "paper.auto_explain_policy_selected" in caplog.text

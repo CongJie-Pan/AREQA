@@ -15,6 +15,7 @@ from services.query_policy.classifier import (
     count_pdf_attachments,
 )
 from services.orchestration.trace import TurnLatencyTrace
+from services.query_policy.models import AttachmentTask, default_response_policy
 
 logger = logging.getLogger("backend.services.orchestration_service")
 InterfaceLanguage = str
@@ -221,8 +222,15 @@ class OrchestrationExecutionMixin:
 
         # Node 2 & 3: Parallel Tasks (HyDE & Policy)
         policy_task = None
+        local_paper_policy = apply_pdf_auto_explain_guardrail(
+            default_response_policy(),
+            user_msg=last_user_msg,
+            has_pdf_attachment=has_pdf_attachment and settings.enable_pdf_paper_auto_explain,
+        )
+        use_local_paper_policy = local_paper_policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
         should_run_policy_classifier = (
-            last_user_msg
+            not use_local_paper_policy
+            and last_user_msg
             and self.client
             and (
                 has_pdf_attachment
@@ -293,9 +301,14 @@ class OrchestrationExecutionMixin:
                 yield sse_adapter.encode_legacy(event, run_context.run_id)
 
         # Node 5: Prompt Assembly
-        response_policy, response_policy_source, policy_timed_out = await resolve_response_policy(
-            policy_task, trace, conversation_id,
-        )
+        if use_local_paper_policy:
+            response_policy = local_paper_policy
+            response_policy_source = "local_pdf_overview"
+            policy_timed_out = False
+        else:
+            response_policy, response_policy_source, policy_timed_out = await resolve_response_policy(
+                policy_task, trace, conversation_id,
+            )
         if policy_timed_out:
             yield sse_adapter.encode_legacy(
                 f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '✅ 已完成基本分析，正在組織回答'}, ensure_ascii=False)}\n\n",

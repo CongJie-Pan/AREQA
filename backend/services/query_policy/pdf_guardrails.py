@@ -43,7 +43,7 @@ _PDF_BROAD_AUTO_EXPLAIN_PATTERNS = (
     ),
     re.compile(
         r"(?:幫我|請)?(?:解釋|解释|解說|解说|說明|说明|講解|讲解|解讀|解读|介紹|介绍|導讀|导读|摘要|總結|总结|閱讀|阅读|讀|读|看)(?:一下)?"
-        r"\s*(?:這篇|這份|這個|這|这篇|这份|这个|这|此篇|此|本篇|該篇|該|该篇|该)?\s*(?:論文|论文|PDF|文件|文獻|文献|paper)(?![a-z0-9_])",
+        r"\s*(?:這一篇|這一份|這篇|這份|這個|這|这一篇|这一份|这篇|这份|这个|这|此篇|此|本篇|該篇|該|该篇|该)?\s*(?:論文|论文|PDF|文件|文獻|文献|paper)(?![a-z0-9_])",
         re.IGNORECASE,
     ),
     re.compile(
@@ -56,8 +56,8 @@ _PDF_TARGETED_TASK_PATTERN = re.compile(
     r"\b(?:method|methods|methodology|limitation|limitations|future\s+work|"
     r"translate|translation|proofread|rewrite|citation|citations|reference|"
     r"references|compare|comparison|page|section|formula|equation|only)\b|"
-    r"(?:方法|局限|限制|未來|翻譯|改寫|潤稿|校對|引用|參考文獻|比較|第\s*\d+\s*頁|"
-    r"第\s*\d+\s*章|(?:圖|图|表)\s*\d+|\b(?:figure|table)\s+\d+|公式|方程式|只看|只要)",
+    r"(?:方法|局限|限制|未來|翻譯|翻译|翻成|譯成|译成|改寫|潤稿|校對|引用|參考文獻|比較|第\s*\d+\s*頁|"
+    r"第\s*\d+\s*[章節节]|(?:圖|图|表)\s*\d+|\b(?:figure|table)\s+\d+|公式|方程式|只看|只要|只解[釋释]|不用解[釋释]|不必解[釋释]|不要解[釋释])",
     re.IGNORECASE,
 )
 
@@ -116,7 +116,7 @@ def paper_auto_explain_instruction() -> str:
         "【PDF 論文自動解說任務】本回合使用者上傳 PDF，且 policy classifier 判定使用者"
         "是在要求一般性的論文導讀，沒有指定更細的任務。請把它視為一篇需要導讀的論文或技術文件，"
         f"{render_paper_overview_style()}"
-        "根據實際可讀取的 PDF 內容，回答請依下列順序使用六個有編號的 Markdown 小標題；標題使用回答語言："
+        "根據實際可讀取的 PDF 內容，回答請依下列順序使用六個有編號的 Markdown 小標題；標題使用回答語言。請在同一則回覆中依序完成六節，直接說明每一節。篇幅有限時精簡各節："
         "\n1. 研究動機與目的：說明作者想解決什麼問題、為什麼重要。"
         "\n2. 研究方法與模型架構：說明核心方法、模型、資料、流程或理論設計。"
         "\n3. 實驗設計與資料集：說明資料集、比較基準、實驗設計、評估指標或分析流程。"
