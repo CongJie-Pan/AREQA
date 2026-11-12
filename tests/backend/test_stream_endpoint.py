@@ -303,7 +303,8 @@ async def test_sse_streaming_sequence_with_rag():
         yield {"type": "results", "data": MockRagResults()}
     
     # We patch the rag_service, router_service and suggestion_service instances in the main app
-    with patch('backend.main.rag_service') as mock_rag, \
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch('backend.main.rag_service') as mock_rag, \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service') as mock_suggestion, \
          patch('backend.services.orchestration_service.parse_and_decompose_query', new_callable=AsyncMock) as mock_expand, \
@@ -590,7 +591,8 @@ async def test_rag_score_threshold_refusal():
     def mock_retrieve_with_events(query):
         yield {"type": "results", "data": LowScoreMockRagResults()}
 
-    with patch('backend.main.rag_service') as mock_rag, \
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch('backend.main.rag_service') as mock_rag, \
          patch('backend.main.router_service') as mock_router, \
          patch('backend.main.suggestion_service', None), \
          patch('backend.services.orchestration_service.parse_and_decompose_query', new_callable=AsyncMock) as mock_expand, \
@@ -624,3 +626,59 @@ async def test_rag_score_threshold_refusal():
                 # OpenAI generation (stream) should NOT be called
                 for call in mock_openai.return_value.chat.completions.create.call_args_list:
                     assert not call.kwargs.get('stream', False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("question", "label", "overview"),
+    [
+        ("可以帶我看一下作者在做什麼嗎？", "overview", True),
+        ("只翻譯摘要", "targeted", False),
+        ("換個話題，晚餐吃什麼？", "other", False),
+        ("可以帶我看一下作者在做什麼嗎？", None, False),
+    ],
+)
+async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, label, overview, caplog):
+    import pymupdf
+    from config import settings
+    from services.orchestration_service import OrchestrationService
+
+    with pymupdf.open() as document:
+        page = document.new_page()
+        page.insert_text((72, 72), "Paper abstract: compares two learning methods.")
+        pdf_bytes = document.tobytes()
+
+    client = MagicMock()
+    post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": label}}})
+    client.with_options.return_value.post = post
+    answer_prompts = []
+
+    async def stream_answer(_service, *args, **_kwargs):
+        answer_prompts.extend(message["content"] for message in args[3] if message["role"] == "system")
+        yield 'data: {"content":"paper reply"}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"paper reply"}\n\n'
+
+    caplog.set_level("INFO", logger="backend.services.orchestration_service")
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("backend.main.AsyncOpenAI", return_value=client), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock) as gemini, \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("services.speaking_material_service.save_material", new_callable=AsyncMock), \
+         patch.object(settings, "enable_visual_preflight", False), \
+         patch.object(settings, "enable_parts_llm_rewrite", False), \
+         patch.object(OrchestrationService, "_node_llm_stream", stream_answer):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                data={"messages": json.dumps([{"role": "user", "content": question}]), "search_mode": "never", "use_rag": "false"},
+                files={"attachments": ("paper.pdf", pdf_bytes, "application/pdf")},
+            )
+
+    assert response.status_code == 200
+    assert "paper reply" in response.text
+    assert "data: [DONE]" in response.text
+    post.assert_awaited_once()
+    gemini.assert_not_awaited()
+    assert bool(answer_prompts)
+    assert any("PDF 論文自動解說任務" in prompt for prompt in answer_prompts) is overview
+    assert f"applied={overview}" in caplog.text

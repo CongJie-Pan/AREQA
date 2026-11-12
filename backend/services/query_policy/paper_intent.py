@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
+from time import perf_counter
 
 from openai import AsyncOpenAI
 
@@ -55,6 +56,7 @@ async def classify_jev(client: AsyncOpenAI, message: str, context: str) -> str:
 
 async def classify_pdf_response_policy(
     client: AsyncOpenAI, message: str, messages: list[dict[str, str]],
+    *, conversation_id: str = "",
 ) -> ResponsePolicy:
     """Map the decision to an attachment policy within the foreground budget."""
     policy = default_response_policy()
@@ -64,6 +66,7 @@ async def classify_pdf_response_policy(
     )
     previous = messages[current_index - 1] if current_index > 0 else {}
     context = previous.get("content", "") if previous.get("role") in {"user", "assistant"} else ""
+    started_at = perf_counter()
     try:
         label = await asyncio.wait_for(
             classify_jev(client, message, context if isinstance(context, str) else ""),
@@ -75,7 +78,10 @@ async def classify_pdf_response_policy(
         logger.warning("paper.intent_jev_failed reason=%s", type(exc).__name__)
         return policy
 
-    logger.info("paper.intent_jev_selected label=%s", label)
+    logger.info(
+        "paper.intent_jev_selected label=%s conversation_id=%s duration_ms=%.1f",
+        label, conversation_id, (perf_counter() - started_at) * 1000,
+    )
     if label == "overview":
         return _pdf_auto_explain_policy_from(policy)
     if label == "targeted":

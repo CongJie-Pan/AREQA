@@ -52,7 +52,7 @@ async def test_jev_decision_uses_only_current_question_and_topic():
     ("other", AttachmentTask.NONE),
     ("invalid", AttachmentTask.NONE),
 ])
-async def test_pdf_policy_maps_jev_output_and_falls_back_on_invalid_label(label, task):
+async def test_pdf_policy_maps_jev_output_and_falls_back_on_invalid_label(label, task, caplog):
     client = MagicMock()
     client.with_options.return_value.post = AsyncMock(
         return_value={"answers": {"paper_intent": {"choice": label}}},
@@ -64,8 +64,12 @@ async def test_pdf_policy_maps_jev_output_and_falls_back_on_invalid_label(label,
         {"role": "user", "content": message},
         {"role": "assistant", "content": "本輪草稿"},
     ]
-    policy = await classify_pdf_response_policy(client, message, messages)
+    with caplog.at_level("INFO", logger="services.query_policy.paper_intent"):
+        policy = await classify_pdf_response_policy(client, message, messages, conversation_id="paper-test")
     assert policy.attachment_task is task
+    if label != "invalid":
+        assert f"label={label} conversation_id=paper-test duration_ms=" in caplog.text
+        assert message not in caplog.text
     client.chat.completions.create.assert_not_called()
     body = client.with_options.return_value.post.await_args.kwargs["body"]
     assert body["state"]["previous_topic"] == "接下來談研究方法"

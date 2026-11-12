@@ -246,7 +246,9 @@ class OrchestrationExecutionMixin:
                 # The Gemini dialogue classifier is disabled for PDF intent routing.
                 # It remains available for ordinary dialogue and offline comparison.
                 policy_task = asyncio.create_task(
-                    classify_pdf_response_policy(self.client, last_user_msg, messages)
+                    classify_pdf_response_policy(
+                        self.client, last_user_msg, messages, conversation_id=conversation_id,
+                    )
                 )
             else:
                 policy_task = asyncio.create_task(
