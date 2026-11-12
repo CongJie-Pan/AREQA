@@ -1,9 +1,10 @@
-import json
-
-import httpx
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 
-from scripts.benchmark_paper_intent import JEV_MODEL, classify_jev, summarize
+from config import settings
+from scripts.benchmark_paper_intent import summarize
+from services.query_policy.paper_intent import JEV_ENDPOINT, JEV_MODEL, classify_jev, classify_pdf_response_policy
 from services.query_policy.models import AttachmentTask, default_response_policy
 from services.query_policy.pdf_guardrails import apply_pdf_auto_explain_guardrail
 
@@ -28,20 +29,62 @@ def test_local_pdf_overview_respects_intent_and_pdf_availability(message, has_pd
 
 @pytest.mark.asyncio
 async def test_jev_decision_uses_only_current_question_and_topic():
-    def reply(request):
-        assert request.url.path == "/api/alpha/decisions"
-        payload = json.loads(request.content)
-        assert payload["model"] == JEV_MODEL
-        assert payload["state"] == {
-            "latest_user_message": "那接下來呢？",
-            "previous_topic": "約定接下來只談實驗方法",
-            "pdf_available": True,
-        }
-        assert payload["questions"]["paper_intent"]["type"] == "choice"
-        return httpx.Response(200, json={"answers": {"paper_intent": {"choice": "targeted"}}})
+    client = MagicMock()
+    post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "targeted"}}})
+    client.with_options.return_value.post = post
+    assert await classify_jev(client, "那接下來呢？", "約定接下來只談實驗方法") == "targeted"
+    client.with_options.assert_called_once_with(max_retries=0)
+    assert post.await_args.args == (JEV_ENDPOINT,)
+    payload = post.await_args.kwargs["body"]
+    assert payload["model"] == JEV_MODEL
+    assert payload["state"] == {
+        "latest_user_message": "那接下來呢？",
+        "previous_topic": "約定接下來只談實驗方法",
+        "pdf_available": True,
+    }
+    assert payload["questions"]["paper_intent"]["type"] == "choice"
 
-    async with httpx.AsyncClient(base_url="https://openrouter.ai", transport=httpx.MockTransport(reply)) as client:
-        assert await classify_jev(client, "那接下來呢？", "約定接下來只談實驗方法") == "targeted"
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("label", "task"), [
+    ("overview", AttachmentTask.PAPER_AUTO_EXPLAIN),
+    ("targeted", AttachmentTask.PAPER_TARGETED_QA),
+    ("other", AttachmentTask.NONE),
+    ("invalid", AttachmentTask.NONE),
+])
+async def test_pdf_policy_maps_jev_output_and_falls_back_on_invalid_label(label, task):
+    client = MagicMock()
+    client.with_options.return_value.post = AsyncMock(
+        return_value={"answers": {"paper_intent": {"choice": label}}},
+    )
+    message = "那接下來呢？"
+    messages = [
+        {"role": "user", "content": "舊問題"},
+        {"role": "assistant", "content": "接下來談研究方法"},
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": "本輪草稿"},
+    ]
+    policy = await classify_pdf_response_policy(client, message, messages)
+    assert policy.attachment_task is task
+    client.chat.completions.create.assert_not_called()
+    body = client.with_options.return_value.post.await_args.kwargs["body"]
+    assert body["state"]["previous_topic"] == "接下來談研究方法"
+
+
+@pytest.mark.asyncio
+async def test_jev_timeout_does_not_retry_or_call_gemini(monkeypatch):
+    monkeypatch.setattr(settings, "policy_classifier_timeout_ms", 10)
+    client = MagicMock()
+
+    async def slow_response(*args, **kwargs):
+        await asyncio.sleep(1)
+
+    post = AsyncMock(side_effect=slow_response)
+    client.with_options.return_value.post = post
+    with pytest.raises(asyncio.TimeoutError):
+        await classify_pdf_response_policy(client, "可以帶我讀一下嗎？", [])
+    post.assert_awaited_once()
+    client.chat.completions.create.assert_not_called()
 
 
 def test_summary_counts_late_correct_and_failed_predictions_as_misses():

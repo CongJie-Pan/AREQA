@@ -22,15 +22,10 @@ from openai import AsyncOpenAI
 from config import settings
 from services.query_policy.classifier import classify_response_policy_impl
 from services.query_policy.models import AttachmentTask, default_response_policy
+from services.query_policy.paper_intent import JEV_MODEL, classify_jev
 from services.query_policy.pdf_guardrails import apply_pdf_auto_explain_guardrail
 
-JEV_MODEL = "typesafe/jev-1.14"
 OPENROUTER_URL = "https://openrouter.ai/api"
-LABELS = {
-    "overview": "An introduction, explanation, or summary of the entire available paper.",
-    "targeted": "A specific section, result, figure, concept, translation or other operation on the paper.",
-    "other": "An unrelated request or a request whose relationship to the paper is unclear.",
-}
 GEMINI_LABELS = {
     AttachmentTask.PAPER_AUTO_EXPLAIN: "overview",
     AttachmentTask.PAPER_TARGETED_QA: "targeted",
@@ -58,32 +53,6 @@ CASES = (
     ("other-no-context", "other", "再看一下", ""),
     ("other-negation", "other", "不用解釋這一篇論文，我只是想問怎麼匯出對話。", ""),
 )
-
-
-async def classify_jev(client: httpx.AsyncClient, message: str, context: str) -> str:
-    response = await client.post(
-        "/api/alpha/decisions",
-        json={
-            "model": JEV_MODEL,
-            "state": {
-                "pdf_available": True,
-                "previous_topic": context,
-                "latest_user_message": message,
-            },
-            "questions": {
-                "paper_intent": {
-                    "type": "choice",
-                    "instructions": "Classify the latest user's intent using the supplied conversation state.",
-                    "criteria": LABELS,
-                },
-            },
-        },
-    )
-    response.raise_for_status()
-    label = response.json()["answers"]["paper_intent"]["choice"]
-    if not isinstance(label, str) or label not in LABELS:
-        raise ValueError("Unexpected paper intent")
-    return label
 
 
 async def classify_gemini(client: AsyncOpenAI, message: str, context: str) -> str:
@@ -135,7 +104,7 @@ async def run(key: str, repetitions: int) -> dict:
     results = {"gemini": [], "jev": []}
     async with (
         AsyncOpenAI(api_key=key, base_url=f"{OPENROUTER_URL}/v1", max_retries=0) as gemini,
-        httpx.AsyncClient(base_url="https://openrouter.ai", headers={"Authorization": f"Bearer {key}"}) as jev,
+        AsyncOpenAI(api_key=key, base_url=f"{OPENROUTER_URL}/v1", max_retries=0) as jev,
     ):
         for repetition in range(1, repetitions + 1):
             for case_id, expected, message, context in CASES:

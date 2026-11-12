@@ -1911,14 +1911,20 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
 
 
 @pytest.mark.asyncio
-async def test_explicit_pdf_overview_skips_policy_classifier(
+@pytest.mark.parametrize(("user_message", "uses_jev"), [
+    ("請幫我解釋這一篇論文", False),
+    ("可以帶我看一下作者在做什麼嗎？", True),
+])
+async def test_pdf_overview_routes_to_local_rules_or_jev(
     mock_router,
     mock_rag,
     mock_suggestion,
     mock_client,
     caplog,
+    user_message,
+    uses_jev,
 ):
-    """An explicit paper request uses local routing before any classifier call."""
+    """PDF overview routes use either local rules or Jev without a Gemini call."""
 
     service = OrchestrationService(mock_router, mock_rag, None, mock_client)
     request = MagicMock()
@@ -1939,6 +1945,9 @@ async def test_explicit_pdf_overview_skips_policy_classifier(
     }
     attachment_visual_sources = [{"filename": "paper.pdf", "pdf_bytes": b"%PDF-1.4"}]
 
+    post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "overview"}}})
+    mock_client.with_options = MagicMock(return_value=SimpleNamespace(post=post))
+
     with patch("memory_store.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
@@ -1946,10 +1955,10 @@ async def test_explicit_pdf_overview_skips_policy_classifier(
          patch.object(service, "_extract_attachment_visual_candidates", new_callable=AsyncMock, side_effect=fake_extract) as mock_extract, \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
              {"role": "system", "content": "base prompt"},
-             {"role": "user", "content": "請幫我解釋這一篇論文"},
+             {"role": "user", "content": user_message},
          ]):
         _ = [event async for event in service.execute(
-            [{"role": "user", "content": "請幫我解釋這一篇論文"}],
+            [{"role": "user", "content": user_message}],
             "local-paper-overview-conv",
             True,
             False,
@@ -1966,7 +1975,9 @@ async def test_explicit_pdf_overview_skips_policy_classifier(
         )]
 
     mock_policy.assert_not_awaited()
-    assert "source=local_pdf_overview" in caplog.text
+    assert post.await_count == int(uses_jev)
+    assert ("source=classifier" in caplog.text) is uses_jev
+    assert ("source=local_pdf_overview" in caplog.text) is not uses_jev
     assert mock_extract.await_count == 1
     assert "PDF 論文自動解說任務" in captured_messages[0]["content"]
     assert "paper.auto_explain_policy_selected" in caplog.text

@@ -16,6 +16,7 @@ from services.query_policy.classifier import (
 )
 from services.orchestration.trace import TurnLatencyTrace
 from services.query_policy.models import AttachmentTask, default_response_policy
+from services.query_policy.paper_intent import classify_pdf_response_policy
 
 logger = logging.getLogger("backend.services.orchestration_service")
 InterfaceLanguage = str
@@ -241,16 +242,23 @@ class OrchestrationExecutionMixin:
         if should_run_policy_classifier:
             trace.mark("policy_classifier_started")
             trace.increment_model_call("policy_classifier")
-            policy_task = asyncio.create_task(
-                self.classify_dialogue_policy(
-                    self.client,
-                    settings.model_policy_classifier,
-                    last_user_msg,
-                    messages,
-                    has_pdf_attachment=has_pdf_attachment,
-                    pdf_attachment_count=pdf_attachment_count,
+            if has_pdf_attachment:
+                # The Gemini dialogue classifier is disabled for PDF intent routing.
+                # It remains available for ordinary dialogue and offline comparison.
+                policy_task = asyncio.create_task(
+                    classify_pdf_response_policy(self.client, last_user_msg, messages)
                 )
-            )
+            else:
+                policy_task = asyncio.create_task(
+                    self.classify_dialogue_policy(
+                        self.client,
+                        settings.model_policy_classifier,
+                        last_user_msg,
+                        messages,
+                        has_pdf_attachment=has_pdf_attachment,
+                        pdf_attachment_count=pdf_attachment_count,
+                    )
+                )
         elif last_user_msg and self.client and turn_plan_enabled:
             trace.mark("policy_classifier_skipped")
 
