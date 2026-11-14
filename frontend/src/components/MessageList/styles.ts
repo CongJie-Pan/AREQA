@@ -1726,7 +1726,7 @@ quoteBlockContent: css`
   `,
 
   replyActionsMenu: css`
-    &.ant-dropdown-menu .ant-dropdown-menu-item > .ant-dropdown-menu-item-icon {
+    &.ant-dropdown-menu .ant-dropdown-menu-item > svg {
       margin-inline-end: 8px;
     }
   `,
