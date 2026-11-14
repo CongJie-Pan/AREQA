@@ -348,7 +348,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     flex-direction: column;
     padding: 12px 0;
-    max-width: 800px;
+    max-width: var(--areqa-chat-column-width, 720px);
     width: 90%;
     margin: 0 auto;
     animation: ${fadeIn} 0.3s ease-out;
@@ -425,7 +425,7 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   bubble: css`
     padding: 12px 0;
-    line-height: 1.8;
+    line-height: 1.65;
     word-break: break-word;
     overflow-wrap: anywhere;
     width: fit-content;
@@ -622,9 +622,13 @@ export const useStyles = createStyles(({ css, token }) => ({
   `,
 
 content: css`
-  font-size: 16px;
-  line-height: 1.8;
+  font-size: 0.9375rem;
+  line-height: 1.65;
   color: var(--areqa-message-text);
+
+  @media (max-width: 768px) {
+    font-size: 1rem;
+  }
   overflow-wrap: anywhere;
   word-break: break-word;
 
@@ -1675,7 +1679,7 @@ quoteBlockContent: css`
     gap: 12px;
     flex: none;
     width: 90%;
-    max-width: 800px;
+    max-width: var(--areqa-chat-column-width, 720px);
     margin: 8px auto 16px;
     color: var(--areqa-message-action-color);
 
@@ -1735,8 +1739,25 @@ quoteBlockContent: css`
   actionButtons: css`
     display: flex;
     flex-direction: row;
-    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
     margin-top: 4px;
+  `,
+
+  replyTimestamp: css`
+    color: var(--areqa-message-muted-text);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    margin-inline-start: 2px;
+    cursor: default;
+
+    &:focus-visible {
+      outline: 2px solid var(--areqa-citation-border);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
   `,
 
   // Action button style (copy, regenerate)

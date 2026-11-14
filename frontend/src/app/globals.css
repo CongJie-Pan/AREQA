@@ -10,6 +10,7 @@
 @source "../../node_modules/streamdown/dist/*.js";
 
 :root {
+  --areqa-chat-column-width: 720px;
   --background: #130f18;
   --foreground: #f0f0f0;
   --card: #1b1622;
@@ -480,8 +481,8 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
 
 .areqa-chat-input-shell {
   display: flex;
-  width: min(90%, 800px);
-  max-width: 800px;
+  width: min(90%, var(--areqa-chat-column-width));
+  max-width: var(--areqa-chat-column-width);
   flex-direction: column;
   gap: 0;
   margin: 0 auto 12px;

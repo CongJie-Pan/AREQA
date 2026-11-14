@@ -34,6 +34,7 @@ import type {
   MessageFeedbackReason,
 } from '@/database/schema';
 import { useStyles } from './styles';
+import { ReplyTimestamp } from './ReplyTimestamp';
 import { ImageGenerationLoading } from './ImageGenerationLoading';
 import { normalizeDisplayMathBlocks, normalizeLooseStrongMarkers, rehypeMathSource } from '@/utils/markdownMath';
 import { AttachmentCard } from './AttachmentCard';
@@ -1931,7 +1932,7 @@ export const MessageItem = memo(function MessageItem({
 }: MessageItemProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
-  const { t } = useUserPreferences();
+  const { language, t } = useUserPreferences();
   const isUser = message.role === 'user';
   const hasLiveStreamed = useHasLiveStreamed(isStreaming && !thinking?.isThinking);
   const reveal = useStreamingReveal(message.content, isStreaming && !thinking?.isThinking, isUser || Boolean(message.voicePlayback));
@@ -2796,6 +2797,9 @@ export const MessageItem = memo(function MessageItem({
                     <Ellipsis size={16} />
                   </button>
                 </Dropdown>
+              )}
+              {!isDisplayingStream && !isImageGenerationPending && (
+                <ReplyTimestamp value={message.createdAt} language={language} className={styles.replyTimestamp} />
               )}
             </div>
             {onFeedback && (
