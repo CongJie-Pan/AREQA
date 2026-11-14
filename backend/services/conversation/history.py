@@ -17,8 +17,7 @@ from typing import Any
 
 from services.conversation.context_budget import ContextBudgetError, budget_retrieval, token_bound
 from services.conversation.summary_store import summary_store
-from services.conversation.attachment_budget import bounded_attachment_cost, AttachmentInspectionError
-from config import settings
+from services.conversation.attachment_budget import attachment_transport_size
 
 logger = logging.getLogger(__name__)
 _CACHE: OrderedDict[tuple[str, str, str, str, str], tuple[float, str]] = OrderedDict()
@@ -114,25 +113,21 @@ async def prepare_history(
         Calls the configured model only for oversized histories. INFO/WARNING
         history.prepared/history.summary_started/history.summary_completed logs
         expose only model, timing, usage and counts. attachment.context_budget logs
-        numeric media estimates only; these do not reject or shrink chat capacity.
+        attachment counts and transport sizes only; these do not reject or shrink chat capacity.
         history.budget_evaluated records conversation ID, chat bytes/budget and
         whether compaction is needed; no input text or media payload is logged.
         Actual media capacity is enforced by the provider. WARNING history.summary_failed
         exposes safe reason codes, never transcript text, summaries, credentials
         or arbitrary exception messages.
     """
-    try:
-        attachment_units, attachment_count = await bounded_attachment_cost(
-            messages, timeout_seconds=settings.conversation_attachment_timeout_seconds)
-    except AttachmentInspectionError as error:
-        logger.warning('attachment.inspection_rejected conversation_id=%s reason=%s',
-                       conversation_id, error.reason)
-        raise ContextBudgetError(error.reason) from None
+    # Attachments never decide admission here; the provider enforces media capacity.
+    # Counting stays in-process: parsing PDFs in a subprocess on a memory-tight host
+    # stalled near the cgroup limit and rejected answers for a diagnostic-only value.
+    attachment_count, attachment_bytes = attachment_transport_size(messages)
     if attachment_count:
-        # Byte/page estimates are diagnostic only; the provider owns actual media capacity.
-        logger.info('attachment.context_budget conversation_id=%s count=%d estimated_reading_units=%d '
+        logger.info('attachment.context_budget conversation_id=%s count=%d transport_bytes=%d '
                     'excluded_from_chat_budget=True enforcement=provider',
-                    conversation_id, attachment_count, attachment_units)
+                    conversation_id, attachment_count, attachment_bytes)
     budget = context_tokens - output_tokens - token_bound(tools) - 1024
     if budget <= 0:
         raise ContextBudgetError('output_budget', budget=budget, tools_bytes=token_bound(tools), output_tokens=output_tokens)

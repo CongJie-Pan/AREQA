@@ -66,7 +66,9 @@ class SummaryStore:
             params = dict(zip(('user_id', 'conversation_id', 'model', 'prompt_hash'), scope))
             params.update(prefix=prefix, covered=covered, summary=summary,
                           updated=int(time.time()), cutoff=int(time.time()) - _TTL)
-            async with asyncio.timeout(2):
+
+            async def run() -> list[Checkpoint] | None:
+                # None marks a completed write; a list is load output or a skipped write.
                 async with engine.begin() as connection:
                     if operation == 'load':
                         result = await connection.execute(text('''
@@ -101,6 +103,12 @@ class SummaryStore:
                             ORDER BY updated_at DESC, covered DESC LIMIT 16
                           ))
                     '''), params)
+                return None
+
+            # wait_for keeps the 2-second bound on Python 3.10, where asyncio.timeout is absent.
+            rows = await asyncio.wait_for(run(), timeout=2)
+            if rows is not None:
+                return rows
             logger.info('history.checkpoint_saved covered=%d', covered)
         except Exception as error:
             self._retry_after = time.monotonic() + 60

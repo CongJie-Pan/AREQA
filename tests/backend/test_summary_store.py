@@ -49,6 +49,17 @@ async def test_store_restart_ownership_upsert_and_scope(storage):
 
 
 @pytest.mark.asyncio
+async def test_store_round_trips_without_asyncio_timeout(storage, monkeypatch, caplog):
+    # Render runs Python 3.10, which has no asyncio.timeout; every save used to fail there.
+    import asyncio
+    monkeypatch.delattr(asyncio, 'timeout', raising=False)
+    store, scope, _ = storage
+    await store.save(scope, 'prefix', 3, 'notes')
+    assert await store.load(scope) == [('prefix', 3, 'notes')]
+    assert 'history.checkpoint_unavailable' not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_store_retains_only_16_versions_and_ignores_expired(storage):
     store, scope, _ = storage
     for i in range(20):
