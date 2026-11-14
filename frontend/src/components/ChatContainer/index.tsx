@@ -752,6 +752,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
           conversationId={activeConversationId}
           replyCount={messages.filter((message) => message.role === 'assistant' && !message.isStreaming).length}
           blocked={!isChatReady || isStreaming || isGeneratingImage || isMessageHandoffLoading || isLiveTutorOpen}
+          canCreateBranch={conversationBranchesEnabled && Boolean(user)}
           onNewConversation={handleNewConversation}
         />
 

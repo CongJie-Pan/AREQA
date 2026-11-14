@@ -142,6 +142,7 @@ export type TranslationKey =
   | 'newChat'
   | 'longConversationTitle'
   | 'longConversationDescription'
+  | 'longConversationBranchDescription'
   | 'longConversationContinue'
   | 'mailbox'
   | 'noConversations'
@@ -403,8 +404,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     latexPreview: 'LaTeX 預覽',
     formulaPreview: '公式預覽',
     newChat: '新對話',
-    longConversationTitle: '開啟新對話，讓交流更順暢',
-    longConversationDescription: 'AI 已回覆 {count} 則，建議開啟新對話，讓交流更清楚、流暢。原對話仍會保留。',
+    longConversationTitle: '這段對話已經很長',
+    longConversationDescription: 'AI 已回覆 {count} 則。你可以開啟新對話，原對話仍會保留。',
+    longConversationBranchDescription: 'AI 已回覆 {count} 則。你可以從先前某則回覆的「⋯」選單建立分支，沿用到那則回覆為止的內容，或開啟新對話。原對話仍會保留。',
     longConversationContinue: '繼續目前對話',
     mailbox: '信箱',
     noConversations: '尚無對話紀錄',
@@ -640,8 +642,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     latexPreview: 'LaTeX 预览',
     formulaPreview: '公式预览',
     newChat: '新对话',
-    longConversationTitle: '开启新对话，让交流更顺畅',
-    longConversationDescription: 'AI 已回复 {count} 条，建议开启新对话，让交流更清楚、流畅。原对话仍会保留。',
+    longConversationTitle: '这段对话已经很长',
+    longConversationDescription: 'AI 已回复 {count} 条。你可以开启新对话，原对话仍会保留。',
+    longConversationBranchDescription: 'AI 已回复 {count} 条。你可以从之前某条回复的「⋯」菜单创建分支，沿用到那条回复为止的内容，或开启新对话。原对话仍会保留。',
     longConversationContinue: '继续当前对话',
     mailbox: '信箱',
     noConversations: '尚无对话纪录',
@@ -877,8 +880,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     latexPreview: 'LaTeX preview',
     formulaPreview: 'Formula preview',
     newChat: 'New chat',
-    longConversationTitle: 'Start a fresh conversation',
-    longConversationDescription: 'This conversation has {count} AI replies. Consider a new chat to keep things clear and focused. This chat will remain saved.',
+    longConversationTitle: 'This conversation is getting long',
+    longConversationDescription: 'This conversation has {count} AI replies. You can start a new chat. This chat will remain saved.',
+    longConversationBranchDescription: 'This conversation has {count} AI replies. Use the ⋯ menu on an earlier reply to branch from that point, or start a new chat. This chat will remain saved.',
     longConversationContinue: 'Continue this chat',
     mailbox: 'Mailbox',
     noConversations: 'No conversations yet',

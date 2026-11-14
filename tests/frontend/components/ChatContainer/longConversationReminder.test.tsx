@@ -38,6 +38,17 @@ describe('Long conversation reminder', () => {
     expect(defaults.onNewConversation).not.toHaveBeenCalled();
   });
 
+  it('offers branching via an earlier reply only when branching is available', async () => {
+    const view = render(<LongConversationReminder {...defaults} replyCount={100} canCreateBranch />);
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent('Use the ⋯ menu on an earlier reply to branch from that point');
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+
+    view.rerender(<LongConversationReminder {...defaults} replyCount={100} />);
+    expect(notice).not.toHaveTextContent('to branch from that point');
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeInTheDocument();
+  });
+
   it('defers while busy and catches a threshold crossed by a reply-count jump', async () => {
     const view = render(<LongConversationReminder {...defaults} replyCount={100} />);
     await dismiss();

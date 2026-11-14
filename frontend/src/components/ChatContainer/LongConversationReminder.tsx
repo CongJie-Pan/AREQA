@@ -10,11 +10,12 @@ interface LongConversationReminderProps {
   conversationId: string | null;
   replyCount: number;
   blocked: boolean;
+  canCreateBranch?: boolean;
   onNewConversation: () => void;
 }
 
 /**
- * Offer a fresh chat at 100 assistant replies and every five replies thereafter.
+ * Offer ways to continue at 100 assistant replies and every five replies thereafter.
  *
  * Crossed thresholds are deferred until the chat is idle, never replayed as a
  * backlog. Browser-local high-water marks isolate accounts/conversations and
@@ -23,7 +24,7 @@ interface LongConversationReminderProps {
  * Only milestone/count/action metadata is logged, never identity or message text.
  */
 export function LongConversationReminder({
-  userId, conversationId, replyCount, blocked, onNewConversation,
+  userId, conversationId, replyCount, blocked, canCreateBranch = false, onNewConversation,
 }: LongConversationReminderProps) {
   const { t } = useUserPreferences();
   const { styles } = useStyles();
@@ -77,7 +78,7 @@ export function LongConversationReminder({
     <aside className={styles.longConversationReminder} role="status" aria-live="polite">
       <div>
         <strong>{t('longConversationTitle')}</strong>
-        <p>{t('longConversationDescription', { count: pending.count })}</p>
+        <p>{t(canCreateBranch ? 'longConversationBranchDescription' : 'longConversationDescription', { count: pending.count })}</p>
       </div>
       <div className={styles.longConversationReminderActions}>
         <button
