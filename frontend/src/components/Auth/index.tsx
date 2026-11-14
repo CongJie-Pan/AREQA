@@ -34,6 +34,8 @@ export interface UserAuthUIProps {
   onOpenNotes?: () => void;
 }
 
+type AccountPreferencePanel = 'theme' | 'language' | null;
+
 const THEME_OPTIONS: Array<{
   value: InterfaceTheme;
   label: string;
@@ -114,6 +116,7 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [activePreferencePanel, setActivePreferencePanel] = useState<AccountPreferencePanel>(null);
   const [newUsername, setNewUsername] = useState('');
   const [feedbackText, setFeedbackText] = useState('');
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
@@ -285,11 +288,16 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
         menu={{ items: menuItems }}
         classNames={{ root: 'areqa-account-dropdown' }}
         placement="topLeft"
+        onOpenChange={(open) => {
+          if (!open) setActivePreferencePanel(null);
+        }}
         popupRender={(menus) => (
           <div className="areqa-account-dropdown-panel">
             <AccountPreferenceControls
               selectedTheme={interfaceTheme}
               selectedLanguage={language}
+              activePanel={activePreferencePanel}
+              onPanelChange={setActivePreferencePanel}
               onThemeChange={setTheme}
               onLanguageChange={setLanguage}
             />
@@ -385,6 +393,8 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
 interface AccountPreferenceControlsProps {
   selectedTheme: InterfaceTheme;
   selectedLanguage: InterfaceLanguage;
+  activePanel: AccountPreferencePanel;
+  onPanelChange: (panel: AccountPreferencePanel) => void;
   onThemeChange: (theme: InterfaceTheme) => void;
   onLanguageChange: (language: InterfaceLanguage) => void;
 }
@@ -395,6 +405,8 @@ interface AccountPreferenceControlsProps {
  * Args:
  *   selectedTheme: Currently selected persisted theme choice.
  *   selectedLanguage: Currently selected persisted language choice.
+ *   activePanel: Submenu expanded during the current account menu opening.
+ *   onPanelChange: Callback that changes which submenu is expanded.
  *   onThemeChange: Callback that persists a sanitized theme choice.
  *   onLanguageChange: Callback that persists a sanitized language choice.
  *
@@ -405,6 +417,8 @@ interface AccountPreferenceControlsProps {
 function AccountPreferenceControls({
   selectedTheme,
   selectedLanguage,
+  activePanel,
+  onPanelChange,
   onThemeChange,
   onLanguageChange,
 }: AccountPreferenceControlsProps) {
@@ -412,7 +426,6 @@ function AccountPreferenceControls({
   const stopDropdownDismissal = (event: React.SyntheticEvent) => {
     event.stopPropagation();
   };
-  const [activePanel, setActivePanel] = useState<'theme' | 'language' | null>(null);
   const themeLabelByValue: Record<InterfaceTheme, string> = {
     light: t('theme.light'),
     dark: t('theme.dark'),
@@ -437,14 +450,14 @@ function AccountPreferenceControls({
         icon={<Moon size={18} />}
         label={t('appearance')}
         summary={selectedTheme === 'system' ? `${t('theme.system')} (${selectedThemeLabel})` : selectedThemeLabel}
-        onClick={() => setActivePanel(activePanel === 'theme' ? null : 'theme')}
+        onClick={() => onPanelChange(activePanel === 'theme' ? null : 'theme')}
         expanded={activePanel === 'theme'}
       />
       <PreferenceSubmenuRow
         icon={<Languages size={18} />}
         label={t('language')}
         summary={selectedLanguageLabel}
-        onClick={() => setActivePanel(activePanel === 'language' ? null : 'language')}
+        onClick={() => onPanelChange(activePanel === 'language' ? null : 'language')}
         expanded={activePanel === 'language'}
       />
       {activePanel && (
