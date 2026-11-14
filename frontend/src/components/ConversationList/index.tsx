@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image';
 import { App, Dropdown, Input, Modal, Spin } from 'antd';
 import type { MenuProps } from 'antd';
-import { MoreHorizontal, Pencil, Pin, PinOff, Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
+import { MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
 import { BranchIcon, conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
@@ -65,6 +65,10 @@ export function ConversationList({
   const { resolvedTheme, t } = useUserPreferences();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [pinnedOpen, setPinnedOpen] = useState(false);
+  const [recentsOpen, setRecentsOpen] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
@@ -131,6 +135,7 @@ export function ConversationList({
   const handleNew = useCallback(async () => {
     // We don't create a conversation in DB yet (Lazy creation)
     // Just trigger the callback to reset the UI
+    setOpenMenuId(null);
     onNew?.();
   }, [onNew]);
 
@@ -209,12 +214,13 @@ export function ConversationList({
   }, [antMessageApi, renameTargetId, renameValue, t]);
 
   const togglePinned = useCallback((id: string) => {
+    if (!pinnedIds.includes(id)) setPinnedOpen(true);
     setPinnedIds((current) => (
       current.includes(id)
         ? current.filter((pinnedId) => pinnedId !== id)
         : [id, ...current]
     ));
-  }, []);
+  }, [pinnedIds]);
 
   const isMobileViewport = useCallback(() => (
     window.matchMedia('(max-width: 768px)').matches
@@ -262,39 +268,26 @@ export function ConversationList({
     ));
   }, []);
 
-  /**
-   * Group conversations by date
-   */
-  const groupedConversations = useMemo(() => {
-    const pinnedIdSet = new Set(pinnedIds);
-    const pinnedConversations = conversations.filter((conv) => pinnedIdSet.has(conv.id));
-    const unpinnedConversations = conversations.filter((conv) => !pinnedIdSet.has(conv.id));
-    const groups: { [key: string]: typeof conversations } = {
-      [t('today')]: [],
-      [t('yesterday')]: [],
-      [t('previousSevenDays')]: [],
-      [t('older')]: [],
-    };
+  const sortedConversations = useMemo(() => (
+    [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  ), [conversations]);
+  const pinnedIdSet = new Set(pinnedIds);
+  const groups = [
+    { key: 'pinned', label: t('pinned'), open: pinnedOpen, toggle: () => setPinnedOpen((open) => !open),
+      items: sortedConversations.filter((conversation) => pinnedIdSet.has(conversation.id)) },
+    { key: 'recents', label: t('conversationRecents'), open: recentsOpen, toggle: () => setRecentsOpen((open) => !open),
+      items: sortedConversations.filter((conversation) => !pinnedIdSet.has(conversation.id)) },
+  ];
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+  const searchResults = searchOpen ? sortedConversations.filter((conversation) => (
+    [conversation.title, conversation.lastMessagePreview].some((value) =>
+      value?.toLocaleLowerCase().includes(normalizedQuery))
+  )) : [];
 
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    unpinnedConversations.forEach((conv) => {
-      const date = new Date(conv.updatedAt);
-      date.setHours(0, 0, 0, 0);
-      const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 0) groups[t('today')].push(conv);
-      else if (diffDays === 1) groups[t('yesterday')].push(conv);
-      else if (diffDays < 7) groups[t('previousSevenDays')].push(conv);
-      else groups[t('older')].push(conv);
-    });
-
-    return [
-      ...(pinnedConversations.length > 0 ? [[t('pinned'), pinnedConversations] as const] : []),
-      ...Object.entries(groups).filter(([, items]) => items.length > 0),
-    ];
-  }, [conversations, pinnedIds, t]);
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+  };
 
   return (
     <div className={cx('areqa-conversation-list', styles.container, className)}>
@@ -305,18 +298,24 @@ export function ConversationList({
         externalSidebarToggle && 'areqa-conversation-logo-row-external-toggle',
         externalSidebarToggle && styles.logoContainerExternalToggle,
       )}>
-        <div className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}>
+        <button
+          type="button"
+          className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}
+          onClick={handleNew}
+          aria-label={t('conversationHome')}
+          title={t('conversationHome')}
+        >
           <Image
             src={sidebarLogoSrc}
             alt="AREQA Logo" 
-            width={150}
+            width={100}
             height={36}
             unoptimized
             className={cx('areqa-conversation-logo', styles.logo)}
             draggable={false}
             priority
           />
-        </div>
+        </button>
         {!externalSidebarToggle && (
           <button
             className={cx('areqa-conversation-toggle-button', styles.toggleButton)}
@@ -330,11 +329,14 @@ export function ConversationList({
 
       {/* Action Area */}
       <div className={cx('areqa-conversation-actions', styles.header)}>
-        <button className={cx('areqa-conversation-new-button', styles.newButton)} onClick={handleNew}>
+        <button type="button" className={cx('areqa-conversation-new-button', styles.newButton)} onClick={handleNew}>
           <Plus size={18} />
           <span>{t('newChat')}</span>
         </button>
-        <div className={cx('areqa-conversation-divider', styles.divider)} />
+        <button type="button" className={styles.searchButton} onClick={() => setSearchOpen(true)}>
+          <Search size={17} aria-hidden="true" />
+          <span>{t('conversationSearch')}</span>
+        </button>
         {mailboxEnabled && (
           <button className={cx('areqa-conversation-panel-button', styles.gumButton)} onClick={() => onSelectGumPanel?.('mailbox')}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -362,151 +364,176 @@ export function ConversationList({
           <div className={cx('areqa-conversation-loading', styles.loading)}>
             <Spin size="small" />
           </div>
-        ) : conversations.length === 0 ? (
-          <div className={cx('areqa-conversation-empty', styles.empty)}>
-            <MessagesSquare size={32} className={cx('areqa-conversation-empty-icon', styles.emptyIcon)} />
-            <p className={cx('areqa-conversation-empty-text', styles.emptyText)}>{t('noConversations')}</p>
-          </div>
-        ) : (
-          groupedConversations.map(([group, items]) => (
-            <React.Fragment key={group}>
-              <div className={cx('areqa-conversation-group-title', styles.groupTitle)}>{group}</div>
-              {items.map((conv) => {
-                const isPinned = pinnedIds.includes(conv.id);
-                const hasDefaultTitle = DEFAULT_CONVERSATION_TITLES.has(conv.title);
-                const isGeneratingTitle = streamingTitles[conv.id] !== undefined;
-                const isAwaitingInitialTitle = (
-                  conv.id === activeId &&
-                  hasDefaultTitle &&
-                  isActiveConversationAwaitingFirstReply
-                );
-                const isTitlePending = isGeneratingTitle || isAwaitingInitialTitle;
-                const displayTitle = isGeneratingTitle
-                  ? streamingTitles[conv.id]
-                  : (hasDefaultTitle ? t('newChat') : conv.title || t('newChat'));
-                const source = conversationBranchesEnabled && conv.branchOrigin
-                  ? conversations.find((item) => item.id === conv.branchOrigin?.conversationId)
-                  : undefined;
-                const childBranches = conversationBranchesEnabled
-                  ? conversations.filter((item) => item.branchOrigin?.conversationId === conv.id)
-                  : [];
-                const branchMenuIcon = <span className={styles.branchMenuIcon}><BranchIcon size={14} /></span>;
-                const menuItems: MenuProps['items'] = [
-                  {
-                    key: 'rename',
-                    icon: <Pencil size={14} />,
-                    label: t('rename'),
-                  },
-                  {
-                    key: 'pin',
-                    icon: isPinned ? <PinOff size={14} /> : <Pin size={14} />,
-                    label: isPinned ? t('unpin') : t('pin'),
-                  },
-                  {
-                    key: 'delete',
-                    danger: true,
-                    icon: <Trash2 size={14} />,
-                    label: t('delete'),
-                  },
-                  ...(source ? [{ key: `branch:${source.id}`, icon: branchMenuIcon, label: t('conversationBranchReturn') }] : []),
-                  ...(childBranches.length ? [{
-                    key: 'branches',
-                    label: t('conversationBranches'),
-                    icon: branchMenuIcon,
-                    children: childBranches.map((child) => ({ key: `branch:${child.id}`, label: child.title })),
-                  }] : []),
-                ];
+        ) : groups.map(({ key, label, items, open, toggle }) => (
+          <section key={key} className={styles.group}>
+            <button type="button" className={styles.groupTitle} aria-expanded={open} onClick={toggle}>
+              {label}
+              <ChevronRight size={13} aria-hidden="true" />
+            </button>
+            {open && items.length === 0 && (
+              <p className={styles.emptyText}>{t(key === 'pinned' ? 'noPinnedConversations' : 'noConversations')}</p>
+            )}
+            {open && items.map((conv) => {
+              const isPinned = pinnedIds.includes(conv.id);
+              const hasDefaultTitle = DEFAULT_CONVERSATION_TITLES.has(conv.title);
+              const isGeneratingTitle = streamingTitles[conv.id] !== undefined;
+              const isAwaitingInitialTitle = (
+                conv.id === activeId &&
+                hasDefaultTitle &&
+                isActiveConversationAwaitingFirstReply
+              );
+              const isTitlePending = isGeneratingTitle || isAwaitingInitialTitle;
+              const displayTitle = isGeneratingTitle
+                ? streamingTitles[conv.id]
+                : (hasDefaultTitle ? t('newChat') : conv.title || t('newChat'));
+              const source = conversationBranchesEnabled && conv.branchOrigin
+                ? conversations.find((item) => item.id === conv.branchOrigin?.conversationId)
+                : undefined;
+              const childBranches = conversationBranchesEnabled
+                ? conversations.filter((item) => item.branchOrigin?.conversationId === conv.id)
+                : [];
+              const menuLabel = (icon: React.ReactNode, label: string) => (
+                <span className={styles.menuLabel}>{icon}<span>{label}</span></span>
+              );
+              const menuItems: MenuProps['items'] = [
+                { key: 'rename', label: menuLabel(<Pencil size={14} />, t('rename')) },
+                { key: 'pin', label: menuLabel(
+                  isPinned ? <PinOff size={14} /> : <Pin size={14} />, t(isPinned ? 'unpin' : 'pin'),
+                ) },
+                ...(source ? [{
+                  key: `branch:${source.id}`,
+                  label: menuLabel(<BranchIcon size={14} />, t('conversationBranchReturn')),
+                }] : []),
+                ...(childBranches.length ? [{
+                  key: 'branches',
+                  label: menuLabel(<BranchIcon size={14} />, t('conversationBranches')),
+                  children: childBranches.map((child) => ({ key: `branch:${child.id}`, label: child.title })),
+                }] : []),
+                { type: 'divider' },
+                { key: 'delete', danger: true, label: menuLabel(<Trash2 size={14} />, t('delete')) },
+              ];
 
-                return (
-                  <Dropdown
-                    key={conv.id}
-                    menu={{
-                      items: menuItems,
-                      onClick: ({ key, domEvent }) => {
-                        domEvent.stopPropagation();
-                        setOpenMenuId(null);
-                        if (key.startsWith('branch:')) {
-                          void handleItemClick(key.slice('branch:'.length));
-                        } else if (key === 'rename') {
-                          openRenameDialog(conv.id, displayTitle);
-                        } else if (key === 'pin') {
-                          togglePinned(conv.id);
-                        } else if (key === 'delete') {
-                          void handleDelete(conv.id);
-                        }
-                      },
-                    }}
-                    onOpenChange={(open) => setOpenMenuId(open ? conv.id : null)}
-                    open={openMenuId === conv.id}
-                    placement="bottomRight"
-                    trigger={['contextMenu']}
+              return (
+                <Dropdown
+                  key={conv.id}
+                  menu={{
+                    items: menuItems,
+                    onClick: ({ key, domEvent }) => {
+                      domEvent.stopPropagation();
+                      setOpenMenuId(null);
+                      if (key.startsWith('branch:')) {
+                        longPressTriggeredRef.current = false;
+                        void handleSelect(key.slice('branch:'.length));
+                      } else if (key === 'rename') {
+                        openRenameDialog(conv.id, displayTitle);
+                      } else if (key === 'pin') {
+                        togglePinned(conv.id);
+                      } else if (key === 'delete') {
+                        void handleDelete(conv.id);
+                      }
+                    },
+                  }}
+                  onOpenChange={(open) => setOpenMenuId(open ? conv.id : null)}
+                  open={openMenuId === conv.id}
+                  placement="bottomRight"
+                  trigger={['contextMenu']}
+                >
+                  <div
+                    className={cx(
+                      'areqa-conversation-item',
+                      styles.item,
+                      conv.id === activeId && styles.itemActive
+                    )}
+                    onClick={() => handleItemClick(conv.id)}
+                    onPointerCancel={handleItemPointerEnd}
+                    onPointerDown={() => handleItemPointerDown(conv.id)}
+                    onPointerEnter={() => handleTitlePointerEnter(conv.id)}
+                    onPointerLeave={handleItemPointerEnd}
+                    onPointerUp={handleItemPointerEnd}
                   >
-                    <div
-                      className={cx(
-                        'areqa-conversation-item',
-                        styles.item,
-                        conv.id === activeId && styles.itemActive
-                      )}
-                      onClick={() => handleItemClick(conv.id)}
-                      onPointerCancel={handleItemPointerEnd}
-                      onPointerDown={() => handleItemPointerDown(conv.id)}
-                      onPointerEnter={() => handleTitlePointerEnter(conv.id)}
-                      onPointerLeave={handleItemPointerEnd}
-                      onPointerUp={handleItemPointerEnd}
-                    >
-                      {conversationBranchesEnabled && conv.branchOrigin && <span className={styles.itemIcon}>
-                        <BranchIcon />
-                      </span>}
-                      {!(conversationBranchesEnabled && conv.branchOrigin) && <MessageSquare size={16} className={cx('areqa-conversation-item-icon', styles.itemIcon)} />}
-                      <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
-                        <span
-                          className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}
-                          data-overflow={marqueeTitleWidths[conv.id] ? 'true' : undefined}
-                          onPointerEnter={() => handleTitlePointerEnter(conv.id)}
-                          ref={(node) => {
-                            titleRefs.current[conv.id] = node;
-                          }}
-                          style={{
-                            '--areqa-title-marquee-width': `${marqueeTitleWidths[conv.id] || 0}px`,
-                          } as React.CSSProperties}
-                        >
-                          {isTitlePending ? (
-                            <span
-                              className={styles.titleSkeleton}
-                              aria-label={t('newChat')}
-                              role="status"
-                            />
-                          ) : (
-                            <span>{displayTitle}</span>
-                          )}
-                        </span>
-                      </div>
-                      {isPinned && <Pin size={13} className={styles.pinnedIcon} />}
-                      <button
-                        className={cx(styles.menuBtn, 'conversation-menu-btn')}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenMenuId(conv.id);
+                    {conversationBranchesEnabled && conv.branchOrigin && <span className={styles.itemIcon}>
+                      <BranchIcon />
+                    </span>}
+                    <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
+                      <span
+                        className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}
+                        data-overflow={marqueeTitleWidths[conv.id] ? 'true' : undefined}
+                        onPointerEnter={() => handleTitlePointerEnter(conv.id)}
+                        ref={(node) => {
+                          titleRefs.current[conv.id] = node;
                         }}
-                        title={t('conversationMenu')}
-                        type="button"
+                        style={{
+                          '--areqa-title-marquee-width': `${marqueeTitleWidths[conv.id] || 0}px`,
+                        } as React.CSSProperties}
                       >
-                        <MoreHorizontal size={16} />
-                      </button>
+                        {isTitlePending ? (
+                          <span
+                            className={styles.titleSkeleton}
+                            aria-label={t('newChat')}
+                            role="status"
+                          />
+                        ) : (
+                          <span>{displayTitle}</span>
+                        )}
+                      </span>
                     </div>
-                  </Dropdown>
-                );
-              })}
-            </React.Fragment>
-          ))
-        )}
+                    {isPinned && <Pin size={13} className={styles.pinnedIcon} />}
+                    <button
+                      className={cx(styles.menuBtn, 'conversation-menu-btn')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenMenuId(conv.id);
+                      }}
+                      title={t('conversationMenu')}
+                      type="button"
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                  </div>
+                </Dropdown>
+              );
+            })}
+          </section>
+        ))}
       </div>
 
       {/* User Auth UI Area */}
-      <UserAuthUI
-        onOpenMemory={() => onSelectGumPanel?.('memory')}
-        onOpenNotes={() => onSelectGumPanel?.('notes')}
-      />
+      <div className={styles.accountFooter}>
+        <UserAuthUI
+          onOpenMemory={() => onSelectGumPanel?.('memory')}
+          onOpenNotes={() => onSelectGumPanel?.('notes')}
+        />
+      </div>
+      <Modal
+        open={searchOpen}
+        onCancel={closeSearch}
+        title={t('conversationSearch')}
+        footer={null}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          allowClear
+          prefix={<Search size={16} aria-hidden="true" />}
+          aria-label={t('conversationSearch')}
+          placeholder={t('conversationSearchPlaceholder')}
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+        <div className={styles.searchResults}>
+          {searchResults.length === 0 && (
+            <p role="status" className={styles.emptyText}>{t('conversationSearchEmpty')}</p>
+          )}
+          {searchResults.map((conversation) => (
+            <button type="button" key={conversation.id} className={styles.searchResult} onClick={() => {
+              closeSearch();
+              void handleSelect(conversation.id);
+            }}>
+              {DEFAULT_CONVERSATION_TITLES.has(conversation.title) ? t('newChat') : conversation.title || t('newChat')}
+            </button>
+          ))}
+        </div>
+      </Modal>
       <Modal
         confirmLoading={isRenaming}
         okButtonProps={{ disabled: !renameValue.trim() }}

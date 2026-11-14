@@ -7,6 +7,7 @@ import { ConversationList } from '@/components/ConversationList';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
 import type { Conversation } from '@/database/schema';
+import { switchConversation } from '@/services/chat';
 import { databaseService } from '@/services/database';
 
 vi.mock('next/image', () => ({
@@ -30,6 +31,7 @@ vi.mock('@/components/Auth', () => ({
 
 vi.mock('@/services/chat', () => ({
   switchConversation: vi.fn(),
+  logConversationHistoryDebugEvent: vi.fn(),
   deleteConversation: vi.fn(),
 }));
 
@@ -58,6 +60,13 @@ vi.mock('@/contexts/UserPreferencesContext', () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
         newChat: 'New chat',
+        conversationHome: 'AREQA home (New chat)',
+        conversationSearch: 'Search chats',
+        conversationRecents: 'Recents',
+        conversationBranches: 'Conversation branches',
+        pinned: 'Pinned',
+        today: 'Today',
+        yesterday: 'Yesterday',
         noConversations: 'No conversations',
         closeSidebar: 'Close sidebar',
         mailbox: 'Mailbox',
@@ -138,6 +147,52 @@ describe('ConversationList title states', () => {
       ragMessage: '',
       ragSources: [],
     });
+  });
+
+  it('shows a single newest-first list under Recents and lets it collapse', () => {
+    useConversationStore.setState({ conversations: [
+      conversation({ id: 'older', title: 'Older chat' }),
+      conversation({ id: 'newer', title: 'Newer chat', updatedAt: new Date('2026-08-26') }),
+    ] });
+
+    const { container } = renderConversationList();
+    expect([...container.querySelectorAll('.conv-title')].map((title) => title.textContent))
+      .toEqual(['Newer chat', 'Older chat']);
+    expect(screen.queryByText('Today')).not.toBeInTheDocument();
+    expect(screen.queryByText('Yesterday')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Recents' }));
+    expect(screen.queryByText('Older chat')).not.toBeInTheDocument();
+  });
+
+  it('returns home through the brand and opens a search result by preview', () => {
+    const onNew = vi.fn();
+    useConversationStore.setState({ conversations: [
+      conversation({ id: 'found', title: 'Stored chat', lastMessagePreview: 'Matching phrase' }),
+      conversation({ id: 'other', title: 'Other chat' }),
+    ] });
+
+    renderConversationList({ onNew });
+    fireEvent.click(screen.getByRole('button', { name: 'AREQA home (New chat)' }));
+    expect(onNew).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Search chats' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search chats' }), { target: { value: 'MATCHING phrase' } });
+    expect(screen.queryByRole('button', { name: 'Other chat' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Stored chat' }));
+    expect(switchConversation).toHaveBeenCalledWith('found');
+  });
+
+  it('keeps Delete last when the conversation has branches', async () => {
+    useConversationStore.setState({ conversations: [
+      conversation({ id: 'parent', title: 'Parent chat' }),
+      conversation({ id: 'child', title: 'Child chat', branchOrigin: {
+        conversationId: 'parent', messageId: 'original', copiedMessageId: 'copied', title: 'Parent chat',
+      } }),
+    ] });
+
+    renderConversationList();
+    fireEvent.click(screen.getAllByTitle('Conversation menu')[0]);
+    await screen.findByRole('menuitem', { name: /Conversation branches/ });
+    expect(screen.getAllByRole('menuitem').at(-1)).toHaveTextContent('Delete');
   });
 
   it('keeps existing rows mounted while a delayed background refresh updates their titles', async () => {

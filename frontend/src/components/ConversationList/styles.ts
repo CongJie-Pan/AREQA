@@ -40,19 +40,30 @@ export const useStyles = createStyles(({ css }) => ({
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--areqa-sidebar-background);
+    min-height: 0;
+    background: #20201f;
+
+    html[data-interface-theme='light'] & {
+      background: #f8f8f6;
+    }
     color: var(--foreground);
+
+    button:focus-visible {
+      outline: 2px solid var(--areqa-citation-border);
+      outline-offset: -2px;
+    }
   `,
 
   header: css`
-    padding: 4px 16px 8px;
+    padding: 2px 8px 14px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 2px;
   `,
 
   logoContainer: css`
-    padding: 12px 12px 24px;
+    min-height: 45px;
+    padding: 4px 12px 6px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -63,8 +74,15 @@ export const useStyles = createStyles(({ css }) => ({
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    flex: 1;
     min-width: 0;
+    min-height: 34px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    cursor: pointer;
+
+    &:hover { background: var(--areqa-account-hover); }
   `,
 
   logoContainerExternalToggle: css`
@@ -72,10 +90,10 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   logo: css`
-    width: 150px;
+    width: 100px;
     height: auto;
     max-width: 100%;
-    max-height: 36px;
+    max-height: 30px;
     object-fit: contain;
     flex-shrink: 0;
   `,
@@ -99,43 +117,66 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
 
-  title: css`
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--muted-foreground);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
-  `,
-
   newButton: css`
     display: flex;
     align-items: center;
-    justify-content: flex-start;
     gap: 10px;
     width: 100%;
-    padding: 10px 16px;
-    background: transparent;
-    border: 1px solid transparent;
+    min-height: 34px;
+    padding: 5px 9px;
+    background: color-mix(in srgb, var(--foreground) 13%, transparent);
+    border: 0;
     border-radius: 8px;
-    color: var(--foreground);
+    color: inherit;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
 
-    &:hover {
-      background: var(--areqa-account-hover);
-      border-color: transparent;
-    }
+    &:hover { background: color-mix(in srgb, var(--foreground) 19%, transparent); }
+  `,
 
-    svg {
-      color: #d8a25c;
-    }
+  searchButton: css`
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 34px;
+    padding: 5px 9px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:hover { background: var(--areqa-account-hover); }
+  `,
+
+  searchResults: css`
+    display: grid;
+    gap: 2px;
+    max-height: min(50vh, 360px);
+    overflow: auto;
+    margin-top: 8px;
+  `,
+
+  searchResult: css`
+    border: 0;
+    border-radius: 7px;
+    padding: 8px 10px;
+    background: transparent;
+    color: inherit;
+    text-align: start;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+
+    &:hover, &:focus-visible { background: var(--areqa-account-hover); }
   `,
 
   list: css`
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 2px 8px 8px;
     display: flex;
@@ -150,12 +191,27 @@ export const useStyles = createStyles(({ css }) => ({
     scrollbar-width: none;  /* Firefox */
   `,
 
+  group: css`
+    flex: none;
+  `,
+
   groupTitle: css`
-    font-size: 14px;
-    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 34px;
+    padding: 5px 9px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
     color: var(--muted-foreground);
-    padding: 10px 12px 6px;
-    letter-spacing: 0.3px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:hover { background: var(--areqa-account-hover); }
+    &[aria-expanded='true'] svg { transform: rotate(90deg); }
   `,
 
   item: css`
@@ -163,8 +219,9 @@ export const useStyles = createStyles(({ css }) => ({
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 12px;
-    border-radius: 8px;
+    padding: 2px 9px;
+    min-height: 34px;
+    border-radius: 7px;
     cursor: pointer;
     transition: all 0.2s;
     user-select: none;
@@ -180,18 +237,7 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   itemActive: css`
-    background: color-mix(in srgb, #6f2f45 26%, transparent) !important;
-    
-    &::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 20%;
-      height: 60%;
-      width: 3px;
-      background: #6f2f45;
-      border-radius: 0 2px 2px 0;
-    }
+    background: color-mix(in srgb, var(--foreground) 13%, transparent);
 
     .conv-title {
       color: var(--foreground);
@@ -314,11 +360,21 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
 
-  branchMenuIcon: css`
-    display: inline-flex;
+  accountFooter: css`
     flex: none;
-    margin-inline-end: 8px;
-    vertical-align: middle;
+    border-top: 1px solid var(--areqa-subtle-border);
+  `,
+
+  menuLabel: css`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 22px;
+
+    > svg {
+      display: block;
+      flex: 0 0 14px;
+    }
   `,
 
   menuBtn: css`
@@ -335,6 +391,8 @@ export const useStyles = createStyles(({ css }) => ({
     cursor: pointer;
     opacity: 0;
     transition: all 0.2s;
+
+    &:focus-visible { opacity: 1; }
 
     &:hover {
       color: var(--foreground);
@@ -360,31 +418,10 @@ export const useStyles = createStyles(({ css }) => ({
     padding: 40px 20px;
   `,
 
-  empty: css`
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 20px;
-    text-align: center;
-    opacity: 0.5;
-  `,
-
-  emptyIcon: css`
-    margin-bottom: 12px;
-    color: var(--muted-foreground);
-  `,
-
   emptyText: css`
-    font-size: 13px;
+    padding: 6px 9px;
     color: var(--muted-foreground);
-    line-height: 1.6;
-  `,
-
-  divider: css`
-    height: 1px;
-    background: var(--border);
-    margin: 4px 0;
+    font-size: 13px;
   `,
 
   gumButton: css`

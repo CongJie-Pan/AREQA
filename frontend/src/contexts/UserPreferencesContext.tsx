@@ -150,6 +150,12 @@ export type TranslationKey =
   | 'previousSevenDays'
   | 'older'
   | 'pinned'
+  | 'conversationHome'
+  | 'conversationSearch'
+  | 'conversationSearchPlaceholder'
+  | 'conversationSearchEmpty'
+  | 'conversationRecents'
+  | 'noPinnedConversations'
   | 'rename'
   | 'unpin'
   | 'pin'
@@ -407,6 +413,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     previousSevenDays: '過去七天',
     older: '更早以前',
     pinned: '釘選',
+    conversationHome: 'AREQA 首頁（新增對話）',
+    conversationSearch: '搜尋對話',
+    conversationSearchPlaceholder: '搜尋標題或對話摘要',
+    conversationSearchEmpty: '找不到符合的對話',
+    conversationRecents: '最近',
+    noPinnedConversations: '尚無置頂對話',
     rename: '重新命名',
     unpin: '取消釘選',
     pin: '釘選聊天',
@@ -638,6 +650,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     previousSevenDays: '过去七天',
     older: '更早以前',
     pinned: '置顶',
+    conversationHome: 'AREQA 主页（新对话）',
+    conversationSearch: '搜索对话',
+    conversationSearchPlaceholder: '搜索标题或对话摘要',
+    conversationSearchEmpty: '找不到匹配的对话',
+    conversationRecents: '最近',
+    noPinnedConversations: '暂无置顶对话',
     rename: '重新命名',
     unpin: '取消置顶',
     pin: '置顶聊天',
@@ -869,6 +887,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     previousSevenDays: 'Previous 7 days',
     older: 'Older',
     pinned: 'Pinned',
+    conversationHome: 'AREQA home (New chat)',
+    conversationSearch: 'Search chats',
+    conversationSearchPlaceholder: 'Search titles or previews',
+    conversationSearchEmpty: 'No matching chats',
+    conversationRecents: 'Recents',
+    noPinnedConversations: 'No pinned chats',
     rename: 'Rename',
     unpin: 'Unpin',
     pin: 'Pin chat',
