@@ -390,6 +390,7 @@ export function ConversationList({
                 const childBranches = conversationBranchesEnabled
                   ? conversations.filter((item) => item.branchOrigin?.conversationId === conv.id)
                   : [];
+                const branchMenuIcon = <span className={styles.branchMenuIcon}><BranchIcon size={14} /></span>;
                 const menuItems: MenuProps['items'] = [
                   {
                     key: 'rename',
@@ -407,11 +408,11 @@ export function ConversationList({
                     icon: <Trash2 size={14} />,
                     label: t('delete'),
                   },
-                  ...(source ? [{ key: `branch:${source.id}`, icon: <BranchIcon />, label: t('conversationBranchReturn') }] : []),
+                  ...(source ? [{ key: `branch:${source.id}`, icon: branchMenuIcon, label: t('conversationBranchReturn') }] : []),
                   ...(childBranches.length ? [{
                     key: 'branches',
                     label: t('conversationBranches'),
-                    icon: <BranchIcon />,
+                    icon: branchMenuIcon,
                     children: childBranches.map((child) => ({ key: `branch:${child.id}`, label: child.title })),
                   }] : []),
                 ];

@@ -314,6 +314,13 @@ export const useStyles = createStyles(({ css }) => ({
     }
   `,
 
+  branchMenuIcon: css`
+    display: inline-flex;
+    flex: none;
+    margin-inline-end: 8px;
+    vertical-align: middle;
+  `,
+
   menuBtn: css`
     display: inline-flex;
     align-items: center;
