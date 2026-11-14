@@ -265,6 +265,43 @@ describe('UserAuthUI Component', () => {
     });
   });
 
+  it.each([
+    { label: /介面外觀/, group: '介面外觀', option: '深色', key: 'theme', value: 'dark' },
+    { label: /語言/, group: 'Language', option: 'English', key: 'language', value: 'en' },
+  ])('resets the $key submenu when the account dropdown is closed and reopened', async ({
+    label, group, option, key, value,
+  }) => {
+    const user = { id: 'user_123', user_metadata: { username: 'testuser' } };
+    vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: { user } as NonNullable<
+        (Awaited<ReturnType<typeof supabase.auth.getSession>>)['data']['session']
+      > },
+    });
+    vi.mocked(supabase.auth.getUser).mockResolvedValueOnce({
+      data: { user: user as NonNullable<ReturnType<typeof useAuthStore.getState>['user']> },
+      error: null,
+    });
+    renderUserAuthUI();
+
+    const trigger = await screen.findByText('testuser');
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('button', { name: label }));
+    fireEvent.click(screen.getByRole('button', { name: option, exact: true }));
+    const appearance = await screen.findByRole('button', { name: /介面外觀|Appearance/ });
+    const language = screen.getByRole('button', { name: /語言|Language/ });
+    const selectedRow = key === 'theme' ? appearance : language;
+    expect(selectedRow).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(trigger);
+    expect(screen.queryByRole('button', { name: /介面外觀|Appearance/ })).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+
+    expect(await screen.findByRole('button', { name: /介面外觀|Appearance/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: /語言|Language/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('group', { name: group })).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(`areqa:interface-${key}`)).toBe(value);
+  });
+
   it('updates and persists interface theme and language from the account dropdown', async () => {
     vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
       data: { session: { user: { id: 'user_123', user_metadata: { username: 'testuser' } } } as any }

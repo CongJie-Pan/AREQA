@@ -15,7 +15,6 @@ import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
 import { useMailboxStore } from '@/store/mailbox';
 import { useFeatureStore } from '@/store/features';
-import { useStyles } from './styles';
 import { SidePanelType } from '@/types/panel';
 import {
   logConversationHistoryDebugEvent,
@@ -60,7 +59,6 @@ export function ConversationList({
   onSelectGumPanel,
   className,
 }: ConversationListProps) {
-  const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
   const { resolvedTheme, t } = useUserPreferences();
   const longPressTimerRef = useRef<number | null>(null);
@@ -277,17 +275,14 @@ export function ConversationList({
   };
 
   return (
-    <div className={cx('areqa-conversation-list', styles.container, className)}>
+    <div className={['areqa-conversation-list', className].filter(Boolean).join(' ')}>
       {/* Logo & Toggle Area */}
-      <div className={cx(
-        'areqa-conversation-logo-row',
-        styles.logoContainer,
-        externalSidebarToggle && 'areqa-conversation-logo-row-external-toggle',
-        externalSidebarToggle && styles.logoContainerExternalToggle,
-      )}>
+      <div className={externalSidebarToggle
+        ? 'areqa-conversation-logo-row areqa-conversation-logo-row-external-toggle'
+        : 'areqa-conversation-logo-row'}>
         <button
           type="button"
-          className={cx('areqa-conversation-logo-wrapper', styles.logoWrapper)}
+          className="areqa-conversation-logo-wrapper"
           onClick={handleNew}
           aria-label={t('conversationHome')}
           title={t('conversationHome')}
@@ -298,14 +293,14 @@ export function ConversationList({
             width={100}
             height={36}
             unoptimized
-            className={cx('areqa-conversation-logo', styles.logo)}
+            className="areqa-conversation-logo"
             draggable={false}
             priority
           />
         </button>
         {!externalSidebarToggle && (
           <button
-            className={cx('areqa-conversation-toggle-button', styles.toggleButton)}
+            className="areqa-conversation-toggle-button"
             onClick={onToggleSidebar}
             title={t('closeSidebar')}
           >
@@ -315,17 +310,17 @@ export function ConversationList({
       </div>
 
       {/* Action Area */}
-      <div className={cx('areqa-conversation-actions', styles.header)}>
-        <button type="button" className={cx('areqa-conversation-new-button', styles.newButton)} onClick={handleNew}>
+      <div className="areqa-conversation-actions">
+        <button type="button" className="areqa-conversation-new-button" onClick={handleNew}>
           <Plus size={18} />
           <span>{t('newChat')}</span>
         </button>
-        <button type="button" className={styles.searchButton} onClick={() => setSearchOpen(true)}>
+        <button type="button" className="areqa-conversation-search-button" onClick={() => setSearchOpen(true)}>
           <Search size={17} aria-hidden="true" />
           <span>{t('conversationSearch')}</span>
         </button>
         {mailboxEnabled && (
-          <button className={cx('areqa-conversation-panel-button', styles.gumButton)} onClick={() => onSelectGumPanel?.('mailbox')}>
+          <button className="areqa-conversation-panel-button" onClick={() => onSelectGumPanel?.('mailbox')}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <MailIcon size={18} />
               {unreadCount > 0 && (
@@ -346,19 +341,19 @@ export function ConversationList({
       </div>
 
       {/* List Area */}
-      <div className={cx('areqa-conversation-scroll-list', styles.list)}>
+      <div className="areqa-conversation-scroll-list">
         {isLoading && conversations.length === 0 ? (
-          <div className={cx('areqa-conversation-loading', styles.loading)}>
+          <div className="areqa-conversation-loading">
             <Spin size="small" />
           </div>
         ) : groups.map(({ key, label, items, open, toggle }) => (
-          <section key={key} className={styles.group}>
-            <button type="button" className={styles.groupTitle} aria-expanded={open} onClick={toggle}>
+          <section key={key} className="areqa-conversation-group">
+            <button type="button" className="areqa-conversation-group-title" aria-expanded={open} onClick={toggle}>
               {label}
               <ChevronRight size={13} aria-hidden="true" />
             </button>
             {open && items.length === 0 && (
-              <p className={styles.emptyText}>{t(key === 'pinned' ? 'noPinnedConversations' : 'noConversations')}</p>
+              <p className="areqa-conversation-empty-text">{t(key === 'pinned' ? 'noPinnedConversations' : 'noConversations')}</p>
             )}
             {open && items.map((conv) => {
               const isPinned = pinnedIds.includes(conv.id);
@@ -380,7 +375,7 @@ export function ConversationList({
                 ? conversations.filter((item) => item.branchOrigin?.conversationId === conv.id)
                 : [];
               const menuLabel = (icon: React.ReactNode, label: string) => (
-                <span className={styles.menuLabel}>{icon}<span>{label}</span></span>
+                <span className="areqa-conversation-menu-label">{icon}<span>{label}</span></span>
               );
               const menuItems: MenuProps['items'] = [
                 { key: 'rename', label: menuLabel(<Pencil size={14} />, t('rename')) },
@@ -428,28 +423,26 @@ export function ConversationList({
                   trigger={['contextMenu']}
                 >
                   <div
-                    className={cx(
-                      'areqa-conversation-item',
-                      styles.item,
-                      conv.id === activeId && styles.itemActive
-                    )}
+                    className={conv.id === activeId
+                      ? 'areqa-conversation-item areqa-conversation-item-active'
+                      : 'areqa-conversation-item'}
                     onClick={() => handleItemClick(conv.id)}
                     onPointerCancel={handleItemPointerEnd}
                     onPointerDown={() => handleItemPointerDown(conv.id)}
                     onPointerLeave={handleItemPointerEnd}
                     onPointerUp={handleItemPointerEnd}
                   >
-                    {conversationBranchesEnabled && conv.branchOrigin && <span className={styles.itemIcon}>
+                    {conversationBranchesEnabled && conv.branchOrigin && <span className="areqa-conversation-item-icon">
                       <BranchIcon />
                     </span>}
-                    <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
+                    <div className="areqa-conversation-item-content">
                       <span
-                        className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}
+                        className="areqa-conversation-item-title conv-title"
                         title={isTitlePending ? undefined : displayTitle}
                       >
                         {isTitlePending ? (
                           <span
-                            className={styles.titleSkeleton}
+                            className="areqa-conversation-title-skeleton"
                             aria-label={t('newChat')}
                             role="status"
                           />
@@ -458,9 +451,9 @@ export function ConversationList({
                         )}
                       </span>
                     </div>
-                    {isPinned && <Pin size={13} className={styles.pinnedIcon} />}
+                    {isPinned && <Pin size={13} className="areqa-conversation-pinned-icon" />}
                     <button
-                      className={cx(styles.menuBtn, 'conversation-menu-btn')}
+                      className="areqa-conversation-menu-btn conversation-menu-btn"
                       onClick={(event) => {
                         event.stopPropagation();
                         setOpenMenuId((current) => current === conv.id ? null : conv.id);
@@ -484,7 +477,7 @@ export function ConversationList({
       </div>
 
       {/* User Auth UI Area */}
-      <div className={styles.accountFooter}>
+      <div className="areqa-conversation-account-footer">
         <UserAuthUI
           onOpenMemory={() => onSelectGumPanel?.('memory')}
           onOpenNotes={() => onSelectGumPanel?.('notes')}
@@ -506,12 +499,12 @@ export function ConversationList({
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
         />
-        <div className={styles.searchResults}>
+        <div className="areqa-conversation-search-results">
           {searchResults.length === 0 && (
-            <p role="status" className={styles.emptyText}>{t('conversationSearchEmpty')}</p>
+            <p role="status" className="areqa-conversation-empty-text">{t('conversationSearchEmpty')}</p>
           )}
           {searchResults.map((conversation) => (
-            <button type="button" key={conversation.id} className={styles.searchResult} onClick={() => {
+            <button type="button" key={conversation.id} className="areqa-conversation-search-result" onClick={() => {
               closeSearch();
               void handleSelect(conversation.id);
             }}>

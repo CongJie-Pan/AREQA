@@ -684,7 +684,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     <div className={cx('areqa-chat-shell', styles.container, className)}>
       {/* Sidebar Overlay (mobile) */}
       {mobileOpen && (
-        <div className={styles.sidebarOverlay} onClick={closeSidebar} />
+        <div className="areqa-chat-sidebar-overlay" onClick={closeSidebar} />
       )}
 
       {/* Sidebar */}
@@ -692,7 +692,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
         id={sidebarId}
         aria-hidden={!sidebarOpen}
         inert={!sidebarOpen}
-        className={cx('areqa-chat-sidebar', styles.sidebar, mobileOpen && styles.sidebarOpen, desktopCollapsed && styles.sidebarCollapsed)}
+        className="areqa-chat-sidebar"
+        data-mobile-open={mobileOpen}
+        data-desktop-collapsed={desktopCollapsed}
         style={{ '--areqa-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
       >
         <ConversationList
@@ -706,7 +708,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
         />
         {sidebarOpen && (
           <div
-            className={styles.sidebarResizeHandle}
+            className="areqa-chat-sidebar-resize"
             role="separator"
             aria-label={t('resizeSidebar')}
             aria-orientation="vertical"

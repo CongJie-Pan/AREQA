@@ -5,7 +5,6 @@ const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
 const CHAT_MIN_WIDTH = 420;
-const COLLAPSE_OVERSHOOT = 24;
 
 export function useSidebarResize(onCollapse?: () => void) {
   const [preferredWidth, setPreferredWidth] = useState(DEFAULT_WIDTH);
@@ -33,21 +32,25 @@ export function useSidebarResize(onCollapse?: () => void) {
       stopResize();
       setMaxWidth(getMaxWidth());
     };
+    const collapseAtMinimum = (event: PointerEvent) => {
+      const current = drag.current;
+      if (!onCollapse || !current || event.clientX >= current.startX) return false;
+      if (current.startWidth + event.clientX - current.startX > MIN_WIDTH) return false;
+      stopResize();
+      setPreferredWidth(current.preferredWidth);
+      onCollapse();
+      return true;
+    };
     const onMove = (event: PointerEvent) => {
-      if (!drag.current || event.pointerId !== drag.current.pointerId) return;
+      const current = drag.current;
+      if (!current || event.pointerId !== current.pointerId || collapseAtMinimum(event)) return;
       setPreferredWidth(Math.min(getMaxWidth(), Math.max(
-        MIN_WIDTH, drag.current.startWidth + event.clientX - drag.current.startX,
+        MIN_WIDTH, current.startWidth + event.clientX - current.startX,
       )));
     };
     const onEnd = (event: PointerEvent) => {
-      const current = drag.current;
-      if (!current || event.pointerId !== current.pointerId) return;
-      const finalWidth = current.startWidth + event.clientX - current.startX;
-      stopResize();
-      if (event.type === 'pointerup' && finalWidth < MIN_WIDTH - COLLAPSE_OVERSHOOT && onCollapse) {
-        setPreferredWidth(current.preferredWidth);
-        onCollapse();
-      }
+      if (event.pointerId !== drag.current?.pointerId) return;
+      if (event.type !== 'pointerup' || !collapseAtMinimum(event)) stopResize();
     };
     onResize();
     window.addEventListener('resize', onResize);

@@ -45,30 +45,35 @@ describe('sidebar resizing', () => {
     expect(document.body.style.userSelect).toBe('');
   });
 
-  it('collapses only on release beyond the minimum and restores the prior width', () => {
+  it('collapses immediately at the visible minimum and restores the prior width', () => {
     const onCollapse = vi.fn();
     render(<Harness onCollapse={onCollapse} />);
     const handle = screen.getByRole('separator');
     pointer(handle, 'pointerdown', 280);
-    pointer(window, 'pointermove', 175);
-    expect(handle).toHaveAttribute('aria-valuenow', '220');
-    expect(onCollapse).not.toHaveBeenCalled();
-    pointer(window, 'pointercancel', 175);
+    pointer(window, 'pointermove', 221);
+    expect(handle).toHaveAttribute('aria-valuenow', '221');
     expect(onCollapse).not.toHaveBeenCalled();
 
-    pointer(handle, 'pointerdown', 220);
-    pointer(window, 'pointermove', 160);
-    pointer(window, 'pointermove', 250);
-    pointer(window, 'pointerup', 250);
-    expect(onCollapse).not.toHaveBeenCalled();
-    expect(handle).toHaveAttribute('aria-valuenow', '250');
-
-    pointer(handle, 'pointerdown', 250);
-    pointer(window, 'pointermove', 175);
-    pointer(window, 'pointerup', 175);
+    pointer(window, 'pointermove', 220);
     expect(onCollapse).toHaveBeenCalledOnce();
-    expect(handle).toHaveAttribute('aria-valuenow', '250');
+    expect(handle).toHaveAttribute('aria-valuenow', '280');
     expect(document.body.style.cursor).toBe('');
+
+    pointer(window, 'pointermove', 180);
+    pointer(window, 'pointerup', 180);
+    expect(onCollapse).toHaveBeenCalledOnce();
+  });
+
+  it('does not collapse on a stationary click at minimum width or a cancelled drag', () => {
+    const onCollapse = vi.fn();
+    render(<Harness onCollapse={onCollapse} />);
+    const handle = screen.getByRole('separator');
+    fireEvent.keyDown(handle, { key: 'Home' });
+    pointer(handle, 'pointerdown', 220);
+    pointer(window, 'pointerup', 220);
+    pointer(handle, 'pointerdown', 220);
+    pointer(window, 'pointercancel', 190);
+    expect(onCollapse).not.toHaveBeenCalled();
   });
 
   it('restores existing body styles on cancel and unmount', () => {
