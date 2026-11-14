@@ -106,10 +106,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const { t, language } = useUserPreferences();
   const {
     isOpen: sidebarOpen, isMobile, desktopCollapsed, mobileOpen,
-    toggle: toggleSidebar, closeMobile: closeSidebar,
+    toggle: toggleSidebar, collapseDesktop, closeMobile: closeSidebar,
   } = useSidebarState();
   const sidebarId = React.useId();
-  const sidebarResize = useSidebarResize();
+  const sidebarResize = useSidebarResize(collapseDesktop);
   const sidebarWidth = sidebarResize.width;
   const stopSidebarResize = sidebarResize.stopResize;
   useEffect(() => { stopSidebarResize(); }, [sidebarOpen, stopSidebarResize]);
@@ -723,7 +723,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
       {/* Keep navigation outside the clipped/composited chat content. */}
       <div
         className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}
-        data-sidebar-open={sidebarOpen}
       >
         <Tooltip
           title={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}

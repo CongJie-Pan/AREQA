@@ -24,17 +24,6 @@ const titleSkeletonShimmer = keyframes`
   }
 `;
 
-const titleMarquee = keyframes`
-  0%,
-  12% {
-    transform: translateX(0);
-  }
-  88%,
-  100% {
-    transform: translateX(calc(-100% + var(--areqa-title-marquee-width, 100%)));
-  }
-`;
-
 export const useStyles = createStyles(({ css }) => ({
   container: css`
     display: flex;
@@ -259,44 +248,20 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   itemTitle: css`
-    --areqa-title-marquee-width: 100%;
     display: block;
-    max-width: 100%;
+    min-width: 0;
     font-size: 14px;
     color: var(--foreground);
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
-    transition: color 0.2s;
 
     > span {
-      display: inline-block;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      vertical-align: top;
-      white-space: nowrap;
+      display: block;
+      width: max-content;
     }
 
-    &[data-overflow='true']:hover,
-    .areqa-conversation-item:hover &[data-overflow='true'] {
-      text-overflow: clip;
-    }
-
-    &[data-overflow='true']:hover > span,
-    .areqa-conversation-item:hover &[data-overflow='true'] > span {
-      max-width: none;
-      overflow: visible;
-      text-overflow: clip;
-      animation: ${titleMarquee} 5.5s linear infinite alternate;
-      will-change: transform;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      &[data-overflow='true']:hover > span,
-      .areqa-conversation-item:hover &[data-overflow='true'] > span {
-        animation: none;
-      }
+    &:has(> span:not([role='status'])) {
+      mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
     }
   `,
 
@@ -393,7 +358,7 @@ export const useStyles = createStyles(({ css }) => ({
     opacity: 0;
     transition: all 0.2s;
 
-    &:focus-visible { opacity: 1; }
+    &:focus-visible, &[aria-expanded='true'] { opacity: 1; }
 
     &:hover {
       color: var(--foreground);

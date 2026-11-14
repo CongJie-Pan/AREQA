@@ -109,8 +109,6 @@ export const useStyles = createStyles(({ css, token }) => ({
 
   sidebarFloatingAction: css`
     position: fixed;
-    top: max(14px, env(safe-area-inset-top));
-    left: max(16px, env(safe-area-inset-left));
     z-index: 120;
     display: flex;
     align-items: center;

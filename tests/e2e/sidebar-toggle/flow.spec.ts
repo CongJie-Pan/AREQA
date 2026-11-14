@@ -19,7 +19,8 @@ for (const width of [390, 768, 769, 1100]) {
       const open = await toggle.getAttribute('aria-expanded') === 'true';
       const buttonBox = await toggle.boundingBox();
       expect(buttonBox).not.toBeNull();
-      expect(buttonBox!.x).toBeCloseTo(open ? 8 : 16, 0);
+      expect(buttonBox!.x).toBeCloseTo(8, 0);
+      expect(buttonBox!.y).toBeCloseTo(4, 0);
       if (open) {
         const brandBox = await page.locator('.areqa-conversation-logo-wrapper').boundingBox();
         expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(brandBox!.x);

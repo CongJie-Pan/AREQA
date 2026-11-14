@@ -1,10 +1,10 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSidebarResize } from '@/components/ChatContainer/useSidebarResize';
 
-function Harness() {
-  const resize = useSidebarResize();
+function Harness({ onCollapse }: { onCollapse?: () => void }) {
+  const resize = useSidebarResize(onCollapse);
   return <div role="separator" aria-valuenow={resize.width} aria-valuemax={resize.maxWidth}
     onPointerDown={resize.startResize} onKeyDown={resize.onKeyDown} />;
 }
@@ -43,6 +43,32 @@ describe('sidebar resizing', () => {
     pointer(window, 'pointermove', 400);
     expect(handle).toHaveAttribute('aria-valuenow', '220');
     expect(document.body.style.userSelect).toBe('');
+  });
+
+  it('collapses only on release beyond the minimum and restores the prior width', () => {
+    const onCollapse = vi.fn();
+    render(<Harness onCollapse={onCollapse} />);
+    const handle = screen.getByRole('separator');
+    pointer(handle, 'pointerdown', 280);
+    pointer(window, 'pointermove', 175);
+    expect(handle).toHaveAttribute('aria-valuenow', '220');
+    expect(onCollapse).not.toHaveBeenCalled();
+    pointer(window, 'pointercancel', 175);
+    expect(onCollapse).not.toHaveBeenCalled();
+
+    pointer(handle, 'pointerdown', 220);
+    pointer(window, 'pointermove', 160);
+    pointer(window, 'pointermove', 250);
+    pointer(window, 'pointerup', 250);
+    expect(onCollapse).not.toHaveBeenCalled();
+    expect(handle).toHaveAttribute('aria-valuenow', '250');
+
+    pointer(handle, 'pointerdown', 250);
+    pointer(window, 'pointermove', 175);
+    pointer(window, 'pointerup', 175);
+    expect(onCollapse).toHaveBeenCalledOnce();
+    expect(handle).toHaveAttribute('aria-valuenow', '250');
+    expect(document.body.style.cursor).toBe('');
   });
 
   it('restores existing body styles on cancel and unmount', () => {

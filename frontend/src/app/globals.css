@@ -207,14 +207,9 @@ html[lang='en'] body {
 
 .areqa-chat-sidebar-floating-action {
   position: fixed;
-  top: max(14px, env(safe-area-inset-top));
-  left: max(16px, env(safe-area-inset-left));
-  z-index: 120;
-}
-
-.areqa-chat-sidebar-floating-action[data-sidebar-open='true'] {
   top: max(4px, env(safe-area-inset-top));
   left: max(8px, env(safe-area-inset-left));
+  z-index: 120;
 }
 
 .areqa-chat-sidebar-toggle {
@@ -363,7 +358,6 @@ html[lang='en'] body {
   overflow: hidden;
   color: var(--foreground);
   font-size: 14px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

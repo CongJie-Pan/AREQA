@@ -74,8 +74,6 @@ export function ConversationList({
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
-  const [marqueeTitleWidths, setMarqueeTitleWidths] = useState<Record<string, number>>({});
-  const titleRefs = useRef<Record<string, HTMLSpanElement | null>>({});
 
   const conversations = useConversationStore((state) => state.conversations);
   const activeId = useConversationStore((state) => state.activeConversationId);
@@ -257,17 +255,6 @@ export function ConversationList({
     void handleSelect(id);
   }, [handleSelect]);
 
-  const handleTitlePointerEnter = useCallback((id: string) => {
-    const titleNode = titleRefs.current[id];
-    if (!titleNode) return;
-
-    const isOverflowing = titleNode.scrollWidth > titleNode.clientWidth;
-    const marqueeWidth = isOverflowing ? titleNode.clientWidth : 0;
-    setMarqueeTitleWidths((current) => (
-      current[id] === marqueeWidth ? current : { ...current, [id]: marqueeWidth }
-    ));
-  }, []);
-
   const sortedConversations = useMemo(() => (
     [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   ), [conversations]);
@@ -433,7 +420,9 @@ export function ConversationList({
                       }
                     },
                   }}
-                  onOpenChange={(open) => setOpenMenuId(open ? conv.id : null)}
+                  onOpenChange={(open) => setOpenMenuId((current) => (
+                    open ? conv.id : current === conv.id ? null : current
+                  ))}
                   open={openMenuId === conv.id}
                   placement="bottomRight"
                   trigger={['contextMenu']}
@@ -447,7 +436,6 @@ export function ConversationList({
                     onClick={() => handleItemClick(conv.id)}
                     onPointerCancel={handleItemPointerEnd}
                     onPointerDown={() => handleItemPointerDown(conv.id)}
-                    onPointerEnter={() => handleTitlePointerEnter(conv.id)}
                     onPointerLeave={handleItemPointerEnd}
                     onPointerUp={handleItemPointerEnd}
                   >
@@ -457,14 +445,7 @@ export function ConversationList({
                     <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
                       <span
                         className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}
-                        data-overflow={marqueeTitleWidths[conv.id] ? 'true' : undefined}
-                        onPointerEnter={() => handleTitlePointerEnter(conv.id)}
-                        ref={(node) => {
-                          titleRefs.current[conv.id] = node;
-                        }}
-                        style={{
-                          '--areqa-title-marquee-width': `${marqueeTitleWidths[conv.id] || 0}px`,
-                        } as React.CSSProperties}
+                        title={isTitlePending ? undefined : displayTitle}
                       >
                         {isTitlePending ? (
                           <span
@@ -482,7 +463,12 @@ export function ConversationList({
                       className={cx(styles.menuBtn, 'conversation-menu-btn')}
                       onClick={(event) => {
                         event.stopPropagation();
-                        setOpenMenuId(conv.id);
+                        setOpenMenuId((current) => current === conv.id ? null : conv.id);
+                      }}
+                      aria-haspopup="menu"
+                      aria-expanded={openMenuId === conv.id}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') setOpenMenuId(null);
                       }}
                       title={t('conversationMenu')}
                       type="button"

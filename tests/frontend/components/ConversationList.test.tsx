@@ -311,31 +311,20 @@ describe('ConversationList title states', () => {
     expect(onSelectGumPanel).toHaveBeenCalledWith('notes');
   });
 
-  it('enables title marquee only when the rendered title overflows on hover', () => {
-    useConversationStore.setState({
-      conversations: [
-        conversation({
-          id: 'conversation-long-title',
-          title: 'CULTURECONVERSE跨文化多輪模擬評估框架與實驗結果分析',
-        }),
-      ],
-      activeConversationId: 'conversation-long-title',
-    });
-
+  it('keeps the full title available and toggles the row menu on repeated clicks', async () => {
+    const title = 'CULTURECONVERSE跨文化多輪模擬評估框架與實驗結果分析';
+    useConversationStore.setState({ conversations: [conversation({ title })] });
     renderConversationList();
 
-    const titleContainer = screen
-      .getByText('CULTURECONVERSE跨文化多輪模擬評估框架與實驗結果分析')
-      .closest('.areqa-conversation-item-title') as HTMLElement;
-
-    Object.defineProperties(titleContainer, {
-      clientWidth: { configurable: true, value: 120 },
-      scrollWidth: { configurable: true, value: 360 },
-    });
-
-    fireEvent.pointerEnter(titleContainer);
-
-    expect(titleContainer).toHaveAttribute('data-overflow', 'true');
-    expect(titleContainer).toHaveStyle({ '--areqa-title-marquee-width': '120px' });
+    expect(screen.getByTitle(title)).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'Conversation menu' });
+    fireEvent.click(trigger);
+    await screen.findByRole('menuitem', { name: 'Rename' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 });

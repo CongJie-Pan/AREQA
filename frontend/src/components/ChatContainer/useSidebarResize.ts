@@ -5,14 +5,16 @@ const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
 const CHAT_MIN_WIDTH = 420;
+const COLLAPSE_OVERSHOOT = 24;
 
-export function useSidebarResize() {
+export function useSidebarResize(onCollapse?: () => void) {
   const [preferredWidth, setPreferredWidth] = useState(DEFAULT_WIDTH);
   const [maxWidth, setMaxWidth] = useState(DEFAULT_WIDTH);
   const drag = useRef<{
     pointerId: number;
     startX: number;
     startWidth: number;
+    preferredWidth: number;
     cursor: string;
     userSelect: string;
   } | null>(null);
@@ -38,7 +40,14 @@ export function useSidebarResize() {
       )));
     };
     const onEnd = (event: PointerEvent) => {
-      if (event.pointerId === drag.current?.pointerId) stopResize();
+      const current = drag.current;
+      if (!current || event.pointerId !== current.pointerId) return;
+      const finalWidth = current.startWidth + event.clientX - current.startX;
+      stopResize();
+      if (event.type === 'pointerup' && finalWidth < MIN_WIDTH - COLLAPSE_OVERSHOOT && onCollapse) {
+        setPreferredWidth(current.preferredWidth);
+        onCollapse();
+      }
     };
     onResize();
     window.addEventListener('resize', onResize);
@@ -54,7 +63,7 @@ export function useSidebarResize() {
       window.removeEventListener('pointercancel', onEnd);
       window.removeEventListener('blur', stopResize);
     };
-  }, [stopResize]);
+  }, [onCollapse, stopResize]);
 
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || window.innerWidth <= 768) return;
@@ -64,6 +73,7 @@ export function useSidebarResize() {
       pointerId: event.pointerId,
       startX: event.clientX,
       startWidth: width,
+      preferredWidth,
       cursor: document.body.style.cursor,
       userSelect: document.body.style.userSelect,
     };
