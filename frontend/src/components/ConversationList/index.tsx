@@ -10,6 +10,7 @@ import Image from 'next/image';
 import { App, Dropdown, Input, Modal, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import { MoreHorizontal, Pencil, Pin, PinOff, Plus, MessageSquare, Trash2, MessagesSquare, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
+import { BranchIcon, conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
 import { useMailboxStore } from '@/store/mailbox';
@@ -383,6 +384,12 @@ export function ConversationList({
                 const displayTitle = isGeneratingTitle
                   ? streamingTitles[conv.id]
                   : (hasDefaultTitle ? t('newChat') : conv.title || t('newChat'));
+                const source = conversationBranchesEnabled && conv.branchOrigin
+                  ? conversations.find((item) => item.id === conv.branchOrigin?.conversationId)
+                  : undefined;
+                const childBranches = conversationBranchesEnabled
+                  ? conversations.filter((item) => item.branchOrigin?.conversationId === conv.id)
+                  : [];
                 const menuItems: MenuProps['items'] = [
                   {
                     key: 'rename',
@@ -400,6 +407,13 @@ export function ConversationList({
                     icon: <Trash2 size={14} />,
                     label: t('delete'),
                   },
+                  ...(source ? [{ key: `branch:${source.id}`, icon: <BranchIcon />, label: t('conversationBranchReturn') }] : []),
+                  ...(childBranches.length ? [{
+                    key: 'branches',
+                    label: t('conversationBranches'),
+                    icon: <BranchIcon />,
+                    children: childBranches.map((child) => ({ key: `branch:${child.id}`, label: child.title })),
+                  }] : []),
                 ];
 
                 return (
@@ -410,7 +424,9 @@ export function ConversationList({
                       onClick: ({ key, domEvent }) => {
                         domEvent.stopPropagation();
                         setOpenMenuId(null);
-                        if (key === 'rename') {
+                        if (key.startsWith('branch:')) {
+                          void handleItemClick(key.slice('branch:'.length));
+                        } else if (key === 'rename') {
                           openRenameDialog(conv.id, displayTitle);
                         } else if (key === 'pin') {
                           togglePinned(conv.id);
@@ -437,7 +453,10 @@ export function ConversationList({
                       onPointerLeave={handleItemPointerEnd}
                       onPointerUp={handleItemPointerEnd}
                     >
-                      <MessageSquare size={16} className={cx('areqa-conversation-item-icon', styles.itemIcon)} />
+                      {conversationBranchesEnabled && conv.branchOrigin && <span className={styles.itemIcon}>
+                        <BranchIcon />
+                      </span>}
+                      {!(conversationBranchesEnabled && conv.branchOrigin) && <MessageSquare size={16} className={cx('areqa-conversation-item-icon', styles.itemIcon)} />}
                       <div className={cx('areqa-conversation-item-content', styles.itemContent)}>
                         <span
                           className={cx('areqa-conversation-item-title', styles.itemTitle, 'conv-title')}

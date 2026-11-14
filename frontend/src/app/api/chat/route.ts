@@ -33,6 +33,7 @@ const GENERIC_TEXT_UPLOAD_TYPES = new Set(['', 'application/octet-stream', 'text
 interface ChatRequestBody {
   messages: Array<{ role: string; content: string }>;
   conversation_id?: string;
+  isolated_context?: boolean;
   use_rag?: boolean;
   use_web_search?: boolean;
   search_mode?: 'auto' | 'always' | 'never';
@@ -268,6 +269,7 @@ export async function POST(request: NextRequest) {
         body = await request.json() as ChatRequestBody;
         outgoingBody = JSON.stringify({
           messages: body.messages,
+          ...(body.isolated_context === true ? { isolated_context: true } : {}),
           conversation_id: body.conversation_id || '',
           use_rag: body.use_rag || false,
           use_web_search: body.use_web_search || false,

@@ -23,6 +23,7 @@ type CloudConversationRow = {
   id: string;
   user_id: string;
   title: string;
+  branch_origin?: Conversation['branchOrigin'] | null;
   created_at: string;
   updated_at: string;
 };
@@ -34,6 +35,7 @@ type CloudMessageRow = {
   role: Message['role'];
   content: string;
   attachments?: unknown;
+  attachment_source_id?: string | null;
   citations?: unknown;
   search_results?: unknown;
   sources?: unknown;
@@ -228,6 +230,7 @@ async function mergeCloudConversations(
         id: c.id,
         userId: c.user_id,
         title: c.title,
+        branchOrigin: c.branch_origin ?? undefined,
         createdAt: new Date(c.created_at),
         updatedAt: cloudDate,
         messageCount: msgCountByConv[c.id] || 0,
@@ -342,6 +345,7 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
         role: m.role,
         content: nextContent,
         attachments: nextAttachments,
+        attachmentSourceId: cloudIsNewer ? m.attachment_source_id ?? undefined : localMsg?.attachmentSourceId,
         feedback: cloudFeedback,
         feedbackReason: cloudFeedbackReason,
         feedbackComment: cloudFeedbackComment,
@@ -376,6 +380,7 @@ function messageFromCloudRow(m: CloudMessageRow): Message {
     role: m.role,
     content: m.content,
     attachments: normalizeAttachmentMetadata(m.attachments),
+    attachmentSourceId: m.attachment_source_id ?? undefined,
     feedback: normalizeMessageFeedback(m.feedback),
     feedbackReason: normalizeMessageFeedbackReason(m.feedback_reason),
     feedbackComment: typeof m.feedback_comment === 'string' ? m.feedback_comment : null,
@@ -627,6 +632,7 @@ export const syncService = {
         id: conv.id,
         user_id: conv.userId,
         title: conv.title,
+        ...(conv.branchOrigin ? { branch_origin: conv.branchOrigin } : {}),
         created_at: conv.createdAt.toISOString(),
         updated_at: conv.updatedAt.toISOString(),
       });
@@ -667,6 +673,7 @@ export const syncService = {
         role: msg.role,
         content: msg.content,
         attachments: normalizeAttachmentMetadata(msg.attachments),
+        ...(msg.attachmentSourceId ? { attachment_source_id: msg.attachmentSourceId } : {}),
         citations: msg.citations ?? null,
         search_results: msg.searchResults ?? null,
         sources: msg.sources ?? null,

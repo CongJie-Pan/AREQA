@@ -16,7 +16,7 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
                          force_think, context_results_obj, last_user_msg, run_state, trace,
                          turn_plan, turn_plan_enabled, response_policy, interface_language,
                          tutor_profile, response_mode, has_attachments, attachments,
-                         attachment_visual_sources, pdf_attachment_count, max_tokens):
+                         attachment_visual_sources, pdf_attachment_count, max_tokens, isolated_context=False):
     """Assemble grounded prompts, verified visual inventory and generation limits.
 
     Returns:
@@ -42,6 +42,7 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
         tutor_profile=tutor_profile,
         response_mode=response_mode,
         has_attachments=has_attachments,
+        **({"isolated_context": True} if isolated_context else {}),
     )
     trace.mark("prompt_assembly_finished")
     final_messages = service._attach_to_latest_user_message(final_messages, attachments or [])

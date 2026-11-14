@@ -215,6 +215,14 @@ export type TranslationKey =
   | 'regenerate'
   | 'regenerateMessage'
   | 'deleteLatestConversationTurn'
+  | 'createConversationBranch'
+  | 'moreReplyActions'
+  | 'conversationBranches'
+  | 'conversationBranchTitle'
+  | 'conversationBranchSource'
+  | 'conversationBranchReturn'
+  | 'conversationBranchBoundary'
+  | 'conversationBranchFailed'
   | 'deleteLatestConversationTurnSuccess'
   | 'deleteLatestConversationTurnFailed'
   | 'feedbackTitleShort'
@@ -467,6 +475,14 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     regenerate: '重新生成',
     regenerateMessage: '重新生成訊息',
     deleteLatestConversationTurn: '刪除對話',
+    createConversationBranch: '建立新對話分支',
+    moreReplyActions: '更多回覆操作',
+    conversationBranches: '對話分支',
+    conversationBranchTitle: '分支',
+    conversationBranchSource: '來源：',
+    conversationBranchReturn: '返回來源',
+    conversationBranchBoundary: '以下為分支對話',
+    conversationBranchFailed: '無法建立對話分支，請再試一次。',
     deleteLatestConversationTurnSuccess: '已刪除這輪對話',
     deleteLatestConversationTurnFailed: '刪除對話失敗，請稍後再試',
     feedbackTitleShort: '分享回饋',
@@ -693,6 +709,14 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     regenerate: '重新生成',
     regenerateMessage: '重新生成讯息',
     deleteLatestConversationTurn: '删除对话',
+    createConversationBranch: '建立新对话分支',
+    conversationBranches: '对话分支',
+    moreReplyActions: '更多回复操作',
+    conversationBranchTitle: '分支',
+    conversationBranchSource: '来源：',
+    conversationBranchReturn: '返回来源',
+    conversationBranchBoundary: '以下为分支对话',
+    conversationBranchFailed: '无法建立对话分支，请重试。',
     deleteLatestConversationTurnSuccess: '已删除这轮对话',
     deleteLatestConversationTurnFailed: '删除对话失败，请稍后再试',
     feedbackTitleShort: '分享反馈',
@@ -919,6 +943,14 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     regenerate: 'Regenerate',
     regenerateMessage: 'Regenerate message',
     deleteLatestConversationTurn: 'Delete conversation',
+    createConversationBranch: 'Create conversation branch',
+    moreReplyActions: 'More reply actions',
+    conversationBranches: 'Conversation branches',
+    conversationBranchTitle: 'Branch',
+    conversationBranchSource: 'From:',
+    conversationBranchReturn: 'Return to source',
+    conversationBranchBoundary: 'Branch conversation starts here',
+    conversationBranchFailed: 'Could not create the conversation branch. Try again.',
     deleteLatestConversationTurnSuccess: 'Conversation turn deleted',
     deleteLatestConversationTurnFailed: 'Could not delete this conversation turn. Please try again later.',
     feedbackTitleShort: 'Share feedback',

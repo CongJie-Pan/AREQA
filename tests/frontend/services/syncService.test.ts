@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { syncService } from '@/services/syncService';
 import { db } from '@/database/db';
 import { supabase } from '@/lib/supabase';
-import type { ImageBlock, Message } from '@/database/schema';
+import type { Conversation, ImageBlock, Message } from '@/database/schema';
 
 // Mock dependencies
 const mockReload = vi.fn();
@@ -180,6 +180,44 @@ describe('syncService - pullFromCloud', () => {
       role: 'assistant', content: 'Image ready', answer_blocks: [block], created_at: new Date().toISOString() }], error: null };
     await syncService.pullConversationMessages('conv_1', 'user_123');
     expect((await db.messages.get('image-message'))?.answerBlocks?.[0]).toMatchObject({ generationRequest: block.generationRequest });
+  });
+
+  it('preserves branch provenance and upload references across cloud round-trips', async () => {
+    const now = new Date('2026-11-14T06:00:00.000Z');
+    const conversation: Conversation = {
+      id: 'conv_branch', userId: 'user_123', title: 'Draft branch',
+      createdAt: now, updatedAt: now, messageCount: 1, lastMessagePreview: 'Attachment question',
+      branchOrigin: {
+        conversationId: 'conv_source', messageId: 'reply_source',
+        title: 'Source conversation', copiedMessageId: 'reply_branch',
+      },
+    };
+    const attachmentSourceId = 'da84e26d-ee44-4f6e-bc16-947822388e1e';
+    const message: Message = {
+      id: 'upload_branch', userId: conversation.userId, conversationId: conversation.id,
+      role: 'user', content: 'Attachment question', createdAt: now, updatedAt: now,
+      attachments: [{ name: 'test.pdf', mediaType: 'application/pdf', sizeBytes: 1000 }],
+      attachmentSourceId,
+    };
+
+    await expect(syncService.pushConversation(conversation)).resolves.toBe(true);
+    await syncService.pushMessage(message);
+    expect(mockConversationUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      branch_origin: conversation.branchOrigin,
+    }));
+    expect(mockMessageUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      attachment_source_id: attachmentSourceId,
+    }));
+
+    mockSupabaseResponse = { data: [mockConversationUpsert.mock.calls[0][0]], error: null };
+    mockSupabaseMsgResponse = { data: [mockMessageUpsert.mock.calls[0][0]], error: null };
+    await syncService.pullFromCloud();
+    expect((await db.conversations.get(conversation.id))?.branchOrigin).toEqual(conversation.branchOrigin);
+    expect((await db.messages.get(message.id))?.attachmentSourceId).toBe(attachmentSourceId);
+
+    await db.messages.clear();
+    await syncService.pullConversationMessages(conversation.id, conversation.userId);
+    expect((await db.messages.get(message.id))?.attachmentSourceId).toBe(attachmentSourceId);
   });
 
   it('keeps pending local edits and deletion markers while reconciling a cloud snapshot', async () => {

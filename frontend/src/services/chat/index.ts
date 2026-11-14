@@ -307,6 +307,11 @@ function prepareMessagesForAPI(
     .map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: messageContentForAPI(msg),
+      ...(msg.role === 'user' && msg.attachments?.length ? {
+        message_id: msg.id,
+        has_upload: 'true',
+        ...(msg.attachmentSourceId ? { attachment_source_id: msg.attachmentSourceId } : {}),
+      } : {}),
     })) as ChatMessage[];
     
   return sanitizeMessagesForAPI(mappedMessages) as ChatMessage[];

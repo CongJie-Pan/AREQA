@@ -16,8 +16,9 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, Table2, Image as ImageIcon, TextQuote, Code2 } from 'lucide-react';
-import { Button, Input, Modal, Tooltip, App } from 'antd';
+import { ArrowLeft, Ellipsis, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, Table2, Image as ImageIcon, TextQuote, Code2 } from 'lucide-react';
+import { Button, Dropdown, Input, Modal, Tooltip, App } from 'antd';
+import { BranchIcon } from '@/components/ConversationBranch/BranchIcon';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
 import { Citations } from '@/components/Citations';
@@ -656,6 +657,8 @@ export interface MessageItemProps {
     sources: CitationSource[];
   };
   /** Callback when regenerate button is clicked (AI messages only) */
+  onBranch?: (messageId: string) => void;
+  branchBoundaryLabel?: string;
   onRegenerate?: (messageId: string) => void;
   /** Callback when deleting the latest assistant turn is requested */
   onDeleteLatestTurn?: (assistantMessageId: string) => void;
@@ -1915,6 +1918,8 @@ export const MessageItem = memo(function MessageItem({
   isStreaming = false,
   thinking,
   ragInfo,
+  onBranch,
+  branchBoundaryLabel,
   onRegenerate,
   onDeleteLatestTurn,
   onAddNote,
@@ -2776,6 +2781,18 @@ export const MessageItem = memo(function MessageItem({
                   </span>
                 </>
               )}
+              {onBranch && !isStreaming && !isImageGenerationPending && !isEditing && (
+                <Dropdown trigger={['click']} menu={{ items: [{
+                  key: 'branch',
+                  label: t('createConversationBranch'),
+                  icon: <BranchIcon />,
+                  onClick: () => onBranch(message.id),
+                }] }}>
+                  <button type="button" className={styles.actionButton} aria-label={t('moreReplyActions')}>
+                    <Ellipsis size={16} />
+                  </button>
+                </Dropdown>
+              )}
               {onRegenerate && !isStreaming && !isImageGenerationPending && (
                 <Tooltip title={t('regenerate')}>
                   <button
@@ -2799,6 +2816,7 @@ export const MessageItem = memo(function MessageItem({
                 </Tooltip>
               )}
             </div>
+            {branchBoundaryLabel && <div role="separator" aria-label={branchBoundaryLabel}>{branchBoundaryLabel}</div>}
             {onFeedback && (
               <Modal
                 centered={!isMobileFeedbackModal}

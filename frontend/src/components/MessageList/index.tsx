@@ -32,6 +32,8 @@ export interface MessageListProps {
   /** Class name for styling */
   className?: string;
   /** Callback when regenerate button is clicked */
+  onBranch?: (messageId: string) => void;
+  branchBoundary?: { messageId: string; label: string };
   onRegenerate?: (messageId: string) => void;
   /** Callback when edit is submitted for user or assistant messages */
   onEdit?: (messageId: string, newContent: string) => Promise<void> | void;
@@ -183,6 +185,8 @@ function RotatingTypewriterLine({
 export function MessageList({
   className,
   liveVoice = false,
+  onBranch,
+  branchBoundary,
   onRegenerate,
   onEdit,
   onDeleteLatestTurn,
@@ -474,6 +478,8 @@ export function MessageList({
                     }
                   : undefined
               }
+              onBranch={message.role === 'assistant' ? onBranch : undefined}
+              branchBoundaryLabel={branchBoundary?.messageId === message.id ? branchBoundary.label : undefined}
               onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
               onAddNote={message.role === 'assistant' && !isStreaming ? onAddNote : undefined}
               isSavedNote={message.role === 'assistant' ? savedMessageIds.has(message.id) : false}

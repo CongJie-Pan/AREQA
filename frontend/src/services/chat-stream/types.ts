@@ -16,6 +16,9 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 export interface ChatMessage {
   role: MessageRole;
   content: string;
+  message_id?: string;
+  has_upload?: string;
+  attachment_source_id?: string;
 }
 
 /**

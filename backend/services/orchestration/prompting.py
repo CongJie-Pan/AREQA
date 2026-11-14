@@ -17,7 +17,7 @@ InterfaceLanguage = str
 
 
 class OrchestrationPromptingMixin:
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", tutor_profile: str = "general", response_mode: str = "text", has_attachments: bool = False) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", tutor_profile: str = "general", response_mode: str = "text", has_attachments: bool = False, isolated_context: bool = False) -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -121,6 +121,7 @@ class OrchestrationPromptingMixin:
             parts_context=parts_context,
             interface_language=interface_language,
             tutor_profile=tutor_profile,
+            **({"isolated_context": True} if isolated_context else {}),
         )
         final_messages = context.messages
         if response_mode == "voice":

@@ -841,7 +841,7 @@ describe('Chat Service', () => {
       await regenerateMessage('paper-reply');
 
       expect(createChatStream).toHaveBeenLastCalledWith(
-        [{ role: 'user', content: '幫我解釋這篇論文' }],
+        [{ role: 'user', content: '幫我解釋這篇論文', message_id: 'paper-user', has_upload: 'true' }],
         expect.any(Object), expect.any(AbortSignal), false, false, 'never',
         'test-conv-id', [file], expect.any(Object),
       );

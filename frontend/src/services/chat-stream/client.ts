@@ -12,6 +12,7 @@
 import { API_CONFIG } from '@/config/api';
 import { ChatStreamError, StreamParseError, isAbortError } from '@/utils/error';
 import { ThinkTagParser } from './parser';
+import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat/store';
 import type { ChatMessage, ChatStreamOptions, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
@@ -118,6 +119,9 @@ export async function createChatStream(
     const requestPayload = {
       messages,
       conversation_id: conversationId,
+      isolated_context: Boolean(useConversationStore.getState().conversations.find(
+        (conversation) => conversation.id === conversationId && conversation.branchOrigin,
+      )),
       use_rag: useRag,
       force_think: forceThink,
       use_web_search: searchMode === 'always',

@@ -287,6 +287,50 @@ async def test_context_plan_can_skip_foreground_long_term_memory(caplog):
 
 
 @pytest.mark.asyncio
+async def test_isolated_branch_preserves_local_turns_without_reading_account_memory():
+    memory_policy = AsyncMock()
+    memory_policy.evaluate = lambda _: SimpleNamespace(
+        allow_long_term_query=True,
+        reason_code="EXPLICIT_RECALL_REQUEST",
+    )
+    memory_query_tool = AsyncMock()
+    snapshot_loader = AsyncMock(return_value="Unrelated conversation facts")
+    service = ConversationContextService(
+        memory_policy=memory_policy,
+        memory_query_tool=memory_query_tool,
+    )
+    branch_messages = [
+        {"role": "user", "content": "Fork-local starting question"},
+        {"role": "assistant", "content": "Fork-local starting answer"},
+        {"role": "user", "content": "回憶我們之前聊過什麼？"},
+    ]
+
+    result = await service.build_conversation_context(
+        user_id="user-1",
+        conversation_id="branch-1",
+        messages=branch_messages,
+        use_rag=False,
+        use_web_search=False,
+        force_think=False,
+        context_results_obj=None,
+        last_user_msg=branch_messages[-1]["content"],
+        context_prompt="",
+        client=None,
+        snapshot_loader=snapshot_loader,
+        store=None,
+        chat_avatar_key="chat_avatar:branch-1",
+        allow_long_term_memory_query=True,
+        isolated_context=True,
+    )
+
+    assert result.messages[1:] == branch_messages
+    assert result.retrieved_memory is False
+    assert "Unrelated conversation facts" not in result.messages[0]["content"]
+    snapshot_loader.assert_not_awaited()
+    memory_query_tool.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_context_plan_allows_explicit_long_term_memory():
     memory_policy = AsyncMock()
     memory_policy.evaluate = lambda _: SimpleNamespace(

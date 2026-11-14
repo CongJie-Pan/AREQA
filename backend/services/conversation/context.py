@@ -80,6 +80,7 @@ class ConversationContextService:
         parts_context: PartsContext | None = None,
         interface_language: str = "zh-TW",
         tutor_profile: str = "general",
+        isolated_context: bool = False,
     ) -> ConversationContext:
         """Build the final prompt from independently policy-checked sources.
 
@@ -190,10 +191,11 @@ class ConversationContextService:
         # transient or sensitive prior-turn context. Only recent-context recall
         # uses the fast Redis hot-memory path; cold memory remains TurnPlan-gated.
         include_cross_conversation_focus = (
-            requests_recent_working_context_recall(last_user_msg)
+            not isolated_context
+            and requests_recent_working_context_recall(last_user_msg)
             and not is_sensitive_context_query(last_user_msg)
         )
-        hot_snapshot = await snapshot_loader(
+        hot_snapshot = "" if isolated_context else await snapshot_loader(
             user_id,
             conversation_id=conversation_id,
             include_cross_conversation_focus=include_cross_conversation_focus,
@@ -220,7 +222,7 @@ class ConversationContextService:
 
         retrieved_memory = False
         memory_decision = self.memory_policy.evaluate(last_user_msg)
-        can_query_long_term = memory_decision.allow_long_term_query
+        can_query_long_term = not isolated_context and memory_decision.allow_long_term_query
         if allow_long_term_memory_query is not None:
             can_query_long_term = can_query_long_term and allow_long_term_memory_query
         if can_query_long_term:

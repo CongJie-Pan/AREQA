@@ -1,5 +1,6 @@
 import React from 'react';
 import { App } from 'antd';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
@@ -47,6 +48,7 @@ vi.mock('@/services/database', () => ({
     conversation: {
       clearGuestData: vi.fn().mockResolvedValue(undefined),
       getAll: vi.fn().mockResolvedValue([]),
+      branch: vi.fn(),
     },
     note: {
       clearGuestData: vi.fn().mockResolvedValue(undefined),
@@ -57,6 +59,7 @@ vi.mock('@/services/database', () => ({
     message: {
       deleteManyByConversationId: vi.fn().mockResolvedValue(undefined),
       updateFeedback: vi.fn().mockResolvedValue(undefined),
+      getByConversationId: vi.fn(),
     },
   },
 }));
@@ -76,6 +79,7 @@ vi.mock('@/services/chat', async (importOriginal) => {
 vi.mock('@/services/syncService', () => ({
   syncService: {
     pullFromCloud: vi.fn().mockResolvedValue(undefined),
+    pullConversationMessages: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -209,7 +213,9 @@ describe('Latest turn deletion integration flow', () => {
     await act(async () => {
       result = render(
         <App>
-          <ChatContainer />
+          <UserPreferencesProvider initialPreferences={{ theme: 'system', language: 'zh-TW' }}>
+            <ChatContainer />
+          </UserPreferencesProvider>
         </App>,
       );
     });
@@ -283,5 +289,49 @@ describe('Latest turn deletion integration flow', () => {
       expect(screen.queryByText(LATEST_ASSISTANT_MESSAGE)).not.toBeInTheDocument();
     });
     expect(screen.getByText('已刪除這輪對話')).toBeInTheDocument();
+  }, 15000);
+
+  it('opens an earlier reply as an independent branch and can return to the source', async () => {
+    const source = useConversationStore.getState().conversations[0];
+    const sourceMessages = useChatStore.getState().messages;
+    const branchId = 'created-branch';
+    const branchMessages = sourceMessages.slice(0, 2).map(message => ({
+      ...message, id: `branch-${message.id}`, conversationId: branchId,
+    }));
+    vi.mocked(databaseService.conversation.branch).mockResolvedValue({
+      ...source,
+      id: branchId,
+      title: 'Branch title',
+      messageCount: branchMessages.length,
+      lastMessagePreview: PREVIOUS_ASSISTANT_MESSAGE,
+      branchOrigin: {
+        conversationId: source.id,
+        messageId: 'assistant-previous',
+        title: source.title,
+        copiedMessageId: 'branch-assistant-previous',
+      },
+    });
+    vi.mocked(databaseService.message.getByConversationId)
+      .mockImplementation(async id => id === branchId ? branchMessages : sourceMessages);
+
+    await renderChatContainer();
+    fireEvent.click(screen.getAllByRole('button', { name: '更多回覆操作' })[0]);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '建立新對話分支' }));
+
+    await waitFor(() => expect(useConversationStore.getState().activeConversationId).toBe(branchId));
+    expect(databaseService.conversation.branch).toHaveBeenCalledExactlyOnceWith(
+      source.id,
+      'assistant-previous',
+      expect.any(String),
+      `分支 · ${source.title}`,
+    );
+    expect(screen.getByText(PREVIOUS_ASSISTANT_MESSAGE)).toBeVisible();
+    expect(screen.queryByText(LATEST_ASSISTANT_MESSAGE)).not.toBeInTheDocument();
+    expect(screen.getByText('以下為分支對話')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '返回來源' }));
+
+    await waitFor(() => expect(useConversationStore.getState().activeConversationId).toBe(source.id));
+    expect(screen.getByText(LATEST_ASSISTANT_MESSAGE)).toBeVisible();
+    expect(screen.queryByText('以下為分支對話')).not.toBeInTheDocument();
   }, 15000);
 });

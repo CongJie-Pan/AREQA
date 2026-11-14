@@ -12,7 +12,7 @@ logger = logging.getLogger("backend.services.orchestration_service")
 async def complete_answer(service, *, user_id, conversation_id, last_user_msg, messages,
                           answer_content_accumulator, generated_blocks, planned_image_slots,
                           response_policy, preverified_image_blocks, context_results_obj,
-                          use_rag, use_web_search, interface_language, session, trace):
+                          use_rag, use_web_search, interface_language, session, trace, isolated_context=False):
     """Emit answer blocks and suggestions, then enqueue post-turn work.
 
     Yields:
@@ -74,7 +74,7 @@ async def complete_answer(service, *, user_id, conversation_id, last_user_msg, m
     ):
         yield sse_adapter.encode_legacy(event, run_context.run_id)
 
-    if last_user_msg and service.client:
+    if last_user_msg and service.client and not isolated_context:
         from services.memory.gum.runtime import push_reflection_observation
 
         service.post_turn_service.queue_post_turn_work(

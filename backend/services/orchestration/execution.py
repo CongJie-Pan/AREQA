@@ -40,7 +40,8 @@ class OrchestrationExecutionMixin:
                       response_mode: str = "text",
                       attachments: Optional[List[Dict[str, Any]]] = None,
                       attachment_visual_sources: Optional[List[Dict[str, Any]]] = None,
-                      image_attachments: Optional[List[Any]] = None) -> AsyncGenerator[str, None]:
+                      image_attachments: Optional[List[Any]] = None,
+                      isolated_context: bool = False) -> AsyncGenerator[str, None]:
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
         request_id_header = request.headers.get("x-request-id") if request and request.headers else None
@@ -181,7 +182,7 @@ class OrchestrationExecutionMixin:
             5,
         ))
 
-        if last_user_msg:
+        if last_user_msg and not isolated_context:
             if self.turn_intake_service.store_available():
                 yield sse_adapter.encode_legacy(
                     f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '📖 正在回顧你過去的學習紀錄'}, ensure_ascii=False)}\n\n",
@@ -357,6 +358,7 @@ class OrchestrationExecutionMixin:
             response_mode=response_mode, has_attachments=has_attachments,
             attachments=attachments, attachment_visual_sources=attachment_visual_sources,
             pdf_attachment_count=pdf_attachment_count, max_tokens=max_tokens,
+            **({"isolated_context": True} if isolated_context else {}),
         )
 
         # Node 6: Main LLM Stream
@@ -402,6 +404,7 @@ class OrchestrationExecutionMixin:
             response_policy=response_policy, preverified_image_blocks=preverified_image_blocks,
             context_results_obj=context_results_obj, use_rag=use_rag, use_web_search=use_web_search,
             interface_language=interface_language, session=session, trace=trace,
+            **({"isolated_context": True} if isolated_context else {}),
         ):
             yield event
 

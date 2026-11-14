@@ -8,6 +8,8 @@ import type { Conversation } from '../schema';
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
 import { logger } from '@/utils/logger';
+import { persistentAnswerBlocks } from '@/utils/answerBlocks';
+import { queueMessageCloudSync, scheduleQueuedMessageCloudSync } from './messageRepo';
 
 const CONVERSATION_SYNC_RETRY_BASE_DELAY_MS = 1_000;
 const CONVERSATION_SYNC_RETRY_MAX_DELAY_MS = 30_000;
@@ -121,6 +123,66 @@ async function flushQueuedConversationCloudSync(id: string): Promise<void> {
 }
 
 export const conversationRepo = {
+  async branch(sourceId: string, forkMessageId: string, branchId: string, title: string): Promise<Conversation> {
+    const userId = getCurrentUserId();
+    if (!userId) throw new Error('Authentication required to create a branch');
+
+    const { conversation, messageIds } = await db.transaction(
+      'rw', [db.conversations, db.messages, db.conversationSyncQueue, db.messageSyncQueue],
+      async () => {
+        const existing = await db.conversations.get(branchId);
+        if (existing) {
+          if (existing.userId !== userId || existing.branchOrigin?.conversationId !== sourceId
+            || existing.branchOrigin.messageId !== forkMessageId) {
+            throw new Error('Branch identifier is already in use');
+          }
+          return { conversation: existing, messageIds: [] };
+        }
+
+        const source = await db.conversations.get(sourceId);
+        if (source?.userId !== userId) throw new Error('Conversation is unavailable');
+        const messages = await db.messages.where('conversationId').equals(sourceId)
+          .filter((message) => message.userId === userId).sortBy('createdAt');
+        const boundary = messages.findIndex((message) => message.id === forkMessageId);
+        const anchor = messages[boundary];
+        if (anchor?.role !== 'assistant'
+          || (!anchor.content.trim() && !persistentAnswerBlocks(anchor.answerBlocks)?.length)
+          || anchor.answerBlocks?.some((block) => block.type === 'image_block' && block.status === 'pending')) {
+          throw new Error('Select a completed reply to branch');
+        }
+
+        const now = new Date();
+        const prefix = messages.slice(0, boundary + 1).map((message, index) => ({
+          ...message,
+          id: generateUUID(),
+          conversationId: branchId,
+          // IndexedDB and cloud hydration both sort by creation time.
+          createdAt: new Date(now.getTime() - boundary + index - 1),
+          updatedAt: now,
+          answerBlocks: persistentAnswerBlocks(message.answerBlocks),
+          attachmentSourceId: message.attachments?.length ? message.attachmentSourceId ?? message.id : undefined,
+          feedback: null,
+          feedbackReason: null,
+          feedbackComment: null,
+          feedbackUpdatedAt: null,
+        }));
+        const conversation: Conversation = {
+          id: branchId, userId, title, createdAt: now, updatedAt: now,
+          messageCount: prefix.length, lastMessagePreview: anchor.content.slice(0, 100),
+          branchOrigin: { conversationId: sourceId, messageId: forkMessageId, title: source.title, copiedMessageId: prefix[boundary].id },
+        };
+        await db.conversations.add(conversation);
+        await db.messages.bulkAdd(prefix);
+        await queueConversationCloudSync(conversation);
+        await Promise.all(prefix.map(queueMessageCloudSync));
+        return { conversation, messageIds: prefix.map((message) => message.id) };
+      },
+    );
+    scheduleConversationCloudSync(conversation.id);
+    messageIds.forEach((id) => scheduleQueuedMessageCloudSync(id));
+    return conversation;
+  },
+
   /**
    * Create a new conversation
    * @param title - Optional conversation title (defaults to '新對話')

@@ -51,6 +51,26 @@ describe('chat attachment BFF route', () => {
     expect(vi.mocked(fetch).mock.calls[0][1]?.headers).toMatchObject({ 'X-Request-ID': 'search-request-1' });
   });
 
+  it('preserves branch isolation and inherited attachment references in JSON chat requests', async () => {
+    const messages = [
+      {
+        role: 'user', content: 'Read these notes',
+        message_id: '527142ac-7d03-4d88-a81c-2210a5042b41',
+        has_upload: 'true',
+        attachment_source_id: 'e2b32834-c75e-4db3-b8c9-829acba68de8',
+      },
+      { role: 'user', content: 'What are the results?' },
+    ];
+    const response = await POST(jsonRequest({
+      conversation_id: 'branch-conversation', isolated_context: true, messages,
+    }) as any);
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toMatchObject({
+      conversation_id: 'branch-conversation', isolated_context: true, messages,
+    });
+  });
+
   it('forwards 101 messages through the real history validator', async () => {
     const real = await vi.importActual<typeof import('@/utils/validation')>('@/utils/validation');
     const utils = await import('@/utils');

@@ -53,7 +53,7 @@ function retryDelayMs(retryCount: number): number {
   );
 }
 
-async function queueMessageCloudSync(message: Message): Promise<void> {
+export async function queueMessageCloudSync(message: Message): Promise<void> {
   const existing = await db.messageSyncQueue.get(message.id);
   await db.messageSyncQueue.put({
     id: message.id,
@@ -85,7 +85,7 @@ function runQueuedMessageCloudSync(id: string): Promise<void> {
   return tracked;
 }
 
-function scheduleQueuedMessageCloudSync(id: string, delayMs = 0): void {
+export function scheduleQueuedMessageCloudSync(id: string, delayMs = 0): void {
   const existingTimer = messageSyncRetryTimers.get(id);
   if (existingTimer) {
     clearTimeout(existingTimer);

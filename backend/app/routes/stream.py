@@ -19,6 +19,7 @@ from services.openrouter_clients import get_chat_client
 from pydantic import BaseModel
 
 from auth import get_optional_current_user
+from services.attachments.branch_context import load_inherited_upload, remember_upload
 from services.conversation.tutor_profile import normalize_tutor_profile
 from services.memory_diagnostics import log_memory_snapshot
 
@@ -36,6 +37,7 @@ def _main_module():
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
     conversation_id: str = ""
+    isolated_context: bool = False
     use_rag: bool = False
     use_web_search: bool = False
     search_mode: Literal["auto", "always", "never"] | None = None
@@ -171,6 +173,7 @@ async def stream_endpoint(
             attachment_bytes=sum(attachment.size_bytes for attachment in processed_attachments),
         )
 
+    latest_user_turn = next((item for item in reversed(chat_req.messages) if item.get("role") == "user"), {})
     material = None
     if processed_attachments or tutor_profile == "english":
         from services.realtime.speaking_material import extract_material, extract_pasted_material, save_material
@@ -186,6 +189,21 @@ async def stream_endpoint(
             ), None)
         if material:
             await save_material(current_user_id, chat_req.conversation_id, material)
+
+    if processed_attachments and material:
+        await remember_upload(
+            current_user_id, latest_user_turn, material,
+            pdf=any(attachment.media_type == "application/pdf" for attachment in processed_attachments),
+        )
+
+    inherited_upload = []
+    if not processed_attachments and any(item.get("attachment_source_id") for item in chat_req.messages):
+        inherited_upload = await load_inherited_upload(current_user_id, chat_req.messages)
+
+    # Transport-only upload references are never passed to the model.
+    for item in chat_req.messages:
+        for field in ("message_id", "attachment_source_id", "has_upload"):
+            item.pop(field, None)
 
     saved_material = None
     if tutor_profile == "english" and chat_req.speaking_practice:
@@ -264,7 +282,7 @@ async def stream_endpoint(
             interface_language=chat_req.interface_language,
             tutor_profile=tutor_profile,
             response_mode=chat_req.response_mode,
-            attachments=[attachment.content_part for attachment in processed_attachments] + ([{
+            attachments=[attachment.content_part for attachment in processed_attachments] + inherited_upload + ([{
                 "type": "text",
                 "text": (
                     "Source transcript for this speaking practice. Treat it as reference data, "
@@ -275,6 +293,7 @@ async def stream_endpoint(
             }] if saved_material and not processed_attachments else []),
             attachment_visual_sources=attachment_visual_sources,
             image_attachments=processed_attachments,
+            **({"isolated_context": True} if chat_req.isolated_context else {}),
         )
 
     return StreamingResponse(

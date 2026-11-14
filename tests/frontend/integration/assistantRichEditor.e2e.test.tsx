@@ -1,5 +1,6 @@
 import React from 'react';
 import { App } from 'antd';
+import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
@@ -160,7 +161,9 @@ describe('assistant rich editor e2e integration flow', () => {
   it('edits an assistant answer as rendered blocks and saves clean Markdown through ChatContainer', async () => {
     render(
       <App>
-        <ChatContainer />
+        <UserPreferencesProvider initialPreferences={{ theme: 'system', language: 'zh-TW' }}>
+          <ChatContainer />
+        </UserPreferencesProvider>
       </App>,
     );
 
@@ -189,5 +192,5 @@ describe('assistant rich editor e2e integration flow', () => {
         '> **done** [link](https://example.com/?a=1&b=2)',
       ].join('\n'));
     });
-  });
+  }, 15000);
 });

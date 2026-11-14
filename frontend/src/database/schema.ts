@@ -22,6 +22,7 @@ export interface Conversation {
   messageCount: number;
   /** Preview of the last message (first 100 characters) */
   lastMessagePreview: string;
+  branchOrigin?: { conversationId: string; messageId: string; title: string; copiedMessageId: string };
 }
 
 /** Safe, display-only metadata for a request-scoped chat attachment. */
@@ -135,6 +136,8 @@ export interface Message {
   content: string;
   /** Display-only attachment metadata (never binary data or extracted text). */
   attachments?: AttachmentMetadata[];
+  /** Original upload turn used to look up account-scoped extracted text. */
+  attachmentSourceId?: string;
   /** AI reasoning/thinking process (optional) */
   reasoning?: {
     /** Thinking process content */
