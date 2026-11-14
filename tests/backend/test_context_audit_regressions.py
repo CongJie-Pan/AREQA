@@ -20,7 +20,7 @@ async def prepare(messages, **kwargs):
 
 @pytest.mark.asyncio
 async def test_optional_search_does_not_reject_valid_question():
-    budget = 32768 - 3200 - token_bound([]) - 1024
+    budget = (32768 - 3200 - 1024) * 3 - token_bound([])
     messages = [{'role': 'system', 'content': 'policy'}, {'role': 'user', 'content': ''}]
     question = 'q' * (budget - token_bound(messages) - 40)
     prefix = '<context>\n[文獻1]\nURL: https://example.test\n' + 'source ' * 1000 + '\n</context>\n\n'
