@@ -16,7 +16,8 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Ellipsis, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, NotebookPen, Volume2, VolumeX, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, Table2, Image as ImageIcon, TextQuote, Code2 } from 'lucide-react';
+import { ArrowLeft, Ellipsis, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, Bookmark, Volume2, VolumeX, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, Table2, Image as ImageIcon, TextQuote, Code2 } from 'lucide-react';
+import type { MenuProps } from 'antd';
 import { Button, Dropdown, Input, Modal, Tooltip, App } from 'antd';
 import { BranchIcon } from '@/components/ConversationBranch/BranchIcon';
 import { ThinkingPanel } from '@/components/ThinkingPanel';
@@ -658,7 +659,6 @@ export interface MessageItemProps {
   };
   /** Callback when regenerate button is clicked (AI messages only) */
   onBranch?: (messageId: string) => void;
-  branchBoundaryLabel?: string;
   onRegenerate?: (messageId: string) => void;
   /** Callback when deleting the latest assistant turn is requested */
   onDeleteLatestTurn?: (assistantMessageId: string) => void;
@@ -1919,7 +1919,6 @@ export const MessageItem = memo(function MessageItem({
   thinking,
   ragInfo,
   onBranch,
-  branchBoundaryLabel,
   onRegenerate,
   onDeleteLatestTurn,
   onAddNote,
@@ -2293,6 +2292,37 @@ export const MessageItem = memo(function MessageItem({
     setIsEditing(false);
     setEditContent(displayContent);
   }, [displayContent, isEditSaving]);
+
+  const moreReplyActions: NonNullable<MenuProps['items']> = [];
+  if (!isStreaming) {
+    if (onBranch && !isImageGenerationPending && !isEditing) {
+      moreReplyActions.push({
+        key: 'branch',
+        label: t('createConversationBranch'),
+        icon: <BranchIcon size={16} />,
+        onClick: () => onBranch(message.id),
+      });
+    }
+    const isReadAloudActive = isReadAloudPlaying || isReadAloudLoading;
+    moreReplyActions.push({
+      key: 'readAloud',
+      label: t(isReadAloudActive ? 'stopReadAloud' : 'readAloud'),
+      icon: isReadAloudActive ? <VolumeX size={16} /> : <Volume2 size={16} />,
+      onClick: handleReadAloud,
+    });
+    if (onEdit && !isImageGenerationPending) {
+      moreReplyActions.push({ key: 'edit', label: t('editMessage'), icon: <Edit size={16} />, onClick: handleEditClick });
+    }
+    if (onDeleteLatestTurn && !isImageGenerationPending) {
+      moreReplyActions.push({
+        key: 'delete',
+        label: t('deleteLatestConversationTurn'),
+        icon: <Trash2 size={16} />,
+        danger: true,
+        onClick: handleDeleteLatestTurn,
+      });
+    }
+  }
 
   // Handle saving edit
   const handleSaveEdit = useCallback(async () => {
@@ -2677,60 +2707,7 @@ export const MessageItem = memo(function MessageItem({
               />
             )}
 
-            {/* Action Buttons */}
             <div className={styles.actionButtons}>
-              <Tooltip title={t('copyMessage')}>
-                <button
-                  className={styles.actionButton}
-                  onClick={handleCopy}
-                  aria-label={t('copyMessage')}
-                >
-                  <Copy size={16} />
-                </button>
-              </Tooltip>
-              {!isStreaming && (
-                <Tooltip title={isReadAloudPlaying || isReadAloudLoading ? t('stopReadAloud') : t('readAloud')}>
-                  <button
-                    className={cx(
-                      styles.actionButton,
-                      (isReadAloudPlaying || isReadAloudLoading) && styles.actionButtonActive,
-                    )}
-                    onClick={handleReadAloud}
-                    aria-label={isReadAloudPlaying || isReadAloudLoading ? t('stopReadAloud') : t('readAloud')}
-                    aria-pressed={isReadAloudPlaying || isReadAloudLoading}
-                  >
-                    {isReadAloudPlaying || isReadAloudLoading ? (
-                      <VolumeX size={16} />
-                    ) : (
-                      <Volume2 size={16} />
-                    )}
-                  </button>
-                </Tooltip>
-              )}
-              {(onAddNote || isSavedNote) && !isStreaming && (
-                <Tooltip title={isSavedNote ? t('savedToNotes') : t('addToNotes')}>
-                  <button
-                    className={cx(styles.actionButton, isSavedNote && styles.actionButtonActive)}
-                    disabled={isSavedNote}
-                    onClick={handleAddNote}
-                    aria-label={isSavedNote ? t('savedToNotes') : t('addToNotes')}
-                  >
-                    <NotebookPen size={16} />
-                  </button>
-                </Tooltip>
-              )}
-              {onEdit && !isStreaming && !isImageGenerationPending && (
-                <Tooltip title={t('editMessage')}>
-                  <button
-                    aria-label={t('editMessage')}
-                    className={styles.actionButton}
-                    onClick={handleEditClick}
-                    type="button"
-                  >
-                    <Edit size={16} />
-                  </button>
-                </Tooltip>
-              )}
               {!isStreaming && onFeedback && (
                 <>
                   <span
@@ -2781,18 +2758,6 @@ export const MessageItem = memo(function MessageItem({
                   </span>
                 </>
               )}
-              {onBranch && !isStreaming && !isImageGenerationPending && !isEditing && (
-                <Dropdown trigger={['click']} menu={{ items: [{
-                  key: 'branch',
-                  label: t('createConversationBranch'),
-                  icon: <BranchIcon />,
-                  onClick: () => onBranch(message.id),
-                }] }}>
-                  <button type="button" className={styles.actionButton} aria-label={t('moreReplyActions')}>
-                    <Ellipsis size={16} />
-                  </button>
-                </Dropdown>
-              )}
               {onRegenerate && !isStreaming && !isImageGenerationPending && (
                 <Tooltip title={t('regenerate')}>
                   <button
@@ -2804,19 +2769,35 @@ export const MessageItem = memo(function MessageItem({
                   </button>
                 </Tooltip>
               )}
-              {onDeleteLatestTurn && !isStreaming && !isImageGenerationPending && (
-                <Tooltip title={t('deleteLatestConversationTurn')}>
+              <Tooltip title={t('copyMessage')}>
+                <button
+                  className={styles.actionButton}
+                  onClick={handleCopy}
+                  aria-label={t('copyMessage')}
+                >
+                  <Copy size={16} />
+                </button>
+              </Tooltip>
+              {(onAddNote || isSavedNote) && !isStreaming && (
+                <Tooltip title={isSavedNote ? t('savedToNotes') : t('addToNotes')}>
                   <button
-                    className={styles.actionButton}
-                    onClick={handleDeleteLatestTurn}
-                    aria-label={t('deleteLatestConversationTurn')}
+                    className={cx(styles.actionButton, isSavedNote && styles.actionButtonActive)}
+                    disabled={isSavedNote}
+                    onClick={handleAddNote}
+                    aria-label={isSavedNote ? t('savedToNotes') : t('addToNotes')}
                   >
-                    <Trash2 size={16} />
+                    <Bookmark size={16} fill={isSavedNote ? 'currentColor' : 'none'} />
                   </button>
                 </Tooltip>
               )}
+              {moreReplyActions.length > 0 && (
+                <Dropdown trigger={['click']} menu={{ items: moreReplyActions, className: styles.replyActionsMenu }}>
+                  <button type="button" className={styles.actionButton} aria-label={t('moreReplyActions')} aria-haspopup="menu">
+                    <Ellipsis size={16} />
+                  </button>
+                </Dropdown>
+              )}
             </div>
-            {branchBoundaryLabel && <div role="separator" aria-label={branchBoundaryLabel}>{branchBoundaryLabel}</div>}
             {onFeedback && (
               <Modal
                 centered={!isMobileFeedbackModal}

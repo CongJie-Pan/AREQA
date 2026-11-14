@@ -33,10 +33,19 @@ test('@smoke branches an ordinary chat, sends only its history, and reloads it',
 
   await page.getByRole('button', { name: '更多回覆操作', exact: true }).first().click();
   await page.getByRole('menuitem', { name: '建立新對話分支', exact: true }).click();
-  await expect(page.getByText('只有來源對話有這個問題', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('第一輪回覆', { exact: true })).toBeVisible();
-  await expect(page.getByText('以下為分支對話', { exact: true })).toBeVisible();
+  const toBranch = page.getByRole('button', { name: /^到分支 · / });
+  await expect(toBranch).toBeVisible();
+  await expect(page.getByText('只有來源對話有這個問題', { exact: true })).toBeVisible();
+  const sourceReply = page.getByText('第一輪回覆', { exact: true });
+  const firstReplyId = await sourceReply.evaluate(reply => reply.closest('[data-message-id]')?.getAttribute('data-message-id'));
+  expect(firstReplyId).toBeTruthy();
   expect(requests).toHaveLength(2);
+
+  await toBranch.click();
+  const fromSource = page.getByRole('button', { name: '從 · 分支測試來源', exact: true });
+  await expect(fromSource).toBeVisible();
+  await expect(page.getByText('第一輪回覆', { exact: true })).toBeVisible();
+  await expect(page.getByText('只有來源對話有這個問題', { exact: true })).toHaveCount(0);
 
   await send(page, '分支的新問題');
   await expect(page.getByText('分支專屬回覆', { exact: true })).toBeVisible();
@@ -51,7 +60,8 @@ test('@smoke branches an ordinary chat, sends only its history, and reloads it',
   await page.getByText(/^分支 · /).click();
   await expect(page.getByText('分支專屬回覆', { exact: true })).toBeVisible();
   await expect(page.getByText('只有來源對話有這個問題', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: /返回來源/ }).click();
+  await fromSource.click();
   await expect(page.getByText('來源對話的第二輪回覆', { exact: true })).toBeVisible();
   await expect(page.getByText('分支專屬回覆', { exact: true })).toHaveCount(0);
+  await expect(page.locator(`[data-message-id="${firstReplyId}"]`)).toBeInViewport();
 });

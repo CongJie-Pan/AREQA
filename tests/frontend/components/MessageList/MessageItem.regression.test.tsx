@@ -14,6 +14,10 @@ vi.mock('../../../../frontend/src/components/ThinkingPanel', () => ({
   ThinkingPanel: () => <div data-testid="thinking-panel"></div>
 }));
 
+function TraditionalChinesePreferences({ children }: { children: React.ReactNode }) {
+  return <UserPreferencesProvider initialPreferences={{ theme: 'system', language: 'zh-TW' }}>{children}</UserPreferencesProvider>;
+}
+
 describe('MessageItem Quote Alignment Regression', () => {
   it('keeps the user message editor as wide as its message row', () => {
     render(
@@ -52,7 +56,7 @@ describe('MessageItem Quote Alignment Regression', () => {
     expect(screen.queryByText('Here is the image I created.')).not.toBeInTheDocument();
   });
 
-  it('opens assistant rich edit mode without exposing Markdown source syntax', () => {
+  it('opens assistant rich edit mode without exposing Markdown source syntax', async () => {
     render(
       <App>
         <MessageItem
@@ -72,9 +76,11 @@ describe('MessageItem Quote Alignment Regression', () => {
           onEdit={vi.fn()}
         />
       </App>,
+      { wrapper: TraditionalChinesePreferences },
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    fireEvent.click(screen.getByRole('button', { name: '更多回覆操作' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '編輯訊息' }));
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
 
     expect(editor).toHaveTextContent('test test test');
@@ -83,7 +89,7 @@ describe('MessageItem Quote Alignment Regression', () => {
     expect(editor).not.toHaveTextContent('- test test test');
   });
 
-  it('closes the slash menu with Escape without cancelling assistant editing', () => {
+  it('closes the slash menu with Escape without cancelling assistant editing', async () => {
     render(
       <App>
         <MessageItem
@@ -96,9 +102,11 @@ describe('MessageItem Quote Alignment Regression', () => {
           onEdit={vi.fn()}
         />
       </App>,
+      { wrapper: TraditionalChinesePreferences },
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    fireEvent.click(screen.getByRole('button', { name: '更多回覆操作' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '編輯訊息' }));
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     editor.innerHTML = '<p>/</p>';
     const textNode = editor.querySelector('p')?.firstChild;
@@ -176,6 +184,7 @@ describe('MessageItem Quote Alignment Regression', () => {
           }}
         />
       </App>,
+      { wrapper: TraditionalChinesePreferences },
     );
 
     const copyButton = await screen.findByRole('button', { name: '複製公式' });

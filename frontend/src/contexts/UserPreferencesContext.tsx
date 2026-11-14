@@ -219,9 +219,9 @@ export type TranslationKey =
   | 'moreReplyActions'
   | 'conversationBranches'
   | 'conversationBranchTitle'
-  | 'conversationBranchSource'
+  | 'conversationBranchFrom'
+  | 'conversationBranchTo'
   | 'conversationBranchReturn'
-  | 'conversationBranchBoundary'
   | 'conversationBranchFailed'
   | 'deleteLatestConversationTurnSuccess'
   | 'deleteLatestConversationTurnFailed'
@@ -479,9 +479,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     moreReplyActions: '更多回覆操作',
     conversationBranches: '對話分支',
     conversationBranchTitle: '分支',
-    conversationBranchSource: '來源：',
+    conversationBranchFrom: '從',
+    conversationBranchTo: '到分支',
     conversationBranchReturn: '返回來源',
-    conversationBranchBoundary: '以下為分支對話',
     conversationBranchFailed: '無法建立對話分支，請再試一次。',
     deleteLatestConversationTurnSuccess: '已刪除這輪對話',
     deleteLatestConversationTurnFailed: '刪除對話失敗，請稍後再試',
@@ -713,9 +713,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     conversationBranches: '对话分支',
     moreReplyActions: '更多回复操作',
     conversationBranchTitle: '分支',
-    conversationBranchSource: '来源：',
+    conversationBranchFrom: '从',
+    conversationBranchTo: '到分支',
     conversationBranchReturn: '返回来源',
-    conversationBranchBoundary: '以下为分支对话',
     conversationBranchFailed: '无法建立对话分支，请重试。',
     deleteLatestConversationTurnSuccess: '已删除这轮对话',
     deleteLatestConversationTurnFailed: '删除对话失败，请稍后再试',
@@ -947,9 +947,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     moreReplyActions: 'More reply actions',
     conversationBranches: 'Conversation branches',
     conversationBranchTitle: 'Branch',
-    conversationBranchSource: 'From:',
+    conversationBranchFrom: 'From',
+    conversationBranchTo: 'To branch',
     conversationBranchReturn: 'Return to source',
-    conversationBranchBoundary: 'Branch conversation starts here',
     conversationBranchFailed: 'Could not create the conversation branch. Try again.',
     deleteLatestConversationTurnSuccess: 'Conversation turn deleted',
     deleteLatestConversationTurnFailed: 'Could not delete this conversation turn. Please try again later.',

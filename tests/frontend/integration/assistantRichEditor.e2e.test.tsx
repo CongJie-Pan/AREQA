@@ -168,8 +168,8 @@ describe('assistant rich editor e2e integration flow', () => {
     );
 
     await screen.findByText('Please edit the answer.');
-    const editButtons = screen.getAllByRole('button', { name: '編輯訊息' });
-    fireEvent.click(editButtons[editButtons.length - 1]);
+    fireEvent.click(screen.getByRole('button', { name: '更多回覆操作' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '編輯訊息' }));
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
 
     expect(editor).toHaveTextContent('parent');

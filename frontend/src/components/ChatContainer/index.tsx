@@ -8,11 +8,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, MoreHorizontal, FileText, FileImage, FileCode, Share2 } from 'lucide-react';
-import { App, Button, Dropdown, Tooltip } from 'antd';
+import { App, Dropdown, Tooltip } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
 import { conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
+import { requestSourceMessageFocus } from '@/utils/messageFocus';
 import { generateUUID } from '@/utils/id';
 import { switchConversation, sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage, editAssistantMessage, deleteLatestConversationTurn } from '@/services/chat';
 import { ConversationList } from '@/components/ConversationList';
@@ -187,10 +188,13 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const landingPromptSent = useRef(false);
   const branchPending = useRef(false);
   const branchOrigin = activeConversation?.branchOrigin;
-  const branchSource = useConversationStore((state) =>
-    state.conversations.find((conversation) => conversation.id === branchOrigin?.conversationId
-      && conversation.userId === user?.id),
-  );
+  const conversations = useConversationStore((state) => state.conversations);
+  const branchSource = conversations.find((conversation) =>
+    conversation.id === branchOrigin?.conversationId && conversation.userId === user?.id);
+  const childBranches = conversationBranchesEnabled && activeConversationId
+    ? conversations.filter((conversation) =>
+      conversation.userId === user?.id && conversation.branchOrigin?.conversationId === activeConversationId)
+    : [];
 
   const toggleLiveTutorMute = useCallback(() => {
     setLiveTutorMuted(!useLiveTutorStore.getState().isMuted);
@@ -559,16 +563,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
       useConversationStore.setState((state) => ({
         conversations: [branch, ...state.conversations.filter((entry) => entry.id !== branch.id)],
       }));
-      if (useConversationStore.getState().activeConversationId === activeConversationId) {
-        await switchConversation(branch.id);
-        handleConversationSelect();
-      }
     } catch {
       antMessageApi.error(t('conversationBranchFailed'));
     } finally {
       branchPending.current = false;
     }
-  }, [activeConversation, activeConversationId, antMessageApi, handleConversationSelect, t, user]);
+  }, [activeConversation, activeConversationId, antMessageApi, t, user]);
 
   // Handle regenerate message
   const handleRegenerate = useCallback(async (messageId: string) => {
@@ -866,15 +866,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     hideLiveTutorMessages && !isGeneratingImage && styles.messageAreaLiveTutorEmpty,
                   )}
                 >
-                  {conversationBranchesEnabled && branchOrigin && (
-                    <div className={styles.branchOrigin}>
-                      <span>{t('conversationBranchSource')} {branchSource?.title ?? branchOrigin.title}</span>
-                      {branchSource && <Button type="link" size="small"
-                        onClick={() => { void switchConversation(branchSource.id); }}>
-                        {t('conversationBranchReturn')}
-                      </Button>}
-                    </div>
-                  )}
                   {activeImageRequest && !activeImageRequest.assistantMessageId ? (
                     <ImageGenerationLoading caption={language === 'en' ? 'Preparing image…' : language === 'zh-CN' ? '正在准备图片…' : '正在準備圖片…'} />
                   ) : !isEmptyLiveTutor && (
@@ -883,8 +874,20 @@ export function ChatContainer({ className }: ChatContainerProps) {
                       onRegenerate={handleRegenerate}
                       onBranch={conversationBranchesEnabled && user && !isMessageHandoffLoading ? handleBranch : undefined}
                       branchBoundary={conversationBranchesEnabled && branchOrigin?.copiedMessageId ? {
-                        messageId: branchOrigin.copiedMessageId, label: t('conversationBranchBoundary'),
+                        messageId: branchOrigin.copiedMessageId,
+                        label: t('conversationBranchFrom'),
+                        title: branchSource?.title ?? branchOrigin.title,
+                        onOpen: branchSource ? () => {
+                          requestSourceMessageFocus(branchSource.id, branchOrigin.messageId);
+                          void switchConversation(branchSource.id);
+                        } : undefined,
                       } : undefined}
+                      childBranches={childBranches.map((branch) => ({
+                        id: branch.id,
+                        label: t('conversationBranchTo'),
+                        title: branch.title,
+                        onOpen: () => { void switchConversation(branch.id); },
+                      }))}
                       onEdit={handleEdit}
                       onDeleteLatestTurn={handleDeleteLatestTurn}
                       onAddNote={handleAddNote}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { App } from 'antd';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatContainer } from '@/components/ChatContainer';
 import { useChatStore } from '@/store/chat';
@@ -226,7 +226,9 @@ describe('Latest turn deletion integration flow', () => {
     await renderChatContainer();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '刪除對話' }));
+      const menus = screen.getAllByRole('button', { name: '更多回覆操作' });
+      fireEvent.click(menus[menus.length - 1]);
+      fireEvent.click(await screen.findByRole('menuitem', { name: '刪除對話' }));
     });
 
     await waitFor(() => {
@@ -244,7 +246,13 @@ describe('Latest turn deletion integration flow', () => {
   it('shows the delete action only on the bottom assistant reply', async () => {
     await renderChatContainer();
 
-    expect(screen.getAllByRole('button', { name: '刪除對話' })).toHaveLength(1);
+    const menus = screen.getAllByRole('button', { name: '更多回覆操作' });
+    expect(menus).toHaveLength(2);
+    fireEvent.click(menus[0]);
+    expect(within(await screen.findByRole('menu')).queryByRole('menuitem', { name: '刪除對話' })).not.toBeInTheDocument();
+    fireEvent.click(menus[0]);
+    fireEvent.click(menus[1]);
+    expect(await screen.findByRole('menuitem', { name: '刪除對話' })).toBeInTheDocument();
   }, 15000);
 
   it('shows the scroll-to-bottom button after scrolling up in normal chat mode', async () => {
@@ -281,7 +289,9 @@ describe('Latest turn deletion integration flow', () => {
     await renderChatContainer();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '刪除對話' }));
+      const menus = screen.getAllByRole('button', { name: '更多回覆操作' });
+      fireEvent.click(menus[menus.length - 1]);
+      fireEvent.click(await screen.findByRole('menuitem', { name: '刪除對話' }));
     });
 
     await waitFor(() => {
@@ -291,7 +301,7 @@ describe('Latest turn deletion integration flow', () => {
     expect(screen.getByText('已刪除這輪對話')).toBeInTheDocument();
   }, 15000);
 
-  it('opens an earlier reply as an independent branch and can return to the source', async () => {
+  it('creates an independent branch without leaving the source and returns to the original reply', async () => {
     const source = useConversationStore.getState().conversations[0];
     const sourceMessages = useChatStore.getState().messages;
     const branchId = 'created-branch';
@@ -311,27 +321,48 @@ describe('Latest turn deletion integration flow', () => {
         copiedMessageId: 'branch-assistant-previous',
       },
     });
+    const branchLocalMessage = {
+      ...sourceMessages[2], id: 'branch-local', conversationId: branchId, content: '分支的新問題',
+    };
     vi.mocked(databaseService.message.getByConversationId)
-      .mockImplementation(async id => id === branchId ? branchMessages : sourceMessages);
+      .mockImplementation(async id => id === branchId ? [...branchMessages, branchLocalMessage] : sourceMessages);
 
-    await renderChatContainer();
+    const view = await renderChatContainer();
+    const sourceReply = view!.container.querySelector('[data-message-id="assistant-previous"]') as HTMLElement;
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    scrollIntoView.mockClear();
     fireEvent.click(screen.getAllByRole('button', { name: '更多回覆操作' })[0]);
     fireEvent.click(await screen.findByRole('menuitem', { name: '建立新對話分支' }));
 
-    await waitFor(() => expect(useConversationStore.getState().activeConversationId).toBe(branchId));
+    const toBranch = await screen.findByRole('button', { name: '到分支 · Branch title' });
+    expect(useConversationStore.getState().activeConversationId).toBe(source.id);
+    const laterReply = screen.getByText(LATEST_ASSISTANT_MESSAGE);
+    expect(laterReply).toBeVisible();
+    expect(laterReply.compareDocumentPosition(toBranch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(databaseService.conversation.branch).toHaveBeenCalledExactlyOnceWith(
       source.id,
       'assistant-previous',
       expect.any(String),
       `分支 · ${source.title}`,
     );
-    expect(screen.getByText(PREVIOUS_ASSISTANT_MESSAGE)).toBeVisible();
-    expect(screen.queryByText(LATEST_ASSISTANT_MESSAGE)).not.toBeInTheDocument();
-    expect(screen.getByText('以下為分支對話')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: '返回來源' }));
+    fireEvent.click(toBranch);
 
+    const fromSource = await screen.findByRole('button', { name: `從 · ${source.title}` });
+    expect(useConversationStore.getState().activeConversationId).toBe(branchId);
+    const inheritedReply = screen.getByText(PREVIOUS_ASSISTANT_MESSAGE);
+    const localQuestion = screen.getByText('分支的新問題');
+    expect(inheritedReply.compareDocumentPosition(fromSource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(fromSource.compareDocumentPosition(localQuestion) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText(LATEST_ASSISTANT_MESSAGE)).not.toBeInTheDocument();
+
+    fireEvent.click(fromSource);
     await waitFor(() => expect(useConversationStore.getState().activeConversationId).toBe(source.id));
     expect(screen.getByText(LATEST_ASSISTANT_MESSAGE)).toBeVisible();
-    expect(screen.queryByText('以下為分支對話')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `從 · ${source.title}` })).not.toBeInTheDocument();
+    const returnedReply = view!.container.querySelector('[data-message-id="assistant-previous"]');
+    expect(sourceReply).not.toBeNull();
+    expect(returnedReply).not.toBeNull();
+    expect(scrollIntoView.mock.contexts).toContain(returnedReply);
+    scrollIntoView.mockRestore();
   }, 15000);
 });

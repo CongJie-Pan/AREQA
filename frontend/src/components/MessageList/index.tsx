@@ -9,6 +9,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { ArrowDown } from 'lucide-react';
+import { BranchIcon } from '@/components/ConversationBranch/BranchIcon';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useNotesStore } from '@/store/notes';
@@ -26,6 +27,30 @@ const EMPTY_STATE_BACKSPACE_SPEED_MS = 22;
 const EMPTY_STATE_HOLD_MS = 5000;
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
+interface BranchDestination {
+  label: string;
+  title: string;
+  onOpen?: () => void;
+}
+
+function BranchDivider({ label, title, onOpen }: BranchDestination) {
+  const { styles } = useStyles();
+  const text = `${label} · ${title}`;
+  const content = <><BranchIcon /><span>{text}</span></>;
+
+  return (
+    <div className={styles.branchDivider}>
+      {onOpen ? (
+        <button type="button" className={styles.branchDestination} title={text} onClick={onOpen}>
+          {content}
+        </button>
+      ) : (
+        <span className={styles.branchDestination} title={text}>{content}</span>
+      )}
+    </div>
+  );
+}
+
 export interface MessageListProps {
   /** Reserve scrollable space beneath the last message for the voice logo. */
   liveVoice?: boolean;
@@ -33,7 +58,8 @@ export interface MessageListProps {
   className?: string;
   /** Callback when regenerate button is clicked */
   onBranch?: (messageId: string) => void;
-  branchBoundary?: { messageId: string; label: string };
+  branchBoundary?: BranchDestination & { messageId: string };
+  childBranches?: (BranchDestination & { id: string })[];
   onRegenerate?: (messageId: string) => void;
   /** Callback when edit is submitted for user or assistant messages */
   onEdit?: (messageId: string, newContent: string) => Promise<void> | void;
@@ -187,6 +213,7 @@ export function MessageList({
   liveVoice = false,
   onBranch,
   branchBoundary,
+  childBranches = [],
   onRegenerate,
   onEdit,
   onDeleteLatestTurn,
@@ -344,7 +371,7 @@ export function MessageList({
   }, []);
 
   useEffect(() => {
-    if (!activeConversationId || messages.length === 0) return;
+    if (!activeConversationId || isMessageHandoffLoading || messages.length === 0) return;
 
     const sourceMessageId = consumeSourceMessageFocus(activeConversationId);
     if (!sourceMessageId) return;
@@ -378,7 +405,7 @@ export function MessageList({
       cancelAnimationFrame(frameId);
       if (clearHighlightTimer) window.clearTimeout(clearHighlightTimer);
     };
-  }, [activeConversationId, messages]);
+  }, [activeConversationId, isMessageHandoffLoading, messages]);
 
   if (messages.length === 0 && isMessageHandoffLoading) {
     // Keep the transcript quiet while a saved conversation is loading. Rendering
@@ -394,7 +421,7 @@ export function MessageList({
   }
 
   // Show empty state
-  if (messages.length === 0) {
+  if (messages.length === 0 && childBranches.length === 0) {
     const emptyStateLines = [
       t('emptyStateGreeting'),
       t('emptyStateLearningPrompt'),
@@ -451,56 +478,59 @@ export function MessageList({
             messages[index - 1].role === 'user';
 
           return (
-            <MessageItem
-              key={message.id}
-              message={message}
-              isStreaming={Boolean(message.isStreaming || (isCurrentStreaming && isStreaming))}
-              isLast={isLast}
-              className={cx(
-                isAssistantAfterUser && 'assistant-after-user',
-                message.id === focusedSourceMessageId && styles.sourceFocusedMessage,
-              )}
-              onSelectSuggestion={onSelectSuggestion}
-              thinking={
-                isCurrentStreaming
-                  ? {
-                      content: thinkingContent,
-                      isThinking,
-                    }
-                  : undefined
-              }
-              ragInfo={
-                isCurrentStreaming && isStreaming
-                  ? {
-                      status: ragStatus,
-                      message: ragMessage,
-                      sources: ragSources,
-                    }
-                  : undefined
-              }
-              onBranch={message.role === 'assistant' ? onBranch : undefined}
-              branchBoundaryLabel={branchBoundary?.messageId === message.id ? branchBoundary.label : undefined}
-              onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
-              onAddNote={message.role === 'assistant' && !isStreaming ? onAddNote : undefined}
-              isSavedNote={message.role === 'assistant' ? savedMessageIds.has(message.id) : false}
-              onDeleteLatestTurn={
-                message.role === 'assistant' && isLast && !isStreaming
-                  ? onDeleteLatestTurn
-                  : undefined
-              }
-              onFeedback={
-                message.role === 'assistant' && message.userId !== 'guest'
-                  ? handleFeedback
-                  : undefined
-              }
-              onEdit={
-                message.role === 'user' || (message.role === 'assistant' && !isStreaming)
-                  ? onEdit
-                  : undefined
-              }
-            />
+            <React.Fragment key={message.id}>
+              <MessageItem
+                message={message}
+                isStreaming={Boolean(message.isStreaming || (isCurrentStreaming && isStreaming))}
+                isLast={isLast}
+                className={cx(
+                  isAssistantAfterUser && 'assistant-after-user',
+                  message.id === focusedSourceMessageId && styles.sourceFocusedMessage,
+                )}
+                onSelectSuggestion={onSelectSuggestion}
+                thinking={
+                  isCurrentStreaming
+                    ? {
+                        content: thinkingContent,
+                        isThinking,
+                      }
+                    : undefined
+                }
+                ragInfo={
+                  isCurrentStreaming && isStreaming
+                    ? {
+                        status: ragStatus,
+                        message: ragMessage,
+                        sources: ragSources,
+                      }
+                    : undefined
+                }
+                onBranch={message.role === 'assistant' ? onBranch : undefined}
+                onRegenerate={message.role === 'assistant' ? onRegenerate : undefined}
+                onAddNote={message.role === 'assistant' && !isStreaming ? onAddNote : undefined}
+                isSavedNote={message.role === 'assistant' ? savedMessageIds.has(message.id) : false}
+                onDeleteLatestTurn={
+                  message.role === 'assistant' && isLast && !isStreaming
+                    ? onDeleteLatestTurn
+                    : undefined
+                }
+                onFeedback={
+                  message.role === 'assistant' && message.userId !== 'guest'
+                    ? handleFeedback
+                    : undefined
+                }
+                onEdit={
+                  message.role === 'user' || (message.role === 'assistant' && !isStreaming)
+                    ? onEdit
+                    : undefined
+                }
+              />
+              {branchBoundary?.messageId === message.id && <BranchDivider {...branchBoundary} />}
+            </React.Fragment>
           );
         })}
+
+        {childBranches.map((branch) => <BranchDivider key={branch.id} {...branch} />)}
 
         {liveVoice ? (
           <div className={styles.voiceSpacer} aria-hidden="true" />

@@ -1669,6 +1669,68 @@ quoteBlockContent: css`
     }
   `,
 
+  branchDivider: css`
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+    width: 90%;
+    max-width: 800px;
+    margin: 8px auto 16px;
+    color: var(--areqa-message-action-color);
+
+    @media (max-width: 768px) {
+      width: calc(100% - 32px);
+    }
+
+    &::before, &::after {
+      content: '';
+      flex: 1;
+      min-width: 12px;
+      border-top: 1px dashed currentColor;
+      opacity: 0.4;
+    }
+  `,
+
+  branchDestination: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 85%;
+    min-height: 32px;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.8125rem;
+
+    & > svg { flex: none; }
+
+    & > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &:is(button) {
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+
+      &:hover, &:focus-visible {
+        color: var(--areqa-message-action-hover-color);
+      }
+    }
+  `,
+
+  replyActionsMenu: css`
+    &.ant-dropdown-menu .ant-dropdown-menu-item > .ant-dropdown-menu-item-icon {
+      margin-inline-end: 8px;
+    }
+  `,
+
   // Action buttons container
   actionButtons: css`
     display: flex;

@@ -9,6 +9,11 @@ import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 const render: typeof rtlRender = (ui, options) => rtlRender(ui, { wrapper: UserPreferencesProvider, ...options });
 
+async function clickReplyMenuAction(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: '更多回覆操作' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name }));
+}
+
 vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 
 // Mock child components to isolate tests
@@ -176,7 +181,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByTestId('rag-status-panel')).not.toBeInTheDocument();
   });
 
-  it('calls the latest-turn delete callback from the assistant action row', () => {
+  it('calls the latest-turn delete callback from the assistant action row', async () => {
     const onDeleteLatestTurn = vi.fn();
 
     render(
@@ -187,7 +192,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '刪除對話' }));
+    await clickReplyMenuAction('刪除對話');
 
     expect(onDeleteLatestTurn).toHaveBeenCalledWith('msg-1');
   });
@@ -236,7 +241,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     expect(editor).toHaveTextContent('old answer');
     expect(editor.closest('.assistantBubble')).not.toBeNull();
@@ -277,7 +282,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     expect(editor).toHaveTextContent('parent');
     expect(editor).toHaveTextContent('child');
@@ -321,7 +326,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     editor.innerHTML = '<div><ul><li data-depth="0">test</li></ul></div>';
     fireEvent.input(editor);
@@ -337,7 +342,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
         onEdit={onEdit}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
 
     const reopenedEditor = screen.getByRole('textbox', { name: '編輯訊息' });
     expect(reopenedEditor.querySelector('ul li')).toHaveTextContent('test');
@@ -354,7 +359,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     editor.innerHTML = '<p>/</p>';
     const textNode = editor.querySelector('p')?.firstChild;
@@ -400,7 +405,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     fireEvent.paste(editor, {
       clipboardData: {
@@ -426,7 +431,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     editor.innerHTML = '<p>draft answer</p>';
     fireEvent.input(editor);
@@ -474,7 +479,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     });
   });
 
-  it('cancels assistant reply editing without saving changes', () => {
+  it('cancels assistant reply editing without saving changes', async () => {
     const onEdit = vi.fn();
 
     render(
@@ -484,7 +489,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '編輯訊息' }));
+    await clickReplyMenuAction('編輯訊息');
     const editor = screen.getByRole('textbox', { name: '編輯訊息' });
     editor.innerHTML = '<p>discarded answer</p>';
     fireEvent.input(editor);
@@ -503,10 +508,11 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       </UserPreferencesProvider>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '朗讀回覆' }));
+    await clickReplyMenuAction('朗讀回覆');
 
     expect(createReadAloudAudio).toHaveBeenCalledWith('重點：請慢慢讀。', expect.any(AbortSignal));
-    expect(await screen.findByRole('button', { name: '停止朗讀' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '更多回覆操作' }));
+    expect(await screen.findByRole('menuitem', { name: '停止朗讀' })).toBeEnabled();
     expect(MockAudio.instances[0]?.src).toBe('blob:read-aloud');
     expect(MockAudio.instances[0]?.play).toHaveBeenCalled();
   });
