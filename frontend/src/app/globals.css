@@ -212,16 +212,9 @@ html[lang='en'] body {
   z-index: 120;
 }
 
-@media (min-width: 769px) {
-  .areqa-chat-sidebar-floating-action[data-desktop-collapsed='false'] {
-    left: calc(var(--areqa-sidebar-width, 280px) - 52px);
-  }
-}
-
-@media (max-width: 768px) {
-  .areqa-chat-sidebar-floating-action[data-mobile-open='true'] {
-    left: calc(min(280px, 100vw - 48px) - 52px);
-  }
+.areqa-chat-sidebar-floating-action[data-sidebar-open='true'] {
+  top: max(4px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
 }
 
 .areqa-chat-sidebar-toggle {
@@ -233,37 +226,20 @@ html[lang='en'] body {
   height: 36px;
   cursor: pointer;
   touch-action: manipulation;
-  border: 1px solid color-mix(in srgb, var(--foreground) 20%, var(--areqa-sidebar-background));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--foreground) 6%, var(--areqa-sidebar-background));
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--foreground);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  transition: background-color 160ms ease-out, border-color 160ms ease-out,
-    box-shadow 160ms ease-out, transform 160ms ease-out;
 
   @media (hover: hover) and (pointer: fine) {
-    &:hover {
-      background: color-mix(in srgb, #d7a04a 20%, var(--areqa-sidebar-background));
-      border-color: color-mix(in srgb, #d7a04a 65%, var(--areqa-sidebar-background));
-      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
-      transform: translateY(-1px);
-    }
+    &:hover { color: var(--areqa-citation-color); }
   }
 
-  &:active {
-    transform: translateY(0) scale(0.95);
-    background: color-mix(in srgb, #d7a04a 26%, var(--areqa-sidebar-background));
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  }
+  &:active { opacity: 0.65; }
 
   &:focus-visible {
     outline: 2px solid #d8a25c;
     outline-offset: 3px;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    transition: none;
-    &:hover, &:active { transform: none; }
   }
 }
 

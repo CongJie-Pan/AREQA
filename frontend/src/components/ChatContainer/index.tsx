@@ -724,9 +724,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
       <div
         className={cx('areqa-chat-sidebar-floating-action', styles.sidebarFloatingAction)}
         data-sidebar-open={sidebarOpen}
-        data-mobile-open={mobileOpen}
-        data-desktop-collapsed={desktopCollapsed}
-        style={{ '--areqa-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
       >
         <Tooltip
           title={t(sidebarOpen ? 'closeSidebar' : 'openSidebar')}
@@ -743,8 +740,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
             data-mobile-open={mobileOpen}
             type="button"
           >
-            <PanelLeftOpen size={20} data-sidebar-icon="open" aria-hidden="true" />
-            <PanelLeftClose size={20} data-sidebar-icon="close" aria-hidden="true" />
+            <PanelLeftOpen size={17} data-sidebar-icon="open" aria-hidden="true" />
+            <PanelLeftClose size={17} data-sidebar-icon="close" aria-hidden="true" />
           </button>
         </Tooltip>
       </div>

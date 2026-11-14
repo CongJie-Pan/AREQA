@@ -86,7 +86,8 @@ export const useStyles = createStyles(({ css }) => ({
   `,
 
   logoContainerExternalToggle: css`
-    padding-right: 64px;
+    padding-inline-start: calc(max(8px, env(safe-area-inset-left)) + 38px);
+    padding-top: max(4px, env(safe-area-inset-top));
   `,
 
   logo: css`

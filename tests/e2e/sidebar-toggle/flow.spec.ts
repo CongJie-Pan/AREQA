@@ -17,12 +17,13 @@ for (const width of [390, 768, 769, 1100]) {
         return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
       })).toBe(true);
       const open = await toggle.getAttribute('aria-expanded') === 'true';
-      const sidebarBox = await page.locator('.areqa-chat-sidebar').boundingBox();
       const buttonBox = await toggle.boundingBox();
-      expect(sidebarBox).not.toBeNull();
       expect(buttonBox).not.toBeNull();
-      const expectedLeft = open ? sidebarBox!.width - 52 : 16;
-      expect(buttonBox!.x).toBeCloseTo(expectedLeft, 0);
+      expect(buttonBox!.x).toBeCloseTo(open ? 8 : 16, 0);
+      if (open) {
+        const brandBox = await page.locator('.areqa-conversation-logo-wrapper').boundingBox();
+        expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(brandBox!.x);
+      }
       await toggle.click();
       await expect(toggle).toHaveAttribute('aria-expanded', String(count % 2 === 0 ? !initial : initial));
     }
@@ -68,18 +69,14 @@ for (const theme of ['light', 'dark']) {
     const toggle = page.locator('.areqa-chat-sidebar-toggle');
     await expect(toggle).toBeVisible();
     await page.mouse.move(600, 400);
-    const background = await toggle.evaluate(element => getComputedStyle(element).backgroundColor);
-    const shadow = await toggle.evaluate(element => getComputedStyle(element).boxShadow);
-    await expect(toggle).toHaveCSS('border-radius', '10px');
+    const color = await toggle.evaluate(element => getComputedStyle(element).color);
+    await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(toggle).toHaveCSS('box-shadow', 'none');
     await toggle.hover();
     await expect(page.getByRole('tooltip')).toBeVisible();
-    await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).boxShadow)).not.toBe(shadow);
-    await expect.poll(() => toggle.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).m42)).toBe(-1);
-    await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(background);
-    await page.mouse.down();
-    await expect.poll(() => toggle.evaluate(element => new DOMMatrix(getComputedStyle(element).transform).a)).toBeCloseTo(0.95, 2);
+    await expect.poll(() => toggle.evaluate(element => getComputedStyle(element).color)).not.toBe(color);
+    await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await page.mouse.move(600, 400);
-    await page.mouse.up();
     await toggle.focus();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
@@ -118,11 +115,9 @@ test.describe('sidebar first paint without client scripts', () => {
       }));
       await page.goto('/sidebar-first-paint');
       const toggle = page.getByRole('button', { name: 'Open sidebar' });
-      await expect(toggle).toHaveCSS('border-radius', '10px');
-      await expect(toggle).toHaveCSS('border-top-width', '1px');
-      await expect(toggle).toHaveCSS('border-top-style', 'solid');
-      await expect(toggle).not.toHaveCSS('box-shadow', 'none');
-      await expect(toggle).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await expect(toggle).toHaveCSS('border-top-width', '0px');
+      await expect(toggle).toHaveCSS('box-shadow', 'none');
+      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     });
   }
 });
