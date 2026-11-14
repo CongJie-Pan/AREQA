@@ -31,6 +31,26 @@ for (const width of [390, 768, 769, 1100]) {
   });
 }
 
+test('dragging to the visible minimum collapses before pointer release', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 860 });
+  await page.goto('/');
+  const handle = page.locator('.areqa-chat-sidebar-resize');
+  const toggle = page.locator('.areqa-chat-sidebar-toggle');
+  await expect(handle).toBeVisible();
+  const box = (await handle.boundingBox())!;
+  const startX = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(startX - 59, y);
+  await expect(handle).toHaveAttribute('aria-valuenow', '221');
+  await page.mouse.move(startX - 60, y);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await page.mouse.up();
+  await toggle.click();
+  await expect(handle).toHaveAttribute('aria-valuenow', '280');
+});
+
 test('content compositing cannot move or block the navigation control', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 860 });
   await page.goto('/');
@@ -111,10 +131,26 @@ test.describe('sidebar first paint without client scripts', () => {
       await page.route('**/sidebar-first-paint', route => route.fulfill({
         contentType: 'text/html',
         body: `<html data-interface-theme="${theme}"><head><meta charset="utf-8"><link rel="stylesheet" href="/@fs${cssPath}?direct"></head><body>
+          <div class="areqa-chat-sidebar" data-mobile-open="false">
+            <div class="areqa-conversation-list">
+              <div class="areqa-conversation-logo-row areqa-conversation-logo-row-external-toggle">AREQA</div>
+              <div class="areqa-conversation-actions">
+                <button class="areqa-conversation-new-button">New chat</button>
+                <button class="areqa-conversation-search-button">Search chats</button>
+              </div>
+              <div class="areqa-conversation-scroll-list">
+                <div class="areqa-conversation-item">Sample conversation</div>
+              </div>
+            </div>
+          </div>
           <button class="areqa-chat-sidebar-toggle" aria-label="Open sidebar">☰</button>
         </body></html>`,
       }));
       await page.goto('/sidebar-first-paint');
+      await expect(page.locator('.areqa-conversation-logo-row')).toHaveCSS('padding-left', '46px');
+      await expect(page.locator('.areqa-conversation-actions')).toHaveCSS('flex-direction', 'column');
+      await expect(page.getByRole('button', { name: 'Search chats' })).toHaveCSS('min-height', '34px');
+      await expect(page.locator('.areqa-conversation-item')).toHaveCSS('min-height', '34px');
       const toggle = page.getByRole('button', { name: 'Open sidebar' });
       await expect(toggle).toHaveCSS('border-top-width', '0px');
       await expect(toggle).toHaveCSS('box-shadow', 'none');
