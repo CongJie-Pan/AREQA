@@ -139,6 +139,78 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
+  exportButton: css`
+    &[aria-expanded='true'], &.ant-dropdown-open {
+      background: ${token.colorFillTertiary};
+      color: ${token.colorText};
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--areqa-citation-border);
+      outline-offset: 2px;
+    }
+  `,
+
+  exportMenu: css`
+    &.ant-dropdown-menu {
+      min-width: 210px;
+      padding: 6px;
+      border: 1px solid var(--areqa-subtle-border);
+      border-radius: 12px;
+    }
+
+    .ant-dropdown-menu-item-group-title {
+      padding: 8px 8px 6px;
+      color: var(--areqa-message-muted-text);
+      font-size: 12px;
+    }
+
+    .ant-dropdown-menu-item-group-list > .ant-dropdown-menu-item {
+      margin: 0;
+      padding: 4px 8px;
+      border-radius: 8px;
+    }
+  `,
+
+  exportFormat: css`
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+  `,
+
+  exportFormatIcon: css`
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border-radius: 7px;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  `,
+
+  markdownFormat: css`
+    color: var(--areqa-citation-color);
+  `,
+
+  pdfFormat: css`
+    color: #f2a2a5;
+    html[data-interface-theme='light'] & { color: #a63543; }
+  `,
+
+  wordFormat: css`
+    color: #a8c4f5;
+    html[data-interface-theme='light'] & { color: #315d9f; }
+  `,
+
+  exportExtension: css`
+    margin-inline-start: auto;
+    color: var(--areqa-message-muted-text);
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 11px;
+    font-weight: 400;
+  `,
+
   shareButton: css`
     pointer-events: auto;
     display: inline-flex;

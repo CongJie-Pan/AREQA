@@ -236,16 +236,13 @@ export type TranslationKey =
   | 'saveFeedbackFailed'
   | 'openSidebar'
   | 'shareConversation'
-  | 'shareConversationMenu'
+  | 'downloadConversation'
   | 'shareLoginRequired'
   | 'shareNoConversation'
   | 'shareLinkCopied'
   | 'shareLinkCreated'
   | 'shareLinkFailed'
   | 'historySyncPending'
-  | 'exportMarkdown'
-  | 'exportPdf'
-  | 'exportDocx'
   | 'exportConversation'
   | 'exportPdfLoading'
   | 'exportDocxLoading'
@@ -496,16 +493,13 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     saveFeedbackFailed: '儲存評價失敗',
     openSidebar: '打開選單',
     shareConversation: '分享',
-    shareConversationMenu: '對話操作選單',
+    downloadConversation: '下載對話',
     shareLoginRequired: '請先登入後再分享對話。',
     shareNoConversation: '目前沒有可分享的對話。',
     shareLinkCopied: '已公開並複製分享連結',
     shareLinkCreated: '分享連結已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     historySyncPending: '部分訊息尚未備份至雲端。請保留此瀏覽器資料，連線恢復後將自動重試。',
-    exportMarkdown: '下載為 Markdown (.md)',
-    exportPdf: '下載為 PDF (.pdf)',
-    exportDocx: '下載為 Word (.docx)',
     exportConversation: '匯出對話',
     exportPdfLoading: '正在產生 PDF，請稍候...',
     exportDocxLoading: '正在產生 Word 文件，請稍候...',
@@ -730,16 +724,13 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     saveFeedbackFailed: '储存评价失败',
     openSidebar: '打开菜单',
     shareConversation: '分享',
-    shareConversationMenu: '对话操作菜单',
+    downloadConversation: '下载对话',
     shareLoginRequired: '请先登入后再分享对话。',
     shareNoConversation: '目前没有可分享的对话。',
     shareLinkCopied: '已公开并复制分享链接',
     shareLinkCreated: '分享链接已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     historySyncPending: '部分消息尚未备份到云端。请保留此浏览器数据，连接恢复后将自动重试。',
-    exportMarkdown: '下载为 Markdown (.md)',
-    exportPdf: '下载为 PDF (.pdf)',
-    exportDocx: '下载为 Word (.docx)',
     exportConversation: '汇出对话',
     exportPdfLoading: '正在生成 PDF，请稍候...',
     exportDocxLoading: '正在生成 Word 文件，请稍候...',
@@ -964,16 +955,13 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     saveFeedbackFailed: 'Failed to save feedback',
     openSidebar: 'Open menu',
     shareConversation: 'Share',
-    shareConversationMenu: 'Conversation actions',
+    downloadConversation: 'Download conversation',
     shareLoginRequired: 'Log in before sharing a conversation.',
     shareNoConversation: 'There is no conversation to share yet.',
     shareLinkCopied: 'Public share link copied',
     shareLinkCreated: 'Share link created: ',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     historySyncPending: 'Some messages are not backed up yet. Keep this browser data; sync will retry automatically.',
-    exportMarkdown: 'Download as Markdown (.md)',
-    exportPdf: 'Download as PDF (.pdf)',
-    exportDocx: 'Download as Word (.docx)',
     exportConversation: 'Export conversation',
     exportPdfLoading: 'Creating PDF...',
     exportDocxLoading: 'Creating Word document...',

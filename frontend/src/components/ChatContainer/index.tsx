@@ -7,7 +7,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, MoreHorizontal, FileText, FileImage, FileCode, Share2 } from 'lucide-react';
+import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2 } from 'lucide-react';
 import { App, Dropdown, Tooltip } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
@@ -815,11 +815,27 @@ export function ChatContainer({ className }: ChatContainerProps) {
                       </button>
                       <Dropdown
                         menu={{
-                          items: [
-                            { key: 'md', label: t('exportMarkdown'), icon: <FileCode size={16} /> },
-                            { key: 'pdf', label: t('exportPdf'), icon: <FileImage size={16} /> },
-                            { key: 'docx', label: t('exportDocx'), icon: <FileText size={16} /> },
-                          ],
+                          className: styles.exportMenu,
+                          items: [{
+                            type: 'group',
+                            label: t('downloadConversation'),
+                            children: [
+                              { key: 'md', name: 'Markdown', Icon: FileCode, tone: styles.markdownFormat },
+                              { key: 'pdf', name: 'PDF', Icon: FileType, tone: styles.pdfFormat },
+                              { key: 'docx', name: 'Word', Icon: FileText, tone: styles.wordFormat },
+                            ].map(({ key, name, Icon, tone }) => ({
+                              key,
+                              label: (
+                                <span className={styles.exportFormat}>
+                                  <span className={cx(styles.exportFormatIcon, tone)}>
+                                    <Icon size={16} aria-hidden="true" />
+                                  </span>
+                                  <span>{name}</span>
+                                  <span className={styles.exportExtension}>.{key}</span>
+                                </span>
+                              ),
+                            })),
+                          }],
                           onClick: async (info) => {
                             try {
                               if (info.key === 'md') {
@@ -841,14 +857,16 @@ export function ChatContainer({ className }: ChatContainerProps) {
                           }
                         }}
                         trigger={['click']}
-                        placement="bottomLeft"
+                        placement="bottomRight"
                       >
                         <button
-                          className={cx(styles.iconActionButton)}
-                          aria-label={t('shareConversationMenu')}
+                          className={cx(styles.iconActionButton, styles.exportButton)}
+                          aria-label={t('downloadConversation')}
+                          aria-haspopup="menu"
+                          title={t('downloadConversation')}
                           type="button"
                         >
-                          <MoreHorizontal size={20} />
+                          <Download size={17} aria-hidden="true" />
                         </button>
                       </Dropdown>
                     </>
