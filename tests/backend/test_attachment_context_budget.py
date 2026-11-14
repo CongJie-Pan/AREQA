@@ -52,7 +52,7 @@ async def test_attachments_preserved_with_independent_budget(kind, prior, search
                                    context_tokens=32768, retrieval_context=prefix)
     assert result.messages[-1]['content'][-1] == part
     assert messages == before
-    assert token_bound(result.messages) + 3200 + 1024 <= 32768
+    assert token_bound(result.messages) <= (32768 - 3200 - 1024) * 3
     create.assert_not_awaited()
     units, count = attachment_cost(messages)
     assert 0 < units < settings.conversation_attachment_tokens

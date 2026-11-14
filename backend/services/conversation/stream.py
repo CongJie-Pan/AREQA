@@ -193,6 +193,8 @@ class ConversationStreamService:
                 elif reason in ('attachment_parse_timeout', 'attachment_parse_failed'):
                     content = "附件解析逾時或無法完成，請改傳相關頁面、較小的檔案，或可複製文字的版本。"
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0}]}, ensure_ascii=False)}\n\n"
+                # Report the visible notice as the final answer so post-turn work matches the UI.
+                yield f"event: accumulator\ndata: {json.dumps({'accumulator': content, 'image_slots': [], 'generated_blocks': []}, ensure_ascii=False)}\n\n"
                 return
             messages = prepared.messages
             if prepared.notice:

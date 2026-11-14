@@ -36,6 +36,31 @@ import { generateConversationImage, regenerateConversationImage } from '@/servic
  * Allows cancellation of ongoing requests
  */
 let currentAbortController: AbortController | null = null;
+
+// Shown when a stream finishes without any answer text or display blocks.
+const EMPTY_STREAM_ANSWER = '這次沒有產生回答內容，請重新嘗試。';
+
+/**
+ * Replace an empty completed answer with a visible notice.
+ *
+ * Args:
+ *   answer: Text accumulated from the stream.
+ *   blocks: Structured answer blocks received from the stream.
+ *   messageId: Assistant message being finalized.
+ *
+ * Returns:
+ *   The original answer, or the notice when nothing displayable arrived.
+ *
+ * Side Effects:
+ *   Updates the visible message and logs a safe event without any content.
+ */
+function fillEmptyStreamAnswer(answer: string, blocks: AnswerBlock[], messageId: string): string {
+  if (answer.trim() || blocks.length > 0) return answer;
+  logger.warn('chat.empty_stream_answer', { messageId });
+  useChatStore.getState().updateMessageContent(messageId, EMPTY_STREAM_ANSWER);
+  useChatStore.setState({ currentContent: EMPTY_STREAM_ANSWER });
+  return EMPTY_STREAM_ANSWER;
+}
 // Retain one turn's upload in memory so retry works without persisting file bytes.
 let lastAttachmentUpload: {
   conversationId: string;
@@ -529,6 +554,9 @@ export async function sendMessage(
     if (displayContent !== undefined) {
       chatStore.updateMessageContent(assistantMessageId, displayContent);
       useChatStore.setState({ currentContent: displayContent });
+    }
+    if (!isVoiceResponse) {
+      answerContent = fillEmptyStreamAnswer(answerContent, answerBlocksPayload, assistantMessageId);
     }
     chatStore.endStreaming(
       sourcesPayload.length > 0 ? sourcesPayload : undefined,
@@ -1349,6 +1377,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
         },
 
         onDone: async (suggestions?: string[]) => {
+          answerContent = fillEmptyStreamAnswer(answerContent, answerBlocksPayload, messageId);
           // Pass sourcesPayload directly to avoid race condition where
           // state.ragSources may not yet be set when endStreaming reads it.
           chatStore.endStreaming(
@@ -1629,6 +1658,7 @@ export async function editUserMessage(
         },
 
         onDone: async (suggestions?: string[]) => {
+          answerContent = fillEmptyStreamAnswer(answerContent, answerBlocksPayload, assistantMessageId);
           chatStore.endStreaming(
             sourcesPayload.length > 0 ? sourcesPayload : undefined,
             answerBlocksPayload.length > 0 ? answerBlocksPayload : undefined,

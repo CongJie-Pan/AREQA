@@ -18,7 +18,7 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `MODEL_CONVERSATION_SUMMARY` | `google/gemini-3.1-flash-lite` | Independent summary model; main answer and GUM models are unchanged |
-| `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conversation text allowance including tool/output reservations |
+| `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conversation text token allowance including tool/output reservations (about 85 KB of chat text) |
 | `CONVERSATION_ATTACHMENT_TOKENS` | 131072 | Separate estimated attachment reading allowance |
 | `CONVERSATION_PROVIDER_CONTEXT_TOKENS` | 262144 | Combined provider allowance; configure at or below the selected answer model context |
 | `CONVERSATION_SUMMARY_TOKENS` | 1536 | Maximum generated summary tokens |
@@ -30,8 +30,11 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 
 Conversation text estimates use serialized UTF-8 bytes plus framing as a
 conservative text proxy, excluding native file/image payloads and server-marked
-uploaded text parts. The budget reserves completion tokens, tool schemas and
-1024 units of safety margin. Native PDF/image expansion is provider-dependent;
+uploaded text parts. The token allowance minus completion tokens and a 1024-token
+safety margin is converted to bytes at 3 bytes per token (about one CJK character
+per token; English averages about 4 bytes per token), then tool schema bytes are
+subtracted. Before 2026-11-14 tokens were compared to bytes 1:1, which left about
+26 KB and dropped every recent turn in long web-search conversations. Native PDF/image expansion is provider-dependent;
 this estimator cannot guarantee the expanded multimodal token count. Tool and
 attachment provider limits continue to apply.
 
