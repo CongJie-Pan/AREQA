@@ -25,6 +25,29 @@ class PdfTextPart(AttachmentPart):
     """A validated PDF represented by extracted text in the provider payload."""
 
 
+class DocumentPart(AttachmentPart):
+    """Uploaded document content re-sent unchanged on every follow-up turn.
+
+    Only parts whose bytes are identical across turns (native PDFs, complete
+    extracted text) use this marker, so they can sit in a provider-cached prefix.
+    """
+
+
+class PdfDocumentTextPart(PdfTextPart, DocumentPart):
+    """Complete extracted PDF text that is identical across follow-up turns."""
+
+
+class CoverageNotePart(AttachmentPart):
+    """Per-turn document coverage note for the model.
+
+    ``user_notice`` is a learner-facing sentence appended after the answer when
+    the model only received part of a document. It is an instance attribute,
+    not a dict key, so it is never serialized to the provider.
+    """
+
+    user_notice: str = ""
+
+
 def is_attachment(value: Any) -> bool:
     """Identify upload markers and native provider file/image content parts."""
     return isinstance(value, dict) and (

@@ -264,6 +264,13 @@ class OrchestrationExecutionMixin:
                 )
         elif last_user_msg and self.client and turn_plan_enabled:
             trace.mark("policy_classifier_skipped")
+        if policy_task is not None:
+            self._prefetch_parts_rewrite(
+                run_state, messages=messages, last_user_msg=last_user_msg,
+                turn_plan=turn_plan if turn_plan_enabled else None,
+                use_rag=use_rag, use_web_search=use_web_search,
+                has_attachments=has_attachments, conversation_id=conversation_id,
+            )
 
         rag_queries = []
         cached_results = None

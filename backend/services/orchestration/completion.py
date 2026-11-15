@@ -63,6 +63,11 @@ async def complete_answer(service, *, user_id, conversation_id, last_user_msg, m
             len(preverified_image_blocks or {}),
         )
 
+    # The answer is final here; let the client finish the turn while suggestions
+    # (about 1 s of extra model time) are still being generated.
+    trace.mark("answer_complete_sent")
+    yield sse_adapter.encode_legacy("event: answer_complete\ndata: {}\n\n", run_context.run_id)
+
     async for event in service._node_post_generation(
         last_user_msg,
         answer_content_accumulator,

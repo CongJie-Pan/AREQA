@@ -221,6 +221,7 @@ class TurnLatencyTrace:
             "conversation_id": self.conversation_id,
             "elapsed_ms": elapsed_ms,
             "terminal_sent_ms": terminal_sent_ms,
+            "answer_complete_ms": self.milestone_elapsed_ms("answer_complete_sent"),
             "time_to_first_answer_ms": first_answer_delta_ms,
             "main_model_started_ms": main_model_started_ms,
             "provider_first_token_ms": provider_first_token_ms,

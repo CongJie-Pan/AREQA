@@ -12,6 +12,8 @@ class ConversationRunState:
 
     context_results: Any = None
     context_prompt: str = ""
+    # Speculative PARTS rewrite started alongside the policy classifier, if any.
+    parts_rewrite_prefetch: Any = None
     web_search_results: list[dict[str, Any]] = field(default_factory=list)
     tool_budget: ToolBudgetTracker = field(
         default_factory=lambda: ToolBudgetTracker(ToolBudget())

@@ -1368,13 +1368,18 @@ function AssistantRichMarkdownEditor({
   );
 }
 
-// New Sub-Component for handling streaming markdown parsing safely
-export function normalizeCitationMarkers(content: string): string {
-  let text = content;
+// Citation chips only make sense when the message carries citation sources.
+// Without them, bracketed numbers such as [10, 100] are ordinary text (ranges,
+// intervals), so the normalizer leaves them alone.
+const CitationSourcesContext = React.createContext(false);
 
+// Code spans, fenced code and math must never be rewritten into links.
+const PROTECTED_MARKDOWN = /(```[\s\S]*?(?:```|$)|`[^`\n]*`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g;
+
+function convertCitationMarkers(text: string): string {
   // Support both full-width and Markdown-style citation markers, e.g.
   // 【文獻5】 and [文獻5], while leaving regular Markdown links untouched.
-  text = text.replace(/[【[]文獻([^】\]]+)[】\]](?!\()/g, (match, markerContent) => {
+  const converted = text.replace(/[【[]文獻([^】\]]+)[】\]](?!\()/g, (match, markerContent) => {
     const nums = markerContent.match(/\d+/g);
     if (nums) {
       return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
@@ -1383,13 +1388,25 @@ export function normalizeCitationMarkers(content: string): string {
   });
 
   // Also support legacy numeric markers such as [5] or [5, 6].
-  return text.replace(/\[([\d\s,、]+)\](?!\()/g, (match, markerContent) => {
+  return converted.replace(/\[([\d\s,、]+)\](?!\()/g, (match, markerContent) => {
     const nums = markerContent.match(/\d+/g);
     if (nums) {
       return nums.map((n: string) => `[${n}](#cite-${n})`).join('');
     }
     return match;
   });
+}
+
+// New Sub-Component for handling streaming markdown parsing safely
+export function normalizeCitationMarkers(
+  content: string,
+  options: { hasCitationSources?: boolean } = {},
+): string {
+  if (!options.hasCitationSources) return content;
+  return content
+    .split(PROTECTED_MARKDOWN)
+    .map((segment, index) => (index % 2 === 1 ? segment : convertCitationMarkers(segment)))
+    .join('');
 }
 
 function StreamingMarkdown({
@@ -1410,9 +1427,10 @@ function StreamingMarkdown({
   const visibleContent = useVoiceReveal(content, voicePlayback, voiceCaption);
   const rootRef = React.useRef<HTMLDivElement>(null);
   useStreamingTailFade(rootRef, animate && !voicePlayback);
+  const hasCitationSources = React.useContext(CitationSourcesContext);
   const processedContent = React.useMemo(() => {
-    return normalizeMessageMarkdown(normalizeCitationMarkers(visibleContent));
-  }, [visibleContent]);
+    return normalizeMessageMarkdown(normalizeCitationMarkers(visibleContent, { hasCitationSources }));
+  }, [visibleContent, hasCitationSources]);
 
   return (
     <div ref={rootRef}>
@@ -2407,7 +2425,14 @@ export const MessageItem = memo(function MessageItem({
     reader.readAsDataURL(imageFile);
   }, [antMessageApi, isUser]);
 
+  const hasCitationSources = Boolean(
+    (message.sources && message.sources.length > 0)
+    || (ragInfo?.sources && ragInfo.sources.length > 0)
+    || (message.citations && message.citations.length > 0),
+  );
+
   return (
+    <CitationSourcesContext.Provider value={hasCitationSources}>
     <div
       className={cx(styles.messageItem, isUser && styles.userMessage, className)}
       data-message-id={message.id}
@@ -2885,6 +2910,7 @@ export const MessageItem = memo(function MessageItem({
         </div>
       )}
     </div>
+    </CitationSourcesContext.Provider>
   );
 });
 

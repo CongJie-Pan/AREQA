@@ -235,3 +235,48 @@ async def test_storage_round_trip_is_scoped_to_the_owner(monkeypatch):
     assert await storage.download_upload_document(user_id="account-2", upload_id=UPLOAD, doc_id="abc") is None
     assert await storage.persist_upload_document(
         user_id=OWNER, upload_id=UPLOAD, doc_id="x", pdf_bytes=b"not a pdf") is None
+
+
+@pytest.mark.asyncio
+async def test_partial_text_carries_learner_notice_naming_only_partial_files(redis, monkeypatch):
+    """R5b (2026-11-15): the answer found its facts but never said one file was partial."""
+    from services.conversation.attachment_budget import CoverageNotePart, DocumentPart
+
+    monkeypatch.setattr(document_store.settings, "chat_upload_context_text_chars", 30_000, raising=False)
+    storage = FakeStorage(fail_download=True)
+    docs = [document_store.DocumentText(f"p{i}.pdf", "application/pdf", 10, f"{i}" * 64, f"Paper {i} " + "z" * n)
+            for i, n in enumerate([32_000, 7_000, 60_000])]
+    await remember(docs, storage)
+
+    parts, summary = await document_store.load_documents(OWNER, follow_up(), "explain", storage=storage)
+
+    note = parts[0]
+    assert isinstance(note, CoverageNotePart)
+    assert "『p2.pdf』" in note.user_notice and "『p1.pdf』" not in note.user_notice
+    assert "user_notice" not in note  # attribute only; never serialized to the provider
+    stable = [part for part in parts if isinstance(part, DocumentPart)]
+    assert len(stable) == 1 and "Paper 1" in stable[0]["text"]  # only the complete document is cacheable
+    assert summary["partial"] == 2
+
+
+@pytest.mark.asyncio
+async def test_complete_text_and_native_parts_are_cacheable_without_notice(redis):
+    from services.conversation.attachment_budget import CoverageNotePart, DocumentPart
+
+    storage = FakeStorage()
+    data = [pdf_bytes([f"Paper {i} body text"]) for i in range(2)]
+    await remember(document_store.extract_documents(
+        [attachment(f"p{i}.pdf", raw) for i, raw in enumerate(data)]), storage)
+
+    parts, summary = await document_store.load_documents(OWNER, follow_up(), "explain", storage=storage)
+
+    assert summary["mode"] == "native"
+    assert isinstance(parts[0], CoverageNotePart) and parts[0].user_notice == ""
+    assert all(isinstance(part, DocumentPart) for part in parts[1:])
+
+    storage.fail_download = True
+    parts, summary = await document_store.load_documents(OWNER, follow_up(), "explain", storage=storage)
+    assert summary == {**summary, "mode": "text", "partial": 0}
+    assert parts[0].user_notice == ""
+    assert all(isinstance(part, DocumentPart) and isinstance(part, PdfTextPart) for part in parts[1:])
+    assert count_pdf_attachments(parts) == 2

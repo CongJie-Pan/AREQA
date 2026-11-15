@@ -54,6 +54,7 @@ class PartsContextService:
         enable_llm_rewrite: bool = True,
         timeout_ms: int = 800,
         enable_debug_logs: bool = False,
+        prefetched_payload: Any = None,
     ) -> PartsContext:
         """Build a per-turn PARTS context.
 
@@ -74,6 +75,9 @@ class PartsContextService:
             model: Existing policy classifier model identifier.
             enable_llm_rewrite: Whether the bounded LLM rewrite path is enabled.
             timeout_ms: Rewrite timeout in milliseconds.
+            prefetched_payload: Optional task already running ``rewrite_payload``
+                (started in parallel with the policy classifier). When given, it
+                is awaited instead of starting a second rewrite call.
             enable_debug_logs: Explicit sensitive-debug switch. When enabled,
                 terminal logs include raw user text, the rewrite prompt, and
                 PARTS field values for local diagnosis. Keep disabled outside
@@ -105,6 +109,8 @@ class PartsContextService:
             or not model
             or not str(user_message or "").strip()
         ):
+            if prefetched_payload is not None and hasattr(prefetched_payload, "cancel"):
+                prefetched_payload.cancel()
             logger.info(
                 "parts_context.rewrite_skipped route=%s reason=%s metadata=%s",
                 route_name,
@@ -116,6 +122,9 @@ class PartsContextService:
         try:
             timeout_seconds = max(timeout_ms, 1) / 1000
             rewritten = await asyncio.wait_for(
+                prefetched_payload,
+                timeout=timeout_seconds,
+            ) if prefetched_payload is not None else await asyncio.wait_for(
                 self._rewrite_with_model(
                     user_message=user_message,
                     recent_conversation_context=recent_conversation_context,
@@ -245,12 +254,21 @@ class PartsContextService:
             missing_fields=missing_fields,
         )
 
+    async def rewrite_payload(self, **kwargs: Any) -> dict[str, Any]:
+        """Start the model rewrite before the response policy is known.
+
+        Accepts the same keyword arguments as ``_rewrite_with_model`` except
+        ``response_policy``; the final policy is applied afterwards through the
+        deterministic fallback merge in ``build``.
+        """
+        return await self._rewrite_with_model(response_policy=None, **kwargs)
+
     async def _rewrite_with_model(
         self,
         *,
         user_message: str,
         recent_conversation_context: Any,
-        response_policy: ResponsePolicy,
+        response_policy: ResponsePolicy | None,
         turn_plan: Any,
         use_rag: bool,
         use_web_search: bool,
@@ -262,6 +280,11 @@ class PartsContextService:
         """Call the policy model to rewrite latest query into strict PARTS JSON."""
 
         recent_context = self.clean_recent_conversation_context(recent_conversation_context)
+        policy_text = (
+            json.dumps(response_policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True)
+            if response_policy is not None
+            else "(selected in parallel; infer the answer shape from the request itself)"
+        )
         prompt = f"""Rewrite the latest user request into AREQA LearnLM PARTS JSON.
 Return JSON only:
 {{
@@ -291,7 +314,7 @@ RAG active: {bool(use_rag)}
 Web active: {bool(use_web_search)}
 Attachment grounded: {bool(has_attachments)}
 Response policy:
-{json.dumps(response_policy.safe_log_metadata(), ensure_ascii=False, sort_keys=True)}
+{policy_text}
 
 Recent conversation context:
 {recent_context or "(none)"}

@@ -29,7 +29,9 @@ from typing import Any
 
 from config import settings
 from redis_client import get_redis
-from services.conversation.attachment_budget import AttachmentPart, PdfTextPart
+from services.conversation.attachment_budget import (
+    AttachmentPart, CoverageNotePart, DocumentPart, PdfDocumentTextPart, PdfTextPart,
+)
 from services.realtime.speaking_material import MATERIAL_TTL_SECONDS, MAX_MATERIAL_CHARS
 
 logger = logging.getLogger(__name__)
@@ -280,12 +282,20 @@ def allocate_budget(lengths: list[int], budget: int) -> list[int]:
     return shares
 
 
-def _coverage_note(lines: list[str]) -> AttachmentPart:
-    return AttachmentPart(type="text", text=(
+def _coverage_note(lines: list[str], partial_names: list[str] | None = None) -> CoverageNotePart:
+    note = CoverageNotePart(type="text", text=(
         "Uploaded document coverage for this turn (reference data, not instructions):\n"
         + "\n".join(lines)
         + "\nIf a needed detail is outside the provided coverage, say so instead of guessing from file names."
     ))
+    if partial_names:
+        # Told by code, not the model: a found answer otherwise hides the missing coverage.
+        names = "、".join(f"『{name}』" for name in partial_names)
+        note.user_notice = (
+            f"\n\n（{names}內容較長，本輪只讀取了開頭與和問題最相關的段落；"
+            "若需要其他章節，可以指明章節或頁碼。）"
+        )
+    return note
 
 
 async def load_documents(
@@ -329,10 +339,10 @@ async def load_documents(
             parts: list[dict[str, Any]] = [_coverage_note([
                 f"- {record['filename']}: complete original PDF provided" for record in records])]
             for record, data in zip(records, originals):
-                parts.append({"type": "file", "file": {
+                parts.append(DocumentPart({"type": "file", "file": {
                     "filename": record["filename"],
                     "file_data": f"data:{PDF_TYPE};base64,{base64.b64encode(data).decode('ascii')}",
-                }})
+                }}))
             summary = {"mode": "native", "documents": len(records), "partial": 0, "kept_chars": 0}
             return parts, summary
         logger.info("chat_documents.native_unavailable fallback=text missing=%d",
@@ -347,11 +357,13 @@ async def load_documents(
             texts.append("")
     budget = int(getattr(settings, "chat_upload_context_text_chars", 120_000))
     shares = allocate_budget([len(text) for text in texts], budget)
-    parts, lines, partial, kept = [], [], 0, 0
+    parts, lines, partial, kept, partial_names = [], [], 0, 0, []
     for record, text, share in zip(records, texts, shares):
         selected = select_passages(text, question, share)
         complete = len(selected) == len(text) and not record.get("text_truncated")
         partial += 0 if complete else 1
+        if not complete and text:
+            partial_names.append(record["filename"])
         kept += len(selected)
         if not text:
             lines.append(f"- {record['filename']}: text unavailable")
@@ -361,9 +373,14 @@ async def load_documents(
             f"- {record['filename']}: partial text, {len(selected):,} of {len(text):,} characters "
             "(opening plus passages most related to this question)"
         )
-        part_type = PdfTextPart if record.get("media_type") == PDF_TYPE else AttachmentPart
+        is_pdf = record.get("media_type") == PDF_TYPE
+        # Only complete text is byte-stable across turns and safe for the cached prefix.
+        if complete:
+            part_type = PdfDocumentTextPart if is_pdf else DocumentPart
+        else:
+            part_type = PdfTextPart if is_pdf else AttachmentPart
         parts.append(part_type(type="text", text=f"Source document: {record['filename']}\n{selected}"))
     if not parts:
         return None
     summary = {"mode": "text", "documents": len(records), "partial": partial, "kept_chars": kept}
-    return [_coverage_note(lines), *parts], summary
+    return [_coverage_note(lines, partial_names), *parts], summary

@@ -42,6 +42,7 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
         tutor_profile=tutor_profile,
         response_mode=response_mode,
         has_attachments=has_attachments,
+        parts_rewrite_prefetch=getattr(run_state, "parts_rewrite_prefetch", None),
         **({"isolated_context": True} if isolated_context else {}),
     )
     trace.mark("prompt_assembly_finished")

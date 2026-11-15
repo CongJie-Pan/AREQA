@@ -22,6 +22,7 @@ from services.conversation.image_markers import ImageRequestSlot as ImageRequest
 from services.conversation.stream_request import (
     _openrouter_session_id as _openrouter_session_id,
 )
+from services.conversation.prompt_cache import apply_document_cache_layout, coverage_user_notice
 from services.conversation.stream_request import build_stream_request
 from services.conversation.response_boundary import StreamingResponseBoundaryFilter
 from services.memory_diagnostics import log_memory_snapshot
@@ -212,6 +213,14 @@ class ConversationStreamService:
                 yield f"event: accumulator\ndata: {json.dumps({'accumulator': content, 'image_slots': [], 'generated_blocks': []}, ensure_ascii=False)}\n\n"
                 return
             messages = prepared.messages
+            retry_base = messages
+            if getattr(settings, "chat_upload_prompt_cache", True):
+                messages, layout = apply_document_cache_layout(messages)
+                if layout:
+                    logger.info(
+                        "orchestration.prompt_cache_layout conversation_id=%s document_parts=%d prefix_hash=%s",
+                        conversation_id, layout.document_parts, layout.prefix_hash,
+                    )
             if prepared.notice:
                 citation_filter = UnavailableCitationFilter()
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': prepared.notice + chr(10) + chr(10)}, 'index': 0}]}, ensure_ascii=False)}\n\n"
@@ -312,7 +321,10 @@ class ConversationStreamService:
                         'attachment_count=%d answer_started=%s',
                         conversation_id, target_model, attempt + 1, attachment_count, provider_started,
                     )
-                    reduced, removed_sources = minimal_retry_context(messages, original_messages, retrieval_context)
+                    # Retry from the pre-layout messages; the reducer understands that shape.
+                    reduced, removed_sources = minimal_retry_context(retry_base, original_messages, retrieval_context)
+                    reduced, _ = apply_document_cache_layout(reduced) if getattr(
+                        settings, "chat_upload_prompt_cache", True) else (reduced, None)
                     if attempt == 0 and not provider_started and reduced != messages:
                         messages = reduced
                         if removed_sources:
@@ -406,6 +418,11 @@ class ConversationStreamService:
                 conversation_id,
                 image_marker_filter.rejected_verified_marker_count,
             )
+        coverage_notice = coverage_user_notice(original_messages) if not tool_calls else ""
+        if coverage_notice:
+            accumulator += coverage_notice
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': coverage_notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+            logger.info("chat_documents.partial_notice conversation_id=%s", conversation_id)
         if finish_reason == "length" and not tool_calls:
             # Silent mid-sentence cuts looked like bugs; tell the learner how to resume.
             notice = "\n\n（回答已達單次長度上限而中斷，可以回覆「繼續」讓我接著說。）"

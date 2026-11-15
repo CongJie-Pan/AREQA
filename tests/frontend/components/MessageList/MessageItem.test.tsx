@@ -181,6 +181,30 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByTestId('rag-status-panel')).not.toBeInTheDocument();
   });
 
+  it('keeps numeric ranges as plain text when the answer has no citation sources', async () => {
+    const { container } = render(
+      <MessageItem message={{ ...baseMessage, content: '時間間隔取 [10, 100]，見表 [9]。' }} />
+    );
+
+    await waitFor(() => expect(container.textContent).toContain('[10, 100]'));
+    expect(container.querySelector('a[href^="#cite-"]')).toBeNull();
+    expect(container.textContent).not.toContain('#cite-10');
+  });
+
+  it('still renders citation chips when the answer carries sources', async () => {
+    const { container } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '結論成立 [5]。',
+          sources: [{ title: 'Source', chunk_id: 'c-5', url: 'https://example.com/5', snippet: 's', score: 1 }],
+        } as any}
+      />
+    );
+
+    await waitFor(() => expect(container.querySelector('a[href="#cite-5"]')).not.toBeNull());
+  });
+
   it('calls the latest-turn delete callback from the assistant action row', async () => {
     const onDeleteLatestTurn = vi.fn();
 

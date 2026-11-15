@@ -196,6 +196,18 @@ export async function createChatStream(
     const decoder = new TextDecoder();
     let pendingCitations: string[] = [];
     let suggestionsFromDone: string[] = [];
+    // Set once the answer is final (answer_complete); later suggestion events
+    // arrive after the turn has already been finalized in the UI.
+    let answerFinalized = false;
+    let suggestionsDelivered = false;
+    const finishAnswer = (suggestions?: string[]) => {
+      if (answerFinalized) return;
+      answerFinalized = true;
+      if (pendingCitations.length > 0) {
+        callbacks.onCitations(pendingCitations);
+      }
+      callbacks.onDone(suggestions);
+    };
 
     // =================================================================
     // STREAM PROCESSING LOOP
@@ -238,10 +250,7 @@ export async function createChatStream(
         // IF: End-of-stream signal received
         // Why: Explicitly close the stream according to protocol.
         if (data === '[DONE]') {
-          if (pendingCitations.length > 0) {
-            callbacks.onCitations(pendingCitations);
-          }
-          callbacks.onDone(suggestionsFromDone);
+          finishAnswer(suggestionsFromDone);
           return;
         }
 
@@ -312,7 +321,14 @@ export async function createChatStream(
           if (eventType === 'suggestions') {
             const suggestions = Array.isArray(chunk) ? chunk.filter((item): item is string => typeof item === 'string') : [];
             logger.info('chat.suggestions_received', { count: suggestions.length });
+            suggestionsDelivered = suggestions.length > 0;
             callbacks.onSuggestions?.(suggestions);
+            continue;
+          }
+
+          if (eventType === 'answer_complete') {
+            logger.info('chat.answer_complete_received', {});
+            finishAnswer([]);
             continue;
           }
 
@@ -323,6 +339,9 @@ export async function createChatStream(
                 : [];
             }
             logger.info('chat.suggestions_done', { count: suggestionsFromDone.length });
+            if (answerFinalized && !suggestionsDelivered && suggestionsFromDone.length > 0) {
+              callbacks.onSuggestions?.(suggestionsFromDone);
+            }
             continue;
           }
 
@@ -371,10 +390,7 @@ export async function createChatStream(
     }
 
     // Stream ended without [DONE] signal (handle gracefully)
-    if (pendingCitations.length > 0) {
-      callbacks.onCitations(pendingCitations);
-    }
-    callbacks.onDone();
+    finishAnswer();
   } catch (error) {
     // Don't call error callback for user-initiated aborts
     if (isAbortError(error)) {

@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     enable_parts_prompt_context: bool = True
     enable_parts_llm_rewrite: bool = True
     enable_parts_llm_rewrite_for_ungrounded_turns: bool = False
+    # Start grounded-turn PARTS rewrites alongside the policy classifier instead of after it.
+    enable_parts_rewrite_prefetch: bool = True
     parts_rewrite_timeout_ms: int = 2500
     enable_parts_prompt_debug_logs: bool = False
     enable_live_tutor_debug_logs: bool = True
@@ -80,6 +82,8 @@ class Settings(BaseSettings):
     chat_upload_native_followup_bytes: int = 10 * 1024 * 1024
     chat_upload_context_text_chars: int = 120_000
     chat_upload_store_originals: bool = True
+    # Put stable re-sent documents before per-turn instructions so the provider can cache them.
+    chat_upload_prompt_cache: bool = True
     # Production calls return in about 1.0-1.2 s, so a 1 s cap discarded nearly all suggestions.
     suggestion_generation_timeout_ms: int = 2500
     web_search_provider: str = "tavily"

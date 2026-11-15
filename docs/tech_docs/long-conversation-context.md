@@ -279,3 +279,35 @@ snapshot for follow-ups: the first paper used 32,718 characters, the second kept
   Every answer logs `orchestration.provider_finish` with finish reason and token
   counts (prompt, completion, reasoning, cached). A `length` finish appends a
   visible notice inviting the learner to ask for continuation.
+
+## Follow-up caching, coverage notice and faster completion (2026-11-15)
+
+Production acceptance showed four gaps after the per-document change: R2/R3
+re-sent ~50K document tokens with `cached_tokens=0`, R5b answered from a partial
+document without saying so, the PARTS rewrite waited for the policy classifier
+(2.1-2.5 s before the main model), and `terminal_sent` waited ~1.0-1.2 s for
+suggestions.
+
+- **Cacheable prefix** (`CHAT_UPLOAD_PROMPT_CACHE`, default on): Gemini through
+  OpenRouter caches only a byte-identical prefix that includes the system
+  instruction and uses the last `cache_control` breakpoint. When a follow-up
+  carries `DocumentPart`s (native PDFs or complete text), the provider request
+  becomes: fixed system text → documents + one `cache_control` text part →
+  short assistant acknowledgement → earlier turns → latest user turn starting
+  with `<turn_instructions>` (the per-turn system prompt) and the question.
+  User text cannot open or close that tag. Partial text and coverage notes stay
+  after the breakpoint. `orchestration.prompt_cache_layout` logs the part count
+  and a 12-character prefix hash only. The explicit Gemini cache lives about five
+  minutes from the write, so the turn after a cache write is the one that hits.
+- **Coverage notice**: text-mode follow-ups with partial documents attach a
+  `CoverageNotePart.user_notice`; the stream appends it after the answer (before
+  any length notice) and logs `chat_documents.partial_notice` without file names.
+- **PARTS prefetch** (`ENABLE_PARTS_REWRITE_PREFETCH`, default on): grounded
+  turns start the rewrite with the classifier; the final policy is applied
+  through the deterministic fallback merge. Logs `parts_context.rewrite_prefetched`.
+- **answer_complete**: the backend emits `event: answer_complete` after answer
+  blocks and before suggestions. The client finalizes and saves the turn, then
+  writes late suggestions onto the saved message. Older backends without the
+  event keep the previous order. The trace summary adds `answer_complete_ms`.
+- **Citation chips**: `[n]` markers become chips only when the message has
+  sources/citations, and never inside code spans, fenced code or math.
