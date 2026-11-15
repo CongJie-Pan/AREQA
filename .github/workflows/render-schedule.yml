@@ -2,8 +2,9 @@ name: Render Service Schedule
 
 on:
   schedule:
-    # Resume at Asia/Taipei 09:00 on 2026-11-04 through 2026-11-13.
-    - cron: '0 1 4-13 11 *'
+    # Resume at Asia/Taipei 08:30 on 2026-11-15 through 2026-12-16 (inclusive).
+    - cron: '30 0 15-30 11 *'
+    - cron: '30 0 1-16 12 *'
     # Keep the existing daily suspension: Asia/Taipei 00:00 = UTC 16:00
     - cron: '0 16 * * *'
   workflow_dispatch:
@@ -34,11 +35,11 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             action="$MANUAL_ACTION"
-          elif [ "$SCHEDULE_CRON" = "0 1 4-13 11 *" ]; then
+          elif [[ "$SCHEDULE_CRON" = "30 0 15-30 11 *" || "$SCHEDULE_CRON" = "30 0 1-16 12 *" ]]; then
             # Cron has no year field; limit automatic resume to this date window.
             taipei_date=$(TZ=Asia/Taipei date +%F)
-            taipei_hour=$(TZ=Asia/Taipei date +%H)
-            if [[ "$taipei_date" < "2026-11-04" || "$taipei_date" > "2026-11-13" || "$taipei_hour" < "09" ]]; then
+            taipei_time=$(TZ=Asia/Taipei date +%H:%M)
+            if [[ "$taipei_date" < "2026-11-15" || "$taipei_date" > "2026-12-16" || "$taipei_time" < "08:30" ]]; then
               echo "Skipping automatic resume outside the requested window."
               echo "value=skip" >> "$GITHUB_OUTPUT"
               exit 0
