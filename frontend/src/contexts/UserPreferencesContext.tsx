@@ -112,6 +112,7 @@ export type TranslationKey =
   | 'quotedTextDefaultPrompt'
   | 'back'
   | 'askPlaceholder'
+  | 'replyPlaceholder'
   | 'thinkingPlaceholder'
   | 'suggestedQuestionsTitle'
   | 'messageTooLong'
@@ -292,7 +293,6 @@ export type TranslationKey =
   | 'shareYou'
   | 'shareOwnerRole'
   | 'shareCopyLink'
-  | 'shareLinkAccessNote'
   | 'shareReadOnlyOwnerNotice'
   | 'shareOpenOriginal'
   | 'shareUnavailable'
@@ -439,7 +439,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     textSelectionExplainPrompt: '請幫我解釋這段文字：\n\n{text}',
     quotedTextDefaultPrompt: '請回答這段引用內容。',
     back: '返回',
-    askPlaceholder: '回覆',
+    askPlaceholder: '問問 AREQA',
+    replyPlaceholder: '回覆',
     thinkingPlaceholder: '正在努力思考...',
     suggestedQuestionsTitle: '您可能還想了解：',
     messageTooLong: '訊息過長。上限為 {maxLength} 個字元。',
@@ -620,7 +621,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareYou: "(你)",
     shareOwnerRole: "擁有者",
     shareCopyLink: "複製連結",
-    shareLinkAccessNote: "擁有連結的人都能開啟，但無法修改這段對話。",
     shareReadOnlyOwnerNotice: "這是你分享的對話的唯讀副本。",
     shareOpenOriginal: "開啟原始對話",
     shareUnavailable: "這個分享連結無法開啟，或已停止分享。",
@@ -741,7 +741,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     textSelectionExplainPrompt: '请帮我解释这段文字：\n\n{text}',
     quotedTextDefaultPrompt: '请回答这段引用内容。',
     back: '返回',
-    askPlaceholder: '回复',
+    askPlaceholder: '问问 AREQA',
+    replyPlaceholder: '回复',
     thinkingPlaceholder: '正在努力思考...',
     suggestedQuestionsTitle: '您可能还想了解：',
     messageTooLong: '讯息过长。上限为 {maxLength} 个字符。',
@@ -922,7 +923,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareYou: "(你)",
     shareOwnerRole: "所有者",
     shareCopyLink: "复制链接",
-    shareLinkAccessNote: "拥有链接的人都能打开，但无法修改这段对话。",
     shareReadOnlyOwnerNotice: "这是你分享的对话的只读副本。",
     shareOpenOriginal: "打开原始对话",
     shareUnavailable: "这个分享链接无法打开，或已停止分享。",
@@ -1043,7 +1043,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     textSelectionExplainPrompt: 'Please explain this passage:\n\n{text}',
     quotedTextDefaultPrompt: 'Please answer this quoted passage.',
     back: 'Back',
-    askPlaceholder: 'Reply',
+    askPlaceholder: 'Ask AREQA',
+    replyPlaceholder: 'Reply',
     thinkingPlaceholder: 'Thinking...',
     suggestedQuestionsTitle: 'You may also want to know:',
     messageTooLong: 'Message is too long. Limit: {maxLength} characters.',
@@ -1224,7 +1225,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareYou: "(you)",
     shareOwnerRole: "Owner",
     shareCopyLink: "Copy link",
-    shareLinkAccessNote: "Anyone with the link can open it but cannot change the conversation.",
     shareReadOnlyOwnerNotice: "This is the read-only copy that you shared of your chat.",
     shareOpenOriginal: "Open original chat",
     shareUnavailable: "This share link is unavailable or no longer shared.",

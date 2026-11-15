@@ -116,7 +116,7 @@ const useStyles = createStyles(({ css, token }) => ({
     display: flex;
     justify-content: flex-end;
     margin-top: 12px;
-    padding-top: 14px;
+    padding: 14px 0 4px;
     border-top: 1px solid var(--areqa-subtle-border);
   `,
   copy: css`
@@ -137,11 +137,6 @@ const useStyles = createStyles(({ css, token }) => ({
       opacity: 0.6;
       cursor: progress;
     }
-  `,
-  note: css`
-    margin: 12px 0 4px;
-    color: color-mix(in srgb, var(--foreground) 50%, transparent);
-    font-size: 12px;
   `,
 }));
 
@@ -204,7 +199,6 @@ export function SharePanel({
           {t('shareCopyLink')}
         </button>
       </div>
-      <p className={styles.note}>{t('shareLinkAccessNote')}</p>
     </div>
   );
 }
