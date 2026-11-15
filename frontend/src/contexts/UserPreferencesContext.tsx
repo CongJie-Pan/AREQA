@@ -252,6 +252,19 @@ export type TranslationKey =
   | 'shareLoginRequired'
   | 'shareNoConversation'
   | 'shareLinkCopied'
+  | 'shareDialogTitle'
+  | 'shareDialogClose'
+  | 'shareSnapshotNotice'
+  | 'shareWhoHasAccess'
+  | 'shareAnyoneWithLink'
+  | 'shareAnyoneWithLinkHint'
+  | 'shareYou'
+  | 'shareOwnerRole'
+  | 'shareCopyLink'
+  | 'shareLinkAccessNote'
+  | 'shareReadOnlyOwnerNotice'
+  | 'shareOpenOriginal'
+  | 'shareUnavailable'
   | 'shareLinkCreated'
   | 'shareLinkFailed'
   | 'historySyncPending'
@@ -418,7 +431,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentOpenPreview: '預覽 {name}',
     attachmentDownload: '下載',
     attachmentClosePreview: '關閉預覽',
-    attachmentOriginalUnavailable: '重新整理後只保留預覽縮圖，若要下載請重新上傳原始檔案。',
+    attachmentOriginalUnavailable: '這裡只保留預覽縮圖，無法下載原始檔案。',
     pdfPageAttribution: '{filename}，第 {page} 頁',
     messageInputRow: '訊息輸入列',
     addAttachment: '加入圖片或文件',
@@ -536,6 +549,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '請先登入後再分享對話。',
     shareNoConversation: '目前沒有可分享的對話。',
     shareLinkCopied: '已公開並複製分享連結',
+    shareDialogTitle: "分享對話",
+    shareDialogClose: "關閉",
+    shareSnapshotNotice: "只會分享到目前為止的訊息",
+    shareWhoHasAccess: "誰可以存取",
+    shareAnyoneWithLink: "擁有連結的任何人",
+    shareAnyoneWithLinkHint: "可以唯讀檢視這段對話",
+    shareYou: "（你）",
+    shareOwnerRole: "擁有者",
+    shareCopyLink: "複製連結",
+    shareLinkAccessNote: "擁有連結的人都能開啟，但無法修改這段對話。",
+    shareReadOnlyOwnerNotice: "這是你分享的對話的唯讀副本。",
+    shareOpenOriginal: "開啟原始對話",
+    shareUnavailable: "這個分享連結無法開啟，或已停止分享。",
     shareLinkCreated: '分享連結已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     historySyncPending: '部分訊息尚未備份至雲端。請保留此瀏覽器資料，連線恢復後將自動重試。',
@@ -676,7 +702,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentOpenPreview: '预览 {name}',
     attachmentDownload: '下载',
     attachmentClosePreview: '关闭预览',
-    attachmentOriginalUnavailable: '刷新后只保留预览缩略图，如需下载请重新上传原始文件。',
+    attachmentOriginalUnavailable: '这里只保留预览缩略图，无法下载原始文件。',
     pdfPageAttribution: '{filename}，第 {page} 页',
     messageInputRow: '讯息输入列',
     addAttachment: '加入图片或文件',
@@ -794,6 +820,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '请先登入后再分享对话。',
     shareNoConversation: '目前没有可分享的对话。',
     shareLinkCopied: '已公开并复制分享链接',
+    shareDialogTitle: "分享对话",
+    shareDialogClose: "关闭",
+    shareSnapshotNotice: "只会分享到目前为止的消息",
+    shareWhoHasAccess: "谁可以访问",
+    shareAnyoneWithLink: "拥有链接的任何人",
+    shareAnyoneWithLinkHint: "可以只读查看这段对话",
+    shareYou: "（你）",
+    shareOwnerRole: "所有者",
+    shareCopyLink: "复制链接",
+    shareLinkAccessNote: "拥有链接的人都能打开，但无法修改这段对话。",
+    shareReadOnlyOwnerNotice: "这是你分享的对话的只读副本。",
+    shareOpenOriginal: "打开原始对话",
+    shareUnavailable: "这个分享链接无法打开，或已停止分享。",
     shareLinkCreated: '分享链接已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     historySyncPending: '部分消息尚未备份到云端。请保留此浏览器数据，连接恢复后将自动重试。',
@@ -934,7 +973,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentOpenPreview: 'Preview {name}',
     attachmentDownload: 'Download',
     attachmentClosePreview: 'Close preview',
-    attachmentOriginalUnavailable: 'Only the preview thumbnail is kept after a reload; upload the file again to download it.',
+    attachmentOriginalUnavailable: 'Only a preview thumbnail is kept here; the original file cannot be downloaded.',
     pdfPageAttribution: '{filename}, page {page}',
     messageInputRow: 'Message input row',
     addAttachment: 'Add image or document',
@@ -1052,6 +1091,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: 'Log in before sharing a conversation.',
     shareNoConversation: 'There is no conversation to share yet.',
     shareLinkCopied: 'Public share link copied',
+    shareDialogTitle: "Share conversation",
+    shareDialogClose: "Close",
+    shareSnapshotNotice: "Only messages up until now will be shared",
+    shareWhoHasAccess: "Who has access",
+    shareAnyoneWithLink: "Anyone with the link",
+    shareAnyoneWithLinkHint: "Can view this conversation read-only",
+    shareYou: "(you)",
+    shareOwnerRole: "Owner",
+    shareCopyLink: "Copy link",
+    shareLinkAccessNote: "Anyone with the link can open it but cannot change the conversation.",
+    shareReadOnlyOwnerNotice: "This is the read-only copy that you shared of your chat.",
+    shareOpenOriginal: "Open original chat",
+    shareUnavailable: "This share link is unavailable or no longer shared.",
     shareLinkCreated: 'Share link created: ',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
     historySyncPending: 'Some messages are not backed up yet. Keep this browser data; sync will retry automatically.',

@@ -46,5 +46,5 @@ export default async function SharePage({ params }: SharePageProps) {
 
   if (!conversation) notFound();
 
-  return <SharedConversationView conversation={conversation} />;
+  return <SharedConversationView conversation={conversation} token={token} />;
 }

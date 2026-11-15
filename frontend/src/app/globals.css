@@ -1436,3 +1436,46 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
   font-weight: normal;
   font-style: normal;
 }
+
+/* Read-only shared conversation: owner notice in place of the composer. */
+.areqa-shared-owner-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(var(--areqa-chat-column-width), calc(100% - 32px));
+  box-sizing: border-box;
+  margin: 8px auto 16px;
+  padding: 10px 10px 10px 16px;
+  border: 1px solid var(--areqa-subtle-border);
+  border-radius: 14px;
+  background: var(--card);
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+  font-size: 14px;
+}
+
+.areqa-shared-owner-bar-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.areqa-shared-owner-bar-action {
+  flex: none;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.areqa-shared-owner-bar-action:hover {
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+@media (max-width: 768px) {
+  .areqa-shared-owner-bar {
+    margin-bottom: max(env(safe-area-inset-bottom), 12px);
+  }
+}

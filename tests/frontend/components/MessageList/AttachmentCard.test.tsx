@@ -83,6 +83,6 @@ describe('AttachmentCard previews', () => {
 
     expect(screen.getByRole('dialog').querySelector('img')).toHaveAttribute('src', thumb.dataUrl);
     expect(screen.queryByRole('link', { name: '下載' })).not.toBeInTheDocument();
-    expect(screen.getByText(/重新整理後只保留預覽縮圖/)).toBeInTheDocument();
+    expect(screen.getByText(/只保留預覽縮圖/)).toBeInTheDocument();
   });
 });

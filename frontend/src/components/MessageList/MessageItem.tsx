@@ -655,6 +655,8 @@ export interface MessageItemProps {
   };
   /** Learner-facing progress of the turn this streaming message answers */
   progress?: TurnProgressProps;
+  /** Shared read-only copy: hides actions that need the owner's session. */
+  readOnly?: boolean;
   /** RAG status metadata */
   ragInfo?: {
     status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done';
@@ -1527,8 +1529,12 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
     return () => { active = false; };
   }, [isGeneratedImage, block.storagePath, block.storageExpiresAt, block.slotId, conversationId, renewalRetryCount]);
 
+  const imageElementRef = React.useRef<HTMLImageElement | null>(null);
   React.useEffect(() => {
-    setIsImageLoaded(false);
+    // Server-rendered pages (shared copies) can finish loading the image before
+    // hydration attaches onLoad; treat an already-decoded image as loaded.
+    const image = imageElementRef.current;
+    setIsImageLoaded(Boolean(image?.complete && image.naturalWidth > 0 && image.src === safeImageUrl));
     setImageLoadFailed(false);
   }, [safeImageUrl]);
 
@@ -1651,6 +1657,7 @@ function ImageBlockCard({ block, conversationId, styles }: { block: ImageBlock; 
             alt={displayCaption}
             className={`${styles.answerImage} ${isGeneratedImage ? styles.generatedImage : ''} ${isImageLoaded ? styles.answerImageLoaded : ''}`}
             loading="lazy"
+            ref={imageElementRef}
             onLoad={() => setIsImageLoaded(true)}
             onError={() => {
               setImageLoadFailed(true);
@@ -1944,6 +1951,7 @@ export const MessageItem = memo(function MessageItem({
   thinking,
   ragInfo,
   progress,
+  readOnly = false,
   onBranch,
   onRegenerate,
   onDeleteLatestTurn,
@@ -2335,12 +2343,15 @@ export const MessageItem = memo(function MessageItem({
       });
     }
     const isReadAloudActive = isReadAloudPlaying || isReadAloudLoading;
-    moreReplyActions.push({
-      key: 'readAloud',
-      label: t(isReadAloudActive ? 'stopReadAloud' : 'readAloud'),
-      icon: isReadAloudActive ? <VolumeX size={16} /> : <Volume2 size={16} />,
-      onClick: handleReadAloud,
-    });
+    // Read-aloud calls an authenticated speech API, so shared copies omit it.
+    if (!readOnly) {
+      moreReplyActions.push({
+        key: 'readAloud',
+        label: t(isReadAloudActive ? 'stopReadAloud' : 'readAloud'),
+        icon: isReadAloudActive ? <VolumeX size={16} /> : <Volume2 size={16} />,
+        onClick: handleReadAloud,
+      });
+    }
     if (onEdit && !isImageGenerationPending) {
       moreReplyActions.push({ key: 'edit', label: t('editMessage'), icon: <Edit size={16} />, onClick: handleEditClick });
     }

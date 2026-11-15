@@ -8,7 +8,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2 } from 'lucide-react';
-import { App, Dropdown, Tooltip } from 'antd';
+import { App, Dropdown, Popover, Tooltip } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
@@ -41,6 +41,9 @@ import { useStyles } from './styles';
 import { useSidebarResize } from './useSidebarResize';
 import { useSidebarState } from './useSidebarState';
 import { LongConversationReminder } from './LongConversationReminder';
+import { SharePanel } from './SharePanel';
+import { useSharedConversationView } from './useSharedConversationView';
+import { SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 
@@ -116,6 +119,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const [gumPanelType, setGumPanelType] = useState<SidePanelType>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [isSharePanelOpen, setIsSharePanelOpen] = useState(false);
   const [isChatReady, setIsChatReady] = useState(false);
   const [avatarPaneWidth, setAvatarPaneWidth] = useState(AVATAR_PANE_DEFAULT_WIDTH);
   const avatarResizeStateRef = useRef<{
@@ -126,7 +130,13 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const compeerEnabled = useFeatureStore((state) => state.compeer);
   const fetchFeatures = useFeatureStore((state) => state.fetchFeatures);
   const user = useAuthStore((state) => state.user);
+  const isAuthReady = useAuthStore((state) => state.isInitialized);
   const historyUserId = user?.id ?? null;
+  const handleShareUnavailable = useCallback(() => {
+    antMessageApi.warning(t('shareUnavailable'));
+  }, [antMessageApi, t]);
+  // `/?share=<token>` shows a shared conversation read-only inside this workspace.
+  const { sharedView, exitSharedView } = useSharedConversationView(user, isAuthReady, handleShareUnavailable);
   const previousHistoryUserIdRef = useRef(historyUserId);
   const failedMessageSyncCount = useLiveQuery(
     () => user
@@ -474,19 +484,21 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   // Handle conversation selection
   const handleConversationSelect = useCallback(() => {
+    exitSharedView();
     closeSidebar();
     setGumPanelType(null); // Return to chat view
-  }, [closeSidebar]);
+  }, [closeSidebar, exitSharedView]);
 
   // Handle new conversation
   const handleNewConversation = useCallback(() => {
+    exitSharedView();
     // Just clear UI state and deselect active conversation
     useConversationStore.getState().clearActiveConversation();
     useChatStore.getState().clearMessages();
     useChatStore.getState().resetStreamingState();
     closeSidebar();
     setGumPanelType(null); // Return to chat view
-  }, [closeSidebar]);
+  }, [closeSidebar, exitSharedView]);
 
   const resizeAvatarPane = useCallback((event: PointerEvent) => {
     const resizeState = avatarResizeStateRef.current;
@@ -623,17 +635,26 @@ export function ChatContainer({ className }: ChatContainerProps) {
     }
   }, [activeConversation?.title, addNoteFromMessage, antMessageApi, t]);
 
-  const handleShareConversation = useCallback(async () => {
+  const handleSharePanelOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setIsSharePanelOpen(false);
+      return;
+    }
     if (!user) {
       antMessageApi.warning(t('shareLoginRequired'));
       setShowAuthPrompt(true);
       return;
     }
-
     if (!activeConversation || messages.length === 0) {
       antMessageApi.warning(t('shareNoConversation'));
       return;
     }
+    setIsSharePanelOpen(true);
+  }, [activeConversation, antMessageApi, messages.length, t, user]);
+
+  // Copying creates or refreshes the link and moves its snapshot to "now".
+  const handleShareConversation = useCallback(async () => {
+    if (!user || !activeConversation || messages.length === 0) return;
 
     setIsSharing(true);
     try {
@@ -775,11 +796,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
         <div
           className={cx(
             'areqa-chat-content',
-            shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && 'areqa-chat-content-empty',
+            shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && !sharedView && 'areqa-chat-content-empty',
             isLiveTutorOpen && !gumPanelType && 'areqa-chat-content-live-tutor',
             useAvatarSplitLayout && 'areqa-chat-content-avatar-split',
             styles.content,
-            shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && styles.contentEmpty,
+            shouldShowEmptyChat && !isLiveTutorOpen && !gumPanelType && !sharedView && styles.contentEmpty,
             isLiveTutorOpen && !gumPanelType && styles.contentLiveTutor,
             useAvatarSplitLayout && styles.contentAvatarSplit,
           )}
@@ -801,17 +822,34 @@ export function ChatContainer({ className }: ChatContainerProps) {
             <div className={cx(styles.liveTutorWorkspace, useAvatarSplitLayout && styles.liveTutorWorkspaceSplit)}>
               <div className={cx('areqa-chat-response-pane', styles.responsePane, useAvatarSplitLayout && styles.responsePaneSplit)}>
                 <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
-                  {!gumPanelType && !isEmpty && (
+                  {!gumPanelType && !isEmpty && !sharedView && (
                     <>
-                      <button
-                        className={cx(styles.shareButton)}
-                        disabled={isSharing}
-                        onClick={handleShareConversation}
-                        type="button"
+                      <Popover
+                        open={isSharePanelOpen}
+                        onOpenChange={handleSharePanelOpenChange}
+                        trigger="click"
+                        placement="bottomRight"
+                        arrow={false}
+                        destroyOnHidden
+                        content={user ? (
+                          <SharePanel
+                            user={user}
+                            isCopying={isSharing}
+                            onCopyLink={() => { void handleShareConversation(); }}
+                            onClose={() => setIsSharePanelOpen(false)}
+                          />
+                        ) : null}
                       >
-                        <Share2 size={16} aria-hidden="true" />
-                        <span>{t('shareConversation')}</span>
-                      </button>
+                        <button
+                          className={cx(styles.shareButton)}
+                          aria-haspopup="dialog"
+                          aria-expanded={isSharePanelOpen}
+                          type="button"
+                        >
+                          <Share2 size={16} aria-hidden="true" />
+                          <span>{t('shareConversation')}</span>
+                        </button>
+                      </Popover>
                       <Dropdown
                         menu={{
                           className: styles.exportMenu,
@@ -883,7 +921,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     hideLiveTutorMessages && !isGeneratingImage && styles.messageAreaLiveTutorEmpty,
                   )}
                 >
-                  {activeImageRequest && !activeImageRequest.assistantMessageId ? (
+                  {sharedView ? (
+                    <SharedMessages conversation={sharedView.conversation} />
+                  ) : activeImageRequest && !activeImageRequest.assistantMessageId ? (
                     <ImageGenerationLoading caption={language === 'en' ? 'Preparing image…' : language === 'zh-CN' ? '正在准备图片…' : '正在準備圖片…'} />
                   ) : !isEmptyLiveTutor && (
                     <MessageList
@@ -913,11 +953,20 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   )}
                 </div>
 
-                {!useAvatarSplitLayout && (
+                {!useAvatarSplitLayout && !sharedView && (
                   <LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />
                 )}
 
-                {/* Chat Input */}
+                {/* A shared copy is read-only: no composer; the owner gets a way back. */}
+                {sharedView ? (sharedView.isOwner && (
+                  <SharedOwnerBar
+                    onOpenOriginal={sharedView.conversationId ? () => {
+                      const originalId = sharedView.conversationId!;
+                      exitSharedView();
+                      void switchConversation(originalId);
+                    } : undefined}
+                  />
+                )) : (
                 <div className={cx('areqa-chat-input-area', styles.inputArea)}>
                   <ChatInput
                     key={activeConversationId ?? 'new'}
@@ -940,6 +989,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     onCloseLiveVoice={requestCloseLiveTutor}
                   />
                 </div>
+                )}
               </div>
 
               {useAvatarSplitLayout && (

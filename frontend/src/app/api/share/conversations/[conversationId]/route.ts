@@ -32,6 +32,7 @@ interface ShareConversationPayload {
     suggestions?: unknown;
     reasoning?: unknown;
     attachments?: unknown;
+    stoppedByUser?: unknown;
     createdAt?: unknown;
   }>;
 }
@@ -85,8 +86,18 @@ function buildFullMessageRow(message: ShareMessagePayload, conversationId: strin
     reasoning: message.reasoning && typeof message.reasoning === 'object' && !Array.isArray(message.reasoning)
       ? message.reasoning
       : null,
+    // Only stopped replies carry the flag, so accounts without the column still share others.
+    ...(message.stoppedByUser === true ? { stopped_by_user: true } : {}),
     created_at: safeIsoDate(message.createdAt),
   };
+}
+
+/** PostgREST reports an unknown column as PGRST204 / 42703. */
+function isMissingColumnError(error: unknown, column: string): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, message } = error as { code?: string; message?: string };
+  return code === 'PGRST204' || (code === '42703' && Boolean(message?.includes(column)))
+    || Boolean(message?.includes(`'${column}' column`));
 }
 
 function buildMinimalMessageRow(message: ShareMessagePayload, conversationId: string, userId: string) {
@@ -425,15 +436,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
       shareDebugId,
       conversationId,
     }, authHeader);
-    const { error: updateError } = await supabase
+    // Re-sharing moves the snapshot cutoff to now: newer messages become visible.
+    const sharedAt = new Date().toISOString();
+    const reuse = (withSnapshot: boolean) => supabase
       .from('conversation_shares')
       .update({
         is_public: true,
         revoked_at: null,
-        updated_at: new Date().toISOString(),
+        updated_at: sharedAt,
+        ...(withSnapshot ? { shared_until: sharedAt } : {}),
       })
       .eq('conversation_id', conversationId)
       .eq('owner_user_id', user.id);
+    let { error: updateError } = await reuse(true);
+    if (updateError && isMissingColumnError(updateError, 'shared_until')) {
+      logger.warn('share.create_snapshot_column_missing', { shareDebugId, conversationId });
+      ({ error: updateError } = await reuse(false));
+    }
 
     if (updateError) {
       logger.error('share.create_existing_update_failed', undefined, {
@@ -462,16 +481,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
     conversationId,
   }, authHeader);
   const token = createShareToken();
-  const { data: insertedShare, error: insertError } = await supabase
+  const insertShare = (withSnapshot: boolean) => supabase
     .from('conversation_shares')
     .insert({
       conversation_id: conversation.id,
       owner_user_id: user.id,
       share_token: token,
       is_public: true,
+      ...(withSnapshot ? { shared_until: new Date().toISOString() } : {}),
     })
     .select('share_token')
     .single<ConversationShareRow>();
+  let { data: insertedShare, error: insertError } = await insertShare(true);
+  if (insertError && isMissingColumnError(insertError, 'shared_until')) {
+    logger.warn('share.create_snapshot_column_missing', { shareDebugId, conversationId });
+    ({ data: insertedShare, error: insertError } = await insertShare(false));
+  }
 
   if (insertError || !insertedShare?.share_token) {
     logger.error('share.create_insert_failed', undefined, {
