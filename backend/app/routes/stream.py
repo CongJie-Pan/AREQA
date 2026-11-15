@@ -48,6 +48,8 @@ class ChatRequest(BaseModel):
     tutor_profile: str = "general"
     response_mode: Literal["text", "voice"] = "text"
     speaking_practice: bool = False
+    # Opt-in: parse uploads inside the SSE stream so progress and errors reach the chat UI.
+    attachment_progress: bool = False
     force_think: bool = False
     temperature: float = 0.7
     top_p: float = 0.8
@@ -111,6 +113,7 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
             "tutor_profile": normalize_tutor_profile(payload.get("tutor_profile", form.get("tutor_profile", "general"))),
             "response_mode": payload.get("response_mode", form.get("response_mode", "text")),
             "speaking_practice": payload.get("speaking_practice", _parse_bool(form.get("speaking_practice"))),
+            "attachment_progress": payload.get("attachment_progress", _parse_bool(form.get("attachment_progress"))),
             "force_think": payload.get("force_think", _parse_bool(form.get("force_think"))),
             "temperature": payload.get("temperature", form.get("temperature", 0.7)),
             "top_p": payload.get("top_p", form.get("top_p", 0.8)),
@@ -149,6 +152,52 @@ async def stream_endpoint(
         len(uploads), safe_request_id, chat_req.search_mode, chat_req.use_web_search, chat_req.use_rag,
     )
 
+    if uploads and chat_req.attachment_progress:
+        return StreamingResponse(
+            _stream_with_attachment_progress(
+                request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id,
+            ),
+            media_type="text/event-stream",
+            headers=_STREAM_HEADERS,
+        )
+    return await _prepare_stream(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id)
+
+
+_STREAM_HEADERS = {"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+
+
+async def _stream_with_attachment_progress(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id):
+    """Parse uploads inside the SSE stream so the learner sees progress and errors.
+
+    Legacy clients (no ``attachment_progress`` flag) keep receiving HTTP errors
+    before the stream starts; opted-in clients get ``event: attachment_error``.
+    """
+    from services.orchestration.progress import progress_event
+
+    try:
+        yield progress_event("reading_attachments", 0, len(uploads))
+        response = await _prepare_stream(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id)
+        async for event in response.body_iterator:
+            yield event
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        yield f"event: attachment_error\ndata: {json.dumps({'detail': detail, 'status': exc.status_code}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        # Log the error type only; exception text may echo uploaded content.
+        logger.warning("stream.attachment_preparation_failed request_id=%s error_type=%s",
+                       safe_request_id, type(exc).__name__)
+        yield 'event: attachment_error\ndata: {"status": 500}\n\n'
+        yield "data: [DONE]\n\n"
+    finally:
+        # The multipart form outlives the endpoint here, so release its spooled files.
+        await request.close()
+
+
+async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id):
+    """Process uploads and context, then return the orchestration SSE response."""
     processed_attachments = []
     if uploads:
         from services.attachments.parsing import process_attachments
@@ -329,9 +378,5 @@ async def stream_endpoint(
     return StreamingResponse(
         ensure_terminal_event(event_stream),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive"
-        }
+        headers=_STREAM_HEADERS,
     )

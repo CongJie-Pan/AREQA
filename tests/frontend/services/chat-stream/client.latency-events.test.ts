@@ -87,6 +87,43 @@ describe('chat stream visible latency events', () => {
     expect(onContent).toHaveBeenCalledWith('回答');
   });
 
+  it('opts multipart uploads into in-stream parsing only when progress is consumed', async () => {
+    const send = async (withProgress: boolean) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse(['data: [DONE]\n\n'])));
+      await createChatStream([{ role: 'user', content: 'Read this' }], {
+        onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+        onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(),
+        ...(withProgress ? { onProgress: vi.fn() } : {}),
+      }, undefined, false, false, 'never', 'attachment-progress', [new File(['content'], 'notes.txt')]);
+      const body = (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as FormData;
+      return JSON.parse(String(body.get('messages')));
+    };
+
+    expect((await send(true)).attachment_progress).toBe(true);
+    expect((await send(false)).attachment_progress).toBeUndefined();
+  });
+
+  it('reports an in-stream attachment error without completing an empty answer', async () => {
+    const onError = vi.fn();
+    const onDone = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([
+      'event: progress\ndata: {"step":"reading_attachments","current":0,"total":1}\n\n',
+      'event: attachment_error\ndata: {"detail":{"message":"Invalid file","code":"ATTACHMENT_INVALID_CONTENT"},"status":422}\n\n',
+      'data: [DONE]\n\n',
+    ])));
+    await createChatStream([{ role: 'user', content: 'Read this' }], {
+      onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+      onContent: vi.fn(), onCitations: vi.fn(), onDone, onError, onProgress: vi.fn(),
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Invalid file',
+      statusCode: 422,
+      responseBody: { detail: { message: 'Invalid file', code: 'ATTACHMENT_INVALID_CONTENT' } },
+    }));
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
   it('keeps metadata invisible and exposes status before answer content', async () => {
     vi.stubGlobal(
       'fetch',

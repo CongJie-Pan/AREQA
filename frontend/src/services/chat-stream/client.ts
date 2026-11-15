@@ -149,7 +149,11 @@ export async function createChatStream(
     const body = attachments.length > 0
       ? (() => {
           const formData = new FormData();
-          formData.append('messages', JSON.stringify(requestPayload));
+          // Opt in to in-stream parsing so upload progress and errors reach the chat UI.
+          const multipartPayload = callbacks.onProgress
+            ? { ...requestPayload, attachment_progress: true }
+            : requestPayload;
+          formData.append('messages', JSON.stringify(multipartPayload));
           for (const attachment of attachments) formData.append('attachments', attachment);
           return formData;
         })()
@@ -267,6 +271,19 @@ export async function createChatStream(
           if (eventType === 'progress') {
             if (typeof chunk?.step === 'string') callbacks.onProgress?.(chunk);
             continue;
+          }
+
+          // Opted-in upload failures arrive in-stream; keep the HTTP error body
+          // shape ({ detail }) and prefer the backend's learner-facing message.
+          if (eventType === 'attachment_error') {
+            const status = Number(chunk?.status) || 500;
+            const detailMessage = chunk?.detail?.message;
+            callbacks.onError(new ChatStreamError(
+              typeof detailMessage === 'string' && detailMessage ? detailMessage : `API Error: ${status}`,
+              status,
+              chunk?.detail ? { detail: chunk.detail } : undefined,
+            ));
+            return;
           }
 
           // Public action telemetry contains only safe display summaries. It

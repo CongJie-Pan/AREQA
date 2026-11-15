@@ -266,6 +266,8 @@ export type TranslationKey =
   | 'pipeline.defaultActive'
   | 'pipeline.sourceCount'
   | 'progress.uploading'
+  | 'progress.readingAttachments'
+  | 'progress.readingAttachmentsCount'
   | 'progress.analyzing'
   | 'progress.recallingMemory'
   | 'progress.planning'
@@ -543,6 +545,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'pipeline.defaultActive': '正在處理對話狀態',
     'pipeline.sourceCount': '找到 {count} 筆文獻',
     'progress.uploading': '正在上傳並讀取附件',
+    'progress.readingAttachments': '正在讀取附件',
+    'progress.readingAttachmentsCount': '正在讀取 {count} 份附件',
     'progress.analyzing': '正在分析問題',
     'progress.recallingMemory': '正在回顧你的學習紀錄',
     'progress.planning': '正在規劃教學策略',
@@ -794,6 +798,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'pipeline.defaultActive': '正在处理对话状态',
     'pipeline.sourceCount': '找到 {count} 篇文献',
     'progress.uploading': '正在上传并读取附件',
+    'progress.readingAttachments': '正在读取附件',
+    'progress.readingAttachmentsCount': '正在读取 {count} 份附件',
     'progress.analyzing': '正在分析问题',
     'progress.recallingMemory': '正在回顾你的学习记录',
     'progress.planning': '正在规划教学策略',
@@ -1045,6 +1051,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'pipeline.defaultActive': 'Processing the conversation state',
     'pipeline.sourceCount': 'Found {count} sources',
     'progress.uploading': 'Uploading and reading attachments',
+    'progress.readingAttachments': 'Reading attachments',
+    'progress.readingAttachmentsCount': 'Reading {count} attachments',
     'progress.analyzing': 'Analyzing the question',
     'progress.recallingMemory': 'Reviewing your learning history',
     'progress.planning': 'Planning the teaching approach',
