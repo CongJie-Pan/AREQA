@@ -33,6 +33,7 @@ import { logSearchDiagnostic } from '@/services/searchDiagnostics';
 import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { transcribeSpeech } from '@/services/speech/transcription';
+import { prefetchAttachmentPreview } from '@/utils/attachmentPreview';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
 
 /** Maximum allowed message length */
@@ -542,6 +543,8 @@ export function ChatInput({
       return;
     }
 
+    // Overlap thumbnail rendering with typing so sending rarely waits on it.
+    incomingAttachments.forEach((file) => { void prefetchAttachmentPreview(file); });
     setAttachmentPreviews((current) => [
       ...current,
       ...incomingAttachments.map((file) => ({

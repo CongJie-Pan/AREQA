@@ -2001,6 +2001,7 @@ export const MessageItem = memo(function MessageItem({
     if (message.attachments && message.attachments.length > 0) return message.attachments;
     return createLegacyAttachmentMetadata(legacyMessage.legacyCount);
   }, [legacyMessage.legacyCount, message.attachments]);
+  const hasAttachmentPreviews = displayAttachments.some((attachment) => Boolean(attachment.preview));
   const isLiked = message.feedback === 'liked';
   const isDisliked = message.feedback === 'disliked';
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
@@ -2473,7 +2474,19 @@ export const MessageItem = memo(function MessageItem({
                   className={styles.messageAttachmentList}
                   aria-label={t('messageAttachments', { count: displayAttachments.length })}
                 >
-                  {displayAttachments.length === 1 ? (
+                  {hasAttachmentPreviews ? (
+                    <div className={styles.messageAttachmentGallery}>
+                      {displayAttachments.map((attachment, index) => (
+                        <AttachmentCard
+                          key={`${attachment.name}-${index}`}
+                          attachment={attachment}
+                          messageId={message.id}
+                          index={index}
+                          tile={displayAttachments.length > 1}
+                        />
+                      ))}
+                    </div>
+                  ) : displayAttachments.length === 1 ? (
                     <AttachmentCard attachment={displayAttachments[0]} />
                   ) : (
                     <AttachmentToggleList
@@ -2575,7 +2588,19 @@ export const MessageItem = memo(function MessageItem({
                   className={styles.messageAttachmentList}
                   aria-label={t('messageAttachments', { count: displayAttachments.length })}
                 >
-                  {displayAttachments.length === 1 ? (
+                  {hasAttachmentPreviews ? (
+                    <div className={styles.messageAttachmentGallery}>
+                      {displayAttachments.map((attachment, index) => (
+                        <AttachmentCard
+                          key={`${attachment.name}-${index}`}
+                          attachment={attachment}
+                          messageId={message.id}
+                          index={index}
+                          tile={displayAttachments.length > 1}
+                        />
+                      ))}
+                    </div>
+                  ) : displayAttachments.length === 1 ? (
                     <AttachmentCard attachment={displayAttachments[0]} />
                   ) : (
                     <AttachmentToggleList

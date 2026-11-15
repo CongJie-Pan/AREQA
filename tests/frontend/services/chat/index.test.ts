@@ -4,6 +4,8 @@ import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
 import { useFeatureStore } from '@/store/features';
 import { createChatStream } from '@/services/chat-stream';
+import { collectAttachmentPreviews } from '@/utils/attachmentPreview';
+import { getSessionAttachment } from '@/utils/attachmentSession';
 import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
 import { syncService } from '@/services/syncService';
@@ -12,6 +14,9 @@ import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { generateConversationImage, regenerateConversationImage } from '@/services/generatedImages';
 
 vi.mock('@/services/generatedImages', () => ({ generateConversationImage: vi.fn(), regenerateConversationImage: vi.fn() }));
+vi.mock('@/utils/attachmentPreview', () => ({
+  collectAttachmentPreviews: vi.fn(async (files: File[]) => files.map(() => undefined)),
+}));
 
 vi.mock('@/store/chat', () => ({
   useChatStore: {
@@ -586,6 +591,25 @@ describe('Chat Service', () => {
         [attachment],
         { responseMode: 'text' },
       );
+    });
+
+    it('stores the attachment thumbnail but never sends it to the model', async () => {
+      mockChatStore.messages = [];
+      const preview = { dataUrl: 'data:image/jpeg;base64,/9j/4AAQ', width: 400, height: 300 };
+      vi.mocked(collectAttachmentPreviews).mockResolvedValueOnce([preview]);
+      vi.mocked(mockChatStore.addUserMessage).mockReturnValueOnce('user-msg-1');
+      const image = new File(['png'], 'chart.png', { type: 'image/png' });
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        await callbacks.onDone();
+      });
+
+      await sendMessage('看圖', undefined, [image]);
+
+      expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(
+        '看圖', 'test-conv-id', [{ name: 'chart.png', mediaType: 'image/png', sizeBytes: image.size, preview }],
+      );
+      expect(getSessionAttachment('user-msg-1', 0)).toBe(image);
+      expect(JSON.stringify(vi.mocked(createChatStream).mock.lastCall?.[0])).not.toContain('data:image');
     });
 
     it('uses voice response mode without forcing hidden thinking into the spoken turn', async () => {

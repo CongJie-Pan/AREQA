@@ -33,6 +33,20 @@ export interface AttachmentMetadata {
   mediaType: string;
   /** Original file size in bytes. */
   sizeBytes: number;
+  /**
+   * Small display thumbnail generated in the browser (image, or a PDF's first
+   * page). It is a lossy preview, never the original file bytes.
+   */
+  preview?: AttachmentPreview;
+}
+
+/** Bounded, display-only thumbnail persisted with attachment metadata. */
+export interface AttachmentPreview {
+  /** `data:image/jpeg;base64,...` capped by `MAX_ATTACHMENT_PREVIEW_CHARS`. */
+  dataUrl: string;
+  /** Thumbnail width in CSS pixels; with height it keeps the original aspect ratio. */
+  width: number;
+  height: number;
 }
 
 export type MessageFeedback = 'liked' | 'disliked';

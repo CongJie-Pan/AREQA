@@ -510,6 +510,173 @@ export const useStyles = createStyles(({ css, token }) => ({
     font-size: 11px;
   `,
 
+  messageAttachmentGallery: css`
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  `,
+
+  messageAttachmentThumbButton: css`
+    position: relative;
+    display: block;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--foreground) 13%, transparent);
+    border-radius: 12px;
+    background: var(--card);
+    cursor: zoom-in;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--foreground) 32%, transparent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid #d8a25c;
+      outline-offset: 2px;
+    }
+
+    img {
+      display: block;
+    }
+  `,
+
+  /* A single image keeps its real proportions, bounded to 240 px. */
+  messageAttachmentImageSingle: css`
+    img {
+      width: auto;
+      height: auto;
+      max-width: min(240px, 60vw);
+      max-height: 240px;
+    }
+  `,
+
+  /* Several attachments, and every PDF, use a fixed square tile. */
+  messageAttachmentTile: css`
+    width: 120px;
+    height: 120px;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+    }
+  `,
+
+  messageAttachmentTypeBadge: css`
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    padding: 1px 7px;
+    border-radius: 6px;
+    background: rgba(25, 25, 25, 0.82);
+    color: #f0f0f0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 18px;
+  `,
+
+  attachmentDialogBackdrop: css`
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.55);
+  `,
+
+  attachmentDialog: css`
+    display: flex;
+    flex-direction: column;
+    width: min(420px, 100%);
+    max-height: calc(var(--areqa-visual-viewport-height, 100dvh) - 32px);
+    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+    border-radius: 16px;
+    /* One step above the card surface in both themes. */
+    background: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+    color: var(--foreground);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  `,
+
+  attachmentDialogHeader: css`
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 12px 8px 20px;
+  `,
+
+  attachmentDialogTitle: css`
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+  `,
+
+  attachmentDialogClose: css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: color-mix(in srgb, var(--foreground) 80%, transparent);
+    cursor: pointer;
+
+    &:hover {
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    }
+  `,
+
+  attachmentDialogBody: css`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 24px 20px;
+
+    img {
+      display: block;
+      max-width: 100%;
+      max-height: 60vh;
+      height: auto;
+      border-radius: 8px;
+      background: #ffffff;
+    }
+  `,
+
+  attachmentDialogDownload: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #6ea8fe;
+    font-size: 14px;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  `,
+
+  attachmentDialogNote: css`
+    margin: 0;
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+    font-size: 12px;
+    text-align: center;
+  `,
+
   messageAttachmentToggleWrap: css`
     position: relative;
     display: flex;

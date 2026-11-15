@@ -20,6 +20,7 @@ describe('chat surfaces follow the interface theme', () => {
     ['MessageList/styles.ts', 'messageAttachmentCard'],
     ['MessageList/styles.ts', 'messageAttachmentToggle'],
     ['MessageList/styles.ts', 'messageAttachmentDropdown'],
+    ['MessageList/styles.ts', 'attachmentDialog'],
     ['Citations/styles.ts', 'sourceCard'],
   ])('%s %s uses theme colors for its surface', (file, rule) => {
     const css = source(`components/${file}`).match(new RegExp(`${rule}:\\s*css\x60([^\x60]*)\x60`))?.[1];

@@ -26,6 +26,8 @@ import type { AnswerBlock, AttachmentMetadata, ImageBlock, Message } from '@/dat
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
+import { collectAttachmentPreviews } from '@/utils/attachmentPreview';
+import { rememberSessionAttachments } from '@/utils/attachmentSession';
 import { answerBlocksForEditedContent, persistentAnswerBlocks } from '@/utils/answerBlocks';
 import { logger } from '@/utils/logger';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
@@ -445,7 +447,9 @@ export async function sendMessage(
   // Validate input
   validateMessageContent(content, attachments.length > 0);
   const sanitizedContent = content.trim() || (attachments.length > 0 ? '請分析我附加的檔案。' : '');
-  const attachmentMetadata = filesToAttachmentMetadata(attachments);
+  // Thumbnails were usually prefetched on attach; a bounded wait keeps send fast.
+  const attachmentPreviews = await collectAttachmentPreviews(attachments);
+  const attachmentMetadata = filesToAttachmentMetadata(attachments, attachmentPreviews);
   const responseMode = options.responseMode ?? 'text';
   const isVoiceResponse = responseMode === 'voice';
 
@@ -488,6 +492,7 @@ export async function sendMessage(
 
   // Add user message to store
   const userMessageId = chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata);
+  rememberSessionAttachments(userMessageId, attachments);
   if (attachments.length > 0) {
     lastAttachmentUpload = {
       conversationId: activeConversationId,

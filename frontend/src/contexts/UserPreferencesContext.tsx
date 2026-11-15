@@ -130,6 +130,10 @@ export type TranslationKey =
   | 'attachmentItemLabel'
   | 'pdfAttachmentSource'
   | 'uploadedAttachmentBadge'
+  | 'attachmentOpenPreview'
+  | 'attachmentDownload'
+  | 'attachmentClosePreview'
+  | 'attachmentOriginalUnavailable'
   | 'pdfPageAttribution'
   | 'messageInputRow'
   | 'addAttachment'
@@ -409,6 +413,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentItemLabel: '附件 {name}',
     pdfAttachmentSource: '上傳 PDF',
     uploadedAttachmentBadge: '上傳附件',
+    attachmentOpenPreview: '預覽 {name}',
+    attachmentDownload: '下載',
+    attachmentClosePreview: '關閉預覽',
+    attachmentOriginalUnavailable: '重新整理後只保留預覽縮圖，若要下載請重新上傳原始檔案。',
     pdfPageAttribution: '{filename}，第 {page} 頁',
     messageInputRow: '訊息輸入列',
     addAttachment: '加入圖片或文件',
@@ -662,6 +670,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentItemLabel: '附件 {name}',
     pdfAttachmentSource: '上传 PDF',
     uploadedAttachmentBadge: '上传附件',
+    attachmentOpenPreview: '预览 {name}',
+    attachmentDownload: '下载',
+    attachmentClosePreview: '关闭预览',
+    attachmentOriginalUnavailable: '刷新后只保留预览缩略图，如需下载请重新上传原始文件。',
     pdfPageAttribution: '{filename}，第 {page} 页',
     messageInputRow: '讯息输入列',
     addAttachment: '加入图片或文件',
@@ -915,6 +927,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentItemLabel: 'Attachment {name}',
     pdfAttachmentSource: 'Uploaded PDF',
     uploadedAttachmentBadge: 'Uploaded attachment',
+    attachmentOpenPreview: 'Preview {name}',
+    attachmentDownload: 'Download',
+    attachmentClosePreview: 'Close preview',
+    attachmentOriginalUnavailable: 'Only the preview thumbnail is kept after a reload; upload the file again to download it.',
     pdfPageAttribution: '{filename}, page {page}',
     messageInputRow: 'Message input row',
     addAttachment: 'Add image or document',
