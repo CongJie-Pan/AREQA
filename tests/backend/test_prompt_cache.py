@@ -192,7 +192,7 @@ async def test_answer_complete_is_sent_before_suggestions():
 
     service = SimpleNamespace(
         visual_answer_service=SimpleNamespace(build_answer_blocks=AsyncMock(return_value=[])),
-        _node_post_generation=post_generation, client=None,
+        _node_post_generation=post_generation, client=None, tool_registry=None,
     )
     session = SimpleNamespace(context=SimpleNamespace(run_id="run-1"), state=SimpleNamespace(
         tool_budget=None, web_search_results=[]), transport=SSEAdapter())
