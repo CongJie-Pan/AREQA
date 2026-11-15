@@ -26,6 +26,7 @@ from services.pdf_visual.constants import (
     PDF_VISUAL_MAX_CAPTION_GAP_POINTS,
     PDF_VISUAL_MAX_CROP_AREA_RATIO,
     PDF_VISUAL_MAX_DATA_URI_BYTES,
+    PDF_VISUAL_MAX_RENDER_EDGE,
     PDF_VISUAL_MAX_TARGET_CROP_ASPECT_RATIO,
     PDF_VISUAL_MIN_PAGE_SCORE,
     PDF_VISUAL_MIN_CROP_AREA_RATIO,
@@ -296,12 +297,17 @@ class PdfVisualExtractionService(PdfVisualGeometryMixin, PdfVisualRenderingMixin
             page_rect=fitz.Rect(page.rect),
             target_caption=target_caption,
         )
-        pixmap = page.get_pixmap(
-            matrix=fitz.Matrix(self.render_zoom, self.render_zoom),
+        # Bound the native RGB allocation before rendering oversized page boxes.
+        render_rect = crop_choice.clip if crop_choice.clip is not None else page.rect
+        longest_edge = max(render_rect.width, render_rect.height)
+        if longest_edge <= 0:
+            return None
+        zoom = min(self.render_zoom, (PDF_VISUAL_MAX_RENDER_EDGE - 1) / longest_edge)
+        png_bytes = page.get_pixmap(
+            matrix=fitz.Matrix(zoom, zoom),
             clip=crop_choice.clip,
             alpha=False,
-        )
-        png_bytes = pixmap.tobytes("png")
+        ).tobytes("png")
         if not self._is_valid_png(png_bytes):
             return None
         if len(png_bytes) > PDF_VISUAL_MAX_DATA_URI_BYTES:

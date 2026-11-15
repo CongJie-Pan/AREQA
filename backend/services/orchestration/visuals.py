@@ -280,10 +280,10 @@ class OrchestrationVisualMixin:
                 return []
             return list(candidates)
 
-        nested_candidates = await asyncio.gather(
-            *(extract_one(source) for source in attachment_visual_sources[:3])
-        )
-        candidates = [candidate for group in nested_candidates for candidate in group]
+        # Keep the native rendering allocations for multiple PDFs from overlapping.
+        candidates = []
+        for source in attachment_visual_sources[:3]:
+            candidates.extend(await extract_one(source))
         logger.info(
             "visual.attachment_pdf_candidates_ready conversation_id=%s source_count=%s candidate_count=%s planner_enabled=%s",
             conversation_id,

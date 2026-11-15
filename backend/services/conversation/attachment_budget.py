@@ -82,6 +82,33 @@ def reading_cost(part: dict) -> int:
     return 65_536
 
 
+def attachment_transport_size(value: Any) -> tuple[int, int]:
+    """Count attachment parts and their serialized payload size without parsing them.
+
+    Args:
+        value: Assembled provider messages (any JSON-compatible nesting).
+
+    Returns:
+        Attachment part count and the summed length of inline data/text strings.
+        Constant memory: nothing is decoded, copied or handed to a subprocess.
+    """
+    if is_attachment(value):
+        if value.get('type') == 'file':
+            data = value.get('file', {}).get('file_data', '')
+        elif value.get('type') == 'image_url':
+            data = value.get('image_url', {}).get('url', '')
+        else:
+            data = value.get('text', '')
+        return 1, len(data) if isinstance(data, str) else 0
+    children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
+    count, size = 0, 0
+    for child in children:
+        parts, length = attachment_transport_size(child)
+        count += parts
+        size += length
+    return count, size
+
+
 def attachment_cost(value: Any) -> tuple[int, int]:
     """Return total estimated reading units and part count for assembled messages."""
     if is_attachment(value):

@@ -53,7 +53,7 @@ async def test_summary_budget_and_unchanged_transcript():
     assert messages == before
     assert result.messages[0] == messages[0]
     assert result.messages[-1] == messages[-1]
-    assert token_bound(result.messages) + token_bound([]) + 500 + 1024 <= 8000
+    assert token_bound(result.messages) + token_bound([]) <= (8000 - 500 - 1024) * 3
     assert any('Historical conversation summary' in m['content'] for m in result.messages)
     assert not result.notice
 
@@ -201,7 +201,7 @@ async def test_timeout_never_prepends_history_warning(caplog):
 async def test_independent_summary_budget_batches_complete_sources():
     import json
     c = client()
-    messages = history(30)
+    messages = history(37)
     await run(messages, c, summary_context_tokens=16000)
     calls = c.chat.completions.create.call_args_list
     assert 1 < len(calls) < 30

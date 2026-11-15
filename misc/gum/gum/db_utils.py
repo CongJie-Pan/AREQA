@@ -11,9 +11,6 @@ from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 from sqlalchemy import (
     MetaData,
@@ -320,6 +317,8 @@ async def search_propositions_bm25(
             
         initial_scores.append(score)
 
+    import numpy as np
+
     final_scores_np = np.array(initial_scores)
     min_score = np.min(final_scores_np)
     max_score = np.max(final_scores_np)
@@ -332,6 +331,9 @@ async def search_propositions_bm25(
     final_scores = final_scores_np.tolist()
 
     if enable_mmr and len(filtered_rows) > 1:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+
         docs: list[str] = []
         for p, _, _ in filtered_rows:
             doc_parts = [p.text, p.reasoning]

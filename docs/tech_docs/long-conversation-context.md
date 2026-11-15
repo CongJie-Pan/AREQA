@@ -18,7 +18,7 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `MODEL_CONVERSATION_SUMMARY` | `google/gemini-3.1-flash-lite` | Independent summary model; main answer and GUM models are unchanged |
-| `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conversation text allowance including tool/output reservations |
+| `CONVERSATION_CONTEXT_TOKENS` | 32768 | Conversation text token allowance including tool/output reservations (about 85 KB of chat text) |
 | `CONVERSATION_ATTACHMENT_TOKENS` | 131072 | Separate estimated attachment reading allowance |
 | `CONVERSATION_PROVIDER_CONTEXT_TOKENS` | 262144 | Combined provider allowance; configure at or below the selected answer model context |
 | `CONVERSATION_SUMMARY_TOKENS` | 1536 | Maximum generated summary tokens |
@@ -30,8 +30,11 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 
 Conversation text estimates use serialized UTF-8 bytes plus framing as a
 conservative text proxy, excluding native file/image payloads and server-marked
-uploaded text parts. The budget reserves completion tokens, tool schemas and
-1024 units of safety margin. Native PDF/image expansion is provider-dependent;
+uploaded text parts. The token allowance minus completion tokens and a 1024-token
+safety margin is converted to bytes at 3 bytes per token (about one CJK character
+per token; English averages about 4 bytes per token), then tool schema bytes are
+subtracted. Before 2026-11-14 tokens were compared to bytes 1:1, which left about
+26 KB and dropped every recent turn in long web-search conversations. Native PDF/image expansion is provider-dependent;
 this estimator cannot guarantee the expanded multimodal token count. Tool and
 attachment provider limits continue to apply.
 
@@ -202,24 +205,15 @@ allowance. A server-owned dict subtype marks uploaded text without adding any
 fields to provider JSON; typed user text remains fully charged. The original
 attachment payload is preserved, including during retrieval trimming.
 
-Attachments have an independent reading estimate: uploaded text uses UTF-8 bytes;
-PDF uses extracted text bytes plus 1024 units per page, including scanned pages;
-images reserve 1024 units per 512-pixel tile. Unknown/unreadable native content
-reserves 65536 units. Context-budget PDF/image inspection runs in a terminable subprocess. These
-are configurable deployment allowances, not exact provider token measurements.
+The chat path records only attachment count and inline transport length in
+`attachment.context_budget`. PDF and image reading costs are enforced by the
+provider. The context budget needs no native attachment inspection subprocess,
+so slow preview work or a tight container memory limit cannot cause a second
+attachment parse to reject the answer. Upload validation and the native PDF
+payload continue to run through their existing paths.
 
-The answer text allowance is reduced if attachment reading cost leaves less room
-under the combined provider cap. Both caps must be set for the deployed model;
-changing the model requires reviewing these settings. Attachment overflow has a
-distinct user-visible message and `attachment_context_too_large` reason.
-`attachment.context_budget` and `attachment.pdf_budget` log counts, estimates,
-page counts and transport size without content, filenames or data URIs.
-
-Validation: 166 scoped backend tests passed, 2 existing tests skipped. Fixtures
-include real PDF and PNG binaries, large TXT/Markdown uploads, first/second turns,
-search retrieval, combined provider capacity and unchanged streaming payloads.
-Provider responses were mocked; the user's original PDF was not replayed. This
-change does not implement document chunking or move visual preprocessing earlier.
+PDF previews render one source at a time within each request. The renderer
+caps the raster's longest edge at 1,600 pixels before allocating the pixmap.
 
 ## Context audit corrections
 
@@ -228,16 +222,7 @@ change does not implement document chunking or move visual preprocessing earlier
   markers are filtered across streaming chunk boundaries when no excerpts remain.
 - TXT/Markdown uploads keep their complete decoded text within the existing upload
   byte limits. The old 50,000-character prefix cut no longer applies. Full text is
-  independently budgeted, and oversized uploads receive an attachment-specific
-  response rather than an answer based only on their beginning.
-- `combined_context_too_large` distinguishes aggregate provider exhaustion from
-  oversized standalone text or attachments. Logs retain separate numeric sizes.
-- Context-budget native parsing uses `CONVERSATION_ATTACHMENT_TIMEOUT_SECONDS`
-  (default 10 seconds), including waiting for one of two per-loop worker slots.
-  Each Unix child also has a five-second CPU and 1 GiB address-space limit.
-  Timeout/cancellation kills, drains and reaps the process. This deadline applies
-  to reading-cost inspection; it is not an end-to-end deadline for optional visual
-  enrichment, network calls or the whole conversation turn.
+  passed through subject to the upload and provider limits.
 - Explicit provider context errors on HTTP 400/413 allow at most one smaller
   request, only before any answer or tool delta starts. The retry removes earlier
   turns and trusted retrieval, retaining instructions, current text, attachments
@@ -246,9 +231,7 @@ change does not implement document chunking or move visual preprocessing earlier
   a specific capacity response. Responses/tasks are closed or cancelled on exit.
 
 Regression fixtures reproduce the original optional-retrieval rejection, text
-tail loss and aggregate misclassification. Tests cover subprocess timeout,
-cancellation and a real killed child; complete uploads through parsing and
-budgeting; context retry before streaming; no retry after output or for unrelated
-errors; unchanged current attachments; and split citation filtering. Model calls
-are mocked. Live-provider context limits still require deployment validation;
-estimated reading units cannot guarantee identical accounting across providers.
+tail loss and aggregate context failures. Tests cover complete uploads through
+parsing and budgeting, multi-PDF admission without subprocesses, context retry
+before streaming, and split citation filtering. Model calls are mocked.
+Live-provider context limits still require deployment validation.

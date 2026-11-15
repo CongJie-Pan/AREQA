@@ -61,6 +61,30 @@ def test_extract_candidates_renders_pdf_page_visual():
     assert block["transient"] is True
 
 
+def test_extract_candidates_bounds_raster_before_rendering_large_page(monkeypatch):
+    with fitz.open() as document:
+        page = document.new_page(width=3000, height=4000)
+        page.insert_text((30, 40), "Figure 1. A large-format page")
+        pdf_bytes = document.tobytes()
+
+    rendered_sizes = []
+    original_get_pixmap = fitz.Page.get_pixmap
+
+    def measure_render(page, *args, **kwargs):
+        pixmap = original_get_pixmap(page, *args, **kwargs)
+        rendered_sizes.append((pixmap.width, pixmap.height))
+        return pixmap
+
+    monkeypatch.setattr(fitz.Page, "get_pixmap", measure_render)
+    service = PdfVisualExtractionService(max_candidates=1, max_pages_scanned=1)
+    candidates = service.extract_candidates(pdf_bytes=pdf_bytes, filename="poster.pdf")
+
+    assert len(candidates) == len(rendered_sizes) == 1
+    assert max(rendered_sizes[0]) <= 1600
+    assert candidates[0].page_number == 1
+    assert png_size_from_data_uri(candidates[0].image_data_uri) == rendered_sizes[0]
+
+
 def test_extract_candidates_crops_caption_adjacent_figure_region(caplog):
     """A captioned vector figure should render as a compact crop, not a full page."""
 

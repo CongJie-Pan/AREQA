@@ -34,7 +34,7 @@ async def test_regression_five_messages_with_twelve_large_sources_fit_without_su
         context_tokens=32768, retrieval_context=prefix,
     )
     assert result.messages[-1]['content'].endswith('short question')
-    assert token_bound(result.messages) <= 32768 - 2048 - token_bound([]) - 1024
+    assert token_bound(result.messages) <= (32768 - 2048 - 1024) * 3 - token_bound([])
     assert messages == before
     create.assert_not_called()
     assert 'mandatory_context_too_large' not in caplog.text
@@ -115,7 +115,7 @@ def test_mismatched_server_prefix_never_cuts_user_text():
 @pytest.mark.asyncio
 async def test_user_authored_context_tags_are_not_treated_as_optional_retrieval():
     with pytest.raises(ValueError, match='current_turn_too_large'):
-        await prepare_history(messages=prompt(sources()), tools=[], client=None,
+        await prepare_history(messages=prompt(sources(size=1500)), tools=[], client=None,
                               user_id='test', conversation_id='test', model='test',
                               output_tokens=2048, context_tokens=32768)
 
@@ -125,7 +125,7 @@ async def test_large_original_question_is_still_rejected_with_separate_sizes():
     from services.conversation.context_budget import ContextBudgetError
     prefix = sources()
     messages = prompt(prefix)
-    messages[-1]['content'] += '原文' * 10000
+    messages[-1]['content'] += '原文' * 20000
     with pytest.raises(ContextBudgetError) as error:
         await prepare_history(messages=messages, tools=[], client=None,
                               user_id='test', conversation_id='test', model='test',
@@ -152,7 +152,7 @@ async def test_retrieval_budget_and_long_history_compaction_work_together():
     assert any('Historical conversation summary' in m['content'] for m in result.messages)
     assert result.messages[-1]['content'].endswith('short question')
     assert '[文獻1]' in result.messages[-1]['content']
-    assert token_bound(result.messages) <= 32768 - 2048 - token_bound([]) - 1024
+    assert token_bound(result.messages) <= (32768 - 2048 - 1024) * 3 - token_bound([])
     assert messages == before
 
 
@@ -222,7 +222,7 @@ async def test_integration_sources_context_mixin_budget_and_provider_stream(
     assert text.endswith('short question')
     assert '[文獻1] Source 1\nURL: https://example.com/1' in text
     assert len(source_payload) == 12 and source_payload[-1]['url'] == 'https://example.com/12'
-    assert token_bound(sent) <= 32768 - 2048 - token_bound(kwargs['tools']) - 1024
+    assert token_bound(sent) <= (32768 - 2048 - 1024) * 3 - token_bound(kwargs['tools'])
     if with_attachment:
         assert sent[-1]['content'][1] == attachment
     answer = ''.join(json.loads(chunk[6:])['choices'][0]['delta'].get('content', '')
@@ -290,7 +290,7 @@ async def test_regression_execute_carries_request_scoped_retrieval_to_real_strea
     create.assert_awaited_once()
     kwargs = create.call_args.kwargs
     sent = kwargs['messages']
-    assert token_bound(sent) <= config.settings.conversation_context_tokens - kwargs['max_tokens'] - token_bound(kwargs['tools']) - 1024
+    assert token_bound(sent) <= (config.settings.conversation_context_tokens - kwargs['max_tokens'] - 1024) * 3 - token_bound(kwargs['tools'])
     assert '[文獻1]' in sent[-1]['content']
     assert sent[-1]['content'].endswith('short question')
     assert 'Grounded answer' in ''.join(chunks)

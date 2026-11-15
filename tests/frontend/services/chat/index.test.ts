@@ -453,6 +453,19 @@ describe('Chat Service', () => {
       expect(result).toEqual({ completed: true });
     });
 
+    it('shows and saves a fallback when the stream completes without an answer', async () => {
+      const notice = '這次沒有產生回答內容，請重新嘗試。';
+      vi.mocked(createChatStream).mockImplementationOnce(async (_messages, callbacks) => {
+        await callbacks.onDone();
+      });
+
+      expect(await sendMessage('請解釋這段文字')).toEqual({ completed: true });
+      expect(mockChatStore.updateMessageContent).toHaveBeenCalledWith('assistant-msg-id', notice);
+      expect(databaseService.message.add).toHaveBeenCalledWith(
+        'test-conv-id', expect.objectContaining({ role: 'assistant', content: notice }),
+      );
+    });
+
     it('forwards streamed image slots into the chat store', async () => {
       mockChatStore.messages = [{ id: 'msg-prev', role: 'user', content: 'previous' }];
       const slot = { slotId: 'img_1', anchorAfterParagraph: 0, contentOffset: 8 };
