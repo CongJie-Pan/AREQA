@@ -2868,6 +2868,7 @@ export const MessageItem = memo(function MessageItem({
                       disabled={isSavedNote}
                       onClick={handleAddNote}
                       aria-label={isSavedNote ? t('savedToNotes') : t('addToNotes')}
+                      data-tour={isLast ? 'add-note' : undefined}
                     >
                       <Bookmark size={16} fill={isSavedNote ? 'currentColor' : 'none'} />
                     </button>
@@ -2875,7 +2876,7 @@ export const MessageItem = memo(function MessageItem({
                 )}
                 {moreReplyActions.length > 0 && (
                   <Dropdown trigger={['click']} menu={{ items: moreReplyActions, className: styles.replyActionsMenu }}>
-                    <button type="button" className={styles.actionButton} aria-label={t('moreReplyActions')} aria-haspopup="menu">
+                    <button type="button" className={styles.actionButton} aria-label={t('moreReplyActions')} aria-haspopup="menu" data-tour={isLast ? 'reply-more' : undefined}>
                       <Ellipsis size={16} />
                     </button>
                   </Dropdown>

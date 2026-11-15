@@ -872,6 +872,7 @@ export function ChatInput({
       </div>
     )}
     <div
+      data-tour="composer"
       className={cx(
         'areqa-chat-input-shell',
         attachmentPreviews.length > 0 && 'areqa-chat-input-shell-has-attachments',
@@ -1000,6 +1001,7 @@ export function ChatInput({
               )}
               disabled={disabled || dictationState !== 'idle'}
               aria-label={addMenuLabels.open}
+              data-tour="composer-plus"
               aria-haspopup="menu"
               aria-pressed={tutorProfile === 'english'}
             >

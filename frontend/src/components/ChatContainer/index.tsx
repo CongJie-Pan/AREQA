@@ -44,6 +44,8 @@ import { LongConversationReminder } from './LongConversationReminder';
 import { SharePanel } from './SharePanel';
 import { useSharedConversationView } from './useSharedConversationView';
 import { SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
+import { OnboardingTour } from '@/components/Onboarding/OnboardingTour';
+import { hasSeenOnboarding, useOnboardingStore } from '@/store/onboarding';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 
@@ -482,6 +484,17 @@ export function ChatContainer({ className }: ChatContainerProps) {
     void handleSend(prompt).catch(() => undefined);
   }, [handleSend, isChatReady]);
 
+  // New accounts (no conversations yet) get the guided tour once; it is stored
+  // on the account, so other devices and later visits skip it.
+  const onboardingCheckedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isChatReady || !user || sharedView || isLiveTutorOpen) return;
+    if (onboardingCheckedFor.current === user.id) return;
+    onboardingCheckedFor.current = user.id;
+    if (conversations.length > 0 || hasSeenOnboarding(user)) return;
+    useOnboardingStore.getState().start();
+  }, [conversations.length, isChatReady, isLiveTutorOpen, sharedView, user]);
+
   // Handle conversation selection
   const handleConversationSelect = useCallback(() => {
     exitSharedView();
@@ -629,6 +642,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
     try {
       await addNoteFromMessage(sourceMessage, activeConversation?.title ?? null);
       antMessageApi.success(t('addedToNotes'));
+      useOnboardingStore.getState().notify('note_added');
     } catch (err) {
       console.error('Failed to add note:', err);
       antMessageApi.error(t('addNoteFailed'));
@@ -703,6 +717,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   return (
     <div className={cx('areqa-chat-shell', styles.container, className)}>
+      <OnboardingTour onAskExample={(question) => { void handleSend(question); }} />
       {/* Sidebar Overlay (mobile) */}
       {mobileOpen && (
         <div className="areqa-chat-sidebar-overlay" onClick={closeSidebar} />

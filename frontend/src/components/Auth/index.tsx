@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Modal, Input, Dropdown, MenuProps, message, Button } from 'antd';
 import {
+  Compass,
   BrainCircuit,
   Check,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
   Sun,
   User,
 } from 'lucide-react';
+import { useOnboardingStore } from '@/store/onboarding';
 import { Auth as SupabaseAuth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/lib/supabase';
@@ -208,6 +210,12 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
         setNewUsername(displayName);
         setIsEditModalOpen(true);
       }
+    },
+    {
+      key: 'tour',
+      icon: <Compass size={16} />,
+      label: t('onboardingReplay'),
+      onClick: () => useOnboardingStore.getState().start(),
     },
     {
       key: 'feedback',

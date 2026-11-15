@@ -252,6 +252,30 @@ export type TranslationKey =
   | 'shareLoginRequired'
   | 'shareNoConversation'
   | 'shareLinkCopied'
+  | 'onboardingWelcomeTitle'
+  | 'onboardingPitch'
+  | 'onboardingPointConcise'
+  | 'onboardingPointGuided'
+  | 'onboardingPointAdaptive'
+  | 'onboardingStart'
+  | 'onboardingSkip'
+  | 'onboardingNext'
+  | 'onboardingGotIt'
+  | 'onboardingDone'
+  | 'onboardingAskTitle'
+  | 'onboardingAskBody'
+  | 'onboardingExample1'
+  | 'onboardingExample2'
+  | 'onboardingExample3'
+  | 'onboardingNoteTitle'
+  | 'onboardingNoteBody'
+  | 'onboardingBranchTitle'
+  | 'onboardingBranchBody'
+  | 'onboardingPlusTitle'
+  | 'onboardingPlusBody'
+  | 'onboardingFinishTitle'
+  | 'onboardingFinishBody'
+  | 'onboardingReplay'
   | 'shareDialogTitle'
   | 'shareDialogClose'
   | 'shareSnapshotNotice'
@@ -549,6 +573,30 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '請先登入後再分享對話。',
     shareNoConversation: '目前沒有可分享的對話。',
     shareLinkCopied: '已公開並複製分享連結',
+    onboardingWelcomeTitle: "歡迎來到 AREQA",
+    onboardingPitch: "把難懂的東西用最少的話講到你聽得懂，再陪你想下一步的學習夥伴。",
+    onboardingPointConcise: "講得短、講得白：先用直覺說明，再補上專業術語。",
+    onboardingPointGuided: "引導你思考：回答最後會留一個問題，讓你決定往哪裡深入。",
+    onboardingPointAdaptive: "跟著你的程度調整：注意你是剛開始、卡關，還是已經掌握。",
+    onboardingStart: "開始（約 1 分鐘）",
+    onboardingSkip: "略過引導",
+    onboardingNext: "下一步",
+    onboardingGotIt: "知道了",
+    onboardingDone: "完成",
+    onboardingAskTitle: "先問一個學習上的問題",
+    onboardingAskBody: "在下方輸入你最近在學、還不太懂的東西，或直接點一個範例。AREQA 回答完後會繼續帶你認識其他功能。",
+    onboardingExample1: "什麼是自我效能？",
+    onboardingExample2: "用白話解釋貝氏定理",
+    onboardingExample3: "學習動機有哪些主要理論？",
+    onboardingNoteTitle: "把重點存進筆記",
+    onboardingNoteBody: "覺得這段回答有用？按這裡就能存進筆記，之後在側欄的「筆記」裡整理和複習。",
+    onboardingBranchTitle: "換個方向問，不打亂原對話",
+    onboardingBranchBody: "回答旁的「⋯」選單可以「建立新對話分支」：從這一點另開一段對話，原本的對話保持不變。也可以在這裡朗讀回答。",
+    onboardingPlusTitle: "更多工具都在「＋」裡",
+    onboardingPlusBody: "按「＋」可以上傳 PDF 或圖片一起提問，也能「產生圖片」，例如把一個概念畫成圖解。",
+    onboardingFinishTitle: "準備好了！",
+    onboardingFinishBody: "你還可以用麥克風跟 AREQA 語音對話、把對話分享給別人，或在帳號選單裡查看筆記與 AREQA 對你的記憶。想再看一次這個導覽，到帳號選單點「觀看功能導覽」。",
+    onboardingReplay: "觀看功能導覽",
     shareDialogTitle: "分享對話",
     shareDialogClose: "關閉",
     shareSnapshotNotice: "只會分享到目前為止的訊息",
@@ -820,6 +868,30 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '请先登入后再分享对话。',
     shareNoConversation: '目前没有可分享的对话。',
     shareLinkCopied: '已公开并复制分享链接',
+    onboardingWelcomeTitle: "欢迎来到 AREQA",
+    onboardingPitch: "把难懂的东西用最少的话讲到你听得懂，再陪你想下一步的学习伙伴。",
+    onboardingPointConcise: "讲得短、讲得白：先用直觉说明，再补上专业术语。",
+    onboardingPointGuided: "引导你思考：回答最后会留一个问题，让你决定往哪里深入。",
+    onboardingPointAdaptive: "跟着你的程度调整：注意你是刚开始、卡关，还是已经掌握。",
+    onboardingStart: "开始（约 1 分钟）",
+    onboardingSkip: "跳过引导",
+    onboardingNext: "下一步",
+    onboardingGotIt: "知道了",
+    onboardingDone: "完成",
+    onboardingAskTitle: "先问一个学习上的问题",
+    onboardingAskBody: "在下方输入你最近在学、还不太懂的东西，或直接点一个示例。AREQA 回答完后会继续带你认识其他功能。",
+    onboardingExample1: "什么是自我效能？",
+    onboardingExample2: "用白话解释贝叶斯定理",
+    onboardingExample3: "学习动机有哪些主要理论？",
+    onboardingNoteTitle: "把重点存进笔记",
+    onboardingNoteBody: "觉得这段回答有用？按这里就能存进笔记，之后在侧栏的「笔记」里整理和复习。",
+    onboardingBranchTitle: "换个方向问，不打乱原对话",
+    onboardingBranchBody: "回答旁的「⋯」菜单可以「建立新对话分支」：从这一点另开一段对话，原本的对话保持不变。也可以在这里朗读回答。",
+    onboardingPlusTitle: "更多工具都在「＋」里",
+    onboardingPlusBody: "按「＋」可以上传 PDF 或图片一起提问，也能「生成图片」，例如把一个概念画成图解。",
+    onboardingFinishTitle: "准备好了！",
+    onboardingFinishBody: "你还可以用麦克风跟 AREQA 语音对话、把对话分享给别人，或在账号菜单里查看笔记与 AREQA 对你的记忆。想再看一次这个导览，到账号菜单点「观看功能导览」。",
+    onboardingReplay: "观看功能导览",
     shareDialogTitle: "分享对话",
     shareDialogClose: "关闭",
     shareSnapshotNotice: "只会分享到目前为止的消息",
@@ -1091,6 +1163,30 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: 'Log in before sharing a conversation.',
     shareNoConversation: 'There is no conversation to share yet.',
     shareLinkCopied: 'Public share link copied',
+    onboardingWelcomeTitle: "Welcome to AREQA",
+    onboardingPitch: "A learning partner that explains hard things in as few words as it takes for you to get it, then helps you think about what to explore next.",
+    onboardingPointConcise: "Short and plain: intuition first, technical terms after.",
+    onboardingPointGuided: "Guides your thinking: each answer ends with a question so you choose where to go deeper.",
+    onboardingPointAdaptive: "Adapts to you: it notices whether you are just starting, stuck, or already confident.",
+    onboardingStart: "Start (about 1 min)",
+    onboardingSkip: "Skip tour",
+    onboardingNext: "Next",
+    onboardingGotIt: "Got it",
+    onboardingDone: "Done",
+    onboardingAskTitle: "Ask a learning question",
+    onboardingAskBody: "Type something you are learning and do not fully understand yet, or pick an example. After AREQA answers, the tour continues.",
+    onboardingExample1: "What is self-efficacy?",
+    onboardingExample2: "Explain Bayes' theorem in plain words",
+    onboardingExample3: "What are the main theories of motivation?",
+    onboardingNoteTitle: "Save key points to notes",
+    onboardingNoteBody: "Found this answer useful? Save it here, then review it later under Notes in the sidebar.",
+    onboardingBranchTitle: "Branch without losing your place",
+    onboardingBranchBody: "The ⋯ menu next to an answer can create a new conversation branch from this point, leaving the original untouched. You can also have the answer read aloud here.",
+    onboardingPlusTitle: "More tools live under +",
+    onboardingPlusBody: "Use + to upload a PDF or image to ask about, or to create an image, for example a diagram of a concept.",
+    onboardingFinishTitle: "You're ready!",
+    onboardingFinishBody: "You can also talk to AREQA by voice, share a conversation, or open your notes and what AREQA remembers about you from the account menu. To see this tour again, choose \"Feature tour\" in the account menu.",
+    onboardingReplay: "Feature tour",
     shareDialogTitle: "Share conversation",
     shareDialogClose: "Close",
     shareSnapshotNotice: "Only messages up until now will be shared",
