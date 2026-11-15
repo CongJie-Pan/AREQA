@@ -7,7 +7,7 @@ export const useStyles = createStyles(({ css }) => ({
     display: flex;
     flex-direction: column;
     animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    background: #130f18;
+    background: #191919;
   `,
   header: css`
     display: flex;
@@ -15,7 +15,7 @@ export const useStyles = createStyles(({ css }) => ({
     align-items: center;
     padding: 24px 32px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(19, 15, 24, 0.6);
+    background: rgba(25, 25, 25, 0.6);
     backdrop-filter: blur(12px);
     z-index: 10;
   `,
@@ -86,7 +86,7 @@ export const useStyles = createStyles(({ css }) => ({
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     cursor: pointer;
     transition: all 0.2s ease;
-    background: rgba(30, 24, 38, 0.2);
+    background: rgba(34, 34, 34, 0.2);
 
     &:hover {
       background: rgba(255, 255, 255, 0.05);
@@ -178,7 +178,7 @@ export const useStyles = createStyles(({ css }) => ({
     word-break: break-word;
     white-space: pre-wrap;
     
-    background: rgba(30, 24, 38, 0.6);
+    background: rgba(34, 34, 34, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.05);
     color: rgba(255, 255, 255, 0.9);
     border-bottom-left-radius: 4px;

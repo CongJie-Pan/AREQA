@@ -34,7 +34,7 @@ const useStyles = createStyles(({ token, css }) => ({
     padding: ${token.paddingMD}px;
     border: 1px solid rgba(216, 162, 92, 0.42);
     border-radius: ${token.borderRadiusLG}px;
-    background: rgba(30, 24, 38, 0.96);
+    background: rgba(34, 34, 34, 0.96);
     color: #f8fafc;
     box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
     backdrop-filter: blur(14px);
@@ -99,13 +99,13 @@ const useStyles = createStyles(({ token, css }) => ({
     height: 42px;
     border: 0;
     background: #d8a25c;
-    color: #130f18;
+    color: #191919;
     font-weight: 700;
 
     &.ant-btn:hover,
     &.ant-btn:focus-visible {
       background: #e1b16f !important;
-      color: #130f18 !important;
+      color: #191919 !important;
     }
   `,
   laterButton: css`

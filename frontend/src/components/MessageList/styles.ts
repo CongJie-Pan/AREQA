@@ -1864,7 +1864,7 @@ quoteBlockContent: css`
       overflow-y: auto;
       border: 1px solid rgba(216, 162, 92, 0.16);
       border-radius: 24px 24px 0 0;
-      background: #1e1826;
+      background: #222222;
       color: #f5f0ea;
       padding: 16px 20px calc(18px + env(safe-area-inset-bottom));
       box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.42);
@@ -2008,7 +2008,7 @@ quoteBlockContent: css`
     }
 
     option {
-      background: #241d2e;
+      background: #262626;
       color: #f5f0ea;
     }
   `,
@@ -2016,7 +2016,7 @@ quoteBlockContent: css`
   feedbackSelectDropdown: css`
     max-height: min(44dvh, 320px);
     overflow-y: auto;
-    background: #241d2e;
+    background: #262626;
     border: 1px solid rgba(216, 162, 92, 0.22);
     border-radius: 14px;
     padding: 6px;
@@ -2123,7 +2123,7 @@ quoteBlockContent: css`
       font-size: 16px;
       font-weight: 700;
       background: #d8a25c;
-      color: #130f18;
+      color: #191919;
 
       &.ant-btn:disabled {
         background: rgba(255, 255, 255, 0.12);

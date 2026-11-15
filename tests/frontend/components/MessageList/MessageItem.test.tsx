@@ -178,6 +178,20 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByTestId('turn-progress-label')).toHaveTextContent('正在挑選附件中的關鍵圖表');
   });
 
+  it('shows a single waiting indicator while turn progress is visible', () => {
+    // Regression: the trailing streaming dots rendered under the progress line.
+    const { container } = render(
+      <MessageItem
+        message={{ ...baseMessage, content: '' }}
+        isStreaming={true}
+        progress={{ steps: [{ step: 'reading_documents', current: 0, total: 3, startedAt: Date.now() }] }}
+      />
+    );
+
+    expect(screen.getByTestId('turn-progress')).toBeInTheDocument();
+    expect(container.querySelector('.streamingDots')).not.toBeInTheDocument();
+  });
+
   it('hides turn progress once answer text starts', () => {
     render(
       <MessageItem

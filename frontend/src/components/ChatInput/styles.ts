@@ -222,7 +222,7 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: rgba(19, 15, 24, 0.72);
+    background: rgba(25, 25, 25, 0.72);
     backdrop-filter: blur(6px);
     pointer-events: none;
   `,

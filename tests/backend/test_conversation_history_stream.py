@@ -159,7 +159,7 @@ async def test_length_finish_adds_visible_notice_and_logs_usage(monkeypatch, cap
         yield SimpleNamespace(choices=[], usage=SimpleNamespace(
             prompt_tokens=50_000, completion_tokens=3_200,
             completion_tokens_details=SimpleNamespace(reasoning_tokens=1_900),
-            prompt_tokens_details=SimpleNamespace(cached_tokens=40_000)))
+            prompt_tokens_details=SimpleNamespace(cached_tokens=40_000, cache_write_tokens=9_000)))
 
     create = AsyncMock(return_value=response())
     service = ConversationStreamService(SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), None)
@@ -174,7 +174,7 @@ async def test_length_finish_adds_visible_notice_and_logs_usage(monkeypatch, cap
     assert '回答已達單次長度上限' in final
     assert create.call_args.kwargs['extra_body']['usage'] == {'include': True}
     assert ('orchestration.provider_finish conversation_id=chat finish_reason=length prompt_tokens=50000 '
-            'completion_tokens=3200 reasoning_tokens=1900 cached_tokens=40000') in caplog.text
+            'completion_tokens=3200 reasoning_tokens=1900 cached_tokens=40000 cache_write_tokens=9000') in caplog.text
     assert 'The LSTM paper shows' not in caplog.text
 
 

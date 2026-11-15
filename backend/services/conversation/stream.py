@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import logging
 import time
 import uuid
@@ -28,6 +29,18 @@ from services.conversation.response_boundary import StreamingResponseBoundaryFil
 from services.memory_diagnostics import log_memory_snapshot
 
 logger = logging.getLogger(__name__)
+
+
+def _cache_write_tokens(usage: Any) -> Any:
+    """Return OpenRouter's prompt cache write count, or None when not reported.
+
+    A cache write re-uploads the whole document prefix, which is the costly,
+    slow-first-token case on attachment follow-ups.
+    """
+    details = usage.get("prompt_tokens_details") if isinstance(usage, dict) else getattr(usage, "prompt_tokens_details", None)
+    if details is None:
+        return None
+    return details.get("cache_write_tokens") if isinstance(details, dict) else getattr(details, "cache_write_tokens", None)
 
 
 def _usage_counts(usage: Any) -> tuple[Any, Any, Any, Any]:
@@ -146,6 +159,7 @@ class ConversationStreamService:
         generated_blocks: list[dict] = []
         finish_reason: str | None = None
         provider_usage: Any = None
+        generation_id: str | None = None
         logger.info(
             "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s image_slot_cap=%s openrouter_session=%s latency_routing=%s",
             conversation_id,
@@ -274,6 +288,8 @@ class ConversationStreamService:
                             logger.info("orchestration.stream_cancelled conversation_id=%s", conversation_id)
                             break
                         provider_usage = getattr(chunk, "usage", None) or provider_usage
+                        # Opaque OpenRouter id; lets /api/v1/generation explain provider latency.
+                        generation_id = getattr(chunk, "id", None) or generation_id
                         if not chunk.choices:
                             continue
                         finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
@@ -430,8 +446,10 @@ class ConversationStreamService:
             yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
         logger.info(
             "orchestration.provider_finish conversation_id=%s finish_reason=%s prompt_tokens=%s "
-            "completion_tokens=%s reasoning_tokens=%s cached_tokens=%s",
+            "completion_tokens=%s reasoning_tokens=%s cached_tokens=%s cache_write_tokens=%s generation_id=%s",
             conversation_id, finish_reason or "none", *_usage_counts(provider_usage),
+            _cache_write_tokens(provider_usage),
+            generation_id if isinstance(generation_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", generation_id) else "none",
         )
         logger.info(
             "orchestration.stream_completed conversation_id=%s elapsed_ms=%s",

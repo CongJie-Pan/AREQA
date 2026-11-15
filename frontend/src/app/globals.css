@@ -11,26 +11,26 @@
 
 :root {
   --areqa-chat-column-width: 720px;
-  --background: #130f18;
+  --background: #191919;
   --foreground: #f0f0f0;
-  --card: #1b1622;
+  --card: #212121;
   --areqa-chat-input-background: #242424;
   --card-foreground: #f0f0f0;
-  --muted: #26202f;
+  --muted: #2a2a2a;
   --muted-foreground: rgba(255, 255, 255, 0.62);
   --border: rgba(255, 255, 255, 0.13);
   --input: rgba(255, 255, 255, 0.13);
   --primary: #f0f0f0;
-  --primary-foreground: #130f18;
+  --primary-foreground: #191919;
   --radius: 0.625rem;
   --areqa-citation-color: #d4af37;
   --areqa-citation-background: rgba(212, 175, 55, 0.15);
   --areqa-citation-border: rgba(212, 175, 55, 0.3);
   --areqa-citation-hover-background: rgba(212, 175, 55, 0.3);
   --areqa-citation-hover-border: rgba(212, 175, 55, 0.6);
-  --areqa-sidebar-background: #1b1622;
+  --areqa-sidebar-background: #212121;
   --areqa-subtle-border: rgba(255, 255, 255, 0.08);
-  --areqa-scrollbar-track: #130f18;
+  --areqa-scrollbar-track: #191919;
   --areqa-account-hover: rgba(255, 255, 255, 0.05);
   --areqa-account-muted-text: rgba(255, 255, 255, 0.62);
   --areqa-account-icon-background: rgba(255, 255, 255, 0.1);
@@ -52,7 +52,7 @@
   --areqa-table-modal-close-border: rgba(255, 255, 255, 0.12);
   --areqa-table-modal-close-color: rgba(255, 255, 255, 0.78);
   --areqa-table-modal-close-hover: rgba(255, 255, 255, 0.06);
-  --areqa-user-bubble-background: #1f1b2b;
+  --areqa-user-bubble-background: #262626;
   --areqa-user-bubble-color: #ffffff;
   --areqa-message-text: #e0e0e0;
   --areqa-message-muted-text: rgba(255, 255, 255, 0.6);
