@@ -65,7 +65,7 @@ describe('Text Selection Integration', () => {
     expect(screen.getByText('紅樓夢')).toBeDefined();
 
     // 5. Type question and send
-    const input = screen.getByPlaceholderText(/^回覆$/);
+    const input = screen.getByPlaceholderText(/^問問 AREQA$/);
     fireEvent.change(input, { target: { value: '這是什麼？' } });
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
 

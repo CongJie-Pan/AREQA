@@ -152,7 +152,7 @@ describe('ChatInput', () => {
 
   it('should render correctly', () => {
     render(<ChatInput onSend={mockOnSend} />);
-    expect(screen.getByPlaceholderText(/^回覆$/)).toBeDefined();
+    expect(screen.getByPlaceholderText(/^問問 AREQA$/)).toBeDefined();
     expect(screen.getByLabelText('新增')).toBeInTheDocument();
     expect(screen.queryByText('5.5 Medium')).not.toBeInTheDocument();
     expect(screen.queryByText('0/4000')).not.toBeInTheDocument();
@@ -317,7 +317,7 @@ describe('ChatInput', () => {
     '請幫我根據此產出教學圖\n\n### 統計判讀\n**顯著不等於重要**：$p < .05$\n- 比較效果量 $R^2$\n- 檢查樣本偏誤',
   ])('keeps Markdown and LaTeX as plain draft text and submits the original source (%#)', (draft) => {
     const { container } = render(<ChatInput onSend={mockOnSend} />);
-    const input = screen.getByPlaceholderText(/^回覆$/);
+    const input = screen.getByPlaceholderText(/^問問 AREQA$/);
 
     fireEvent.change(input, { target: { value: draft } });
 
@@ -400,7 +400,7 @@ describe('ChatInput', () => {
     });
 
     render(<ChatInput onSend={mockOnSend} />);
-    const input = screen.getByPlaceholderText(/^回覆$/);
+    const input = screen.getByPlaceholderText(/^問問 AREQA$/);
     
     fireEvent.change(input, { target: { value: 'my question' } });
     fireEvent.click(screen.getByLabelText(/發送訊息/i));

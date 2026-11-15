@@ -103,8 +103,8 @@ vi.mock('@/components/MessageList', () => ({
   MessageList: () => <div data-testid="message-list" />,
 }));
 vi.mock('@/components/ChatInput', () => ({
-  ChatInput: ({ onSend }: { onSend: (content: string) => void }) => (
-    <button onClick={() => onSend('訪客問題')}>送出問題</button>
+  ChatInput: ({ onSend, placeholder }: { onSend: (content: string) => void; placeholder?: string }) => (
+    <button data-placeholder={placeholder} onClick={() => onSend('訪客問題')}>送出問題</button>
   ),
 }));
 vi.mock('@/components/TextSelectionToolbar', () => ({ TextSelectionToolbar: () => null }));
@@ -138,6 +138,20 @@ describe('Guest chat authentication prompt flow', () => {
       </App>,
     );
   }
+
+  // No preferences provider here, so the interface uses the default English copy.
+  it('asks AREQA in an empty conversation and switches to reply once it has messages', () => {
+    const { rerender } = renderChat();
+    expect(screen.getByRole('button', { name: '送出問題' })).toHaveAttribute('data-placeholder', 'Ask AREQA');
+
+    chatState.messages = [{ id: 'message-1', role: 'user', content: 'question' } as never];
+    rerender(
+      <App>
+        <ChatContainer />
+      </App>,
+    );
+    expect(screen.getByRole('button', { name: '送出問題' })).toHaveAttribute('data-placeholder', 'Reply');
+  });
 
   it('opens and closes the mobile sidebar from the floating menu controls', async () => {
     const { container } = renderChat();

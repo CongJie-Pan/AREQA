@@ -1034,7 +1034,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     placeholder={
                       isStreaming
                         ? t('thinkingPlaceholder')
-                        : t('askPlaceholder')
+                        : t(isEmpty ? 'askPlaceholder' : 'replyPlaceholder')
                     }
                     isStreaming={isStreaming}
                     isGeneratingImage={isGeneratingImage}
