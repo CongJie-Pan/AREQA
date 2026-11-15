@@ -36,7 +36,7 @@ const useStyles = createStyles(({ token, css }) => ({
     &.ant-btn:hover {
       background: ${token.colorPrimary} !important;
       border-color: ${token.colorPrimary} !important;
-      color: #130f18 !important;
+      color: #191919 !important;
       transform: translateY(-1px);
       box-shadow: ${token.boxShadowTertiary};
     }

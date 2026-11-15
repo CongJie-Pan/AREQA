@@ -63,3 +63,18 @@ async def test_relay_ignores_unknown_steps_and_leaves_errors_to_the_caller():
     assert frames == []
     with pytest.raises(RuntimeError):
         await task
+
+
+def test_learner_document_count_ignores_coverage_note_and_transcript_parts():
+    from services.conversation.attachment_budget import AttachmentPart, CoverageNotePart, DocumentPart
+    from services.orchestration.progress import count_learner_documents
+
+    pdf = {"type": "file", "file": {"filename": "a.pdf", "file_data": "data:application/pdf;base64,AA=="}}
+    parts = [
+        CoverageNotePart({"type": "text", "text": "coverage"}),
+        DocumentPart(pdf), DocumentPart(pdf), DocumentPart(pdf),
+        {"type": "text", "text": "speaking transcript"},
+    ]
+    assert count_learner_documents(parts) == 3
+    assert count_learner_documents([pdf, AttachmentPart({"type": "text", "text": "notes.txt"})]) == 2
+    assert count_learner_documents(None) == 0

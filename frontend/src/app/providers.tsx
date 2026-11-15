@@ -56,10 +56,10 @@ function ThemedAppProviders({ children }: ThemedAppProvidersProps) {
         token: {
           colorPrimary: '#d8a25c',
           colorInfo: '#d8a25c',
-          colorBgBase: isDarkTheme ? '#130f18' : '#f7f4ef',
-          colorBgContainer: isDarkTheme ? '#1e1826' : '#ffffff',
-          colorBgElevated: isDarkTheme ? '#1e1826' : '#ffffff',
-          colorBgLayout: isDarkTheme ? '#130f18' : '#f7f4ef',
+          colorBgBase: isDarkTheme ? '#191919' : '#f7f4ef',
+          colorBgContainer: isDarkTheme ? '#222222' : '#ffffff',
+          colorBgElevated: isDarkTheme ? '#222222' : '#ffffff',
+          colorBgLayout: isDarkTheme ? '#191919' : '#f7f4ef',
           colorTextBase: isDarkTheme ? '#f0f0f0' : '#1d1b20',
         },
       }}

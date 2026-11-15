@@ -1971,6 +1971,10 @@ export const MessageItem = memo(function MessageItem({
   const isImageGenerationPending = Boolean(message.answerBlocks?.some((block) => (
     block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending'
   )));
+  // Before the first answer token the progress line is the only waiting indicator.
+  const showTurnProgress = Boolean(
+    !isImageGenerationPending && progress && !thinking?.isThinking && !thinking?.content && !message.content,
+  );
   const liveImageSlots = message.streamImageSlots ?? [];
   const answerBlockImageCount = React.useMemo(
     () => (message.answerBlocks ?? []).filter((block) => block.type === 'image_block').length,
@@ -2615,9 +2619,7 @@ export const MessageItem = memo(function MessageItem({
           {/* Bubble Wrapper */}
           <div className={cx(styles.bubbleWrapper, 'bubbleWrapper')}>
             {/* Turn progress - one line naming the current step until the first answer token */}
-            {!isImageGenerationPending && progress && !thinking?.isThinking && !thinking?.content && !message.content && (
-              <TurnProgress {...progress} />
-            )}
+            {showTurnProgress && progress && <TurnProgress {...progress} />}
 
             {/* RAG Status Panel - Should be at the top and only visible before thinking or content starts */}
             {!isImageGenerationPending && ragInfo && ragInfo.status !== 'idle' && ragInfo.status !== 'done' && !thinking?.isThinking && !thinking?.content && !message.content && (
@@ -2711,7 +2713,7 @@ export const MessageItem = memo(function MessageItem({
                       markdownComponents={markdownComponents}
                     />
                   )}
-                  {isDisplayingStream && !thinking?.isThinking && (
+                  {isDisplayingStream && !thinking?.isThinking && !showTurnProgress && (
                     <span className={styles.streamingDots} aria-hidden="true">
                       <span className={styles.streamingDot} />
                       <span className={styles.streamingDot} />

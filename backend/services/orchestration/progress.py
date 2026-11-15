@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 PROGRESS_STEPS = frozenset({
     "reading_attachments",
@@ -20,6 +20,22 @@ PROGRESS_STEPS = frozenset({
     "reading_documents",
     "composing",
 })
+
+
+def count_learner_documents(attachments: Any) -> int:
+    """Count the files a learner uploaded, not internal helper parts.
+
+    Follow-up turns carry a coverage note and transcript text parts next to the
+    documents; counting those made the UI say "4 attachments" for three PDFs.
+    """
+    from services.conversation.attachment_budget import AttachmentPart, CoverageNotePart
+
+    return sum(
+        1 for part in attachments or ()
+        if not isinstance(part, CoverageNotePart)
+        and (isinstance(part, AttachmentPart)
+             or (isinstance(part, dict) and part.get("type") in ("file", "image_url")))
+    )
 
 
 def progress_event(step: str, current: int | None = None, total: int | None = None) -> str:

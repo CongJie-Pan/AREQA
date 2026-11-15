@@ -26,7 +26,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import Request
 from services.orchestration.answer_preparation import prepare_answer
-from services.orchestration.progress import ProgressRelay, progress_event
+from services.orchestration.progress import ProgressRelay, count_learner_documents, progress_event
 from services.orchestration.completion import complete_answer
 from services.orchestration.response_policy import resolve_response_policy
 from services.orchestration.routing import plan_search
@@ -384,7 +384,7 @@ class OrchestrationExecutionMixin:
                 preparation.cancel()
                 await asyncio.gather(preparation, return_exceptions=True)
         yield sse_adapter.encode_legacy(
-            progress_event("reading_documents", 0, len(attachments or ()))
+            progress_event("reading_documents", 0, count_learner_documents(attachments))
             if has_attachments else progress_event("composing"),
             run_context.run_id,
         )
