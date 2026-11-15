@@ -1988,12 +1988,14 @@ async def test_pdf_overview_routes_to_local_rules_or_jev(
 
 @pytest.mark.asyncio
 async def test_non_visual_pdf_turn_skips_blocking_page_rendering(
-    mock_router, mock_rag, mock_suggestion, mock_client, caplog,
+    mock_router, mock_client, caplog,
 ):
     """Rendering PDF pages took ~10 s in production and was discarded when no visuals were planned."""
 
-    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    service = OrchestrationService(mock_router, None, None, mock_client)
+    question = "請翻譯第一頁的標題，只要文字。"
     caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
+    caplog.set_level(logging.INFO, logger="services.memory_diagnostics")
 
     async def llm_stream(*args, **kwargs):
         yield 'event: accumulator\ndata: {"accumulator":"Ok"}\n\n'
@@ -2013,11 +2015,20 @@ async def test_non_visual_pdf_turn_skips_blocking_page_rendering(
          patch.object(service, "_extract_attachment_visual_candidates", new_callable=AsyncMock, return_value=[]) as mock_extract, \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
              {"role": "system", "content": "base prompt"},
-             {"role": "user", "content": "請閱讀這份pdf 閱讀完請說Ok"},
+             {"role": "user", "content": question},
          ]):
         _ = [event async for event in service.execute(
-            [{"role": "user", "content": "請閱讀這份pdf 閱讀完請說Ok"}],
-            "non-visual-pdf-conv", True, False, False, 100, 0.7, 0.9, 1.0, MagicMock(), "u1",
+            [{"role": "user", "content": question}],
+            conversation_id="non-visual-pdf-conv",
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            max_tokens=100,
+            temperature=0.7,
+            top_p=0.9,
+            repetition_penalty=1.0,
+            request=MagicMock(),
+            user_id="u1",
             search_mode="never",
             attachments=[attachment],
             attachment_visual_sources=[{"filename": "slides.pdf", "pdf_bytes": b"%PDF-1.4"}],
@@ -2025,6 +2036,7 @@ async def test_non_visual_pdf_turn_skips_blocking_page_rendering(
 
     mock_extract.assert_not_awaited()
     assert "visual.attachment_preflight_skipped" in caplog.text
+    assert "pdf_visual_preflight_started" not in caplog.text
     assert "applied=False" in caplog.text
 
 
