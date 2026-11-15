@@ -214,6 +214,16 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('你停止了 AREQA 的回應'));
   });
 
+  it('hides the reply toolbar under a stopped response', () => {
+    const handlers = { onFeedback: vi.fn(), onRegenerate: vi.fn() };
+    const { rerender } = render(<MessageItem message={{ ...baseMessage, content: '完整回答' }} {...handlers} />);
+    expect(screen.getByRole('button', { name: '更多回覆操作' })).toBeInTheDocument();
+
+    rerender(<MessageItem message={{ ...baseMessage, content: '前半段', stoppedByUser: true }} {...handlers} />);
+    expect(screen.queryByRole('button', { name: '更多回覆操作' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /重新生成|Regenerate/ })).not.toBeInTheDocument();
+  });
+
   it('places user attachments above the message bubble', () => {
     const { container } = render(
       <MessageItem message={{

@@ -2777,100 +2777,103 @@ export const MessageItem = memo(function MessageItem({
               />
             )}
 
-            <div className={styles.actionButtons}>
-              {!isStreaming && onFeedback && (
-                <>
-                  <span
-                    aria-hidden={isDisliked}
-                    className={cx(
-                      styles.feedbackActionSlot,
-                      isDisliked && styles.feedbackActionSlotCollapsed,
-                    )}
-                  >
-                    <Tooltip title={t('helpfulReply')}>
-                      <button
-                        className={cx(
-                          styles.actionButton,
-                          isLiked && styles.actionButtonActive,
-                        )}
-                        disabled={isDisliked}
-                        onClick={handleLikeFeedback}
-                        aria-label={t('helpfulReply')}
-                        aria-pressed={isLiked}
-                        tabIndex={isDisliked ? -1 : undefined}
-                      >
-                        <ThumbsUp fill={isLiked ? 'currentColor' : 'none'} size={16} />
-                      </button>
-                    </Tooltip>
-                  </span>
-                  <span
-                    aria-hidden={isLiked}
-                    className={cx(
-                      styles.feedbackActionSlot,
-                      isLiked && styles.feedbackActionSlotCollapsed,
-                    )}
-                  >
-                    <Tooltip title={t('notHelpfulReply')}>
-                      <button
-                        className={cx(
-                          styles.actionButton,
-                          isDisliked && styles.actionButtonActive,
-                        )}
-                        disabled={isLiked}
-                        onClick={openDislikeFeedback}
-                        aria-label={t('notHelpfulReply')}
-                        aria-pressed={isDisliked}
-                        tabIndex={isLiked ? -1 : undefined}
-                      >
-                        <ThumbsDown fill={isDisliked ? 'currentColor' : 'none'} size={16} />
-                      </button>
-                    </Tooltip>
-                  </span>
-                </>
-              )}
-              {onRegenerate && !isStreaming && !isImageGenerationPending && (
-                <Tooltip title={t('regenerate')}>
+            {/* A reply the learner stopped ends with the notice alone, without the toolbar. */}
+            {!message.stoppedByUser && (
+              <div className={styles.actionButtons}>
+                {!isStreaming && onFeedback && (
+                  <>
+                    <span
+                      aria-hidden={isDisliked}
+                      className={cx(
+                        styles.feedbackActionSlot,
+                        isDisliked && styles.feedbackActionSlotCollapsed,
+                      )}
+                    >
+                      <Tooltip title={t('helpfulReply')}>
+                        <button
+                          className={cx(
+                            styles.actionButton,
+                            isLiked && styles.actionButtonActive,
+                          )}
+                          disabled={isDisliked}
+                          onClick={handleLikeFeedback}
+                          aria-label={t('helpfulReply')}
+                          aria-pressed={isLiked}
+                          tabIndex={isDisliked ? -1 : undefined}
+                        >
+                          <ThumbsUp fill={isLiked ? 'currentColor' : 'none'} size={16} />
+                        </button>
+                      </Tooltip>
+                    </span>
+                    <span
+                      aria-hidden={isLiked}
+                      className={cx(
+                        styles.feedbackActionSlot,
+                        isLiked && styles.feedbackActionSlotCollapsed,
+                      )}
+                    >
+                      <Tooltip title={t('notHelpfulReply')}>
+                        <button
+                          className={cx(
+                            styles.actionButton,
+                            isDisliked && styles.actionButtonActive,
+                          )}
+                          disabled={isLiked}
+                          onClick={openDislikeFeedback}
+                          aria-label={t('notHelpfulReply')}
+                          aria-pressed={isDisliked}
+                          tabIndex={isLiked ? -1 : undefined}
+                        >
+                          <ThumbsDown fill={isDisliked ? 'currentColor' : 'none'} size={16} />
+                        </button>
+                      </Tooltip>
+                    </span>
+                  </>
+                )}
+                {onRegenerate && !isStreaming && !isImageGenerationPending && (
+                  <Tooltip title={t('regenerate')}>
+                    <button
+                      className={styles.actionButton}
+                      onClick={handleRegenerate}
+                      aria-label={t('regenerateMessage')}
+                    >
+                      <RefreshCw size={16} />
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip title={t('copyMessage')}>
                   <button
                     className={styles.actionButton}
-                    onClick={handleRegenerate}
-                    aria-label={t('regenerateMessage')}
+                    onClick={handleCopy}
+                    aria-label={t('copyMessage')}
                   >
-                    <RefreshCw size={16} />
+                    <Copy size={16} />
                   </button>
                 </Tooltip>
-              )}
-              <Tooltip title={t('copyMessage')}>
-                <button
-                  className={styles.actionButton}
-                  onClick={handleCopy}
-                  aria-label={t('copyMessage')}
-                >
-                  <Copy size={16} />
-                </button>
-              </Tooltip>
-              {(onAddNote || isSavedNote) && !isStreaming && (
-                <Tooltip title={isSavedNote ? t('savedToNotes') : t('addToNotes')}>
-                  <button
-                    className={cx(styles.actionButton, isSavedNote && styles.actionButtonActive)}
-                    disabled={isSavedNote}
-                    onClick={handleAddNote}
-                    aria-label={isSavedNote ? t('savedToNotes') : t('addToNotes')}
-                  >
-                    <Bookmark size={16} fill={isSavedNote ? 'currentColor' : 'none'} />
-                  </button>
-                </Tooltip>
-              )}
-              {moreReplyActions.length > 0 && (
-                <Dropdown trigger={['click']} menu={{ items: moreReplyActions, className: styles.replyActionsMenu }}>
-                  <button type="button" className={styles.actionButton} aria-label={t('moreReplyActions')} aria-haspopup="menu">
-                    <Ellipsis size={16} />
-                  </button>
-                </Dropdown>
-              )}
-              {!isDisplayingStream && !isImageGenerationPending && (
-                <ReplyTimestamp value={message.createdAt} language={language} className={styles.replyTimestamp} />
-              )}
-            </div>
+                {(onAddNote || isSavedNote) && !isStreaming && (
+                  <Tooltip title={isSavedNote ? t('savedToNotes') : t('addToNotes')}>
+                    <button
+                      className={cx(styles.actionButton, isSavedNote && styles.actionButtonActive)}
+                      disabled={isSavedNote}
+                      onClick={handleAddNote}
+                      aria-label={isSavedNote ? t('savedToNotes') : t('addToNotes')}
+                    >
+                      <Bookmark size={16} fill={isSavedNote ? 'currentColor' : 'none'} />
+                    </button>
+                  </Tooltip>
+                )}
+                {moreReplyActions.length > 0 && (
+                  <Dropdown trigger={['click']} menu={{ items: moreReplyActions, className: styles.replyActionsMenu }}>
+                    <button type="button" className={styles.actionButton} aria-label={t('moreReplyActions')} aria-haspopup="menu">
+                      <Ellipsis size={16} />
+                    </button>
+                  </Dropdown>
+                )}
+                {!isDisplayingStream && !isImageGenerationPending && (
+                  <ReplyTimestamp value={message.createdAt} language={language} className={styles.replyTimestamp} />
+                )}
+              </div>
+            )}
             {onFeedback && (
               <Modal
                 centered={!isMobileFeedbackModal}
