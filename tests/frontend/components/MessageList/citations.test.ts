@@ -5,21 +5,40 @@ import { Citations } from '@/components/Citations';
 import { normalizeCitationMarkers } from '@/components/MessageList/MessageItem';
 
 describe('normalizeCitationMarkers', () => {
+  const withSources = { hasCitationSources: true };
+
   it('converts Markdown-style 文獻 markers into clickable citation links', () => {
-    expect(normalizeCitationMarkers('根據資料[文獻5]，此說法成立。')).toBe(
+    expect(normalizeCitationMarkers('根據資料[文獻5]，此說法成立。', withSources)).toBe(
       '根據資料[5](#cite-5)，此說法成立。',
     );
   });
 
   it('keeps full-width markers and expands multiple references', () => {
-    expect(normalizeCitationMarkers('依據【文獻5、6】。')).toBe(
+    expect(normalizeCitationMarkers('依據【文獻5、6】。', withSources)).toBe(
       '依據[5](#cite-5)[6](#cite-6)。',
     );
   });
 
   it('does not rewrite an existing Markdown link', () => {
     const content = '[文獻5](https://example.com/source)';
+    expect(normalizeCitationMarkers(content, withSources)).toBe(content);
+  });
+
+  it('converts numeric markers when the message has citation sources', () => {
+    expect(normalizeCitationMarkers('結論成立 [5]。', withSources)).toBe('結論成立 [5](#cite-5)。');
+  });
+
+  it('leaves numeric ranges untouched when the message has no citation sources', () => {
+    const content = '時間間隔取 [10, 100] 或 [1, 1000]，見 [5]。';
     expect(normalizeCitationMarkers(content)).toBe(content);
+    expect(normalizeCitationMarkers(content, { hasCitationSources: false })).toBe(content);
+  });
+
+  it('never rewrites brackets inside code or math, even with sources', () => {
+    const content = '見 [2]。`x[10]` 與 $t \\in [1, 100]$ 以及\n```\narr[3]\n```';
+    expect(normalizeCitationMarkers(content, withSources)).toBe(
+      '見 [2](#cite-2)。`x[10]` 與 $t \\in [1, 100]$ 以及\n```\narr[3]\n```',
+    );
   });
 });
 

@@ -400,6 +400,42 @@ function validateMessageContent(
  * }
  * ```
  */
+type StreamCallbacks = Parameters<typeof createChatStream>[1];
+
+/**
+ * Persist suggestions that arrive after the answer was finalized.
+ *
+ * The backend sends `answer_complete` before generating suggestions, so the
+ * turn is saved first and suggestions (about 1 s later) are written onto the
+ * saved message once that save has settled. Earlier suggestions are still
+ * saved by the regular onDone path.
+ */
+export function withLateSuggestionPersistence(
+  callbacks: StreamCallbacks,
+  messageId: string,
+  shouldPersist: boolean,
+): StreamCallbacks {
+  let answerSaved: Promise<unknown> | null = null;
+  return {
+    ...callbacks,
+    onDone: (suggestions?: string[]) => {
+      answerSaved = Promise.resolve(callbacks.onDone(suggestions));
+      return answerSaved as unknown as void;
+    },
+    onSuggestions: (suggestions: string[]) => {
+      callbacks.onSuggestions?.(suggestions);
+      if (!answerSaved || !shouldPersist || suggestions.length === 0) return;
+      void answerSaved
+        .then(() => databaseService.message.update(messageId, { suggestions }))
+        .catch((error: unknown) => {
+          logger.warn('chat.late_suggestions_persist_failed', {
+            reason: error instanceof Error ? error.name : 'unknown',
+          });
+        });
+    },
+  };
+}
+
 export async function sendMessage(
   content: string,
   conversationId?: string,
@@ -708,7 +744,7 @@ export async function sendMessage(
     if (attachments.length > 0) {
       await createChatStream(
         messages,
-        callbacks,
+        withLateSuggestionPersistence(callbacks, assistantMessageId, shouldPersist),
         abortSignal,
         effectiveUseRag,
         effectiveForceThink,
@@ -720,7 +756,7 @@ export async function sendMessage(
     } else {
       await createChatStream(
         messages,
-        callbacks,
+        withLateSuggestionPersistence(callbacks, assistantMessageId, shouldPersist),
         abortSignal,
         effectiveUseRag,
         effectiveForceThink,
@@ -1321,7 +1357,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
   try {
     await createChatStream(
       apiMessages,
-      {
+      withLateSuggestionPersistence({
         onThinkingStart: () => {
           // Hide the RAG panel at the first generation boundary. The first
           // thinking/content token may arrive after this callback, and backend
@@ -1451,7 +1487,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           chatStore.updateAssistantMessage(messageId, originalAssistantMessage);
           currentAbortController = null;
         },
-      },
+      }, messageId, shouldPersist),
       abortSignal,
       chatStore.useRag,
       chatStore.forceThink,
@@ -1602,7 +1638,7 @@ export async function editUserMessage(
   try {
     await createChatStream(
       apiMessages,
-      {
+      withLateSuggestionPersistence({
         onThinkingStart: () => {
           // Hide the RAG panel at the first generation boundary. The first
           // thinking/content token may arrive after this callback, and backend
@@ -1742,7 +1778,7 @@ export async function editUserMessage(
           chatStore.endStreaming();
           currentAbortController = null;
         },
-      },
+      }, assistantMessageId, shouldPersist),
       abortSignal,
       chatStore.useRag,
       chatStore.forceThink,

@@ -416,3 +416,99 @@ def test_parts_context_fallback_uses_attachment_route():
     assert context.persona == "附件理解教練"
     assert context.act == "根據可讀取的附件內容回答使用者問題"
     assert "附件理解教練" in context.composed_instruction
+
+
+_VALID_PARTS = """{"persona": "論文導讀教練", "act": "說明實驗", "recipient": "程度未知的學習者",
+"theme": "LSTM 實驗 6", "structure": "分步說明", "composed_instruction": "請說明 LSTM 實驗 6。",
+"confidence": "high", "missing_fields": []}"""
+
+
+@pytest.mark.asyncio
+async def test_prefetched_rewrite_is_used_without_a_second_model_call():
+    """2026-11-15: the rewrite waited for the classifier, adding 1.3-1.7 s before the main model."""
+    service = PartsContextService()
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(return_value=_mock_chat_response(_VALID_PARTS))
+    prefetch = asyncio.create_task(service.rewrite_payload(
+        user_message="實驗 6 在測什麼？", recent_conversation_context="", turn_plan=None,
+        use_rag=False, use_web_search=False, has_attachments=True, client=client,
+        model="policy-model", enable_debug_logs=False,
+    ))
+
+    context = await service.build(
+        user_message="實驗 6 在測什麼？", response_policy=_policy(), has_attachments=True,
+        client=client, model="policy-model", prefetched_payload=prefetch,
+    )
+
+    assert context.theme == "LSTM 實驗 6"
+    assert client.chat.completions.create.await_count == 1
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert "selected in parallel" in prompt
+
+
+@pytest.mark.asyncio
+async def test_prefetch_overlaps_the_classifier_instead_of_adding_to_it():
+    service = PartsContextService()
+
+    async def slow_rewrite(**kwargs):
+        await asyncio.sleep(0.3)
+        return _mock_chat_response(_VALID_PARTS)
+
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(side_effect=slow_rewrite)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    prefetch = asyncio.create_task(service.rewrite_payload(
+        user_message="q", recent_conversation_context="", turn_plan=None, use_rag=False,
+        use_web_search=False, has_attachments=True, client=client, model="m", enable_debug_logs=False,
+    ))
+    await asyncio.sleep(0.2)  # the policy classifier
+    await service.build(user_message="q", response_policy=_policy(), has_attachments=True,
+                        client=client, model="m", timeout_ms=2500, prefetched_payload=prefetch)
+
+    assert loop.time() - started < 0.45  # ~max(0.2, 0.3), not 0.2 + 0.3
+
+
+@pytest.mark.asyncio
+async def test_failed_prefetch_falls_back_and_disabled_rewrite_cancels_it(caplog):
+    service = PartsContextService()
+
+    async def boom():
+        raise RuntimeError("provider down")
+
+    failed = asyncio.create_task(boom())
+    context = await service.build(user_message="q", response_policy=_policy(), has_attachments=True,
+                                  client=MagicMock(), model="m", prefetched_payload=failed)
+    assert context == service.fallback(response_policy=_policy(), turn_plan=None, use_rag=False,
+                                       use_web_search=False, has_attachments=True)
+    assert "parts_context.rewrite_fallback" in caplog.text and "RuntimeError" in caplog.text
+
+    pending = asyncio.create_task(asyncio.sleep(5))
+    await service.build(user_message="q", response_policy=_policy(), client=MagicMock(), model="m",
+                        enable_llm_rewrite=False, prefetched_payload=pending)
+    await asyncio.sleep(0)
+    assert pending.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_orchestration_prefetches_only_grounded_turns(caplog):
+    from core.run_state import ConversationRunState
+    from services.orchestration.prompting import OrchestrationPromptingMixin
+
+    caplog.set_level(logging.INFO)
+
+    class Service(OrchestrationPromptingMixin):
+        client = MagicMock()
+        parts_context_service = MagicMock(rewrite_payload=AsyncMock(return_value={}))
+
+    service = Service()
+    grounded, chat = ConversationRunState(), ConversationRunState()
+    common = dict(messages=[{"role": "user", "content": "q"}], last_user_msg="secret question",
+                  turn_plan=None, use_rag=False, use_web_search=False, conversation_id="c1")
+    service._prefetch_parts_rewrite(grounded, has_attachments=True, **common)
+    service._prefetch_parts_rewrite(chat, has_attachments=False, **common)
+
+    assert grounded.parts_rewrite_prefetch is not None and chat.parts_rewrite_prefetch is None
+    await grounded.parts_rewrite_prefetch
+    assert "parts_context.rewrite_prefetched conversation_id=c1" in caplog.text
+    assert "secret question" not in caplog.text

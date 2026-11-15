@@ -149,7 +149,10 @@ class OrchestrationVisualMixin:
                 continue
             content = message.get("content")
             text = content if isinstance(content, str) and content.strip() else "請分析我附加的檔案。"
-            message["content"] = [{"type": "text", "text": text}, *(AttachmentPart(part) for part in attachments)]
+            # Keep server marker subclasses (documents, coverage notes) intact for later stages.
+            message["content"] = [{"type": "text", "text": text}, *(
+                part if isinstance(part, AttachmentPart) else AttachmentPart(part) for part in attachments
+            )]
             break
         return messages
 

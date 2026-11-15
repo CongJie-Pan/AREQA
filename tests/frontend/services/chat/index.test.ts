@@ -1430,3 +1430,43 @@ describe('Chat Service', () => {
     });
   });
 });
+
+describe('withLateSuggestionPersistence', () => {
+  it('writes suggestions that arrive after the answer was saved onto the saved message', async () => {
+    const { withLateSuggestionPersistence } = await import('@/services/chat');
+    const saved: string[] = [];
+    let finishSave: () => void = () => {};
+    const inner = {
+      onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+      onContent: vi.fn(), onCitations: vi.fn(), onError: vi.fn(),
+      onDone: vi.fn(() => new Promise<void>((resolve) => { finishSave = () => { saved.push('answer'); resolve(); }; })),
+      onSuggestions: vi.fn(),
+    };
+    vi.mocked(databaseService.message.update).mockImplementation(async () => { saved.push('suggestions'); });
+    const wrapped = withLateSuggestionPersistence(inner as any, 'assistant-1', true);
+
+    wrapped.onDone([]);
+    wrapped.onSuggestions?.(['下一題？']);
+    expect(inner.onSuggestions).toHaveBeenCalledWith(['下一題？']);
+    expect(databaseService.message.update).not.toHaveBeenCalled();  // waits for the answer save
+
+    finishSave();
+    await vi.waitFor(() => expect(saved).toEqual(['answer', 'suggestions']));
+    expect(databaseService.message.update).toHaveBeenCalledWith('assistant-1', { suggestions: ['下一題？'] });
+  });
+
+  it('does not write early suggestions or when history is not persisted', async () => {
+    const { withLateSuggestionPersistence } = await import('@/services/chat');
+    vi.mocked(databaseService.message.update).mockClear();
+    const inner = { onDone: vi.fn(), onSuggestions: vi.fn() } as any;
+
+    const early = withLateSuggestionPersistence(inner, 'a', true);
+    early.onSuggestions?.(['A']);  // before onDone: regular onDone path saves it
+    const guest = withLateSuggestionPersistence(inner, 'b', false);
+    guest.onDone([]);
+    guest.onSuggestions?.(['B']);
+    await Promise.resolve();
+
+    expect(databaseService.message.update).not.toHaveBeenCalled();
+  });
+});

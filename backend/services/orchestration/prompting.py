@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -17,7 +18,7 @@ InterfaceLanguage = str
 
 
 class OrchestrationPromptingMixin:
-    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", tutor_profile: str = "general", response_mode: str = "text", has_attachments: bool = False, isolated_context: bool = False) -> List[Dict[str, str]]:
+    async def _node_prompt_assembly(self, user_id: str, conversation_id: str, messages: List[Dict[str, str]], use_rag: bool, use_web_search: bool, force_think: bool, context_results_obj: Any, last_user_msg: str, context_prompt: str = "", trace: Optional[TurnLatencyTrace] = None, turn_plan: Optional[TurnPlan] = None, response_policy: Any = None, interface_language: InterfaceLanguage = "zh-TW", tutor_profile: str = "general", response_mode: str = "text", has_attachments: bool = False, isolated_context: bool = False, parts_rewrite_prefetch: Any = None) -> List[Dict[str, str]]:
         """
         Assemble the final system prompt and inject context retrieved from RAG, Web Search, and Memory.
 
@@ -85,9 +86,13 @@ class OrchestrationPromptingMixin:
                 enable_llm_rewrite=enable_parts_llm_rewrite,
                 timeout_ms=settings.parts_rewrite_timeout_ms,
                 enable_debug_logs=settings.enable_parts_prompt_debug_logs,
+                prefetched_payload=parts_rewrite_prefetch if enable_parts_llm_rewrite else None,
             )
             if trace:
                 trace.mark("parts_context_finished")
+        if parts_rewrite_prefetch is not None and not parts_rewrite_prefetch.done():
+            # Rewrite disabled or PARTS off after all: stop the unused call.
+            parts_rewrite_prefetch.cancel()
 
         context = await self.context_service.build_conversation_context(
             user_id=user_id,
@@ -139,6 +144,47 @@ class OrchestrationPromptingMixin:
             tutor_profile,
         )
         return final_messages
+
+    def _prefetch_parts_rewrite(self, run_state: Any, *, messages: List[Dict[str, Any]], last_user_msg: str,
+                                turn_plan: Optional[TurnPlan], use_rag: bool, use_web_search: bool,
+                                has_attachments: bool, conversation_id: str) -> None:
+        """Start the PARTS rewrite while the policy classifier is still running.
+
+        The rewrite used to wait for the classifier (0.7-1.0 s) and then take
+        another 1.3-1.7 s before the main model could start. Only turns whose
+        rewrite gate is already true without the policy (grounded turns) are
+        prefetched, so no rewrite is spent on turns that would have skipped it.
+        """
+        from config import settings
+
+        if not (
+            settings.enable_parts_prompt_context
+            and settings.enable_parts_llm_rewrite
+            and getattr(settings, "enable_parts_rewrite_prefetch", True)
+            and self.client and str(last_user_msg or "").strip()
+        ):
+            return
+        if not self._should_run_parts_llm_rewrite(
+            global_enabled=True, turn_plan=turn_plan, response_policy=None,
+            use_rag=use_rag, use_web_search=use_web_search, has_attachments=has_attachments,
+            allow_ungrounded=False,
+        ):
+            return
+        task = asyncio.create_task(self.parts_context_service.rewrite_payload(
+            user_message=last_user_msg,
+            recent_conversation_context=self._recent_conversation_context(messages),
+            turn_plan=turn_plan,
+            use_rag=use_rag,
+            use_web_search=use_web_search,
+            has_attachments=has_attachments,
+            client=self.client,
+            model=settings.model_policy_classifier,
+            enable_debug_logs=settings.enable_parts_prompt_debug_logs,
+        ))
+        # Early-return paths may never await it; retrieve the result so errors stay quiet.
+        task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        run_state.parts_rewrite_prefetch = task
+        logger.info("parts_context.rewrite_prefetched conversation_id=%s", conversation_id)
 
     @staticmethod
     def _apply_voice_response_instruction(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:

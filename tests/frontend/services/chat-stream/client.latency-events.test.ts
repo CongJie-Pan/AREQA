@@ -322,3 +322,63 @@ describe('chat stream visible latency events', () => {
     });
   });
 });
+
+describe('answer completion before suggestions', () => {
+  const base = () => ({
+    onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+    onContent: vi.fn(), onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(), onSuggestions: vi.fn(),
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  it('finishes the turn on answer_complete and delivers suggestions afterwards (2026-11-15: +1.0-1.2 s wait)', async () => {
+    const order: string[] = [];
+    const callbacks = base();
+    callbacks.onDone.mockImplementation(() => order.push('done'));
+    callbacks.onSuggestions.mockImplementation(() => order.push('suggestions'));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([
+      'data: {"choices":[{"delta":{"content":"答案"}}]}\n\n',
+      'event: answer_complete\ndata: {}\n\n',
+      'event: suggestions\ndata: ["下一題？"]\n\n',
+      'event: done\ndata: {"suggestions":["下一題？"]}\n\n',
+      'data: [DONE]\n\n',
+    ])));
+
+    await createChatStream([{ role: 'user', content: 'q' }], callbacks, undefined, false, false, 'never', 'c1');
+
+    expect(order).toEqual(['done', 'suggestions']);
+    expect(callbacks.onDone).toHaveBeenCalledTimes(1);
+    expect(callbacks.onDone).toHaveBeenCalledWith([]);
+    expect(callbacks.onSuggestions).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers late suggestions from the done event when no suggestions event was sent', async () => {
+    const callbacks = base();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([
+      'event: answer_complete\ndata: {}\n\n',
+      'event: done\ndata: {"suggestions":["A？"]}\n\n',
+      'data: [DONE]\n\n',
+    ])));
+
+    await createChatStream([{ role: 'user', content: 'q' }], callbacks, undefined, false, false, 'never', 'c2');
+
+    expect(callbacks.onDone).toHaveBeenCalledTimes(1);
+    expect(callbacks.onSuggestions).toHaveBeenCalledWith(['A？']);
+  });
+
+  it('keeps the legacy order when the backend sends no answer_complete', async () => {
+    const callbacks = base();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([
+      'event: done\ndata: {"suggestions":["A？"]}\n\n',
+      'data: [DONE]\n\n',
+    ])));
+
+    await createChatStream([{ role: 'user', content: 'q' }], callbacks, undefined, false, false, 'never', 'c3');
+
+    expect(callbacks.onDone).toHaveBeenCalledWith(['A？']);
+    expect(callbacks.onSuggestions).not.toHaveBeenCalled();
+  });
+});
