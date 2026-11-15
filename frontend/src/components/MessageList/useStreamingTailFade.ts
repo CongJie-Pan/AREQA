@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type RefObject } from 'react';
+import { useLayoutEffect, type RefObject } from 'react';
 
 const FADE_MS = 180;
 
@@ -15,11 +15,10 @@ const FADE_MS = 180;
  *   Unsupported browsers fall back to the same paced text without fading.
  */
 export function useStreamingTailFade(root: RefObject<HTMLDivElement | null>, active: boolean) {
-  const running = useRef(new Set<Animation>());
-
   useLayoutEffect(() => {
     const element = root.current;
     if (!element || !active) return;
+    const running = new Set<Animation>();
     const spans = () => Array.from(element.querySelectorAll<HTMLElement>('[data-sd-animate]'));
     const seen = new WeakSet<HTMLElement>();
     let previous = spans().map(span => { seen.add(span); return span.textContent ?? ''; }).join('');
@@ -36,10 +35,10 @@ export function useStreamingTailFade(root: RefObject<HTMLDivElement | null>, act
         const end = offset + (span.textContent?.length ?? 0);
         if (!seen.has(span) && end > prefix && offset < text.length - suffix && typeof span.animate === 'function') {
           const animation = span.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' });
-          running.current.add(animation);
+          running.add(animation);
           void animation.finished.then(
-            () => running.current.delete(animation),
-            () => running.current.delete(animation),
+            () => running.delete(animation),
+            () => running.delete(animation),
           );
         }
         seen.add(span);
@@ -48,11 +47,10 @@ export function useStreamingTailFade(root: RefObject<HTMLDivElement | null>, act
       previous = text;
     });
     observer.observe(element, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      for (const animation of running) animation.cancel();
+      running.clear();
+    };
   }, [active, root]);
-
-  useLayoutEffect(() => {
-    const animations = running.current;
-    return () => { for (const animation of animations) animation.cancel(); animations.clear(); };
-  }, []);
 }
