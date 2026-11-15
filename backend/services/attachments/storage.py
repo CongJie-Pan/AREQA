@@ -163,6 +163,64 @@ class AttachmentImageStorageService:
             return None
         return content
 
+    async def persist_upload_document(
+        self, *, user_id: str, upload_id: str, doc_id: str, pdf_bytes: bytes,
+    ) -> str | None:
+        """Store an uploaded PDF privately so follow-up turns can re-send it.
+
+        Returns:
+            The private object path, or ``None`` when storage is unavailable or
+            the payload is not a bounded PDF. No signed URL is created.
+        """
+
+        storage_config = self._storage_config()
+        if storage_config is None or not pdf_bytes.startswith(b"%PDF") or len(pdf_bytes) > MAX_ATTACHMENT_BYTES:
+            return None
+        supabase_url, service_role_key, bucket, _ = storage_config
+        object_path = self._upload_document_path(user_id, upload_id, doc_id)
+        encoded_path = "/".join(quote(segment, safe="") for segment in object_path.split("/"))
+        upload_url = f"{supabase_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_path}"
+        headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}"}
+        try:
+            async with self._async_client_factory(timeout=30.0) as client:
+                response = await client.post(upload_url, content=pdf_bytes, headers={
+                    **headers, "Content-Type": "application/pdf", "x-upsert": "true",
+                })
+                response.raise_for_status()
+        except Exception as error:
+            logger.warning("chat_documents.storage_failed operation=upload reason=%s", type(error).__name__)
+            return None
+        return object_path
+
+    async def download_upload_document(self, *, user_id: str, upload_id: str, doc_id: str) -> bytes | None:
+        """Read the authenticated user's stored upload; the path is rebuilt, never trusted."""
+
+        storage_config = self._storage_config()
+        if storage_config is None:
+            return None
+        supabase_url, service_role_key, bucket, _ = storage_config
+        object_path = self._upload_document_path(user_id, upload_id, doc_id)
+        encoded_path = "/".join(quote(segment, safe="") for segment in object_path.split("/"))
+        object_url = f"{supabase_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_path}"
+        headers = {"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}"}
+        try:
+            async with self._async_client_factory(timeout=30.0) as client:
+                response = await client.get(object_url, headers=headers)
+                response.raise_for_status()
+                content = response.content
+        except Exception as error:
+            logger.warning("chat_documents.storage_failed operation=download reason=%s", type(error).__name__)
+            return None
+        if not content.startswith(b"%PDF") or len(content) > MAX_ATTACHMENT_BYTES:
+            return None
+        return content
+
+    @classmethod
+    def _upload_document_path(cls, user_id: str, upload_id: str, doc_id: str) -> str:
+        user_hash = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:24]
+        return (f"users/{user_hash}/chat-uploads/{cls._safe_segment(upload_id, 'upload')}/"
+                f"{cls._safe_segment(doc_id, 'document')}.pdf")
+
     @classmethod
     def _generated_image_path(cls, user_id: str, conversation_id: str, image_id: str) -> str:
         user_hash = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:24]

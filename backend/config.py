@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     enable_explicit_recall_memory_cache: bool = True
     explicit_recall_memory_cache_ttl_seconds: int = 120
     cold_memory_embedding_timeout_ms: int = 1500
+    # Follow-up upload context: re-send stored original PDFs up to this many bytes,
+    # otherwise give each document a fair share of this many extracted characters.
+    chat_upload_native_followup_bytes: int = 10 * 1024 * 1024
+    chat_upload_context_text_chars: int = 120_000
+    chat_upload_store_originals: bool = True
     # Production calls return in about 1.0-1.2 s, so a 1 s cap discarded nearly all suggestions.
     suggestion_generation_timeout_ms: int = 2500
     web_search_provider: str = "tavily"

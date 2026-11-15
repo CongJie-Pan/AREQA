@@ -29,6 +29,19 @@ from services.memory_diagnostics import log_memory_snapshot
 logger = logging.getLogger(__name__)
 
 
+def _usage_counts(usage: Any) -> tuple[Any, Any, Any, Any]:
+    """Return prompt, completion, reasoning and cached token counts (or None)."""
+    def read(source: Any, name: str) -> Any:
+        if source is None:
+            return None
+        return source.get(name) if isinstance(source, dict) else getattr(source, name, None)
+
+    completion_details = read(usage, "completion_tokens_details")
+    prompt_details = read(usage, "prompt_tokens_details")
+    return (read(usage, "prompt_tokens"), read(usage, "completion_tokens"),
+            read(completion_details, "reasoning_tokens"), read(prompt_details, "cached_tokens"))
+
+
 
 def letter_task_id(
     user_id: str,
@@ -130,6 +143,8 @@ class ConversationStreamService:
         tool_call_args = ""
         tool_calls: dict[int, dict[str, str]] = {}
         generated_blocks: list[dict] = []
+        finish_reason: str | None = None
+        provider_usage: Any = None
         logger.info(
             "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s image_slot_cap=%s openrouter_session=%s latency_routing=%s",
             conversation_id,
@@ -249,8 +264,10 @@ class ConversationStreamService:
                         if await request.is_disconnected():
                             logger.info("orchestration.stream_cancelled conversation_id=%s", conversation_id)
                             break
+                        provider_usage = getattr(chunk, "usage", None) or provider_usage
                         if not chunk.choices:
                             continue
+                        finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
                         delta = chunk.choices[0].delta
                         if getattr(delta, "tool_calls", None):
                             provider_started = True
@@ -389,6 +406,16 @@ class ConversationStreamService:
                 conversation_id,
                 image_marker_filter.rejected_verified_marker_count,
             )
+        if finish_reason == "length" and not tool_calls:
+            # Silent mid-sentence cuts looked like bugs; tell the learner how to resume.
+            notice = "\n\n（回答已達單次長度上限而中斷，可以回覆「繼續」讓我接著說。）"
+            accumulator += notice
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+        logger.info(
+            "orchestration.provider_finish conversation_id=%s finish_reason=%s prompt_tokens=%s "
+            "completion_tokens=%s reasoning_tokens=%s cached_tokens=%s",
+            conversation_id, finish_reason or "none", *_usage_counts(provider_usage),
+        )
         logger.info(
             "orchestration.stream_completed conversation_id=%s elapsed_ms=%s",
             conversation_id,

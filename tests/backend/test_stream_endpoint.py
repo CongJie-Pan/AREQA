@@ -717,10 +717,15 @@ async def test_plain_follow_up_reloads_earlier_upload_text(monkeypatch):
 
     import sys
 
+    async def no_manifest(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(branch_context, "load_inherited_upload", fake_load)
     for name in ("app.routes.stream", "backend.app.routes.stream"):
         if name in sys.modules:
             monkeypatch.setattr(sys.modules[name], "load_inherited_upload", fake_load)
+            # Uploads saved before per-document storage have no manifest: legacy path.
+            monkeypatch.setattr(sys.modules[name], "load_documents", no_manifest)
     with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
          patch("services.orchestration_service.OrchestrationService", return_value=FollowUpOrchestrator()):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -738,3 +743,98 @@ async def test_plain_follow_up_reloads_earlier_upload_text(monkeypatch):
     assert loaded == {"user_id": "default_user", "source": upload_id}
     assert "Expectancy theory" in captured["attachments"][0]["text"]
     assert all("has_upload" not in message for message in captured["messages"])
+
+
+def _route_modules():
+    import sys
+
+    return [sys.modules[name] for name in ("app.routes.stream", "backend.app.routes.stream") if name in sys.modules]
+
+
+@pytest.mark.asyncio
+async def test_follow_up_prefers_per_document_context(monkeypatch):
+    """Each earlier document arrives as its own part, with a coverage note first."""
+    from services.conversation.attachment_budget import AttachmentPart, PdfTextPart
+
+    captured, seen = {}, {}
+    upload_id = "11111111-2222-3333-4444-555555555555"
+
+    class Orchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    async def fake_documents(user_id, messages, question):
+        seen.update(user_id=user_id, question=question)
+        return ([AttachmentPart(type="text", text="coverage"),
+                 PdfTextPart(type="text", text="Source document: a.pdf\nA"),
+                 PdfTextPart(type="text", text="Source document: b.pdf\nB")],
+                {"mode": "text", "documents": 2, "partial": 1, "kept_chars": 2})
+
+    legacy = AsyncMock(return_value=[])
+    for module in _route_modules():
+        monkeypatch.setattr(module, "load_documents", fake_documents)
+        monkeypatch.setattr(module, "load_inherited_upload", legacy)
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=Orchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post("/api/v1/stream", json={
+                "messages": [
+                    {"role": "user", "content": "read", "message_id": upload_id, "has_upload": "true"},
+                    {"role": "assistant", "content": "OK"},
+                    {"role": "user", "content": "explain both"},
+                ],
+                "conversation_id": "conv-docs",
+            })
+
+    assert response.status_code == 200
+    assert seen == {"user_id": "default_user", "question": "explain both"}
+    assert [part["text"][-1] for part in captured["attachments"]] == ["e", "A", "B"]
+    legacy.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_first_upload_remembers_each_pdf_separately(monkeypatch):
+    import pymupdf
+
+    def pdf(text):
+        with pymupdf.open() as doc:
+            doc.new_page().insert_text((40, 60), text)
+            return doc.tobytes()
+
+    remembered = {}
+
+    async def fake_remember(user_id, upload_id, conversation_id, documents):
+        remembered.update(user_id=user_id, upload_id=upload_id, names=[d.filename for d in documents],
+                          texts=[d.text for d in documents])
+
+    class Orchestrator:
+        def execute(self, **kwargs):
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    for module in _route_modules():
+        monkeypatch.setattr(module, "remember_documents", fake_remember)
+        monkeypatch.setattr(module, "remember_upload", AsyncMock())
+    upload_id = "22222222-3333-4444-5555-666666666666"
+    files = [("attachments", ("a.pdf", pdf("Alpha paper"), "application/pdf")),
+             ("attachments", ("b.pdf", pdf("Beta paper"), "application/pdf"))]
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=Orchestrator()), \
+         patch("services.speaking_material_service.save_material", new_callable=AsyncMock, return_value=True):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post("/api/v1/stream", files=files, data={
+                "messages": json.dumps([{"role": "user", "content": "read both", "message_id": upload_id}]),
+                "conversation_id": "conv-upload",
+            })
+
+    assert response.status_code == 200
+    assert remembered["user_id"] == "default_user" and remembered["upload_id"] == upload_id
+    assert remembered["names"] == ["a.pdf", "b.pdf"]
+    assert "Alpha paper" in remembered["texts"][0] and "Beta paper" in remembered["texts"][1]
