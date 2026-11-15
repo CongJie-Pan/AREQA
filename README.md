@@ -30,6 +30,7 @@
 - 安裝 Antigravity CLI (`agy`)
 - 安裝 Drift (`drift`, `driftdetect-mcp`)
 - 安裝 Codex CLI (`codex`)
+- 安裝 Claude Code CLI (`claude`)
 - 建立 `backend/.venv`，優先用 `uv pip install` 安裝 `backend/requirements.txt`（無 `uv` 時才 fallback 到 pip）
 - 安裝 `frontend/node_modules`
 - 在 shell 啟動時自動啟用 `backend/.venv`
@@ -40,7 +41,20 @@
 bash .devcontainer/setup.sh
 ```
 
-`postAttachCommand` 會執行 `.devcontainer/on-attach.sh`，負責檢查 `agy` / `drift` / `codex`，必要時初始化 `.drift`，並嘗試啟動 Redis。注意：目前這個 Codespace 映像沒有可用的 `redis-server` service，因此 `on-attach.sh` 會顯示 Redis 啟動失敗；若功能需要 Redis，請設定外部 `REDIS_URL`，或在 Codespace 中自行安裝並啟動 Redis。
+首次使用 Claude Code 時，在容器終端機執行：
+
+```bash
+claude
+```
+
+依照瀏覽器登入流程完成 Anthropic 帳號驗證後，即可在專案根目錄使用 Claude Code。若使用 API key，請只透過未提交至 Git 的環境變數提供：
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+claude
+```
+
+`postAttachCommand` 會執行 `.devcontainer/on-attach.sh`，負責檢查 `agy` / `drift` / `codex` / `claude`，必要時初始化 `.drift`，並嘗試啟動 Redis。注意：目前這個 Codespace 映像沒有可用的 `redis-server` service，因此 `on-attach.sh` 會顯示 Redis 啟動失敗；若功能需要 Redis，請設定外部 `REDIS_URL`，或在 Codespace 中自行安裝並啟動 Redis。
 
 ### 啟動完整開發服務
 

@@ -67,6 +67,13 @@ else
   echo "✅ Codex CLI is already installed."
 fi
 
+echo "🚀 Installing Claude Code..."
+if ! command -v claude >/dev/null 2>&1; then
+  npm install -g @anthropic-ai/claude-code
+else
+  echo "✅ Claude Code is already installed."
+fi
+
 echo "🔎 Checking versions..."
 node -v
 npm -v
@@ -74,6 +81,7 @@ npm -v
 agy --version || true
 drift --version || true
 codex --version || true
+claude --version || true
 ensure_uv
 uv --version || true
 
@@ -142,10 +150,12 @@ else
 fi
 
 echo -e "\033[1;36m======================================\033[0m"
-echo -e "\033[1;32m🤖 Drift AI Brain, Antigravity CLI & Codex are Ready!\033[0m"
+echo -e "\033[1;32m🤖 Drift AI Brain, Antigravity CLI, Codex & Claude Code are Ready!\033[0m"
 echo -e "\033[1;33m👉 Run \033[1;37magy\033[0m"
 echo -e "\033[1;33m👉 Login Codex if this is your first time: \033[1;37mcodex login\033[0m"
 echo -e "\033[1;33m👉 Start Codex development: \033[1;37mcodex\033[0m"
+echo -e "\033[1;33m👉 Login Claude Code if this is your first time: \033[1;37mclaude\033[0m"
+echo -e "\033[1;33m👉 Start Claude Code development: \033[1;37mclaude\033[0m"
 echo -e "\033[1;33m👉 Force rescan (recommended after refactoring): \033[1;37mdrift scan backend frontend tests --force\033[0m"
 echo -e "\033[1;33m👉 Full manual Drift refresh: \033[1;37mnpm run drift:refresh\033[0m"
 echo -e "\033[1;33m👉 If you want to start over completely:\033[0m"
