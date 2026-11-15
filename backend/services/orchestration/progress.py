@@ -11,6 +11,7 @@ import json
 from typing import AsyncIterator
 
 PROGRESS_STEPS = frozenset({
+    "reading_attachments",
     "analyzing",
     "recalling_memory",
     "planning",

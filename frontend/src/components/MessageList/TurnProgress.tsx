@@ -18,6 +18,7 @@ import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferen
 
 const STEP_KEYS: Record<TurnProgressStep, TranslationKey> = {
   uploading: 'progress.uploading',
+  reading_attachments: 'progress.readingAttachments',
   analyzing: 'progress.analyzing',
   recalling_memory: 'progress.recallingMemory',
   planning: 'progress.planning',
@@ -178,6 +179,9 @@ export function describeStep(
 ): { label: string; count?: string } {
   if (entry.step === 'reading_documents' && entry.total) {
     return { label: t('progress.readingDocumentsCount', { count: entry.total }) };
+  }
+  if (entry.step === 'reading_attachments' && entry.total) {
+    return { label: t('progress.readingAttachmentsCount', { count: entry.total }) };
   }
   const label = t(STEP_KEYS[entry.step] ?? 'progress.analyzing');
   if (COUNTED_STEPS.has(entry.step) && entry.total) {

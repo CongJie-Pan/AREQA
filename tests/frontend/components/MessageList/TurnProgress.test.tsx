@@ -28,6 +28,11 @@ describe('TurnProgress', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
+  it('names the backend parsing step with the attachment count', () => {
+    renderProgress([{ step: 'reading_attachments', current: 0, total: 3, startedAt: Date.now() }], true);
+    expect(screen.getByTestId('turn-progress-label')).toHaveTextContent('正在讀取 3 份附件');
+  });
+
   it('names the current step with counts and only shows elapsed time once the wait is long', () => {
     const now = Date.now();
     renderProgress([

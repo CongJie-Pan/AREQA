@@ -692,6 +692,77 @@ async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, labe
 
 
 @pytest.mark.asyncio
+async def test_opted_in_upload_streams_reading_progress_before_parsing_and_answer():
+    """Attachment parsing used to finish before any SSE byte, leaving the chat blank."""
+    import pymupdf
+    from config import settings
+    from services.orchestration_service import OrchestrationService
+
+    with pymupdf.open() as document:
+        document.new_page().insert_text((72, 72), "Paper abstract: compares two learning methods.")
+        pdf_bytes = document.tobytes()
+
+    client = MagicMock()
+    client.with_options.return_value.post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "overview"}}})
+
+    async def stream_answer(_service, *args, **_kwargs):
+        yield 'data: {"content":"paper reply"}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"paper reply"}\n\n'
+
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("backend.main.AsyncOpenAI", return_value=client), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("services.speaking_material_service.save_material", new_callable=AsyncMock), \
+         patch.object(settings, "policy_classifier_timeout_ms", 10), \
+         patch.object(settings, "enable_visual_preflight", False), \
+         patch.object(settings, "enable_parts_llm_rewrite", False), \
+         patch.object(OrchestrationService, "_node_llm_stream", stream_answer):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                data={"messages": json.dumps({
+                    "messages": [{"role": "user", "content": "請幫我解釋這一篇論文"}],
+                    "search_mode": "never",
+                    "attachment_progress": True,
+                })},
+                files={"attachments": ("paper.pdf", pdf_bytes, "application/pdf")},
+            )
+
+    assert response.status_code == 200
+    text = response.text
+    reading = text.index('{"step": "reading_attachments", "current": 0, "total": 1}')
+    assert reading < text.index('"step": "analyzing"') < text.index("paper reply")
+    assert text.index("event: progress") == reading - len("event: progress\ndata: ")
+    assert "data: [DONE]" in text
+
+
+@pytest.mark.asyncio
+async def test_attachment_progress_keeps_legacy_http_errors_and_streams_errors_when_opted_in():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async def send(opt_in):
+            return await ac.post(
+                "/api/v1/stream",
+                data={"messages": json.dumps({
+                    "messages": [{"role": "user", "content": "read this"}],
+                    "attachment_progress": opt_in,
+                })},
+                files={"attachments": ("empty.txt", b"", "text/plain")},
+            )
+
+        legacy = await send(False)
+        opted_in = await send(True)
+
+    assert legacy.status_code == 422
+    assert legacy.json()["detail"]["code"] == "ATTACHMENT_INVALID_CONTENT"
+    assert opted_in.status_code == 200
+    assert opted_in.text.index('"step": "reading_attachments"') < opted_in.text.index("event: attachment_error")
+    assert '"code": "ATTACHMENT_INVALID_CONTENT"' in opted_in.text
+    assert '"status": 422' in opted_in.text
+    assert "data: [DONE]" in opted_in.text
+
+
+@pytest.mark.asyncio
 async def test_plain_follow_up_reloads_earlier_upload_text(monkeypatch):
     """Follow-ups send only file names; the stored PDF text must reach the model."""
     captured = {}

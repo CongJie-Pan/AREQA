@@ -155,6 +155,7 @@ export interface ParsedChunk {
 /** Stable learner-facing progress step codes; the frontend owns their wording. */
 export type TurnProgressStep =
   | 'uploading'
+  | 'reading_attachments'
   | 'analyzing'
   | 'recalling_memory'
   | 'planning'
