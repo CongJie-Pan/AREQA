@@ -252,6 +252,13 @@ export type TranslationKey =
   | 'shareLoginRequired'
   | 'shareNoConversation'
   | 'shareLinkCopied'
+  | 'onboardingFeaturesTitle'
+  | 'onboardingFeaturesBody'
+  | 'onboardingFeaturesStart'
+  | 'onboardingFeaturesOfferTitle'
+  | 'onboardingFeaturesOfferBody'
+  | 'onboardingFeaturesOfferAccept'
+  | 'onboardingFeaturesOfferDismiss'
   | 'onboardingWelcomeTitle'
   | 'onboardingPitch'
   | 'onboardingPointConcise'
@@ -573,6 +580,13 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '請先登入後再分享對話。',
     shareNoConversation: '目前沒有可分享的對話。',
     shareLinkCopied: '已公開並複製分享連結',
+    onboardingFeaturesTitle: "你可能還沒用過這些功能",
+    onboardingFeaturesBody: "花 30 秒認識 {count} 個能讓學習更順手的功能，隨時可以略過。",
+    onboardingFeaturesStart: "看看",
+    onboardingFeaturesOfferTitle: "AREQA 有幾個你可能還沒用過的功能",
+    onboardingFeaturesOfferBody: "例如把重點存進筆記、從某個回答另開對話分支，或上傳 PDF 一起提問。",
+    onboardingFeaturesOfferAccept: "看看（約 30 秒）",
+    onboardingFeaturesOfferDismiss: "不用了",
     onboardingWelcomeTitle: "歡迎來到 AREQA",
     onboardingPitch: "把難懂的東西用最少的話講到你聽得懂，再陪你想下一步的學習夥伴。",
     onboardingPointConcise: "講得短、講得白：先用直覺說明，再補上專業術語。",
@@ -868,6 +882,13 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '请先登入后再分享对话。',
     shareNoConversation: '目前没有可分享的对话。',
     shareLinkCopied: '已公开并复制分享链接',
+    onboardingFeaturesTitle: "你可能还没用过这些功能",
+    onboardingFeaturesBody: "花 30 秒认识 {count} 个能让学习更顺手的功能，随时可以跳过。",
+    onboardingFeaturesStart: "看看",
+    onboardingFeaturesOfferTitle: "AREQA 有几个你可能还没用过的功能",
+    onboardingFeaturesOfferBody: "例如把重点存进笔记、从某个回答另开对话分支，或上传 PDF 一起提问。",
+    onboardingFeaturesOfferAccept: "看看（约 30 秒）",
+    onboardingFeaturesOfferDismiss: "不用了",
     onboardingWelcomeTitle: "欢迎来到 AREQA",
     onboardingPitch: "把难懂的东西用最少的话讲到你听得懂，再陪你想下一步的学习伙伴。",
     onboardingPointConcise: "讲得短、讲得白：先用直觉说明，再补上专业术语。",
@@ -1163,6 +1184,13 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: 'Log in before sharing a conversation.',
     shareNoConversation: 'There is no conversation to share yet.',
     shareLinkCopied: 'Public share link copied',
+    onboardingFeaturesTitle: "Features you may not have tried",
+    onboardingFeaturesBody: "Take 30 seconds to see {count} features that make studying easier. You can skip anytime.",
+    onboardingFeaturesStart: "Show me",
+    onboardingFeaturesOfferTitle: "AREQA has a few features you may not have tried",
+    onboardingFeaturesOfferBody: "For example saving key points to notes, branching a new conversation from an answer, or asking about an uploaded PDF.",
+    onboardingFeaturesOfferAccept: "Show me (30 s)",
+    onboardingFeaturesOfferDismiss: "No thanks",
     onboardingWelcomeTitle: "Welcome to AREQA",
     onboardingPitch: "A learning partner that explains hard things in as few words as it takes for you to get it, then helps you think about what to explore next.",
     onboardingPointConcise: "Short and plain: intuition first, technical terms after.",

@@ -4,8 +4,10 @@ import type { User } from '@supabase/supabase-js';
 const { updateUser } = vi.hoisted(() => ({ updateUser: vi.fn(async () => ({ error: null })) }));
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { updateUser } } }));
 vi.mock('@/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+const { sendOnboardingEvent } = vi.hoisted(() => ({ sendOnboardingEvent: vi.fn() }));
+vi.mock('@/services/onboardingTelemetry', () => ({ sendOnboardingEvent }));
 
-import { ONBOARDING_VERSION, hasSeenOnboarding, useOnboardingStore } from '@/store/onboarding';
+import { ONBOARDING_VERSION, hasSeenFeatureTour, hasSeenOnboarding, useOnboardingStore } from '@/store/onboarding';
 
 const user = (metadata: Record<string, unknown> = {}) => ({ id: 'u1', user_metadata: metadata }) as unknown as User;
 
@@ -13,6 +15,7 @@ describe('onboarding store', () => {
   beforeEach(() => {
     window.localStorage.clear();
     updateUser.mockClear();
+    sendOnboardingEvent.mockClear();
     useOnboardingStore.setState({ active: false, step: 0, waitingForAnswer: false });
   });
 
@@ -50,5 +53,30 @@ describe('onboarding store', () => {
     expect(useOnboardingStore.getState().active).toBe(false);
     expect(updateUser).toHaveBeenCalledWith({ data: { areqa_onboarding: expect.objectContaining({ version: ONBOARDING_VERSION, status: 'skipped' }) } });
     expect(hasSeenOnboarding(user())).toBe(true);
+  });
+
+  it('builds a short tour of only the unused features for existing learners', () => {
+    useOnboardingStore.getState().start('features', ['addNote', 'composerPlus']);
+    expect(useOnboardingStore.getState()).toMatchObject({
+      mode: 'features', steps: ['featuresIntro', 'addNote', 'composerPlus', 'finish'], step: 0,
+    });
+
+    useOnboardingStore.getState().finish('completed', user());
+    expect(updateUser).toHaveBeenCalledWith({ data: { areqa_feature_tour: expect.objectContaining({ status: 'completed' }) } });
+    expect(hasSeenFeatureTour(user())).toBe(true);
+    expect(hasSeenOnboarding(user())).toBe(false);
+  });
+
+  it('reports progress with step codes for drop-off analysis', () => {
+    const store = useOnboardingStore.getState();
+    store.start();
+    store.next();
+    store.finish('skipped', user());
+
+    expect(sendOnboardingEvent.mock.calls.map(([event]) => event)).toEqual([
+      { event: 'started', mode: 'full', step: 'welcome', stepIndex: 0, stepCount: 6 },
+      { event: 'step_viewed', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 6 },
+      { event: 'finished', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 6, outcome: 'skipped' },
+    ]);
   });
 });

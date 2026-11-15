@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from openai import AsyncOpenAI
@@ -40,6 +40,16 @@ class ShareDebugLogRequest(BaseModel):
 class ConversationHistoryDebugLogRequest(BaseModel):
     event: str
     context: Dict[str, Any] = {}
+
+class OnboardingEventRequest(BaseModel):
+    """Guided-tour progress; every field is a fixed code, never learner text."""
+
+    event: Literal["started", "step_viewed", "finished"]
+    mode: Literal["full", "features"]
+    step: Literal["welcome", "featuresIntro", "ask", "addNote", "replyMore", "composerPlus", "finish"]
+    outcome: Optional[Literal["completed", "skipped"]] = None
+    step_index: int = 0
+    step_count: int = 0
 
 class MemoryQueryRequest(BaseModel):
     query: str
@@ -300,6 +310,17 @@ async def log_conversation_history_debug(
         current_user_id or "anonymous",
         req.event,
         json.dumps(safe_context, ensure_ascii=False, sort_keys=True),
+    )
+    return {"status": "ok"}
+
+@router.post("/api/v1/onboarding/event")
+async def log_onboarding_event(req: OnboardingEventRequest, current_user_id: str = Depends(get_current_user)):
+    """Record where learners are in, or leave, the guided tour (drop-off analysis)."""
+    if not (0 <= req.step_index < 20 and 0 <= req.step_count <= 20):
+        raise HTTPException(status_code=400, detail="Invalid onboarding step position")
+    logger.info(
+        "onboarding.event user_id=%s event=%s mode=%s step=%s step_index=%d step_count=%d outcome=%s",
+        current_user_id, req.event, req.mode, req.step, req.step_index, req.step_count, req.outcome or "none",
     )
     return {"status": "ok"}
 

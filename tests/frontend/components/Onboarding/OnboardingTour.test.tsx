@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { updateUser: vi.fn(async () => ({ error: null })) } } }));
 vi.mock('@/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+vi.mock('@/services/onboardingTelemetry', () => ({ sendOnboardingEvent: vi.fn() }));
 vi.mock('@/store/auth', () => ({
   useAuthStore: (selector: (state: { user: unknown }) => unknown) => selector({ user: { id: 'u1', user_metadata: {} } }),
 }));
@@ -69,5 +70,16 @@ describe('OnboardingTour', () => {
     act(() => useOnboardingStore.getState().start());
     fireEvent.click(screen.getByRole('button', { name: '略過引導' }));
     expect(useOnboardingStore.getState().active).toBe(false);
+  });
+
+  it('runs the short existing-learner tour over only the unused features', () => {
+    renderTour();
+    act(() => useOnboardingStore.getState().start('features', ['addNote']));
+
+    expect(screen.getByText('你可能還沒用過這些功能')).toBeInTheDocument();
+    expect(screen.getByText(/認識 1 個/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '看看' }));
+    expect(screen.getByText('把重點存進筆記')).toBeInTheDocument();
+    expect(screen.queryByText('先問一個學習上的問題')).not.toBeInTheDocument();
   });
 });

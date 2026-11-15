@@ -8,7 +8,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2 } from 'lucide-react';
-import { App, Dropdown, Popover, Tooltip } from 'antd';
+import { App, Button, Dropdown, Popover, Space, Tooltip } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
@@ -45,7 +45,8 @@ import { SharePanel } from './SharePanel';
 import { useSharedConversationView } from './useSharedConversationView';
 import { SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
 import { OnboardingTour } from '@/components/Onboarding/OnboardingTour';
-import { hasSeenOnboarding, useOnboardingStore } from '@/store/onboarding';
+import { hasSeenFeatureTour, hasSeenOnboarding, recordOnboardingOutcome, useOnboardingStore } from '@/store/onboarding';
+import { detectUnusedFeatureSteps } from '@/services/onboardingFeatures';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 
@@ -107,7 +108,7 @@ const RESPONSE_PANE_MIN_WIDTH = 420;
  */
 export function ChatContainer({ className }: ChatContainerProps) {
   const { styles, cx } = useStyles();
-  const { message: antMessageApi } = App.useApp();
+  const { message: antMessageApi, notification } = App.useApp();
   const { t, language } = useUserPreferences();
   const {
     isOpen: sidebarOpen, isMobile, desktopCollapsed, mobileOpen,
@@ -484,16 +485,59 @@ export function ChatContainer({ className }: ChatContainerProps) {
     void handleSend(prompt).catch(() => undefined);
   }, [handleSend, isChatReady]);
 
-  // New accounts (no conversations yet) get the guided tour once; it is stored
-  // on the account, so other devices and later visits skip it.
+  // New accounts (no conversations yet) get the guided tour once. Existing
+  // learners who never took it are offered a short tour of only the features
+  // they have not used. Outcomes live on the account, so nothing repeats.
   const onboardingCheckedFor = useRef<string | null>(null);
+  const featureOfferTimer = useRef<number | null>(null);
+  // Cancel a pending offer only on unmount: re-runs caused by a growing
+  // conversation list must not drop an offer that was already scheduled.
+  useEffect(() => () => {
+    if (featureOfferTimer.current !== null) window.clearTimeout(featureOfferTimer.current);
+  }, []);
   useEffect(() => {
-    if (!isChatReady || !user || sharedView || isLiveTutorOpen) return;
-    if (onboardingCheckedFor.current === user.id) return;
+    if (!isChatReady || !user || sharedView || isLiveTutorOpen) return undefined;
+    if (onboardingCheckedFor.current === user.id) return undefined;
     onboardingCheckedFor.current = user.id;
-    if (conversations.length > 0 || hasSeenOnboarding(user)) return;
-    useOnboardingStore.getState().start();
-  }, [conversations.length, isChatReady, isLiveTutorOpen, sharedView, user]);
+    if (conversations.length === 0) {
+      if (!hasSeenOnboarding(user)) useOnboardingStore.getState().start();
+      return undefined;
+    }
+    if (hasSeenOnboarding(user) || hasSeenFeatureTour(user)) return undefined;
+
+    // Wait until the workspace settles so the offer does not compete with loading.
+    featureOfferTimer.current = window.setTimeout(() => {
+      featureOfferTimer.current = null;
+      void detectUnusedFeatureSteps(user.id).then((unused) => {
+        if (unused.length === 0 || useOnboardingStore.getState().active) return;
+        const key = 'areqa-feature-tour-offer';
+        let answered = false;
+        const answer = (accept: boolean) => {
+          answered = true;
+          notification.destroy(key);
+          if (accept) useOnboardingStore.getState().start('features', unused);
+          else recordOnboardingOutcome('features', 'skipped', user);
+        };
+        notification.open({
+          key,
+          title: t('onboardingFeaturesOfferTitle'),
+          description: t('onboardingFeaturesOfferBody'),
+          placement: 'bottomRight',
+          duration: false,
+          actions: (
+            <Space>
+              <Button size="small" onClick={() => answer(false)}>{t('onboardingFeaturesOfferDismiss')}</Button>
+              <Button type="primary" size="small" onClick={() => answer(true)}>{t('onboardingFeaturesOfferAccept')}</Button>
+            </Space>
+          ),
+          onClose: () => {
+            if (!answered) recordOnboardingOutcome('features', 'skipped', user);
+          },
+        });
+      }).catch(() => undefined);
+    }, 4000);
+    return undefined;
+  }, [conversations.length, isChatReady, isLiveTutorOpen, notification, sharedView, t, user]);
 
   // Handle conversation selection
   const handleConversationSelect = useCallback(() => {

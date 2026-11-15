@@ -14,7 +14,7 @@ import { createStyles } from 'antd-style';
 import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
 import { useAuthStore } from '@/store/auth';
 import { useChatStore } from '@/store/chat';
-import { ONBOARDING_STEPS, useOnboardingStore, type OnboardingStepId } from '@/store/onboarding';
+import { useOnboardingStore, type OnboardingStepId } from '@/store/onboarding';
 
 const useStyles = createStyles(({ css }) => ({
   body: css`
@@ -74,10 +74,10 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
   const { styles } = useStyles();
   const { t } = useUserPreferences();
   const user = useAuthStore((state) => state.user);
-  const { active, step, waitingForAnswer, next, notify, finish } = useOnboardingStore();
+  const { active, steps: stepIds, step, waitingForAnswer, next, notify, finish } = useOnboardingStore();
   const isStreaming = useChatStore((state) => state.isStreaming);
   const wasStreaming = useRef(false);
-  const stepId = ONBOARDING_STEPS[step];
+  const stepId = stepIds[step];
 
   // The "ask" step advances on real activity: a stream starts, then finishes.
   useEffect(() => {
@@ -95,7 +95,7 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
   const skip = () => finish('skipped', user);
   const actions = (primary: React.ReactNode) => (
     <div className={styles.actions}>
-      <Button type="text" size="small" onClick={skip}>{t('onboardingSkip')}</Button>
+      <Button autoInsertSpace={false} type="text" size="small" onClick={skip}>{t('onboardingSkip')}</Button>
       {primary}
     </div>
   );
@@ -113,7 +113,12 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
           </ul>
         </div>
       ),
-      actions: actions(<Button type="primary" size="small" onClick={next}>{t('onboardingStart')}</Button>),
+      actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingStart')}</Button>),
+    },
+    featuresIntro: {
+      title: t('onboardingFeaturesTitle'),
+      description: t('onboardingFeaturesBody', { count: Math.max(stepIds.length - 2, 1) }),
+      actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingFeaturesStart')}</Button>),
     },
     ask: {
       title: t('onboardingAskTitle'),
@@ -122,7 +127,7 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
           <span>{t('onboardingAskBody')}</span>
           <div className={styles.examples}>
             {EXAMPLE_KEYS.map((key) => (
-              <Button key={key} size="small" onClick={() => onAskExample(t(key))}>{t(key)}</Button>
+              <Button autoInsertSpace={false} key={key} size="small" onClick={() => onAskExample(t(key))}>{t(key)}</Button>
             ))}
           </div>
         </div>
@@ -132,17 +137,17 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
     addNote: {
       title: t('onboardingNoteTitle'),
       description: t('onboardingNoteBody'),
-      actions: actions(<Button size="small" onClick={next}>{t('onboardingNext')}</Button>),
+      actions: actions(<Button autoInsertSpace={false} size="small" onClick={next}>{t('onboardingNext')}</Button>),
     },
     replyMore: {
       title: t('onboardingBranchTitle'),
       description: t('onboardingBranchBody'),
-      actions: actions(<Button type="primary" size="small" onClick={next}>{t('onboardingGotIt')}</Button>),
+      actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingGotIt')}</Button>),
     },
     composerPlus: {
       title: t('onboardingPlusTitle'),
       description: t('onboardingPlusBody'),
-      actions: actions(<Button type="primary" size="small" onClick={next}>{t('onboardingNext')}</Button>),
+      actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingNext')}</Button>),
     },
     finish: {
       title: t('onboardingFinishTitle'),
@@ -150,13 +155,13 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
       actions: (
         <div className={styles.actions}>
           <span />
-          <Button type="primary" size="small" onClick={() => finish('completed', user)}>{t('onboardingDone')}</Button>
+          <Button autoInsertSpace={false} type="primary" size="small" onClick={() => finish('completed', user)}>{t('onboardingDone')}</Button>
         </div>
       ),
     },
   };
 
-  const steps: TourStepProps[] = ONBOARDING_STEPS.map((id) => {
+  const steps: TourStepProps[] = stepIds.map((id) => {
     const { actions: _actions, ...step } = content[id];
     void _actions;
     return { ...step, target: findTarget(id) };
@@ -170,7 +175,7 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
       onClose={skip}
       indicatorsRender={(current, total) => <span>{current + 1} / {total}</span>}
       // antd 6 only honours actionsRender on the Tour itself, so pick per step here.
-      actionsRender={(_original, { current }) => content[ONBOARDING_STEPS[current]].actions}
+      actionsRender={(_original, { current }) => content[stepIds[current]].actions}
       zIndex={1200}
     />
   );
