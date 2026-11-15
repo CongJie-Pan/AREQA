@@ -559,6 +559,16 @@ export async function sendMessage(
     return { completed: false };
   }
 
+  // Name a new conversation from the question itself, in parallel with the
+  // answer, instead of waiting for the full reply. File names give the title
+  // model something concrete when the learner only sent attachments.
+  if (shouldPersist && messages.length === 1) {
+    const titleQuery = attachmentMetadata.length > 0
+      ? `${sanitizedContent}\n（附件：${attachmentMetadata.map((attachment) => attachment.name).join('、')}）`
+      : sanitizedContent;
+    void useConversationStore.getState().generateTitle(activeConversationId, [{ role: 'user', content: titleQuery }]);
+  }
+
   // Track state for database save
   let thinkingContent = '';
   let thinkingStartTime: number | null = null;
@@ -630,11 +640,6 @@ export async function sendMessage(
       });
     }
     if (shouldPersist) updateConversationPreviewInStore(conversationIdForSave, answerContent, 2);
-    if (shouldPersist && messages.length === 1 && (answerContent || answerBlocksPayload.some((block) => block.type === 'image_block' && block.provider === 'generated_image'))) {
-      useConversationStore.getState().generateTitle(conversationIdForSave, [
-        ...messages, { role: 'assistant', content: answerContent },
-      ]);
-    }
     currentAbortController = null;
   };
 

@@ -802,6 +802,47 @@ describe('Chat Service', () => {
       });
       expect(await sendMessage('請產圖', 'test-conv-id')).toEqual({ completed: false });
       expect(mockChatStore.setAnswerBlocks).toHaveBeenLastCalledWith([expect.objectContaining({ status: 'error' })]);
+      // The title comes from the question at send time, so stopping does not cancel it.
+      expect(mockConversationStore.generateTitle).toHaveBeenCalledWith('test-conv-id', [{ role: 'user', content: '請產圖' }]);
+    });
+
+    it('names a new conversation from the question before the answer streams', async () => {
+      mockChatStore.messages = [{ id: 'user-1', role: 'user', content: '中華民國歷史', conversationId: 'test-conv-id' }];
+      let titleRequestedBeforeStream = false;
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => {
+        titleRequestedBeforeStream = vi.mocked(mockConversationStore.generateTitle).mock.calls.length > 0;
+        callbacks.onContent('回答');
+        await callbacks.onDone();
+      });
+
+      await sendMessage('中華民國歷史', 'test-conv-id');
+
+      expect(titleRequestedBeforeStream).toBe(true);
+      expect(mockConversationStore.generateTitle).toHaveBeenCalledTimes(1);
+      expect(mockConversationStore.generateTitle).toHaveBeenCalledWith('test-conv-id', [{ role: 'user', content: '中華民國歷史' }]);
+    });
+
+    it('adds attachment names to the title query when only files were sent', async () => {
+      mockChatStore.messages = [];
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => { await callbacks.onDone(); });
+
+      await sendMessage('', undefined, [new File(['%PDF'], 'Ch08_Motivation.pdf', { type: 'application/pdf' })]);
+
+      expect(mockConversationStore.generateTitle).toHaveBeenCalledWith('test-conv-id', [{
+        role: 'user', content: '請分析我附加的檔案。\n（附件：Ch08_Motivation.pdf）',
+      }]);
+    });
+
+    it('does not rename the conversation on follow-up questions', async () => {
+      mockChatStore.messages = [
+        { id: 'u1', role: 'user', content: '第一題', conversationId: 'test-conv-id' },
+        { id: 'a1', role: 'assistant', content: '回答', conversationId: 'test-conv-id' },
+        { id: 'u2', role: 'user', content: '追問', conversationId: 'test-conv-id' },
+      ];
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => { await callbacks.onDone(); });
+
+      await sendMessage('追問', 'test-conv-id');
+
       expect(mockConversationStore.generateTitle).not.toHaveBeenCalled();
     });
 
