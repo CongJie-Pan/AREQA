@@ -252,6 +252,9 @@ export type TranslationKey =
   | 'shareLoginRequired'
   | 'shareNoConversation'
   | 'shareLinkCopied'
+  | 'composerLineCount'
+  | 'composerLowRes'
+  | 'composerActiveModes'
   | 'onboardingFeaturesTitle'
   | 'onboardingFeaturesBody'
   | 'onboardingFeaturesStart'
@@ -577,6 +580,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '請先登入後再分享對話。',
     shareNoConversation: '目前沒有可分享的對話。',
     shareLinkCopied: '已公開並複製分享連結',
+    composerLineCount: "{count} 行",
+    composerLowRes: "解析度低",
+    composerActiveModes: "已啟用的模式",
     onboardingFeaturesTitle: "你可能還沒用過這些功能",
     onboardingFeaturesBody: "花 30 秒認識 {count} 個能讓學習更順手的功能，隨時可以略過。",
     onboardingFeaturesStart: "看看",
@@ -876,6 +882,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: '请先登入后再分享对话。',
     shareNoConversation: '目前没有可分享的对话。',
     shareLinkCopied: '已公开并复制分享链接',
+    composerLineCount: "{count} 行",
+    composerLowRes: "分辨率低",
+    composerActiveModes: "已启用的模式",
     onboardingFeaturesTitle: "你可能还没用过这些功能",
     onboardingFeaturesBody: "花 30 秒认识 {count} 个能让学习更顺手的功能，随时可以跳过。",
     onboardingFeaturesStart: "看看",
@@ -1175,6 +1184,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareLoginRequired: 'Log in before sharing a conversation.',
     shareNoConversation: 'There is no conversation to share yet.',
     shareLinkCopied: 'Public share link copied',
+    composerLineCount: "{count} lines",
+    composerLowRes: "Low res",
+    composerActiveModes: "Active modes",
     onboardingFeaturesTitle: "Features you may not have tried",
     onboardingFeaturesBody: "Take 30 seconds to see {count} features that make studying easier. You can skip anytime.",
     onboardingFeaturesStart: "Show me",

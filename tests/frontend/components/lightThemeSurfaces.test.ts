@@ -16,7 +16,8 @@ describe('chat surfaces follow the interface theme', () => {
   });
 
   it.each([
-    ['ChatInput/styles.ts', 'imageAttachmentRemove'],
+    // Composer attachment tiles; their badge and remove control are image overlays by design.
+    ['ChatInput/ComposerAttachmentTile.tsx', 'tile'],
     ['MessageList/styles.ts', 'messageAttachmentCard'],
     ['MessageList/styles.ts', 'messageAttachmentToggle'],
     ['MessageList/styles.ts', 'messageAttachmentDropdown'],

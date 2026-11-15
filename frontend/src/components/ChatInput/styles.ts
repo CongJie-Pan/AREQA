@@ -78,140 +78,15 @@ export const useStyles = createStyles(({ css, token }) => ({
     flex-wrap: nowrap;
     gap: 10px;
     width: 100%;
-    margin: 0 0 18px;
+    margin: 0 0 12px;
     overflow-x: auto;
-    padding: 0 2px 2px;
+    padding: 2px 2px 8px;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--foreground) 30%, transparent) transparent;
 
     @media (max-width: 768px) {
       margin: 0 0 16px;
     }
-  `,
-
-  attachmentChip: css`
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    flex: 0 0 auto;
-    width: min(320px, 76vw);
-    min-height: 58px;
-    padding: 9px 10px;
-    border-width: 1px;
-    border-style: solid;
-    border-color: color-mix(in srgb, #d8a25c 22%, var(--border));
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--muted) 82%, #d8a25c 5%);
-    color: var(--foreground);
-    font-size: 14px;
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
-
-    button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      border: 0;
-      border-radius: 999px;
-      background: transparent;
-      color: var(--muted-foreground);
-      cursor: pointer;
-      width: 26px;
-      height: 26px;
-      flex: 0 0 26px;
-
-      &:hover {
-        background: color-mix(in srgb, var(--foreground) 8%, transparent);
-        color: var(--foreground);
-      }
-    }
-  `,
-
-  attachmentIconFrame: css`
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    flex: 0 0 34px;
-    border-radius: 9px;
-    background: color-mix(in srgb, #d8a25c 16%, transparent);
-    color: #d8a25c;
-  `,
-
-  imageAttachmentChip: css`
-    position: relative;
-    width: 68px;
-    height: 68px;
-    flex: 0 0 68px;
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--muted) 82%, #ffffff 6%);
-    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
-
-    @media (max-width: 768px) {
-      width: 58px;
-      height: 58px;
-      flex-basis: 58px;
-      border-radius: 16px;
-    }
-  `,
-
-  imageAttachmentRemove: css`
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border: 0;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--card) 90%, transparent);
-    color: color-mix(in srgb, var(--foreground) 92%, transparent);
-    cursor: pointer;
-    backdrop-filter: blur(8px);
-
-    &:hover {
-      background: var(--muted);
-      color: var(--foreground);
-    }
-  `,
-
-  attachmentDetails: css`
-    display: flex;
-    flex: 1 1 auto;
-    min-width: 0;
-    flex-direction: column;
-    gap: 3px;
-
-    > span {
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      line-height: 1.25;
-    }
-
-    small {
-      color: var(--muted-foreground);
-      font-size: 11px;
-      line-height: 1.2;
-    }
-  `,
-
-  attachmentThumbnail: css`
-    width: 100%;
-    height: 100%;
-    display: block;
-    border-radius: inherit;
-    object-fit: cover;
-    background: color-mix(in srgb, var(--foreground) 8%, transparent);
-  `,
-
-  attachmentFileIcon: css`
-    flex: 0 0 auto;
-    color: #d8a25c;
   `,
 
   dropOverlay: css`
@@ -318,41 +193,56 @@ export const useStyles = createStyles(({ css, token }) => ({
     }
   `,
 
-  tutorProfileBar: css`
+  modeTokens: css`
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
     width: 100%;
-    margin: 0 0 8px;
+    margin: 0 0 6px;
+    padding: 0 2px;
   `,
 
-  tutorProfileChip: css`
+  modeToken: css`
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    min-height: 28px;
-    padding: 4px 7px 4px 9px;
-    border: 1px solid color-mix(in srgb, #d8a25c 28%, transparent);
-    border-radius: 999px;
-    background: color-mix(in srgb, #d8a25c 16%, transparent);
-    color: var(--foreground);
-    font-size: 12px;
-    line-height: 16px;
+    gap: 2px;
+    color: #6ea8fe;
+    font-size: 14px;
+    line-height: 22px;
 
+    /* The remove control takes no space until hovered, so tokens read as one line of commands. */
     button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 18px;
+      /* Collapsed but still focusable, so keyboard users can reach it. */
+      width: 0;
       height: 18px;
+      overflow: hidden;
+      opacity: 0;
       padding: 0;
       border: 0;
       border-radius: 999px;
       background: transparent;
-      color: currentColor;
+      color: color-mix(in srgb, var(--foreground) 55%, transparent);
       cursor: pointer;
 
       &:hover {
-        background: color-mix(in srgb, #ffffff 12%, transparent);
+        background: color-mix(in srgb, var(--foreground) 12%, transparent);
+        color: var(--foreground);
       }
+
+      @media (hover: none) {
+        width: 18px;
+        opacity: 1;
+      }
+    }
+
+    &:hover button,
+    &:focus-within button {
+      width: 18px;
+      opacity: 1;
     }
   `,
 

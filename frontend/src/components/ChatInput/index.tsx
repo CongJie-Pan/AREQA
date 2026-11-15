@@ -12,8 +12,6 @@ import {
   BookOpen,
   Check,
   CornerDownRight,
-  FileText,
-  FileImage,
   ImagePlus,
   Globe2,
   Mic,
@@ -34,6 +32,7 @@ import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { transcribeSpeech } from '@/services/speech/transcription';
 import { prefetchAttachmentPreview } from '@/utils/attachmentPreview';
+import { ComposerAttachmentTile } from './ComposerAttachmentTile';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
 
 /** Maximum allowed message length */
@@ -197,12 +196,6 @@ function clipboardImagesToFiles(items: DataTransferItemList | undefined): File[]
  * Side effects:
  *   None.
  */
-function formatAttachmentSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /**
  * Monitors a microphone stream and maps recent audio energy to waveform bars.
  *
@@ -463,6 +456,7 @@ export function ChatInput({
   const shouldUseExpandedShape = attachmentPreviews.length > 0
     || Boolean(quotedText)
     || tutorProfile === 'english'
+    || createImage
     || isTextareaMultiline
     || value.includes('\n')
     || value.length > EXPANDED_COMPOSER_MIN_CHARS;
@@ -710,9 +704,15 @@ export function ChatInput({
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
+        return;
+      }
+      // Like slash commands: Backspace in an empty composer removes the last mode.
+      if (e.key === 'Backspace' && e.currentTarget.value === '' && e.currentTarget.selectionStart === 0) {
+        if (tutorProfile === 'english') setTutorProfile('general');
+        else if (createImage) setCreateImage(false);
       }
     },
-    [handleSend]
+    [createImage, handleSend, setTutorProfile, tutorProfile]
   );
 
   const handleChange = useCallback(
@@ -897,74 +897,46 @@ export function ChatInput({
 
       {attachmentPreviews.length > 0 && (
         <div className={cx('areqa-chat-input-attachment-list', styles.attachmentList)} aria-label={t('pendingAttachments')}>
-          {attachmentPreviews.map((preview) => {
-            const { file: attachment, objectUrl } = preview;
-            const isImagePreview = Boolean(objectUrl && attachment.type.startsWith('image/'));
-            const AttachmentIcon = attachment.type.startsWith('image/') ? FileImage : FileText;
-            if (isImagePreview) {
-              return (
-                <div
-                  className={cx('areqa-chat-input-image-attachment-chip', styles.imageAttachmentChip)}
-                  key={`${attachment.name}-${attachment.lastModified}`}
-                  title={attachment.name}
+          {attachmentPreviews.map((preview) => (
+            <ComposerAttachmentTile
+              key={`${preview.file.name}-${preview.file.lastModified}`}
+              file={preview.file}
+              objectUrl={preview.objectUrl}
+              imageAlt={t('attachmentImagePreview')}
+              removeLabel={`${t('delete')} ${preview.file.name}`}
+              lineCountLabel={(count) => t('composerLineCount', { count })}
+              lowResLabel={t('composerLowRes')}
+              onRemove={() => removeAttachment(preview)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Active modes read like slash commands, as in Claude's composer. */}
+      {(createImage || tutorProfile === 'english') && (
+        <div className={cx('areqa-chat-input-mode-tokens', styles.modeTokens)} aria-label={t('composerActiveModes')}>
+          {createImage && (
+            <Tooltip title={addMenuLabels.createImage}>
+              <span className={styles.modeToken}>
+                <span>/create-image</span>
+                <button type="button" onClick={() => setCreateImage(false)} aria-label="Cancel Create Image"><X size={12} /></button>
+              </span>
+            </Tooltip>
+          )}
+          {tutorProfile === 'english' && (
+            <Tooltip title={addMenuLabels.englishTutor}>
+              <span className={styles.modeToken}>
+                <span>/english-tutor</span>
+                <button
+                  type="button"
+                  onClick={() => setTutorProfile('general')}
+                  aria-label={`${t('delete')} ${addMenuLabels.englishTutor}`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={objectUrl ?? ''}
-                    alt={t('attachmentImagePreview')}
-                    className={cx('areqa-chat-input-attachment-thumbnail', styles.attachmentThumbnail)}
-                  />
-                  <button
-                    className={cx('areqa-chat-input-image-attachment-remove', styles.imageAttachmentRemove)}
-                    type="button"
-                    onClick={() => removeAttachment(preview)}
-                    aria-label={`${t('delete')} ${attachment.name}`}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              );
-            }
-
-            return (
-            <div className={cx('areqa-chat-input-attachment-chip', styles.attachmentChip)} key={`${attachment.name}-${attachment.lastModified}`}>
-              <span className={cx('areqa-chat-input-attachment-icon', styles.attachmentIconFrame)} aria-hidden="true">
-                <AttachmentIcon size={20} className={styles.attachmentFileIcon} />
+                  <X size={12} />
+                </button>
               </span>
-              <span className={cx('areqa-chat-input-attachment-details', styles.attachmentDetails)} title={attachment.name}>
-                <span>{attachment.name}</span>
-                <small>{formatAttachmentSize(attachment.size)}</small>
-              </span>
-              <button type="button" onClick={() => removeAttachment(preview)} aria-label={`${t('delete')} ${attachment.name}`}>
-                <X size={13} />
-              </button>
-            </div>
-          );
-          })}
-        </div>
-      )}
-
-      {createImage && (
-        <div className={styles.tutorProfileBar}>
-          <span className={styles.tutorProfileChip}>
-            <ImagePlus size={14} /> {addMenuLabels.createImage}
-            <button type="button" onClick={() => setCreateImage(false)} aria-label="Cancel Create Image"><X size={14} /></button>
-          </span>
-        </div>
-      )}
-      {tutorProfile === 'english' && (
-        <div className={styles.tutorProfileBar}>
-          <span className={styles.tutorProfileChip}>
-            <BookOpen size={14} />
-            <span>{addMenuLabels.englishTutor}</span>
-            <button
-              type="button"
-              onClick={() => setTutorProfile('general')}
-              aria-label={`${t('delete')} ${addMenuLabels.englishTutor}`}
-            >
-              <X size={12} />
-            </button>
-          </span>
+            </Tooltip>
+          )}
         </div>
       )}
 

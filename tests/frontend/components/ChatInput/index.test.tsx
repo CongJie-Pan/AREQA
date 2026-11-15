@@ -258,9 +258,26 @@ describe('ChatInput', () => {
 
     render(<ChatInput onSend={mockOnSend} />);
 
-    expect(screen.getByText('English Tutor')).toBeInTheDocument();
+    // Active modes read like slash commands in one row.
+    expect(screen.getByText('/english-tutor')).toBeInTheDocument();
     expect(screen.getByLabelText('訊息輸入框').closest('.areqa-chat-input-shell-expanded')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('刪除 English Tutor'));
+
+    expect(mockSetTutorProfile).toHaveBeenCalledWith('general');
+  });
+
+  it('removes the last active mode with Backspace in an empty composer', () => {
+    (useChatStore as any).mockImplementation((selector: any) => {
+      const state = {
+        useRag: false, useWebSearch: false, forceThink: false, tutorProfile: 'english', quotedText: null,
+        toggleRag: vi.fn(), toggleWebSearch: mockToggleWebSearch, toggleThink: vi.fn(),
+        setTutorProfile: mockSetTutorProfile, setQuotedText: mockSetQuotedText,
+      };
+      return typeof selector === 'function' ? selector(state) : state;
+    });
+
+    render(<ChatInput onSend={mockOnSend} />);
+    fireEvent.keyDown(screen.getByLabelText('訊息輸入框'), { key: 'Backspace' });
 
     expect(mockSetTutorProfile).toHaveBeenCalledWith('general');
   });

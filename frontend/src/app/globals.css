@@ -855,8 +855,9 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
 
 .areqa-chat-input-shell-has-attachments,
 .areqa-chat-input-shell-expanded {
-  padding: 12px 16px 10px;
-  border-radius: 34px;
+  padding: 12px 14px 10px;
+  /* Once the composer holds tiles or modes it is a card, not a pill. */
+  border-radius: 22px;
 }
 
 .areqa-chat-input-row {
@@ -1003,116 +1004,21 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
 .areqa-chat-input-attachment-list {
   flex-wrap: nowrap;
   gap: 10px;
-  margin: 0 0 18px;
+  margin: 0 0 12px;
   overflow-x: auto;
-  padding: 0 2px 2px;
+  padding: 2px 2px 8px;
 }
 
-.areqa-chat-input-image-attachment-chip {
-  position: relative;
-  width: 68px;
-  height: 68px;
-  flex: 0 0 68px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--muted) 82%, #ffffff 6%);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
-}
 
-.areqa-chat-input-attachment-thumbnail {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
-  object-fit: cover;
-}
 
-.areqa-chat-input-image-attachment-remove {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--card) 90%, transparent);
-  color: var(--foreground);
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-}
 
-.areqa-chat-input-image-attachment-remove:hover {
-  background: var(--muted);
-  color: var(--foreground);
-}
 
-.areqa-chat-input-attachment-chip {
-  display: inline-flex;
-  width: min(320px, 76vw);
-  min-height: 58px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, #d8a25c 22%, var(--border));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--muted) 82%, #d8a25c 5%);
-  color: var(--foreground);
-  font-size: 14px;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
-}
 
-.areqa-chat-input-attachment-icon {
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: color-mix(in srgb, #d8a25c 16%, transparent);
-  color: #d8a25c;
-}
 
-.areqa-chat-input-attachment-details {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
 
-.areqa-chat-input-attachment-details > span {
-  max-width: 100%;
-  overflow: hidden;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.areqa-chat-input-attachment-details small {
-  color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 1.2;
-}
 
-.areqa-chat-input-attachment-chip button {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  color: var(--muted-foreground);
-}
 
-.areqa-chat-input-attachment-chip button:hover {
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
-  color: var(--foreground);
-}
 
 .areqa-chat-input-math-preview {
   margin: 4px 0 8px;
@@ -1382,19 +1288,14 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
   .areqa-chat-input-shell-has-attachments,
   .areqa-chat-input-shell-expanded {
     padding: 10px 12px 9px;
-    border-radius: 28px;
+    border-radius: 20px;
   }
 
   .areqa-chat-input-attachment-list {
     margin-bottom: 16px;
   }
 
-  .areqa-chat-input-image-attachment-chip {
-    width: 58px;
-    height: 58px;
-    flex-basis: 58px;
-    border-radius: 16px;
-  }
+
 }
 
 /* Custom Scrollbar Styles */
