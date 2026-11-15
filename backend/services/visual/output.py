@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import replace
 from typing import Any
 from urllib.parse import urlparse
@@ -285,6 +286,8 @@ class OutputImageService:
         user_msg: str,
         conversation_id: str,
         model_client: Any = None,
+        deadline: float | None = None,
+        on_progress: Any = None,
     ) -> dict[str, ImageBlock]:
         """Prepare verified image blocks from request-scoped attachment visuals.
 
@@ -294,6 +297,12 @@ class OutputImageService:
                 context but never logged by this service.
             conversation_id: Correlation id for safe structured logs.
             model_client: OpenAI-compatible async client for vision analysis.
+            deadline: Optional ``time.monotonic()`` instant shared by all vision
+                calls. Calls still running at the deadline are abandoned and the
+                image keeps its planner caption, so a slow vision model cannot
+                hold the first answer token.
+            on_progress: Optional ``(step, current, total)`` callback invoked as
+                each image finishes; carries counts only.
 
         Returns:
             Mapping from slot id to image blocks, in candidate order. When
@@ -307,68 +316,95 @@ class OutputImageService:
         if not candidates:
             return {}
 
-        slots = asyncio.Semaphore(2)
+        selected = list(candidates[:4])
+        finished_count = 0
+
+        async def analyze_within_deadline(block: ImageBlock) -> Any:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
+                raise TimeoutError
+            return await asyncio.wait_for(
+                self.understanding_agent.analyze(
+                    client=model_client,
+                    model=settings.model_visual_understanding,
+                    image_url=block.image_url,
+                    image_part={
+                        "type": "image_url",
+                        "image_url": {"url": block.image_url},
+                    },
+                    user_msg=user_msg,
+                    visual_brief=None,
+                    conversation_id=conversation_id,
+                ),
+                timeout=remaining,
+            )
 
         async def prepare_candidate(candidate: Any) -> ImageBlock | None:
-            async with slots:
-                if not hasattr(candidate, "to_image_block"):
-                    return None
-                block = candidate.to_image_block()
-                attachment_caption = "：".join(
-                    part
-                    for part in (
-                        str(getattr(candidate, "answer_section", "") or "").strip(),
-                        str(getattr(candidate, "teaching_caption", "") or "").strip(),
-                    )
-                    if part
+            nonlocal finished_count
+            try:
+                return await prepare_one(candidate)
+            finally:
+                finished_count += 1
+                if on_progress is not None:
+                    on_progress("visual_understanding", finished_count, len(selected))
+
+        # At most four small images, each bound to network calls: run them all at
+        # once so the stage costs one vision round trip instead of two.
+        async def prepare_one(candidate: Any) -> ImageBlock | None:
+            if not hasattr(candidate, "to_image_block"):
+                return None
+            block = candidate.to_image_block()
+            attachment_caption = "：".join(
+                part
+                for part in (
+                    str(getattr(candidate, "answer_section", "") or "").strip(),
+                    str(getattr(candidate, "teaching_caption", "") or "").strip(),
                 )
-                if attachment_caption and not block.explanatory_caption:
-                    block = replace(block, explanatory_caption=attachment_caption)
-                if settings.enable_visual_understanding:
-                    try:
-                        result = await self.understanding_agent.analyze(
-                            client=model_client,
-                            model=settings.model_visual_understanding,
-                            image_url=block.image_url,
-                            image_part={
-                                "type": "image_url",
-                                "image_url": {"url": block.image_url},
-                            },
-                            user_msg=user_msg,
-                            visual_brief=None,
-                            conversation_id=conversation_id,
-                        )
-                    except Exception as exc:
-                        logger.info(
-                            "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=%s",
-                            conversation_id,
-                            block.slot_id,
-                            type(exc).__name__,
-                        )
-                        result = None
-                    if not self._has_usable_understanding(result):
-                        logger.info(
-                            "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=understanding_unavailable",
-                            conversation_id,
-                            block.slot_id,
-                        )
-                    else:
-                        block = self._apply_understanding(block, result)
+                if part
+            )
+            if attachment_caption and not block.explanatory_caption:
+                block = replace(block, explanatory_caption=attachment_caption)
+            if settings.enable_visual_understanding:
                 try:
-                    return await self.attachment_image_storage_service.persist_pdf_image_block(
-                        block=block,
-                        conversation_id=conversation_id,
+                    result = await analyze_within_deadline(block)
+                except TimeoutError:
+                    logger.info(
+                        "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=budget_exhausted",
+                        conversation_id,
+                        block.slot_id,
                     )
+                    result = None
                 except Exception as exc:
                     logger.info(
-                        "visual.attachment_storage_failed_soft conversation_id=%s slot_id=%s reason=%s",
+                        "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=%s",
                         conversation_id,
                         block.slot_id,
                         type(exc).__name__,
                     )
-                    return block
+                    result = None
+                if not self._has_usable_understanding(result):
+                    logger.info(
+                        "visual.attachment_understanding_failed_soft conversation_id=%s slot_id=%s reason=understanding_unavailable",
+                        conversation_id,
+                        block.slot_id,
+                    )
+                else:
+                    block = self._apply_understanding(block, result)
+            try:
+                return await self.attachment_image_storage_service.persist_pdf_image_block(
+                    block=block,
+                    conversation_id=conversation_id,
+                )
+            except Exception as exc:
+                logger.info(
+                    "visual.attachment_storage_failed_soft conversation_id=%s slot_id=%s reason=%s",
+                    conversation_id,
+                    block.slot_id,
+                    type(exc).__name__,
+                )
+                return block
 
-        prepared = await asyncio.gather(*(prepare_candidate(candidate) for candidate in candidates[:4]))
+        prepared = await asyncio.gather(*(prepare_candidate(candidate) for candidate in selected))
         blocks = {block.slot_id: block for block in prepared if block is not None}
 
         logger.info(

@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     enable_pdf_attachment_visuals: bool = True
     pdf_attachment_visual_max_candidates: int = 4
     pdf_attachment_visual_max_pages_scanned: int = 8
+    # Attachment visuals block the first answer token; vision calls still running
+    # this long after preflight starts are dropped (images keep planner captions).
+    pdf_attachment_visual_preflight_budget_seconds: float = 6.0
     enable_pdf_attachment_image_storage: bool = True
     pdf_attachment_image_storage_bucket: str = "areqa-pdf-visuals"
     pdf_attachment_image_signed_url_ttl_seconds: int = 2592000

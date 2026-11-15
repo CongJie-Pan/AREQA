@@ -152,6 +152,25 @@ export interface ParsedChunk {
   content?: string;
 }
 
+/** Stable learner-facing progress step codes; the frontend owns their wording. */
+export type TurnProgressStep =
+  | 'uploading'
+  | 'analyzing'
+  | 'recalling_memory'
+  | 'planning'
+  | 'web_search'
+  | 'visual_planning'
+  | 'visual_understanding'
+  | 'reading_documents'
+  | 'composing';
+
+/** One `event: progress` payload. Counts are present only for countable steps. */
+export interface TurnProgressUpdate {
+  step: TurnProgressStep;
+  current?: number;
+  total?: number;
+}
+
 /**
  * Callbacks for streaming chat responses
  */
@@ -172,6 +191,8 @@ export interface StreamCallbacks {
   onError: (error: Error) => void;
   /** Called when RAG pipeline status changes */
   onStatus?: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => void;
+  /** Called when the backend reports a learner-facing progress step */
+  onProgress?: (update: TurnProgressUpdate) => void;
   /** Called when structured sources payload is pushed */
   onSources?: (sources: CitationSource[]) => void;
   /** Called when structured illustrated answer blocks are pushed */

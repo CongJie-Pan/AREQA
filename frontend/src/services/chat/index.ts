@@ -21,7 +21,7 @@ import { databaseService } from '@/services/database';
 import { syncService } from '@/services/syncService';
 import { ValidationError, normalizeError } from '@/utils/error';
 import { sanitizeMessagesForAPI } from '@/utils/sanitizer';
-import type { ChatMessage } from '@/services/chat-stream/types';
+import type { ChatMessage, TurnProgressUpdate } from '@/services/chat-stream/types';
 import type { AnswerBlock, AttachmentMetadata, ImageBlock, Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
@@ -675,6 +675,10 @@ export async function sendMessage(
 
       onStatus: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => {
         chatStore.setRagStatus(status, message);
+      },
+
+      onProgress: (update: TurnProgressUpdate) => {
+        chatStore.pushTurnProgress(update);
       },
 
       onSources: (sources: CitationSource[]) => {
@@ -1392,6 +1396,10 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           chatStore.setRagStatus(status, message);
         },
 
+        onProgress: (update: TurnProgressUpdate) => {
+          chatStore.pushTurnProgress(update);
+        },
+
         onSources: (sources: CitationSource[]) => {
           sourcesPayload = sources;
           chatStore.setRagStatus('sources_ready');
@@ -1671,6 +1679,10 @@ export async function editUserMessage(
 
         onStatus: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message: string) => {
           chatStore.setRagStatus(status, message);
+        },
+
+        onProgress: (update: TurnProgressUpdate) => {
+          chatStore.pushTurnProgress(update);
         },
 
         onSources: (sources: CitationSource[]) => {

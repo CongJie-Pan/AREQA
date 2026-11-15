@@ -264,6 +264,11 @@ export async function createChatStream(
             continue;
           }
 
+          if (eventType === 'progress') {
+            if (typeof chunk?.step === 'string') callbacks.onProgress?.(chunk);
+            continue;
+          }
+
           // Public action telemetry contains only safe display summaries. It
           // intentionally excludes model reasoning and raw tool arguments.
           if (eventType === 'action' || eventType === 'tool_started' || eventType === 'tool_completed') {

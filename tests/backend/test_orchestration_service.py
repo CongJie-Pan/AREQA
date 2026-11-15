@@ -1987,6 +1987,64 @@ async def test_pdf_overview_routes_to_local_rules_or_jev(
 
 
 @pytest.mark.asyncio
+async def test_pdf_turn_streams_progress_steps_before_answer(
+    mock_router, mock_rag, mock_suggestion, mock_client,
+):
+    """Learners saw no update during the ~17 s PDF visual preflight; progress must stream."""
+
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+
+    async def llm_stream(*args, **kwargs):
+        yield 'data: {"choices": [{"delta": {"content": "answer"}, "index": 0}]}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"answer"}\n\n'
+
+    async def fake_extract(*args, **kwargs):
+        # Progress reported from inside the awaited stage must reach the stream.
+        kwargs["on_progress"]("visual_planning", 1, 1)
+        await asyncio.sleep(0)
+        return []
+
+    service._node_llm_stream = llm_stream
+    attachment = {
+        "type": "file",
+        "file": {"filename": "paper.pdf", "file_data": "data:application/pdf;base64,AA=="},
+    }
+    mock_client.with_options = MagicMock(return_value=SimpleNamespace(post=AsyncMock(return_value={})))
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock), \
+         patch.object(service, "_extract_attachment_visual_candidates", new_callable=AsyncMock, side_effect=fake_extract), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
+             {"role": "system", "content": "base prompt"},
+             {"role": "user", "content": "請幫我解釋這一篇論文"},
+         ]):
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "請幫我解釋這一篇論文"}],
+            "progress-conv", True, False, False, 100, 0.7, 0.9, 1.0, MagicMock(), "u1",
+            search_mode="auto",
+            attachments=[attachment],
+            attachment_visual_sources=[{"filename": "paper.pdf", "pdf_bytes": b"%PDF-1.4"}],
+        )]
+
+    progress = [
+        json.loads(event.split("data: ", 1)[1])
+        for event in events if event.startswith("event: progress\n")
+    ]
+    steps = [item["step"] for item in progress]
+    assert steps[0] == "analyzing"
+    assert "planning" in steps
+    assert {"step": "visual_planning", "current": 1, "total": 1} in progress
+    assert steps[-1] == "reading_documents"
+    assert progress[-1]["total"] == 1
+    answer_index = next(i for i, event in enumerate(events) if '"content": "answer"' in event)
+    last_progress_index = max(i for i, event in enumerate(events) if event.startswith("event: progress\n"))
+    assert last_progress_index < answer_index
+    assert all("paper.pdf" not in event for event in events if event.startswith("event: progress"))
+
+
+@pytest.mark.asyncio
 async def test_non_visual_pdf_turn_skips_blocking_page_rendering(
     mock_router, mock_client, caplog,
 ):

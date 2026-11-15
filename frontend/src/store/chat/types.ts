@@ -5,6 +5,7 @@
 
 import type { AnswerBlock, AttachmentMetadata, Message, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
 import type { CitationSource } from '@/components/Citations';
+import type { TurnProgressStep, TurnProgressUpdate } from '@/services/chat-stream/types';
 
 export type SearchMode = 'auto' | 'always' | 'never';
 export type TutorProfile = 'general' | 'english';
@@ -117,6 +118,17 @@ export interface ChatState {
   ragMessage: string;
   /** Detailed RAG sources payload containing snippets and scores */
   ragSources: CitationSource[];
+  /** Learner-facing progress steps of the current turn, oldest first. */
+  turnProgress: TurnProgressEntry[];
+}
+
+/** One progress step shown beside the waiting assistant message. */
+export interface TurnProgressEntry {
+  step: TurnProgressStep;
+  current?: number;
+  total?: number;
+  /** Client time (ms) when this step became active. */
+  startedAt: number;
 }
 
 /**
@@ -195,6 +207,8 @@ export interface ChatActions {
   // RAG Visualization
   /** Set the RAG retrieval status and message */
   setRagStatus: (status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done', message?: string) => void;
+  /** Record a progress step; repeated steps update their counts in place. */
+  pushTurnProgress: (update: TurnProgressUpdate) => void;
   /** Set structured RAG sources */
   setRagSources: (sources: CitationSource[]) => void;
 }

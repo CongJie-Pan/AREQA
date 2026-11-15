@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from config import settings
 from services.memory_diagnostics import log_memory_snapshot
@@ -16,8 +17,13 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
                          force_think, context_results_obj, last_user_msg, run_state, trace,
                          turn_plan, turn_plan_enabled, response_policy, interface_language,
                          tutor_profile, response_mode, has_attachments, attachments,
-                         attachment_visual_sources, pdf_attachment_count, max_tokens, isolated_context=False):
+                         attachment_visual_sources, pdf_attachment_count, max_tokens, isolated_context=False,
+                         progress=None):
     """Assemble grounded prompts, verified visual inventory and generation limits.
+
+    Args:
+        progress: Optional ``(step, current, total)`` callback for learner-facing
+            progress; it receives stable step codes and counts only.
 
     Returns:
         Prepared messages, token budget, slot limit and verified image inventory.
@@ -107,17 +113,26 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
         )
         if attachment_visual_sources and visual_preflight_allowed:
             log_memory_snapshot("pdf_visual_preflight_started", conversation_id=conversation_id)
+            preflight_deadline = time.monotonic() + max(
+                0.5, float(settings.pdf_attachment_visual_preflight_budget_seconds))
+            if progress:
+                progress("visual_planning", 0, min(len(attachment_visual_sources), 3))
             attachment_visual_candidates = await service._extract_attachment_visual_candidates(
                 attachment_visual_sources,
                 conversation_id,
                 model_client=service.client,
                 use_paper_visual_planner=should_auto_explain_paper,
+                on_progress=progress,
             )
+            if progress and attachment_visual_candidates:
+                progress("visual_understanding", 0, min(len(attachment_visual_candidates), 4))
             preverified_image_blocks = await service.output_image_service.prepare_attachment_image_blocks(
                 candidates=attachment_visual_candidates,
                 user_msg=last_user_msg,
                 conversation_id=conversation_id,
                 model_client=service.client,
+                deadline=preflight_deadline,
+                on_progress=progress,
             )
             log_memory_snapshot("pdf_visual_preflight_completed", conversation_id=conversation_id)
         elif attachment_visual_sources:
