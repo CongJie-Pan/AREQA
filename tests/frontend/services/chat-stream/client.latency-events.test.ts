@@ -66,6 +66,27 @@ describe('chat stream visible latency events', () => {
     expect(JSON.stringify(vi.mocked(logSearchDiagnostic).mock.calls)).not.toContain('PRIVATE');
   });
 
+  it('forwards progress frames before answer content without leaking them into the text', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([
+      'event: progress\ndata: {"step":"visual_understanding","current":1,"total":4}\n\n',
+      'event: progress\ndata: {"step":"reading_documents","current":0,"total":3}\n\n',
+      'data: {"choices":[{"delta":{"content":"回答"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ])));
+    const order: string[] = [];
+    const onProgress = vi.fn(() => order.push('progress'));
+    const onContent = vi.fn(() => order.push('content'));
+
+    await createChatStream([{ role: 'user', content: '問題' }], {
+      onThinkingStart: vi.fn(), onThinkingContent: vi.fn(), onThinkingEnd: vi.fn(),
+      onContent, onCitations: vi.fn(), onDone: vi.fn(), onError: vi.fn(), onProgress,
+    });
+
+    expect(order).toEqual(['progress', 'progress', 'content']);
+    expect(onProgress).toHaveBeenNthCalledWith(1, { step: 'visual_understanding', current: 1, total: 4 });
+    expect(onContent).toHaveBeenCalledWith('回答');
+  });
+
   it('keeps metadata invisible and exposes status before answer content', async () => {
     vi.stubGlobal(
       'fetch',

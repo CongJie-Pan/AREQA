@@ -237,6 +237,7 @@ export function MessageList({
 
   // RAG States
   const ragStatus = useChatStore((state) => state.ragStatus);
+  const turnProgress = useChatStore((state) => state.turnProgress);
   const ragMessage = useChatStore((state) => state.ragMessage);
   const ragSources = useChatStore((state) => state.ragSources);
   const setMessageFeedback = useChatStore((state) => state.setMessageFeedback);
@@ -493,6 +494,18 @@ export function MessageList({
                     ? {
                         content: thinkingContent,
                         isThinking,
+                      }
+                    : undefined
+                }
+                progress={
+                  isCurrentStreaming && isStreaming
+                    ? {
+                        steps: turnProgress,
+                        hasAttachments: Boolean(
+                          index > 0
+                          && messages[index - 1].role === 'user'
+                          && messages[index - 1].attachments?.length,
+                        ),
                       }
                     : undefined
                 }

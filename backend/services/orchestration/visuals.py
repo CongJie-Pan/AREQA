@@ -214,6 +214,7 @@ class OrchestrationVisualMixin:
         conversation_id: str,
         model_client: Any = None,
         use_paper_visual_planner: bool = False,
+        on_progress: Any = None,
     ) -> List[Any]:
         """Render PDF visual candidates after the visual policy gate passes.
 
@@ -227,6 +228,8 @@ class OrchestrationVisualMixin:
                 the planner select semantically important visuals before local
                 rendering. Targeted attachment tasks keep deterministic
                 extraction only.
+            on_progress: Optional ``(step, current, total)`` callback invoked as
+                each PDF finishes planning; carries counts only.
 
         Returns:
             A flat list of PDF visual candidates accepted by
@@ -249,11 +252,24 @@ class OrchestrationVisualMixin:
         from services.paper_visual.planner import PaperVisualPlannerService
         from services.pdf_visual.extraction import PdfVisualExtractionService
 
+        sources = [
+            source for source in attachment_visual_sources[:3]
+            if isinstance(source.get("pdf_bytes"), bytes) and source.get("pdf_bytes")
+        ]
+        # Planner calls are network-bound, so they run concurrently; native
+        # rendering below stays serialized to bound peak memory.
+        render_lock = asyncio.Lock()
+        planned_count = 0
+
+        def report_planned() -> None:
+            nonlocal planned_count
+            planned_count += 1
+            if on_progress is not None:
+                on_progress("visual_planning", planned_count, len(sources))
+
         async def extract_one(source: Dict[str, Any]) -> List[Any]:
             filename = str(source.get("filename") or "attachment.pdf")
-            pdf_bytes = source.get("pdf_bytes")
-            if not isinstance(pdf_bytes, bytes) or not pdf_bytes:
-                return []
+            pdf_bytes = source["pdf_bytes"]
             service = PdfVisualExtractionService()
             visual_plan = ()
             if use_paper_visual_planner:
@@ -265,14 +281,16 @@ class OrchestrationVisualMixin:
                     client=model_client,
                     max_visuals=service.max_candidates,
                 )
+            report_planned()
             try:
-                candidates = await asyncio.to_thread(
-                    service.extract_candidates,
-                    pdf_bytes=pdf_bytes,
-                    filename=filename,
-                    conversation_id=conversation_id,
-                    visual_plan=visual_plan,
-                )
+                async with render_lock:
+                    candidates = await asyncio.to_thread(
+                        service.extract_candidates,
+                        pdf_bytes=pdf_bytes,
+                        filename=filename,
+                        conversation_id=conversation_id,
+                        visual_plan=visual_plan,
+                    )
             except Exception as exc:
                 logger.info(
                     "visual.attachment_pdf_extraction_failed conversation_id=%s filename=%s reason=%s",
@@ -283,10 +301,10 @@ class OrchestrationVisualMixin:
                 return []
             return list(candidates)
 
-        # Keep the native rendering allocations for multiple PDFs from overlapping.
         candidates = []
-        for source in attachment_visual_sources[:3]:
-            candidates.extend(await extract_one(source))
+        # gather preserves source order, so candidate slot order stays deterministic.
+        for extracted in await asyncio.gather(*(extract_one(source) for source in sources)):
+            candidates.extend(extracted)
         logger.info(
             "visual.attachment_pdf_candidates_ready conversation_id=%s source_count=%s candidate_count=%s planner_enabled=%s",
             conversation_id,

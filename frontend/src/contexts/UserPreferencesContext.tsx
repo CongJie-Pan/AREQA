@@ -265,6 +265,19 @@ export type TranslationKey =
   | 'pipeline.done'
   | 'pipeline.defaultActive'
   | 'pipeline.sourceCount'
+  | 'progress.uploading'
+  | 'progress.analyzing'
+  | 'progress.recallingMemory'
+  | 'progress.planning'
+  | 'progress.webSearch'
+  | 'progress.visualPlanning'
+  | 'progress.visualUnderstanding'
+  | 'progress.readingDocuments'
+  | 'progress.readingDocumentsCount'
+  | 'progress.composing'
+  | 'progress.elapsed'
+  | 'progress.showSteps'
+  | 'progress.hideSteps'
   | 'retry';
 
 interface UserPreferencesContextValue {
@@ -529,6 +542,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'pipeline.done': '已完成',
     'pipeline.defaultActive': '正在處理對話狀態',
     'pipeline.sourceCount': '找到 {count} 筆文獻',
+    'progress.uploading': '正在上傳並讀取附件',
+    'progress.analyzing': '正在分析問題',
+    'progress.recallingMemory': '正在回顧你的學習紀錄',
+    'progress.planning': '正在規劃教學策略',
+    'progress.webSearch': '正在搜尋網路資料',
+    'progress.visualPlanning': '正在挑選附件中的關鍵圖表',
+    'progress.visualUnderstanding': '正在分析圖表內容',
+    'progress.readingDocuments': '正在閱讀附件並撰寫回答',
+    'progress.readingDocumentsCount': '正在閱讀 {count} 份附件並撰寫回答',
+    'progress.composing': '正在撰寫回答',
+    'progress.elapsed': '{seconds} 秒',
+    'progress.showSteps': '顯示處理步驟',
+    'progress.hideSteps': '隱藏處理步驟',
     retry: '重試',
   },
   'zh-CN': {
@@ -767,6 +793,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'pipeline.done': '已完成',
     'pipeline.defaultActive': '正在处理对话状态',
     'pipeline.sourceCount': '找到 {count} 篇文献',
+    'progress.uploading': '正在上传并读取附件',
+    'progress.analyzing': '正在分析问题',
+    'progress.recallingMemory': '正在回顾你的学习记录',
+    'progress.planning': '正在规划教学策略',
+    'progress.webSearch': '正在搜索网络资料',
+    'progress.visualPlanning': '正在挑选附件中的关键图表',
+    'progress.visualUnderstanding': '正在分析图表内容',
+    'progress.readingDocuments': '正在阅读附件并撰写回答',
+    'progress.readingDocumentsCount': '正在阅读 {count} 份附件并撰写回答',
+    'progress.composing': '正在撰写回答',
+    'progress.elapsed': '{seconds} 秒',
+    'progress.showSteps': '显示处理步骤',
+    'progress.hideSteps': '隐藏处理步骤',
     retry: '重试',
   },
   en: {
@@ -1005,6 +1044,19 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     'pipeline.done': 'Complete',
     'pipeline.defaultActive': 'Processing the conversation state',
     'pipeline.sourceCount': 'Found {count} sources',
+    'progress.uploading': 'Uploading and reading attachments',
+    'progress.analyzing': 'Analyzing the question',
+    'progress.recallingMemory': 'Reviewing your learning history',
+    'progress.planning': 'Planning the teaching approach',
+    'progress.webSearch': 'Searching the web',
+    'progress.visualPlanning': 'Picking key figures from the attachments',
+    'progress.visualUnderstanding': 'Analyzing figures',
+    'progress.readingDocuments': 'Reading the attachments and writing',
+    'progress.readingDocumentsCount': 'Reading {count} attachments and writing',
+    'progress.composing': 'Writing the answer',
+    'progress.elapsed': '{seconds}s',
+    'progress.showSteps': 'Show steps',
+    'progress.hideSteps': 'Hide steps',
     retry: 'Retry',
   },
 };

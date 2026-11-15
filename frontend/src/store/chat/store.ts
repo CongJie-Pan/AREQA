@@ -54,6 +54,7 @@ const initialState = {
   ragStatus: 'idle' as 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done',
   ragMessage: '',
   ragSources: [] as CitationSource[],
+  turnProgress: [] as ChatStore['turnProgress'],
 };
 
 /**
@@ -201,6 +202,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       ragStatus: 'idle',
       ragMessage: '',
       ragSources: [],
+      turnProgress: [],
     }));
   },
 
@@ -322,6 +324,7 @@ export const useChatStore = create<ChatStore>((set) => ({
           ragStatus: 'idle' as const,
           ragMessage: '',
           ragSources: [],
+          turnProgress: [],
           currentAnswerBlocks: [],
         };
       }
@@ -444,6 +447,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       ragStatus: 'idle',
       ragMessage: '',
       ragSources: [],
+      turnProgress: [],
     });
   },
 
@@ -478,10 +482,30 @@ export const useChatStore = create<ChatStore>((set) => ({
       ? 'generating'
       : status;
 
+    const lastStep = state.turnProgress[state.turnProgress.length - 1]?.step;
+    const enteringWebSearch = status === 'searching_dense' && !hasGenerationStarted && lastStep !== 'web_search';
+
     return {
       ragStatus: nextStatus,
       ...(message !== undefined ? { ragMessage: message } : {}),
+      ...(enteringWebSearch
+        ? { turnProgress: [...state.turnProgress, { step: 'web_search' as const, startedAt: Date.now() }] }
+        : {}),
     };
   }),
   setRagSources: (sources) => set({ ragSources: sources }),
+  pushTurnProgress: (update) => set((state) => {
+    const last = state.turnProgress[state.turnProgress.length - 1];
+    if (last?.step === update.step) {
+      return {
+        turnProgress: [
+          ...state.turnProgress.slice(0, -1),
+          { ...last, current: update.current, total: update.total },
+        ],
+      };
+    }
+    return {
+      turnProgress: [...state.turnProgress, { ...update, startedAt: Date.now() }],
+    };
+  }),
 }));

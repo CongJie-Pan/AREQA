@@ -163,6 +163,33 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(panel).toHaveTextContent('檢索中...');
   });
 
+  it('shows turn progress while waiting even when no RAG sources exist', () => {
+    // Regression: backend status frames were dropped because the only waiting
+    // UI (RAGStatusPanel) renders nothing without sources.
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: '' }}
+        isStreaming={true}
+        ragInfo={{ status: 'routing', message: '', sources: [] }}
+        progress={{ steps: [{ step: 'visual_planning', current: 1, total: 3, startedAt: Date.now() }] }}
+      />
+    );
+
+    expect(screen.getByTestId('turn-progress-label')).toHaveTextContent('正在挑選附件中的關鍵圖表');
+  });
+
+  it('hides turn progress once answer text starts', () => {
+    render(
+      <MessageItem
+        message={{ ...baseMessage, content: '開始回答' }}
+        isStreaming={true}
+        progress={{ steps: [{ step: 'composing', startedAt: Date.now() }] }}
+      />
+    );
+
+    expect(screen.queryByTestId('turn-progress')).not.toBeInTheDocument();
+  });
+
   it('Scenario 2: Do not render RAGStatusPanel when idle', () => {
     const ragInfo = {
       status: 'idle' as const,

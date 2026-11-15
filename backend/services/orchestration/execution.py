@@ -26,6 +26,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import Request
 from services.orchestration.answer_preparation import prepare_answer
+from services.orchestration.progress import ProgressRelay, progress_event
 from services.orchestration.completion import complete_answer
 from services.orchestration.response_policy import resolve_response_policy
 from services.orchestration.routing import plan_search
@@ -181,6 +182,8 @@ class OrchestrationExecutionMixin:
             run_context.run_id,
             5,
         ))
+        # Numbered AgentEvents above own sequences 1-5; legacy frames continue after them.
+        yield sse_adapter.encode_legacy(progress_event("analyzing"), run_context.run_id)
 
         if last_user_msg and not isolated_context:
             if self.turn_intake_service.store_available():
@@ -188,6 +191,7 @@ class OrchestrationExecutionMixin:
                     f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '📖 正在回顧你過去的學習紀錄'}, ensure_ascii=False)}\n\n",
                     run_context.run_id,
                 )
+                yield sse_adapter.encode_legacy(progress_event("recalling_memory"), run_context.run_id)
             trace.mark("turn_intake_started")
             await self.turn_intake_service.process(
                 user_id=user_id,
@@ -221,6 +225,7 @@ class OrchestrationExecutionMixin:
             f"event: status\ndata: {json.dumps({'status': 'routing', 'message': '📚 正在準備檢索策略與教學策略'}, ensure_ascii=False)}\n\n",
             run_context.run_id,
         )
+        yield sse_adapter.encode_legacy(progress_event("planning"), run_context.run_id)
 
         # Node 2 & 3: Parallel Tasks (HyDE & Policy)
         policy_task = None
@@ -355,7 +360,9 @@ class OrchestrationExecutionMixin:
             run_context.run_id,
         )
 
-        final_messages, effective_max_tokens, max_image_slots, preverified_image_blocks = await prepare_answer(
+        # Preparation can block for seconds (PDF visuals); relay its progress while it runs.
+        progress_relay = ProgressRelay()
+        preparation = asyncio.create_task(prepare_answer(
             self, user_id=user_id, conversation_id=conversation_id, messages=messages,
             use_rag=use_rag, use_web_search=use_web_search, force_think=force_think,
             context_results_obj=context_results_obj, last_user_msg=last_user_msg,
@@ -366,6 +373,20 @@ class OrchestrationExecutionMixin:
             attachments=attachments, attachment_visual_sources=attachment_visual_sources,
             pdf_attachment_count=pdf_attachment_count, max_tokens=max_tokens,
             **({"isolated_context": True} if isolated_context else {}),
+            progress=progress_relay.report,
+        ))
+        try:
+            async for frame in progress_relay.drain_while(preparation):
+                yield sse_adapter.encode_legacy(frame, run_context.run_id)
+            final_messages, effective_max_tokens, max_image_slots, preverified_image_blocks = await preparation
+        finally:
+            if not preparation.done():
+                preparation.cancel()
+                await asyncio.gather(preparation, return_exceptions=True)
+        yield sse_adapter.encode_legacy(
+            progress_event("reading_documents", 0, len(attachments or ()))
+            if has_attachments else progress_event("composing"),
+            run_context.run_id,
         )
 
         # Node 6: Main LLM Stream

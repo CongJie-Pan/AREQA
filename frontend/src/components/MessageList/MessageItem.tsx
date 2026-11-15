@@ -24,6 +24,7 @@ import { ThinkingPanel } from '@/components/ThinkingPanel';
 import { SuggestedQuestions } from '@/components/SuggestedQuestions';
 import { Citations } from '@/components/Citations';
 import { RAGStatusPanel } from '@/components/RAGStatusPanel';
+import { TurnProgress, type TurnProgressProps } from './TurnProgress';
 import type { CitationSource } from '@/components/Citations';
 import type { DisplayMessage, StreamingImageSlot } from '@/store/chat';
 import type {
@@ -652,6 +653,8 @@ export interface MessageItemProps {
     isThinking: boolean;
     duration?: number;
   };
+  /** Learner-facing progress of the turn this streaming message answers */
+  progress?: TurnProgressProps;
   /** RAG status metadata */
   ragInfo?: {
     status: 'idle' | 'routing' | 'retrieving' | 'searching_dense' | 'searching_sparse' | 'reranking' | 'sources_ready' | 'generating' | 'done';
@@ -1940,6 +1943,7 @@ export const MessageItem = memo(function MessageItem({
   isStreaming = false,
   thinking,
   ragInfo,
+  progress,
   onBranch,
   onRegenerate,
   onDeleteLatestTurn,
@@ -2610,6 +2614,11 @@ export const MessageItem = memo(function MessageItem({
         <div className={styles.assistantMessageWrapper}>
           {/* Bubble Wrapper */}
           <div className={cx(styles.bubbleWrapper, 'bubbleWrapper')}>
+            {/* Turn progress - one line naming the current step until the first answer token */}
+            {!isImageGenerationPending && progress && !thinking?.isThinking && !thinking?.content && !message.content && (
+              <TurnProgress {...progress} />
+            )}
+
             {/* RAG Status Panel - Should be at the top and only visible before thinking or content starts */}
             {!isImageGenerationPending && ragInfo && ragInfo.status !== 'idle' && ragInfo.status !== 'done' && !thinking?.isThinking && !thinking?.content && !message.content && (
               <RAGStatusPanel ragInfo={ragInfo} />

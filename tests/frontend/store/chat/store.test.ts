@@ -8,6 +8,29 @@ describe('Chat Store', () => {
     useChatStore.getState().setQuotedText(null);
   });
 
+  it('records progress steps, updating counts of a repeated step in place', () => {
+    const state = useChatStore.getState();
+    state.startStreaming('assistant-progress');
+    state.pushTurnProgress({ step: 'analyzing' });
+    state.pushTurnProgress({ step: 'visual_understanding', current: 1, total: 4 });
+    state.pushTurnProgress({ step: 'visual_understanding', current: 3, total: 4 });
+
+    const steps = useChatStore.getState().turnProgress;
+    expect(steps.map((entry) => entry.step)).toEqual(['analyzing', 'visual_understanding']);
+    expect(steps[1]).toMatchObject({ current: 3, total: 4 });
+  });
+
+  it('adds a web search step from the legacy status stream and resets on the next turn', () => {
+    const state = useChatStore.getState();
+    state.startStreaming('assistant-progress');
+    state.setRagStatus('searching_dense', '');
+    state.setRagStatus('searching_dense', '');
+    expect(useChatStore.getState().turnProgress.map((entry) => entry.step)).toEqual(['web_search']);
+
+    state.startStreaming('assistant-next');
+    expect(useChatStore.getState().turnProgress).toEqual([]);
+  });
+
   it('should initialize with quotedText as null', () => {
     const state = useChatStore.getState();
     expect(state.quotedText).toBeNull();
