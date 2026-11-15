@@ -239,6 +239,28 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(token.closest('.bubble, [class*="Bubble"], div')).toHaveTextContent('Create Image請幫我將此畫成圖解釋');
   });
 
+  it('copies a question with its modes as HTML markers so pasting restores them', async () => {
+    const write = vi.fn(async () => undefined);
+    class FakeClipboardItem { constructor(public data: Record<string, Blob>) {} }
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+    Object.assign(navigator, { clipboard: { ...navigator.clipboard, write, writeText: vi.fn() } });
+
+    render(<MessageItem message={{ ...baseMessage, role: 'user', content: '請幫我將此畫成圖解釋', requestModes: ['create_image'] }} />);
+    fireEvent.click(screen.getAllByLabelText('複製訊息')[0]);
+
+    await waitFor(() => expect(write).toHaveBeenCalled());
+    const item = (write.mock.calls[0] as unknown as [FakeClipboardItem[]])[0][0];
+    // jsdom's Blob has no text(); FileReader reads it the same way.
+    const read = (blob: Blob) => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blob);
+    });
+    expect(await read(item.data['text/plain'])).toBe('請幫我將此畫成圖解釋');
+    expect(await read(item.data['text/html'])).toContain('data-areqa-mode="create_image"');
+    vi.unstubAllGlobals();
+  });
+
   it('hides the reply toolbar while an image is still generating', () => {
     render(
       <MessageItem

@@ -32,6 +32,7 @@ import { useStyles } from './styles';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { transcribeSpeech } from '@/services/speech/transcription';
 import { prefetchAttachmentPreview } from '@/utils/attachmentPreview';
+import { readRequestModesFromClipboard } from '@/utils/requestModeClipboard';
 import { ComposerAttachmentTile } from './ComposerAttachmentTile';
 import { normalizeVoiceTranscript } from '@/services/realtime/language';
 
@@ -736,10 +737,25 @@ export function ChatInput({
 
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const imageFiles = clipboardImagesToFiles(event.clipboardData?.items);
-    if (imageFiles.length === 0) return;
+    if (imageFiles.length > 0) {
+      event.preventDefault();
+      addAttachments(imageFiles);
+      return;
+    }
+    // A copied AREQA question brings its modes along (e.g. Create Image).
+    const copied = readRequestModesFromClipboard(event.clipboardData);
+    if (!copied) return;
     event.preventDefault();
-    addAttachments(imageFiles);
-  }, [addAttachments]);
+    if (copied.modes.includes('create_image')) setCreateImage(true);
+    if (copied.modes.includes('english_tutor')) setTutorProfile('english');
+    const textarea = event.currentTarget;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    composerVersionRef.current += 1;
+    setValue((current) => current.slice(0, start) + copied.text + current.slice(end));
+    const caret = start + copied.text.length;
+    window.requestAnimationFrame(() => textarea.setSelectionRange(caret, caret));
+  }, [addAttachments, setTutorProfile]);
 
   const removeAttachment = useCallback((target: AttachmentPreview) => {
     if (target.objectUrl) URL.revokeObjectURL(target.objectUrl);

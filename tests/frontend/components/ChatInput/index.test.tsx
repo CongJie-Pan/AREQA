@@ -269,6 +269,28 @@ describe('ChatInput', () => {
     expect(mockSetTutorProfile).toHaveBeenCalledWith('general');
   });
 
+  it('restores Create Image and the text when a copied AREQA question is pasted', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const textarea = screen.getByLabelText('訊息輸入框') as HTMLTextAreaElement;
+    const html = '<span data-areqa-mode="create_image">Create Image</span> <span>請幫我將此畫成圖解釋</span>';
+
+    fireEvent.paste(textarea, {
+      clipboardData: { items: [], getData: (type: string) => (type === 'text/html' ? html : type === 'text/plain' ? '請幫我將此畫成圖解釋' : '') },
+    });
+
+    expect(textarea.value).toBe('請幫我將此畫成圖解釋');
+    expect(screen.getByLabelText('Cancel Create Image')).toBeInTheDocument();
+  });
+
+  it('turns English Tutor back on from a pasted question', () => {
+    render(<ChatInput onSend={mockOnSend} />);
+    const html = '<span data-areqa-mode="english_tutor">English Tutor</span> <span>Check my essay</span>';
+    fireEvent.paste(screen.getByLabelText('訊息輸入框'), {
+      clipboardData: { items: [], getData: (type: string) => (type === 'text/html' ? html : 'Check my essay') },
+    });
+    expect(mockSetTutorProfile).toHaveBeenCalledWith('english');
+  });
+
   it('removes the last active mode with Backspace in an empty composer', () => {
     (useChatStore as any).mockImplementation((selector: any) => {
       const state = {

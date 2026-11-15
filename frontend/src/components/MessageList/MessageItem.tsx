@@ -43,6 +43,7 @@ import { AttachmentCard, AttachmentGallery } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
+import { REQUEST_MODE_ATTRIBUTE, requestModesClipboardHtml } from '@/utils/requestModeClipboard';
 import { prepareReadAloudText, startReadAloudPlayback } from '@/services/speech/readAloud';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { logger } from '@/utils/logger';
@@ -1958,7 +1959,7 @@ function RequestModeTokens({ modes }: { modes?: RequestMode[] }) {
       {modes.map((mode) => {
         const { Icon, labelKey } = REQUEST_MODE_DISPLAY[mode];
         return (
-          <span key={mode} className={styles.requestModeToken}>
+          <span key={mode} className={styles.requestModeToken} {...{ [REQUEST_MODE_ATTRIBUTE]: mode }}>
             <Icon size={15} aria-hidden="true" />
             {t(labelKey)}
           </span>
@@ -2209,12 +2210,25 @@ export const MessageItem = memo(function MessageItem({
   // Handle copy message content
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(displayContent);
+      const modes = isUser ? message.requestModes : undefined;
+      if (modes?.length && typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+        // HTML carries the mode markers so pasting into the composer restores the modes.
+        const html = requestModesClipboardHtml(modes, {
+          create_image: t('requestModeCreateImage'),
+          english_tutor: t('requestModeEnglishTutor'),
+        }, displayContent);
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/plain': new Blob([displayContent], { type: 'text/plain' }),
+          'text/html': new Blob([html], { type: 'text/html' }),
+        })]);
+      } else {
+        await navigator.clipboard.writeText(displayContent);
+      }
       antMessageApi.success(t('copyMessageSuccess'));
     } catch {
       antMessageApi.error(t('copyMessageFailed'));
     }
-  }, [displayContent, antMessageApi, t]);
+  }, [displayContent, isUser, message.requestModes, antMessageApi, t]);
 
   const stopReadAloud = useCallback(() => {
     readAloudAbortRef.current?.abort();
