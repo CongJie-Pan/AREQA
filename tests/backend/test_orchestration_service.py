@@ -1987,6 +1987,48 @@ async def test_pdf_overview_routes_to_local_rules_or_jev(
 
 
 @pytest.mark.asyncio
+async def test_non_visual_pdf_turn_skips_blocking_page_rendering(
+    mock_router, mock_rag, mock_suggestion, mock_client, caplog,
+):
+    """Rendering PDF pages took ~10 s in production and was discarded when no visuals were planned."""
+
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
+
+    async def llm_stream(*args, **kwargs):
+        yield 'event: accumulator\ndata: {"accumulator":"Ok"}\n\n'
+
+    service._node_llm_stream = llm_stream
+    attachment = {
+        "type": "file",
+        "file": {"filename": "slides.pdf", "file_data": "data:application/pdf;base64,AA=="},
+    }
+    post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "other"}}})
+    mock_client.with_options = MagicMock(return_value=SimpleNamespace(post=post))
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
+         patch.object(service, "_extract_attachment_visual_candidates", new_callable=AsyncMock, return_value=[]) as mock_extract, \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
+             {"role": "system", "content": "base prompt"},
+             {"role": "user", "content": "請閱讀這份pdf 閱讀完請說Ok"},
+         ]):
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": "請閱讀這份pdf 閱讀完請說Ok"}],
+            "non-visual-pdf-conv", True, False, False, 100, 0.7, 0.9, 1.0, MagicMock(), "u1",
+            search_mode="never",
+            attachments=[attachment],
+            attachment_visual_sources=[{"filename": "slides.pdf", "pdf_bytes": b"%PDF-1.4"}],
+        )]
+
+    mock_extract.assert_not_awaited()
+    assert "visual.attachment_preflight_skipped" in caplog.text
+    assert "applied=False" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_durable_jobs_suppress_in_process_edf_and_reflection_tasks(
     mock_router, mock_rag, mock_suggestion, mock_client
 ):

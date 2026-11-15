@@ -689,3 +689,52 @@ async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, labe
     assert bool(answer_prompts)
     assert any("PDF 論文自動解說任務" in prompt for prompt in answer_prompts) is overview
     assert f"applied={overview}" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_plain_follow_up_reloads_earlier_upload_text(monkeypatch):
+    """Follow-ups send only file names; the stored PDF text must reach the model."""
+    captured = {}
+    upload_id = "11111111-2222-3333-4444-555555555555"
+
+    class FollowUpOrchestrator:
+        def execute(self, **kwargs):
+            captured.update(kwargs)
+
+            async def events():
+                yield "data: [DONE]\n\n"
+
+            return events()
+
+    from services.attachments import branch_context
+
+    loaded = {}
+
+    async def fake_load(user_id, messages):
+        loaded["user_id"] = user_id
+        loaded["source"] = next(m.get("message_id") for m in messages if m.get("has_upload") == "true")
+        return [{"type": "text", "text": "Source document: Ch08_Motivation.pdf\nExpectancy theory"}]
+
+    import sys
+
+    monkeypatch.setattr(branch_context, "load_inherited_upload", fake_load)
+    for name in ("app.routes.stream", "backend.app.routes.stream"):
+        if name in sys.modules:
+            monkeypatch.setattr(sys.modules[name], "load_inherited_upload", fake_load)
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("services.orchestration_service.OrchestrationService", return_value=FollowUpOrchestrator()):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post("/api/v1/stream", json={
+                "messages": [
+                    {"role": "user", "content": "請閱讀這三份pdf\n1. Ch08_Motivation.pdf",
+                     "message_id": upload_id, "has_upload": "true"},
+                    {"role": "assistant", "content": "Ok"},
+                    {"role": "user", "content": "請說說這幾個pdf所說的事情"},
+                ],
+                "conversation_id": "conv-follow-up",
+            })
+
+    assert response.status_code == 200
+    assert loaded == {"user_id": "default_user", "source": upload_id}
+    assert "Expectancy theory" in captured["attachments"][0]["text"]
+    assert all("has_upload" not in message for message in captured["messages"])

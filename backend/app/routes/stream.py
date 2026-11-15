@@ -178,7 +178,8 @@ async def stream_endpoint(
     if processed_attachments or tutor_profile == "english":
         from services.realtime.speaking_material import extract_material, extract_pasted_material, save_material
 
-        material = extract_material(processed_attachments) if processed_attachments else extract_pasted_material(
+        # PDF text extraction is CPU-bound (~2 s for three slide decks); keep it off the event loop.
+        material = await asyncio.to_thread(extract_material, processed_attachments) if processed_attachments else extract_pasted_material(
             next((item.get("content", "") for item in reversed(chat_req.messages) if item.get("role") == "user"), "")
         )
         if not material and chat_req.speaking_practice:
@@ -197,8 +198,15 @@ async def stream_endpoint(
         )
 
     inherited_upload = []
-    if not processed_attachments and any(item.get("attachment_source_id") for item in chat_req.messages):
+    # Follow-up turns resend only file names, so reload the earlier upload's extracted
+    # text for plain follow-ups (has_upload) as well as for branched conversations.
+    if not processed_attachments and any(
+        item.get("attachment_source_id") or item.get("has_upload") == "true"
+        for item in chat_req.messages
+    ):
         inherited_upload = await load_inherited_upload(current_user_id, chat_req.messages)
+        logger.info("chat_upload_context.inherited conversation_id=%s loaded=%s",
+                    chat_req.conversation_id, bool(inherited_upload))
 
     # Transport-only upload references are never passed to the model.
     for item in chat_req.messages:

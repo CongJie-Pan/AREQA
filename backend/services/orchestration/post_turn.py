@@ -37,7 +37,7 @@ class PostTurnService:
                     self.dispatch_post_turn_work(**dispatch_kwargs),
                     timeout=timeout_seconds,
                 )
-            except TimeoutError:
+            except (TimeoutError, asyncio.TimeoutError):
                 logger.warning(
                     "orchestration.post_turn_timeout run_id=%s conversation_id=%s timeout_seconds=%s",
                     dispatch_kwargs.get("run_id", ""),
@@ -230,7 +230,8 @@ class PostTurnService:
             if trace:
                 trace.mark_once("suggestions_finished")
             return events
-        except TimeoutError:
+        # Python 3.10 (production) raises asyncio.TimeoutError, which is not the builtin.
+        except (TimeoutError, asyncio.TimeoutError):
             if trace:
                 trace.mark_once("suggestions_timeout")
             logger.warning(
