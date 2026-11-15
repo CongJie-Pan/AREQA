@@ -215,6 +215,21 @@ payload continue to run through their existing paths.
 PDF previews render one source at a time within each request. The renderer
 caps the raster's longest edge at 1,600 pixels before allocating the pixmap.
 
+## Attachment turn latency and follow-ups (2026-11-15)
+
+- Attachment page previews render only when the visual preflight policy allows
+  visuals (explicit request, known affordance, optional or required visual
+  support) or a paper walkthrough is applied. A plain "read these PDFs" turn no
+  longer spends ~10 s rendering, describing and uploading images it never uses.
+- PDF/TXT text extraction for upload memory runs in a worker thread so it does
+  not block the event loop.
+- Follow-up turns resend only attachment names. When a history user message has
+  `has_upload="true"` (or a branch `attachment_source_id`), the stream route
+  reloads that upload's stored text (`chat_upload_context.inherited`) so answers
+  stay grounded in the document rather than its file name.
+- Suggestion generation waits up to 2.5 s, and timeouts are recognised on
+  Python 3.10, where `asyncio.TimeoutError` is not the builtin `TimeoutError`.
+
 ## Context audit corrections
 
 - Optional retrieval excerpts can be removed entirely without rejecting a valid

@@ -130,7 +130,7 @@ class OutputImageService:
                         model_client=model_client,
                         deadline=deadline,
                     )
-                except TimeoutError:
+                except (TimeoutError, asyncio.TimeoutError):
                     logger.info(
                         "visual.output_understanding_budget_exhausted conversation_id=%s slot_id=%s budget_seconds=%.1f",
                         conversation_id,
@@ -264,7 +264,7 @@ class OutputImageService:
                     ),
                     timeout=remaining_seconds,
                 )
-            except TimeoutError:
+            except (TimeoutError, asyncio.TimeoutError):
                 raise
             except Exception as exc:
                 logger.info(

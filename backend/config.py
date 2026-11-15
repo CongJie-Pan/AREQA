@@ -75,7 +75,8 @@ class Settings(BaseSettings):
     enable_explicit_recall_memory_cache: bool = True
     explicit_recall_memory_cache_ttl_seconds: int = 120
     cold_memory_embedding_timeout_ms: int = 1500
-    suggestion_generation_timeout_ms: int = 1000
+    # Production calls return in about 1.0-1.2 s, so a 1 s cap discarded nearly all suggestions.
+    suggestion_generation_timeout_ms: int = 2500
     web_search_provider: str = "tavily"
     tavily_web_search_depth: str = "basic"
     openrouter_web_search_engine: str = "exa"

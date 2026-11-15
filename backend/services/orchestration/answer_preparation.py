@@ -97,9 +97,12 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
             visual_preflight_decision.max_images,
             bool(attachment_visual_sources),
         )
+        # PDF rendering blocks the first token (~10 s for three decks in production). Render
+        # attachment pages only when the policy may use visuals or a paper walkthrough needs them.
         visual_preflight_allowed = bool(
             visual_preflight_decision.blocking_allowed
-            or attachment_visual_sources
+            or (attachment_visual_sources and (
+                visual_preflight_decision.allowed or should_auto_explain_paper))
         )
         if attachment_visual_sources and visual_preflight_allowed:
             log_memory_snapshot("pdf_visual_preflight_started", conversation_id=conversation_id)

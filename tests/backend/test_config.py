@@ -53,7 +53,7 @@ def test_settings_loads_defaults():
     assert s.enable_explicit_recall_memory_cache is True
     assert s.explicit_recall_memory_cache_ttl_seconds == 120
     assert s.cold_memory_embedding_timeout_ms == 1500
-    assert s.suggestion_generation_timeout_ms == 1000
+    assert s.suggestion_generation_timeout_ms == 2500
     assert s.web_search_provider == "tavily"
     assert s.tavily_web_search_depth == "basic"
     assert s.openrouter_web_search_engine == "exa"

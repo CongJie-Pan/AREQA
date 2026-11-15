@@ -112,3 +112,28 @@ async def test_suggestion_events_timeout_returns_compatible_done(caplog):
     assert "suggestions_started" in phase_names
     assert "suggestions_timeout" in phase_names
     assert "orchestration.suggestions_timeout" in caplog.text
+
+
+class _LegacyAsyncioTimeout(Exception):
+    """Stands in for the Python 3.10 asyncio.TimeoutError, which is not the builtin."""
+
+
+@pytest.mark.asyncio
+async def test_suggestion_timeout_is_classified_on_legacy_asyncio(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(asyncio, "TimeoutError", _LegacyAsyncioTimeout)
+
+    async def legacy_wait_for(awaitable, timeout):
+        awaitable.close()
+        raise _LegacyAsyncioTimeout()
+
+    monkeypatch.setattr(asyncio, "wait_for", legacy_wait_for)
+    service = PostTurnService(AsyncMock())
+    events = await service.suggestion_events(
+        last_user_msg="question", answer_text="answer", context_results_obj=None,
+        use_rag=False, use_web_search=False, timeout_ms=1,
+    )
+
+    assert 'event: done\ndata: {"suggestions": []}' in "".join(events)
+    assert "orchestration.suggestions_timeout" in caplog.text
+    assert "orchestration.suggestions_failed" not in caplog.text

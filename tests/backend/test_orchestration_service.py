@@ -1987,6 +1987,60 @@ async def test_pdf_overview_routes_to_local_rules_or_jev(
 
 
 @pytest.mark.asyncio
+async def test_non_visual_pdf_turn_skips_blocking_page_rendering(
+    mock_router, mock_client, caplog,
+):
+    """Rendering PDF pages took ~10 s in production and was discarded when no visuals were planned."""
+
+    service = OrchestrationService(mock_router, None, None, mock_client)
+    question = "請翻譯第一頁的標題，只要文字。"
+    caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
+    caplog.set_level(logging.INFO, logger="services.memory_diagnostics")
+
+    async def llm_stream(*args, **kwargs):
+        yield 'event: accumulator\ndata: {"accumulator":"Ok"}\n\n'
+
+    service._node_llm_stream = llm_stream
+    attachment = {
+        "type": "file",
+        "file": {"filename": "slides.pdf", "file_data": "data:application/pdf;base64,AA=="},
+    }
+    post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "other"}}})
+    mock_client.with_options = MagicMock(return_value=SimpleNamespace(post=post))
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
+         patch.object(service, "_extract_attachment_visual_candidates", new_callable=AsyncMock, return_value=[]) as mock_extract, \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[
+             {"role": "system", "content": "base prompt"},
+             {"role": "user", "content": question},
+         ]):
+        _ = [event async for event in service.execute(
+            [{"role": "user", "content": question}],
+            conversation_id="non-visual-pdf-conv",
+            use_rag=False,
+            use_web_search=False,
+            force_think=False,
+            max_tokens=100,
+            temperature=0.7,
+            top_p=0.9,
+            repetition_penalty=1.0,
+            request=MagicMock(),
+            user_id="u1",
+            search_mode="never",
+            attachments=[attachment],
+            attachment_visual_sources=[{"filename": "slides.pdf", "pdf_bytes": b"%PDF-1.4"}],
+        )]
+
+    mock_extract.assert_not_awaited()
+    assert "visual.attachment_preflight_skipped" in caplog.text
+    assert "pdf_visual_preflight_started" not in caplog.text
+    assert "applied=False" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_durable_jobs_suppress_in_process_edf_and_reflection_tasks(
     mock_router, mock_rag, mock_suggestion, mock_client
 ):
