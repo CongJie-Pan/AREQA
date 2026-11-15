@@ -518,6 +518,44 @@ export const useStyles = createStyles(({ css, token }) => ({
     font-style: italic;
   `,
 
+  messageAttachmentGalleryGroups: css`
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  `,
+
+  /* Files without a thumbnail (md, txt, ...) as a square name tile. */
+  messageAttachmentDocTile: css`
+    cursor: default;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 12px 34px;
+    box-sizing: border-box;
+    text-align: left;
+
+    @media (max-width: 768px) {
+      padding: 10px 10px 30px;
+    }
+  `,
+
+  messageAttachmentDocName: css`
+    @media (max-width: 768px) {
+      font-size: 12px;
+      -webkit-line-clamp: 2;
+    }
+
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    color: var(--foreground);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+    word-break: break-word;
+  `,
+
   messageAttachmentGallery: css`
     display: flex;
     flex-wrap: wrap;
@@ -564,6 +602,12 @@ export const useStyles = createStyles(({ css, token }) => ({
   messageAttachmentTile: css`
     width: 120px;
     height: 120px;
+
+    /* Three tiles per row on phones instead of a tall two-column stack. */
+    @media (max-width: 768px) {
+      width: 96px;
+      height: 96px;
+    }
 
     img {
       width: 100%;

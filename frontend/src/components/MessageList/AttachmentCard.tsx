@@ -156,6 +156,22 @@ export function AttachmentCard({
   const close = React.useCallback(() => setIsOpen(false), []);
 
   if (!attachment.preview || (!isImage && !isPdf)) {
+    if (tile) {
+      // In a multi-file gallery every file is a square tile: name plus type badge.
+      const extension = /\.([A-Za-z0-9]{1,8})$/.exec(attachment.name)?.[1] ?? '';
+      return (
+        <div
+          className={cx(styles.messageAttachmentThumbButton, styles.messageAttachmentTile, styles.messageAttachmentDocTile)}
+          title={attachment.name}
+          aria-label={t('attachmentItemLabel', { name: attachment.name })}
+        >
+          <span className={styles.messageAttachmentDocName}>{attachment.name}</span>
+          <span className={styles.messageAttachmentTypeBadge} aria-hidden="true">
+            {(isPdf ? 'pdf' : extension || 'file').toUpperCase()}
+          </span>
+        </div>
+      );
+    }
     return (
       <div
         className={styles.messageAttachmentCard}
@@ -204,5 +220,38 @@ export function AttachmentCard({
         ? <AttachmentPdfDialog attachment={attachment} original={original} onClose={close} />
         : <AttachmentImageViewer attachment={attachment} original={original} onClose={close} />)}
     </>
+  );
+}
+
+/**
+ * The attachments above a sent message: images first, then documents on their
+ * own bottom row, so many files still read top-to-bottom in a clear order.
+ * Original indexes are kept because session originals are looked up by index.
+ */
+export function AttachmentGallery({ attachments, messageId }: { attachments: AttachmentMetadata[]; messageId: string }) {
+  const { styles } = useStyles();
+  const indexed = attachments.map((attachment, index) => ({ attachment, index }));
+  const images = indexed.filter(({ attachment }) => attachment.mediaType.startsWith('image/'));
+  const documents = indexed.filter(({ attachment }) => !attachment.mediaType.startsWith('image/'));
+  const tile = attachments.length > 1;
+  const row = (items: typeof indexed) => (
+    <div className={styles.messageAttachmentGallery}>
+      {items.map(({ attachment, index }) => (
+        <AttachmentCard
+          key={`${attachment.name}-${index}`}
+          attachment={attachment}
+          messageId={messageId}
+          index={index}
+          tile={tile}
+        />
+      ))}
+    </div>
+  );
+
+  return (
+    <div className={styles.messageAttachmentGalleryGroups}>
+      {images.length > 0 && row(images)}
+      {documents.length > 0 && row(documents)}
+    </div>
   );
 }

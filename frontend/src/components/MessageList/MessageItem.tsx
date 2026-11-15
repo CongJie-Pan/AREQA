@@ -38,7 +38,7 @@ import { useStyles } from './styles';
 import { ReplyTimestamp } from './ReplyTimestamp';
 import { ImageGenerationLoading } from './ImageGenerationLoading';
 import { normalizeDisplayMathBlocks, normalizeLooseStrongMarkers, rehypeMathSource } from '@/utils/markdownMath';
-import { AttachmentCard } from './AttachmentCard';
+import { AttachmentCard, AttachmentGallery } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
@@ -2469,17 +2469,7 @@ export const MessageItem = memo(function MessageItem({
                   aria-label={t('messageAttachments', { count: displayAttachments.length })}
                 >
                   {hasAttachmentPreviews ? (
-                    <div className={styles.messageAttachmentGallery}>
-                      {displayAttachments.map((attachment, index) => (
-                        <AttachmentCard
-                          key={`${attachment.name}-${index}`}
-                          attachment={attachment}
-                          messageId={message.id}
-                          index={index}
-                          tile={displayAttachments.length > 1}
-                        />
-                      ))}
-                    </div>
+                    <AttachmentGallery attachments={displayAttachments} messageId={message.id} />
                   ) : displayAttachments.length === 1 ? (
                     <AttachmentCard attachment={displayAttachments[0]} />
                   ) : (
@@ -2532,17 +2522,7 @@ export const MessageItem = memo(function MessageItem({
                   aria-label={t('messageAttachments', { count: displayAttachments.length })}
                 >
                   {hasAttachmentPreviews ? (
-                    <div className={styles.messageAttachmentGallery}>
-                      {displayAttachments.map((attachment, index) => (
-                        <AttachmentCard
-                          key={`${attachment.name}-${index}`}
-                          attachment={attachment}
-                          messageId={message.id}
-                          index={index}
-                          tile={displayAttachments.length > 1}
-                        />
-                      ))}
-                    </div>
+                    <AttachmentGallery attachments={displayAttachments} messageId={message.id} />
                   ) : displayAttachments.length === 1 ? (
                     <AttachmentCard attachment={displayAttachments[0]} />
                   ) : (

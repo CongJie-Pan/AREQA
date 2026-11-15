@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AttachmentCard } from '../../../../frontend/src/components/MessageList/AttachmentCard';
+import { AttachmentCard, AttachmentGallery } from '../../../../frontend/src/components/MessageList/AttachmentCard';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
 import { clearSessionAttachments, rememberSessionAttachments } from '../../../../frontend/src/utils/attachmentSession';
 import type { AttachmentMetadata } from '../../../../frontend/src/database/schema';
@@ -84,5 +84,41 @@ describe('AttachmentCard previews', () => {
     expect(screen.getByRole('dialog').querySelector('img')).toHaveAttribute('src', thumb.dataUrl);
     expect(screen.queryByRole('link', { name: '下載' })).not.toBeInTheDocument();
     expect(screen.getByText(/只保留預覽縮圖/)).toBeInTheDocument();
+  });
+
+  it('orders a mixed gallery as images first and documents on their own bottom row', () => {
+    const md: AttachmentMetadata = { name: 'Ch08_Motivation_EN.md', mediaType: 'text/markdown', sizeBytes: 170 };
+    const shot: AttachmentMetadata = { name: 'shot.png', mediaType: 'image/png', sizeBytes: 9, preview: thumb };
+    render(
+      <UserPreferencesProvider>
+        <AttachmentGallery attachments={[md, pdf, shot]} messageId="m3" />
+      </UserPreferencesProvider>,
+    );
+
+    const rows = [...document.querySelectorAll('[title]')].map((element) => element.getAttribute('title'));
+    expect(rows).toEqual(['shot.png', 'Ch08_Motivation_EN.md', 'Ch08_Motivation.pdf']);
+    // Documents form their own row after the image row.
+    const [imageRow, documentRow] = [...document.querySelectorAll('[title="shot.png"], [title="Ch08_Motivation_EN.md"]')]
+      .map((element) => element.parentElement);
+    expect(imageRow).not.toBe(documentRow);
+    expect(screen.getByText('MD')).toBeInTheDocument();
+  });
+
+  it('keeps the original attachment index when a reordered tile opens its original', () => {
+    rememberSessionAttachments('m4', [
+      new File(['%PDF'], 'first.pdf', { type: 'application/pdf' }),
+      new File(['png'], 'second.png', { type: 'image/png' }),
+    ]);
+    render(
+      <UserPreferencesProvider>
+        <AttachmentGallery
+          attachments={[{ ...pdf, name: 'first.pdf' }, { ...image, name: 'second.png' }]}
+          messageId="m4"
+        />
+      </UserPreferencesProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '預覽 second.png' }));
+    expect(screen.getByRole('link', { name: '下載' })).toHaveAttribute('download', 'second.png');
   });
 });
