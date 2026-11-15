@@ -150,6 +150,8 @@ export interface Message {
   content: string;
   /** Display-only attachment metadata (never binary data or extracted text). */
   attachments?: AttachmentMetadata[];
+  /** True when the learner pressed Stop; the reply keeps a "you stopped" notice. */
+  stoppedByUser?: boolean;
   /** Original upload turn used to look up account-scoped extracted text. */
   attachmentSourceId?: string;
   /** AI reasoning/thinking process (optional) */

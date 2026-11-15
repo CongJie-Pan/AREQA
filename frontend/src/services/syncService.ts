@@ -46,9 +46,16 @@ type CloudMessageRow = {
   feedback_reason?: unknown;
   feedback_comment?: unknown;
   feedback_updated_at?: string | null;
+  stopped_by_user?: boolean | null;
   created_at: string;
   updated_at?: string | null;
 };
+
+/** PostgREST reports an unknown column as PGRST204 ("Could not find the ... column"). */
+function isMissingColumnError(error: { code?: string; message?: string }, column: string): boolean {
+  return error.code === 'PGRST204' || (error.code === '42703' && Boolean(error.message?.includes(column)))
+    || Boolean(error.message?.includes(`'${column}' column`));
+}
 
 type CloudNoteRow = {
   id: string;
@@ -346,6 +353,7 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
         content: nextContent,
         attachments: nextAttachments,
         attachmentSourceId: cloudIsNewer ? m.attachment_source_id ?? undefined : localMsg?.attachmentSourceId,
+        stoppedByUser: cloudIsNewer ? m.stopped_by_user === true || undefined : localMsg?.stoppedByUser,
         feedback: cloudFeedback,
         feedbackReason: cloudFeedbackReason,
         feedbackComment: cloudFeedbackComment,
@@ -381,6 +389,7 @@ function messageFromCloudRow(m: CloudMessageRow): Message {
     content: m.content,
     attachments: normalizeAttachmentMetadata(m.attachments),
     attachmentSourceId: m.attachment_source_id ?? undefined,
+    ...(m.stopped_by_user === true ? { stoppedByUser: true } : {}),
     feedback: normalizeMessageFeedback(m.feedback),
     feedbackReason: normalizeMessageFeedbackReason(m.feedback_reason),
     feedbackComment: typeof m.feedback_comment === 'string' ? m.feedback_comment : null,
@@ -674,6 +683,8 @@ export const syncService = {
         content: msg.content,
         attachments: normalizeAttachmentMetadata(msg.attachments),
         ...(msg.attachmentSourceId ? { attachment_source_id: msg.attachmentSourceId } : {}),
+        // Sent only when set, so accounts without the column keep syncing other messages.
+        ...(typeof msg.stoppedByUser === 'boolean' ? { stopped_by_user: msg.stoppedByUser } : {}),
         citations: msg.citations ?? null,
         search_results: msg.searchResults ?? null,
         sources: msg.sources ?? null,
@@ -688,6 +699,12 @@ export const syncService = {
         updated_at: (msg.updatedAt ?? msg.createdAt).toISOString(),
       };
       let { error } = await supabase.from('messages').upsert(payload);
+      if (error && 'stopped_by_user' in payload && isMissingColumnError(error, 'stopped_by_user')) {
+        // The stopped-reply migration may not be applied yet; keep the message syncing without the flag.
+        const { stopped_by_user: _unsupported, ...withoutStopFlag } = payload;
+        void _unsupported;
+        ({ error } = await supabase.from('messages').upsert(withoutStopFlag));
+      }
 
       if (error?.code === '23503') {
         const conversation = await db.conversations.get(msg.conversationId);

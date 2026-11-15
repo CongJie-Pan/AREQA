@@ -204,6 +204,29 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByTestId('turn-progress')).not.toBeInTheDocument();
   });
 
+  it('tells the learner they stopped the response, but not while it is still streaming', async () => {
+    const stopped = { ...baseMessage, content: '前半段', stoppedByUser: true };
+    const { rerender } = render(<MessageItem message={stopped} isStreaming={true} />);
+    expect(screen.queryByText('你停止了 AREQA 的回應')).not.toBeInTheDocument();
+
+    rerender(<MessageItem message={stopped} isStreaming={false} />);
+    // The notice follows the end of the text reveal animation.
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('你停止了 AREQA 的回應'));
+  });
+
+  it('places user attachments above the message bubble', () => {
+    const { container } = render(
+      <MessageItem message={{
+        ...baseMessage, role: 'user', content: '看這份',
+        attachments: [{ name: 'lesson.pdf', mediaType: 'application/pdf', sizeBytes: 2048 }],
+      }} />
+    );
+    const attachments = screen.getByText('lesson.pdf');
+    const bubbleText = screen.getByText('看這份');
+    expect(attachments.compareDocumentPosition(bubbleText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container).toBeTruthy();
+  });
+
   it('Scenario 2: Do not render RAGStatusPanel when idle', () => {
     const ragInfo = {
       status: 'idle' as const,

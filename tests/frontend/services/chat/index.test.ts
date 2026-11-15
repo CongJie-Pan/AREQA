@@ -842,6 +842,35 @@ describe('Chat Service', () => {
       expect(mockChatStore.resetStreamingState).toHaveBeenCalled();
     });
 
+    it('keeps a reply stopped before any text and marks it as stopped by the learner', async () => {
+      mockChatStore.currentStreamingId = 'assistant-stopped';
+      mockChatStore.currentContent = '';
+      mockChatStore.isThinking = false;
+      mockChatStore.thinkingContent = '';
+
+      await cancelCurrentStream({ stoppedByUser: true });
+
+      expect(mockChatStore.removeMessage).not.toHaveBeenCalled();
+      expect(mockChatStore.updateAssistantMessage).toHaveBeenCalledWith('assistant-stopped', { stoppedByUser: true });
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({
+        id: 'assistant-stopped', role: 'assistant', content: '', stoppedByUser: true,
+      }));
+    });
+
+    it('keeps partial text and marks it stopped when the learner presses Stop mid-answer', async () => {
+      mockChatStore.currentStreamingId = 'assistant-partial';
+      mockChatStore.currentContent = '前半段回答';
+      mockChatStore.isThinking = false;
+      mockChatStore.thinkingContent = '';
+
+      await cancelCurrentStream({ stoppedByUser: true });
+
+      expect(mockChatStore.endStreaming).toHaveBeenCalled();
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({
+        content: '前半段回答', stoppedByUser: true,
+      }));
+    });
+
     it('should not call createChatStream and set error when messages are empty after preparation (safety intercept)', async () => {
       // Arrange
       mockChatStore.messages = [];

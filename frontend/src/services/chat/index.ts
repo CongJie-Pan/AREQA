@@ -857,7 +857,9 @@ export async function insertAssistantMessage(
  * Preserves accumulated thinking content if stopped during thinking phase
  * Saves partial response to database to prevent data loss
  */
-export async function cancelCurrentStream(): Promise<void> {
+export async function cancelCurrentStream(
+  { stoppedByUser = false }: { stoppedByUser?: boolean } = {},
+): Promise<void> {
   if (currentAbortController) {
     currentAbortController.abort();
     currentAbortController = null;
@@ -878,6 +880,9 @@ export async function cancelCurrentStream(): Promise<void> {
       : block
   );
   const hasAssistantContent = Boolean(currentContent || thinkingContent || cancelledBlocks.length);
+  // An explicit Stop keeps the reply, even when empty, so it can say so; internal
+  // cancellations (switching or deleting conversations) keep the old cleanup.
+  const keepStoppedReply = stoppedByUser && Boolean(streamingMessageId);
   if (cancelledBlocks.length) chatStore.setAnswerBlocks(cancelledBlocks);
 
   // If we're in thinking phase, save the accumulated thinking content to the message
@@ -885,7 +890,11 @@ export async function cancelCurrentStream(): Promise<void> {
     chatStore.endThinking();
   }
 
-  if (!hasAssistantContent && streamingMessageId) {
+  if (keepStoppedReply && streamingMessageId) {
+    chatStore.updateAssistantMessage(streamingMessageId, { stoppedByUser: true });
+  }
+
+  if (!hasAssistantContent && !keepStoppedReply && streamingMessageId) {
     chatStore.removeMessage(streamingMessageId);
   } else {
     // Finalize the streaming message with whatever content we have.
@@ -894,12 +903,13 @@ export async function cancelCurrentStream(): Promise<void> {
 
   // Save partial response to database to prevent data loss on page refresh
   const activeConversationId = conversationStore.activeConversationId;
-  if (hasAssistantContent && canPersistHistory() && streamingMessageId && activeConversationId) {
+  if ((hasAssistantContent || keepStoppedReply) && canPersistHistory() && streamingMessageId && activeConversationId) {
     try {
       const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
         role: 'assistant',
         content: currentContent || '',
         answerBlocks: persistentAnswerBlocks(cancelledBlocks),
+        ...(keepStoppedReply ? { stoppedByUser: true } : {}),
       };
 
       // Include thinking/reasoning if we have it
@@ -1346,6 +1356,7 @@ export async function regenerateMessage(messageId: string): Promise<void> {
     sources: undefined,
     answerBlocks: undefined,
     suggestions: undefined,
+    stoppedByUser: false,
     isStreaming: true,
   });
 
@@ -1449,6 +1460,8 @@ export async function regenerateMessage(messageId: string): Promise<void> {
           const messageData: Omit<Message, 'id' | 'conversationId' | 'createdAt' | 'userId'> = {
             role: 'assistant',
             content: answerContent,
+            // A regenerated reply replaces an earlier stopped one in place.
+            stoppedByUser: false,
           };
 
           if (thinkingContent) {

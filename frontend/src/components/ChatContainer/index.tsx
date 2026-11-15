@@ -547,7 +547,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   // Image cancellation must not interrupt the independently owned voice/text stream.
   const handleStop = useCallback(async () => {
     if (cancelConversationImage(activeConversationId) || isGeneratingImage) return;
-    await cancelCurrentStream();
+    await cancelCurrentStream({ stoppedByUser: true });
   }, [activeConversationId, isGeneratingImage]);
 
   const handleBranch = useCallback(async (messageId: string) => {

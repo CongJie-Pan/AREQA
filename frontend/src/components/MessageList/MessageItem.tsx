@@ -2455,20 +2455,6 @@ export const MessageItem = memo(function MessageItem({
           {isEditing ? (
             /* Edit Mode */
             <div className={styles.editModeContainer}>
-              <div className={cx(styles.bubble, styles.userBubble, styles.userEditBubble)}>
-                <textarea
-                  aria-label={t('editMessage')}
-                  autoFocus
-                  className={styles.editTextarea}
-                  disabled={isEditSaving}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={handleEditKeyDown}
-                  placeholder="輸入訊息..."
-                  ref={editTextareaRef}
-                  rows={editingTextareaRows(editContent)}
-                  value={editContent}
-                />
-              </div>
               {displayAttachments.length > 0 && (
                 <div
                   className={styles.messageAttachmentList}
@@ -2498,6 +2484,20 @@ export const MessageItem = memo(function MessageItem({
                   )}
                 </div>
               )}
+              <div className={cx(styles.bubble, styles.userBubble, styles.userEditBubble)}>
+                <textarea
+                  aria-label={t('editMessage')}
+                  autoFocus
+                  className={styles.editTextarea}
+                  disabled={isEditSaving}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="輸入訊息..."
+                  ref={editTextareaRef}
+                  rows={editingTextareaRows(editContent)}
+                  value={editContent}
+                />
+              </div>
               <div className={styles.editButtons}>
                 <button
                   className={cx(styles.editButton, styles.editCancelButton)}
@@ -2518,6 +2518,36 @@ export const MessageItem = memo(function MessageItem({
           ) : (
             /* Normal Display Mode */
             <div className={cx(styles.bubbleWrapper, 'bubbleWrapper')}>
+              {displayAttachments.length > 0 && (
+                <div
+                  className={styles.messageAttachmentList}
+                  aria-label={t('messageAttachments', { count: displayAttachments.length })}
+                >
+                  {hasAttachmentPreviews ? (
+                    <div className={styles.messageAttachmentGallery}>
+                      {displayAttachments.map((attachment, index) => (
+                        <AttachmentCard
+                          key={`${attachment.name}-${index}`}
+                          attachment={attachment}
+                          messageId={message.id}
+                          index={index}
+                          tile={displayAttachments.length > 1}
+                        />
+                      ))}
+                    </div>
+                  ) : displayAttachments.length === 1 ? (
+                    <AttachmentCard attachment={displayAttachments[0]} />
+                  ) : (
+                    <AttachmentToggleList
+                      attachments={displayAttachments}
+                      expanded={areAttachmentsExpanded}
+                      listId={`message-attachments-${message.id}`}
+                      onExpandedChange={setAreAttachmentsExpanded}
+                    />
+                  )}
+                </div>
+              )}
+
               {(() => {
                 // Split content into citation and the rest
                 // Pattern matches one or more lines starting with '>' at the beginning
@@ -2583,35 +2613,6 @@ export const MessageItem = memo(function MessageItem({
                 );
               })()}
 
-              {displayAttachments.length > 0 && (
-                <div
-                  className={styles.messageAttachmentList}
-                  aria-label={t('messageAttachments', { count: displayAttachments.length })}
-                >
-                  {hasAttachmentPreviews ? (
-                    <div className={styles.messageAttachmentGallery}>
-                      {displayAttachments.map((attachment, index) => (
-                        <AttachmentCard
-                          key={`${attachment.name}-${index}`}
-                          attachment={attachment}
-                          messageId={message.id}
-                          index={index}
-                          tile={displayAttachments.length > 1}
-                        />
-                      ))}
-                    </div>
-                  ) : displayAttachments.length === 1 ? (
-                    <AttachmentCard attachment={displayAttachments[0]} />
-                  ) : (
-                    <AttachmentToggleList
-                      attachments={displayAttachments}
-                      expanded={areAttachmentsExpanded}
-                      listId={`message-attachments-${message.id}`}
-                      onExpandedChange={setAreAttachmentsExpanded}
-                    />
-                  )}
-                </div>
-              )}
               
               <div className={styles.userActionButtons}>
                 <Tooltip title={t('copyMessage')}>
@@ -2746,6 +2747,10 @@ export const MessageItem = memo(function MessageItem({
                     </span>
                   )}
                 </div>
+
+                {message.stoppedByUser && !isDisplayingStream && (
+                  <p className={styles.stoppedNotice} role="note">{t('responseStoppedByUser')}</p>
+                )}
 
                 {/* Citations / Sources Panel */}
                 {((message.sources && message.sources.length > 0) || 

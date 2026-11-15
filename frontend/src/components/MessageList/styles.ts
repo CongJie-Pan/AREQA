@@ -457,7 +457,8 @@ export const useStyles = createStyles(({ css, token }) => ({
     align-self: flex-end;
     align-items: flex-end;
     gap: 8px;
-    margin-top: 8px;
+    /* Attachments sit above the user's bubble, as in ChatGPT and Claude. */
+    margin-bottom: 8px;
     max-width: 85%;
 
     @media (max-width: 768px) {
@@ -508,6 +509,13 @@ export const useStyles = createStyles(({ css, token }) => ({
     margin-top: 2px;
     color: color-mix(in srgb, var(--foreground) 48%, transparent);
     font-size: 11px;
+  `,
+
+  stoppedNotice: css`
+    margin: 8px 0 0;
+    color: color-mix(in srgb, var(--foreground) 50%, transparent);
+    font-size: 13px;
+    font-style: italic;
   `,
 
   messageAttachmentGallery: css`

@@ -815,6 +815,30 @@ describe('syncService - pullFromCloud', () => {
     );
   });
 
+  it('syncs the stopped flag and keeps syncing when the column is not migrated yet', async () => {
+    mockMessageUpsert
+      .mockResolvedValueOnce({ error: { code: 'PGRST204', message: "Could not find the 'stopped_by_user' column of 'messages'" } })
+      .mockResolvedValueOnce({ error: null });
+
+    await syncService.pushMessage({
+      id: 'msg_stopped', userId: 'user_123', conversationId: 'conv_1', role: 'assistant',
+      content: '', stoppedByUser: true, createdAt: new Date('2026-11-15T00:00:00.000Z'),
+    });
+
+    expect(mockMessageUpsert).toHaveBeenNthCalledWith(1, expect.objectContaining({ stopped_by_user: true }));
+    expect(mockMessageUpsert).toHaveBeenNthCalledWith(2, expect.not.objectContaining({ stopped_by_user: expect.anything() }));
+  });
+
+  it('omits the stopped flag for ordinary messages', async () => {
+    await syncService.pushMessage({
+      id: 'msg_plain', userId: 'user_123', conversationId: 'conv_1', role: 'assistant',
+      content: 'Answer', createdAt: new Date('2026-11-15T00:00:00.000Z'),
+    });
+
+    expect(mockMessageUpsert).toHaveBeenCalledTimes(1);
+    expect(mockMessageUpsert.mock.calls[0][0]).not.toHaveProperty('stopped_by_user');
+  });
+
   it('creates a missing cloud conversation before retrying its queued message', async () => {
     const createdAt = new Date('2026-09-22T08:38:37.000Z');
     await db.conversations.add({

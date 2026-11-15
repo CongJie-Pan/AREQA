@@ -130,6 +130,7 @@ export type TranslationKey =
   | 'attachmentItemLabel'
   | 'pdfAttachmentSource'
   | 'uploadedAttachmentBadge'
+  | 'responseStoppedByUser'
   | 'attachmentOpenPreview'
   | 'attachmentDownload'
   | 'attachmentClosePreview'
@@ -413,6 +414,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentItemLabel: '附件 {name}',
     pdfAttachmentSource: '上傳 PDF',
     uploadedAttachmentBadge: '上傳附件',
+    responseStoppedByUser: "你停止了 AREQA 的回應",
     attachmentOpenPreview: '預覽 {name}',
     attachmentDownload: '下載',
     attachmentClosePreview: '關閉預覽',
@@ -670,6 +672,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentItemLabel: '附件 {name}',
     pdfAttachmentSource: '上传 PDF',
     uploadedAttachmentBadge: '上传附件',
+    responseStoppedByUser: "你停止了 AREQA 的回应",
     attachmentOpenPreview: '预览 {name}',
     attachmentDownload: '下载',
     attachmentClosePreview: '关闭预览',
@@ -927,6 +930,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     attachmentItemLabel: 'Attachment {name}',
     pdfAttachmentSource: 'Uploaded PDF',
     uploadedAttachmentBadge: 'Uploaded attachment',
+    responseStoppedByUser: "You stopped AREQA's response",
     attachmentOpenPreview: 'Preview {name}',
     attachmentDownload: 'Download',
     attachmentClosePreview: 'Close preview',
