@@ -1924,12 +1924,13 @@ async def test_pdf_overview_routes_to_local_rules_or_jev(
     user_message,
     uses_jev,
 ):
-    """PDF overview routes use either local rules or Jev without a Gemini call."""
+    """PDF overview routes use local rules, or Jev plus the EDF teaching classifier in parallel."""
 
     service = OrchestrationService(mock_router, mock_rag, None, mock_client)
     request = MagicMock()
     captured_messages = []
     caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
+    caplog.set_level(logging.INFO, logger="services.query_policy.attachment_turn_policy")
 
     async def llm_stream(*args, **kwargs):
         captured_messages.extend(args[3])
@@ -1974,9 +1975,11 @@ async def test_pdf_overview_routes_to_local_rules_or_jev(
             attachment_visual_sources=attachment_visual_sources,
         )]
 
-    mock_policy.assert_not_awaited()
+    # The local shortcut skips both classifiers; otherwise JEV and EDF both run.
+    assert mock_policy.await_count == int(uses_jev)
     assert post.await_count == int(uses_jev)
     assert ("source=classifier" in caplog.text) is uses_jev
+    assert ("orchestration.attachment_policy_timing" in caplog.text) is uses_jev
     assert ("source=local_pdf_overview" in caplog.text) is not uses_jev
     assert mock_extract.await_count == 1
     assert "PDF 論文自動解說任務" in captured_messages[0]["content"]

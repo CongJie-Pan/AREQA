@@ -131,6 +131,8 @@ class AttachmentReason(str, Enum):
     GENERIC_PAPER_EXPLANATION = "GENERIC_PAPER_EXPLANATION"
     TARGETED_ATTACHMENT_TASK = "TARGETED_ATTACHMENT_TASK"
     NOT_PAPER_TASK = "NOT_PAPER_TASK"
+    # Overview of a mixed or non-paper upload: cover every attachment, no paper template.
+    ATTACHMENT_OVERVIEW = "ATTACHMENT_OVERVIEW"
 
 
 ALLOWED_LEGACY_POLICIES = {

@@ -16,7 +16,11 @@ from services.query_policy.classifier import (
 )
 from services.orchestration.trace import TurnLatencyTrace
 from services.query_policy.models import AttachmentTask, default_response_policy
-from services.query_policy.paper_intent import classify_pdf_response_policy
+from services.query_policy.attachment_turn_policy import (
+    attachment_policy_timeout_ms,
+    classify_attachment_turn_policy,
+    gate_paper_overview,
+)
 
 logger = logging.getLogger("backend.services.orchestration_service")
 InterfaceLanguage = str
@@ -42,6 +46,7 @@ class OrchestrationExecutionMixin:
                       attachments: Optional[List[Dict[str, Any]]] = None,
                       attachment_visual_sources: Optional[List[Dict[str, Any]]] = None,
                       image_attachments: Optional[List[Any]] = None,
+                      attachment_manifest: Any = None,
                       isolated_context: bool = False) -> AsyncGenerator[str, None]:
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
@@ -229,10 +234,16 @@ class OrchestrationExecutionMixin:
 
         # Node 2 & 3: Parallel Tasks (HyDE & Policy)
         policy_task = None
-        local_paper_policy = apply_pdf_auto_explain_guardrail(
-            default_response_policy(),
+        # The local shortcut skips both classifiers, so it must already respect
+        # the paper-evidence gate; a gated turn falls through to classification.
+        local_paper_policy = gate_paper_overview(
+            apply_pdf_auto_explain_guardrail(
+                default_response_policy(),
+                user_msg=last_user_msg,
+                has_pdf_attachment=has_pdf_attachment and settings.enable_pdf_paper_auto_explain,
+            ),
             user_msg=last_user_msg,
-            has_pdf_attachment=has_pdf_attachment and settings.enable_pdf_paper_auto_explain,
+            manifest=attachment_manifest,
         )
         use_local_paper_policy = local_paper_policy.attachment_task is AttachmentTask.PAPER_AUTO_EXPLAIN
         should_run_policy_classifier = (
@@ -249,11 +260,19 @@ class OrchestrationExecutionMixin:
             trace.mark("policy_classifier_started")
             trace.increment_model_call("policy_classifier")
             if has_pdf_attachment:
-                # The Gemini dialogue classifier is disabled for PDF intent routing.
-                # It remains available for ordinary dialogue and offline comparison.
+                # JEV owns the attachment decision and EDF the teaching decision;
+                # both run in parallel so attachment turns keep EDF's learning boundary.
+                trace.increment_model_call("pdf_intent_classifier")
                 policy_task = asyncio.create_task(
-                    classify_pdf_response_policy(
-                        self.client, last_user_msg, messages, conversation_id=conversation_id,
+                    classify_attachment_turn_policy(
+                        self.client,
+                        dialogue_classifier=self.classify_dialogue_policy,
+                        dialogue_model=settings.model_policy_classifier,
+                        message=last_user_msg,
+                        messages=messages,
+                        pdf_attachment_count=pdf_attachment_count,
+                        manifest=attachment_manifest,
+                        conversation_id=conversation_id,
                     )
                 )
             else:
@@ -331,7 +350,7 @@ class OrchestrationExecutionMixin:
         else:
             response_policy, response_policy_source, policy_timed_out = await resolve_response_policy(
                 policy_task, trace, conversation_id,
-                timeout_ms=settings.pdf_intent_classifier_timeout_ms if has_pdf_attachment else None,
+                timeout_ms=attachment_policy_timeout_ms() if has_pdf_attachment else None,
             )
         if policy_timed_out:
             yield sse_adapter.encode_legacy(
@@ -339,10 +358,14 @@ class OrchestrationExecutionMixin:
                 run_context.run_id,
             )
 
-        response_policy = apply_pdf_auto_explain_guardrail(
-            response_policy,
+        response_policy = gate_paper_overview(
+            apply_pdf_auto_explain_guardrail(
+                response_policy,
+                user_msg=last_user_msg,
+                has_pdf_attachment=has_pdf_attachment,
+            ),
             user_msg=last_user_msg,
-            has_pdf_attachment=has_pdf_attachment,
+            manifest=attachment_manifest,
         )
         logger.info(
             "orchestration.response_policy_applied conversation_id=%s source=%s metadata=%s",

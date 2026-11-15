@@ -22,23 +22,33 @@ logger = logging.getLogger(__name__)
 JEV_MODEL = "typesafe/jev-1.14"
 JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
 LABELS = {
-    "overview": "An introduction, explanation, or summary of the entire available paper.",
+    "overview": (
+        "An introduction, explanation, or summary of the entire available paper. Only when the upload is a "
+        "research paper (see attachment_inventory.paper_like_pdf_count) or the user refers to a paper; a request "
+        "to summarize several mixed attachments, notes, slides or images is not a paper overview."
+    ),
     "targeted": "A specific section, result, figure, concept, translation or other operation on the paper.",
     "other": "An unrelated request or a request whose relationship to the paper is unclear.",
 }
 
 
-async def classify_jev(client: AsyncOpenAI, message: str, context: str) -> str:
+async def classify_jev(
+    client: AsyncOpenAI, message: str, context: str, inventory: dict[str, int] | None = None,
+) -> str:
+    state: dict[str, object] = {
+        "pdf_available": True,
+        "previous_topic": context[:500],
+        "latest_user_message": message[:4000],
+    }
+    if inventory:
+        # Counts only: file names are learner-authored and never sent here.
+        state["attachment_inventory"] = inventory
     response = await client.with_options(max_retries=0).post(
         JEV_ENDPOINT,
         cast_to=object,
         body={
             "model": JEV_MODEL,
-            "state": {
-                "pdf_available": True,
-                "previous_topic": context[:500],
-                "latest_user_message": message[:4000],
-            },
+            "state": state,
             "questions": {
                 "paper_intent": {
                     "type": "choice",
@@ -56,7 +66,7 @@ async def classify_jev(client: AsyncOpenAI, message: str, context: str) -> str:
 
 async def classify_pdf_response_policy(
     client: AsyncOpenAI, message: str, messages: list[dict[str, str]],
-    *, conversation_id: str = "",
+    *, conversation_id: str = "", inventory: dict[str, int] | None = None,
 ) -> ResponsePolicy:
     """Map the decision to an attachment policy within the foreground budget."""
     policy = default_response_policy()
@@ -69,7 +79,7 @@ async def classify_pdf_response_policy(
     started_at = perf_counter()
     try:
         label = await asyncio.wait_for(
-            classify_jev(client, message, context if isinstance(context, str) else ""),
+            classify_jev(client, message, context if isinstance(context, str) else "", inventory),
             timeout=max(settings.pdf_intent_classifier_timeout_ms, 1) / 1000,
         )
     except asyncio.TimeoutError:

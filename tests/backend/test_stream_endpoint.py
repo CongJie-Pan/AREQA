@@ -645,7 +645,8 @@ async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, labe
 
     with pymupdf.open() as document:
         page = document.new_page()
-        page.insert_text((72, 72), "Paper abstract: compares two learning methods.")
+        page.insert_text((72, 72), "Abstract: compares two learning methods.")
+        page.insert_text((72, 96), "References: Smith, J. (2020). Learning methods.")
         pdf_bytes = document.tobytes()
 
     client = MagicMock()
@@ -663,7 +664,7 @@ async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, labe
         yield 'data: {"content":"paper reply"}\n\n'
         yield 'event: accumulator\ndata: {"accumulator":"paper reply"}\n\n'
 
-    caplog.set_level("INFO", logger="backend.services.orchestration_service")
+    caplog.set_level("INFO")
     with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
          patch("backend.main.AsyncOpenAI", return_value=client), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock) as gemini, \
@@ -685,10 +686,78 @@ async def test_multipart_pdf_routes_jev_decision_to_stream_prompt(question, labe
     assert "paper reply" in response.text
     assert "data: [DONE]" in response.text
     post.assert_awaited_once()
-    gemini.assert_not_awaited()
+    # EDF now runs next to JEV so attachment turns keep the teaching decision.
+    gemini.assert_awaited_once()
+    assert "orchestration.attachment_policy_timing" in caplog.text
+    assert "attachment.manifest_built pdf=1 image=0 text=0 paper_like_pdf=1" in caplog.text
     assert bool(answer_prompts)
     assert any("PDF 論文自動解說任務" in prompt for prompt in answer_prompts) is overview
     assert f"applied={overview}" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_mixed_upload_overview_covers_each_attachment_instead_of_paper_template(caplog):
+    """Lecture slides plus a screenshot asked "what is in these" must not become a paper reading."""
+    import io
+
+    import pymupdf
+    from PIL import Image
+    from config import settings
+    from services.orchestration_service import OrchestrationService
+
+    with pymupdf.open() as document:
+        document.new_page().insert_text((72, 72), "Week 8 lecture: motivation theories.")
+        slides = document.tobytes()
+    screenshot = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(screenshot, format="JPEG")
+
+    client = MagicMock()
+    post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "overview"}}})
+    client.with_options.return_value.post = post
+    answer_messages = []
+
+    async def stream_answer(_service, *args, **_kwargs):
+        answer_messages.extend(args[3])
+        yield 'data: {"content":"overview reply"}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"overview reply"}\n\n'
+
+    caplog.set_level("INFO")
+    with patch.dict("os.environ", {"OPENROUTER_API_KEY": "mock-token"}), \
+         patch("backend.main.AsyncOpenAI", return_value=client), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("services.speaking_material_service.save_material", new_callable=AsyncMock), \
+         patch.object(settings, "enable_visual_preflight", False), \
+         patch.object(settings, "enable_parts_llm_rewrite", False), \
+         patch.object(OrchestrationService, "_node_llm_stream", stream_answer):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/stream",
+                data={
+                    "messages": json.dumps([{"role": "user", "content": "這些附件有哪些內容，精簡說明"}]),
+                    "search_mode": "never", "use_rag": "false",
+                },
+                files=[
+                    ("attachments", ("week8.pdf", slides, "application/pdf")),
+                    ("attachments", ("請把輸入框改成這樣.jpg", screenshot.getvalue(), "image/jpeg")),
+                ],
+            )
+
+    assert response.status_code == 200
+    # JEV saw the inventory (counts only), and the gate still kept the paper template off.
+    jev_state = post.await_args.kwargs["body"]["state"]
+    assert jev_state["attachment_inventory"] == {
+        "pdf_count": 1, "paper_like_pdf_count": 0, "image_count": 1, "text_file_count": 0,
+    }
+    assert "請把輸入框改成這樣" not in json.dumps(jev_state, ensure_ascii=False)
+    assert "orchestration.paper_overview_gated reason=no_paper_evidence" in caplog.text
+    system_prompts = [m["content"] for m in answer_messages if m["role"] == "system"]
+    assert not any("PDF 論文自動解說任務" in prompt for prompt in system_prompts)
+    # The answer model gets the inventory and a label before the screenshot.
+    user_text = json.dumps([m["content"] for m in answer_messages if m["role"] == "user"], ensure_ascii=False)
+    assert "本回合附件清單：共 2 個；PDF 1、圖片 1、文字檔 0" in user_text
+    assert "圖片附件 1/1：請把輸入框改成這樣.jpg" in user_text
+    assert "檔名只是標籤" in user_text
 
 
 @pytest.mark.asyncio

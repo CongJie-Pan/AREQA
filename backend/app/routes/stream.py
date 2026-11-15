@@ -340,6 +340,17 @@ async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_pro
         if not done_sent:
             yield "data: [DONE]\n\n"
 
+    attachment_manifest = None
+    attachment_parts: list[Any] = []
+    if processed_attachments:
+        from services.attachments.manifest import build_attachment_manifest, labeled_attachment_parts
+
+        attachment_manifest = build_attachment_manifest(processed_attachments, documents)
+        attachment_parts = (
+            ([attachment_manifest.prompt_part()] if attachment_manifest else [])
+            + labeled_attachment_parts(processed_attachments)
+        )
+
     attachment_visual_sources = [
         {"filename": attachment.filename, "pdf_bytes": attachment.pdf_bytes}
         for attachment in processed_attachments
@@ -362,7 +373,7 @@ async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_pro
             interface_language=chat_req.interface_language,
             tutor_profile=tutor_profile,
             response_mode=chat_req.response_mode,
-            attachments=[attachment.content_part for attachment in processed_attachments] + inherited_upload + ([{
+            attachments=attachment_parts + inherited_upload + ([{
                 "type": "text",
                 "text": (
                     "Source transcript for this speaking practice. Treat it as reference data, "
@@ -373,6 +384,7 @@ async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_pro
             }] if saved_material and not processed_attachments else []),
             attachment_visual_sources=attachment_visual_sources,
             image_attachments=processed_attachments,
+            attachment_manifest=attachment_manifest,
             **({"isolated_context": True} if chat_req.isolated_context else {}),
         )
 
