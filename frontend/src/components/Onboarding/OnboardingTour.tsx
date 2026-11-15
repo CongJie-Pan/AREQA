@@ -27,14 +27,6 @@ const useStyles = createStyles(({ css }) => ({
     margin: 0;
     font-weight: 600;
   `,
-  points: css`
-    margin: 0;
-    padding-left: 18px;
-
-    li + li {
-      margin-top: 4px;
-    }
-  `,
   examples: css`
     display: flex;
     flex-wrap: wrap;
@@ -180,11 +172,6 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
       description: (
         <div className={styles.body}>
           <p className={styles.lead}>{t('onboardingPitch')}</p>
-          <ul className={styles.points}>
-            <li>{t('onboardingPointConcise')}</li>
-            <li>{t('onboardingPointGuided')}</li>
-            <li>{t('onboardingPointAdaptive')}</li>
-          </ul>
         </div>
       ),
       actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingStart')}</Button>),

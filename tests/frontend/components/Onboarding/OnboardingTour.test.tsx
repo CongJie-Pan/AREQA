@@ -42,20 +42,20 @@ describe('OnboardingTour', () => {
 
   it('stays hidden until started', () => {
     renderTour();
-    expect(screen.queryByText('歡迎來到 AREQA')).not.toBeInTheDocument();
+    expect(screen.queryByText('歡迎來到 AREQA：懂你所學，伴你所讀')).not.toBeInTheDocument();
   });
 
   it('opens with what AREQA is for, then asks for a real question', async () => {
     const onAskExample = renderTour();
     act(() => useOnboardingStore.getState().start());
 
-    expect(screen.getByText('歡迎來到 AREQA')).toBeInTheDocument();
-    expect(screen.getByText(/把難懂的東西用最少的話講到你聽得懂/)).toBeInTheDocument();
+    expect(screen.getByText('歡迎來到 AREQA：懂你所學，伴你所讀')).toBeInTheDocument();
+    expect(screen.getByText(/我可以把學習材料和觀念講解易懂清楚/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '開始（約 1 分鐘）' }));
-    expect(await screen.findByText('先問一個學習上的問題', undefined, { timeout: 3000 })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '什麼是自我效能？' }));
-    expect(onAskExample).toHaveBeenCalledWith('什麼是自我效能？');
+    expect(await screen.findByText('你可以先問一個學習上的問題', undefined, { timeout: 3000 })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '什麼是梯度下降？' }));
+    expect(onAskExample).toHaveBeenCalledWith('什麼是梯度下降？');
   });
 
   it('steps aside while the answer streams and resumes at the notes step', async () => {
@@ -88,7 +88,7 @@ describe('OnboardingTour', () => {
     expect(screen.getByText(/認識 1 個/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '看看' }));
     expect(await screen.findByText('把重點存進筆記', undefined, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.queryByText('先問一個學習上的問題')).not.toBeInTheDocument();
+    expect(screen.queryByText('你可以先問一個學習上的問題')).not.toBeInTheDocument();
   });
 
   it('keeps a step hidden until its button exists and has stopped moving', async () => {
