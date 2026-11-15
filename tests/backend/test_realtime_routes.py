@@ -523,42 +523,64 @@ async def test_transcribe_speech_uses_mini_transcribe_model(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer test-key"
 
 
-@pytest.mark.asyncio
-async def test_read_speech_uses_mini_tts_model_without_logging_text(monkeypatch, caplog):
-    captured: dict[str, object] = {}
+def _fake_speech_client(captured: dict[str, object], *, status_code=200, chunks=(b"mp3-", b"bytes")):
+    """Stand-in for httpx.AsyncClient that streams the given MP3 chunks."""
 
-    class FakeResponse:
-        status_code = 200
-        content = b"mp3-bytes"
+    class FakeStreamResponse:
         headers = {"content-type": "audio/mpeg"}
+
+        def __init__(self):
+            self.status_code = status_code
+
+        async def aiter_bytes(self):
+            for chunk in chunks:
+                captured.setdefault("yielded", []).append(chunk)
+                yield chunk
+
+        async def aclose(self):
+            captured["response_closed"] = True
 
     class FakeAsyncClient:
         def __init__(self, *args, **kwargs):
             pass
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def post(self, url, *, headers, json):
+        def build_request(self, method, url, *, headers, json):
+            captured["method"] = method
             captured["url"] = url
             captured["headers"] = headers
             captured["json"] = json
-            return FakeResponse()
+            return object()
 
+        async def send(self, request, *, stream):
+            captured["stream"] = stream
+            return FakeStreamResponse()
+
+        async def aclose(self):
+            captured["client_closed"] = True
+
+    return FakeAsyncClient
+
+
+async def _collect_body(response) -> bytes:
+    return b"".join([chunk async for chunk in response.body_iterator])
+
+
+@pytest.mark.asyncio
+async def test_read_speech_uses_mini_tts_model_without_logging_text(monkeypatch, caplog):
+    captured: dict[str, object] = {}
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setattr(realtime_routes.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(realtime_routes.httpx, "AsyncClient", _fake_speech_client(captured))
 
     with caplog.at_level(logging.INFO):
         response = await read_speech(
             SpeechReadRequest(text="請朗讀這段私人回覆"),
             current_user_id="user_123",
         )
+        body = await _collect_body(response)
 
     assert response.status_code == 200
-    assert response.body == b"mp3-bytes"
+    assert response.media_type == "audio/mpeg"
+    assert body == b"mp3-bytes"
     assert captured["url"] == "https://api.openai.com/v1/audio/speech"
     assert captured["json"] == {
         "model": "gpt-4o-mini-tts",
@@ -570,9 +592,48 @@ async def test_read_speech_uses_mini_tts_model_without_logging_text(monkeypatch,
     assert captured["headers"]["Authorization"] == "Bearer test-key"
     assert captured["headers"]["OpenAI-Safety-Identifier"] != "user_123"
     assert "speech.read_started" in caplog.text
-    assert "speech.read_completed" in caplog.text
+    assert "speech.read_first_audio" in caplog.text
+    assert "speech.read_completed authenticated=True bytes=9" in caplog.text
     assert "請朗讀這段私人回覆" not in caplog.text
     assert "test-key" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_read_speech_streams_audio_before_the_provider_finishes(monkeypatch):
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(realtime_routes.httpx, "AsyncClient", _fake_speech_client(captured))
+
+    response = await read_speech(SpeechReadRequest(text="hello"), current_user_id=None)
+
+    # Nothing is read from the provider until the browser pulls the body.
+    assert captured["stream"] is True
+    assert "yielded" not in captured
+    first = await response.body_iterator.__anext__()
+    assert first == b"mp3-"
+    assert captured["yielded"] == [b"mp3-"]
+
+    rest = [chunk async for chunk in response.body_iterator]
+    assert rest == [b"bytes"]
+    assert captured["response_closed"] is True
+    assert captured["client_closed"] is True
+
+
+@pytest.mark.asyncio
+async def test_read_speech_maps_provider_errors_before_streaming(monkeypatch):
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        realtime_routes.httpx, "AsyncClient", _fake_speech_client(captured, status_code=429),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await read_speech(SpeechReadRequest(text="hello"), current_user_id=None)
+
+    assert error.value.status_code == 429
+    assert error.value.detail["code"] == "OPENAI_SPEECH_READ_FAILED"
+    assert captured["response_closed"] is True
+    assert captured["client_closed"] is True
 
 
 @pytest.mark.asyncio

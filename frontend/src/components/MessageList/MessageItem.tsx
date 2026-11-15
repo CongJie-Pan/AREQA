@@ -42,7 +42,7 @@ import { AttachmentCard } from './AttachmentCard';
 import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
-import { createReadAloudAudio, prepareReadAloudText } from '@/services/speech/readAloud';
+import { prepareReadAloudText, startReadAloudPlayback } from '@/services/speech/readAloud';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { logger } from '@/utils/logger';
 
@@ -2024,7 +2024,7 @@ export const MessageItem = memo(function MessageItem({
   const [isReadAloudLoading, setIsReadAloudLoading] = useState(false);
   const [isReadAloudPlaying, setIsReadAloudPlaying] = useState(false);
   const readAloudAudioRef = React.useRef<HTMLAudioElement | null>(null);
-  const readAloudObjectUrlRef = React.useRef<string | null>(null);
+  const readAloudDisposeRef = React.useRef<(() => void) | null>(null);
   const readAloudAbortRef = React.useRef<AbortController | null>(null);
   const setBubbleRef = useCallback((node: HTMLDivElement | null) => {
     setBubbleEl(node);
@@ -2039,9 +2039,7 @@ export const MessageItem = memo(function MessageItem({
     return () => {
       readAloudAbortRef.current?.abort();
       readAloudAudioRef.current?.pause();
-      if (readAloudObjectUrlRef.current) {
-        URL.revokeObjectURL(readAloudObjectUrlRef.current);
-      }
+      readAloudDisposeRef.current?.();
     };
   }, []);
 
@@ -2195,10 +2193,8 @@ export const MessageItem = memo(function MessageItem({
     readAloudAbortRef.current = null;
     readAloudAudioRef.current?.pause();
     readAloudAudioRef.current = null;
-    if (readAloudObjectUrlRef.current) {
-      URL.revokeObjectURL(readAloudObjectUrlRef.current);
-      readAloudObjectUrlRef.current = null;
-    }
+    readAloudDisposeRef.current?.();
+    readAloudDisposeRef.current = null;
     setIsReadAloudPlaying(false);
     setIsReadAloudLoading(false);
   }, []);
@@ -2219,14 +2215,15 @@ export const MessageItem = memo(function MessageItem({
     const abortController = new AbortController();
     readAloudAbortRef.current = abortController;
     try {
-      const audioBlob = await createReadAloudAudio(readableText, abortController.signal);
+      // Streams where supported: playback starts on the first audio chunk.
+      const playback = await startReadAloudPlayback(readableText, abortController.signal);
       if (abortController.signal.aborted || readAloudAbortRef.current !== abortController) {
+        playback.dispose();
         return;
       }
-      const objectUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(objectUrl);
+      const { audio } = playback;
       readAloudAudioRef.current = audio;
-      readAloudObjectUrlRef.current = objectUrl;
+      readAloudDisposeRef.current = playback.dispose;
 
       audio.addEventListener('ended', stopReadAloud, { once: true });
       audio.addEventListener('error', stopReadAloud, { once: true });

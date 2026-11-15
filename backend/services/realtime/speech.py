@@ -6,11 +6,11 @@ import json
 import logging
 import os
 import time
-from typing import Literal
+from typing import AsyncIterator, Literal
 
 import httpx
 from fastapi import HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from services.realtime.constants import (
     MAX_SPEECH_AUDIO_BYTES,
     OPENAI_AUDIO_SPEECH_URL,
@@ -156,7 +156,7 @@ async def read_speech(
         current_user_id: Optional authenticated user from Supabase JWT.
 
     Returns:
-        MP3 audio bytes suitable for direct browser playback.
+        A streamed MP3 response the browser can play while it downloads.
 
     Raises:
         HTTPException: For missing OpenAI configuration, empty text, or
@@ -192,17 +192,23 @@ async def read_speech(
         SPEECH_READ_VOICE,
         len(text),
     )
-    try:
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        safety_identifier = _safe_realtime_user_identifier(current_user_id)
-        if safety_identifier:
-            headers["OpenAI-Safety-Identifier"] = safety_identifier
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    safety_identifier = _safe_realtime_user_identifier(current_user_id)
+    if safety_identifier:
+        headers["OpenAI-Safety-Identifier"] = safety_identifier
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
+    # Stream the provider's chunked MP3 straight through so the browser can
+    # start playing within a second or two instead of waiting for the whole
+    # file. The client must outlive this function, so the body generator
+    # owns closing it.
+    client = httpx.AsyncClient(timeout=30.0)
+    try:
+        response = await client.send(
+            client.build_request(
+                "POST",
                 OPENAI_AUDIO_SPEECH_URL,
                 headers=headers,
                 json={
@@ -212,23 +218,11 @@ async def read_speech(
                     "response_format": "mp3",
                     "instructions": "Read clearly in a warm, natural tutoring tone.",
                 },
-            )
-        if response.status_code >= 400:
-            logger.warning(
-                "speech.read_failed status=%s elapsed_ms=%s",
-                response.status_code,
-                int((time.time() - started_at) * 1000),
-            )
-            raise HTTPException(
-                status_code=429 if response.status_code == 429 else 503,
-                detail={
-                    "code": "OPENAI_SPEECH_READ_FAILED",
-                    "message": "Unable to generate speech.",
-                },
-            )
-    except HTTPException:
-        raise
+            ),
+            stream=True,
+        )
     except httpx.HTTPError as exc:
+        await client.aclose()
         logger.exception("speech.read_unavailable reason=%s", type(exc).__name__)
         raise HTTPException(
             status_code=503,
@@ -238,14 +232,58 @@ async def read_speech(
             },
         ) from exc
 
-    logger.info(
-        "speech.read_completed authenticated=%s bytes=%s elapsed_ms=%s",
-        bool(current_user_id),
-        len(response.content),
-        int((time.time() - started_at) * 1000),
-    )
-    return Response(
-        content=response.content,
+    if response.status_code >= 400:
+        await response.aclose()
+        await client.aclose()
+        logger.warning(
+            "speech.read_failed status=%s elapsed_ms=%s",
+            response.status_code,
+            int((time.time() - started_at) * 1000),
+        )
+        raise HTTPException(
+            status_code=429 if response.status_code == 429 else 503,
+            detail={
+                "code": "OPENAI_SPEECH_READ_FAILED",
+                "message": "Unable to generate speech.",
+            },
+        )
+
+    authenticated = bool(current_user_id)
+
+    async def audio_chunks() -> AsyncIterator[bytes]:
+        total_bytes = 0
+        try:
+            async for chunk in response.aiter_bytes():
+                if not chunk:
+                    continue
+                if total_bytes == 0:
+                    logger.info(
+                        "speech.read_first_audio authenticated=%s elapsed_ms=%s",
+                        authenticated,
+                        int((time.time() - started_at) * 1000),
+                    )
+                total_bytes += len(chunk)
+                yield chunk
+            logger.info(
+                "speech.read_completed authenticated=%s bytes=%s elapsed_ms=%s",
+                authenticated,
+                total_bytes,
+                int((time.time() - started_at) * 1000),
+            )
+        except httpx.HTTPError as exc:
+            # Headers are already sent; the browser keeps what it has played.
+            logger.warning(
+                "speech.read_interrupted reason=%s bytes=%s elapsed_ms=%s",
+                type(exc).__name__,
+                total_bytes,
+                int((time.time() - started_at) * 1000),
+            )
+        finally:
+            await response.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        audio_chunks(),
         media_type=response.headers.get("content-type", "audio/mpeg"),
         headers={"Cache-Control": "no-store"},
     )

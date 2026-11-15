@@ -4,7 +4,7 @@ import { act, fireEvent, render as rtlRender, screen, waitFor } from '@testing-l
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
-import { createReadAloudAudio } from '../../../../frontend/src/services/speech/readAloud';
+import { startReadAloudPlayback } from '../../../../frontend/src/services/speech/readAloud';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 
 const render: typeof rtlRender = (ui, options) => rtlRender(ui, { wrapper: UserPreferencesProvider, ...options });
@@ -99,9 +99,11 @@ vi.mock('../../../../frontend/src/services/speech/readAloud', async () => {
   );
   return {
     ...actual,
-    createReadAloudAudio: vi.fn(),
+    startReadAloudPlayback: vi.fn(),
   };
 });
+
+const readAloudDispose = vi.fn();
 
 class MockAudio {
   static instances: MockAudio[] = [];
@@ -139,7 +141,12 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     });
     global.URL.createObjectURL = vi.fn(() => 'blob:read-aloud');
     global.URL.revokeObjectURL = vi.fn();
-    vi.mocked(createReadAloudAudio).mockResolvedValue(new Blob(['audio'], { type: 'audio/mpeg' }));
+    readAloudDispose.mockClear();
+    vi.mocked(startReadAloudPlayback).mockImplementation(async () => ({
+      audio: new MockAudio('blob:read-aloud') as unknown as HTMLAudioElement,
+      mode: 'stream',
+      dispose: readAloudDispose,
+    }));
   });
 
   it('Scenario 1: Render RAGStatusPanel when active', () => {
@@ -608,11 +615,17 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     await clickReplyMenuAction('朗讀回覆');
 
-    expect(createReadAloudAudio).toHaveBeenCalledWith('重點：請慢慢讀。', expect.any(AbortSignal));
+    expect(startReadAloudPlayback).toHaveBeenCalledWith('重點：請慢慢讀。', expect.any(AbortSignal));
     fireEvent.click(screen.getByRole('button', { name: '更多回覆操作' }));
-    expect(await screen.findByRole('menuitem', { name: '停止朗讀' })).toBeEnabled();
+    const stop = await screen.findByRole('menuitem', { name: '停止朗讀' });
+    expect(stop).toBeEnabled();
     expect(MockAudio.instances[0]?.src).toBe('blob:read-aloud');
     expect(MockAudio.instances[0]?.play).toHaveBeenCalled();
+
+    // Stopping releases the stream download and its object URL.
+    fireEvent.click(stop);
+    expect(MockAudio.instances[0]?.pause).toHaveBeenCalled();
+    expect(readAloudDispose).toHaveBeenCalled();
   });
 
   it('renders persisted user attachment metadata below the message text', () => {
