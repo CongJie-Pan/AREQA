@@ -1,6 +1,6 @@
 import { db, getCurrentUserId } from '@/database/db';
 import { supabase } from '@/lib/supabase';
-import type { AnswerBlock, Conversation, Message, Note } from '@/database/schema';
+import type { RequestMode, AnswerBlock, Conversation, Message, Note } from '@/database/schema';
 import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
@@ -47,14 +47,28 @@ type CloudMessageRow = {
   feedback_comment?: unknown;
   feedback_updated_at?: string | null;
   stopped_by_user?: boolean | null;
+  request_modes?: unknown;
   created_at: string;
   updated_at?: string | null;
 };
 
+const REQUEST_MODES: ReadonlySet<RequestMode> = new Set(['create_image', 'english_tutor']);
+
+/** Keep only known request modes from synced data. */
+export function normalizeRequestModes(value: unknown): RequestMode[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const modes = value.filter((mode): mode is RequestMode => REQUEST_MODES.has(mode as RequestMode));
+  return modes.length > 0 ? [...new Set(modes)] : undefined;
+}
+
+/** Optional columns added by later migrations; a missing one is dropped and the write retried. */
+const OPTIONAL_MESSAGE_COLUMNS = ['stopped_by_user', 'request_modes'] as const;
+
 /** PostgREST reports an unknown column as PGRST204 ("Could not find the ... column"). */
 function isMissingColumnError(error: { code?: string; message?: string }, column: string): boolean {
-  return error.code === 'PGRST204' || (error.code === '42703' && Boolean(error.message?.includes(column)))
-    || Boolean(error.message?.includes(`'${column}' column`));
+  // The message names the column, so one missing column never strips another.
+  if (error.code === 'PGRST204' || error.code === '42703') return !error.message || error.message.includes(column);
+  return Boolean(error.message?.includes(`'${column}' column`));
 }
 
 type CloudNoteRow = {
@@ -354,6 +368,7 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
         attachments: nextAttachments,
         attachmentSourceId: cloudIsNewer ? m.attachment_source_id ?? undefined : localMsg?.attachmentSourceId,
         stoppedByUser: cloudIsNewer ? m.stopped_by_user === true || undefined : localMsg?.stoppedByUser,
+        requestModes: cloudIsNewer ? normalizeRequestModes(m.request_modes) : localMsg?.requestModes,
         feedback: cloudFeedback,
         feedbackReason: cloudFeedbackReason,
         feedbackComment: cloudFeedbackComment,
@@ -390,6 +405,7 @@ function messageFromCloudRow(m: CloudMessageRow): Message {
     attachments: normalizeAttachmentMetadata(m.attachments),
     attachmentSourceId: m.attachment_source_id ?? undefined,
     ...(m.stopped_by_user === true ? { stoppedByUser: true } : {}),
+    ...(normalizeRequestModes(m.request_modes) ? { requestModes: normalizeRequestModes(m.request_modes) } : {}),
     feedback: normalizeMessageFeedback(m.feedback),
     feedbackReason: normalizeMessageFeedbackReason(m.feedback_reason),
     feedbackComment: typeof m.feedback_comment === 'string' ? m.feedback_comment : null,
@@ -685,6 +701,7 @@ export const syncService = {
         ...(msg.attachmentSourceId ? { attachment_source_id: msg.attachmentSourceId } : {}),
         // Sent only when set, so accounts without the column keep syncing other messages.
         ...(typeof msg.stoppedByUser === 'boolean' ? { stopped_by_user: msg.stoppedByUser } : {}),
+        ...(msg.requestModes?.length ? { request_modes: msg.requestModes } : {}),
         citations: msg.citations ?? null,
         search_results: msg.searchResults ?? null,
         sources: msg.sources ?? null,
@@ -699,17 +716,21 @@ export const syncService = {
         updated_at: (msg.updatedAt ?? msg.createdAt).toISOString(),
       };
       let { error } = await supabase.from('messages').upsert(payload);
-      if (error && 'stopped_by_user' in payload && isMissingColumnError(error, 'stopped_by_user')) {
-        // The stopped-reply migration may not be applied yet; keep the message syncing without the flag.
-        const { stopped_by_user: _unsupported, ...withoutStopFlag } = payload;
+      // A newer migration may not be applied yet: drop the missing optional column and retry,
+      // so the message itself always syncs.
+      let retryPayload: Record<string, unknown> = payload;
+      for (const column of OPTIONAL_MESSAGE_COLUMNS) {
+        if (!error || !(column in retryPayload) || !isMissingColumnError(error, column)) continue;
+        const { [column]: _unsupported, ...rest } = retryPayload;
         void _unsupported;
-        ({ error } = await supabase.from('messages').upsert(withoutStopFlag));
+        retryPayload = rest;
+        ({ error } = await supabase.from('messages').upsert(retryPayload));
       }
 
       if (error?.code === '23503') {
         const conversation = await db.conversations.get(msg.conversationId);
         if (conversation?.userId === userId && await syncService.pushConversation(conversation)) {
-          ({ error } = await supabase.from('messages').upsert(payload));
+          ({ error } = await supabase.from('messages').upsert(retryPayload));
         }
       }
 

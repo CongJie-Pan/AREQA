@@ -11,7 +11,7 @@ import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import type { ChatStore, DisplayMessage } from './types';
 import type { CitationSource } from '@/components/Citations';
-import type { AnswerBlock, AttachmentMetadata, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
+import type { AnswerBlock, AttachmentMetadata, MessageFeedback, RequestMode, MessageFeedbackDetails } from '@/database/schema';
 
 const STREAM_IMAGE_SLOT_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 const MAX_STREAM_IMAGE_SLOTS = 4;
@@ -69,7 +69,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   ...initialState,
 
   // Message operations
-  addUserMessage: (content: string, conversationId: string, attachments: AttachmentMetadata[] = []) => {
+  addUserMessage: (content: string, conversationId: string, attachments: AttachmentMetadata[] = [], requestModes: RequestMode[] = []) => {
     const id = generateUUID();
     const message: DisplayMessage = {
       id,
@@ -78,6 +78,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       role: 'user',
       content,
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...(requestModes.length > 0 ? { requestModes } : {}),
       createdAt: new Date(),
     };
 

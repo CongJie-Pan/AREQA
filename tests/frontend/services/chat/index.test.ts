@@ -443,7 +443,7 @@ describe('Chat Service', () => {
       const result = await sendMessage(INPUT_CONTENT);
 
       // Assert
-      expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(INPUT_CONTENT, 'test-conv-id', []);
+      expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(INPUT_CONTENT, 'test-conv-id', [], []);
       expect(databaseService.message.add).toHaveBeenCalledTimes(2); // user msg + assistant msg
       expect(mockChatStore.endStreaming).toHaveBeenCalled();
       expect(mockConversationStore.updateConversation).toHaveBeenCalledWith(
@@ -571,6 +571,7 @@ describe('Chat Service', () => {
         '請分析我附加的檔案。',
         'test-conv-id',
         [{ name: 'notes.txt', mediaType: 'text/plain', sizeBytes: attachment.size }],
+        [],
       );
       expect(databaseService.message.add).toHaveBeenCalledWith(
         'test-conv-id',
@@ -606,10 +607,22 @@ describe('Chat Service', () => {
       await sendMessage('看圖', undefined, [image]);
 
       expect(mockChatStore.addUserMessage).toHaveBeenCalledWith(
-        '看圖', 'test-conv-id', [{ name: 'chart.png', mediaType: 'image/png', sizeBytes: image.size, preview }],
+        '看圖', 'test-conv-id', [{ name: 'chart.png', mediaType: 'image/png', sizeBytes: image.size, preview }], [],
       );
       expect(getSessionAttachment('user-msg-1', 0)).toBe(image);
       expect(JSON.stringify(vi.mocked(createChatStream).mock.lastCall?.[0])).not.toContain('data:image');
+    });
+
+    it('records the English Tutor mode on the question it was asked with', async () => {
+      mockChatStore.messages = [];
+      vi.mocked(createChatStream).mockImplementation(async (_messages, callbacks) => { await callbacks.onDone(); });
+
+      await sendMessage('Check my essay', 'test-conv-id', [], { tutorProfile: 'english' });
+
+      expect(mockChatStore.addUserMessage).toHaveBeenCalledWith('Check my essay', 'test-conv-id', [], ['english_tutor']);
+      expect(databaseService.message.add).toHaveBeenCalledWith('test-conv-id', expect.objectContaining({
+        role: 'user', requestModes: ['english_tutor'],
+      }));
     });
 
     it('uses voice response mode without forcing hidden thinking into the spoken turn', async () => {

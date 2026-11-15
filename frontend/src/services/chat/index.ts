@@ -22,7 +22,7 @@ import { syncService } from '@/services/syncService';
 import { ValidationError, normalizeError } from '@/utils/error';
 import { sanitizeMessagesForAPI } from '@/utils/sanitizer';
 import type { ChatMessage, TurnProgressUpdate } from '@/services/chat-stream/types';
-import type { AnswerBlock, AttachmentMetadata, ImageBlock, Message } from '@/database/schema';
+import type { RequestMode, AnswerBlock, AttachmentMetadata, ImageBlock, Message } from '@/database/schema';
 import { getCurrentUserId } from '@/database/db';
 import { generateUUID } from '@/utils/id';
 import { filesToAttachmentMetadata } from '@/utils/attachments';
@@ -491,7 +491,8 @@ export async function sendMessage(
   }
 
   // Add user message to store
-  const userMessageId = chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata);
+  const requestModes: RequestMode[] = (options.tutorProfile ?? chatStore.tutorProfile) === 'english' ? ['english_tutor'] : [];
+  const userMessageId = chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata, requestModes);
   rememberSessionAttachments(userMessageId, attachments);
   if (attachments.length > 0) {
     lastAttachmentUpload = {
@@ -509,6 +510,7 @@ export async function sendMessage(
       role: 'user',
       content: sanitizedContent,
       ...(attachmentMetadata.length > 0 ? { attachments: attachmentMetadata } : {}),
+      ...(requestModes.length > 0 ? { requestModes } : {}),
     });
   }
 

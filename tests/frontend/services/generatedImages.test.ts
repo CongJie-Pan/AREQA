@@ -127,11 +127,25 @@ describe('generated image conversation workflow', () => {
     expect(useChatStore.getState().imageGenerationRequests).toEqual({});
     expect(await work).toMatchObject({ completed: false, cancelled: true });
     const stopped = useChatStore.getState().messages.at(-1)!;
-    expect(stopped).toMatchObject({ content: 'Image generation stopped.', answerBlocks: [{ status: 'error', imageUrl: '' }] });
+    // The card says it stopped; the reply carries the learner-stop flag instead of a status line.
+    expect(stopped).toMatchObject({ content: '', stoppedByUser: true, answerBlocks: [{ status: 'error', imageUrl: '', caption: 'Image generation stopped.' }] });
     finish(response());
     await Promise.resolve();
     expect(useChatStore.getState().messages.at(-1)).toEqual(stopped);
     expect((await db.messages.get(stopped.id))?.answerBlocks?.[0]).toMatchObject({ status: 'error', imageUrl: '' });
+    expect((await db.messages.get(stopped.id))?.stoppedByUser).toBe(true);
+  });
+
+  it('records the Create Image mode on the persisted question', async () => {
+    vi.mocked(authenticatedFetch).mockImplementationOnce(() => new Promise(() => undefined));
+    const work = generateConversationImage('Draw a cat', 'conv-a', 'en', true);
+    await vi.waitFor(() => expect(useChatStore.getState().messages.some((message) => message.role === 'user')).toBe(true));
+    const question = useChatStore.getState().messages.find((message) => message.role === 'user')!;
+
+    expect(question.requestModes).toEqual(['create_image']);
+    await vi.waitFor(async () => expect((await db.messages.get(question.id))?.requestModes).toEqual(['create_image']));
+    cancelConversationImage('conv-a');
+    await work;
   });
 
   it('can stop while preparing a new conversation without selecting its late result', async () => {

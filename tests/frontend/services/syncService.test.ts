@@ -829,6 +829,22 @@ describe('syncService - pullFromCloud', () => {
     expect(mockMessageUpsert).toHaveBeenNthCalledWith(2, expect.not.objectContaining({ stopped_by_user: expect.anything() }));
   });
 
+  it('syncs request modes and only drops the column the database is missing', async () => {
+    mockMessageUpsert
+      .mockResolvedValueOnce({ error: { code: 'PGRST204', message: "Could not find the 'request_modes' column of 'messages'" } })
+      .mockResolvedValueOnce({ error: null });
+
+    await syncService.pushMessage({
+      id: 'msg_modes', userId: 'user_123', conversationId: 'conv_1', role: 'user', content: 'draw',
+      requestModes: ['create_image'], stoppedByUser: false, createdAt: new Date('2026-11-15T00:00:00.000Z'),
+    });
+
+    expect(mockMessageUpsert).toHaveBeenNthCalledWith(1, expect.objectContaining({ request_modes: ['create_image'] }));
+    const retried = mockMessageUpsert.mock.calls[1][0];
+    expect(retried).not.toHaveProperty('request_modes');
+    expect(retried).toHaveProperty('stopped_by_user', false);
+  });
+
   it('omits the stopped flag for ordinary messages', async () => {
     await syncService.pushMessage({
       id: 'msg_plain', userId: 'user_123', conversationId: 'conv_1', role: 'assistant',

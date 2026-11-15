@@ -231,6 +231,35 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.queryByRole('button', { name: /重新生成|Regenerate/ })).not.toBeInTheDocument();
   });
 
+  it('shows the attached mode inside the sent question bubble', () => {
+    render(
+      <MessageItem message={{ ...baseMessage, role: 'user', content: '請幫我將此畫成圖解釋', requestModes: ['create_image'] }} />
+    );
+    const token = screen.getByText('Create Image');
+    expect(token.closest('.bubble, [class*="Bubble"], div')).toHaveTextContent('Create Image請幫我將此畫成圖解釋');
+  });
+
+  it('hides the reply toolbar while an image is still generating', () => {
+    render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '',
+          answerBlocks: [{ type: 'image_block', provider: 'generated_image', status: 'pending', slotId: 'img', imageUrl: '' } as never],
+        }}
+        onFeedback={vi.fn()}
+        onRegenerate={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: '更多回覆操作' })).not.toBeInTheDocument();
+  });
+
+  it('says a voice reply was interrupted and drops the toolbar', async () => {
+    render(<MessageItem message={{ ...baseMessage, content: '說到一半', voicePlayback: 'interrupted' }} onFeedback={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('note')).toHaveTextContent('你打斷了 AREQA 的回應'));
+    expect(screen.queryByRole('button', { name: '更多回覆操作' })).not.toBeInTheDocument();
+  });
+
   it('places user attachments above the message bubble', () => {
     const { container } = render(
       <MessageItem message={{

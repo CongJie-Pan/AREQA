@@ -511,6 +511,38 @@ export const useStyles = createStyles(({ css, token }) => ({
     font-size: 11px;
   `,
 
+  /* Mode tokens and the first paragraph share one inline line, so a short
+     question stays on one line and longer text wraps naturally after them. */
+  userBubbleWithModes: css`
+    & > .areqa-user-bubble-content,
+    & > .areqa-user-bubble-content > p:first-child {
+      display: inline;
+    }
+  `,
+
+  requestModeTokens: css`
+    display: inline;
+    margin-right: 8px;
+
+    & > span + span {
+      margin-left: 10px;
+    }
+  `,
+
+  requestModeToken: css`
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    vertical-align: bottom;
+    color: #6ea8fe;
+    font-size: inherit;
+    white-space: nowrap;
+
+    svg {
+      flex: none;
+    }
+  `,
+
   stoppedNotice: css`
     margin: 8px 0 0;
     color: color-mix(in srgb, var(--foreground) 50%, transparent);

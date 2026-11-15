@@ -193,7 +193,7 @@ export async function generateConversationImage(
       (message) => message.conversationId === id,
     );
     const attachments = filesToAttachmentMetadata(options.attachments || []);
-    const userId = persistUserTurn ? useChatStore.getState().addUserMessage(prompt, id, attachments) : undefined;
+    const userId = persistUserTurn ? useChatStore.getState().addUserMessage(prompt, id, attachments, ['create_image']) : undefined;
     const userCreatedAt = useChatStore.getState().messages.find((message) => message.id === userId)?.createdAt;
     assistantId = assistantId || useChatStore.getState().addAssistantMessage(id);
     activeImageRequests.add(assistantId);
@@ -212,7 +212,7 @@ export async function generateConversationImage(
     // Render the card before disk/network work so attachment preparation is visible.
     if (userId) {
       await awaitImageOperation(databaseService.message.add(id, { id: userId, createdAt: userCreatedAt, role: 'user', content: prompt,
-        ...(attachments.length ? { attachments } : {}) }), signal);
+        requestModes: ['create_image'], ...(attachments.length ? { attachments } : {}) }), signal);
       signal.throwIfAborted();
       if (ownerChanged()) return { completed: false, conversationId: id };
     }
@@ -311,10 +311,13 @@ export async function generateConversationImage(
       if (!cancelled) throw error;
     } else if (assistantId && id) {
       const errorBlock: ImageBlock = { ...pendingBlock, status: 'error', caption: cancelled ? content : code };
-      const failureContent = cancelled ? withStatus(content) : retainedText;
-      useChatStore.getState().updateAssistantMessage(assistantId, { content: failureContent, answerBlocks: [...retainedBlocks, errorBlock], isStreaming: false });
+      // A learner stop reads like a stopped text reply: the card says it stopped and the
+      // "you stopped" notice replaces the toolbar, so the text keeps no extra status line.
+      const failureContent = retainedText;
+      const stopFlag = cancelled ? { stoppedByUser: true } : {};
+      useChatStore.getState().updateAssistantMessage(assistantId, { content: failureContent, answerBlocks: [...retainedBlocks, errorBlock], isStreaming: false, ...stopFlag });
       try {
-        const messageData = { role: 'assistant' as const, content: failureContent, answerBlocks: [...retainedBlocks, errorBlock] };
+        const messageData = { role: 'assistant' as const, content: failureContent, answerBlocks: [...retainedBlocks, errorBlock], ...stopFlag };
         if (previousMessage) await databaseService.message.update(assistantId, messageData);
         else await databaseService.message.add(id, { id: assistantId, createdAt, ...messageData });
       } catch (persistenceError) {

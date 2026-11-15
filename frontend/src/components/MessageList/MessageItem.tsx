@@ -16,7 +16,7 @@ import { createMathPlugin } from '@streamdown/math';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ArrowLeft, Ellipsis, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, Bookmark, Volume2, VolumeX, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, Table2, Image as ImageIcon, TextQuote, Code2 } from 'lucide-react';
+import { ArrowLeft, Ellipsis, Copy, Download, Maximize2, RefreshCw, Edit, CornerDownRight, ThumbsDown, ThumbsUp, ExternalLink, Trash2, X, Bookmark, Volume2, VolumeX, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, Table2, Image as ImageIcon, TextQuote, Code2, ImagePlus, BookOpen } from 'lucide-react';
 import type { MenuProps } from 'antd';
 import { Button, Dropdown, Input, Modal, Tooltip, App } from 'antd';
 import { BranchIcon } from '@/components/ConversationBranch/BranchIcon';
@@ -33,6 +33,7 @@ import type {
   MessageFeedback,
   MessageFeedbackDetails,
   MessageFeedbackReason,
+  RequestMode,
 } from '@/database/schema';
 import { useStyles } from './styles';
 import { ReplyTimestamp } from './ReplyTimestamp';
@@ -1942,6 +1943,31 @@ function LiveOrderedAnswerRenderer({
   );
 }
 
+const REQUEST_MODE_DISPLAY: Record<RequestMode, { Icon: typeof ImagePlus; labelKey: TranslationKey }> = {
+  create_image: { Icon: ImagePlus, labelKey: 'requestModeCreateImage' },
+  english_tutor: { Icon: BookOpen, labelKey: 'requestModeEnglishTutor' },
+};
+
+/** Modes attached to a question, shown inline at the start of the bubble like ChatGPT. */
+function RequestModeTokens({ modes }: { modes?: RequestMode[] }) {
+  const { styles } = useStyles();
+  const { t } = useUserPreferences();
+  if (!modes?.length) return null;
+  return (
+    <span className={styles.requestModeTokens}>
+      {modes.map((mode) => {
+        const { Icon, labelKey } = REQUEST_MODE_DISPLAY[mode];
+        return (
+          <span key={mode} className={styles.requestModeToken}>
+            <Icon size={15} aria-hidden="true" />
+            {t(labelKey)}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 /**
  * MessageItem displays a single chat message
  */
@@ -1979,6 +2005,8 @@ export const MessageItem = memo(function MessageItem({
   const isImageGenerationPending = Boolean(message.answerBlocks?.some((block) => (
     block.type === 'image_block' && block.provider === 'generated_image' && block.status === 'pending'
   )));
+  // Talking over a voice reply interrupts it; the reply then says so instead of offering actions.
+  const isVoiceInterrupted = message.role === 'assistant' && message.voicePlayback === 'interrupted';
   // Before the first answer token the progress line is the only waiting indicator.
   const showTurnProgress = Boolean(
     !isImageGenerationPending && progress && !thinking?.isThinking && !thinking?.content && !message.content,
@@ -2567,8 +2595,9 @@ export const MessageItem = memo(function MessageItem({
                       
                       {/* 2. Main Query: Inside bubble */}
                       {remainingText && (
-                        <div className={cx(styles.bubble, styles.userBubble)}>
-                          <div className={styles.content}>
+                        <div className={cx(styles.bubble, styles.userBubble, Boolean(message.requestModes?.length) && styles.userBubbleWithModes)}>
+                          <RequestModeTokens modes={message.requestModes} />
+                          <div className={cx(styles.content, 'areqa-user-bubble-content')}>
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm, remarkMath]}
                               rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
@@ -2586,8 +2615,9 @@ export const MessageItem = memo(function MessageItem({
 
                 // Default: render everything inside bubble
                 return (
-                  <div className={cx(styles.bubble, styles.userBubble)}>
-                    {displayContent && <div className={styles.content}>
+                  <div className={cx(styles.bubble, styles.userBubble, Boolean(message.requestModes?.length) && styles.userBubbleWithModes)}>
+                    <RequestModeTokens modes={message.requestModes} />
+                    {displayContent && <div className={cx(styles.content, 'areqa-user-bubble-content')}>
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[[rehypeKatex, { throwOnError: false }], rehypeMathSource]}
@@ -2736,8 +2766,10 @@ export const MessageItem = memo(function MessageItem({
                   )}
                 </div>
 
-                {message.stoppedByUser && !isDisplayingStream && (
+                {message.stoppedByUser && !isDisplayingStream ? (
                   <p className={styles.stoppedNotice} role="note">{t('responseStoppedByUser')}</p>
+                ) : isVoiceInterrupted && !isDisplayingStream && (
+                  <p className={styles.stoppedNotice} role="note">{t('responseInterruptedByUser')}</p>
                 )}
 
                 {/* Citations / Sources Panel */}
@@ -2765,8 +2797,9 @@ export const MessageItem = memo(function MessageItem({
               />
             )}
 
-            {/* A reply the learner stopped ends with the notice alone, without the toolbar. */}
-            {!message.stoppedByUser && (
+            {/* Stopped or interrupted replies end with their notice alone; a generating
+                image has nothing to act on yet, so neither shows the toolbar. */}
+            {!message.stoppedByUser && !isVoiceInterrupted && !isImageGenerationPending && (
               <div className={styles.actionButtons}>
                 {!isStreaming && onFeedback && (
                   <>

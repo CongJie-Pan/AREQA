@@ -3,7 +3,7 @@
  * Types for managing chat state with Zustand
  */
 
-import type { AnswerBlock, AttachmentMetadata, Message, MessageFeedback, MessageFeedbackDetails } from '@/database/schema';
+import type { AnswerBlock, AttachmentMetadata, Message, MessageFeedback, RequestMode, MessageFeedbackDetails } from '@/database/schema';
 import type { CitationSource } from '@/components/Citations';
 import type { TurnProgressStep, TurnProgressUpdate } from '@/services/chat-stream/types';
 
@@ -137,7 +137,7 @@ export interface TurnProgressEntry {
 export interface ChatActions {
   // Message operations
   /** Add a user message to the conversation */
-  addUserMessage: (content: string, conversationId: string, attachments?: AttachmentMetadata[]) => string;
+  addUserMessage: (content: string, conversationId: string, attachments?: AttachmentMetadata[], requestModes?: RequestMode[]) => string;
   /** Add an assistant message (usually empty, to be filled by streaming) */
   addAssistantMessage: (conversationId: string) => string;
   /** Insert an assistant message at a specific position in the conversation */

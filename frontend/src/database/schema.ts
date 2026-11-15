@@ -40,6 +40,9 @@ export interface AttachmentMetadata {
   preview?: AttachmentPreview;
 }
 
+/** A tool or tutor mode attached to a user message. */
+export type RequestMode = 'create_image' | 'english_tutor';
+
 /** Bounded, display-only thumbnail persisted with attachment metadata. */
 export interface AttachmentPreview {
   /** `data:image/jpeg;base64,...` capped by `MAX_ATTACHMENT_PREVIEW_CHARS`. */
@@ -152,6 +155,8 @@ export interface Message {
   attachments?: AttachmentMetadata[];
   /** True when the learner pressed Stop; the reply keeps a "you stopped" notice. */
   stoppedByUser?: boolean;
+  /** Modes the learner attached to this question (shown as tokens in the bubble). */
+  requestModes?: RequestMode[];
   /** Original upload turn used to look up account-scoped extracted text. */
   attachmentSourceId?: string;
   /** AI reasoning/thinking process (optional) */
