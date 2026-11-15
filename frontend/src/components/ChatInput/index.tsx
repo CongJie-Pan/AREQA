@@ -1011,7 +1011,8 @@ export function ChatInput({
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={placeholder ?? t('askPlaceholder')}
+              // A mode token already fills the start of the row; a placeholder after it reads as clutter.
+              placeholder={createImage || tutorProfile === 'english' ? '' : placeholder ?? t('askPlaceholder')}
               disabled={disabled}
               rows={1}
               maxLength={maxLength + 100}

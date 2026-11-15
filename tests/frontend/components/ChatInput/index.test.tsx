@@ -262,6 +262,8 @@ describe('ChatInput', () => {
     const row = screen.getByRole('group', { name: '訊息輸入列' });
     expect(within(row).getByText('English Tutor')).toBeInTheDocument();
     expect(screen.getByLabelText('訊息輸入框').closest('.areqa-chat-input-shell-expanded')).not.toBeInTheDocument();
+    // The token fills the start of the row, so no "ask AREQA" placeholder trails after it.
+    expect(screen.getByLabelText('訊息輸入框')).toHaveAttribute('placeholder', '');
     fireEvent.click(screen.getByLabelText('刪除 English Tutor'));
 
     expect(mockSetTutorProfile).toHaveBeenCalledWith('general');
