@@ -38,7 +38,7 @@ import { normalizeVoiceTranscript } from '@/services/realtime/language';
 /** Maximum allowed message length */
 const MAX_MESSAGE_LENGTH = 4000;
 /** Maximum number of files that can be staged in one outgoing message. */
-const MAX_ATTACHMENT_COUNT = 5;
+const MAX_ATTACHMENT_COUNT = 10;
 const MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = MAX_ATTACHMENT_BYTES;
 const DICTATION_WAVE_BAR_COUNT = 34;
@@ -376,21 +376,27 @@ const ADD_MENU_LABELS = {
   'zh-TW': {
     open: '新增',
     upload: '上傳檔案',
+    uploadDescription: '從電腦上傳 PDF、圖片或文字檔',
     createImage: 'Create Image',
+    createImageDescription: '把想法畫成圖',
     englishTutor: 'English Tutor',
     englishTutorDescription: '英文口說、閱讀、寫作與文學分析',
   },
   'zh-CN': {
     open: '新增',
     upload: '上传文件',
+    uploadDescription: '从电脑上传 PDF、图片或文本文件',
     createImage: 'Create Image',
+    createImageDescription: '把想法画成图',
     englishTutor: 'English Tutor',
     englishTutorDescription: '英文口语、阅读、写作与文学分析',
   },
   en: {
     open: 'Add',
     upload: 'Upload file',
+    uploadDescription: 'PDFs, images or text from your computer',
     createImage: 'Create Image',
+    createImageDescription: 'Visualize anything',
     englishTutor: 'English Tutor',
     englishTutorDescription: 'Speaking, reading, writing, and literary analysis',
   },
@@ -425,6 +431,7 @@ export function ChatInput({
   const addMenuLabels = ADD_MENU_LABELS[language];
   const [value, setValue] = useState('');
   const [createImage, setCreateImage] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const composerVersionRef = useRef(0);
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -455,8 +462,6 @@ export function ChatInput({
   const isOverLimit = value.length > maxLength;
   const shouldUseExpandedShape = attachmentPreviews.length > 0
     || Boolean(quotedText)
-    || tutorProfile === 'english'
-    || createImage
     || isTextareaMultiline
     || value.includes('\n')
     || value.length > EXPANDED_COMPOSER_MIN_CHARS;
@@ -744,27 +749,17 @@ export function ChatInput({
   const canSend = (value.trim().length > 0 || attachmentPreviews.length > 0) && !disabled && !isGeneratingImage && !isOverLimit;
   const showStop = onStop && (isGeneratingImage || (isStreaming && !(isLiveVoiceActive && onCloseLiveVoice)));
   const hasComposerContent = value.trim().length > 0 || attachmentPreviews.length > 0 || Boolean(quotedText);
+  // One function per row: icon, name, then a short muted description.
+  const addMenuRow = (title: string, description: string) => (
+    <span className={styles.addMenuItem}>
+      <span className={styles.addMenuItemTitle}>{title}</span>
+      <span className={styles.addMenuItemDescription}>{description}</span>
+    </span>
+  );
   const addMenuItems: MenuProps['items'] = [
-    {
-      key: 'create-image',
-      icon: <ImagePlus size={15} />,
-      label: addMenuLabels.createImage,
-    },
-    {
-      key: 'upload',
-      icon: <Upload size={15} />,
-      label: addMenuLabels.upload,
-    },
-    {
-      key: 'english',
-      icon: <BookOpen size={15} />,
-      label: (
-        <span className={styles.addMenuTutorItem}>
-          <span>{addMenuLabels.englishTutor}</span>
-          <small>{addMenuLabels.englishTutorDescription}</small>
-        </span>
-      ),
-    },
+    { key: 'upload', icon: <Upload size={16} />, label: addMenuRow(addMenuLabels.upload, addMenuLabels.uploadDescription) },
+    { key: 'create-image', icon: <ImagePlus size={16} />, label: addMenuRow(addMenuLabels.createImage, addMenuLabels.createImageDescription) },
+    { key: 'english', icon: <BookOpen size={16} />, label: addMenuRow(addMenuLabels.englishTutor, addMenuLabels.englishTutorDescription) },
   ];
 
   const handleAddMenuClick: MenuProps['onClick'] = ({ key }) => {
@@ -912,34 +907,6 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Active modes read like slash commands, as in Claude's composer. */}
-      {(createImage || tutorProfile === 'english') && (
-        <div className={cx('areqa-chat-input-mode-tokens', styles.modeTokens)} aria-label={t('composerActiveModes')}>
-          {createImage && (
-            <Tooltip title={addMenuLabels.createImage}>
-              <span className={styles.modeToken}>
-                <span>/create-image</span>
-                <button type="button" onClick={() => setCreateImage(false)} aria-label="Cancel Create Image"><X size={12} /></button>
-              </span>
-            </Tooltip>
-          )}
-          {tutorProfile === 'english' && (
-            <Tooltip title={addMenuLabels.englishTutor}>
-              <span className={styles.modeToken}>
-                <span>/english-tutor</span>
-                <button
-                  type="button"
-                  onClick={() => setTutorProfile('general')}
-                  aria-label={`${t('delete')} ${addMenuLabels.englishTutor}`}
-                >
-                  <X size={12} />
-                </button>
-              </span>
-            </Tooltip>
-          )}
-        </div>
-      )}
-
       <div
         className={cx(
           'areqa-chat-input-row',
@@ -960,9 +927,12 @@ export function ChatInput({
           }}
           trigger={['click']}
           disabled={disabled || dictationState !== 'idle'}
-          placement="topLeft"
+          placement="bottomLeft"
+          classNames={{ root: styles.addMenu }}
+          onOpenChange={setIsAddMenuOpen}
         >
-          <Tooltip title={addMenuLabels.open} color="#262626" styles={{ container: { color: '#ffffff' } }}>
+          {/* Hidden while the menu is open so it never covers the first row. */}
+          <Tooltip title={addMenuLabels.open} open={isAddMenuOpen ? false : undefined} color="#262626" styles={{ container: { color: '#ffffff' } }}>
             <button
               type="button"
               className={cx(
@@ -1009,6 +979,31 @@ export function ChatInput({
           </>
         ) : (
           <>
+            {/* Active modes sit inline after "+", as icon + name (icon only on narrow screens). */}
+            {createImage && (
+              <Tooltip title={addMenuLabels.createImage}>
+                <span className={cx('areqa-chat-input-mode-token', styles.modeToken)}>
+                  <ImagePlus size={16} aria-hidden="true" />
+                  <span className={styles.modeTokenLabel}>{addMenuLabels.createImage}</span>
+                  <button type="button" onClick={() => setCreateImage(false)} aria-label="Cancel Create Image"><X size={12} /></button>
+                </span>
+              </Tooltip>
+            )}
+            {tutorProfile === 'english' && (
+              <Tooltip title={addMenuLabels.englishTutor}>
+                <span className={cx('areqa-chat-input-mode-token', styles.modeToken)}>
+                  <BookOpen size={16} aria-hidden="true" />
+                  <span className={styles.modeTokenLabel}>{addMenuLabels.englishTutor}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTutorProfile('general')}
+                    aria-label={`${t('delete')} ${addMenuLabels.englishTutor}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              </Tooltip>
+            )}
             <textarea
               ref={textareaRef}
               className="areqa-chat-input-textarea"

@@ -738,6 +738,26 @@ async def test_opted_in_upload_streams_reading_progress_before_parsing_and_answe
 
 
 @pytest.mark.asyncio
+async def test_multipart_upload_limit_matches_ten_attachments():
+    """The form parser must not reject a 10-file turn before attachment validation."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async def send(count):
+            return await ac.post(
+                "/api/v1/stream",
+                data={"messages": json.dumps({"messages": [{"role": "user", "content": "read"}]})},
+                files=[("attachments", (f"n{i}.txt", b"", "text/plain")) for i in range(count)],
+            )
+
+        ten = await send(10)
+        eleven = await send(11)
+
+    # Empty files fail content validation, which proves the 10 parts got through the parser.
+    assert ten.status_code == 422 and ten.json()["detail"]["code"] == "ATTACHMENT_INVALID_CONTENT"
+    assert eleven.status_code in (400, 422)
+    assert "ATTACHMENT_INVALID_CONTENT" not in eleven.text
+
+
+@pytest.mark.asyncio
 async def test_attachment_progress_keeps_legacy_http_errors_and_streams_errors_when_opted_in():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         async def send(opt_in):

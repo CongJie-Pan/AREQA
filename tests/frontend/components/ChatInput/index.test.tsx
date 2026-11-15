@@ -1,7 +1,7 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { render as renderWithProviders, screen, fireEvent, waitFor, createEvent, act } from '@testing-library/react';
+import { render as renderWithProviders, screen, fireEvent, waitFor, createEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatInput } from '@/components/ChatInput';
 import { useChatStore } from '@/store/chat';
@@ -258,9 +258,10 @@ describe('ChatInput', () => {
 
     render(<ChatInput onSend={mockOnSend} />);
 
-    // Active modes read like slash commands in one row.
-    expect(screen.getByText('/english-tutor')).toBeInTheDocument();
-    expect(screen.getByLabelText('訊息輸入框').closest('.areqa-chat-input-shell-expanded')).toBeInTheDocument();
+    // The active mode sits inline in the input row (icon + name), so the pill shape stays.
+    const row = screen.getByRole('group', { name: '訊息輸入列' });
+    expect(within(row).getByText('English Tutor')).toBeInTheDocument();
+    expect(screen.getByLabelText('訊息輸入框').closest('.areqa-chat-input-shell-expanded')).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('刪除 English Tutor'));
 
     expect(mockSetTutorProfile).toHaveBeenCalledWith('general');
@@ -420,6 +421,19 @@ describe('ChatInput', () => {
     fireEvent.click(screen.getByLabelText(/發送訊息/i));
 
     expect(mockOnSend).toHaveBeenCalledWith('', [attachment]);
+  });
+
+  it('accepts up to ten attachments and rejects an eleventh', () => {
+    const files = (count: number, prefix: string) => Array.from({ length: count }, (_, index) => (
+      new File(['notes'], `${prefix}-${index}.txt`, { type: 'text/plain' })
+    ));
+    render(<ChatInput onSend={mockOnSend} />);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: files(10, 'ok') } });
+    expect(screen.getAllByTitle(/^ok-\d\.txt$/)).toHaveLength(10);
+
+    fireEvent.change(screen.getByLabelText('選擇附件'), { target: { files: files(1, 'extra') } });
+    expect(screen.queryByTitle('extra-0.txt')).not.toBeInTheDocument();
   });
 
   it('should accept txt attachments with a generic browser MIME type', () => {

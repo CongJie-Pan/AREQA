@@ -16,7 +16,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_ATTACHMENT_COUNT = 5;
+const MAX_ATTACHMENT_COUNT = 10;
 const MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = MAX_ATTACHMENT_BYTES;
 const SUPPORTED_ATTACHMENT_TYPES = new Set([

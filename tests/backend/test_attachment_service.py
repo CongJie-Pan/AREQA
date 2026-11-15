@@ -228,3 +228,19 @@ async def test_rejects_mime_spoofed_file():
         await process_attachments([upload])
 
     assert raised.value.detail["code"] == "ATTACHMENT_UNSUPPORTED_TYPE"
+
+
+@pytest.mark.asyncio
+async def test_accepts_up_to_ten_attachments_per_turn():
+    uploads = [make_upload(f"note-{i}.txt", "text/plain", b"line one\nline two") for i in range(10)]
+    processed = await process_attachments(uploads)
+    assert len(processed) == 10
+
+
+@pytest.mark.asyncio
+async def test_rejects_an_eleventh_attachment():
+    uploads = [make_upload(f"note-{i}.txt", "text/plain", b"text") for i in range(11)]
+    with pytest.raises(HTTPException) as error:
+        await process_attachments(uploads)
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "ATTACHMENT_COUNT_EXCEEDED"

@@ -23,7 +23,7 @@ from services.conversation.attachment_budget import PdfTextPart
 
 logger = logging.getLogger("backend.services.attachment_service")
 
-MAX_ATTACHMENT_COUNT = 5
+MAX_ATTACHMENT_COUNT = 10
 MAX_ATTACHMENT_BYTES = 40 * 1024 * 1024
 MAX_TOTAL_ATTACHMENT_BYTES = MAX_ATTACHMENT_BYTES
 MAX_NATIVE_CHAT_PDF_BYTES = 10 * 1024 * 1024

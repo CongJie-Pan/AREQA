@@ -95,7 +95,8 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
             raise HTTPException(status_code=400, detail="Invalid JSON in request body") from error
 
     try:
-        form = await request.form(max_files=5, max_fields=20, max_part_size=5 * 1024 * 1024)
+        # max_files must cover attachments.parsing.MAX_ATTACHMENT_COUNT (10 uploads per turn).
+        form = await request.form(max_files=10, max_fields=20, max_part_size=5 * 1024 * 1024)
         raw_messages = form.get("messages")
         if not isinstance(raw_messages, str):
             raise HTTPException(status_code=400, detail="Missing messages field")

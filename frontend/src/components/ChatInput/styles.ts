@@ -180,43 +180,57 @@ export const useStyles = createStyles(({ css, token }) => ({
     color: var(--foreground);
   `,
 
-  addMenuTutorItem: css`
-    display: flex;
-    min-width: 190px;
-    flex-direction: column;
-    gap: 2px;
+  addMenu: css`
+    .ant-dropdown-menu {
+      min-width: min(380px, calc(100vw - 32px));
+      padding: 6px;
+    }
 
-    small {
-      color: color-mix(in srgb, var(--foreground) 58%, transparent);
-      font-size: 11px;
-      line-height: 14px;
+    .ant-dropdown-menu-item {
+      padding: 8px 10px;
     }
   `,
 
-  modeTokens: css`
+  addMenuItem: css`
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 10px;
-    width: 100%;
-    margin: 0 0 6px;
-    padding: 0 2px;
+    min-width: 0;
+    align-items: baseline;
+    gap: 10px;
+  `,
+
+  addMenuItemTitle: css`
+    flex: none;
+    color: var(--foreground);
+    font-weight: 500;
+  `,
+
+  addMenuItemDescription: css`
+    overflow: hidden;
+    min-width: 0;
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   `,
 
   modeToken: css`
     display: inline-flex;
+    flex: none;
     align-items: center;
-    gap: 2px;
+    gap: 5px;
+    max-width: 45%;
     color: #6ea8fe;
     font-size: 14px;
     line-height: 22px;
 
-    /* The remove control takes no space until hovered, so tokens read as one line of commands. */
+    svg {
+      flex: none;
+    }
+
+    /* Collapsed but still focusable remove control; expands on hover/focus. */
     button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      /* Collapsed but still focusable, so keyboard users can reach it. */
       width: 0;
       height: 18px;
       overflow: hidden;
@@ -243,6 +257,17 @@ export const useStyles = createStyles(({ css, token }) => ({
     &:focus-within button {
       width: 18px;
       opacity: 1;
+    }
+  `,
+
+  modeTokenLabel: css`
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    /* Narrow phones keep the textarea usable: icon only, name in the tooltip. */
+    @media (max-width: 520px) {
+      display: none;
     }
   `,
 
