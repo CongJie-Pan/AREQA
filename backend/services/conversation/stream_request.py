@@ -29,7 +29,8 @@ def build_stream_request(*, force_think: bool, repetition_penalty: float,
         A tuple of model name, extra request body, tool definitions and PDF flag.
     """
     target_model = settings.model_main_thinking if force_think else settings.model_main_instruct
-    extra_body = {"repetition_penalty": repetition_penalty}
+    # usage.include asks OpenRouter for token counts (incl. reasoning/cached) in the final chunk.
+    extra_body = {"repetition_penalty": repetition_penalty, "usage": {"include": True}}
     session_id = _openrouter_session_id(conversation_id)
     if settings.enable_openrouter_main_session_id and session_id:
         extra_body["session_id"] = session_id

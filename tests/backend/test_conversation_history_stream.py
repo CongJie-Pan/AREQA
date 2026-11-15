@@ -138,3 +138,67 @@ async def test_wait_status_is_separate_from_answer_and_cancels_on_disconnect(mon
     assert 'choices' not in chunks[0]
     assert cancelled.is_set()
     create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_length_finish_adds_visible_notice_and_logs_usage(monkeypatch, caplog):
+    """Production answers stopped mid-sentence without any explanation (2026-11-15)."""
+    import logging
+    import services.conversation.stream as module
+    from services.conversation.history import HistoryContext
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(module, 'prepare_history', AsyncMock(return_value=HistoryContext(
+        [{'role': 'user', 'content': 'explain'}], '')))
+
+    async def response():
+        yield SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content='The LSTM paper shows', tool_calls=None), finish_reason=None)])
+        yield SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content='', tool_calls=None), finish_reason='length')])
+        yield SimpleNamespace(choices=[], usage=SimpleNamespace(
+            prompt_tokens=50_000, completion_tokens=3_200,
+            completion_tokens_details=SimpleNamespace(reasoning_tokens=1_900),
+            prompt_tokens_details=SimpleNamespace(cached_tokens=40_000)))
+
+    create = AsyncMock(return_value=response())
+    service = ConversationStreamService(SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), None)
+    chunks = [chunk async for chunk in service.stream(
+        user_id='alice', conversation_id='chat', last_user_msg='explain', messages=[],
+        force_think=False, max_tokens=3200, temperature=0.1, top_p=0.9,
+        repetition_penalty=1, request=SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
+    )]
+    joined = ''.join(chunks)
+    assert '回答已達單次長度上限' in joined
+    final = next(c for c in chunks if c.startswith('event: accumulator'))
+    assert '回答已達單次長度上限' in final
+    assert create.call_args.kwargs['extra_body']['usage'] == {'include': True}
+    assert ('orchestration.provider_finish conversation_id=chat finish_reason=length prompt_tokens=50000 '
+            'completion_tokens=3200 reasoning_tokens=1900 cached_tokens=40000') in caplog.text
+    assert 'The LSTM paper shows' not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_normal_finish_has_no_truncation_notice(monkeypatch, caplog):
+    import logging
+    import services.conversation.stream as module
+    from services.conversation.history import HistoryContext
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(module, 'prepare_history', AsyncMock(return_value=HistoryContext(
+        [{'role': 'user', 'content': 'hi'}], '')))
+
+    async def response():
+        yield SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content='Hello', tool_calls=None), finish_reason='stop')])
+
+    service = ConversationStreamService(SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+        create=AsyncMock(return_value=response())))), None)
+    chunks = [chunk async for chunk in service.stream(
+        user_id='alice', conversation_id='chat', last_user_msg='hi', messages=[],
+        force_think=False, max_tokens=500, temperature=0.1, top_p=0.9,
+        repetition_penalty=1, request=SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
+    )]
+    assert '長度上限' not in ''.join(chunks)
+    assert 'finish_reason=stop' in caplog.text
+    assert 'reasoning_tokens=None' in caplog.text

@@ -250,3 +250,32 @@ tail loss and aggregate context failures. Tests cover complete uploads through
 parsing and budgeting, multi-PDF admission without subprocesses, context retry
 before streaming, and split citation filtering. Model calls are mocked.
 Live-provider context limits still require deployment validation.
+
+## Per-document upload context (2026-11-15)
+
+Production showed that three uploaded papers shared one 40,000-character text
+snapshot for follow-ups: the first paper used 32,718 characters, the second kept
+7,280 and the third kept none. Follow-ups now use `services/attachments/document_store.py`:
+
+- **Identity**: each PDF/TXT/Markdown upload becomes its own document (`doc_id`
+  from the content hash). Extracted text is stored per document in Redis
+  (`chat_upload_doc_text:*`, up to 200,000 characters each) with a manifest
+  (`chat_upload_docs:*`). Original PDFs are uploaded in the background to the
+  private storage bucket under `users/<hash>/chat-uploads/<upload>/<doc>.pdf`.
+- **Native re-send**: when every document is a stored PDF and the total is within
+  `CHAT_UPLOAD_NATIVE_FOLLOWUP_BYTES` (10 MiB), follow-ups attach the original
+  PDFs again, matching the first turn's representation.
+- **Text fallback**: otherwise `CHAT_UPLOAD_CONTEXT_TEXT_CHARS` (120,000) is
+  water-filled across documents so short documents stay complete and none drop to
+  zero. Long documents keep their opening plus the chunks that share the most
+  terms with the current question.
+- **Coverage note**: a server-marked text part lists each document as complete
+  original PDF, complete text, partial text (kept/total characters) or
+  unavailable, and tells the model not to guess from file names.
+- **Fallbacks**: no manifest (older uploads) uses the legacy snapshot; Redis or
+  storage failures degrade to text or legacy without failing the turn.
+- **Observability**: `chat_documents.saved`, `chat_documents.originals_stored`,
+  `chat_documents.loaded mode=native|text`, `chat_upload_context.inherited mode=`.
+  Every answer logs `orchestration.provider_finish` with finish reason and token
+  counts (prompt, completion, reasoning, cached). A `length` finish appends a
+  visible notice inviting the learner to ask for continuation.

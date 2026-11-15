@@ -20,6 +20,9 @@ from pydantic import BaseModel
 
 from auth import get_optional_current_user
 from services.attachments.branch_context import load_inherited_upload, remember_upload
+from services.attachments.document_store import (
+    extract_documents, load_documents, material_from_documents, remember_documents,
+)
 from services.conversation.tutor_profile import normalize_tutor_profile
 from services.memory_diagnostics import log_memory_snapshot
 
@@ -175,11 +178,14 @@ async def stream_endpoint(
 
     latest_user_turn = next((item for item in reversed(chat_req.messages) if item.get("role") == "user"), {})
     material = None
+    documents = []
     if processed_attachments or tutor_profile == "english":
-        from services.realtime.speaking_material import extract_material, extract_pasted_material, save_material
+        from services.realtime.speaking_material import extract_pasted_material, save_material
 
-        # PDF text extraction is CPU-bound (~2 s for three slide decks); keep it off the event loop.
-        material = await asyncio.to_thread(extract_material, processed_attachments) if processed_attachments else extract_pasted_material(
+        if processed_attachments:
+            # Per-document extraction is CPU-bound (~2 s for three decks); keep it off the event loop.
+            documents = await asyncio.to_thread(extract_documents, processed_attachments)
+        material = material_from_documents(documents) if processed_attachments else extract_pasted_material(
             next((item.get("content", "") for item in reversed(chat_req.messages) if item.get("role") == "user"), "")
         )
         if not material and chat_req.speaking_practice:
@@ -192,21 +198,37 @@ async def stream_endpoint(
             await save_material(current_user_id, chat_req.conversation_id, material)
 
     if processed_attachments and material:
+        # Legacy single snapshot stays as a rollback/fallback source for follow-ups.
         await remember_upload(
             current_user_id, latest_user_turn, material,
             pdf=any(attachment.media_type == "application/pdf" for attachment in processed_attachments),
         )
+    if processed_attachments and documents:
+        await remember_documents(
+            current_user_id, latest_user_turn.get("message_id", ""), chat_req.conversation_id, documents,
+        )
 
     inherited_upload = []
-    # Follow-up turns resend only file names, so reload the earlier upload's extracted
-    # text for plain follow-ups (has_upload) as well as for branched conversations.
+    # Follow-up turns resend only file names, so reload the earlier upload for plain
+    # follow-ups (has_upload) as well as for branched conversations.
     if not processed_attachments and any(
         item.get("attachment_source_id") or item.get("has_upload") == "true"
         for item in chat_req.messages
     ):
-        inherited_upload = await load_inherited_upload(current_user_id, chat_req.messages)
-        logger.info("chat_upload_context.inherited conversation_id=%s loaded=%s",
-                    chat_req.conversation_id, bool(inherited_upload))
+        loaded = await load_documents(
+            current_user_id, chat_req.messages, str(latest_user_turn.get("content", "") or ""),
+        )
+        mode = "legacy"
+        if loaded is not None:
+            inherited_upload, summary = loaded
+            mode = summary["mode"]
+            logger.info("chat_documents.loaded conversation_id=%s mode=%s documents=%d partial=%d kept_chars=%d",
+                        chat_req.conversation_id, mode, summary["documents"], summary["partial"],
+                        summary["kept_chars"])
+        else:
+            inherited_upload = await load_inherited_upload(current_user_id, chat_req.messages)
+        logger.info("chat_upload_context.inherited conversation_id=%s loaded=%s mode=%s",
+                    chat_req.conversation_id, bool(inherited_upload), mode)
 
     # Transport-only upload references are never passed to the model.
     for item in chat_req.messages:
