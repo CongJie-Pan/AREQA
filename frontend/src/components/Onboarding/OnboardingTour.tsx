@@ -8,7 +8,7 @@
  * answer streams), save it as a note, then points at the branch menu and the
  * composer's "+" menu. Every step can skip the whole tour.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Tour, type TourStepProps } from 'antd';
 import { createStyles } from 'antd-style';
 import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
@@ -59,15 +59,86 @@ const TARGETS: Partial<Record<OnboardingStepId, string>> = {
 
 const EXAMPLE_KEYS: TranslationKey[] = ['onboardingExample1', 'onboardingExample2', 'onboardingExample3'];
 
+/** Latest match = the newest reply. */
+function latestAnchor(anchor: string): HTMLElement | null {
+  const matches = document.querySelectorAll<HTMLElement>(`[data-tour="${anchor}"]`);
+  return matches.length ? matches[matches.length - 1] : null;
+}
+
 function findTarget(id: OnboardingStepId): TourStepProps['target'] {
   const anchor = TARGETS[id];
   if (!anchor) return undefined;
-  // Latest match = the newest reply. A missing target centres the step instead.
-  const lookup = () => {
-    const matches = document.querySelectorAll<HTMLElement>(`[data-tour="${anchor}"]`);
-    return matches.length ? matches[matches.length - 1] : null;
-  };
-  return lookup as () => HTMLElement;
+  // A missing target centres the step instead.
+  return (() => latestAnchor(anchor)) as () => HTMLElement;
+}
+
+const TARGET_POLL_MS = 200;
+const TARGET_STABLE_CHECKS = 2;
+const TARGET_MAX_WAIT_MS = 8000;
+
+/**
+ * Report the step index once its target button exists, is visible and has
+ * stopped moving (replies keep shifting while they reveal), scrolled to the
+ * middle of the screen. Steps without a target are ready immediately.
+ */
+function useStepTargetReady(stepId: OnboardingStepId | undefined, step: number, enabled: boolean): boolean {
+  const [readyStep, setReadyStep] = useState<number | null>(null);
+  const anchor = stepId ? TARGETS[stepId] : undefined;
+
+  useEffect(() => {
+    if (!enabled || !anchor) return undefined;
+    let previous = '';
+    let stableChecks = 0;
+    const startedAt = Date.now();
+    let settleTimer: number | undefined;
+    const poll = window.setInterval(() => {
+      const element = latestAnchor(anchor);
+      const rect = element?.getBoundingClientRect();
+      const signature = rect && rect.width > 0 && rect.height > 0
+        ? `${Math.round(rect.top)}:${Math.round(rect.left)}:${Math.round(rect.width)}:${Math.round(rect.height)}`
+        : '';
+      stableChecks = signature && signature === previous ? stableChecks + 1 : 0;
+      previous = signature;
+      if (stableChecks < TARGET_STABLE_CHECKS && Date.now() - startedAt < TARGET_MAX_WAIT_MS) return;
+      window.clearInterval(poll);
+      element?.scrollIntoView({ block: 'center' });
+      // Let the scroll land before the highlight measures the button.
+      settleTimer = window.setTimeout(() => setReadyStep(step), 150);
+    }, TARGET_POLL_MS);
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(settleTimer);
+    };
+  }, [anchor, enabled, step]);
+
+  return !anchor || readyStep === step;
+}
+
+/**
+ * The highlight only re-measures on window scroll/resize. Messages scroll
+ * inside their own container and replies change size, so forward those as a
+ * window scroll while a step is open.
+ */
+function useKeepHighlightAligned(open: boolean): void {
+  useEffect(() => {
+    if (!open) return undefined;
+    let frame = 0;
+    const nudge = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        window.dispatchEvent(new Event('scroll'));
+      });
+    };
+    document.addEventListener('scroll', nudge, true);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(nudge);
+    observer?.observe(document.body);
+    return () => {
+      document.removeEventListener('scroll', nudge, true);
+      observer?.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [open]);
 }
 
 export function OnboardingTour({ onAskExample }: { onAskExample: (question: string) => void }) {
@@ -78,6 +149,9 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
   const isStreaming = useChatStore((state) => state.isStreaming);
   const wasStreaming = useRef(false);
   const stepId = stepIds[step];
+  const isTargetReady = useStepTargetReady(stepId, step, active && !waitingForAnswer);
+  const isOpen = active && !waitingForAnswer && isTargetReady;
+  useKeepHighlightAligned(isOpen);
 
   // The "ask" step advances on real activity: a stream starts, then finishes.
   useEffect(() => {
@@ -169,14 +243,15 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
 
   return (
     <Tour
-      open={!waitingForAnswer}
+      open={isOpen}
       current={step}
       steps={steps}
       onClose={skip}
       indicatorsRender={(current, total) => <span>{current + 1} / {total}</span>}
       // antd 6 only honours actionsRender on the Tour itself, so pick per step here.
       actionsRender={(_original, { current }) => content[stepIds[current]].actions}
-      zIndex={1200}
+      // Below antd dropdowns (1050) so menus opened from a highlighted button stay clickable.
+      zIndex={1030}
     />
   );
 }

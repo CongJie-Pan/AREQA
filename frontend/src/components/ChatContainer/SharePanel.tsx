@@ -8,7 +8,11 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
 const useStyles = createStyles(({ css, token }) => ({
   panel: css`
-    width: min(440px, calc(100vw - 32px));
+    /* Popover adds 12px; with this padding the content sits 20px from each edge
+       and the panel keeps 16px gutters on phones. */
+    box-sizing: border-box;
+    width: min(440px, calc(100vw - 56px));
+    padding: 8px 8px 4px;
     color: var(--foreground);
   `,
   header: css`
@@ -99,7 +103,7 @@ const useStyles = createStyles(({ css, token }) => ({
     font-size: 12px;
   `,
   you: css`
-    margin-left: 4px;
+    margin-left: 6px;
     color: color-mix(in srgb, var(--foreground) 55%, transparent);
     font-weight: 400;
   `,
@@ -135,7 +139,7 @@ const useStyles = createStyles(({ css, token }) => ({
     }
   `,
   note: css`
-    margin: 10px 0 0;
+    margin: 12px 0 4px;
     color: color-mix(in srgb, var(--foreground) 50%, transparent);
     font-size: 12px;
   `,
