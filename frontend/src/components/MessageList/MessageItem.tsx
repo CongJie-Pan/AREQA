@@ -1426,7 +1426,8 @@ function StreamingMarkdown({
 }) {
   const visibleContent = useVoiceReveal(content, voicePlayback, voiceCaption);
   const rootRef = React.useRef<HTMLDivElement>(null);
-  useStreamingTailFade(rootRef, animate && !voicePlayback);
+  const animateText = animate && isStreaming && !voicePlayback;
+  useStreamingTailFade(rootRef, animateText);
   const hasCitationSources = React.useContext(CitationSourcesContext);
   const processedContent = React.useMemo(() => {
     return normalizeMessageMarkdown(normalizeCitationMarkers(visibleContent, { hasCitationSources }));
@@ -1435,13 +1436,15 @@ function StreamingMarkdown({
   return (
     <div ref={rootRef}>
       <Streamdown
+        // Streamdown can reuse blocks whose text did not change when the animation plugin is removed.
+        key={animateText ? 'live-markdown' : 'settled-markdown'}
         components={markdownComponents as StreamdownComponents}
         controls={false}
         disallowedElements={['script', 'iframe', 'object', 'embed']}
         linkSafety={STREAMDOWN_LINK_SAFETY}
         mode="streaming"
         isAnimating={isStreaming || voicePlayback === 'waiting' || voicePlayback === 'playing'}
-        rehypePlugins={animate ? STREAMING_REHYPE_PLUGINS : undefined}
+        rehypePlugins={animateText ? STREAMING_REHYPE_PLUGINS : undefined}
         plugins={STREAMDOWN_PLUGINS}
       >
         {processedContent}

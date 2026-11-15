@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => typeof window.cascadeReplay === 'function');
 });
 
-test('keeps packet and paragraph playback ordered, preserves running fades, and drains without remounting', async ({ page }) => {
+test('preserves running fades and clears animated text after the final packet', async ({ page }) => {
   const first = `開頭${'甲'.repeat(80)}`;
   const full = `${first}\n\n第二段${'乙'.repeat(40)}`;
   await page.evaluate(content => { Object.assign(window, { freezeFirstFade: true }); window.cascadeReplay(content, true); }, first);
@@ -29,7 +29,7 @@ test('keeps packet and paragraph playback ordered, preserves running fades, and 
   expect(initialLength).not.toContain('甲'.repeat(80));
   await page.evaluate(() => {
     const entries = (window as unknown as { cascadeFades: { node: Element; animation: Animation }[] }).cascadeFades;
-    Object.assign(window, { firstFade: entries[0], firstSpan: document.querySelector('[data-sd-animate]') });
+    Object.assign(window, { firstFade: entries[0] });
   });
   await page.evaluate(content => window.cascadeReplay(content, true), full);
   expect(await bubble.textContent()).not.toContain('第二段');
@@ -38,10 +38,12 @@ test('keeps packet and paragraph playback ordered, preserves running fades, and 
     return first.node.getAnimations().includes(first.animation) && first.animation.playState === 'paused' && first.animation.currentTime === 60;
   })).toBe(true);
   await page.evaluate(() => (window as unknown as { firstFade: { animation: Animation } }).firstFade.animation.play());
+  const originalBubble = await bubble.elementHandle();
   await page.evaluate(content => window.cascadeReplay(content, false), full);
   await expect(bubble).toContainText('第二段');
   await expect(bubble).toContainText('乙'.repeat(40));
-  expect(await page.evaluate(() => document.querySelector('[data-sd-animate]') === (window as unknown as { firstSpan: Element }).firstSpan)).toBe(true);
+  await expect(bubble.locator('[data-sd-animate]')).toHaveCount(0);
+  expect(await originalBubble?.evaluate(node => node.isConnected)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { cascadeFades: { text: string }[] }).cascadeFades.filter(fade => fade.text === '開').length)).toBe(1);
 });
 

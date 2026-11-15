@@ -1115,7 +1115,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     expect(screen.getByText('完成後補上的圖片說明。')).toBeInTheDocument();
   });
 
-  it('keeps live text nodes stable while resolving an image at its streamed slot', async () => {
+  it('clears streaming wrappers without replacing the resolved image or its surrounding parts', async () => {
     const before = '圖片前段';
     const after = '\n\n圖片後段';
     const content = `${before}${after}`;
@@ -1157,6 +1157,7 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
     ]);
     expect(screen.getByRole('status', { name: '圖片搜尋中' })).toBeInTheDocument();
     const stableBeforeNode = initialParts[0];
+    await waitFor(() => expect(stableBeforeNode.querySelector('[data-sd-animate]')).not.toBeNull());
 
     rerender(
       <MessageItem
@@ -1172,7 +1173,12 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
       'live-image-img_1',
       'live-text-after-img_1',
     ]);
-    expect(screen.getByAltText('Forest plot example')).toBeInTheDocument();
+    const resolvedImage = screen.getByAltText('Forest plot example');
+    await waitFor(() => {
+      expect(container.querySelector('[data-sd-animate]')).toBeNull();
+      expect(container.querySelector('[data-live-answer-part="live-text-after-img_1"]')).toHaveTextContent('圖片後段');
+    });
+    expect(screen.getByAltText('Forest plot example')).toBe(resolvedImage);
 
     unmount();
     const historical = render(
