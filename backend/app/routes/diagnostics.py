@@ -46,7 +46,12 @@ class OnboardingEventRequest(BaseModel):
 
     event: Literal["started", "step_viewed", "finished"]
     mode: Literal["full", "features"]
-    step: Literal["welcome", "featuresIntro", "ask", "addNote", "replyMore", "composerPlus", "finish"]
+    step: Literal[
+        "welcome", "featuresIntro", "ask",
+        "addNote", "notesEntry", "notesFilters", "noteActions",
+        "replyMore", "branchSidebar", "branchInside",
+        "composerPlus", "finish",
+    ]
     outcome: Optional[Literal["completed", "skipped"]] = None
     step_index: int = 0
     step_count: int = 0

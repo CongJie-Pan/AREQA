@@ -296,7 +296,7 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
           value={query}
         />
 
-        <div className={styles.filters} aria-label="Notes filters">
+        <div className={styles.filters} aria-label="Notes filters" data-tour="notes-filters">
           <div className={styles.filterGroup}>
             <button
               className={selectedConversationId === 'all' ? styles.filterChipActive : styles.filterChip}
@@ -364,7 +364,11 @@ export function NotesPanel({ onClose }: NotesPanelProps) {
                       const summary = buildNoteSummary(note.contentSnapshot);
                       const displayedContent = isExpanded ? note.contentSnapshot.trim() : summary.text;
                       return (
-                        <article className={styles.noteCard} key={note.id}>
+                        <article
+                          className={styles.noteCard}
+                          key={note.id}
+                          data-tour={note.id === groupedNotes[0]?.notes[0]?.id ? 'note-card' : undefined}
+                        >
                           <div className={styles.noteMeta}>
                             <span className={styles.noteSource}>
                               {note.conversationTitle || t('notesUntitledConversation')}

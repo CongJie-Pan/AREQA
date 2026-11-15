@@ -283,6 +283,26 @@ export type TranslationKey =
   | 'onboardingFinishTitle'
   | 'onboardingFinishBody'
   | 'onboardingReplay'
+  | 'onboardingOpenForMe'
+  | 'onboardingBackToChat'
+  | 'onboardingNotesEntryTitle'
+  | 'onboardingNotesEntryBody'
+  | 'onboardingNotesFiltersTitle'
+  | 'onboardingNotesFiltersBody'
+  | 'onboardingNoteActionsTitle'
+  | 'onboardingNoteActionsBody'
+  | 'onboardingNoteActionTag'
+  | 'onboardingNoteActionEdit'
+  | 'onboardingNoteActionPin'
+  | 'onboardingNoteActionSource'
+  | 'onboardingNoteActionDelete'
+  | 'onboardingBranchTry'
+  | 'onboardingBranchSidebarTitle'
+  | 'onboardingBranchSidebarBody'
+  | 'onboardingBranchInsideTitle'
+  | 'onboardingBranchInsideAbove'
+  | 'onboardingBranchInsideBelow'
+  | 'onboardingBranchInsideReturn'
   | 'shareDialogTitle'
   | 'shareDialogClose'
   | 'shareSnapshotNotice'
@@ -583,15 +603,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     composerLineCount: "{count} 行",
     composerLowRes: "解析度低",
     onboardingFeaturesTitle: "你可能還沒用過這些功能",
-    onboardingFeaturesBody: "花 30 秒認識 {count} 個能讓學習更順手的功能，隨時可以略過。",
+    onboardingFeaturesBody: "花 1 分鐘認識 {count} 個能讓學習更順手的功能，隨時可以略過。",
     onboardingFeaturesStart: "看看",
     onboardingFeaturesOfferTitle: "AREQA 有幾個你可能還沒用過的功能",
     onboardingFeaturesOfferBody: "例如把重點存進筆記、從某個回答另開對話分支，或上傳 PDF 提問。",
-    onboardingFeaturesOfferAccept: "看看（約 30 秒）",
+    onboardingFeaturesOfferAccept: "看看（約 1 分鐘）",
     onboardingFeaturesOfferDismiss: "不用了",
     onboardingWelcomeTitle: "歡迎來到 AREQA：懂你所學，伴你所讀",
     onboardingPitch: "我可以把學習材料和觀念講解易懂清楚，再陪你延伸發想思考的學習夥伴！您需要導覽嗎？",
-    onboardingStart: "開始（約 1 分鐘）",
+    onboardingStart: "開始（約 2 分鐘）",
     onboardingSkip: "略過引導",
     onboardingNext: "下一步",
     onboardingGotIt: "知道了",
@@ -610,6 +630,26 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     onboardingFinishTitle: "準備好了！",
     onboardingFinishBody: "你還可以用麥克風跟 AREQA 語音對話、把對話分享給別人，或在帳號選單裡查看筆記與 AREQA 對你的記憶。想再看一次這個導覽，到帳號選單點「觀看功能導覽」。",
     onboardingReplay: "觀看功能導覽",
+    onboardingOpenForMe: "幫我打開",
+    onboardingBackToChat: "回到對話",
+    onboardingNotesEntryTitle: "你的筆記在這裡",
+    onboardingNotesEntryBody: "筆記收在左下角的帳號選單：點你的名字，再選「瀏覽筆記」。也可以直接按「幫我打開」。",
+    onboardingNotesFiltersTitle: "搜尋和篩選筆記",
+    onboardingNotesFiltersBody: "上方輸入關鍵字可以搜尋筆記；這裡可以依「來源」對話或「標籤」篩選，只看某段對話或某個主題的筆記。",
+    onboardingNoteActionsTitle: "整理每一則筆記",
+    onboardingNoteActionsBody: "每則筆記下方都有這些操作：",
+    onboardingNoteActionTag: "在「新增標籤」輸入文字後按 Enter，幫筆記分類，例如「期中考」。",
+    onboardingNoteActionEdit: "鉛筆圖示：修改筆記內容，只留下你要的重點。",
+    onboardingNoteActionPin: "圖釘圖示：釘選常看的筆記，它會排在最上面。",
+    onboardingNoteActionSource: "「開啟來源位置」：跳回當初存這則筆記的那段回答。",
+    onboardingNoteActionDelete: "「刪除」：移除不需要的筆記。",
+    onboardingBranchTry: "現在試試看：點「⋯」→「建立新對話分支」。",
+    onboardingBranchSidebarTitle: "新分支出現在左邊了",
+    onboardingBranchSidebarBody: "左側清單裡，前面有分支圖示的這筆就是剛建立的分支。它複製了到這則回答為止的對話，你在裡面繼續問，原本的對話不會被改動。點它進去看看，或按「幫我打開」。",
+    onboardingBranchInsideTitle: "這就是分支對話",
+    onboardingBranchInsideAbove: "這條「從 · 原對話名稱」標示以上，是從原對話帶過來的內容，AREQA 會沿用這些上下文回答你。",
+    onboardingBranchInsideBelow: "標示以下是分支裡的新對話，你在這裡問什麼，都不會改動原本的對話。",
+    onboardingBranchInsideReturn: "點這條標示可以跳回原對話；原對話底部也會出現「到分支」的連結，讓你隨時切回來。左側對話的「⋯」選單也能「返回來源」。",
     shareDialogTitle: "分享對話",
     shareDialogClose: "關閉",
     shareSnapshotNotice: "只會分享到目前為止的訊息",
@@ -884,15 +924,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     composerLineCount: "{count} 行",
     composerLowRes: "分辨率低",
     onboardingFeaturesTitle: "你可能还没用过这些功能",
-    onboardingFeaturesBody: "花 30 秒认识 {count} 个能让学习更顺手的功能，随时可以跳过。",
+    onboardingFeaturesBody: "花 1 分钟认识 {count} 个能让学习更顺手的功能，随时可以跳过。",
     onboardingFeaturesStart: "看看",
     onboardingFeaturesOfferTitle: "AREQA 有几个你可能还没用过的功能",
     onboardingFeaturesOfferBody: "例如把重点存进笔记、从某个回答另开对话分支，或上传 PDF 提问。",
-    onboardingFeaturesOfferAccept: "看看（约 30 秒）",
+    onboardingFeaturesOfferAccept: "看看（约 1 分钟）",
     onboardingFeaturesOfferDismiss: "不用了",
     onboardingWelcomeTitle: "欢迎来到 AREQA：懂你所学，伴你所读",
     onboardingPitch: "我可以把学习材料和观念讲解得易懂清楚，再陪你延伸发想思考的学习伙伴！你需要导览吗？",
-    onboardingStart: "开始（约 1 分钟）",
+    onboardingStart: "开始（约 2 分钟）",
     onboardingSkip: "跳过引导",
     onboardingNext: "下一步",
     onboardingGotIt: "知道了",
@@ -911,6 +951,26 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     onboardingFinishTitle: "准备好了！",
     onboardingFinishBody: "你还可以用麦克风跟 AREQA 语音对话、把对话分享给别人，或在账号菜单里查看笔记与 AREQA 对你的记忆。想再看一次这个导览，到账号菜单点「观看功能导览」。",
     onboardingReplay: "观看功能导览",
+    onboardingOpenForMe: "帮我打开",
+    onboardingBackToChat: "回到对话",
+    onboardingNotesEntryTitle: "你的笔记在这里",
+    onboardingNotesEntryBody: "笔记收在左下角的账号菜单：点你的名字，再选「浏览笔记」。也可以直接按「帮我打开」。",
+    onboardingNotesFiltersTitle: "搜索和筛选笔记",
+    onboardingNotesFiltersBody: "上方输入关键字可以搜索笔记；这里可以按「来源」对话或「标签」筛选，只看某段对话或某个主题的笔记。",
+    onboardingNoteActionsTitle: "整理每一则笔记",
+    onboardingNoteActionsBody: "每则笔记下方都有这些操作：",
+    onboardingNoteActionTag: "在「新增标签」输入文字后按 Enter，给笔记分类，例如「期中考」。",
+    onboardingNoteActionEdit: "铅笔图标：修改笔记内容，只留下你要的重点。",
+    onboardingNoteActionPin: "图钉图标：置顶常看的笔记，它会排在最上面。",
+    onboardingNoteActionSource: "「打开来源位置」：跳回当初保存这则笔记的那段回答。",
+    onboardingNoteActionDelete: "「删除」：移除不需要的笔记。",
+    onboardingBranchTry: "现在试试看：点「⋯」→「建立新对话分支」。",
+    onboardingBranchSidebarTitle: "新分支出现在左边了",
+    onboardingBranchSidebarBody: "左侧列表里，前面有分支图标的这一项就是刚建立的分支。它复制了到这则回答为止的对话，你在里面继续问，原本的对话不会被改动。点它进去看看，或按「帮我打开」。",
+    onboardingBranchInsideTitle: "这就是分支对话",
+    onboardingBranchInsideAbove: "这条「从 · 原对话名称」标示以上，是从原对话带过来的内容，AREQA 会沿用这些上下文回答你。",
+    onboardingBranchInsideBelow: "标示以下是分支里的新对话，你在这里问什么，都不会改动原本的对话。",
+    onboardingBranchInsideReturn: "点这条标示可以跳回原对话；原对话底部也会出现「到分支」的链接，让你随时切回来。左侧对话的「⋯」菜单也能「返回来源」。",
     shareDialogTitle: "分享对话",
     shareDialogClose: "关闭",
     shareSnapshotNotice: "只会分享到目前为止的消息",
@@ -1185,15 +1245,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     composerLineCount: "{count} lines",
     composerLowRes: "Low res",
     onboardingFeaturesTitle: "Features you may not have tried",
-    onboardingFeaturesBody: "Take 30 seconds to see {count} features that make studying easier. You can skip anytime.",
+    onboardingFeaturesBody: "Take a minute to see {count} features that make studying easier. You can skip anytime.",
     onboardingFeaturesStart: "Show me",
     onboardingFeaturesOfferTitle: "AREQA has a few features you may not have tried",
     onboardingFeaturesOfferBody: "For example saving key points to notes, branching a new conversation from an answer, or asking about an uploaded PDF.",
-    onboardingFeaturesOfferAccept: "Show me (30 s)",
+    onboardingFeaturesOfferAccept: "Show me (1 min)",
     onboardingFeaturesOfferDismiss: "No thanks",
     onboardingWelcomeTitle: "Welcome to AREQA: understands what you learn, reads alongside you",
     onboardingPitch: "I'm a learning partner that makes your study materials and concepts clear and easy to follow, then helps you explore and think further. Would you like a quick tour?",
-    onboardingStart: "Start (about 1 min)",
+    onboardingStart: "Start (about 2 min)",
     onboardingSkip: "Skip tour",
     onboardingNext: "Next",
     onboardingGotIt: "Got it",
@@ -1212,6 +1272,26 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     onboardingFinishTitle: "You're ready!",
     onboardingFinishBody: "You can also talk to AREQA by voice, share a conversation, or open your notes and what AREQA remembers about you from the account menu. To see this tour again, choose \"Feature tour\" in the account menu.",
     onboardingReplay: "Feature tour",
+    onboardingOpenForMe: "Open it for me",
+    onboardingBackToChat: "Back to chat",
+    onboardingNotesEntryTitle: "Your notes live here",
+    onboardingNotesEntryBody: "Notes are in the account menu at the bottom left: click your name, then choose \"Notes\". Or press \"Open it for me\".",
+    onboardingNotesFiltersTitle: "Search and filter notes",
+    onboardingNotesFiltersBody: "Search notes by keyword above, or filter by source conversation or tag to see only one conversation or topic.",
+    onboardingNoteActionsTitle: "Organize each note",
+    onboardingNoteActionsBody: "Every note has these actions:",
+    onboardingNoteActionTag: "Type in \"Add tag\" and press Enter to label a note, for example \"midterm\".",
+    onboardingNoteActionEdit: "Pencil: edit the note so it keeps only what you need.",
+    onboardingNoteActionPin: "Pin: keep notes you use often at the top.",
+    onboardingNoteActionSource: "\"Open source location\": jump back to the answer the note came from.",
+    onboardingNoteActionDelete: "\"Delete\": remove notes you no longer need.",
+    onboardingBranchTry: "Try it now: open ⋯ and choose \"Create conversation branch\".",
+    onboardingBranchSidebarTitle: "Your new branch is on the left",
+    onboardingBranchSidebarBody: "The item with the branch icon in the sidebar is the branch you just created. It copies the conversation up to this answer, and anything you ask there leaves the original untouched. Open it, or press \"Open it for me\".",
+    onboardingBranchInsideTitle: "This is a branch conversation",
+    onboardingBranchInsideAbove: "Everything above the \"From · original title\" marker was carried over from the original conversation, and AREQA uses it as context.",
+    onboardingBranchInsideBelow: "Below the marker is the new branch conversation. Nothing you ask here changes the original.",
+    onboardingBranchInsideReturn: "Click the marker to jump back to the original. The original also shows a \"To branch\" link at the bottom, and the ⋯ menu of a sidebar item can \"Return to source\".",
     shareDialogTitle: "Share conversation",
     shareDialogClose: "Close",
     shareSnapshotNotice: "Only messages up until now will be shared",

@@ -29,6 +29,10 @@ export function useSidebarState() {
     if (isMobile) setMobileOpen(value => !value);
     else setDesktopCollapsed(value => !value);
   }, [isMobile]);
+  const open = useCallback(() => {
+    if (isMobile) setMobileOpen(true);
+    else setDesktopCollapsed(false);
+  }, [isMobile]);
   const collapseDesktop = useCallback(() => setDesktopCollapsed(true), []);
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
@@ -36,5 +40,5 @@ export function useSidebarState() {
     logger.debug('sidebar_visibility_changed', { viewport: isMobile ? 'mobile' : 'desktop', expanded: isOpen });
   }, [isMobile, isOpen]);
 
-  return { isMobile, isOpen, desktopCollapsed, mobileOpen, toggle, collapseDesktop, closeMobile };
+  return { isMobile, isOpen, desktopCollapsed, mobileOpen, toggle, open, collapseDesktop, closeMobile };
 }

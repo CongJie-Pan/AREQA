@@ -315,7 +315,8 @@ export function UserAuthUI({ onOpenMemory, onOpenNotes }: UserAuthUIProps) {
         )}
         trigger={['click']}
       >
-        <div 
+        <div
+          data-tour="account-menu"
           style={{
             display: 'flex', alignItems: 'center', gap: '8px', padding: '12px',
             marginTop: 'auto', cursor: 'pointer', borderRadius: '8px',

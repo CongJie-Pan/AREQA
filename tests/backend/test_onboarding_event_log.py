@@ -41,3 +41,11 @@ def test_onboarding_event_requires_sign_in():
     assert TestClient(app).post("/api/v1/onboarding/event", json={
         "event": "started", "mode": "full", "step": "welcome",
     }).status_code in (401, 403)
+
+
+@pytest.mark.parametrize("step", ["notesEntry", "notesFilters", "noteActions", "branchSidebar", "branchInside"])
+def test_onboarding_event_accepts_notes_and_branch_walkthrough_steps(client, step):
+    response = client.post("/api/v1/onboarding/event", json={
+        "event": "step_viewed", "mode": "full", "step": step, "step_index": 4, "step_count": 11,
+    })
+    assert response.status_code == 200

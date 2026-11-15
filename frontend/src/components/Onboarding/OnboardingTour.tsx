@@ -4,9 +4,13 @@
  * Step-by-step first-run guide.
  *
  * It opens with a one-line introduction of what AREQA is for, then asks the
- * learner to do things for real: ask a question (the tour hides while the
- * answer streams), save it as a note, then points at the branch menu and the
- * composer's "+" menu. Every step can skip the whole tour.
+ * learner to do things for real and explains what just happened:
+ * - ask a question (the tour hides while the answer streams);
+ * - save it as a note, find the notes from the sidebar and learn the notes
+ *   page (filters, tags, edit, pin, jump back, delete);
+ * - create a branch, spot it in the sidebar, open it and learn what the
+ *   branch marker means;
+ * - then the composer's "+" menu. Every step can skip the whole tour.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Tour, type TourStepProps } from 'antd';
@@ -14,6 +18,7 @@ import { createStyles } from 'antd-style';
 import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferencesContext';
 import { useAuthStore } from '@/store/auth';
 import { useChatStore } from '@/store/chat';
+import { useConversationStore } from '@/store/conversation';
 import { useOnboardingStore, type OnboardingStepId } from '@/store/onboarding';
 
 const useStyles = createStyles(({ css }) => ({
@@ -26,6 +31,14 @@ const useStyles = createStyles(({ css }) => ({
   lead: css`
     margin: 0;
     font-weight: 600;
+  `,
+  points: css`
+    margin: 0;
+    padding-left: 18px;
+
+    li + li {
+      margin-top: 4px;
+    }
   `,
   examples: css`
     display: flex;
@@ -45,23 +58,44 @@ const useStyles = createStyles(({ css }) => ({
 const TARGETS: Partial<Record<OnboardingStepId, string>> = {
   ask: 'composer',
   addNote: 'add-note',
+  notesEntry: 'account-menu',
+  notesFilters: 'notes-filters',
+  noteActions: 'note-card',
   replyMore: 'reply-more',
+  branchInside: 'branch-boundary',
   composerPlus: 'composer-plus',
 };
 
+/** Steps shown on top of the notes page; leaving them returns to the chat. */
+const NOTES_PAGE_STEPS: ReadonlySet<OnboardingStepId> = new Set(['notesFilters', 'noteActions']);
+/** Steps that point into the sidebar, which is closed on phones. */
+const SIDEBAR_STEPS: ReadonlySet<OnboardingStepId> = new Set(['notesEntry', 'branchSidebar']);
+
 const EXAMPLE_KEYS: TranslationKey[] = ['onboardingExample1', 'onboardingExample2', 'onboardingExample3'];
+const NOTE_ACTION_KEYS: TranslationKey[] = [
+  'onboardingNoteActionTag', 'onboardingNoteActionEdit', 'onboardingNoteActionPin',
+  'onboardingNoteActionSource', 'onboardingNoteActionDelete',
+];
+const BRANCH_INSIDE_KEYS: TranslationKey[] = [
+  'onboardingBranchInsideAbove', 'onboardingBranchInsideBelow', 'onboardingBranchInsideReturn',
+];
+
+function targetSelector(id: OnboardingStepId | undefined, branchId: string | null): string | undefined {
+  if (id === 'branchSidebar') return branchId ? `[data-conversation-id="${branchId}"]` : undefined;
+  const anchor = id ? TARGETS[id] : undefined;
+  return anchor ? `[data-tour="${anchor}"]` : undefined;
+}
 
 /** Latest match = the newest reply. */
-function latestAnchor(anchor: string): HTMLElement | null {
-  const matches = document.querySelectorAll<HTMLElement>(`[data-tour="${anchor}"]`);
+function latestAnchor(selector: string): HTMLElement | null {
+  const matches = document.querySelectorAll<HTMLElement>(selector);
   return matches.length ? matches[matches.length - 1] : null;
 }
 
-function findTarget(id: OnboardingStepId): TourStepProps['target'] {
-  const anchor = TARGETS[id];
-  if (!anchor) return undefined;
+function findTarget(selector: string | undefined): TourStepProps['target'] {
+  if (!selector) return undefined;
   // A missing target centres the step instead.
-  return (() => latestAnchor(anchor)) as () => HTMLElement;
+  return (() => latestAnchor(selector)) as () => HTMLElement;
 }
 
 const TARGET_POLL_MS = 200;
@@ -73,9 +107,8 @@ const TARGET_MAX_WAIT_MS = 8000;
  * stopped moving (replies keep shifting while they reveal), scrolled to the
  * middle of the screen. Steps without a target are ready immediately.
  */
-function useStepTargetReady(stepId: OnboardingStepId | undefined, step: number, enabled: boolean): boolean {
+function useStepTargetReady(anchor: string | undefined, step: number, enabled: boolean): boolean {
   const [readyStep, setReadyStep] = useState<number | null>(null);
-  const anchor = stepId ? TARGETS[stepId] : undefined;
 
   useEffect(() => {
     if (!enabled || !anchor) return undefined;
@@ -133,17 +166,55 @@ function useKeepHighlightAligned(open: boolean): void {
   }, [open]);
 }
 
-export function OnboardingTour({ onAskExample }: { onAskExample: (question: string) => void }) {
+export interface OnboardingTourProps {
+  onAskExample: (question: string) => void;
+  /** Whether the notes page currently replaces the chat. */
+  notesOpen: boolean;
+  onOpenNotes: () => void;
+  onCloseNotes: () => void;
+  /** Make sure the sidebar is visible (it is a closed drawer on phones). */
+  onOpenSidebar: () => void;
+  onOpenConversation: (conversationId: string) => void;
+}
+
+export function OnboardingTour({
+  onAskExample, notesOpen, onOpenNotes, onCloseNotes, onOpenSidebar, onOpenConversation,
+}: OnboardingTourProps) {
   const { styles } = useStyles();
   const { t } = useUserPreferences();
   const user = useAuthStore((state) => state.user);
-  const { active, steps: stepIds, step, waitingForAnswer, next, notify, finish } = useOnboardingStore();
+  const {
+    active, steps: stepIds, step, featureCount, waitingForAnswer, branchId, next, notify, finish,
+  } = useOnboardingStore();
   const isStreaming = useChatStore((state) => state.isStreaming);
+  const activeConversationId = useConversationStore((state) => state.activeConversationId);
   const wasStreaming = useRef(false);
+  const notesOpenRef = useRef(notesOpen);
+  notesOpenRef.current = notesOpen;
   const stepId = stepIds[step];
-  const isTargetReady = useStepTargetReady(stepId, step, active && !waitingForAnswer);
+  const selector = targetSelector(stepId, branchId);
+  const isTargetReady = useStepTargetReady(selector, step, active && !waitingForAnswer);
   const isOpen = active && !waitingForAnswer && isTargetReady;
   useKeepHighlightAligned(isOpen);
+
+  // Entering a step: show the sidebar it points into, or leave the notes page
+  // once the notes steps are over. Runs on step changes only, so a learner who
+  // opens notes on their own later is not interrupted.
+  useEffect(() => {
+    if (!active || !stepId) return;
+    if (SIDEBAR_STEPS.has(stepId)) onOpenSidebar();
+    if (notesOpenRef.current && stepId !== 'notesEntry' && !NOTES_PAGE_STEPS.has(stepId)) onCloseNotes();
+    // Callbacks are recreated by the parent; the step is what matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, stepId]);
+
+  // Real actions that finish a step.
+  useEffect(() => {
+    if (active && stepId === 'notesEntry' && notesOpen) notify('notes_opened');
+  }, [active, notesOpen, notify, stepId]);
+  useEffect(() => {
+    if (active && stepId === 'branchSidebar' && branchId && activeConversationId === branchId) notify('branch_opened');
+  }, [active, activeConversationId, branchId, notify, stepId]);
 
   // The "ask" step advances on real activity: a stream starts, then finishes.
   useEffect(() => {
@@ -159,6 +230,14 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
   if (!active) return null;
 
   const skip = () => finish('skipped', user);
+  const primaryButton = (label: TranslationKey, onClick: () => void) => (
+    <Button autoInsertSpace={false} type="primary" size="small" onClick={onClick}>{t(label)}</Button>
+  );
+  const pointList = (keys: TranslationKey[]) => (
+    <ul className={styles.points}>
+      {keys.map((key) => <li key={key}>{t(key)}</li>)}
+    </ul>
+  );
   const actions = (primary: React.ReactNode) => (
     <div className={styles.actions}>
       <Button autoInsertSpace={false} type="text" size="small" onClick={skip}>{t('onboardingSkip')}</Button>
@@ -178,7 +257,7 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
     },
     featuresIntro: {
       title: t('onboardingFeaturesTitle'),
-      description: t('onboardingFeaturesBody', { count: Math.max(stepIds.length - 2, 1) }),
+      description: t('onboardingFeaturesBody', { count: Math.max(featureCount, 1) }),
       actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingFeaturesStart')}</Button>),
     },
     ask: {
@@ -200,10 +279,49 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
       description: t('onboardingNoteBody'),
       actions: actions(<Button autoInsertSpace={false} size="small" onClick={next}>{t('onboardingNext')}</Button>),
     },
+    notesEntry: {
+      title: t('onboardingNotesEntryTitle'),
+      description: t('onboardingNotesEntryBody'),
+      actions: actions(primaryButton('onboardingOpenForMe', onOpenNotes)),
+    },
+    notesFilters: {
+      title: t('onboardingNotesFiltersTitle'),
+      description: t('onboardingNotesFiltersBody'),
+      actions: actions(primaryButton('onboardingNext', next)),
+    },
+    noteActions: {
+      title: t('onboardingNoteActionsTitle'),
+      description: (
+        <div className={styles.body}>
+          <span>{t('onboardingNoteActionsBody')}</span>
+          {pointList(NOTE_ACTION_KEYS)}
+        </div>
+      ),
+      actions: actions(primaryButton('onboardingBackToChat', next)),
+    },
     replyMore: {
       title: t('onboardingBranchTitle'),
-      description: t('onboardingBranchBody'),
-      actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingGotIt')}</Button>),
+      description: (
+        <div className={styles.body}>
+          <span>{t('onboardingBranchBody')}</span>
+          <span className={styles.lead}>{t('onboardingBranchTry')}</span>
+        </div>
+      ),
+      actions: actions(<Button autoInsertSpace={false} size="small" onClick={next}>{t('onboardingNext')}</Button>),
+    },
+    branchSidebar: {
+      title: t('onboardingBranchSidebarTitle'),
+      description: t('onboardingBranchSidebarBody'),
+      actions: actions(primaryButton('onboardingOpenForMe', () => { if (branchId) onOpenConversation(branchId); })),
+    },
+    branchInside: {
+      title: t('onboardingBranchInsideTitle'),
+      description: (
+        <div className={styles.body}>
+          {pointList(BRANCH_INSIDE_KEYS)}
+        </div>
+      ),
+      actions: actions(primaryButton('onboardingGotIt', next)),
     },
     composerPlus: {
       title: t('onboardingPlusTitle'),
@@ -225,7 +343,7 @@ export function OnboardingTour({ onAskExample }: { onAskExample: (question: stri
   const steps: TourStepProps[] = stepIds.map((id) => {
     const { actions: _actions, ...step } = content[id];
     void _actions;
-    return { ...step, target: findTarget(id) };
+    return { ...step, target: findTarget(targetSelector(id, branchId)) };
   });
 
   return (

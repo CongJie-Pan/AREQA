@@ -423,6 +423,7 @@ export function ConversationList({
                   trigger={['contextMenu']}
                 >
                   <div
+                    data-conversation-id={conv.id}
                     className={conv.id === activeId
                       ? 'areqa-conversation-item areqa-conversation-item-active'
                       : 'areqa-conversation-item'}

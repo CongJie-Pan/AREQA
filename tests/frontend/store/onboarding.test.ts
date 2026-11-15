@@ -16,7 +16,7 @@ describe('onboarding store', () => {
     window.localStorage.clear();
     updateUser.mockClear();
     sendOnboardingEvent.mockClear();
-    useOnboardingStore.setState({ active: false, step: 0, waitingForAnswer: false });
+    useOnboardingStore.setState({ active: false, step: 0, waitingForAnswer: false, seen: [], branchId: null });
   });
 
   it('treats an account record or a local record as already seen', () => {
@@ -36,6 +36,57 @@ describe('onboarding store', () => {
     expect(useOnboardingStore.getState()).toMatchObject({ step: 2, waitingForAnswer: false });
     store.notify('note_added');
     expect(useOnboardingStore.getState().step).toBe(3);
+  });
+
+  const stepIdNow = () => {
+    const { steps, step } = useOnboardingStore.getState();
+    return steps[step];
+  };
+  const goTo = (id: string) => {
+    useOnboardingStore.setState((state) => ({ step: state.steps.indexOf(id as never) }));
+  };
+
+  it('walks from a saved note to the notes page and its note actions', () => {
+    const store = useOnboardingStore.getState();
+    store.start();
+    goTo('addNote');
+    store.notify('note_added');
+    expect(stepIdNow()).toBe('notesEntry');
+    store.notify('notes_opened');
+    expect(stepIdNow()).toBe('notesFilters');
+    store.next();
+    expect(stepIdNow()).toBe('noteActions');
+    store.next();
+    expect(stepIdNow()).toBe('replyMore');
+  });
+
+  it('skips the note-card step when no note was saved during the tour', () => {
+    const store = useOnboardingStore.getState();
+    store.start();
+    goTo('addNote');
+    store.next();
+    store.notify('notes_opened');
+    store.next();
+    expect(stepIdNow()).toBe('replyMore');
+  });
+
+  it('follows a real branch into the sidebar and inside it', () => {
+    const store = useOnboardingStore.getState();
+    store.start();
+    goTo('replyMore');
+    store.notify('branch_created', { conversationId: 'branch-1' });
+    expect(stepIdNow()).toBe('branchSidebar');
+    expect(useOnboardingStore.getState().branchId).toBe('branch-1');
+    store.notify('branch_opened');
+    expect(stepIdNow()).toBe('branchInside');
+  });
+
+  it('skips the branch walkthrough when the learner moves on without branching', () => {
+    const store = useOnboardingStore.getState();
+    store.start();
+    goTo('replyMore');
+    store.next();
+    expect(stepIdNow()).toBe('composerPlus');
   });
 
   it('ignores events that do not belong to the current step', () => {
@@ -58,7 +109,10 @@ describe('onboarding store', () => {
   it('builds a short tour of only the unused features for existing learners', () => {
     useOnboardingStore.getState().start('features', ['addNote', 'composerPlus']);
     expect(useOnboardingStore.getState()).toMatchObject({
-      mode: 'features', steps: ['featuresIntro', 'addNote', 'composerPlus', 'finish'], step: 0,
+      mode: 'features',
+      steps: ['featuresIntro', 'addNote', 'notesEntry', 'notesFilters', 'noteActions', 'composerPlus', 'finish'],
+      step: 0,
+      featureCount: 2,
     });
 
     useOnboardingStore.getState().finish('completed', user());
@@ -74,9 +128,9 @@ describe('onboarding store', () => {
     store.finish('skipped', user());
 
     expect(sendOnboardingEvent.mock.calls.map(([event]) => event)).toEqual([
-      { event: 'started', mode: 'full', step: 'welcome', stepIndex: 0, stepCount: 6 },
-      { event: 'step_viewed', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 6 },
-      { event: 'finished', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 6, outcome: 'skipped' },
+      { event: 'started', mode: 'full', step: 'welcome', stepIndex: 0, stepCount: 11 },
+      { event: 'step_viewed', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 11 },
+      { event: 'finished', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 11, outcome: 'skipped' },
     ]);
   });
 });

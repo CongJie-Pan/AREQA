@@ -112,7 +112,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const { t, language } = useUserPreferences();
   const {
     isOpen: sidebarOpen, isMobile, desktopCollapsed, mobileOpen,
-    toggle: toggleSidebar, collapseDesktop, closeMobile: closeSidebar,
+    toggle: toggleSidebar, open: openSidebar, collapseDesktop, closeMobile: closeSidebar,
   } = useSidebarState();
   const sidebarId = React.useId();
   const sidebarResize = useSidebarResize(collapseDesktop);
@@ -632,6 +632,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
       useConversationStore.setState((state) => ({
         conversations: [branch, ...state.conversations.filter((entry) => entry.id !== branch.id)],
       }));
+      useOnboardingStore.getState().notify('branch_created', { conversationId: branch.id });
     } catch {
       antMessageApi.error(t('conversationBranchFailed'));
     } finally {
@@ -761,7 +762,19 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   return (
     <div className={cx('areqa-chat-shell', styles.container, className)}>
-      <OnboardingTour onAskExample={(question) => { void handleSend(question); }} />
+      <OnboardingTour
+        onAskExample={(question) => { void handleSend(question); }}
+        notesOpen={gumPanelType === 'notes'}
+        onOpenNotes={() => {
+          setGumPanelType('notes');
+          closeSidebar();
+        }}
+        onCloseNotes={() => setGumPanelType(null)}
+        onOpenSidebar={openSidebar}
+        onOpenConversation={(conversationId) => {
+          void switchConversation(conversationId).then(handleConversationSelect);
+        }}
+      />
       {/* Sidebar Overlay (mobile) */}
       {mobileOpen && (
         <div className="areqa-chat-sidebar-overlay" onClick={closeSidebar} />

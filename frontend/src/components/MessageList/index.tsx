@@ -33,13 +33,13 @@ interface BranchDestination {
   onOpen?: () => void;
 }
 
-function BranchDivider({ label, title, onOpen }: BranchDestination) {
+function BranchDivider({ label, title, onOpen, tour }: BranchDestination & { tour?: string }) {
   const { styles } = useStyles();
   const text = `${label} · ${title}`;
   const content = <><BranchIcon /><span>{text}</span></>;
 
   return (
-    <div className={styles.branchDivider}>
+    <div className={styles.branchDivider} data-tour={tour}>
       {onOpen ? (
         <button type="button" className={styles.branchDestination} title={text} onClick={onOpen}>
           {content}
@@ -538,7 +538,7 @@ export function MessageList({
                     : undefined
                 }
               />
-              {branchBoundary?.messageId === message.id && <BranchDivider {...branchBoundary} />}
+              {branchBoundary?.messageId === message.id && <BranchDivider {...branchBoundary} tour="branch-boundary" />}
             </React.Fragment>
           );
         })}
