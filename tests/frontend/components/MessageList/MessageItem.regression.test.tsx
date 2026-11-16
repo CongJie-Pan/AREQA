@@ -216,7 +216,9 @@ describe('MessageItem Quote Alignment Regression', () => {
         </UserPreferencesProvider>,
       );
 
-      expect(await screen.findByRole('button', { name: 'Copy formula' })).toHaveTextContent('Copy formula');
+      const copyFormula = await screen.findByRole('button', { name: 'Copy formula' });
+      expect(copyFormula).toHaveClass('areqa-markdown-math-copy');
+      expect(copyFormula).not.toHaveTextContent('Copy formula');
     } finally {
       window.localStorage.removeItem('areqa:interface-language');
     }

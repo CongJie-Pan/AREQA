@@ -955,6 +955,51 @@ content: css`
     white-space: nowrap;
   }
 
+  /* Icon-only copy for display math; revealed on hover like table actions. */
+  .katex-display:has(> .areqa-markdown-math-copy) {
+    padding-right: 36px;
+  }
+
+  .areqa-markdown-math-copy {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--areqa-message-muted-text);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(-50%);
+    transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+
+    &:hover {
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--areqa-message-text);
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid rgba(216, 162, 92, 0.62);
+      outline-offset: 2px;
+    }
+  }
+
+  .katex-display:hover > .areqa-markdown-math-copy {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .areqa-markdown-math-copy {
+      opacity: 1;
+    }
+  }
+
   .areqa-markdown-code-copy {
     display: inline-flex;
     width: 30px;

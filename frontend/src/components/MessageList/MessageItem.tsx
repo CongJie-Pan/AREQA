@@ -44,6 +44,7 @@ import { AttachmentToggleList } from './AttachmentToggleList';
 import { createLegacyAttachmentMetadata, splitLegacyAttachmentMarker } from '@/utils/attachments';
 import { useUserPreferences, type InterfaceLanguage, type TranslationKey } from '@/contexts/UserPreferencesContext';
 import { REQUEST_MODE_ATTRIBUTE, requestModesClipboardHtml } from '@/utils/requestModeClipboard';
+import { selectionToMarkdown } from '@/utils/selectionMarkdown';
 import { prepareReadAloudText, startReadAloudPlayback } from '@/services/speech/readAloud';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { logger } from '@/utils/logger';
@@ -618,24 +619,16 @@ const createMarkdownComponents = (
           style={{ display: 'block', position: 'relative', ...((props as { style?: React.CSSProperties }).style || {}) }}
         >
           {children}
-          <button
-            type="button"
-            aria-label={formulaCopyLabel}
-            onClick={() => onCopyMath(latex)}
-            style={{
-              display: 'block',
-              margin: '6px 0 0 auto',
-              padding: '3px 8px',
-              border: '1px solid rgba(216, 162, 92, 0.45)',
-              borderRadius: '4px',
-              background: 'rgba(216, 162, 92, 0.12)',
-              color: '#d8a25c',
-              cursor: 'pointer',
-              fontSize: '11px',
-            }}
-          >
-            {formulaCopyLabel}
-          </button>
+          <Tooltip title={formulaCopyLabel}>
+            <button
+              type="button"
+              aria-label={formulaCopyLabel}
+              className="areqa-markdown-math-copy"
+              onClick={() => onCopyMath(latex)}
+            >
+              <Copy size={15} aria-hidden="true" />
+            </button>
+          </Tooltip>
         </span>
       );
     }
@@ -2230,6 +2223,15 @@ export const MessageItem = memo(function MessageItem({
     }
   }, [displayContent, isUser, message.requestModes, antMessageApi, t]);
 
+  // Selecting part of a reply and copying keeps its Markdown and TeX source
+  // instead of the browser's flattened text of the rendered KaTeX.
+  const handleBubbleCopy = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
+    const markdown = selectionToMarkdown(window.getSelection(), event.currentTarget);
+    if (!markdown) return;
+    event.clipboardData.setData('text/plain', markdown);
+    event.preventDefault();
+  }, []);
+
   const stopReadAloud = useCallback(() => {
     readAloudAbortRef.current?.abort();
     readAloudAbortRef.current = null;
@@ -2736,6 +2738,7 @@ export const MessageItem = memo(function MessageItem({
                 ref={setBubbleRef}
                 className={cx(styles.bubble, styles.assistantBubble, styles.assistantBubbleReveal)}
                 data-role="assistant-bubble"
+                onCopy={handleBubbleCopy}
               >
                 {/* Message Content */}
                 <div

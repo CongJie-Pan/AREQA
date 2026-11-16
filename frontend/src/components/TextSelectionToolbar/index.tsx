@@ -7,6 +7,7 @@ import { useChatStore } from '@/store/chat';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { sendMessage } from '@/services/chat';
 import { useTextSelection } from '@/hooks/useTextSelection';
+import { selectionToMarkdown } from '@/utils/selectionMarkdown';
 import { useStyles } from './styles';
 
 function formatSelectedTextAsQuote(text: string): string {
@@ -41,7 +42,7 @@ export function TextSelectionToolbar() {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(selectionToMarkdown(window.getSelection()) ?? text);
       message.success(t('copyMessageSuccess'));
       clearSelection();
     } catch {

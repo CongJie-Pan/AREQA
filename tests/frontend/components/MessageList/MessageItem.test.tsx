@@ -1,6 +1,6 @@
 import React from 'react';
 import { App } from 'antd';
-import { act, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { act, createEvent, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageItem } from '../../../../frontend/src/components/MessageList/MessageItem';
 import { UserPreferencesProvider } from '../../../../frontend/src/contexts/UserPreferencesContext';
@@ -1055,6 +1055,31 @@ describe('MessageItem Integration with RAGStatusPanel', () => {
 
     expect(container.querySelector('.katex')).toBeInTheDocument();
     expect(container.querySelector('annotation')).toHaveTextContent('\\theta');
+  });
+
+  it('copies a selected part of an assistant reply as Markdown with TeX source', () => {
+    const { container } = render(
+      <MessageItem
+        message={{
+          ...baseMessage,
+          content: '面積是 **$\\pi r^2$**',
+        }}
+      />
+    );
+
+    const bubble = container.querySelector('[data-role="assistant-bubble"]') as HTMLElement;
+    const range = document.createRange();
+    range.selectNodeContents(bubble.querySelector('strong')!);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+
+    const setData = vi.fn();
+    const copyEvent = createEvent.copy(bubble, { clipboardData: { setData } });
+    fireEvent(bubble, copyEvent);
+
+    expect(setData).toHaveBeenCalledWith('text/plain', '$\\pi r^2$');
+    expect(copyEvent.defaultPrevented).toBe(true);
+    window.getSelection()!.removeAllRanges();
   });
 
   it('renders Markdown tables with floating copy, CSV download, and expand actions', () => {
