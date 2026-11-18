@@ -142,6 +142,9 @@ export type TranslationKey =
   | 'topicFeasData'
   | 'topicFeasAdvisor'
   | 'topicFeasPriorWork'
+  | 'topicFeasEthics'
+  | 'topicCardAiProposed'
+  | 'topicCardAiProposedHint'
   | 'topicFeasOk'
   | 'topicFeasUnsure'
   | 'topicFeasBlocked'
@@ -577,7 +580,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicStageSub2: "一個現成工具、現有論文或研究成果，現在就能解決它嗎？想出最偷懶的解法，再說明它夠不夠。",
     topicStageSub3: "拿掉工具和案例，把具體題目往上抽一層，寫出你的「母問題」。",
     topicStageSub4: "題目裡每個關鍵詞，要用什麼證據看出來？結果有沒有可能證明你錯了？",
-    topicStageSub5: "以你現在的時間、資源、場域和指導教授，做得到嗎？有人做過了嗎？",
+    topicStageSub5: "以你現在的時間、資源、場域和指導教授，做得到嗎？有人做過了嗎？合乎研究倫理嗎？",
     topicCardSuggestions: "AI 建議（參考用，請自己查證）",
     topicCardKeywords: "可以搜尋的關鍵字",
     topicCardKeywordCopy: "複製關鍵字：{keyword}",
@@ -589,6 +592,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicFeasData: "資料與場域",
     topicFeasAdvisor: "指導教授與方法",
     topicFeasPriorWork: "有沒有人做過",
+    topicFeasEthics: "研究倫理",
+    topicCardAiProposed: "AI 提議",
+    topicCardAiProposedHint: "這個候選是 AI 列出的；用你自己的話改寫後，就會變成你的想法。",
     topicFeasOk: "可以",
     topicFeasUnsure: "還不確定",
     topicFeasBlocked: "有困難",
@@ -991,7 +997,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicStageSub2: "一个现成工具、现有论文或研究成果，现在就能解决它吗？想出最偷懒的解法，再说明它够不够。",
     topicStageSub3: "拿掉工具和案例，把具体题目往上抽一层，写出你的「母问题」。",
     topicStageSub4: "题目里每个关键词，要用什么证据看出来？结果有没有可能证明你错了？",
-    topicStageSub5: "以你现在的时间、资源、场域和指导教授，做得到吗？有人做过了吗？",
+    topicStageSub5: "以你现在的时间、资源、场域和指导教授，做得到吗？有人做过了吗？合乎研究伦理吗？",
     topicCardSuggestions: "AI 建议（参考用，请自己查证）",
     topicCardKeywords: "可以搜索的关键词",
     topicCardKeywordCopy: "复制关键词：{keyword}",
@@ -1003,6 +1009,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicFeasData: "资料与场域",
     topicFeasAdvisor: "指导教授与方法",
     topicFeasPriorWork: "有没有人做过",
+    topicFeasEthics: "研究伦理",
+    topicCardAiProposed: "AI 提议",
+    topicCardAiProposedHint: "这个候选是 AI 列出的；用你自己的话改写后，就会变成你的想法。",
     topicFeasOk: "可以",
     topicFeasUnsure: "还不确定",
     topicFeasBlocked: "有困难",
@@ -1405,7 +1414,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicStageSub2: "Would an existing tool, paper, or research result already solve it? Name the laziest solution and whether it is enough.",
     topicStageSub3: "Remove the tool and the example, step up one level, and write your core question.",
     topicStageSub4: "What evidence will show each key term? Could the result prove you wrong?",
-    topicStageSub5: "Can you do it with your time, resources, setting, and advisor? Has someone already done it?",
+    topicStageSub5: "Can you do it with your time, resources, setting, and advisor? Has someone already done it? Is it ethical?",
     topicCardSuggestions: "AI suggestions (for reference; check them yourself)",
     topicCardKeywords: "Keywords to search",
     topicCardKeywordCopy: "Copy keyword: {keyword}",
@@ -1417,6 +1426,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicFeasData: "Data and setting",
     topicFeasAdvisor: "Advisor and method",
     topicFeasPriorWork: "Done before?",
+    topicFeasEthics: "Research ethics",
+    topicCardAiProposed: "AI-proposed",
+    topicCardAiProposedHint: "The AI listed this candidate. Put it in your own words to make it yours.",
     topicFeasOk: "OK",
     topicFeasUnsure: "Not sure yet",
     topicFeasBlocked: "Difficult",

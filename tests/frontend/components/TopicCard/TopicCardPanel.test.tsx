@@ -83,16 +83,17 @@ describe('TopicCardPanel', () => {
     expect(screen.getByText('版本 v4')).toBeInTheDocument();
   });
 
-  it('shows the four feasibility checks at stage 5, with unanswered ones marked', () => {
+  it('shows the five feasibility checks at stage 5, including ethics, with unanswered ones marked', () => {
     renderPanel({ state: state({ stage: 5, card: { ...fullCard, feasibility: [
       { key: 'data', status: 'blocked', note: '韓文資料讀不懂' }, { key: 'time', status: 'ok', note: '' },
     ] } }) });
 
     expect(screen.getByText('可行性檢查')).toBeInTheDocument();
     const rows = document.querySelectorAll('.areqa-topic-card-feasibility li');
-    expect([...rows].map((row) => row.getAttribute('data-status'))).toEqual(['ok', 'blocked', 'missing', 'missing']);
+    expect([...rows].map((row) => row.getAttribute('data-status'))).toEqual(['ok', 'blocked', 'missing', 'missing', 'missing']);
+    expect(screen.getByText('研究倫理')).toBeInTheDocument();
     expect(screen.getByText('韓文資料讀不懂')).toBeInTheDocument();
-    expect(screen.getAllByText('⚠️ 還沒討論')).toHaveLength(2);
+    expect(screen.getAllByText('⚠️ 還沒討論')).toHaveLength(3);
     expect(screen.getByText('❌ 有困難')).toBeInTheDocument();
   });
 
@@ -178,6 +179,17 @@ describe('TopicCardPanel', () => {
     expect(screen.queryByRole('button', { name: '下一階段 →' })).not.toBeInTheDocument();
     // The stepper still lets the learner revisit any stage.
     expect(screen.getByRole('button', { name: '切換到第 3 階段：你真正想知道的是什麼？' })).toBeEnabled();
+  });
+
+  it('tags candidates the AI proposed, in the draft and on the card', () => {
+    renderPanel({ state: state({
+      card: { ...empty, candidates: ['AI 列的題目', '我自己的題目'], ai_candidates: ['AI 列的題目'] },
+      pending: { card: { ...empty, candidates: ['AI 新題目'], ai_candidates: ['AI 新題目'] }, notes: [] },
+    }) });
+    const tags = screen.getAllByText('AI 提議');
+    expect(tags).toHaveLength(2);
+    expect(tags[0]).toHaveAttribute('title', '這個候選是 AI 列出的；用你自己的話改寫後，就會變成你的想法。');
+    expect(screen.getByText('我自己的題目').parentElement).not.toHaveTextContent('AI 提議');
   });
 
   it('offers branch exploration per adopted candidate', () => {

@@ -810,6 +810,20 @@ button.areqa-topic-finder-badge {
 
 .areqa-topic-card-candidates li span:first-child { margin-right: 6px; }
 
+/* Marks a candidate the AI listed, until the learner rewords it. */
+.areqa-topic-card-ai-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border: 1px dashed var(--muted-foreground);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: middle;
+  cursor: help;
+}
+
 .areqa-topic-card-explore {
   display: inline-flex;
   align-items: center;

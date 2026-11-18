@@ -21,6 +21,7 @@ export function escapeMarkdown(value: string): string {
 
 const FEASIBILITY_LABELS = {
   time: 'topicFeasTime', data: 'topicFeasData', advisor: 'topicFeasAdvisor', prior_work: 'topicFeasPriorWork',
+  ethics: 'topicFeasEthics',
 } as const;
 const FEASIBILITY_STATUS = {
   ok: ['✅', 'topicFeasOk'], unsure: ['⚠️', 'topicFeasUnsure'], blocked: ['❌', 'topicFeasBlocked'],
@@ -53,7 +54,9 @@ export function topicCardToMarkdown(state: TopicCardState, t: Translate): string
     card.mother_question ? escapeMarkdown(card.mother_question) : '—',
     '',
     `## ${t('topicCardCandidates')}`,
-    ...(card.candidates.length ? card.candidates.map((item) => `- ${escapeMarkdown(item)}`) : ['—']),
+    ...(card.candidates.length
+      ? card.candidates.map((item) => `- ${escapeMarkdown(item)}${card.ai_candidates?.includes(item) ? ` (${t('topicCardAiProposed')})` : ''}`)
+      : ['—']),
     '',
     `## ${t('topicCardOperationalization')}`,
     ...(card.operationalization.length

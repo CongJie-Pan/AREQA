@@ -39,6 +39,7 @@ type FieldKey = 'pain_point' | 'mother_question' | 'candidates' | 'operationaliz
 
 export const FEASIBILITY_LABEL_KEYS: Record<TopicFeasibilityKey, TranslationKey> = {
   time: 'topicFeasTime', data: 'topicFeasData', advisor: 'topicFeasAdvisor', prior_work: 'topicFeasPriorWork',
+  ethics: 'topicFeasEthics',
 };
 
 export const FEASIBILITY_STATUS: Record<TopicFeasibilityItem['status'], { icon: string; key: TranslationKey }> = {
@@ -133,6 +134,9 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
           {card.candidates.map((item) => (
             <li key={item}>
               <span>{item}</span>
+              {card.ai_candidates?.includes(item) && (
+                <span className="areqa-topic-card-ai-tag" title={t('topicCardAiProposedHint')}>{t('topicCardAiProposed')}</span>
+              )}
               {confirmed && onExploreCandidate && (
                 <button
                   type="button"

@@ -16,6 +16,8 @@ export interface TopicCardContent {
   pain_point: string;
   mother_question: string;
   candidates: string[];
+  /** Candidates the AI proposed that the learner has not put in their own words; older cards may not have it. */
+  ai_candidates?: string[];
   operationalization: { term: string; measure: string }[];
   /** Stage-5 checks; older cards may not have it. */
   feasibility?: TopicFeasibilityItem[];
@@ -23,8 +25,8 @@ export interface TopicCardContent {
   objections: string[];
 }
 
-export type TopicFeasibilityKey = 'time' | 'data' | 'advisor' | 'prior_work';
-export const TOPIC_FEASIBILITY_KEYS: TopicFeasibilityKey[] = ['time', 'data', 'advisor', 'prior_work'];
+export type TopicFeasibilityKey = 'time' | 'data' | 'advisor' | 'prior_work' | 'ethics';
+export const TOPIC_FEASIBILITY_KEYS: TopicFeasibilityKey[] = ['time', 'data', 'advisor', 'prior_work', 'ethics'];
 
 export interface TopicFeasibilityItem {
   key: TopicFeasibilityKey;

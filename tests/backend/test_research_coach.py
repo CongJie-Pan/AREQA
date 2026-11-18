@@ -122,7 +122,7 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
         assert "may jump forward or back" in prompt
         assert "Do not claim you have searched" in prompt
         assert "Could this problem be solved by new technology or by events within a few years?" in prompt
-        assert "Stage 5 (feasibility)" in prompt
+        assert "Stage 5 (feasibility)" in prompt and "research ethics" in prompt
         assert "Do not generate images" in prompt
         assert "Runtime prompt payload" not in prompt
     finally:

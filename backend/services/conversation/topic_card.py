@@ -44,8 +44,8 @@ STAGE_FOCUS = {
         "或請他自己打開輸入框旁的「網路搜尋」再問。你不要自己宣稱已經查過或某個解法存在。"),
     3: "第 3 階段（母問題）：拿掉工具和案例，學習者真正想知道的是什麼？請他把具體題目往上抽一層，自己寫出母問題。",
     4: "第 4 階段（怎麼證明）：題目裡每個關鍵詞，要用什麼證據看出來？結果有沒有可能證明自己錯了？無法量化時，改看它造成的行為變化。",
-    5: ("第 5 階段（做得到嗎）：用反問陪學習者一起評估四件事——時間、資料與場域、指導教授與方法、有沒有人做過；"
-        "一次問一項，由他回答，不要替他判斷可不可行。"),
+    5: ("第 5 階段（做得到嗎）：用反問陪學習者一起評估五件事——時間、資料與場域、指導教授與方法、有沒有人做過、"
+        "研究倫理（受試者、知情同意、是否需要送倫理審查、資料能否合法使用）；一次問一項，由他回答，不要替他判斷可不可行。"),
     6: "學習者已完成五個階段。可以協助整理研究問題的最終表述與下一步，但不要宣告研究一定可行。",
 }
 
@@ -74,8 +74,8 @@ class DiscardedTopic(BaseModel):
     can_return: bool = False
 
 
-FeasibilityKey = Literal["time", "data", "advisor", "prior_work"]
-FEASIBILITY_KEYS: tuple[str, ...] = ("time", "data", "advisor", "prior_work")
+FeasibilityKey = Literal["time", "data", "advisor", "prior_work", "ethics"]
+FEASIBILITY_KEYS: tuple[str, ...] = ("time", "data", "advisor", "prior_work", "ethics")
 
 
 class FeasibilityItem(BaseModel):
@@ -94,8 +94,10 @@ class TopicCard(BaseModel):
     pain_point: str = Field(default="", max_length=300)
     mother_question: str = Field(default="", max_length=400)
     candidates: list[str] = Field(default_factory=list, max_length=8)
+    # Candidates the tutor proposed and the learner has not yet put in their own words.
+    ai_candidates: list[str] = Field(default_factory=list, max_length=8)
     operationalization: list[OperationalTerm] = Field(default_factory=list, max_length=12)
-    feasibility: list[FeasibilityItem] = Field(default_factory=list, max_length=4)
+    feasibility: list[FeasibilityItem] = Field(default_factory=list, max_length=5)
     discarded: list[DiscardedTopic] = Field(default_factory=list, max_length=20)
     objections: list[str] = Field(default_factory=list, max_length=20)
 
@@ -119,8 +121,9 @@ class CardPatch(BaseModel):
     pain_point: str | None = Field(default=None, max_length=300)
     mother_question: str | None = Field(default=None, max_length=400)
     candidates: list[str] | None = Field(default=None, max_length=8)
+    ai_candidates: list[str] | None = Field(default=None, max_length=8)
     operationalization: list[OperationalTerm] | None = Field(default=None, max_length=12)
-    feasibility: list[FeasibilityItem] | None = Field(default=None, max_length=4)
+    feasibility: list[FeasibilityItem] | None = Field(default=None, max_length=5)
     discarded_add: list[DiscardedTopic] = Field(default_factory=list, max_length=5)
     objections_add: list[str] = Field(default_factory=list, max_length=5)
     keywords: list[str] | None = Field(default=None, max_length=8)
@@ -131,7 +134,7 @@ class CardPatch(BaseModel):
     def has_card_change(self) -> bool:
         return not (
             self.pain_point is None and self.mother_question is None and self.candidates is None
-            and self.operationalization is None and self.feasibility is None
+            and self.ai_candidates is None and self.operationalization is None and self.feasibility is None
             and not self.discarded_add and not self.objections_add
         )
 
@@ -203,10 +206,14 @@ def apply_patch(card: TopicCard, patch: CardPatch) -> TopicCard:
         if item.topic not in known:
             discarded.append(item)
             known.add(item.topic)
+    candidates = _clean_list(patch.candidates, 8) if patch.candidates is not None else card.candidates
+    ai_source = _clean_list(patch.ai_candidates, 8) if patch.ai_candidates is not None else card.ai_candidates
     return TopicCard(
         pain_point=(patch.pain_point.strip() if patch.pain_point is not None else card.pain_point),
         mother_question=(patch.mother_question.strip() if patch.mother_question is not None else card.mother_question),
-        candidates=_clean_list(patch.candidates, 8) if patch.candidates is not None else card.candidates,
+        candidates=candidates,
+        # AI origin only applies to candidates still on the list.
+        ai_candidates=[item for item in ai_source if item in candidates],
         operationalization=(patch.operationalization if patch.operationalization is not None else card.operationalization),
         feasibility=_merge_feasibility(card.feasibility, patch.feasibility),
         discarded=discarded[-20:],
@@ -226,7 +233,7 @@ _OPTIONAL_FIELDS = ("pain_point", "mother_question", "candidates", "operationali
 def allowed_patch_fields(stage: int) -> set[str]:
     """Keys the AI may propose at this stage (pain point and candidates are always open)."""
 
-    fields = {"pain_point", "candidates", "discarded_add", "objections_add"}
+    fields = {"pain_point", "candidates", "ai_candidates", "discarded_add", "objections_add"}
     if stage <= 2:
         fields.add("keywords")
     if stage == FIRST_STAGE:
@@ -326,13 +333,15 @@ def render_card_prompt(state: TopicCardState | None) -> str:
     if card.mother_question:
         lines.append(f"母問題：{card.mother_question}")
     if card.candidates:
-        lines.append("候選題目：" + "；".join(card.candidates))
+        lines.append("候選題目：" + "；".join(
+            f"{item}（AI 提議）" if item in card.ai_candidates else item for item in card.candidates))
     if card.operationalization:
         lines.append("操作化：" + "；".join(
             f"{item.term}→{item.measure or '❗尚未填'}" for item in card.operationalization))
     if card.feasibility:
         status = {"ok": "可以", "unsure": "還不確定", "blocked": "有困難"}
-        names = {"time": "時間", "data": "資料與場域", "advisor": "指導教授與方法", "prior_work": "有沒有人做過"}
+        names = {"time": "時間", "data": "資料與場域", "advisor": "指導教授與方法", "prior_work": "有沒有人做過",
+                 "ethics": "研究倫理"}
         lines.append("可行性：" + "；".join(
             f"{names[item.key]}→{status[item.status]}{('（' + item.note + '）') if item.note else ''}"
             for item in card.feasibility))
@@ -351,8 +360,10 @@ proposes changes. Keys (all optional except change_note):
 - pain_point: string, the learner's own one-sentence pain point, only if they stated or revised it.
 - mother_question: string, the core question the learner settled on, only if they stated it.
 - candidates: array of strings, the full current list of candidate topics still under consideration.
+- ai_candidates: array of strings, the subset of candidates that the TUTOR proposed and the learner has not restated in
+  their own words; send it whenever you send candidates. A candidate the learner wrote or rephrased is not listed.
 - operationalization: array of {term, measure}; measure is "" when the learner has not said how to measure it.
-- feasibility: array of {key: "time"|"data"|"advisor"|"prior_work", status: "ok"|"unsure"|"blocked", note}; only keys
+- feasibility: array of {key: "time"|"data"|"advisor"|"prior_work"|"ethics", status: "ok"|"unsure"|"blocked", note}; only keys
   the learner answered, with the status the LEARNER's own answer implies and a short note in their words.
 - discarded_add: array of {topic, filter (the stage 1-5 where it was dropped, or 0), reason, can_return}; only when the learner agreed to drop a candidate.
 - objections_add: array of strings; only objections or doubts the LEARNER raised in their own words, never the tutor's.

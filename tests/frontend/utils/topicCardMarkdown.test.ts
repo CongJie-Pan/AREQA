@@ -7,7 +7,7 @@ const labels: Record<string, string> = {
   topicStageTitle1: 'Notice a pain point, then diverge', topicStageTitle4: 'How will you show it?',
   topicCardFeasibility: 'Feasibility check', topicFeasTime: 'Time', topicFeasData: 'Data and setting',
   topicFeasAdvisor: 'Advisor and method', topicFeasPriorWork: 'Done before?', topicFeasOk: 'OK',
-  topicFeasUnsure: 'Not sure yet', topicFeasBlocked: 'Difficult', topicFeasMissing: 'Not discussed yet',
+  topicFeasUnsure: 'Not sure yet', topicFeasBlocked: 'Difficult', topicFeasMissing: 'Not discussed yet', topicFeasEthics: 'Research ethics', topicCardAiProposed: 'AI-proposed',
   topicCardPainPoint: 'What you are stuck on', topicCardMotherQuestion: 'What you really want to know',
   topicCardCandidates: 'Candidate topics', topicCardOperationalization: 'How you will show it',
   topicCardMeasureMissing: 'No evidence chosen yet', topicCardDiscarded: 'Set-aside topics',
@@ -25,7 +25,7 @@ describe('topic card Markdown', () => {
       stage: 4, version: 4,
       card: {
         pain_point: 'AREQA feels like Gemini', mother_question: 'How do AI replies shape reasoning',
-        candidates: ['Reply strategy'], operationalization: [{ term: 'Depth', measure: '' }, { term: 'Engagement', measure: 'follow-ups' }],
+        candidates: ['Reply strategy', 'Question balance'], ai_candidates: ['Question balance'], operationalization: [{ term: 'Depth', measure: '' }, { term: 'Engagement', measure: 'follow-ups' }],
         discarded: [{ topic: 'Memory', filter: 1, reason: 'solved by progress', can_return: true }],
         feasibility: [{ key: 'data', status: 'blocked', note: 'Korean sources' }],
         objections: ['Too many questions annoy me'],
@@ -39,6 +39,9 @@ describe('topic card Markdown', () => {
     expect(markdown).toContain('- Depth: ⚠️ No evidence chosen yet');
     expect(markdown).toContain('- Data and setting: ❌ Difficult · Korean sources');
     expect(markdown).toContain('- Time: ⚠️ Not discussed yet');
+    expect(markdown).toContain('- Research ethics: ⚠️ Not discussed yet');
+    expect(markdown).toContain('- Question balance (AI-proposed)');
+    expect(markdown).toContain('- Reply strategy\n');
     expect(markdown).toContain('- Engagement: follow\\-ups');
     expect(markdown).toContain('- Memory (dropped at stage 1): solved by progress · may return later');
     expect(markdown).toContain('- v1 · Stage 1: pain point');

@@ -138,6 +138,22 @@ def test_apply_patch_dedupes_and_bounds_lists():
     assert result.candidates == ["X", "Y"]
 
 
+def test_ai_candidates_track_origin_and_follow_the_candidate_list():
+    card = apply_patch(TopicCard(), CardPatch(candidates=["AI 題目", "我的題目"], ai_candidates=["AI 題目", "不在清單"]))
+    assert card.ai_candidates == ["AI 題目"]
+    # The learner rephrases the AI candidate; it drops out of both lists.
+    card = apply_patch(card, CardPatch(candidates=["我改寫的題目", "我的題目"]))
+    assert card.ai_candidates == []
+    assert "AI 題目（AI 提議）" in render_card_prompt(TopicCardState(card=TopicCard(candidates=["AI 題目"], ai_candidates=["AI 題目"])))
+
+
+def test_feasibility_includes_research_ethics():
+    card = apply_patch(TopicCard(), CardPatch(feasibility=[FeasibilityItem(key="ethics", status="unsure", note="要訪談官員")]))
+    assert card.feasibility[0].key == "ethics"
+    assert "研究倫理→還不確定（要訪談官員）" in render_card_prompt(TopicCardState(stage=5, card=card))
+    assert "研究倫理" in topic_card.STAGE_FOCUS[5]
+
+
 # --- Unit: prompt and stage rules ------------------------------------------------------------
 
 
