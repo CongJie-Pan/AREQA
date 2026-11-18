@@ -249,6 +249,10 @@ html[lang='en'] body {
 }
 
 .areqa-chat-main {
+  /* Must be in the first stylesheet: the empty-home workspace switch is positioned against
+     this column. Before antd-style injects its rules, it would otherwise centre on the
+     whole viewport (sidebar included) and then jump right. */
+  position: relative;
   flex: 1 1 auto;
   display: flex;
   min-width: 0;
