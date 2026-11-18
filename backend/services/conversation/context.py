@@ -31,7 +31,8 @@ from services.query_policy.classifier import (
     ResponsePolicy,
     default_response_policy,
 )
-from services.conversation.research_coach import render_prompt_profile
+from services.conversation.research_coach import is_research_coach, render_prompt_profile
+from services.conversation.topic_card import load_card_prompt
 
 logger = logging.getLogger(__name__)
 SnapshotLoader = Callable[..., Awaitable[str]]
@@ -159,6 +160,9 @@ class ConversationContextService:
 
         system_prompt += _answer_language_instruction(interface_language, last_user_msg)
         system_prompt += render_prompt_profile(tutor_profile)
+        if is_research_coach(tutor_profile):
+            # The learner-confirmed stage decides which filter the coach may ask about.
+            system_prompt += await load_card_prompt(user_id, conversation_id)
         system_prompt += _example_instruction(interface_language, last_user_msg)
         system_prompt += (
             "\n【工具使用規則】依使用者的需求選擇回答、澄清或已授權的工具。"

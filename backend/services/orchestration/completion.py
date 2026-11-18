@@ -12,7 +12,8 @@ logger = logging.getLogger("backend.services.orchestration_service")
 async def complete_answer(service, *, user_id, conversation_id, last_user_msg, messages,
                           answer_content_accumulator, generated_blocks, planned_image_slots,
                           response_policy, preverified_image_blocks, context_results_obj,
-                          use_rag, use_web_search, interface_language, session, trace, isolated_context=False):
+                          use_rag, use_web_search, interface_language, session, trace, isolated_context=False,
+                          topic_finder=False):
     """Emit answer blocks and suggestions, then enqueue post-turn work.
 
     Yields:
@@ -78,6 +79,15 @@ async def complete_answer(service, *, user_id, conversation_id, last_user_msg, m
         interface_language=interface_language,
     ):
         yield sse_adapter.encode_legacy(event, run_context.run_id)
+
+    if topic_finder and service.client and answer_content_accumulator:
+        from services.conversation.topic_card import schedule_card_refresh
+
+        # Proposes a pending card draft; only the learner's confirmation adopts it.
+        schedule_card_refresh(
+            client=service.client, model=settings.model_policy_classifier, user_id=user_id,
+            conversation_id=conversation_id, messages=messages, answer=answer_content_accumulator,
+        )
 
     if last_user_msg and service.client and not isolated_context:
         from services.memory.gum.runtime import push_reflection_observation

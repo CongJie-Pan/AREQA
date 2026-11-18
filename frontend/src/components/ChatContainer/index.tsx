@@ -8,7 +8,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2, Telescope } from 'lucide-react';
-import { App, Button, Dropdown, Popover, Space, Tooltip } from 'antd';
+import { App, Button, Drawer, Dropdown, Popover, Space, Tooltip } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
@@ -22,6 +22,8 @@ import { MessageList } from '@/components/MessageList';
 import { ImageGenerationLoading } from '@/components/MessageList/ImageGenerationLoading';
 import { ChatInput } from '@/components/ChatInput';
 import { HomeWorkspaceSwitch } from '@/components/WorkspaceSwitch';
+import { TopicCardPanel, topicCardStageLabel } from '@/components/TopicCard';
+import { useTopicCard } from '@/hooks/useTopicCard';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
 import { MailboxPanel } from '@/components/MailboxPanel';
@@ -198,6 +200,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const isTopicFinder = useConversationStore(
     (state) => resolveConversationKind(state, state.activeConversationId) === 'research_coach'
   );
+  // Topic card: server-side per signed-in conversation; a side pane on desktop, a drawer on mobile.
+  const [isTopicCardPaneOpen, setIsTopicCardPaneOpen] = useState(true);
+  const [isTopicCardDrawerOpen, setIsTopicCardDrawerOpen] = useState(false);
   const activeImageRequest = Object.values(imageGenerationRequests ?? {}).find((request) => (
     request.userId === user?.id && request.conversationId === activeConversationId
   ));
@@ -214,6 +219,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
     ? conversations.filter((conversation) =>
       conversation.userId === user?.id && conversation.branchOrigin?.conversationId === activeConversationId)
     : [];
+
+  const topicCard = useTopicCard(activeConversationId, isTopicFinder && Boolean(user) && !isEmpty);
+  const showTopicCard = isTopicFinder && Boolean(user) && !isEmpty && !gumPanelType && !useAvatarSplitLayout;
+  const showTopicCardPane = showTopicCard && !isMobile && isTopicCardPaneOpen;
 
   const toggleLiveTutorMute = useCallback(() => {
     setLiveTutorMuted(!useLiveTutorStore.getState().isMuted);
@@ -897,19 +906,37 @@ export function ChatContainer({ className }: ChatContainerProps) {
               onClose={() => setGumPanelType(null)}
             />
           ) : (
-            <div className={cx(styles.liveTutorWorkspace, useAvatarSplitLayout && styles.liveTutorWorkspaceSplit)}>
+            <div className={cx(
+              styles.liveTutorWorkspace,
+              useAvatarSplitLayout && styles.liveTutorWorkspaceSplit,
+              showTopicCardPane && !sharedView && styles.topicCardWorkspace,
+            )}>
               <div className={cx('areqa-chat-response-pane', styles.responsePane, useAvatarSplitLayout && styles.responsePaneSplit)}>
                 {/* Workspace choice lives at the top of the empty home only. */}
                 {shouldShowEmptyChat && !gumPanelType && !sharedView && !isLiveTutorOpen && <HomeWorkspaceSwitch />}
                 <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
                   {!gumPanelType && !isEmpty && !sharedView && (
                     <>
-                      {isTopicFinder && (
+                      {isTopicFinder && (user ? (
+                        <button
+                          type="button"
+                          className="areqa-topic-finder-badge"
+                          title={t(isMobile || !isTopicCardPaneOpen ? 'topicCardOpen' : 'topicCardClose')}
+                          aria-expanded={isMobile ? isTopicCardDrawerOpen : isTopicCardPaneOpen}
+                          onClick={() => (isMobile
+                            ? setIsTopicCardDrawerOpen((open) => !open)
+                            : setIsTopicCardPaneOpen((open) => !open))}
+                        >
+                          <Telescope size={15} aria-hidden="true" />
+                          <span>{t('workspaceTopicFinder')}</span>
+                          {topicCard.state && <span className="areqa-topic-finder-badge-stage">· {topicCardStageLabel(t, topicCard.state.stage)}</span>}
+                        </button>
+                      ) : (
                         <span className="areqa-topic-finder-badge" title={t('workspaceTopicFinderTooltip')}>
                           <Telescope size={15} aria-hidden="true" />
                           <span>{t('workspaceTopicFinder')}</span>
                         </span>
-                      )}
+                      ))}
                       <Popover
                         open={isSharePanelOpen}
                         onOpenChange={handleSharePanelOpenChange}
@@ -1080,6 +1107,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
                 )}
               </div>
 
+              {showTopicCardPane && !sharedView && (
+                <aside className="areqa-topic-card-pane">
+                  <TopicCardPanel topicCard={topicCard} onClose={() => setIsTopicCardPaneOpen(false)} />
+                </aside>
+              )}
+
               {useAvatarSplitLayout && (
                 <>
                   <div
@@ -1107,6 +1140,18 @@ export function ChatContainer({ className }: ChatContainerProps) {
           )}
         </div>
       </div>
+
+      <Drawer
+        open={showTopicCard && !sharedView && isMobile && isTopicCardDrawerOpen}
+        onClose={() => setIsTopicCardDrawerOpen(false)}
+        placement="right"
+        width="min(88vw, 360px)"
+        closable={false}
+        destroyOnHidden
+        styles={{ body: { padding: 0 } }}
+      >
+        <TopicCardPanel topicCard={topicCard} onClose={() => setIsTopicCardDrawerOpen(false)} />
+      </Drawer>
 
       {/* Text Selection Toolbar */}
       <TextSelectionToolbar />

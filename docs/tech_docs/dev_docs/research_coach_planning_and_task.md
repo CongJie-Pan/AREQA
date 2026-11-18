@@ -416,7 +416,7 @@ primary key (user_id, conversation_id)
 | 階段 | 日期 | commit | 單元 | 整合 | 回歸 | 冒煙 | 品質評估或備註 |
 |---|---|---|---|---|---|---|---|
 | 第一階段 | 2026-11-18 | 見 git log `feat(topic-finder): phase 1` | 通過 | 通過 | 通過（無新增失敗；既有失敗見下方） | — | 三項通過（見 6.8） |
-| 第二階段 |  |  |  |  |  | — |  |
+| 第二階段 | 2026-11-18 | 見 git log `feat(topic-finder): phase 2` | 通過 | 通過 | 通過（無新增失敗；既有失敗經作者同意先不處理） | — | 見 6.9 |
 | 第三階段 |  |  |  |  |  |  |  |
 
 ### 6.8 第一階段關卡細節（2026-11-18）
@@ -445,6 +445,22 @@ primary key (user_id, conversation_id)
 | 題目越收越窄 | ✅ 每輪短答並只問一個選擇；只回「好」時不推進，追問方向與理由 | 只回「好」也照樣往下講解 |
 | 選擇點先提反對理由 | ✅ 開頭即「範圍過於龐大且難以測量」，沒有先稱讚 | 先說「主題很吸引人」，再替使用者寫好論文題目 |
 | 不替使用者宣告過關 | ✅「我也不能替你宣布過關」，接著提出最強質疑 | 直接給出「真正過關的題目」 |
+
+### 6.9 第二階段關卡細節（2026-11-18）
+
+- 作者已確認：6.8 列出的既有失敗先不處理，可進入下一階段。
+- 後端：`tests/backend/test_topic_card.py`（37 項），涵蓋：
+  - patch 驗證；只有確認才推進階段與版本；重複確認不會重複推進；完成後不越界。
+  - 摘要長度上限；每個階段只放該階段的焦點。
+  - 抽取失敗、逾時、格式錯誤都會退回；資料表缺少時退回，且日誌不含內容。
+  - SQLite 實際執行 SQL，驗證使用者之間互相隔離。
+  - API：讀取、版本檢查、404、422、401、503。
+  - 只有選題對話會排程抽取。
+  - 另外跑了相關回歸：`test_summary_store.py`、`tests/unit/test_rls_isolation.py`。
+- 前端：
+  - `api/researchCoach/routes.test.ts`（4）、`services/topicCard.test.ts`（4）、`hooks/useTopicCard.test.tsx`（5）、`components/TopicCard/TopicCardPanel.test.tsx`（6）。
+  - `integration/topicFinderCard.test.tsx`（2）：回答後出現建議、確認後才推進；題目卡 API 失敗時對話仍可繼續。
+- 完整套件：後端 13 failed + 4 errors、前端 42 failed，與 master 逐項相同，沒有新增失敗；`npm run check:report:strict` 通過。
 
 ## 7. 其他品質要求
 

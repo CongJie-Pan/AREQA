@@ -228,6 +228,11 @@ export const useStyles = createStyles(({ css, token }) => ({
     overflow: hidden;
   `,
 
+  // Topic Finder: chat beside the topic card pane on desktop.
+  topicCardWorkspace: css`
+    flex-direction: row;
+  `,
+
   liveTutorWorkspaceSplit: css`
     flex-direction: row;
 

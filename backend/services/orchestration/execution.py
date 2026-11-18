@@ -34,6 +34,7 @@ from services.orchestration.progress import ProgressRelay, count_learner_documen
 from services.orchestration.completion import complete_answer
 from services.orchestration.response_policy import resolve_response_policy
 from services.orchestration.routing import plan_search
+from services.conversation.research_coach import is_research_coach
 
 
 class OrchestrationExecutionMixin:
@@ -456,6 +457,7 @@ class OrchestrationExecutionMixin:
             context_results_obj=context_results_obj, use_rag=use_rag, use_web_search=use_web_search,
             interface_language=interface_language, session=session, trace=trace,
             **({"isolated_context": True} if isolated_context else {}),
+            **({"topic_finder": True} if is_research_coach(tutor_profile) else {}),
         ):
             yield event
 

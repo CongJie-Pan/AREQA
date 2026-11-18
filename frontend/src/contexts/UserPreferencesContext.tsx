@@ -114,6 +114,39 @@ export type TranslationKey =
   | 'topicFinderEmptyPainPrompt'
   | 'topicFinderEmptyMethodPrompt'
   | 'topicFinderPlaceholder'
+  | 'topicCardTitle'
+  | 'topicCardStagePainPoint'
+  | 'topicCardStageFilter'
+  | 'topicCardStageDone'
+  | 'topicCardFilter1'
+  | 'topicCardFilter2'
+  | 'topicCardFilter3'
+  | 'topicCardFilter4'
+  | 'topicCardFilter5'
+  | 'topicCardPainPoint'
+  | 'topicCardMotherQuestion'
+  | 'topicCardCandidates'
+  | 'topicCardProgress'
+  | 'topicCardOperationalization'
+  | 'topicCardMeasureMissing'
+  | 'topicCardDiscarded'
+  | 'topicCardDiscardedBy'
+  | 'topicCardCanReturn'
+  | 'topicCardObjections'
+  | 'topicCardPending'
+  | 'topicCardConfirm'
+  | 'topicCardConfirmHint'
+  | 'topicCardDone'
+  | 'topicCardEmpty'
+  | 'topicCardUnavailable'
+  | 'topicCardNotSynced'
+  | 'topicCardConfirmFailed'
+  | 'topicCardStale'
+  | 'topicCardAdvanced'
+  | 'topicCardVersion'
+  | 'topicCardOpen'
+  | 'topicCardClose'
+  | 'topicCardHistory'
   | 'textSelectionCopy'
   | 'textSelectionAskQuote'
   | 'textSelectionExplain'
@@ -473,6 +506,39 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicFinderEmptyPainPrompt: "你最近卡在什麼問題上？",
     topicFinderEmptyMethodPrompt: "從你的痛點出發，我會陪你一關一關篩選題目。",
     topicFinderPlaceholder: "說說你最近卡住的問題……",
+    topicCardTitle: "題目卡",
+    topicCardStagePainPoint: "痛點",
+    topicCardStageFilter: "篩子 {n}/5：{name}",
+    topicCardStageDone: "完成",
+    topicCardFilter1: "時間",
+    topicCardFilter2: "最簡方案",
+    topicCardFilter3: "核心",
+    topicCardFilter4: "可測",
+    topicCardFilter5: "現實",
+    topicCardPainPoint: "痛點",
+    topicCardMotherQuestion: "母問題",
+    topicCardCandidates: "候選題目",
+    topicCardProgress: "進度",
+    topicCardOperationalization: "操作化（我要用＿＿測量）",
+    topicCardMeasureMissing: "尚未填測量方式",
+    topicCardDiscarded: "淘汰清單",
+    topicCardDiscardedBy: "篩子 {n}",
+    topicCardCanReturn: "可降級保留",
+    topicCardObjections: "我的反問",
+    topicCardPending: "AI 整理的建議：確認這一關時才會採用",
+    topicCardConfirm: "我確認這一關過了",
+    topicCardConfirmHint: "只有你能決定是否過關；AI 只負責提出反例。",
+    topicCardDone: "五道篩子都已由你確認",
+    topicCardEmpty: "開始對話後，這裡會整理你的題目。",
+    topicCardUnavailable: "題目卡暫時無法載入，對話不受影響。",
+    topicCardNotSynced: "對話同步完成後即可使用題目卡。",
+    topicCardConfirmFailed: "確認失敗，請稍後再試。",
+    topicCardStale: "題目卡已有更新，請看過最新內容後再確認一次。",
+    topicCardAdvanced: "已確認，進入下一關。",
+    topicCardVersion: "版本 v{n}",
+    topicCardOpen: "開啟題目卡",
+    topicCardClose: "收合題目卡",
+    topicCardHistory: "版本紀錄",
     textSelectionCopy: '複製',
     textSelectionAskQuote: '問AREQA(引用)',
     textSelectionExplain: '幫我解釋',
@@ -806,6 +872,39 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicFinderEmptyPainPrompt: "你最近卡在什么问题上？",
     topicFinderEmptyMethodPrompt: "从你的痛点出发，我会陪你一关一关筛选题目。",
     topicFinderPlaceholder: "说说你最近卡住的问题……",
+    topicCardTitle: "题目卡",
+    topicCardStagePainPoint: "痛点",
+    topicCardStageFilter: "筛子 {n}/5：{name}",
+    topicCardStageDone: "完成",
+    topicCardFilter1: "时间",
+    topicCardFilter2: "最简方案",
+    topicCardFilter3: "核心",
+    topicCardFilter4: "可测",
+    topicCardFilter5: "现实",
+    topicCardPainPoint: "痛点",
+    topicCardMotherQuestion: "母问题",
+    topicCardCandidates: "候选题目",
+    topicCardProgress: "进度",
+    topicCardOperationalization: "操作化（我要用＿＿测量）",
+    topicCardMeasureMissing: "尚未填测量方式",
+    topicCardDiscarded: "淘汰清单",
+    topicCardDiscardedBy: "筛子 {n}",
+    topicCardCanReturn: "可降级保留",
+    topicCardObjections: "我的反问",
+    topicCardPending: "AI 整理的建议：确认这一关时才会采用",
+    topicCardConfirm: "我确认这一关过了",
+    topicCardConfirmHint: "只有你能决定是否过关；AI 只负责提出反例。",
+    topicCardDone: "五道筛子都已由你确认",
+    topicCardEmpty: "开始对话后，这里会整理你的题目。",
+    topicCardUnavailable: "题目卡暂时无法加载，对话不受影响。",
+    topicCardNotSynced: "对话同步完成后即可使用题目卡。",
+    topicCardConfirmFailed: "确认失败，请稍后再试。",
+    topicCardStale: "题目卡已有更新，请看过最新内容后再确认一次。",
+    topicCardAdvanced: "已确认，进入下一关。",
+    topicCardVersion: "版本 v{n}",
+    topicCardOpen: "打开题目卡",
+    topicCardClose: "收起题目卡",
+    topicCardHistory: "版本记录",
     textSelectionCopy: '复制',
     textSelectionAskQuote: '问AREQA(引用)',
     textSelectionExplain: '帮我解释',
@@ -1139,6 +1238,39 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicFinderEmptyPainPrompt: "What have you been stuck on lately?",
     topicFinderEmptyMethodPrompt: "Start from your pain point, and I'll help you filter candidates one step at a time.",
     topicFinderPlaceholder: "Describe what you've been stuck on…",
+    topicCardTitle: "Topic card",
+    topicCardStagePainPoint: "Pain point",
+    topicCardStageFilter: "Filter {n}/5: {name}",
+    topicCardStageDone: "Done",
+    topicCardFilter1: "Time",
+    topicCardFilter2: "Simplest fix",
+    topicCardFilter3: "Core",
+    topicCardFilter4: "Measurable",
+    topicCardFilter5: "Reality",
+    topicCardPainPoint: "Pain point",
+    topicCardMotherQuestion: "Core question",
+    topicCardCandidates: "Candidate topics",
+    topicCardProgress: "Progress",
+    topicCardOperationalization: "Measures (I will measure it with ___)",
+    topicCardMeasureMissing: "No measure yet",
+    topicCardDiscarded: "Discarded",
+    topicCardDiscardedBy: "Filter {n}",
+    topicCardCanReturn: "May return later",
+    topicCardObjections: "My objections",
+    topicCardPending: "AI suggestions: adopted only when you confirm this step",
+    topicCardConfirm: "I confirm this step is passed",
+    topicCardConfirmHint: "Only you decide whether a step passes; the AI only raises counterexamples.",
+    topicCardDone: "You have confirmed all five filters",
+    topicCardEmpty: "Your topic will take shape here as you talk.",
+    topicCardUnavailable: "The topic card is unavailable right now; the chat still works.",
+    topicCardNotSynced: "The topic card becomes available once this chat has synced.",
+    topicCardConfirmFailed: "Could not confirm. Please try again.",
+    topicCardStale: "The card changed. Review the latest version, then confirm again.",
+    topicCardAdvanced: "Confirmed. On to the next step.",
+    topicCardVersion: "Version v{n}",
+    topicCardOpen: "Open topic card",
+    topicCardClose: "Collapse topic card",
+    topicCardHistory: "History",
     textSelectionCopy: 'Copy',
     textSelectionAskQuote: 'Ask AREQA (quote)',
     textSelectionExplain: 'Explain',
