@@ -1065,3 +1065,83 @@ describe('syncService - pullFromCloud', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 });
+
+describe('syncService - Topic Finder conversation kind', () => {
+  const at = new Date('2026-11-18T00:00:00.000Z');
+  const base: Conversation = {
+    id: 'conv_kind', userId: 'user_123', title: 'Topic', createdAt: at, updatedAt: at,
+    messageCount: 0, lastMessagePreview: '',
+  };
+
+  beforeEach(async () => {
+    mockSupabaseResponse = { data: [], error: null };
+    mockSupabaseMsgResponse = { data: [], error: null };
+    mockSupabaseNoteResponse = { data: [], error: null };
+    mockConversationUpsert.mockReset();
+    mockConversationUpsert.mockResolvedValue({ error: null });
+    await db.open();
+    await db.conversations.clear();
+    await db.messages.clear();
+    await db.conversationSyncQueue.clear();
+  });
+
+  afterEach(async () => {
+    vi.clearAllMocks();
+    await db.conversations.clear();
+    await db.conversationSyncQueue.clear();
+  });
+
+  it('pushes the kind for Topic Finder conversations and omits it for chat', async () => {
+    await syncService.pushConversation({ ...base, kind: 'research_coach' });
+    await syncService.pushConversation({ ...base, id: 'conv_chat' });
+
+    expect(mockConversationUpsert).toHaveBeenNthCalledWith(1, expect.objectContaining({ kind: 'research_coach' }));
+    expect(mockConversationUpsert.mock.calls[1][0]).not.toHaveProperty('kind');
+  });
+
+  it('keeps syncing the conversation when the kind column is not migrated yet', async () => {
+    mockConversationUpsert
+      .mockResolvedValueOnce({ error: { code: 'PGRST204', message: "Could not find the 'kind' column of 'conversations'" } })
+      .mockResolvedValueOnce({ error: null });
+
+    await expect(syncService.pushConversation({ ...base, kind: 'research_coach' })).resolves.toBe(true);
+    const retried = mockConversationUpsert.mock.calls[1][0];
+    expect(retried).not.toHaveProperty('kind');
+    expect(retried).toHaveProperty('title', 'Topic');
+  });
+
+  it('does not strip the kind for an unrelated upsert error', async () => {
+    mockConversationUpsert.mockResolvedValueOnce({ error: { code: 'PGRST204', message: "Could not find the 'branch_origin' column" } });
+
+    await expect(syncService.pushConversation({ ...base, kind: 'research_coach' })).resolves.toBe(false);
+    expect(mockConversationUpsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores the kind from cloud rows and treats unknown kinds as chat', async () => {
+    mockSupabaseResponse = { data: [
+      { id: 'conv_coach', user_id: 'user_123', title: 'Coach', kind: 'research_coach', created_at: at.toISOString(), updated_at: at.toISOString() },
+      { id: 'conv_odd', user_id: 'user_123', title: 'Odd', kind: 'mystery', created_at: at.toISOString(), updated_at: at.toISOString() },
+      { id: 'conv_plain', user_id: 'user_123', title: 'Plain', kind: 'chat', created_at: at.toISOString(), updated_at: at.toISOString() },
+    ], error: null };
+
+    await syncService.pullFromCloud();
+
+    expect((await db.conversations.get('conv_coach'))?.kind).toBe('research_coach');
+    expect((await db.conversations.get('conv_odd'))?.kind).toBeUndefined();
+    expect((await db.conversations.get('conv_plain'))?.kind).toBeUndefined();
+  });
+
+  it('keeps a local-only kind when the cloud row has no kind column', async () => {
+    await db.conversations.add({ ...base, kind: 'research_coach' });
+    const newer = new Date('2026-11-18T01:00:00.000Z').toISOString();
+    mockSupabaseResponse = { data: [
+      { id: base.id, user_id: 'user_123', title: 'Renamed elsewhere', created_at: at.toISOString(), updated_at: newer },
+    ], error: null };
+
+    await syncService.pullFromCloud();
+
+    const merged = await db.conversations.get(base.id);
+    expect(merged?.title).toBe('Renamed elsewhere');
+    expect(merged?.kind).toBe('research_coach');
+  });
+});

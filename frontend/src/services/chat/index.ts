@@ -14,6 +14,7 @@ import { useChatStore } from '@/store/chat';
 import type { DisplayMessage, SearchMode, StreamingImageSlot, TutorProfile } from '@/store/chat';
 import type { CitationSource } from '@/components/Citations';
 import { useConversationStore } from '@/store/conversation';
+import { resolveConversationKind } from '@/utils/conversationKind';
 import { useFeatureStore } from '@/store/features';
 import { useNotesStore } from '@/store/notes';
 import { createChatStream } from '@/services/chat-stream';
@@ -485,8 +486,8 @@ export async function sendMessage(
   if (!activeConversationId) {
     isNewConversation = true;
     if (shouldPersist) {
-      // Create new conversation in database first to get the ID
-      const conversation = await databaseService.conversation.create();
+      // Create new conversation in database first to get the ID; it joins the visible workspace.
+      const conversation = await databaseService.conversation.create(undefined, conversationStore.workspace);
       activeConversationId = conversation.id;
 
       // Add to the conversation list in store without selecting yet
@@ -500,7 +501,10 @@ export async function sendMessage(
   }
 
   // Add user message to store
-  const requestModes: RequestMode[] = (options.tutorProfile ?? chatStore.tutorProfile) === 'english' ? ['english_tutor'] : [];
+  // Topic Finder conversations never carry the English Tutor mode.
+  const isTopicFinderTurn = resolveConversationKind(useConversationStore.getState(), activeConversationId) === 'research_coach';
+  const requestModes: RequestMode[] = !isTopicFinderTurn && (options.tutorProfile ?? chatStore.tutorProfile) === 'english'
+    ? ['english_tutor'] : [];
   const userMessageId = chatStore.addUserMessage(sanitizedContent, activeConversationId, attachmentMetadata, requestModes);
   rememberSessionAttachments(userMessageId, attachments);
   if (attachments.length > 0) {

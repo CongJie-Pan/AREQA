@@ -79,6 +79,23 @@ def build_stream_request(*, force_think: bool, repetition_penalty: float,
     return target_model, extra_body, tools, has_pdf
 
 
+def tools_for_image_slots(tools: list[dict[str, Any]], max_image_slots: int) -> list[dict[str, Any]]:
+    """Drop the image tool for turns that allow no images (Topic Finder).
+
+    Args:
+        tools: Tool schemas built for this turn.
+        max_image_slots: Image slots the turn may fill; zero or less disables images.
+
+    Returns:
+        The original list when images are allowed, otherwise a copy without
+        ``generate_image``.
+    """
+
+    if max_image_slots > 0:
+        return tools
+    return [tool for tool in tools if tool.get("function", {}).get("name") != IMAGE_TOOL["function"]["name"]]
+
+
 def _openrouter_session_id(conversation_id: str) -> str:
     """Return a stable OpenRouter session id without exposing raw user content.
 

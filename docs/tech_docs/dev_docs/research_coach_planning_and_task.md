@@ -415,9 +415,36 @@ primary key (user_id, conversation_id)
 
 | 階段 | 日期 | commit | 單元 | 整合 | 回歸 | 冒煙 | 品質評估或備註 |
 |---|---|---|---|---|---|---|---|
-| 第一階段 |  |  |  |  |  | — |  |
+| 第一階段 | 2026-11-18 | 見 git log `feat(topic-finder): phase 1` | 通過 | 通過 | 通過（無新增失敗；既有失敗見下方） | — | 三項通過（見 6.8） |
 | 第二階段 |  |  |  |  |  | — |  |
 | 第三階段 |  |  |  |  |  |  |  |
+
+### 6.8 第一階段關卡細節（2026-11-18）
+
+**本功能測試（全部通過）**
+
+- 後端：`tests/backend/test_research_coach.py`（31）、`test_prompt_skills.py`；相關回歸 `test_stream_endpoint.py`、`test_conversation_context_service.py`、`test_tutor_profile_service.py`、`test_answer_style_service.py`。
+- 前端：`utils/conversationKind.test.ts`、`store/conversation/workspace.test.ts`、`database/conversationRepo.kind.test.ts`、`services/syncService.test.ts`（新增 5 項）、`components/ConversationList.test.tsx`（新增 4 項）、`components/ChatInput/index.test.tsx`（新增 3 項）、`integration/topicFinderWorkspace.test.tsx`（2 項）。
+- `npm run check:report:strict`：通過。
+
+**既有失敗（與 master 逐項比對完全相同，本功能未新增任何失敗）**
+
+- 後端完整套件：master 與本分支同為 13 failed、4 collection errors。
+  - collection errors 是環境缺套件（`respx`、`livekit`）：`test_livekit_agent.py`、`test_perplexity_node.py`、`test_realtime_websocket_integration.py`、`test_stream_api_perplexity.py`。
+  - failed：`test_edf_integration.py::test_compeer_daily_schedule_e2e`、`test_generate_title.py::test_generate_title_uses_english_for_english_first_query`、`test_gum_evolution.py`（2 項）、`test_gum_integration.py`（4 項）、`test_memory_injection_regression.py::...test_vector_failure_does_not_abort_bm25_search`、`test_multi_user_isolation.py::test_batch_process_observations_multi_user_isolation`、`test_realtime_routes.py::test_create_livekit_avatar_session_mints_dispatch_token_without_logging_secrets`、`test_suggestion_service.py`（2 項）。
+- 前端完整套件：master 與本分支同為 42 failed，分布在 `chatContainer.avatarSplit`、`MessageList`（regression／ImageGenerationLoading／streamingCascade）、`RAGStatusPanel`、`SuggestedQuestions`、`TextSelectionToolbar`、`integration/`（TextSelection、explicitWebSearchFlow、guestChatAuthPrompt、liveTutorAvatar×2、mailboxFlow）、`messageItem.visual`。
+- 依 6.2 第 4 點，這些既有失敗需作者確認後才能進入第二階段。
+
+**對話品質評估**
+
+- 國關朋友的原始對話紀錄不在 repo 內，改用同情境的固定腳本：國關所碩一想寫 AI 相關論文，共 6 輪，包含只回「好」、選定大題目、詢問研究方法、要求宣告過關。
+- 兩種模式都用實際組出的系統提示與正式主模型（`google/gemini-3.8-flash`）、max_tokens 2048 執行。
+
+| 指標 | 選題模式 | 一般模式 |
+|---|---|---|
+| 題目越收越窄 | ✅ 每輪短答並只問一個選擇；只回「好」時不推進，追問方向與理由 | 只回「好」也照樣往下講解 |
+| 選擇點先提反對理由 | ✅ 開頭即「範圍過於龐大且難以測量」，沒有先稱讚 | 先說「主題很吸引人」，再替使用者寫好論文題目 |
+| 不替使用者宣告過關 | ✅「我也不能替你宣布過關」，接著提出最強質疑 | 直接給出「真正過關的題目」 |
 
 ## 7. 其他品質要求
 

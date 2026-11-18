@@ -305,6 +305,8 @@ export interface ChatInputProps {
   onToggleLiveVoiceAvatar?: () => void;
   /** Callback that ends the active live voice session. */
   onCloseLiveVoice?: () => void;
+  /** Topic Finder conversation: only file upload stays in the + menu; image and tutor modes are off. */
+  topicFinder?: boolean;
 }
 
 const LIVE_VOICE_LABELS = {
@@ -423,6 +425,7 @@ export function ChatInput({
   onToggleLiveVoiceMute,
   onToggleLiveVoiceAvatar,
   onCloseLiveVoice,
+  topicFinder = false,
 }: ChatInputProps) {
   const { styles, cx } = useStyles();
   const { t, language } = useUserPreferences();
@@ -459,6 +462,9 @@ export function ChatInput({
   const toggleWebSearch = useChatStore((state) => state.toggleWebSearch);
   const tutorProfile = useChatStore((state) => state.tutorProfile);
   const setTutorProfile = useChatStore((state) => state.setTutorProfile);
+  // Topic Finder ignores these modes without clearing the learner's Chat-side choices.
+  const createImageActive = createImage && !topicFinder;
+  const englishActive = tutorProfile === 'english' && !topicFinder;
 
   const isOverLimit = value.length > maxLength;
   const shouldUseExpandedShape = attachmentPreviews.length > 0
@@ -622,7 +628,7 @@ export function ChatInput({
   const handleSend = useCallback(async () => {
     const trimmedValue = value.trim();
     const composerVersionAtSend = composerVersionRef.current;
-    const sendingAsImage = createImage;
+    const sendingAsImage = createImageActive;
     const previewsToSend = attachmentPreviews;
     const quotedTextToSend = quotedText;
 
@@ -678,7 +684,7 @@ export function ChatInput({
         searchMode: searchState.searchMode, useWebSearch: searchState.useWebSearch,
         useRag: searchState.useRag, attachmentCount: filesToSend.length,
       });
-      const result = createImage
+      const result = createImageActive
         ? await onSend(finalMessage, filesToSend, { createImage: true })
         : filesToSend.length > 0
           ? await onSend(finalMessage, filesToSend)
@@ -699,7 +705,7 @@ export function ChatInput({
       if (sendingAsImage && composerVersionRef.current === composerVersionAtSend) setCreateImage(true);
       return;
     }
-  }, [value, attachmentPreviews, createImage, disabled, isGeneratingImage, onSend, maxLength, quotedText, setQuotedText, t]);
+  }, [value, attachmentPreviews, createImageActive, disabled, isGeneratingImage, onSend, maxLength, quotedText, setQuotedText, t]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -714,11 +720,11 @@ export function ChatInput({
       }
       // Like slash commands: Backspace in an empty composer removes the last mode.
       if (e.key === 'Backspace' && e.currentTarget.value === '' && e.currentTarget.selectionStart === 0) {
-        if (tutorProfile === 'english') setTutorProfile('general');
-        else if (createImage) setCreateImage(false);
+        if (englishActive) setTutorProfile('general');
+        else if (createImageActive) setCreateImage(false);
       }
     },
-    [createImage, handleSend, setTutorProfile, tutorProfile]
+    [createImageActive, englishActive, handleSend, setTutorProfile]
   );
 
   const handleChange = useCallback(
@@ -746,8 +752,9 @@ export function ChatInput({
     const copied = readRequestModesFromClipboard(event.clipboardData);
     if (!copied) return;
     event.preventDefault();
-    if (copied.modes.includes('create_image')) setCreateImage(true);
-    if (copied.modes.includes('english_tutor')) setTutorProfile('english');
+    // In Topic Finder only the text is pasted; image and tutor modes do not apply there.
+    if (!topicFinder && copied.modes.includes('create_image')) setCreateImage(true);
+    if (!topicFinder && copied.modes.includes('english_tutor')) setTutorProfile('english');
     const textarea = event.currentTarget;
     const start = textarea.selectionStart ?? textarea.value.length;
     const end = textarea.selectionEnd ?? start;
@@ -755,7 +762,7 @@ export function ChatInput({
     setValue((current) => current.slice(0, start) + copied.text + current.slice(end));
     const caret = start + copied.text.length;
     window.requestAnimationFrame(() => textarea.setSelectionRange(caret, caret));
-  }, [addAttachments, setTutorProfile]);
+  }, [addAttachments, setTutorProfile, topicFinder]);
 
   const removeAttachment = useCallback((target: AttachmentPreview) => {
     if (target.objectUrl) URL.revokeObjectURL(target.objectUrl);
@@ -774,12 +781,15 @@ export function ChatInput({
   );
   const addMenuItems: MenuProps['items'] = [
     { key: 'upload', icon: <Upload size={16} />, label: addMenuRow(addMenuLabels.upload, addMenuLabels.uploadDescription) },
-    { key: 'create-image', icon: <ImagePlus size={16} />, label: addMenuRow(addMenuLabels.createImage, addMenuLabels.createImageDescription) },
-    { key: 'english', icon: <BookOpen size={16} />, label: addMenuRow(addMenuLabels.englishTutor, addMenuLabels.englishTutorDescription) },
+    ...(topicFinder ? [] : [
+      { key: 'create-image', icon: <ImagePlus size={16} />, label: addMenuRow(addMenuLabels.createImage, addMenuLabels.createImageDescription) },
+      { key: 'english', icon: <BookOpen size={16} />, label: addMenuRow(addMenuLabels.englishTutor, addMenuLabels.englishTutorDescription) },
+    ]),
   ];
 
   const handleAddMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (disabled || dictationState !== 'idle') return;
+    if (topicFinder && key !== 'upload') return;
     if (key === 'create-image') {
       setCreateImage((current) => !current);
       textareaRef.current?.focus();
@@ -937,8 +947,8 @@ export function ChatInput({
             onClick: handleAddMenuClick,
             selectable: true,
             selectedKeys: [
-              ...(tutorProfile === 'english' ? ['english'] : []),
-              ...(createImage ? ['create-image'] : []),
+              ...(englishActive ? ['english'] : []),
+              ...(createImageActive ? ['create-image'] : []),
             ],
           }}
           trigger={['click']}
@@ -954,14 +964,14 @@ export function ChatInput({
               className={cx(
                 'areqa-chat-input-attachment-button',
                 styles.attachmentButton,
-                tutorProfile === 'english' && styles.attachmentButtonActive,
+                englishActive && styles.attachmentButtonActive,
                 dictationState !== 'idle' && styles.recordingInactiveControl,
               )}
               disabled={disabled || dictationState !== 'idle'}
               aria-label={addMenuLabels.open}
               data-tour="composer-plus"
               aria-haspopup="menu"
-              aria-pressed={tutorProfile === 'english'}
+              aria-pressed={englishActive}
             >
               <Plus size={18} />
             </button>
@@ -996,7 +1006,7 @@ export function ChatInput({
         ) : (
           <>
             {/* Active modes sit inline after "+", as icon + name (icon only on narrow screens). */}
-            {createImage && (
+            {createImageActive && (
               <Tooltip title={addMenuLabels.createImage}>
                 <span className={cx('areqa-chat-input-mode-token', styles.modeToken)}>
                   <ImagePlus size={16} aria-hidden="true" />
@@ -1005,7 +1015,7 @@ export function ChatInput({
                 </span>
               </Tooltip>
             )}
-            {tutorProfile === 'english' && (
+            {englishActive && (
               <Tooltip title={addMenuLabels.englishTutor}>
                 <span className={cx('areqa-chat-input-mode-token', styles.modeToken)}>
                   <BookOpen size={16} aria-hidden="true" />
@@ -1028,7 +1038,7 @@ export function ChatInput({
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               // A mode token already fills the start of the row; a placeholder after it reads as clutter.
-              placeholder={createImage || tutorProfile === 'english' ? '' : placeholder ?? t('askPlaceholder')}
+              placeholder={createImageActive || englishActive ? '' : placeholder ?? t('askPlaceholder')}
               disabled={disabled}
               rows={1}
               maxLength={maxLength + 100}

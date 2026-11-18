@@ -24,7 +24,7 @@ from services.conversation.stream_request import (
     _openrouter_session_id as _openrouter_session_id,
 )
 from services.conversation.prompt_cache import apply_document_cache_layout, coverage_user_notice
-from services.conversation.stream_request import build_stream_request
+from services.conversation.stream_request import build_stream_request, tools_for_image_slots
 from services.conversation.response_boundary import StreamingResponseBoundaryFilter
 from services.memory_diagnostics import log_memory_snapshot
 
@@ -142,6 +142,7 @@ class ConversationStreamService:
             conversation_id=conversation_id, messages=messages,
             interface_language=interface_language, last_user_msg=last_user_msg,
         )
+        tools = tools_for_image_slots(tools, max_image_slots)
         if tool_budget is None:
             from core import ToolBudget, ToolBudgetTracker
 

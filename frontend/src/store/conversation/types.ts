@@ -3,7 +3,7 @@
  * Types for managing conversation list state with Zustand
  */
 
-import type { Conversation, Message } from '@/database/schema';
+import type { Conversation, ConversationKind, Message } from '@/database/schema';
 
 /**
  * Conversation state managed by Zustand
@@ -21,6 +21,8 @@ export interface ConversationState {
   error: Error | null;
   /** Map of conversation IDs to their currently streaming title */
   streamingTitles: Record<string, string>;
+  /** Visible workspace: the sidebar lists, and new conversations use, this kind. */
+  workspace: ConversationKind;
 }
 
 /**
@@ -29,8 +31,10 @@ export interface ConversationState {
 export interface ConversationActions {
   /** Load all conversations for the authenticated user */
   loadConversations: (userId: string) => Promise<void>;
-  /** Create a new conversation */
-  createConversation: (title?: string) => Promise<string>;
+  /** Create a new conversation; only the composer send path passes the visible workspace (defaults to chat) */
+  createConversation: (title?: string, kind?: ConversationKind) => Promise<string>;
+  /** Switch the visible workspace; stored as a local preference */
+  setWorkspace: (workspace: ConversationKind) => void;
   /** Select a conversation as active */
   selectConversation: (id: string) => void;
   /** Delete a conversation */

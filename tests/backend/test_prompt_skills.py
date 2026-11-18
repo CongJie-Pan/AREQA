@@ -151,7 +151,7 @@ def test_app_creation_preloads_all_skills(skill_root):
 
     (skill_root / "english_tutor_skill.md").write_text(_document({"rules": ["Startup rule"]}))
     assert create_app().title == "XiaoHong Ancient Chinese QA - RAG Backend API"
-    assert prompt_skills.load_prompt_skill.cache_info().currsize == 3
+    assert prompt_skills.load_prompt_skill.cache_info().currsize == len(prompt_skills._SCHEMAS)
     (skill_root / "english_tutor_skill.md").unlink()
     assert "Startup rule" in tutor_profile.render_tutor_profile_prompt("english")
 
@@ -160,7 +160,7 @@ def test_shipped_payloads_are_valid_and_hide_implementation_details():
     prompt_skills.load_prompt_skill.cache_clear()
     try:
         prompt_skills.preload_prompt_skills()
-        for skill_id in ("pedagogy-tutor", "english-tutor", "paper-auto-explain"):
+        for skill_id in ("pedagogy-tutor", "english-tutor", "paper-auto-explain", "research-topic-coach"):
             assert prompt_skills.load_prompt_skill(skill_id) is not None
         assert "Runtime prompt payload" not in paper_auto_explain_instruction()
         assert "Implementation map" not in paper_auto_explain_instruction()

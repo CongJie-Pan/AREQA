@@ -4,7 +4,8 @@
  */
 
 import { db, getCurrentUserId } from '../db';
-import type { Conversation } from '../schema';
+import type { Conversation, ConversationKind } from '../schema';
+import { isTopicFinderConversation } from '@/utils/conversationKind';
 import { generateUUID } from '@/utils/id';
 import { syncService } from '@/services/syncService';
 import { logger } from '@/utils/logger';
@@ -170,6 +171,8 @@ export const conversationRepo = {
           id: branchId, userId, title, createdAt: now, updatedAt: now,
           messageCount: prefix.length, lastMessagePreview: anchor.content.slice(0, 100),
           branchOrigin: { conversationId: sourceId, messageId: forkMessageId, title: source.title, copiedMessageId: prefix[boundary].id },
+          // A branch stays in its source's workspace (Topic Finder branches explore candidate topics).
+          ...(isTopicFinderConversation(source) ? { kind: 'research_coach' as const } : {}),
         };
         await db.conversations.add(conversation);
         await db.messages.bulkAdd(prefix);
@@ -186,9 +189,10 @@ export const conversationRepo = {
   /**
    * Create a new conversation
    * @param title - Optional conversation title (defaults to '新對話')
+   * @param kind - Workspace of the conversation; fixed after creation (defaults to `chat`)
    * @returns The created conversation
    */
-  async create(title?: string): Promise<Conversation> {
+  async create(title?: string, kind: ConversationKind = 'chat'): Promise<Conversation> {
     const userId = getCurrentUserId();
     if (!userId) throw new Error('Authentication required to persist conversations');
 
@@ -201,6 +205,7 @@ export const conversationRepo = {
       updatedAt: now,
       messageCount: 0,
       lastMessagePreview: '',
+      ...(kind === 'research_coach' ? { kind } : {}),
     };
     await db.transaction('rw', [db.conversations, db.conversationSyncQueue], async () => {
       await db.conversations.add(conversation);

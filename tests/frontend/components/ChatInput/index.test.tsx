@@ -769,4 +769,51 @@ describe('ChatInput', () => {
       expect(screen.getByLabelText('Message input')).toHaveValue('請解釋這篇論文');
     });
   });
+
+  describe('Topic Finder conversation', () => {
+    const useEnglishProfile = () => {
+      (useChatStore as any).mockImplementation((selector: any) => {
+        const state = {
+          useRag: false, useWebSearch: false, forceThink: false, tutorProfile: 'english', quotedText: null,
+          toggleRag: vi.fn(), toggleWebSearch: mockToggleWebSearch, toggleThink: vi.fn(),
+          setTutorProfile: mockSetTutorProfile, setQuotedText: mockSetQuotedText,
+        };
+        return typeof selector === 'function' ? selector(state) : state;
+      });
+    };
+
+    it('keeps only file upload in the add menu', async () => {
+      render(<ChatInput onSend={mockOnSend} topicFinder />);
+
+      fireEvent.click(screen.getByLabelText('新增'));
+
+      expect(await screen.findByText('上傳檔案')).toBeInTheDocument();
+      expect(screen.queryByText('Create Image')).not.toBeInTheDocument();
+      expect(screen.queryByText('English Tutor')).not.toBeInTheDocument();
+    });
+
+    it('hides a Chat-side English Tutor selection without clearing it', () => {
+      useEnglishProfile();
+      render(<ChatInput onSend={mockOnSend} topicFinder placeholder="說說你最近卡住的問題……" />);
+
+      expect(screen.queryByText('English Tutor')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('新增')).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByLabelText('訊息輸入框')).toHaveAttribute('placeholder', '說說你最近卡住的問題……');
+      fireEvent.keyDown(screen.getByLabelText('訊息輸入框'), { key: 'Backspace' });
+      expect(mockSetTutorProfile).not.toHaveBeenCalled();
+    });
+
+    it('pastes a copied question as text only, without its modes', () => {
+      render(<ChatInput onSend={mockOnSend} topicFinder />);
+      const input = screen.getByLabelText('訊息輸入框');
+      const html = '<span data-areqa-mode="create_image">Create Image</span> <span data-areqa-mode="english_tutor">English Tutor</span> <span>畫圖</span>';
+      fireEvent.paste(input, { clipboardData: {
+        items: [], getData: (type: string) => (type === 'text/html' ? html : '畫圖'),
+      } });
+
+      expect(input).toHaveValue('畫圖');
+      expect(mockSetTutorProfile).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText('Cancel Create Image')).not.toBeInTheDocument();
+    });
+  });
 });

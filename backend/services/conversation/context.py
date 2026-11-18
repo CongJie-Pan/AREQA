@@ -31,7 +31,7 @@ from services.query_policy.classifier import (
     ResponsePolicy,
     default_response_policy,
 )
-from services.conversation.tutor_profile import render_tutor_profile_prompt
+from services.conversation.research_coach import render_prompt_profile
 
 logger = logging.getLogger(__name__)
 SnapshotLoader = Callable[..., Awaitable[str]]
@@ -114,8 +114,9 @@ class ConversationContextService:
                 grounding, tools, or learner-state claims.
             interface_language: Persisted UI language used only as fallback
                 when the latest user turn has no supported language signal.
-            tutor_profile: Optional subject tutor overlay. It must not override
-                language, grounding, memory, safety, citations, or tools.
+            tutor_profile: Optional prompt overlay: a subject tutor profile or
+                the internal ``research_coach`` Topic Finder profile. It must not
+                override language, grounding, memory, safety, citations, or tools.
 
         Returns:
             Finalized messages plus explicit learner-understanding metadata.
@@ -157,7 +158,7 @@ class ConversationContextService:
             system_prompt += "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
 
         system_prompt += _answer_language_instruction(interface_language, last_user_msg)
-        system_prompt += render_tutor_profile_prompt(tutor_profile)
+        system_prompt += render_prompt_profile(tutor_profile)
         system_prompt += _example_instruction(interface_language, last_user_msg)
         system_prompt += (
             "\n【工具使用規則】依使用者的需求選擇回答、澄清或已授權的工具。"

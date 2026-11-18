@@ -23,6 +23,9 @@ from services.attachments.branch_context import load_inherited_upload, remember_
 from services.attachments.document_store import (
     extract_documents, load_documents, material_from_documents, remember_documents,
 )
+from services.conversation.research_coach import (
+    RESEARCH_COACH_KIND, normalize_conversation_kind, resolve_prompt_profile,
+)
 from services.conversation.tutor_profile import normalize_tutor_profile
 from services.memory_diagnostics import log_memory_snapshot
 
@@ -46,6 +49,8 @@ class ChatRequest(BaseModel):
     search_mode: Literal["auto", "always", "never"] | None = None
     interface_language: Literal["zh-TW", "zh-CN", "en"] = "zh-TW"
     tutor_profile: str = "general"
+    # Fixed per conversation: "chat" or "research_coach" (Topic Finder). Unknown values mean chat.
+    conversation_kind: Any = "chat"
     response_mode: Literal["text", "voice"] = "text"
     speaking_practice: bool = False
     # Opt-in: parse uploads inside the SSE stream so progress and errors reach the chat UI.
@@ -112,6 +117,8 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
             "search_mode": payload.get("search_mode", form.get("search_mode") or None),
             "interface_language": payload.get("interface_language", form.get("interface_language", "zh-TW")),
             "tutor_profile": normalize_tutor_profile(payload.get("tutor_profile", form.get("tutor_profile", "general"))),
+            "conversation_kind": normalize_conversation_kind(
+                payload.get("conversation_kind", form.get("conversation_kind", "chat"))),
             "response_mode": payload.get("response_mode", form.get("response_mode", "text")),
             "speaking_practice": payload.get("speaking_practice", _parse_bool(form.get("speaking_practice"))),
             "attachment_progress": payload.get("attachment_progress", _parse_bool(form.get("attachment_progress"))),
@@ -140,15 +147,19 @@ async def stream_endpoint(
     chat_req, uploads = await parse_stream_request(request)
     if not chat_req.messages:
         raise HTTPException(status_code=422, detail="At least one message is required")
-    tutor_profile = normalize_tutor_profile(chat_req.tutor_profile)
+    conversation_kind = normalize_conversation_kind(chat_req.conversation_kind)
+    # Topic Finder conversations never combine with a subject tutor overlay.
+    tutor_profile = "general" if conversation_kind == RESEARCH_COACH_KIND else normalize_tutor_profile(chat_req.tutor_profile)
+    chat_req.conversation_kind = conversation_kind
     request_id = request.headers.get("x-request-id", "")
     safe_request_id = request_id if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", request_id) else "none"
     logger.info(
-        "stream.request_accepted conversation_id=%s response_mode=%s tutor_profile=%s message_count=%s upload_count=%s "
-        "request_id=%s search_mode=%s use_web_search=%s use_rag=%s",
+        "stream.request_accepted conversation_id=%s response_mode=%s tutor_profile=%s conversation_kind=%s "
+        "message_count=%s upload_count=%s request_id=%s search_mode=%s use_web_search=%s use_rag=%s",
         chat_req.conversation_id,
         chat_req.response_mode,
         tutor_profile,
+        conversation_kind,
         len(chat_req.messages),
         len(uploads), safe_request_id, chat_req.search_mode, chat_req.use_web_search, chat_req.use_rag,
     )
@@ -371,7 +382,7 @@ async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_pro
             user_id=effective_user_id,
             search_mode=chat_req.search_mode,
             interface_language=chat_req.interface_language,
-            tutor_profile=tutor_profile,
+            tutor_profile=resolve_prompt_profile(tutor_profile, normalize_conversation_kind(chat_req.conversation_kind)),
             response_mode=chat_req.response_mode,
             attachments=attachment_parts + inherited_upload + ([{
                 "type": "text",

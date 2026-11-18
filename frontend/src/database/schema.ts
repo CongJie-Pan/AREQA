@@ -23,7 +23,12 @@ export interface Conversation {
   /** Preview of the last message (first 100 characters) */
   lastMessagePreview: string;
   branchOrigin?: { conversationId: string; messageId: string; title: string; copiedMessageId: string };
+  /** Workspace, fixed at creation. Missing means `chat` (rows created before Topic Finder). */
+  kind?: ConversationKind;
 }
+
+/** Workspace a conversation belongs to: ordinary chat or Topic Finder (選題). */
+export type ConversationKind = 'chat' | 'research_coach';
 
 /** Safe, display-only metadata for a request-scoped chat attachment. */
 export interface AttachmentMetadata {

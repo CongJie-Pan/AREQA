@@ -7,11 +7,12 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2 } from 'lucide-react';
+import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2, Telescope } from 'lucide-react';
 import { App, Button, Dropdown, Popover, Space, Tooltip } from 'antd';
 import { exportToMarkdown, exportToDocx, exportToPdf } from '@/utils/exportChat';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore, conversationSelectors } from '@/store/conversation';
+import { resolveConversationKind } from '@/utils/conversationKind';
 import { conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
 import { requestSourceMessageFocus } from '@/utils/messageFocus';
 import { generateUUID } from '@/utils/id';
@@ -191,6 +192,10 @@ export function ChatContainer({ className }: ChatContainerProps) {
   );
   const activeConversationId = useConversationStore(
     (state) => state.activeConversationId
+  );
+  // Topic Finder (選題): the open conversation's kind, or the visible workspace on the empty home.
+  const isTopicFinder = useConversationStore(
+    (state) => resolveConversationKind(state, state.activeConversationId) === 'research_coach'
   );
   const activeImageRequest = Object.values(imageGenerationRequests ?? {}).find((request) => (
     request.userId === user?.id && request.conversationId === activeConversationId
@@ -896,6 +901,12 @@ export function ChatContainer({ className }: ChatContainerProps) {
                 <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
                   {!gumPanelType && !isEmpty && !sharedView && (
                     <>
+                      {isTopicFinder && (
+                        <span className="areqa-topic-finder-badge" title={t('workspaceTopicFinderTooltip')}>
+                          <Telescope size={15} aria-hidden="true" />
+                          <span>{t('workspaceTopicFinder')}</span>
+                        </span>
+                      )}
                       <Popover
                         open={isSharePanelOpen}
                         onOpenChange={handleSharePanelOpenChange}
@@ -1047,12 +1058,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     placeholder={
                       isStreaming
                         ? t('thinkingPlaceholder')
-                        : t(isEmpty ? 'askPlaceholder' : 'replyPlaceholder')
+                        : t(isEmpty ? (isTopicFinder ? 'topicFinderPlaceholder' : 'askPlaceholder') : 'replyPlaceholder')
                     }
                     isStreaming={isStreaming}
                     isGeneratingImage={isGeneratingImage}
                     onStop={handleStop}
-                    onOpenLiveTutor={openLiveTutor}
+                    // Live voice is out of Topic Finder's scope; it stays a Chat feature.
+                    onOpenLiveTutor={isTopicFinder ? undefined : openLiveTutor}
+                    topicFinder={isTopicFinder}
                     isLiveVoiceActive={isLiveTutorOpen}
                     isLiveVoiceMuted={isLiveTutorMuted}
                     isLiveVoiceAvatarEnabled={isLiveTutorAvatarEnabled}

@@ -5,6 +5,7 @@ import { logger } from '@/utils/logger';
 import { useAuthStore } from '@/store/auth';
 import { normalizeAttachmentMetadata } from '@/utils/attachments';
 import { persistentAnswerBlocks } from '@/utils/answerBlocks';
+import { TOPIC_FINDER_KIND, isTopicFinderConversation, normalizeConversationKind } from '@/utils/conversationKind';
 import type { MessageFeedback, MessageFeedbackDetails, MessageFeedbackReason } from '@/database/schema';
 
 type MessageSearchResult = NonNullable<Message['searchResults']>[number];
@@ -24,6 +25,7 @@ type CloudConversationRow = {
   user_id: string;
   title: string;
   branch_origin?: Conversation['branchOrigin'] | null;
+  kind?: unknown;
   created_at: string;
   updated_at: string;
 };
@@ -252,6 +254,9 @@ async function mergeCloudConversations(
         userId: c.user_id,
         title: c.title,
         branchOrigin: c.branch_origin ?? undefined,
+        // Without the kind column (migration pending) the kind exists only locally, so keep it.
+        ...(normalizeConversationKind('kind' in c ? c.kind : localConv?.kind) === TOPIC_FINDER_KIND
+          ? { kind: TOPIC_FINDER_KIND } : {}),
         createdAt: new Date(c.created_at),
         updatedAt: cloudDate,
         messageCount: msgCountByConv[c.id] || 0,
@@ -653,14 +658,24 @@ export const syncService = {
     if (!userId || userId === 'default_user') return false;
 
     try {
-      const { error } = await supabase.from('conversations').upsert({
+      const payload: Record<string, unknown> = {
         id: conv.id,
         user_id: conv.userId,
         title: conv.title,
         ...(conv.branchOrigin ? { branch_origin: conv.branchOrigin } : {}),
+        // Chat rows omit kind and keep the column default, so older databases sync unchanged.
+        ...(isTopicFinderConversation(conv) ? { kind: TOPIC_FINDER_KIND } : {}),
         created_at: conv.createdAt.toISOString(),
         updated_at: conv.updatedAt.toISOString(),
-      });
+      };
+      let { error } = await supabase.from('conversations').upsert(payload);
+      if (error && 'kind' in payload && isMissingColumnError(error, 'kind')) {
+        // The kind migration is not applied yet: keep the conversation syncing; the kind stays local.
+        const { kind: _unsupported, ...rest } = payload;
+        void _unsupported;
+        logger.warn('sync_conversation_kind_column_missing', { component: 'syncService', conversationId: conv.id });
+        ({ error } = await supabase.from('conversations').upsert(rest));
+      }
       if (error) throw error;
       return true;
     } catch (e) {

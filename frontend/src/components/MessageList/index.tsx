@@ -15,6 +15,7 @@ import { useConversationStore } from '@/store/conversation';
 import { useNotesStore } from '@/store/notes';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { MessageItem } from './MessageItem';
+import { WorkspaceSwitch } from '@/components/WorkspaceSwitch';
 import { useStyles } from './styles';
 import { databaseService } from '@/services/database';
 import { consumeSourceMessageFocus } from '@/utils/messageFocus';
@@ -244,6 +245,7 @@ export function MessageList({
   const savedNotes = useNotesStore((state) => state.notes);
   const activeConversationId = useConversationStore((state) => state.activeConversationId);
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
+  const workspace = useConversationStore((state) => state.workspace);
   const savedMessageIds = React.useMemo(
     () => new Set(savedNotes.map((note) => note.messageId).filter(Boolean)),
     [savedNotes],
@@ -423,14 +425,14 @@ export function MessageList({
 
   // Show empty state
   if (messages.length === 0 && childBranches.length === 0) {
-    const emptyStateLines = [
-      t('emptyStateGreeting'),
-      t('emptyStateLearningPrompt'),
-      t('emptyStateTutorPrompt'),
-    ];
+    const emptyStateLines = workspace === 'research_coach'
+      ? [t('topicFinderEmptyGreeting'), t('topicFinderEmptyPainPrompt'), t('topicFinderEmptyMethodPrompt')]
+      : [t('emptyStateGreeting'), t('emptyStateLearningPrompt'), t('emptyStateTutorPrompt')];
 
     return (
       <div className={cx('areqa-message-list', 'areqa-message-list-empty', styles.container, styles.empty, className)}>
+        {/* Only the empty new-chat screen offers this switch; it disappears once the first message is sent. */}
+        <WorkspaceSwitch variant="segmented" />
         <div className={cx('areqa-message-empty-logo-stage', styles.emptyLogoStage)}>
           <Image
             src="/icon/areqa_icon_v4_circle.png"

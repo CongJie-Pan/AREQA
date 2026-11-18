@@ -6,7 +6,8 @@
 import { create } from 'zustand';
 import { databaseService } from '@/services/database';
 import { getCurrentUserId } from '@/database/db';
-import type { Conversation } from '@/database/schema';
+import type { Conversation, ConversationKind } from '@/database/schema';
+import { conversationKindOf, normalizeConversationKind } from '@/utils/conversationKind';
 import type { ConversationStore } from './types';
 import { logger } from '@/utils/logger';
 
@@ -14,6 +15,25 @@ const GENERATED_TITLE_MAX_LENGTH = 18;
 const GENERATED_ENGLISH_TITLE_MAX_LENGTH = 48;
 const CONVERSATION_LOAD_TIMEOUT_MS = 7000;
 let conversationLoadSequence = 0;
+const WORKSPACE_STORAGE_KEY = 'areqa:workspace';
+
+/** Read the remembered workspace; storage is a convenience, so any failure means chat. */
+export function readStoredWorkspace(): ConversationKind {
+  try {
+    if (typeof window === 'undefined') return 'chat';
+    return normalizeConversationKind(window.localStorage.getItem(WORKSPACE_STORAGE_KEY));
+  } catch {
+    return 'chat';
+  }
+}
+
+function storeWorkspace(workspace: ConversationKind): void {
+  try {
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspace);
+  } catch {
+    // Remembering the workspace is optional; chat keeps working without storage.
+  }
+}
 
 function withTimeout<T>(operation: PromiseLike<T>, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -57,12 +77,13 @@ const initialState = {
   isMessageHandoffLoading: false,
   error: null as Error | null,
   streamingTitles: {} as Record<string, string>,
+  workspace: readStoredWorkspace(),
 };
 
 /**
  * Conversation store for managing conversation list
  */
-export const useConversationStore = create<ConversationStore>((set) => ({
+export const useConversationStore = create<ConversationStore>((set, get) => ({
   ...initialState,
 
   loadConversations: async (userId: string) => {
@@ -114,9 +135,9 @@ export const useConversationStore = create<ConversationStore>((set) => ({
     }
   },
 
-  createConversation: async (title?: string) => {
+  createConversation: async (title?: string, kind?: ConversationKind) => {
     try {
-      const conversation = await databaseService.conversation.create(title);
+      const conversation = await databaseService.conversation.create(title, kind ?? 'chat');
       set((state) => ({
         conversations: [conversation, ...state.conversations],
         activeConversationId: conversation.id,
@@ -131,7 +152,22 @@ export const useConversationStore = create<ConversationStore>((set) => ({
   },
 
   selectConversation: (id: string) => {
-    set({ activeConversationId: id, error: null });
+    // Opening a conversation (sidebar, branch link, search) shows its workspace.
+    const conversation = get().conversations.find((item) => item.id === id);
+    const workspace = conversation ? conversationKindOf(conversation) : get().workspace;
+    if (workspace !== get().workspace) {
+      storeWorkspace(workspace);
+      logger.info('workspace_followed_conversation', { component: 'useConversationStore', conversationId: id, workspace });
+    }
+    set({ activeConversationId: id, error: null, workspace });
+  },
+
+  setWorkspace: (workspace: ConversationKind) => {
+    const next = normalizeConversationKind(workspace);
+    if (next === get().workspace) return;
+    storeWorkspace(next);
+    logger.info('workspace_switched', { component: 'useConversationStore', workspace: next });
+    set({ workspace: next });
   },
 
   deleteConversation: async (id: string) => {

@@ -6,6 +6,7 @@ import logging
 import time
 
 from config import settings
+from services.conversation.research_coach import is_research_coach
 from services.memory_diagnostics import log_memory_snapshot
 from services.query_policy.models import (
     AttachmentTask,
@@ -65,8 +66,12 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
                 "orchestration.missing_visual_attachment_guard_applied conversation_id=%s",
                 conversation_id,
             )
+    is_topic_finder = is_research_coach(tutor_profile)
+    # Topic Finder relates uploaded papers to the learner's candidate topic, so the
+    # generic paper walkthrough is not forced there.
     should_auto_explain_paper = (
-        settings.enable_pdf_paper_auto_explain
+        not is_topic_finder
+        and settings.enable_pdf_paper_auto_explain
         and getattr(response_policy.attachment_task, "value", response_policy.attachment_task)
         == AttachmentTask.PAPER_AUTO_EXPLAIN.value
     )
@@ -81,7 +86,8 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
     )
     if should_auto_explain_paper:
         final_messages = service._add_paper_auto_explain_instruction(final_messages)
-    max_image_slots = 4 if should_auto_explain_paper else 2
+    # Topic Finder does not generate images; zero slots also removes the image tool.
+    max_image_slots = 0 if is_topic_finder else 4 if should_auto_explain_paper else 2
 
     preverified_image_blocks = None
     if settings.enable_visual_preflight:

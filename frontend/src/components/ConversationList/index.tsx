@@ -25,6 +25,8 @@ import { databaseService } from '@/services/database';
 import { UserAuthUI } from '../Auth';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
+import { conversationKindOf } from '@/utils/conversationKind';
+import { WorkspaceSwitch } from '@/components/WorkspaceSwitch';
 
 const PINNED_CONVERSATION_IDS_KEY = 'areqa:pinned-conversation-ids';
 const LONG_PRESS_MENU_MS = 520;
@@ -74,6 +76,7 @@ export function ConversationList({
   const [isRenaming, setIsRenaming] = useState(false);
 
   const conversations = useConversationStore((state) => state.conversations);
+  const workspace = useConversationStore((state) => state.workspace);
   const activeId = useConversationStore((state) => state.activeConversationId);
   const isLoading = useConversationStore((state) => state.isLoading);
   const streamingTitles = useConversationStore((state) => state.streamingTitles);
@@ -253,9 +256,12 @@ export function ConversationList({
     void handleSelect(id);
   }, [handleSelect]);
 
+  // The list and search show only the visible workspace (Chat or Topic Finder).
   const sortedConversations = useMemo(() => (
-    [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  ), [conversations]);
+    conversations
+      .filter((conversation) => conversationKindOf(conversation) === workspace)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  ), [conversations, workspace]);
   const pinnedIdSet = new Set(pinnedIds);
   const groups = [
     { key: 'pinned', label: t('pinned'), open: pinnedOpen, toggle: () => setPinnedOpen((open) => !open),
@@ -298,15 +304,18 @@ export function ConversationList({
             priority
           />
         </button>
-        {!externalSidebarToggle && (
-          <button
-            className="areqa-conversation-toggle-button"
-            onClick={onToggleSidebar}
-            title={t('closeSidebar')}
-          >
-            <PanelLeftClose size={20} />
-          </button>
-        )}
+        <div className="areqa-conversation-logo-actions">
+          <WorkspaceSwitch variant="icons" onLeaveConversation={handleNew} />
+          {!externalSidebarToggle && (
+            <button
+              className="areqa-conversation-toggle-button"
+              onClick={onToggleSidebar}
+              title={t('closeSidebar')}
+            >
+              <PanelLeftClose size={20} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Action Area */}

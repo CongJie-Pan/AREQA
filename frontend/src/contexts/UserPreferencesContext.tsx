@@ -105,6 +105,15 @@ export type TranslationKey =
   | 'emptyStateGreeting'
   | 'emptyStateLearningPrompt'
   | 'emptyStateTutorPrompt'
+  | 'workspaceSwitch'
+  | 'workspaceChat'
+  | 'workspaceTopicFinder'
+  | 'workspaceChatTooltip'
+  | 'workspaceTopicFinderTooltip'
+  | 'topicFinderEmptyGreeting'
+  | 'topicFinderEmptyPainPrompt'
+  | 'topicFinderEmptyMethodPrompt'
+  | 'topicFinderPlaceholder'
   | 'textSelectionCopy'
   | 'textSelectionAskQuote'
   | 'textSelectionExplain'
@@ -455,6 +464,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     emptyStateGreeting: '嗨! 我是 AREQA👋，你最好的學習夥伴。😊🌸',
     emptyStateLearningPrompt: '今天想學什麼呢？🤔',
     emptyStateTutorPrompt: '我也是一位 AI Tutor喔，可以與你一步步拆解難題！😎',
+    workspaceSwitch: "工作區",
+    workspaceChat: "對話",
+    workspaceTopicFinder: "選題",
+    workspaceChatTooltip: "一般對話",
+    workspaceTopicFinderTooltip: "選題：找出適合你的研究題目",
+    topicFinderEmptyGreeting: "一起找出適合你的研究題目 🔭",
+    topicFinderEmptyPainPrompt: "你最近卡在什麼問題上？",
+    topicFinderEmptyMethodPrompt: "從你的痛點出發，我會陪你一關一關篩選題目。",
+    topicFinderPlaceholder: "說說你最近卡住的問題……",
     textSelectionCopy: '複製',
     textSelectionAskQuote: '問AREQA(引用)',
     textSelectionExplain: '幫我解釋',
@@ -779,6 +797,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     emptyStateGreeting: '嗨！我是 AREQA，你最好的学习伙伴。',
     emptyStateLearningPrompt: '今天你想学什么？',
     emptyStateTutorPrompt: '我也是 AI Tutor，可以一步一步教你！',
+    workspaceSwitch: "工作区",
+    workspaceChat: "对话",
+    workspaceTopicFinder: "选题",
+    workspaceChatTooltip: "一般对话",
+    workspaceTopicFinderTooltip: "选题：找出适合你的研究题目",
+    topicFinderEmptyGreeting: "一起找出适合你的研究题目 🔭",
+    topicFinderEmptyPainPrompt: "你最近卡在什么问题上？",
+    topicFinderEmptyMethodPrompt: "从你的痛点出发，我会陪你一关一关筛选题目。",
+    topicFinderPlaceholder: "说说你最近卡住的问题……",
     textSelectionCopy: '复制',
     textSelectionAskQuote: '问AREQA(引用)',
     textSelectionExplain: '帮我解释',
@@ -1103,6 +1130,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     emptyStateGreeting: "Hi ! I'm AREQA. Your Best Learning Partner.",
     emptyStateLearningPrompt: 'What do you want to learn today ?',
     emptyStateTutorPrompt: "I'm also an AI Tutor, can teach you step-by-step !",
+    workspaceSwitch: "Workspace",
+    workspaceChat: "Chat",
+    workspaceTopicFinder: "Topic Finder",
+    workspaceChatTooltip: "Ordinary chat",
+    workspaceTopicFinderTooltip: "Topic Finder: find a research topic that fits you",
+    topicFinderEmptyGreeting: "Let's find a research topic that fits you 🔭",
+    topicFinderEmptyPainPrompt: "What have you been stuck on lately?",
+    topicFinderEmptyMethodPrompt: "Start from your pain point, and I'll help you filter candidates one step at a time.",
+    topicFinderPlaceholder: "Describe what you've been stuck on…",
     textSelectionCopy: 'Copy',
     textSelectionAskQuote: 'Ask AREQA (quote)',
     textSelectionExplain: 'Explain',

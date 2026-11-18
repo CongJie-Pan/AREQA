@@ -13,6 +13,7 @@ import { API_CONFIG } from '@/config/api';
 import { ChatStreamError, StreamParseError, isAbortError } from '@/utils/error';
 import { ThinkTagParser } from './parser';
 import { useConversationStore } from '@/store/conversation';
+import { resolveConversationKind } from '@/utils/conversationKind';
 import { useChatStore } from '@/store/chat/store';
 import type { ChatMessage, ChatStreamOptions, StreamCallbacks } from './types';
 import type { SearchMode } from '@/store/chat/types';
@@ -116,6 +117,7 @@ export async function createChatStream(
 
   try {
     const requestId = generateUUID();
+    const conversationKind = resolveConversationKind(useConversationStore.getState(), conversationId);
     const requestPayload = {
       messages,
       conversation_id: conversationId,
@@ -127,7 +129,9 @@ export async function createChatStream(
       use_web_search: searchMode === 'always',
       search_mode: searchMode,
       interface_language: readInterfaceLanguage(),
-      tutor_profile: options.tutorProfile ?? 'general',
+      // The backend also ignores subject tutors in Topic Finder; sending general keeps logs honest.
+      tutor_profile: conversationKind === 'research_coach' ? 'general' : options.tutorProfile ?? 'general',
+      conversation_kind: conversationKind,
       response_mode: options.responseMode ?? 'text',
       speaking_practice: options.speakingPractice ?? false,
     };
@@ -142,6 +146,7 @@ export async function createChatStream(
       conversationId, requestId, searchMode, useWebSearch: requestPayload.use_web_search, useRag,
       responseMode: requestPayload.response_mode,
       tutorProfile: requestPayload.tutor_profile,
+      conversationKind,
       messageCount: messages.length,
       hasAttachments: attachments.length > 0,
     });

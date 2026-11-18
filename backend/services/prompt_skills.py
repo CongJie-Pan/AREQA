@@ -34,6 +34,7 @@ _SCHEMAS = {
     ),
     "english-tutor": ("english_tutor_skill.md", {"rules": list}),
     "paper-auto-explain": ("paper_auto_explain_skill.md", {"instruction": str}),
+    "research-topic-coach": ("research_topic_coach_skill.md", {"rules": list}),
 }
 
 PromptPayload = Mapping[str, str | tuple[str, ...]]
@@ -50,7 +51,7 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-@lru_cache(maxsize=3)
+@lru_cache(maxsize=len(_SCHEMAS))
 def load_prompt_skill(skill_id: str) -> PromptPayload | None:
     """Return an immutable validated payload, or cache a fail-soft result.
 
@@ -102,7 +103,7 @@ def load_prompt_skill(skill_id: str) -> PromptPayload | None:
 
 
 def preload_prompt_skills() -> None:
-    """Warm the three prompt payloads before serving application requests."""
+    """Warm every allowlisted prompt payload before serving application requests."""
 
     for skill_id in _SCHEMAS:
         load_prompt_skill(skill_id)

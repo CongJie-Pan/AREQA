@@ -328,3 +328,65 @@ describe('ConversationList title states', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 });
+
+describe('ConversationList workspace switch', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    useConversationStore.setState({
+      conversations: [
+        conversation({ id: 'chat-a', title: 'Chat about cells', lastMessagePreview: 'mitosis' }),
+        conversation({ id: 'coach-a', title: 'Topic about feedback', lastMessagePreview: 'mitosis too', kind: 'research_coach' }),
+      ],
+      activeConversationId: null,
+      isLoading: false,
+      error: null,
+      streamingTitles: {},
+      workspace: 'chat',
+    });
+  });
+
+  it('marks the visible workspace and lists only its conversations', () => {
+    const { container } = renderConversationList();
+    const titles = () => [...container.querySelectorAll('.conv-title')].map((title) => title.textContent);
+
+    expect(screen.getByRole('button', { name: 'workspaceChatTooltip' })).toHaveAttribute('aria-pressed', 'true');
+    expect(titles()).toEqual(['Chat about cells']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'workspaceTopicFinderTooltip' }));
+
+    expect(screen.getByRole('button', { name: 'workspaceTopicFinderTooltip' })).toHaveAttribute('aria-pressed', 'true');
+    expect(useConversationStore.getState().workspace).toBe('research_coach');
+    expect(titles()).toEqual(['Topic about feedback']);
+  });
+
+  it('searches only inside the visible workspace', () => {
+    renderConversationList();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search chats' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search chats' }), { target: { value: 'mitosis' } });
+
+    const results = document.querySelectorAll('.areqa-conversation-search-result');
+    expect([...results].map((result) => result.textContent)).toEqual(['Chat about cells']);
+  });
+
+  it('leaves an open conversation of the other workspace and returns home', () => {
+    const onNew = vi.fn();
+    useConversationStore.setState({ activeConversationId: 'chat-a' });
+    renderConversationList({ onNew });
+
+    fireEvent.click(screen.getByRole('button', { name: 'workspaceTopicFinderTooltip' }));
+
+    expect(onNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays on the home screen when nothing is open', () => {
+    const onNew = vi.fn();
+    renderConversationList({ onNew });
+
+    fireEvent.click(screen.getByRole('button', { name: 'workspaceTopicFinderTooltip' }));
+    fireEvent.click(screen.getByRole('button', { name: 'workspaceTopicFinderTooltip' }));
+
+    expect(onNew).not.toHaveBeenCalled();
+    expect(useConversationStore.getState().workspace).toBe('research_coach');
+  });
+});
