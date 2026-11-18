@@ -1,6 +1,6 @@
 # Topic Finder（選題）開發計畫與任務清單
 
-- 狀態：規劃完成，尚未實作
+- 狀態：規劃完成，尚未實作。每個階段的測試關卡都通過，才能進入下一階段（見第 6 節）
 - 建立日期：2026-11-18
 - 來源：
   - Heptabase 白板 `docs/paper/paper_review/Adaptive AI Learning with Human - Extracted`
@@ -151,9 +151,35 @@ primary key (user_id, conversation_id)
 - 不記錄：使用者文字、題目卡內容、模型輸出。
 - 題目卡抽取或讀取失敗時，對話照常進行，題目卡維持上一版。
 
-## 6. 任務清單
+## 6. 測試策略與階段關卡
 
-### 第一階段：MVP（空間 + skill）
+### 6.1 四種測試的定義
+
+| 類型 | 範圍 | 工具與位置 |
+|---|---|---|
+| 單元測試 | 單一函式、元件、store 或 service 的行為 | 前端：Vitest，放在 `tests/frontend/{components,store,services,utils,database}`。後端：pytest，放在 `tests/backend` |
+| 整合測試 | 跨元件、store、service、路由的連動，外部服務一律 mock | 前端：`tests/frontend/integration/topicFinder*.test.tsx`。後端：用 FastAPI 測試 client 打 `stream`／`research-coach` 路由 |
+| 回歸測試 | 確認既有功能沒有被改壞 | 重跑既有的相關測試檔（清單見各階段），最後跑完整套件 |
+| 冒煙測試 | 在真實瀏覽器走一遍主要流程，確認可用 | Playwright，新增 `tests/e2e/topic-finder/`，測試標上 `@smoke`。**只在第三階段的最後執行** |
+
+### 6.2 關卡規則（每一階段都適用）
+
+**一個階段的所有測試都通過，才能進入下一階段。** 每個階段結束時都要完成以下步驟：
+
+1. 這個階段新增或更新的單元測試全部通過。
+2. 這個階段的整合測試全部通過。
+3. 回歸測試全部通過：
+   - 前端：`npm run test:frontend`
+   - 後端：`npm run test:backend`
+   - 前端品質：`npm run check:report:strict`
+4. 只要有失敗，就留在本階段修正，**不能把問題標成「已知問題」帶到下一階段**。
+   - 例外：如果失敗的測試確定和本功能無關，而且在改動前就已經失敗，要附上測試名稱和證據，例如在 master 上同樣失敗，記錄在第 6.7 節，並請作者確認後才能放行。
+5. 在第 6.7 節填寫本階段的關卡紀錄：日期、commit、執行的指令、通過數量。
+6. commit 到 master，commit 訊息註明階段，例如 `feat(topic-finder): phase 1 …`。
+
+### 6.3 第一階段：MVP（空間 + skill）
+
+**實作任務**
 
 前端：
 - [ ] `schema.ts` 新增 `ConversationKind` 和 `Conversation.kind`；在 repository 和 store 裡，缺少 `kind` 時預設為 `chat`。
@@ -177,42 +203,227 @@ primary key (user_id, conversation_id)
 - [ ] prompt 組裝：選題對話要注入選題 skill，載入失敗時退回一般 skill。
 - [ ] 安全日誌：`conversation_kind` 和 skill 載入結果。
 
-測試：
-- [ ] 後端：`conversation_kind` 正規化；skill payload 的 schema 驗證；選題對話會注入 skill；skill 載入失敗會退回；選題對話裡會忽略 english 和生成圖片。
-- [ ] 前端：
-  - 沒有 `kind` 的舊對話視為 `chat`。
-  - 側欄切換會篩選列表。
-  - 分段切換只在空白首頁出現，送出第一則訊息後消失。
-  - 選題對話的加號選單隱藏指定項目。
-  - 分支繼承 `kind`。
-  - sync 會帶上 `kind`。
-- [ ] 對話品質評估：以國關朋友那份對話紀錄的開頭當腳本，比較一般模式和選題模式。指標包括：題目有沒有越收越窄、有沒有在選擇點提出反對理由、有沒有替使用者宣告過關。
+**單元測試**
 
-### 第二階段：題目卡
+後端：
+- [ ] `conversation_kind` 正規化：`chat` 和 `research_coach` 原樣保留；空值、未知值、大小寫錯誤、非字串一律變成 `chat`。
+- [ ] `load_prompt_skill("research-topic-coach")`：
+  - 合法 payload 能載入。
+  - 缺欄位、型別錯誤、重複 key、超過大小上限時，回傳 `None`，而且日誌不含檔案內容。
+- [ ] prompt 組裝：
+  - 選題對話包含選題 skill。
+  - 一般對話不包含選題 skill。
+  - skill 載入失敗時退回一般 skill。
+
+前端：
+- [ ] `schema` 和 repository：沒有 `kind` 的對話讀出來是 `chat`。
+- [ ] chat store 的 `workspace`：
+  - 預設值是 `chat`。
+  - 切換後會寫入偏好設定。
+  - 偏好設定讀取時拋錯，會退回 `chat`。
+- [ ] `syncService`：
+  - 推送 payload 帶有 `kind`，拉取時能還原 `kind`。
+  - 雲端回報缺少 `kind` 欄位時，只丟掉 `kind`，其他照常同步。
+- [ ] `ConversationList`：
+  - 切換圖示有正確的 aria 狀態。
+  - 列表和搜尋只顯示目前空間的對話。
+- [ ] 新對話首頁：
+  - 沒有訊息時顯示分段切換，有訊息時不顯示。
+  - 選題空間的標語和輸入框提示正確。
+- [ ] `ChatInput`：選題對話的加號選單沒有 Create Image 和 English Tutor，但有上傳檔案。
+- [ ] 分支：從選題對話分支出去的新對話，`kind` 是 `research_coach`。
+
+**整合測試**
+
+- [ ] 後端 `stream` 路由：
+  - 帶 `conversation_kind=research_coach` 時，最後的 prompt 包含選題 skill。
+  - 同時帶 `tutor_profile=english` 時，english overlay 不會生效。
+  - 日誌只有 kind 和 skill 狀態，沒有使用者文字。
+- [ ] 前端 `tests/frontend/integration/topicFinderWorkspace.test.tsx`，以下步驟串在一起測：
+  1. 從側欄切換到選題空間。
+  2. 首頁出現分段切換和選題標語。
+  3. 送出第一則訊息後，建立的對話 `kind = research_coach`，請求帶上 `conversation_kind`，分段切換消失。
+  4. 切回 Chat 空間，列表裡看不到這個選題對話。
+  5. 重新整理（重建 store）後，`kind` 和 `workspace` 都正確還原。
+
+**回歸測試（必跑）**
+
+- [ ] 既有測試檔：
+  - `tests/backend/test_answer_style_service.py`
+  - English Tutor 相關的後端測試
+  - `tests/frontend/integration/generatedImageFlow.test.tsx`
+  - 對話分支相關的前端測試
+  - sync 相關的前端測試
+  - `ConversationList` 和 `ChatInput` 既有的元件測試
+- [ ] 完整套件：`npm run test:frontend`、`npm run test:backend`、`npm run check:report:strict`。
+- [ ] 重點確認：
+  - 一般對話：English Tutor、Create Image、分支、附件、停止生成的行為都沒有改變。
+  - 沒有 `kind` 的舊對話照常顯示在 Chat 空間。
+
+**對話品質評估（第一階段才有，人工判讀）**
+
+- [ ] 以國關朋友那份對話紀錄的開頭當腳本，分別在一般模式和選題模式跑一次，看三個指標：
+  1. 題目有沒有越收越窄。
+  2. 使用者做選擇時，AI 有沒有先提出反對理由。
+  3. AI 有沒有替使用者宣告過關（應該沒有）。
+- [ ] 結果寫在 6.7 節。如果第 2 或第 3 項不符合，要先修改 skill 再重跑，才能進入第二階段。
+
+**關卡：** 單元、整合、回歸測試全部通過，品質評估三項都符合，才能進入第二階段。
+
+### 6.4 第二階段：題目卡
+
+**實作任務**
 
 - [ ] migration：`research_topic_cards` 資料表和 RLS。
 - [ ] 後端 service：讀寫題目卡、在背景抽取 `card_patch`（結構化輸出，有長度上限）、確認後推進版本。
 - [ ] FastAPI 路由和 Next.js proxy：`GET card`、`POST confirm`。
 - [ ] prompt 注入題目卡摘要；階段規則由後端決定，每個階段只放該階段的篩子問題。
 - [ ] 前端右側題目卡面板（手機版用抽屜）、確認過關按鈕、上方標籤顯示階段。
-- [ ] 測試：
-  - 沒有確認就不能推進階段。
-  - 抽取失敗時對話不受影響。
-  - 摘要長度上限。
-  - 日誌不包含內容。
-  - 面板和抽屜的響應式顯示。
 
-### 第三階段：發散與匯出
+**單元測試**
+
+後端：
+- [ ] `card_patch` schema 驗證：合法建議會被接受；未知欄位、超過長度、型別錯誤的建議會被拒絕。
+- [ ] 確認邏輯：
+  - 只有確認時 `stage` 才推進、`version` 才加一，並寫入 `history`。
+  - 抽到建議時不會改變 `stage` 和 `version`。
+  - 重複確認同一關不會重複推進（冪等）。
+  - 超過最後一關時不會越界。
+- [ ] 摘要產生：輸出有長度上限，只包含目前階段需要的欄位。
+- [ ] 階段規則：每個 `stage` 只放對應篩子的問題。
+- [ ] 抽取失敗、逾時、回傳格式錯誤時，題目卡維持上一版，日誌不含內容。
+
+前端：
+- [ ] 題目卡面板：
+  - 正確渲染各區塊。
+  - 未填的測量方式標 ❗。
+  - 收合狀態正確。
+  - 手機寬度改成抽屜。
+- [ ] 確認按鈕：
+  - 請求進行中時停用。
+  - 失敗時顯示錯誤並保留原狀態。
+- [ ] 上方標籤：顯示 `篩子 n/5：名稱`。
+
+**整合測試**
+
+- [ ] 後端：
+  - 用 `GET card` 讀到空卡，發一輪 `stream`，抽取建議。
+  - 再 `GET card`：建議存在，但 `stage` 沒有改變。
+  - `POST confirm` 之後 `stage` 和 `version` 推進，下一輪 prompt 的摘要反映新階段。
+- [ ] 後端權限：
+  - 使用者 A 不能讀取或確認使用者 B 的題目卡。
+  - 未登入呼叫回傳 401。
+- [ ] 前端 `tests/frontend/integration/topicFinderCard.test.tsx`：
+  1. 打開選題對話，面板載入題目卡。
+  2. 送出一則訊息後出現待確認建議。
+  3. 按下確認，版本和階段更新。
+  4. API 失敗時，對話仍然可以繼續。
+- [ ] Next.js proxy：正確轉發驗證資訊，不把後端錯誤細節洩漏給瀏覽器。
+
+**回歸測試（必跑）**
+
+- [ ] 第一階段的全部 Topic Finder 測試。
+- [ ] 既有的串流、摘要 checkpoint、RLS 隔離測試：
+  - `tests/unit/test_rls_isolation.py`
+  - 摘要 checkpoint 相關的後端測試
+  - 串流相關的前端整合測試
+- [ ] 完整套件：`npm run test:frontend`、`npm run test:backend`、`npm run check:report:strict`。
+- [ ] 重點確認：一般對話不會呼叫題目卡 API，回應延遲也沒有增加，因為抽取在背景進行。
+
+**關卡：** 單元、整合、回歸測試全部通過，才能進入第三階段。
+
+### 6.5 第三階段：發散、匯出與冒煙測試
+
+**實作任務**
 
 - [ ] 在「發散」步驟，為每個候選題目開一條分支；主線題目卡只保留通過篩選的題目。
 - [ ] 題目卡和版本歷史可以匯出成 Markdown。
 
-## 7. 驗收與品質關卡
+**單元測試**
 
-- 前端先跑相關的 Vitest 檔案，再跑 `npm run check:report:strict`。
-- 後端相關的 pytest 都要通過。
-- 確認一般對話的行為完全不變：沒有 `kind` 的舊對話、English Tutor、Create Image、分支都要回歸測試。
-- 第一階段完成後，先做對話品質評估，再決定是否進入第二階段。
+- [ ] 從候選題目開分支：新分支繼承 `kind`，並帶入該候選題目。
+- [ ] 分支和主線題目卡的關係：分支不會改到主線題目卡。
+- [ ] Markdown 匯出：
+  - 各區塊和版本歷史格式正確。
+  - 特殊字元有跳脫。
+  - 空的題目卡也能匯出。
+
+**整合測試**
+
+- [ ] 前端 `tests/frontend/integration/topicFinderDivergence.test.tsx`：
+  1. 在發散步驟為兩個候選題目各開一條分支。
+  2. 兩條分支都只出現在選題空間。
+  3. 回到主線確認過關後，匯出的 Markdown 包含淘汰清單和版本歷史。
+
+**回歸測試（必跑）**
+
+- [ ] 第一、二階段的全部 Topic Finder 測試。
+- [ ] 既有的分支和分享測試：
+  - `tests/e2e/conversation-branches` 測試組
+  - 分支和分享相關的前端測試
+- [ ] 完整套件：`npm run test:frontend`、`npm run test:backend`、`npm run check:report:strict`。
+
+**冒煙測試（全部實作完成後才執行）**
+
+新增 `tests/e2e/topic-finder/flow.spec.ts`，結構比照 `tests/e2e/conversation-branches`，每個測試都標上 `@smoke`：
+
+- [ ] `@smoke` 從側欄切換到選題空間，首頁出現分段切換和選題標語。
+- [ ] `@smoke` 送出第一則訊息後，回答會串流完成，分段切換消失，上方出現選題標籤。
+- [ ] `@smoke` 題目卡面板會載入，確認一關之後階段和版本更新；重新整理後狀態仍在。
+- [ ] `@smoke` 切回 Chat 空間，看不到選題對話；一般對話可以正常收發一輪。
+- [ ] `@smoke` 從候選題目開分支後，分支出現在選題空間；匯出的 Markdown 可以下載。
+- [ ] `@smoke` 手機寬度（390px）時題目卡變成抽屜，畫面沒有水平捲動。
+- [ ] 執行：新增 `test:e2e:topic-finder` 這個 npm script，並跑 `npm run test:smoke`，同時確認既有的 `@smoke` 測試也都通過。
+
+**關卡：** 單元、整合、回歸、冒煙測試全部通過，才能交付實機測試劇本，進行人工驗收。
+
+### 6.6 交付：實機測試劇本
+
+全部實作完成、第三階段關卡通過後，新增 `docs/tech_docs/dev_docs/research_coach_manual_test_script.md`，讓作者在實際環境中手動驗收。內容至少包括：
+
+1. **事前準備**：
+   - 啟動前端和後端的指令。
+   - 確認 Supabase migration 已經套用。
+   - 準備一個測試帳號，以及一個有舊對話（沒有 `kind`）的帳號。
+2. **劇本 A｜空間切換**：
+   - 側欄切換。
+   - 首頁的分段切換只在空白首頁出現。
+   - 列表和搜尋只顯示目前空間的對話。
+   - 舊對話出現在 Chat 空間。
+3. **劇本 B｜完整選題流程**：用作者自己 8 月的痛點「AREQA 做出來跟 Gemini 差不多」當輸入，從痛點走到第五道篩子。每一步列出：
+   - 輸入範例。
+   - 預期 AI 的行為，例如提出反對理由、不宣告過關、資訊型問題直接回答。
+   - 預期題目卡的變化。
+4. **劇本 C｜反問推翻**：
+   - 使用者只回「好」時，AI 不推進階段。
+   - 使用者提出反例時，題目卡記錄這條反問。
+5. **劇本 D｜模式隔離**：
+   - 選題對話的加號選單沒有 Create Image 和 English Tutor。
+   - 一般對話的這兩個功能照常可用。
+6. **劇本 E｜發散與匯出**：從候選題目開分支，然後匯出 Markdown。
+7. **劇本 F｜失敗與降級**：
+   - 中斷後端，或模擬題目卡 API 失敗：對話仍可繼續，題目卡維持原樣。
+   - 重新整理後狀態可以還原。
+8. **劇本 G｜裝置與存取**：
+   - 手機寬度。
+   - 深色和淺色主題。
+   - 中英文介面。
+   - 鍵盤操作切換鈕。
+9. **紀錄表**：每一步都有「通過／失敗／備註」欄位，最後由作者簽核。
+
+### 6.7 關卡紀錄
+
+| 階段 | 日期 | commit | 單元 | 整合 | 回歸 | 冒煙 | 品質評估或備註 |
+|---|---|---|---|---|---|---|---|
+| 第一階段 |  |  |  |  |  | — |  |
+| 第二階段 |  |  |  |  |  | — |  |
+| 第三階段 |  |  |  |  |  |  |  |
+
+## 7. 其他品質要求
+
+- 前端改動要先跑相關的 Vitest 檔案，再跑全部套件。
+- 日誌不能包含使用者文字、題目卡內容或模型輸出。每個階段的整合測試都至少要有一個案例檢查這件事。
+- 新的介面元件要支援深色和淺色主題、手機寬度，以及鍵盤操作。
 
 ## 8. 不在這次範圍內
 
