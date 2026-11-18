@@ -216,7 +216,8 @@ class OrchestrationExecutionMixin:
         # A greeting with an upload is still an attachment task; memory eligibility
         # must not short-circuit the model's access to request-scoped material.
         if last_user_msg and not has_attachments and not classify_user_message(last_user_msg).should_prompt:
-            greeting_reply = _localized_greeting_reply(interface_language)
+            greeting_reply = _localized_greeting_reply(
+                interface_language, last_user_msg, topic_finder=is_research_coach(tutor_profile))
             yield sse_adapter.encode_legacy(
                 f"data: {json.dumps({'choices': [{'delta': {'content': greeting_reply}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n",
                 run_context.run_id,

@@ -17,12 +17,37 @@ logger = logging.getLogger(__name__)
 InterfaceLanguage = str
 
 
-def _localized_greeting_reply(interface_language: InterfaceLanguage) -> str:
-    if interface_language == "en":
-        return "Hello, I am here. You can tell me what you want to work on now."
-    if interface_language == "zh-CN":
-        return "你好，我在。你可以直接告诉我现在想处理什么。"
-    return "你好，我在。你可以直接告訴我現在想處理什麼。"
+_GREETING_REPLIES = {
+    "en": "Hello, I am here. You can tell me what you want to work on now.",
+    "zh-CN": "你好，我在。你可以直接告诉我现在想处理什么。",
+    "zh-TW": "你好，我在。你可以直接告訴我現在想處理什麼。",
+}
+
+# Topic Finder's greeting is the coach's first step: ask for the pain point.
+_TOPIC_FINDER_GREETING_REPLIES = {
+    "en": (
+        "Hi! This is Topic Finder. Start with one sentence about what you are stuck on or curious about: "
+        "\"I'm stuck on / curious about ___\". Ideally it is something you have actually run into or care about."
+    ),
+    "zh-CN": "你好！这里是选题空间。先用一句话说说你最近卡住或好奇的问题：「我卡在／我好奇＿＿」，最好是你真的遇过或在乎的事。",
+    "zh-TW": "你好！這裡是選題空間。先用一句話說說你最近卡住或好奇的問題：「我卡在／我好奇＿＿」，最好是你真的遇過或在乎的事。",
+}
+
+
+def _localized_greeting_reply(interface_language: InterfaceLanguage, last_user_msg: str = "",
+                              topic_finder: bool = False) -> str:
+    """Canned reply for a bare greeting, in the language of the greeting itself.
+
+    Args:
+        interface_language: UI language, used only when the message has no language signal.
+        last_user_msg: The greeting; "你好" in an English UI is answered in Chinese.
+        topic_finder: Topic Finder conversations get the coach's opening question.
+    """
+    from services.conversation.language import detect_reply_language
+
+    language = detect_reply_language(interface_language, last_user_msg)
+    replies = _TOPIC_FINDER_GREETING_REPLIES if topic_finder else _GREETING_REPLIES
+    return replies.get(language, replies["zh-TW"])
 
 
 def reorder_for_attention(results):

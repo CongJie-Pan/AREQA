@@ -146,3 +146,35 @@ def _example_instruction(interface_language: str, latest_user_message: str = "")
         "請至少加入一個能直接說明答案的具體案例。案例要簡潔、貼近問題；"
         "若問題只是簡單事實、翻譯、格式調整或純操作請求，不要強行加入案例。"
     )
+
+
+def detect_reply_language(interface_language: str, latest_user_message: str) -> str:
+    """Pick the language key for a short canned reply (for example a greeting).
+
+    The message decides, not the UI: "你好" in an English UI gets Chinese.
+    Chinese with no script-specific characters (for example "你好") follows a
+    Chinese UI, so a Simplified-Chinese UI still gets Simplified.
+
+    Args:
+        interface_language: Persisted UI language, used only as a fallback.
+        latest_user_message: Current user-authored message.
+
+    Returns:
+        One of ``"zh-TW"``, ``"zh-CN"`` or ``"en"``.
+    """
+    explicit = _explicit_language_request(latest_user_message)
+    if explicit:
+        return explicit
+    detected = _detect_query_language(latest_user_message)
+    if detected in {"zh-TW", "zh-CN"}:
+        han = re.findall(r"[\u3400-\u9fff]", latest_user_message)
+        script_neutral = not any(char in SIMPLIFIED_CHINESE_HINTS or char in TRADITIONAL_CHINESE_HINTS for char in han)
+        if script_neutral and interface_language in {"zh-TW", "zh-CN"}:
+            return interface_language
+        return detected
+    if detected:
+        return detected
+    # Too short for the English heuristic ("hi"), but plainly Latin script.
+    if re.search(r"[A-Za-z]", latest_user_message):
+        return "en"
+    return interface_language if interface_language in ANSWER_LANGUAGE_RULES else "zh-TW"

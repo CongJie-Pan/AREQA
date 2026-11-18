@@ -936,6 +936,37 @@ async def test_execute_short_circuits_low_information_greeting_without_llm(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("greeting", "interface_language", "tutor_profile", "expected", "absent"), [
+    # The greeting's own language wins over the UI language.
+    ("你好", "en", "general", "你好，我在。你可以直接告訴我現在想處理什麼。", "Hello, I am here"),
+    ("hello", "zh-TW", "general", "Hello, I am here.", "你好，我在"),
+    ("你好", "zh-CN", "general", "你好，我在。你可以直接告诉我现在想处理什么。", "告訴"),
+    # Topic Finder opens with the coach's first question instead of a generic greeting.
+    ("你好", "en", "research_coach", "這裡是選題空間", "你好，我在"),
+    ("hi", "zh-TW", "research_coach", "This is Topic Finder", "選題空間"),
+    ("hi", "zh-TW", "general", "Hello, I am here.", "你好，我在"),
+    ("嗨", "en", "general", "你好，我在", "Hello, I am here"),
+])
+async def test_greeting_shortcut_follows_message_language_and_workspace(
+    mock_router, mock_rag, mock_suggestion, mock_client, greeting, interface_language, tutor_profile, expected, absent,
+):
+    service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock):
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": greeting}], "greeting-conv", False, False, False, 100, 0.7, 0.9, 1.0,
+            MagicMock(), "u1", interface_language=interface_language, tutor_profile=tutor_profile,
+        )]
+
+    joined = "".join(events)
+    assert expected in joined
+    assert absent not in joined
+    assert joined.endswith("data: [DONE]\n\n")
+
+
+@pytest.mark.asyncio
 async def test_execute_emits_visible_status_before_memory_work(
     mock_router, mock_rag, mock_suggestion, mock_client
 ):

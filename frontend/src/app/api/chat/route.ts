@@ -39,6 +39,8 @@ interface ChatRequestBody {
   search_mode?: 'auto' | 'always' | 'never';
   interface_language?: 'zh-TW' | 'zh-CN' | 'en';
   tutor_profile?: 'general' | 'english';
+  /** Workspace of the conversation; only these two values reach the backend. */
+  conversation_kind?: 'chat' | 'research_coach';
   response_mode?: 'text' | 'voice';
   speaking_practice?: boolean;
   force_think?: boolean;
@@ -276,6 +278,8 @@ export async function POST(request: NextRequest) {
           search_mode: body.search_mode,
           interface_language: body.interface_language,
           tutor_profile: body.tutor_profile === 'english' ? 'english' : 'general',
+          // Without this field the backend treats Topic Finder turns as ordinary chat.
+          conversation_kind: body.conversation_kind === 'research_coach' ? 'research_coach' : 'chat',
           response_mode: body.response_mode === 'voice' ? 'voice' : 'text',
           speaking_practice: body.speaking_practice === true,
           force_think: body.force_think || false,
