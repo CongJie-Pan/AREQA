@@ -1,9 +1,10 @@
 /**
  * Topic Finder (選題) topic card client.
  *
- * The card lives server-side; the browser reads it and confirms stages through
- * the Next.js proxy. The AI can only propose a pending draft; a stage advances
- * only when the learner confirms the version they are looking at.
+ * The card lives server-side; the browser reads it, adopts drafts, and picks
+ * stages through the Next.js proxy. The AI can only propose a pending draft,
+ * which is adopted only for the version the learner is looking at. Only the
+ * learner moves between stages, in any order.
  */
 
 import { authenticatedFetch } from '@/services/authenticatedFetch';
@@ -16,8 +17,26 @@ export interface TopicCardContent {
   mother_question: string;
   candidates: string[];
   operationalization: { term: string; measure: string }[];
+  /** Stage-5 checks; older cards may not have it. */
+  feasibility?: TopicFeasibilityItem[];
   discarded: { topic: string; filter: number; reason: string; can_return: boolean }[];
   objections: string[];
+}
+
+export type TopicFeasibilityKey = 'time' | 'data' | 'advisor' | 'prior_work';
+export const TOPIC_FEASIBILITY_KEYS: TopicFeasibilityKey[] = ['time', 'data', 'advisor', 'prior_work'];
+
+export interface TopicFeasibilityItem {
+  key: TopicFeasibilityKey;
+  status: 'ok' | 'unsure' | 'blocked';
+  note: string;
+}
+
+/** AI search hints; reference only, never the learner's decisions. */
+export interface TopicCardSuggestions {
+  keywords: string[];
+  gaps: string[];
+  related: string[];
 }
 
 export interface TopicCardState {
@@ -25,6 +44,7 @@ export interface TopicCardState {
   version: number;
   card: TopicCardContent;
   pending: { card: TopicCardContent; notes: string[] } | null;
+  suggestions?: TopicCardSuggestions;
   history: { version: number; stage: number; note: string; confirmed_at: number }[];
 }
 
@@ -54,24 +74,41 @@ export async function fetchTopicCard(conversationId: string, signal?: AbortSigna
   return (await response.json()) as TopicCardState;
 }
 
-export async function confirmTopicCardStage(
+/** Adopt the AI draft for the version the learner saw; the stage does not change. */
+export async function adoptTopicCardDraft(
   conversationId: string,
   version: number,
-): Promise<{ state: TopicCardState; advanced: boolean }> {
+): Promise<{ state: TopicCardState; adopted: boolean }> {
   const response = await authenticatedFetch(`/api/research-coach/${encodeURIComponent(conversationId)}/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ version }),
   });
   if (!response.ok) {
-    logger.info('topic_card_confirm_failed', { conversationId, status: response.status });
+    logger.info('topic_card_adopt_failed', { conversationId, status: response.status });
     throw new TopicCardError(failureFor(response.status));
   }
-  const result = (await response.json()) as { state: TopicCardState; advanced: boolean };
-  logger.info('topic_card_confirmed', {
-    conversationId, advanced: result.advanced, stage: result.state.stage, version: result.state.version,
+  const result = (await response.json()) as { state: TopicCardState; adopted: boolean };
+  logger.info('topic_card_adopted', {
+    conversationId, adopted: result.adopted, stage: result.state.stage, version: result.state.version,
   });
   return result;
+}
+
+/** Move to the stage the learner picked (1-5, or 6 for done). */
+export async function setTopicCardStage(conversationId: string, stage: number): Promise<TopicCardState> {
+  const response = await authenticatedFetch(`/api/research-coach/${encodeURIComponent(conversationId)}/stage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage }),
+  });
+  if (!response.ok) {
+    logger.info('topic_card_stage_failed', { conversationId, status: response.status });
+    throw new TopicCardError(failureFor(response.status));
+  }
+  const state = (await response.json()) as TopicCardState;
+  logger.info('topic_card_stage_set', { conversationId, stage: state.stage, version: state.version });
+  return state;
 }
 
 /** The draft when the AI proposed one, otherwise the last confirmed card. */

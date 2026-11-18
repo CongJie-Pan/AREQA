@@ -7,6 +7,7 @@ vi.mock('next/server', () => ({
 
 import { GET as getCard } from '@/app/api/research-coach/[conversationId]/card/route';
 import { POST as confirm } from '@/app/api/research-coach/[conversationId]/confirm/route';
+import { POST as setStage } from '@/app/api/research-coach/[conversationId]/stage/route';
 
 const ID = '8f0c2c55-1d3e-4c11-9a77-1b0e4c2f9a10';
 const context = (conversationId = ID) => ({ params: Promise.resolve({ conversationId }) });
@@ -48,6 +49,18 @@ describe('topic card proxy routes', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0];
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ version: 2 });
+  });
+
+  it('forwards only a validated stage between 1 and 6', async () => {
+    for (const stage of [0, 7, '2', 2.5]) expect((await setStage(request({ stage }) as never, context())).status).toBe(400);
+    expect((await setStage(request({ stage: 2 }, false) as never, context())).status).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+
+    await setStage(request({ stage: 4, version: 9 }) as never, context());
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain(`/api/v1/research-coach/${ID}/stage`);
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ stage: 4 });
   });
 
   it('returns generic errors for upstream failures', async () => {

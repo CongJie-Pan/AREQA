@@ -110,35 +110,49 @@ export type TranslationKey =
   | 'workspaceTopicFinder'
   | 'workspaceChatTooltip'
   | 'workspaceTopicFinderTooltip'
+  | 'workspaceBeta'
   | 'topicFinderEmptyGreeting'
   | 'topicFinderEmptyPainPrompt'
   | 'topicFinderEmptyMethodPrompt'
   | 'topicFinderPlaceholder'
   | 'topicCardTitle'
-  | 'topicCardStagePainPoint'
+  | 'topicCardNextStage'
+  | 'topicCardGoToStage'
+  | 'topicCardAdopted'
+  | 'topicCardStageFailed'
+  | 'topicCardDoneSub'
+  | 'topicStageTitle1'
+  | 'topicStageTitle2'
+  | 'topicStageTitle3'
+  | 'topicStageTitle4'
+  | 'topicStageTitle5'
+  | 'topicStageSub1'
+  | 'topicStageSub2'
+  | 'topicStageSub3'
+  | 'topicStageSub4'
+  | 'topicStageSub5'
+  | 'topicCardSuggestions'
+  | 'topicCardKeywords'
+  | 'topicCardKeywordCopy'
+  | 'topicCardKeywordCopied'
+  | 'topicCardGaps'
+  | 'topicCardRelated'
+  | 'topicCardFeasibility'
+  | 'topicFeasTime'
+  | 'topicFeasData'
+  | 'topicFeasAdvisor'
+  | 'topicFeasPriorWork'
+  | 'topicFeasOk'
+  | 'topicFeasUnsure'
+  | 'topicFeasBlocked'
+  | 'topicFeasMissing'
   | 'topicCardStageFilter'
   | 'topicCardStageDone'
-  | 'topicCardStageStart'
-  | 'topicCardCurrentQuestion'
-  | 'topicCardWhy'
   | 'topicCardDraftTitle'
   | 'topicCardAccept'
-  | 'topicCardAdvance'
   | 'topicCardRevise'
   | 'topicCardReviseHint'
   | 'topicCardCurrentTopic'
-  | 'topicStageQ0'
-  | 'topicStageQ1'
-  | 'topicStageQ2'
-  | 'topicStageQ3'
-  | 'topicStageQ4'
-  | 'topicStageQ5'
-  | 'topicStageWhy0'
-  | 'topicStageWhy1'
-  | 'topicStageWhy2'
-  | 'topicStageWhy3'
-  | 'topicStageWhy4'
-  | 'topicStageWhy5'
   | 'topicCardPainPoint'
   | 'topicCardMotherQuestion'
   | 'topicCardCandidates'
@@ -157,7 +171,6 @@ export type TranslationKey =
   | 'topicCardNotSynced'
   | 'topicCardConfirmFailed'
   | 'topicCardStale'
-  | 'topicCardAdvanced'
   | 'topicCardVersion'
   | 'topicCardOpen'
   | 'topicCardClose'
@@ -537,35 +550,57 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     workspaceTopicFinder: "選題",
     workspaceChatTooltip: "一般對話",
     workspaceTopicFinderTooltip: "選題：找出適合你的研究題目",
+    workspaceBeta: "測試版",
     topicFinderEmptyGreeting: "一起找出適合你的研究題目 🔭",
     topicFinderEmptyPainPrompt: "你最近卡在什麼問題上？",
-    topicFinderEmptyMethodPrompt: "從你的痛點出發，我會陪你一關一關篩選題目。",
     topicFinderPlaceholder: "說說你最近卡住的問題……",
     topicCardTitle: "題目卡",
-    topicCardStagePainPoint: "痛點",
-    topicCardStageFilter: "第 {n} 關／共 5 關",
+    topicFinderEmptyMethodPrompt: "從你的痛點出發，我會陪你一個階段一個階段找題目，也可以跳著走。",
+    topicCardStageFilter: "第 {n} 階段",
+    topicCardAccept: "採用這份整理",
+    topicCardNextStage: "下一階段 →",
+    topicCardGoToStage: "切換到第 {n} 階段：{title}",
+    topicCardAdopted: "已採用，存成新版本。",
+    topicCardStageFailed: "切換階段失敗，請稍後再試。",
+    topicCardConfirmHint: "要不要採用、何時換階段都由你決定；AI 只負責整理和提出疑問。",
+    topicCardDone: "你已走完五個階段",
+    topicCardDoneSub: "可以匯出題目卡，或點上方的數字回到任何一個階段。",
+    topicCardDiscardedBy: "第 {n} 階段淘汰",
+    topicCardConfirmFailed: "儲存失敗，請稍後再試。",
+    topicCardStale: "題目卡已有更新，請看過最新內容後再採用一次。",
+    topicStageTitle1: "觀察痛點，先發散",
+    topicStageTitle2: "有沒有很簡單的解法？",
+    topicStageTitle3: "你真正想知道的是什麼？",
+    topicStageTitle4: "怎麼證明？",
+    topicStageTitle5: "做得到嗎？",
+    topicStageSub1: "從生活中的痛點或研究的缺口出發，先發想幾個想解決的問題。",
+    topicStageSub2: "一個現成工具、現有論文或研究成果，現在就能解決它嗎？想出最偷懶的解法，再說明它夠不夠。",
+    topicStageSub3: "拿掉工具和案例，把具體題目往上抽一層，寫出你的「母問題」。",
+    topicStageSub4: "題目裡每個關鍵詞，要用什麼證據看出來？結果有沒有可能證明你錯了？",
+    topicStageSub5: "以你現在的時間、資源、場域和指導教授，做得到嗎？有人做過了嗎？",
+    topicCardSuggestions: "AI 建議（參考用，請自己查證）",
+    topicCardKeywords: "可以搜尋的關鍵字",
+    topicCardKeywordCopy: "複製關鍵字：{keyword}",
+    topicCardKeywordCopied: "已複製，可以貼到 Google Scholar 搜尋。",
+    topicCardGaps: "可能的研究缺口",
+    topicCardRelated: "相關議題",
+    topicCardFeasibility: "可行性檢查",
+    topicFeasTime: "時間",
+    topicFeasData: "資料與場域",
+    topicFeasAdvisor: "指導教授與方法",
+    topicFeasPriorWork: "有沒有人做過",
+    topicFeasOk: "可以",
+    topicFeasUnsure: "還不確定",
+    topicFeasBlocked: "有困難",
+    topicFeasMissing: "還沒討論",
+    topicTourIntroBody: "這裡不會直接給你題目，而是像指導教授一樣，分 5 個階段陪你找題目，可以跳著走：",
+    topicTourIntroPoint3: "AI 只負責整理和提出疑問，要不要採用、何時換階段由你決定。",
+    topicTourCardBody: "上方的 1～5 可以直接切換階段。AI 會把對話整理成草稿；你覺得對，就按「採用這份整理」。",
     topicCardStageDone: "完成",
-    topicCardStageStart: "起點",
-    topicCardCurrentQuestion: "這一關要回答：",
-    topicCardWhy: "為什麼要問這個？",
     topicCardDraftTitle: "AI 根據剛才的對話，幫你整理成：",
-    topicCardAccept: "對，就這樣，進入下一關",
-    topicCardAdvance: "這一關我想清楚了，進入下一關",
     topicCardRevise: "我再想想",
     topicCardReviseHint: "直接在對話裡告訴 AI 要改哪裡，它會更新這份草稿。",
     topicCardCurrentTopic: "目前的題目",
-    topicStageQ0: "你卡住或好奇的是什麼？用一句話寫下「我卡在／我好奇＿＿」。",
-    topicStageQ1: "這個問題，過兩年技術進步後還存在嗎？",
-    topicStageQ2: "有沒有一個很簡單的做法，現在就能解決它？",
-    topicStageQ3: "拿掉你的工具和案例，你真正想知道的是什麼？",
-    topicStageQ4: "每個關鍵詞，你打算用什麼證據看出來？",
-    topicStageQ5: "以你現在的時間、資源和指導教授，做得到嗎？有人做過了嗎？",
-    topicStageWhy0: "好題目通常來自你真的遇過、在乎的問題，而不是熱門關鍵字。",
-    topicStageWhy1: "如果模型變強、工具更新就會自動消失，它比較像產品功能，不像研究題目。",
-    topicStageWhy2: "如果一句提示詞或一個現成工具就能解決，研究價值就不大；要說得出簡單做法為什麼不夠。",
-    topicStageWhy3: "這就是你的「母問題」。案例可以換，母問題不變，才是研究的核心。",
-    topicStageWhy4: "寫成「我用＿＿來看出○○」。寫不出來的詞，就是題目還沒想清楚的地方；也想想結果有沒有可能證明你錯了。",
-    topicStageWhy5: "找出你現在做得到的最小版本，並確認不是別人已經完整回答過的問題。",
     topicCardPainPoint: "你卡住的問題",
     topicCardMotherQuestion: "你真正想知道的（母問題）",
     topicCardCandidates: "候選題目",
@@ -573,18 +608,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardOperationalization: "怎麼證明（每個關鍵詞用什麼證據看）",
     topicCardMeasureMissing: "還沒想好用什麼證據",
     topicCardDiscarded: "淘汰的題目",
-    topicCardDiscardedBy: "第 {n} 關淘汰",
     topicCardCanReturn: "之後可以再回來",
     topicCardObjections: "我的反問",
     topicCardPending: "AI 整理的草稿（尚未採用）",
-    topicCardConfirmHint: "只有你能決定是否過關；AI 只負責提出反例。",
-    topicCardDone: "五個問題都已由你確認",
     topicCardEmpty: "還沒有確認的內容；採用上面的草稿後，會出現在這裡。",
     topicCardUnavailable: "題目卡暫時無法載入，對話不受影響。",
     topicCardNotSynced: "對話同步完成後即可使用題目卡。",
-    topicCardConfirmFailed: "確認失敗，請稍後再試。",
-    topicCardStale: "題目卡已有更新，請看過最新內容後再確認一次。",
-    topicCardAdvanced: "已確認，進入下一關。",
     topicCardVersion: "版本 v{n}",
     topicCardOpen: "開啟題目卡",
     topicCardClose: "收合題目卡",
@@ -596,14 +625,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardBranchFailed: "目前無法建立分支，請等這一輪回答完成後再試。",
     topicTourIntroTitle: "歡迎來到選題",
     topicTourStart: "開始（約 30 秒）",
-    topicTourIntroBody: "這裡不會直接給你題目，而是像指導教授一樣，用 5 個問題幫你檢查題目：",
-    topicTourIntroPoint3: "AI 只負責提出反例，是否過關由你決定。",
     topicTourAskTitle: "先說說你的痛點",
     topicTourAskBody: "在輸入框寫下「我卡在／我好奇＿＿」，或點下面的例子試試。回答完成後，我再帶你看題目卡。",
     topicTourExample1: "我做的教學系統和 ChatGPT 差不多，不知道研究價值在哪",
     topicTourExample2: "我好奇 AI 的回答方式會不會讓學生想得更少",
     topicTourCardTitle: "這是你的題目卡",
-    topicTourCardBody: "每一關只問一個問題。AI 會把對話整理成草稿；你覺得對，就按「對，就這樣，進入下一關」。",
     topicTourCardPoint1: "不要的題目會收在「淘汰的題目」，之後可以再回來。",
     topicTourCardPoint2: "候選題目可以「開分支探索」，不會影響主線。",
     topicTourCardPoint3: "題目卡可以匯出 Markdown；手機上點右上角的「選題」標籤開啟。",
@@ -938,35 +964,57 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     workspaceTopicFinder: "选题",
     workspaceChatTooltip: "一般对话",
     workspaceTopicFinderTooltip: "选题：找出适合你的研究题目",
+    workspaceBeta: "测试版",
     topicFinderEmptyGreeting: "一起找出适合你的研究题目 🔭",
     topicFinderEmptyPainPrompt: "你最近卡在什么问题上？",
-    topicFinderEmptyMethodPrompt: "从你的痛点出发，我会陪你一关一关筛选题目。",
     topicFinderPlaceholder: "说说你最近卡住的问题……",
     topicCardTitle: "题目卡",
-    topicCardStagePainPoint: "痛点",
-    topicCardStageFilter: "第 {n} 关／共 5 关",
+    topicFinderEmptyMethodPrompt: "从你的痛点出发，我会陪你一个阶段一个阶段找题目，也可以跳着走。",
+    topicCardStageFilter: "第 {n} 阶段",
+    topicCardAccept: "采用这份整理",
+    topicCardNextStage: "下一阶段 →",
+    topicCardGoToStage: "切换到第 {n} 阶段：{title}",
+    topicCardAdopted: "已采用，存成新版本。",
+    topicCardStageFailed: "切换阶段失败，请稍后再试。",
+    topicCardConfirmHint: "要不要采用、何时换阶段都由你决定；AI 只负责整理和提出疑问。",
+    topicCardDone: "你已走完五个阶段",
+    topicCardDoneSub: "可以导出题目卡，或点上方的数字回到任何一个阶段。",
+    topicCardDiscardedBy: "第 {n} 阶段淘汰",
+    topicCardConfirmFailed: "保存失败，请稍后再试。",
+    topicCardStale: "题目卡已有更新，请看过最新内容后再采用一次。",
+    topicStageTitle1: "观察痛点，先发散",
+    topicStageTitle2: "有没有很简单的解法？",
+    topicStageTitle3: "你真正想知道的是什么？",
+    topicStageTitle4: "怎么证明？",
+    topicStageTitle5: "做得到吗？",
+    topicStageSub1: "从生活中的痛点或研究的缺口出发，先发想几个想解决的问题。",
+    topicStageSub2: "一个现成工具、现有论文或研究成果，现在就能解决它吗？想出最偷懒的解法，再说明它够不够。",
+    topicStageSub3: "拿掉工具和案例，把具体题目往上抽一层，写出你的「母问题」。",
+    topicStageSub4: "题目里每个关键词，要用什么证据看出来？结果有没有可能证明你错了？",
+    topicStageSub5: "以你现在的时间、资源、场域和指导教授，做得到吗？有人做过了吗？",
+    topicCardSuggestions: "AI 建议（参考用，请自己查证）",
+    topicCardKeywords: "可以搜索的关键词",
+    topicCardKeywordCopy: "复制关键词：{keyword}",
+    topicCardKeywordCopied: "已复制，可以粘贴到 Google Scholar 搜索。",
+    topicCardGaps: "可能的研究缺口",
+    topicCardRelated: "相关议题",
+    topicCardFeasibility: "可行性检查",
+    topicFeasTime: "时间",
+    topicFeasData: "资料与场域",
+    topicFeasAdvisor: "指导教授与方法",
+    topicFeasPriorWork: "有没有人做过",
+    topicFeasOk: "可以",
+    topicFeasUnsure: "还不确定",
+    topicFeasBlocked: "有困难",
+    topicFeasMissing: "还没讨论",
+    topicTourIntroBody: "这里不会直接给你题目，而是像指导教授一样，分 5 个阶段陪你找题目，可以跳着走：",
+    topicTourIntroPoint3: "AI 只负责整理和提出疑问，要不要采用、何时换阶段由你决定。",
+    topicTourCardBody: "上方的 1～5 可以直接切换阶段。AI 会把对话整理成草稿；你觉得对，就按「采用这份整理」。",
     topicCardStageDone: "完成",
-    topicCardStageStart: "起点",
-    topicCardCurrentQuestion: "这一关要回答：",
-    topicCardWhy: "为什么要问这个？",
     topicCardDraftTitle: "AI 根据刚才的对话，帮你整理成：",
-    topicCardAccept: "对，就这样，进入下一关",
-    topicCardAdvance: "这一关我想清楚了，进入下一关",
     topicCardRevise: "我再想想",
     topicCardReviseHint: "直接在对话里告诉 AI 要改哪里，它会更新这份草稿。",
     topicCardCurrentTopic: "目前的题目",
-    topicStageQ0: "你卡住或好奇的是什么？用一句话写下「我卡在／我好奇＿＿」。",
-    topicStageQ1: "这个问题，过两年技术进步后还存在吗？",
-    topicStageQ2: "有没有一个很简单的做法，现在就能解决它？",
-    topicStageQ3: "拿掉你的工具和案例，你真正想知道的是什么？",
-    topicStageQ4: "每个关键词，你打算用什么证据看出来？",
-    topicStageQ5: "以你现在的时间、资源和指导教授，做得到吗？有人做过了吗？",
-    topicStageWhy0: "好题目通常来自你真的遇过、在乎的问题，而不是热门关键字。",
-    topicStageWhy1: "如果模型变强、工具更新就会自动消失，它比较像产品功能，不像研究题目。",
-    topicStageWhy2: "如果一句提示词或一个现成工具就能解决，研究价值就不大；要说得出简单做法为什么不够。",
-    topicStageWhy3: "这就是你的「母问题」。案例可以换，母问题不变，才是研究的核心。",
-    topicStageWhy4: "写成「我用＿＿来看出○○」。写不出来的词，就是题目还没想清楚的地方；也想想结果有没有可能证明你错了。",
-    topicStageWhy5: "找出你现在做得到的最小版本，并确认不是别人已经完整回答过的问题。",
     topicCardPainPoint: "你卡住的问题",
     topicCardMotherQuestion: "你真正想知道的（母问题）",
     topicCardCandidates: "候选题目",
@@ -974,18 +1022,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardOperationalization: "怎么证明（每个关键词用什么证据看）",
     topicCardMeasureMissing: "还没想好用什么证据",
     topicCardDiscarded: "淘汰的题目",
-    topicCardDiscardedBy: "第 {n} 关淘汰",
     topicCardCanReturn: "之后可以再回来",
     topicCardObjections: "我的反问",
     topicCardPending: "AI 整理的草稿（尚未采用）",
-    topicCardConfirmHint: "只有你能决定是否过关；AI 只负责提出反例。",
-    topicCardDone: "五个问题都已由你确认",
     topicCardEmpty: "还没有确认的内容；采用上面的草稿后，会出现在这里。",
     topicCardUnavailable: "题目卡暂时无法加载，对话不受影响。",
     topicCardNotSynced: "对话同步完成后即可使用题目卡。",
-    topicCardConfirmFailed: "确认失败，请稍后再试。",
-    topicCardStale: "题目卡已有更新，请看过最新内容后再确认一次。",
-    topicCardAdvanced: "已确认，进入下一关。",
     topicCardVersion: "版本 v{n}",
     topicCardOpen: "打开题目卡",
     topicCardClose: "收起题目卡",
@@ -997,14 +1039,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardBranchFailed: "目前无法建立分支，请等这一轮回答完成后再试。",
     topicTourIntroTitle: "欢迎来到选题",
     topicTourStart: "开始（约 30 秒）",
-    topicTourIntroBody: "这里不会直接给你题目，而是像指导教授一样，用 5 个问题帮你检查题目：",
-    topicTourIntroPoint3: "AI 只负责提出反例，是否过关由你决定。",
     topicTourAskTitle: "先说说你的痛点",
     topicTourAskBody: "在输入框写下「我卡在／我好奇＿＿」，或点下面的例子试试。回答完成后，我再带你看题目卡。",
     topicTourExample1: "我做的教学系统和 ChatGPT 差不多，不知道研究价值在哪",
     topicTourExample2: "我好奇 AI 的回答方式会不会让学生想得更少",
     topicTourCardTitle: "这是你的题目卡",
-    topicTourCardBody: "每一关只问一个问题。AI 会把对话整理成草稿；你觉得对，就按「对，就这样，进入下一关」。",
     topicTourCardPoint1: "不要的题目会收在「淘汰的题目」，之后可以再回来。",
     topicTourCardPoint2: "候选题目可以「开分支探索」，不会影响主线。",
     topicTourCardPoint3: "题目卡可以导出 Markdown；手机上点右上角的「选题」标签打开。",
@@ -1339,35 +1378,57 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     workspaceTopicFinder: "Topic Finder",
     workspaceChatTooltip: "Ordinary chat",
     workspaceTopicFinderTooltip: "Topic Finder: find a research topic that fits you",
+    workspaceBeta: "Beta",
     topicFinderEmptyGreeting: "Let's find a research topic that fits you 🔭",
     topicFinderEmptyPainPrompt: "What have you been stuck on lately?",
-    topicFinderEmptyMethodPrompt: "Start from your pain point, and I'll help you filter candidates one step at a time.",
     topicFinderPlaceholder: "Describe what you've been stuck on…",
     topicCardTitle: "Topic card",
-    topicCardStagePainPoint: "Pain point",
-    topicCardStageFilter: "Step {n} of 5",
+    topicFinderEmptyMethodPrompt: "Start from your pain point. I'll work through it with you stage by stage, and you can jump around.",
+    topicCardStageFilter: "Stage {n}",
+    topicCardAccept: "Use this summary",
+    topicCardNextStage: "Next stage →",
+    topicCardGoToStage: "Go to stage {n}: {title}",
+    topicCardAdopted: "Saved as a new version.",
+    topicCardStageFailed: "Could not switch stage. Please try again.",
+    topicCardConfirmHint: "You decide what to keep and when to move on; the AI only summarises and raises questions.",
+    topicCardDone: "You have been through all five stages",
+    topicCardDoneSub: "Export the card, or tap a number above to revisit any stage.",
+    topicCardDiscardedBy: "dropped at stage {n}",
+    topicCardConfirmFailed: "Could not save. Please try again.",
+    topicCardStale: "The card changed. Review the latest version, then try again.",
+    topicStageTitle1: "Notice a pain point, then diverge",
+    topicStageTitle2: "Is there a simple solution?",
+    topicStageTitle3: "What do you really want to know?",
+    topicStageTitle4: "How will you show it?",
+    topicStageTitle5: "Can you do it?",
+    topicStageSub1: "Start from a pain point in daily life or a gap in research, and list a few problems you want to solve.",
+    topicStageSub2: "Would an existing tool, paper, or research result already solve it? Name the laziest solution and whether it is enough.",
+    topicStageSub3: "Remove the tool and the example, step up one level, and write your core question.",
+    topicStageSub4: "What evidence will show each key term? Could the result prove you wrong?",
+    topicStageSub5: "Can you do it with your time, resources, setting, and advisor? Has someone already done it?",
+    topicCardSuggestions: "AI suggestions (for reference; check them yourself)",
+    topicCardKeywords: "Keywords to search",
+    topicCardKeywordCopy: "Copy keyword: {keyword}",
+    topicCardKeywordCopied: "Copied. Paste it into Google Scholar.",
+    topicCardGaps: "Possible research gaps",
+    topicCardRelated: "Related issues",
+    topicCardFeasibility: "Feasibility check",
+    topicFeasTime: "Time",
+    topicFeasData: "Data and setting",
+    topicFeasAdvisor: "Advisor and method",
+    topicFeasPriorWork: "Done before?",
+    topicFeasOk: "OK",
+    topicFeasUnsure: "Not sure yet",
+    topicFeasBlocked: "Difficult",
+    topicFeasMissing: "Not discussed yet",
+    topicTourIntroBody: "Topic Finder does not hand you a topic. Like an advisor, it works with you through five stages, and you can jump around:",
+    topicTourIntroPoint3: "The AI only summarises and raises questions; you decide what to keep and when to move on.",
+    topicTourCardBody: "Tap 1-5 at the top to switch stages. The AI turns the conversation into a draft; if it is right, press \"Use this summary\".",
     topicCardStageDone: "Done",
-    topicCardStageStart: "Starting point",
-    topicCardCurrentQuestion: "This step asks:",
-    topicCardWhy: "Why ask this?",
     topicCardDraftTitle: "From the conversation so far, the AI drafted:",
-    topicCardAccept: "Yes, that is right, next step",
-    topicCardAdvance: "I have thought this through, next step",
     topicCardRevise: "Not yet",
     topicCardReviseHint: "Tell the AI in the chat what to change; it will update this draft.",
     topicCardCurrentTopic: "Your topic so far",
-    topicStageQ0: "What are you stuck on or curious about? Write one sentence: \"I am stuck on / curious about ___\".",
-    topicStageQ1: "Will this problem still exist after two more years of technical progress?",
-    topicStageQ2: "Is there a simple fix that already solves it today?",
-    topicStageQ3: "Without your tool or example, what do you really want to know?",
-    topicStageQ4: "For each key term, what evidence will show it?",
-    topicStageQ5: "Can you do it with your time, resources, and advisor? Has someone already done it?",
-    topicStageWhy0: "Good topics usually come from problems you have actually met and care about, not trending keywords.",
-    topicStageWhy1: "If better models or tools will make it disappear, it is a product feature, not a research topic.",
-    topicStageWhy2: "If one prompt or an existing tool solves it, there is little to research; say why the simple fix is not enough.",
-    topicStageWhy3: "This is your core question. Examples can change; the core question is what the research is about.",
-    topicStageWhy4: "Write \"I will see X through ___\". Terms you cannot fill in are where the topic is still unclear; also ask whether the result could prove you wrong.",
-    topicStageWhy5: "Find the smallest version you can do now, and check that nobody has fully answered it already.",
     topicCardPainPoint: "What you are stuck on",
     topicCardMotherQuestion: "What you really want to know",
     topicCardCandidates: "Candidate topics",
@@ -1375,18 +1436,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardOperationalization: "How you will show it (evidence for each key term)",
     topicCardMeasureMissing: "No evidence chosen yet",
     topicCardDiscarded: "Set-aside topics",
-    topicCardDiscardedBy: "dropped at step {n}",
     topicCardCanReturn: "may return later",
     topicCardObjections: "My objections",
     topicCardPending: "AI draft (not adopted yet)",
-    topicCardConfirmHint: "Only you decide whether a step passes; the AI only raises counterexamples.",
-    topicCardDone: "You have confirmed all five questions",
     topicCardEmpty: "Nothing confirmed yet. Adopt the draft above to fill this in.",
     topicCardUnavailable: "The topic card is unavailable right now; the chat still works.",
     topicCardNotSynced: "The topic card becomes available once this chat has synced.",
-    topicCardConfirmFailed: "Could not confirm. Please try again.",
-    topicCardStale: "The card changed. Review the latest version, then confirm again.",
-    topicCardAdvanced: "Confirmed. On to the next step.",
     topicCardVersion: "Version v{n}",
     topicCardOpen: "Open topic card",
     topicCardClose: "Collapse topic card",
@@ -1398,14 +1453,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardBranchFailed: "Cannot branch right now. Try again after this answer finishes.",
     topicTourIntroTitle: "Welcome to Topic Finder",
     topicTourStart: "Start (about 30 seconds)",
-    topicTourIntroBody: "Topic Finder does not hand you a topic. Like an advisor, it checks your topic with five questions:",
-    topicTourIntroPoint3: "The AI only raises counterexamples; you decide when a step is done.",
     topicTourAskTitle: "Start with your pain point",
     topicTourAskBody: "Write \"I am stuck on / curious about ___\" in the box, or try an example below. After the answer, I will show you the topic card.",
     topicTourExample1: "My tutor app feels just like ChatGPT. What is worth researching?",
     topicTourExample2: "I wonder whether the way AI answers makes students think less",
     topicTourCardTitle: "This is your topic card",
-    topicTourCardBody: "Each step asks one question. The AI turns the conversation into a draft; if it is right, press \"Yes, that is right, next step\".",
     topicTourCardPoint1: "Topics you drop are kept under \"Set-aside topics\" so you can come back.",
     topicTourCardPoint2: "Explore a candidate in its own branch without changing the main card.",
     topicTourCardPoint3: "Export the card as Markdown; on a phone, tap the Topic Finder badge to open it.",

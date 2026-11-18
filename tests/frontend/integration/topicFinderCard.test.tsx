@@ -86,8 +86,8 @@ describe('Topic Finder topic card flow', () => {
     useChatStore.getState().clearMessages();
     useChatStore.setState({ tutorProfile: 'general', searchMode: 'never', useRag: false, useWebSearch: false, isStreaming: false });
     useConversationStore.setState({ conversations: [conversation], activeConversationId: CONVERSATION, workspace: 'research_coach' });
-    cardResponse = () => json({ stage: 0, version: 0, card: empty, pending: null, history: [] });
-    confirmResponse = () => json({ advanced: true, state: {
+    cardResponse = () => json({ stage: 1, version: 0, card: empty, pending: null, history: [] });
+    confirmResponse = () => json({ adopted: true, state: {
       stage: 1, version: 1, card: { ...empty, pain_point: '系統和 Gemini 差不多' }, pending: null,
       history: [{ version: 1, stage: 1, note: '加入痛點', confirmed_at: 1 }],
     } });
@@ -96,18 +96,19 @@ describe('Topic Finder topic card flow', () => {
       if (target.includes('/api/v1/stream')) return sse('先說說你的痛點？');
       if (target.includes('/card')) return cardResponse();
       if (target.includes('/confirm')) return confirmResponse();
+      if (target.includes('/stage')) return json({ stage: 2, version: 1, card: { ...empty, pain_point: '系統和 Gemini 差不多' }, pending: null, history: [] });
       return new Response('data: [DONE]\n\n');
     }));
   });
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it('shows a proposal after an answer and advances only when the learner confirms', { timeout: 40_000 }, async () => {
+  it('shows a proposal after an answer, adopts it on request, and moves stage only when the learner asks', { timeout: 40_000 }, async () => {
     render(<Harness />);
     expect(await screen.findByText('還沒有確認的內容；採用上面的草稿後，會出現在這裡。')).toBeInTheDocument();
 
-    // The backend proposes a draft after the answer; the card still shows stage 0.
-    cardResponse = () => json({ stage: 0, version: 0, card: empty, pending: {
+    // The backend proposes a draft after the answer; the card stays at stage 1.
+    cardResponse = () => json({ stage: 1, version: 0, card: empty, pending: {
       card: { ...empty, pain_point: '系統和 Gemini 差不多' }, notes: ['加入痛點'],
     }, history: [] });
     fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '我做的系統和 Gemini 差不多' } });
@@ -115,16 +116,20 @@ describe('Topic Finder topic card flow', () => {
 
     await waitFor(() => expect(calls('/api/v1/stream')).toHaveLength(1), { timeout: 10_000 });
     expect(await screen.findByRole('note', {}, { timeout: 10_000 })).toHaveTextContent('系統和 Gemini 差不多');
-    // The draft does not move the learner: they are still at the starting point.
-    expect(screen.getByText('起點')).toBeInTheDocument();
+    // The draft does not move the learner: they are still at stage 1.
+    expect(screen.getByText('第 1 階段')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '對，就這樣，進入下一關' }));
+    fireEvent.click(screen.getByRole('button', { name: '採用這份整理' }));
 
-    await waitFor(() => expect(screen.getByText('第 1 關／共 5 關')).toBeInTheDocument());
-    expect(screen.getByText('這個問題，過兩年技術進步後還存在嗎？')).toBeInTheDocument();
-    expect(screen.getByText('版本 v1')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('版本 v1')).toBeInTheDocument());
+    expect(screen.getByText('第 1 階段')).toBeInTheDocument();
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(JSON.parse(String(calls('/confirm')[0][1]?.body))).toEqual({ version: 0 });
+    expect(calls('/stage')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: '下一階段 →' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: '有沒有很簡單的解法？' })).toBeInTheDocument());
+    expect(JSON.parse(String(calls('/stage')[0][1]?.body))).toEqual({ stage: 2 });
   });
 
   it('keeps the chat working when the topic card API fails', { timeout: 40_000 }, async () => {

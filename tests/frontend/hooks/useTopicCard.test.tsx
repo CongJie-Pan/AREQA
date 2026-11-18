@@ -2,17 +2,18 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TOPIC_CARD_REFRESH_DELAYS_MS, useTopicCard } from '@/hooks/useTopicCard';
 import { useChatStore } from '@/store/chat';
-import { TopicCardError, confirmTopicCardStage, fetchTopicCard, type TopicCardState } from '@/services/topicCard';
+import { TopicCardError, adoptTopicCardDraft, fetchTopicCard, setTopicCardStage, type TopicCardState } from '@/services/topicCard';
 
 vi.mock('@/services/topicCard', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/services/topicCard')>(),
   fetchTopicCard: vi.fn(),
-  confirmTopicCardStage: vi.fn(),
+  adoptTopicCardDraft: vi.fn(),
+  setTopicCardStage: vi.fn(),
 }));
 
 const empty = { pain_point: '', mother_question: '', candidates: [], operationalization: [], discarded: [], objections: [] };
 const state = (overrides: Partial<TopicCardState> = {}): TopicCardState => ({
-  stage: 0, version: 0, card: empty, pending: null, history: [], ...overrides,
+  stage: 1, version: 0, card: empty, pending: null, history: [], ...overrides,
 });
 
 describe('useTopicCard', () => {
@@ -55,34 +56,52 @@ describe('useTopicCard', () => {
     expect(fetchTopicCard).toHaveBeenCalledTimes(1 + TOPIC_CARD_REFRESH_DELAYS_MS.length);
   });
 
-  it('confirms the version the learner saw and adopts the returned state', async () => {
+  it('adopts the draft for the version the learner saw', async () => {
     vi.mocked(fetchTopicCard).mockResolvedValue(state({ version: 3, stage: 3 }));
-    vi.mocked(confirmTopicCardStage).mockResolvedValue({ state: state({ version: 4, stage: 4 }), advanced: true });
+    vi.mocked(adoptTopicCardDraft).mockResolvedValue({ state: state({ version: 4, stage: 3 }), adopted: true });
     const { result } = renderHook(() => useTopicCard('conv-1', true));
     await waitFor(() => expect(result.current.state?.version).toBe(3));
 
     let outcome = '';
-    await act(async () => { outcome = await result.current.confirm(); });
+    await act(async () => { outcome = await result.current.adopt(); });
 
-    expect(confirmTopicCardStage).toHaveBeenCalledWith('conv-1', 3);
-    expect(outcome).toBe('advanced');
-    expect(result.current.state?.stage).toBe(4);
+    expect(adoptTopicCardDraft).toHaveBeenCalledWith('conv-1', 3);
+    expect(outcome).toBe('adopted');
+    expect(result.current.state).toMatchObject({ version: 4, stage: 3 });
   });
 
-  it('keeps the card when confirmation is stale or fails', async () => {
+  it('keeps the card when adoption is stale or fails', async () => {
     vi.mocked(fetchTopicCard).mockResolvedValue(state({ version: 1, stage: 1 }));
     const { result } = renderHook(() => useTopicCard('conv-1', true));
     await waitFor(() => expect(result.current.state?.version).toBe(1));
 
-    vi.mocked(confirmTopicCardStage).mockResolvedValueOnce({ state: state({ version: 2, stage: 2 }), advanced: false });
+    vi.mocked(adoptTopicCardDraft).mockResolvedValueOnce({ state: state({ version: 2, stage: 1 }), adopted: false });
     let outcome = '';
-    await act(async () => { outcome = await result.current.confirm(); });
+    await act(async () => { outcome = await result.current.adopt(); });
     expect(outcome).toBe('stale');
     expect(result.current.state?.version).toBe(2);
 
-    vi.mocked(confirmTopicCardStage).mockRejectedValueOnce(new TopicCardError('unavailable'));
-    await act(async () => { outcome = await result.current.confirm(); });
+    vi.mocked(adoptTopicCardDraft).mockRejectedValueOnce(new TopicCardError('unavailable'));
+    await act(async () => { outcome = await result.current.adopt(); });
     expect(outcome).toBe('failed');
     expect(result.current.state?.version).toBe(2);
+  });
+
+  it('jumps to any stage the learner picks and keeps the card on failure', async () => {
+    vi.mocked(fetchTopicCard).mockResolvedValue(state({ version: 2, stage: 1 }));
+    vi.mocked(setTopicCardStage).mockResolvedValueOnce(state({ version: 2, stage: 4 }));
+    const { result } = renderHook(() => useTopicCard('conv-1', true));
+    await waitFor(() => expect(result.current.state?.version).toBe(2));
+
+    let moved = false;
+    await act(async () => { moved = await result.current.goToStage(4); });
+    expect(setTopicCardStage).toHaveBeenCalledWith('conv-1', 4);
+    expect(moved).toBe(true);
+    expect(result.current.state?.stage).toBe(4);
+
+    vi.mocked(setTopicCardStage).mockRejectedValueOnce(new TopicCardError('unavailable'));
+    await act(async () => { moved = await result.current.goToStage(2); });
+    expect(moved).toBe(false);
+    expect(result.current.state?.stage).toBe(4);
   });
 });

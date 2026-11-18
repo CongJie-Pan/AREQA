@@ -59,7 +59,11 @@ class OrchestrationExecutionMixin:
         )
         has_attachments = bool(attachments)
         effective_search_mode = requested_search_mode
-        if (
+        # Topic Finder asks learners to search for themselves; it searches only when they switch search on.
+        if requested_search_mode == SearchMode.AUTO and is_research_coach(tutor_profile):
+            effective_search_mode = SearchMode.NEVER
+            logger.info("orchestration.topic_finder_auto_search_skipped conversation_id=%s", conversation_id)
+        elif (
             requested_search_mode == SearchMode.AUTO
             and not has_attachments
             and not settings.enable_auto_web_search

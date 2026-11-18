@@ -169,8 +169,8 @@ describe('Topic Finder divergence', () => {
       reader.onload = () => resolve(String(reader.result));
       reader.readAsText(blob);
     });
-    expect(text).toContain('記憶機制 (第 1 關淘汰)');
-    expect(text).toContain('v2 · 第 2 關／共 5 關: 淘汰記憶機制');
+    expect(text).toContain('記憶機制 (第 1 階段淘汰)');
+    expect(text).toContain('v2 · 第 2 階段: 淘汰記憶機制');
     click.mockRestore();
   });
 });

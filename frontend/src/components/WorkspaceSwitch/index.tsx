@@ -69,13 +69,18 @@ export function WorkspaceSwitch({ variant, onLeaveConversation, className }: Wor
           type="button"
           className="areqa-workspace-switch-option"
           aria-pressed={workspace === kind}
-          aria-label={variant === 'icons' ? t(tooltip) : undefined}
+          aria-label={variant === 'icons'
+            ? t(tooltip)
+            : kind === 'research_coach' ? `${t(label)} ${t('workspaceBeta')}` : undefined}
           title={t(tooltip)}
           data-workspace={kind}
           onClick={() => select(kind)}
         >
           <Icon size={variant === 'icons' ? 16 : 15} aria-hidden="true" />
           {variant === 'segmented' && <span>{t(label)}</span>}
+          {variant === 'segmented' && kind === 'research_coach' && (
+            <span className="areqa-workspace-switch-beta" aria-hidden="true">{t('workspaceBeta')}</span>
+          )}
         </button>
       ))}
     </div>

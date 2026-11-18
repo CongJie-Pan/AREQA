@@ -6,8 +6,8 @@
  */
 
 import type { TranslationKey } from '@/contexts/UserPreferencesContext';
-import { type TopicCardState, visibleCard } from '@/services/topicCard';
-import { topicCardStageLabel, topicStageQuestion } from '@/utils/topicCardStages';
+import { TOPIC_FEASIBILITY_KEYS, type TopicCardState, type TopicFeasibilityItem, visibleCard } from '@/services/topicCard';
+import { topicCardStageLabel, topicStageTitle } from '@/utils/topicCardStages';
 
 type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
@@ -19,6 +19,23 @@ export function escapeMarkdown(value: string): string {
     .trim();
 }
 
+const FEASIBILITY_LABELS = {
+  time: 'topicFeasTime', data: 'topicFeasData', advisor: 'topicFeasAdvisor', prior_work: 'topicFeasPriorWork',
+} as const;
+const FEASIBILITY_STATUS = {
+  ok: ['✅', 'topicFeasOk'], unsure: ['⚠️', 'topicFeasUnsure'], blocked: ['❌', 'topicFeasBlocked'],
+} as const;
+
+function feasibilityLines(items: TopicFeasibilityItem[], t: Translate): string[] {
+  if (!items.length) return ['—'];
+  const byKey = new Map(items.map((item) => [item.key, item]));
+  return TOPIC_FEASIBILITY_KEYS.map((key) => {
+    const item = byKey.get(key);
+    const [icon, label] = item ? FEASIBILITY_STATUS[item.status] : ['⚠️', 'topicFeasMissing' as const];
+    return `- ${t(FEASIBILITY_LABELS[key])}: ${icon} ${t(label)}${item?.note ? ` · ${escapeMarkdown(item.note)}` : ''}`;
+  });
+}
+
 /** Markdown for the confirmed card plus any pending AI draft, labelled as such. */
 export function topicCardToMarkdown(state: TopicCardState, t: Translate): string {
   const card = state.card;
@@ -26,7 +43,7 @@ export function topicCardToMarkdown(state: TopicCardState, t: Translate): string
     `# ${t('topicCardTitle')}`,
     '',
     `- ${t('topicCardProgress')}: ${topicCardStageLabel(t, state.stage)}`,
-    `- ${t('topicCardCurrentQuestion')} ${escapeMarkdown(topicStageQuestion(t, state.stage))}`,
+    `- ${escapeMarkdown(topicStageTitle(t, state.stage))}`,
     `- ${t('topicCardVersion', { n: state.version })}`,
     '',
     `## ${t('topicCardPainPoint')}`,
@@ -40,8 +57,11 @@ export function topicCardToMarkdown(state: TopicCardState, t: Translate): string
     '',
     `## ${t('topicCardOperationalization')}`,
     ...(card.operationalization.length
-      ? card.operationalization.map((item) => `- ${escapeMarkdown(item.term)}: ${item.measure ? escapeMarkdown(item.measure) : `❗ ${t('topicCardMeasureMissing')}`}`)
+      ? card.operationalization.map((item) => `- ${escapeMarkdown(item.term)}: ${item.measure ? escapeMarkdown(item.measure) : `⚠️ ${t('topicCardMeasureMissing')}`}`)
       : ['—']),
+    '',
+    `## ${t('topicCardFeasibility')}`,
+    ...feasibilityLines(card.feasibility ?? [], t),
     '',
     `## ${t('topicCardDiscarded')}`,
     ...(card.discarded.length

@@ -527,6 +527,19 @@ html[lang='en'] body {
   font-weight: 500;
 }
 
+/* Small "Beta" tag after the Topic Finder label. */
+.areqa-workspace-switch-beta {
+  margin-left: -2px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
 .areqa-topic-finder-badge {
   pointer-events: auto;
   display: inline-flex;
@@ -610,48 +623,46 @@ button.areqa-topic-finder-badge {
   &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
 }
 
-/* The current step: one question, the only emphasised text in the panel. */
+/* The current stage: a clickable 1-5 stepper, then the stage goal (the only emphasised text) and subtitle. */
 .areqa-topic-card-step {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.areqa-topic-card-step-head {
+.areqa-topic-card-stepper {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.areqa-topic-card-step-label {
-  color: var(--muted-foreground);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.areqa-topic-card-dots {
-  display: flex;
-  gap: 4px;
-  margin: 0;
+  gap: 6px;
+  margin: 0 0 6px;
   padding: 0;
   list-style: none;
 
-  li {
-    width: 18px;
-    height: 4px;
+  button {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
     border-radius: 999px;
-    background: var(--border);
+    background: transparent;
+    color: var(--muted-foreground);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover:not(:disabled):not([data-status='current']) { background: var(--areqa-account-hover); color: var(--foreground); }
+    &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+    &:disabled { cursor: wait; }
   }
 
-  li[data-status='done'] { background: var(--muted-foreground); }
-  li[data-status='current'] { background: var(--foreground); }
+  button[data-status='done'] { border-color: var(--muted-foreground); color: var(--foreground); }
+  button[data-status='current'] { border-color: var(--foreground); background: var(--foreground); color: var(--background); }
 }
 
-.areqa-topic-card-step-caption {
-  margin: 4px 0 0;
+.areqa-topic-card-step-label {
+  margin: 0;
   color: var(--muted-foreground);
   font-size: 12.5px;
+  font-weight: 600;
 }
 
 .areqa-topic-card-question {
@@ -662,7 +673,74 @@ button.areqa-topic-finder-badge {
   overflow-wrap: anywhere;
 }
 
-.areqa-topic-card-why,
+.areqa-topic-card-subtitle {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* AI search hints: reference only, visually quieter than the learner's own card. */
+.areqa-topic-card-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+
+  .areqa-topic-card-draft-title { margin: 0; }
+}
+
+.areqa-topic-card-suggestion-label {
+  margin: 0 0 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.areqa-topic-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.areqa-topic-card-chip {
+  max-width: 100%;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  text-align: left;
+  cursor: copy;
+
+  &:hover { background: var(--areqa-account-hover); }
+  &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
+}
+
+.areqa-topic-card-feasibility {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+  }
+
+  small { grid-column: 1 / -1; color: var(--muted-foreground); font-size: 12.5px; overflow-wrap: anywhere; }
+}
+
+.areqa-topic-card-feasibility-status { font-size: 12.5px; white-space: nowrap; }
+
 .areqa-topic-card-fold {
   summary {
     color: var(--muted-foreground);
@@ -783,6 +861,24 @@ button.areqa-topic-finder-badge {
   color: var(--foreground);
 
   &:hover { background: var(--areqa-account-hover); }
+}
+
+/* With a draft on screen, moving on is the quieter choice. */
+.areqa-topic-card-next {
+  flex-basis: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: right;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { color: var(--foreground); text-decoration: underline; }
+  &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+  &:disabled { cursor: wait; }
 }
 
 .areqa-topic-card-muted {

@@ -1,4 +1,4 @@
-/** Authenticated proxy: the learner confirms the current Topic Finder stage. */
+/** Authenticated proxy: the learner adopts the AI draft on the Topic Finder card. */
 import { NextRequest } from 'next/server';
 import { proxyTopicCard } from '../../proxy';
 

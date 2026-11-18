@@ -94,7 +94,7 @@ const NOTE_ACTION_KEYS: TranslationKey[] = [
   'onboardingNoteActionSource', 'onboardingNoteActionDelete',
 ];
 // The five questions, worded exactly as the topic card shows them.
-const TOPIC_INTRO_KEYS: TranslationKey[] = ['topicStageQ1', 'topicStageQ2', 'topicStageQ3', 'topicStageQ4', 'topicStageQ5'];
+const TOPIC_INTRO_KEYS: TranslationKey[] = ['topicStageTitle1', 'topicStageTitle2', 'topicStageTitle3', 'topicStageTitle4', 'topicStageTitle5'];
 const TOPIC_EXAMPLE_KEYS: TranslationKey[] = ['topicTourExample1', 'topicTourExample2'];
 const TOPIC_CARD_KEYS: TranslationKey[] = ['topicTourCardPoint1', 'topicTourCardPoint2', 'topicTourCardPoint3'];
 const BRANCH_INSIDE_KEYS: TranslationKey[] = [

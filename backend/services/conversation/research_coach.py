@@ -21,7 +21,7 @@ ConversationKind = Literal["chat", "research_coach"]
 PromptProfileId = Literal["general", "english", "research_coach"]
 
 RESEARCH_COACH_KIND: ConversationKind = "research_coach"
-RESEARCH_COACH_SKILL_ID = "RESEARCH_TOPIC_COACH_SKILL_V1"
+RESEARCH_COACH_SKILL_ID = "RESEARCH_TOPIC_COACH_SKILL_V2"
 RESEARCH_COACH_SKILL_PATH = "backend/prompts/skills/research_topic_coach_skill.md"
 
 

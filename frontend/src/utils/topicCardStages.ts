@@ -1,9 +1,9 @@
 /**
- * Topic Finder steps in plain language, shared by the topic card, the header
+ * Topic Finder stages in plain language, shared by the topic card, the header
  * badge, the tour, and the Markdown export.
  *
- * Step 0 is the starting point (the learner's pain point); steps 1-5 each ask
- * one question; 6 means the learner confirmed all five.
+ * Stages 1-5 each have a one-line goal and a subtitle; 6 means the learner has
+ * been through all five. Learners may jump between stages.
  */
 
 import type { TranslationKey } from '@/contexts/UserPreferencesContext';
@@ -12,33 +12,43 @@ import { TOPIC_CARD_COMPLETED_STAGE } from '@/services/topicCard';
 type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
 export const TOPIC_STEP_COUNT = 5;
+export const TOPIC_FIRST_STAGE = 1;
 
-export const TOPIC_STAGE_QUESTION_KEYS: TranslationKey[] = [
-  'topicStageQ0', 'topicStageQ1', 'topicStageQ2', 'topicStageQ3', 'topicStageQ4', 'topicStageQ5',
+export const TOPIC_STAGE_TITLE_KEYS: TranslationKey[] = [
+  'topicStageTitle1', 'topicStageTitle2', 'topicStageTitle3', 'topicStageTitle4', 'topicStageTitle5',
 ];
 
-export const TOPIC_STAGE_WHY_KEYS: TranslationKey[] = [
-  'topicStageWhy0', 'topicStageWhy1', 'topicStageWhy2', 'topicStageWhy3', 'topicStageWhy4', 'topicStageWhy5',
+const TOPIC_STAGE_SUB_KEYS: TranslationKey[] = [
+  'topicStageSub1', 'topicStageSub2', 'topicStageSub3', 'topicStageSub4', 'topicStageSub5',
 ];
 
-/** The step's field opens when the learner reaches it (mirrors the backend limits). */
+/** A field opens at the stage that asks about it (mirrors the backend limits). */
 export const MOTHER_QUESTION_STAGE = 3;
 export const OPERATIONALIZATION_STAGE = 4;
+export const FEASIBILITY_STAGE = 5;
 
-/** "起點", "第 3 關／共 5 關", or "完成". */
+/** Stored zeros come from cards saved before stage 0 was folded into stage 1. */
+export function normalizeTopicStage(stage: number): number {
+  return Math.min(Math.max(Math.trunc(stage) || TOPIC_FIRST_STAGE, TOPIC_FIRST_STAGE), TOPIC_CARD_COMPLETED_STAGE);
+}
+
+/** "第 3 階段" or "完成". */
 export function topicCardStageLabel(t: Translate, stage: number): string {
-  if (stage <= 0) return t('topicCardStageStart');
-  if (stage >= TOPIC_CARD_COMPLETED_STAGE) return t('topicCardStageDone');
-  return t('topicCardStageFilter', { n: stage });
+  const current = normalizeTopicStage(stage);
+  if (current >= TOPIC_CARD_COMPLETED_STAGE) return t('topicCardStageDone');
+  return t('topicCardStageFilter', { n: current });
 }
 
-/** The single question this step asks. */
-export function topicStageQuestion(t: Translate, stage: number): string {
-  if (stage >= TOPIC_CARD_COMPLETED_STAGE) return t('topicCardDone');
-  return t(TOPIC_STAGE_QUESTION_KEYS[Math.max(stage, 0)]);
+/** The stage's one-line goal. */
+export function topicStageTitle(t: Translate, stage: number): string {
+  const current = normalizeTopicStage(stage);
+  if (current >= TOPIC_CARD_COMPLETED_STAGE) return t('topicCardDone');
+  return t(TOPIC_STAGE_TITLE_KEYS[current - 1]);
 }
 
-export function topicStageWhy(t: Translate, stage: number): string | null {
-  if (stage >= TOPIC_CARD_COMPLETED_STAGE) return null;
-  return t(TOPIC_STAGE_WHY_KEYS[Math.max(stage, 0)]);
+/** The stage's subtitle: what to do there. */
+export function topicStageSubtitle(t: Translate, stage: number): string {
+  const current = normalizeTopicStage(stage);
+  if (current >= TOPIC_CARD_COMPLETED_STAGE) return t('topicCardDoneSub');
+  return t(TOPIC_STAGE_SUB_KEYS[current - 1]);
 }

@@ -106,7 +106,7 @@ describe('Topic Finder workspace flow', () => {
     // 2. The empty home shows the segmented switch and the Topic Finder copy.
     const segmented = screen.getAllByRole('group', { name: '工作區' });
     expect(segmented).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '選題' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '選題 測試版' })).toHaveAttribute('aria-pressed', 'true');
 
     // 3. The first message creates a research_coach conversation and the request carries its kind.
     fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '我做的系統和 Gemini 差不多' } });
@@ -116,7 +116,7 @@ describe('Topic Finder workspace flow', () => {
     const [payload] = streamPayloads();
     expect(payload.conversation_kind).toBe('research_coach');
     expect(payload.tutor_profile).toBe('general');
-    await waitFor(() => expect(screen.queryByRole('button', { name: '選題' })).not.toBeInTheDocument(), { timeout: 10_000 });
+    await waitFor(() => expect(screen.queryByRole('button', { name: '選題 測試版' })).not.toBeInTheDocument(), { timeout: 10_000 });
 
     const created = useConversationStore.getState().conversations[0];
     expect(created.kind).toBe('research_coach');

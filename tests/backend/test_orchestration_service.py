@@ -1864,6 +1864,43 @@ async def test_legacy_auto_search_mode_is_disabled_by_default(
 
 
 @pytest.mark.asyncio
+async def test_topic_finder_never_auto_searches_even_when_auto_search_is_enabled(
+    mock_router, mock_rag, mock_suggestion, mock_client, monkeypatch, caplog
+):
+    import config as runtime_config
+
+    monkeypatch.setattr(runtime_config.settings, "enable_auto_web_search", True)
+    service = OrchestrationService(mock_router, mock_rag, None, mock_client)
+    caplog.set_level(logging.INFO, logger="backend.services.orchestration_service")
+
+    async def fail_if_searched(*args, **kwargs):
+        raise AssertionError("Topic Finder sends learners to search for themselves")
+        yield
+
+    async def llm_stream(*args, **kwargs):
+        yield 'data: {"choices":[{"delta":{"content":"去 Google Scholar 找"}}]}\n\n'
+        yield 'event: accumulator\ndata: {"accumulator":"去 Google Scholar 找"}\n\n'
+
+    service._node_perplexity_search = fail_if_searched
+    service._node_llm_stream = llm_stream
+
+    with patch("memory_store.get_global_store", return_value=None), \
+         patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
+         patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
+         patch("services.conversation.topic_card.schedule_card_refresh"), \
+         patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
+        events = [event async for event in service.execute(
+            [{"role": "user", "content": "有沒有現成的研究已經做過韓國避險外交"}],
+            "topic-finder-conv", False, False, False, 100, 0.7, 0.9, 1.0, MagicMock(), "u1",
+            search_mode="auto", tutor_profile="research_coach",
+        )]
+
+    assert "Google Scholar" in "".join(events)
+    assert "orchestration.topic_finder_auto_search_skipped" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
     mock_router, mock_rag, mock_suggestion, mock_client, caplog
 ):
