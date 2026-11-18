@@ -503,7 +503,15 @@ html[lang='en'] body {
 
 .areqa-workspace-switch-segmented {
   border-radius: 999px;
-  margin-bottom: clamp(4px, 1vh, 10px);
+}
+
+/* Top-centred on the empty home, aligned with the floating top actions and clear of the edge. */
+.areqa-workspace-switch-home-slot {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
 }
 
 .areqa-workspace-switch-segmented .areqa-workspace-switch-option {

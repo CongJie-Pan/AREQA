@@ -21,6 +21,7 @@ import { ConversationList } from '@/components/ConversationList';
 import { MessageList } from '@/components/MessageList';
 import { ImageGenerationLoading } from '@/components/MessageList/ImageGenerationLoading';
 import { ChatInput } from '@/components/ChatInput';
+import { HomeWorkspaceSwitch } from '@/components/WorkspaceSwitch';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
 import { MailboxPanel } from '@/components/MailboxPanel';
@@ -898,6 +899,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
           ) : (
             <div className={cx(styles.liveTutorWorkspace, useAvatarSplitLayout && styles.liveTutorWorkspaceSplit)}>
               <div className={cx('areqa-chat-response-pane', styles.responsePane, useAvatarSplitLayout && styles.responsePaneSplit)}>
+                {/* Workspace choice lives at the top of the empty home only. */}
+                {shouldShowEmptyChat && !gumPanelType && !sharedView && !isLiveTutorOpen && <HomeWorkspaceSwitch />}
                 <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
                   {!gumPanelType && !isEmpty && !sharedView && (
                     <>

@@ -13,7 +13,7 @@ import React, { useCallback } from 'react';
 import { MessageSquare, Telescope } from 'lucide-react';
 import type { ConversationKind } from '@/database/schema';
 import { useConversationStore } from '@/store/conversation';
-import { useChatStore } from '@/store/chat';
+import { useChatStore, chatSelectors } from '@/store/chat';
 import { useLiveTutorStore } from '@/store/liveTutor';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { conversationKindOf } from '@/utils/conversationKind';
@@ -78,6 +78,20 @@ export function WorkspaceSwitch({ variant, onLeaveConversation, className }: Wor
           {variant === 'segmented' && <span>{t(label)}</span>}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Segmented switch for the empty new-chat screen, pinned to the top of the chat area.
+ * It disappears once the conversation has a message, because a conversation's kind is fixed.
+ */
+export function HomeWorkspaceSwitch() {
+  const isEmpty = useChatStore((state) => chatSelectors.displayMessages(state).length === 0);
+  if (!isEmpty) return null;
+  return (
+    <div className="areqa-workspace-switch-home-slot">
+      <WorkspaceSwitch variant="segmented" />
     </div>
   );
 }

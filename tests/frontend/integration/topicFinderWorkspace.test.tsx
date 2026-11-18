@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConversationList } from '@/components/ConversationList';
 import { MessageList } from '@/components/MessageList';
 import { ChatInput } from '@/components/ChatInput';
+import { HomeWorkspaceSwitch } from '@/components/WorkspaceSwitch';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { db } from '@/database/db';
 import { sendMessage } from '@/services/chat';
@@ -63,6 +64,7 @@ function Harness() {
           useConversationStore.getState().clearActiveConversation();
           useChatStore.getState().clearMessages();
         }} />
+        <HomeWorkspaceSwitch />
         <MessageList />
         <ChatInput key={activeId ?? 'new'} topicFinder={isTopicFinder} onSend={(text) => sendMessage(text)} />
       </App>

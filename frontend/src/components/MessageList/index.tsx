@@ -15,7 +15,6 @@ import { useConversationStore } from '@/store/conversation';
 import { useNotesStore } from '@/store/notes';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { MessageItem } from './MessageItem';
-import { WorkspaceSwitch } from '@/components/WorkspaceSwitch';
 import { useStyles } from './styles';
 import { databaseService } from '@/services/database';
 import { consumeSourceMessageFocus } from '@/utils/messageFocus';
@@ -431,8 +430,6 @@ export function MessageList({
 
     return (
       <div className={cx('areqa-message-list', 'areqa-message-list-empty', styles.container, styles.empty, className)}>
-        {/* Only the empty new-chat screen offers this switch; it disappears once the first message is sent. */}
-        <WorkspaceSwitch variant="segmented" />
         <div className={cx('areqa-message-empty-logo-stage', styles.emptyLogoStage)}>
           <Image
             src="/icon/areqa_icon_v4_circle.png"
