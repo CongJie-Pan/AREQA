@@ -100,13 +100,14 @@ test('@smoke the topic card loads, advances only on confirm, and survives a relo
   await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
 
   const card = page.getByRole('region', { name: '題目卡' });
-  await expect(card.getByRole('note')).toContainText('加入痛點與候選題目', { timeout: 15_000 });
+  await expect(card.getByRole('note')).toContainText('系統和 Gemini 差不多', { timeout: 15_000 });
   await expect(card.getByText('版本 v0')).toBeVisible();
 
-  await card.getByRole('button', { name: '我確認這一關過了' }).click();
+  await card.getByRole('button', { name: '對，就這樣，進入下一關' }).click();
   await expect(card.getByText('版本 v1')).toBeVisible();
-  await expect(card.locator('li[aria-current="step"]')).toContainText('時間');
-  await expect(page.locator('.areqa-topic-finder-badge')).toContainText('篩子 1/5：時間');
+  await expect(card.locator('.areqa-topic-card-step-label')).toHaveText('第 1 關／共 5 關');
+  await expect(card.getByText('這個問題，過兩年技術進步後還存在嗎？')).toBeVisible();
+  await expect(page.locator('.areqa-topic-finder-badge')).toContainText('第 1 關／共 5 關');
 
   await page.reload();
   await page.locator('.areqa-conversation-item').first().click();
@@ -144,6 +145,8 @@ test('@smoke a candidate branch stays in Topic Finder and the card exports as Ma
   await card.getByRole('button', { name: '匯出 Markdown' }).click();
   expect((await download).suggestedFilename()).toBe('areqa-topic-card-v0.md');
 
+  // Candidates become explorable once the learner adopts the draft.
+  await card.getByRole('button', { name: '對，就這樣，進入下一關' }).click();
   await card.getByRole('button', { name: '開分支探索：提問與講解的平衡' }).click();
   await expect(page.getByText('回覆第2輪', { exact: true })).toBeVisible();
   expect(streamRequests[1]).toMatchObject({ conversation_kind: 'research_coach', isolated_context: true });
@@ -165,7 +168,7 @@ test('@smoke on a phone the topic card opens as a drawer without horizontal scro
   await page.locator('.areqa-topic-finder-badge').click();
   const card = page.getByRole('region', { name: '題目卡' });
   await expect(card).toBeVisible();
-  await expect(card.getByRole('button', { name: '我確認這一關過了' })).toBeVisible();
+  await expect(card.getByRole('button', { name: '對，就這樣，進入下一關' })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });

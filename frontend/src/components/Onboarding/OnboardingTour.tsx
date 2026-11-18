@@ -93,7 +93,8 @@ const NOTE_ACTION_KEYS: TranslationKey[] = [
   'onboardingNoteActionTag', 'onboardingNoteActionEdit', 'onboardingNoteActionPin',
   'onboardingNoteActionSource', 'onboardingNoteActionDelete',
 ];
-const TOPIC_INTRO_KEYS: TranslationKey[] = ['topicTourIntroPoint1', 'topicTourIntroPoint2', 'topicTourIntroPoint3'];
+// The five questions, worded exactly as the topic card shows them.
+const TOPIC_INTRO_KEYS: TranslationKey[] = ['topicStageQ1', 'topicStageQ2', 'topicStageQ3', 'topicStageQ4', 'topicStageQ5'];
 const TOPIC_EXAMPLE_KEYS: TranslationKey[] = ['topicTourExample1', 'topicTourExample2'];
 const TOPIC_CARD_KEYS: TranslationKey[] = ['topicTourCardPoint1', 'topicTourCardPoint2', 'topicTourCardPoint3'];
 const BRANCH_INSIDE_KEYS: TranslationKey[] = [
@@ -353,7 +354,10 @@ export function OnboardingTour({
       description: (
         <div className={styles.body}>
           <p className={styles.lead}>{t('topicTourIntroBody')}</p>
-          {pointList(TOPIC_INTRO_KEYS)}
+          <ol className={styles.points}>
+            {TOPIC_INTRO_KEYS.map((key) => <li key={key}>{t(key)}</li>)}
+          </ol>
+          <span>{t('topicTourIntroPoint3')}</span>
         </div>
       ),
       actions: actions(primaryButton('topicTourStart', next)),

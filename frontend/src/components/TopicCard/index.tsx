@@ -3,40 +3,26 @@
 /**
  * Topic Finder (選題) topic card panel.
  *
- * Shows the learner's converging topic: pain point, core question, candidates,
- * measures, discarded candidates, and their own objections. AI proposals are
- * labelled as suggestions; only the learner's "confirm" button adopts them and
- * advances a stage.
+ * One step at a time: the panel shows the current step's single question (with
+ * an optional "why"), then the AI's draft from the conversation with the action
+ * right under it. What is already confirmed, set-aside topics, objections, and
+ * history fold away below. Fields open only when their step is reached, so a
+ * learner at the first step never sees measurement jargon.
  */
 
 import React, { useState } from 'react';
 import { App } from 'antd';
-import { Check, Circle, CircleDot, Download, GitBranch, Telescope, X } from 'lucide-react';
+import { Download, GitBranch, Telescope, X } from 'lucide-react';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
-import type { TranslationKey } from '@/contexts/UserPreferencesContext';
 import type { UseTopicCardResult } from '@/hooks/useTopicCard';
-import { TOPIC_CARD_COMPLETED_STAGE, visibleCard } from '@/services/topicCard';
+import { TOPIC_CARD_COMPLETED_STAGE, type TopicCardContent } from '@/services/topicCard';
 import { downloadTopicCardMarkdown } from '@/utils/topicCardMarkdown';
+import {
+  MOTHER_QUESTION_STAGE, OPERATIONALIZATION_STAGE, TOPIC_STEP_COUNT,
+  topicCardStageLabel, topicStageQuestion, topicStageWhy,
+} from '@/utils/topicCardStages';
 
-type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
-
-const FILTER_KEYS: TranslationKey[] = ['topicCardFilter1', 'topicCardFilter2', 'topicCardFilter3', 'topicCardFilter4', 'topicCardFilter5'];
-
-/** "痛點", "篩子 3/5：核心", or "完成" for the learner-confirmed stage. */
-export function topicCardStageLabel(t: Translate, stage: number): string {
-  if (stage <= 0) return t('topicCardStagePainPoint');
-  if (stage >= TOPIC_CARD_COMPLETED_STAGE) return t('topicCardStageDone');
-  return t('topicCardStageFilter', { n: stage, name: t(FILTER_KEYS[stage - 1]) });
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="areqa-topic-card-section">
-      <h3>{title}</h3>
-      {children}
-    </section>
-  );
-}
+export { topicCardStageLabel } from '@/utils/topicCardStages';
 
 export interface TopicCardPanelProps {
   topicCard: UseTopicCardResult;
@@ -45,24 +31,107 @@ export interface TopicCardPanelProps {
   onExploreCandidate?: (candidate: string) => void;
 }
 
+type FieldKey = 'pain_point' | 'mother_question' | 'candidates' | 'operationalization';
+
+/** Fields shown at this stage, in reading order. */
+function visibleFields(stage: number): FieldKey[] {
+  return [
+    'pain_point',
+    ...(stage >= MOTHER_QUESTION_STAGE ? ['mother_question' as const] : []),
+    'candidates',
+    ...(stage >= OPERATIONALIZATION_STAGE ? ['operationalization' as const] : []),
+  ];
+}
+
+function hasValue(card: TopicCardContent, field: FieldKey): boolean {
+  const value = card[field];
+  return Array.isArray(value) ? value.length > 0 : Boolean(value);
+}
+
 export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: TopicCardPanelProps) {
   const { t } = useUserPreferences();
   const { message } = App.useApp();
   const [notice, setNotice] = useState<string | null>(null);
+  const [showReviseHint, setShowReviseHint] = useState(false);
   const { state, failure, isConfirming, confirm } = topicCard;
-  const card = state ? visibleCard(state) : null;
-  const isDone = (state?.stage ?? 0) >= TOPIC_CARD_COMPLETED_STAGE;
-  const steps = [t('topicCardStagePainPoint'), ...FILTER_KEYS.map((key) => t(key))];
+  const stage = state?.stage ?? 0;
+  const isDone = stage >= TOPIC_CARD_COMPLETED_STAGE;
+  const why = topicStageWhy(t, stage);
 
   const handleConfirm = async () => {
     const outcome = await confirm();
     if (outcome === 'advanced') {
       setNotice(null);
+      setShowReviseHint(false);
       message.success(t('topicCardAdvanced'));
     } else {
       setNotice(t(outcome === 'stale' ? 'topicCardStale' : 'topicCardConfirmFailed'));
     }
   };
+
+  const fieldLabel: Record<FieldKey, string> = {
+    pain_point: t('topicCardPainPoint'),
+    mother_question: t('topicCardMotherQuestion'),
+    candidates: t('topicCardCandidates'),
+    operationalization: t('topicCardOperationalization'),
+  };
+
+  const renderField = (card: TopicCardContent, field: FieldKey, withExplore: boolean) => {
+    if (field === 'candidates') {
+      return (
+        <ul className="areqa-topic-card-list areqa-topic-card-candidates">
+          {card.candidates.map((item) => (
+            <li key={item}>
+              <span>{item}</span>
+              {withExplore && onExploreCandidate && (
+                <button
+                  type="button"
+                  className="areqa-topic-card-explore"
+                  onClick={() => onExploreCandidate(item)}
+                  aria-label={`${t('topicCardExplore')}：${item}`}
+                >
+                  <GitBranch size={12} aria-hidden="true" />
+                  {t('topicCardExplore')}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    if (field === 'operationalization') {
+      return (
+        <ul className="areqa-topic-card-list areqa-topic-card-measures">
+          {card.operationalization.map((item) => (
+            <li key={item.term}>
+              <strong>{item.term}</strong>
+              {item.measure
+                ? <span>{item.measure}</span>
+                : <span className="areqa-topic-card-missing">❗ {t('topicCardMeasureMissing')}</span>}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    return <p>{card[field]}</p>;
+  };
+
+  const fieldsBlock = (card: TopicCardContent, fields: FieldKey[], withExplore: boolean) => (
+    <dl className="areqa-topic-card-fields">
+      {fields.filter((field) => hasValue(card, field)).map((field) => (
+        <div key={field} className="areqa-topic-card-field">
+          <dt>{fieldLabel[field]}</dt>
+          <dd>{renderField(card, field, withExplore)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+
+  const confirmedFields = state ? visibleFields(stage).filter((field) => hasValue(state.card, field)) : [];
+  const draftFields = state?.pending
+    ? visibleFields(stage).filter((field) => hasValue(state.pending!.card, field)
+      && JSON.stringify(state.pending!.card[field]) !== JSON.stringify(state.card[field]))
+    : [];
 
   return (
     <div className="areqa-topic-card" aria-label={t('topicCardTitle')} role="region">
@@ -73,7 +142,7 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
         {state && (
           <button
             type="button"
-            className="areqa-topic-card-close"
+            className="areqa-topic-card-icon-button"
             onClick={() => downloadTopicCardMarkdown(state, t)}
             aria-label={t('topicCardExport')}
             title={t('topicCardExport')}
@@ -82,7 +151,7 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
           </button>
         )}
         {onClose && (
-          <button type="button" className="areqa-topic-card-close" onClick={onClose} aria-label={t('topicCardClose')}>
+          <button type="button" className="areqa-topic-card-icon-button" onClick={onClose} aria-label={t('topicCardClose')}>
             <X size={16} />
           </button>
         )}
@@ -94,110 +163,107 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
         </p>
       )}
 
-      {state && card && (
+      {state && (
         <>
-          <Section title={t('topicCardProgress')}>
-            <ol className="areqa-topic-card-steps">
-              {steps.map((label, index) => {
-                const status = index < state.stage ? 'done' : index === state.stage ? 'current' : 'todo';
-                const Icon = status === 'done' ? Check : status === 'current' ? CircleDot : Circle;
-                return (
-                  <li key={label} data-status={status} aria-current={status === 'current' ? 'step' : undefined}>
-                    <Icon size={13} aria-hidden="true" />
-                    <span>{index === 0 ? label : `${index}. ${label}`}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </Section>
+          <section className="areqa-topic-card-step" aria-label={t('topicCardProgress')}>
+            <div className="areqa-topic-card-step-head">
+              <span className="areqa-topic-card-step-label">{topicCardStageLabel(t, stage)}</span>
+              <ol className="areqa-topic-card-dots" aria-hidden="true">
+                {Array.from({ length: TOPIC_STEP_COUNT }, (_, index) => {
+                  const step = index + 1;
+                  const status = step < stage ? 'done' : step === stage ? 'current' : 'todo';
+                  return <li key={step} data-status={status} />;
+                })}
+              </ol>
+            </div>
+            {!isDone && <p className="areqa-topic-card-step-caption">{t('topicCardCurrentQuestion')}</p>}
+            <p className="areqa-topic-card-question">{topicStageQuestion(t, stage)}</p>
+            {why && (
+              <details className="areqa-topic-card-why">
+                <summary>{t('topicCardWhy')}</summary>
+                <p>{why}</p>
+              </details>
+            )}
+          </section>
 
-          {state.pending && (
-            <p className="areqa-topic-card-pending" role="note">
-              {t('topicCardPending')}
-              {state.pending.notes.length > 0 && <span>{state.pending.notes.join('；')}</span>}
-            </p>
-          )}
-
-          {!card.pain_point && !card.mother_question && card.candidates.length === 0 && (
-            <p className="areqa-topic-card-muted">{t('topicCardEmpty')}</p>
-          )}
-          {card.pain_point && <Section title={t('topicCardPainPoint')}><p>{card.pain_point}</p></Section>}
-          {card.mother_question && <Section title={t('topicCardMotherQuestion')}><p>{card.mother_question}</p></Section>}
-          {card.candidates.length > 0 && (
-            <Section title={t('topicCardCandidates')}>
-              <ul className="areqa-topic-card-candidates">
-                {card.candidates.map((item) => (
-                  <li key={item}>
-                    <span>{item}</span>
-                    {onExploreCandidate && (
-                      <button
-                        type="button"
-                        className="areqa-topic-card-explore"
-                        onClick={() => onExploreCandidate(item)}
-                        aria-label={`${t('topicCardExplore')}：${item}`}
-                      >
-                        <GitBranch size={12} aria-hidden="true" />
-                        {t('topicCardExplore')}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-          {card.operationalization.length > 0 && (
-            <Section title={t('topicCardOperationalization')}>
-              <ul className="areqa-topic-card-measures">
-                {card.operationalization.map((item) => (
-                  <li key={item.term}>
-                    <strong>{item.term}</strong>
-                    {item.measure
-                      ? <span>{item.measure}</span>
-                      : <span className="areqa-topic-card-missing">❗ {t('topicCardMeasureMissing')}</span>}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-          {card.discarded.length > 0 && (
-            <Section title={t('topicCardDiscarded')}>
-              <ul className="areqa-topic-card-discarded">
-                {card.discarded.map((item) => (
-                  <li key={item.topic}>
-                    <span>✂ {item.topic}</span>
-                    <small>
-                      {item.filter > 0 ? `${t('topicCardDiscardedBy', { n: item.filter })} · ` : ''}{item.reason}
-                      {item.can_return ? ` · ${t('topicCardCanReturn')}` : ''}
-                    </small>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-          {card.objections.length > 0 && (
-            <Section title={t('topicCardObjections')}>
-              <ul>{card.objections.map((item) => <li key={item}>{item}</li>)}</ul>
-            </Section>
-          )}
-
-          <footer className="areqa-topic-card-footer">
-            {isDone ? (
-              <p className="areqa-topic-card-muted">{t('topicCardDone')}</p>
-            ) : (
-              <>
+          {!isDone && (
+            <section className="areqa-topic-card-action">
+              {state.pending && (draftFields.length > 0 || state.pending.notes.length > 0) ? (
+                <div className="areqa-topic-card-draft" role="note">
+                  <p className="areqa-topic-card-draft-title">{t('topicCardDraftTitle')}</p>
+                  {draftFields.length > 0
+                    ? fieldsBlock(state.pending.card, draftFields, false)
+                    : <ul className="areqa-topic-card-list">{state.pending.notes.map((note) => <li key={note}>{note}</li>)}</ul>}
+                </div>
+              ) : null}
+              <div className="areqa-topic-card-buttons">
                 <button
                   type="button"
                   className="areqa-topic-card-confirm"
                   onClick={() => { void handleConfirm(); }}
                   disabled={isConfirming}
                 >
-                  {t('topicCardConfirm')}
+                  {t(state.pending ? 'topicCardAccept' : 'topicCardAdvance')}
                 </button>
-                <p className="areqa-topic-card-hint">{t('topicCardConfirmHint')}</p>
-              </>
-            )}
-            {notice && <p className="areqa-topic-card-notice" role="alert">{notice}</p>}
-          </footer>
+                {state.pending && (
+                  <button type="button" className="areqa-topic-card-secondary" onClick={() => setShowReviseHint(true)}>
+                    {t('topicCardRevise')}
+                  </button>
+                )}
+              </div>
+              <p className="areqa-topic-card-hint">{showReviseHint ? t('topicCardReviseHint') : t('topicCardConfirmHint')}</p>
+              {notice && <p className="areqa-topic-card-notice" role="alert">{notice}</p>}
+            </section>
+          )}
+
+          <details className="areqa-topic-card-fold" open>
+            <summary>{t('topicCardCurrentTopic')}</summary>
+            {confirmedFields.length > 0
+              ? fieldsBlock(state.card, confirmedFields, true)
+              : <p className="areqa-topic-card-muted">{t('topicCardEmpty')}</p>}
+          </details>
+
+          {state.card.discarded.length > 0 && (
+            <details className="areqa-topic-card-fold">
+              <summary>{t('topicCardDiscarded')} ({state.card.discarded.length})</summary>
+              <ul className="areqa-topic-card-list areqa-topic-card-discarded">
+                {state.card.discarded.map((item) => (
+                  <li key={item.topic}>
+                    <span>{item.topic}</span>
+                    <small>
+                      {[
+                        item.filter > 0 ? t('topicCardDiscardedBy', { n: item.filter }) : '',
+                        item.reason,
+                        item.can_return ? t('topicCardCanReturn') : '',
+                      ].filter(Boolean).join(' · ')}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {state.card.objections.length > 0 && (
+            <details className="areqa-topic-card-fold">
+              <summary>{t('topicCardObjections')} ({state.card.objections.length})</summary>
+              <ul className="areqa-topic-card-list">{state.card.objections.map((item) => <li key={item}>{item}</li>)}</ul>
+            </details>
+          )}
+
+          {state.history.length > 0 && (
+            <details className="areqa-topic-card-fold">
+              <summary>{t('topicCardHistory')} ({state.history.length})</summary>
+              <ul className="areqa-topic-card-list">
+                {state.history.map((entry) => (
+                  <li key={entry.version}>
+                    v{entry.version} · {topicCardStageLabel(t, entry.stage)}{entry.note ? `：${entry.note}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {isDone && notice && <p className="areqa-topic-card-notice" role="alert">{notice}</p>}
         </>
       )}
     </div>

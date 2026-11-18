@@ -267,7 +267,7 @@ async def test_card_prompt_reflects_confirmed_stage(storage):
     await store.confirm(owner, conversation, 1)
 
     prompt = await load_card_prompt(owner, conversation, store)
-    assert "篩子 2/5：最簡方案" in prompt
+    assert "第 2 關／共 5 關" in prompt
     assert topic_card.STAGE_FOCUS[2] in prompt
 
 
@@ -388,3 +388,42 @@ async def test_api_reports_unavailable_storage(api):
         response = await client.get(f"/api/v1/research-coach/{conversation}/card")
     assert response.status_code == 503
     assert response.json() == {"detail": "Topic card unavailable"}
+
+
+# --- Unit: stage-aware field limits (redesign) -------------------------------------------------
+
+
+@pytest.mark.parametrize(("stage", "has_mother", "has_measures"), [(0, False, False), (2, False, False), (3, True, False), (4, True, True), (6, True, True)])
+def test_fields_open_at_the_step_that_asks_about_them(stage, has_mother, has_measures):
+    from services.conversation.topic_card import restrict_patch
+
+    patch_ = CardPatch(pain_point="p", mother_question="m", candidates=["c"],
+                       operationalization=[OperationalTerm(term="t", measure="x")], change_note="n")
+    result = restrict_patch(patch_, stage)
+    assert result.pain_point == "p" and result.candidates == ["c"]
+    assert (result.mother_question is not None) is has_mother
+    assert (result.operationalization is not None) is has_measures
+
+
+@pytest.mark.asyncio
+async def test_extraction_drops_fields_from_later_steps_and_sends_allowed_keys():
+    client = _client(json.dumps({
+        "pain_point": "痛點", "mother_question": "如何運用聯盟理論分析時事",
+        "operationalization": [{"term": "聯盟形成動機", "measure": "制衡與扈從"}], "change_note": "整理",
+    }))
+    patch_ = await extract_card_patch(client, "m", TopicCard(), [{"role": "user", "content": "q"}], "a", stage=0)
+
+    assert patch_.pain_point == "痛點"
+    assert patch_.mother_question is None and patch_.operationalization is None
+    sent = json.loads(client.chat.completions.create.call_args.kwargs["messages"][1]["content"])
+    assert sent["stage"] == 0
+    assert "operationalization" not in sent["allowed_keys"] and "mother_question" not in sent["allowed_keys"]
+    rules = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "Theories, concepts, or examples the tutor explained are NOT" in rules
+
+
+def test_notes_do_not_double_punctuation():
+    state = with_pending(TopicCardState(), CardPatch(pain_point="a", change_note="確立了研究的核心問題。"))
+    state = with_pending(state, CardPatch(candidates=["b"], change_note="擴充影響因素；"))
+    assert state.pending.notes == ["確立了研究的核心問題", "擴充影響因素"]
+    assert "。；" not in confirm_stage(state).history[-1].note

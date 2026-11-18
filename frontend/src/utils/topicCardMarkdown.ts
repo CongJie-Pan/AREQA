@@ -6,11 +6,10 @@
  */
 
 import type { TranslationKey } from '@/contexts/UserPreferencesContext';
-import { TOPIC_CARD_COMPLETED_STAGE, type TopicCardState, visibleCard } from '@/services/topicCard';
+import { type TopicCardState, visibleCard } from '@/services/topicCard';
+import { topicCardStageLabel, topicStageQuestion } from '@/utils/topicCardStages';
 
 type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
-
-const FILTER_KEYS: TranslationKey[] = ['topicCardFilter1', 'topicCardFilter2', 'topicCardFilter3', 'topicCardFilter4', 'topicCardFilter5'];
 
 /** Escape Markdown syntax and fold line breaks so each value stays on its own line. */
 export function escapeMarkdown(value: string): string {
@@ -20,19 +19,14 @@ export function escapeMarkdown(value: string): string {
     .trim();
 }
 
-function stageText(t: Translate, stage: number): string {
-  if (stage <= 0) return t('topicCardStagePainPoint');
-  if (stage >= TOPIC_CARD_COMPLETED_STAGE) return t('topicCardStageDone');
-  return t('topicCardStageFilter', { n: stage, name: t(FILTER_KEYS[stage - 1]) });
-}
-
 /** Markdown for the confirmed card plus any pending AI draft, labelled as such. */
 export function topicCardToMarkdown(state: TopicCardState, t: Translate): string {
   const card = state.card;
   const lines = [
     `# ${t('topicCardTitle')}`,
     '',
-    `- ${t('topicCardProgress')}: ${stageText(t, state.stage)}`,
+    `- ${t('topicCardProgress')}: ${topicCardStageLabel(t, state.stage)}`,
+    `- ${t('topicCardCurrentQuestion')} ${escapeMarkdown(topicStageQuestion(t, state.stage))}`,
     `- ${t('topicCardVersion', { n: state.version })}`,
     '',
     `## ${t('topicCardPainPoint')}`,
@@ -64,7 +58,7 @@ export function topicCardToMarkdown(state: TopicCardState, t: Translate): string
     '',
     `## ${t('topicCardHistory')}`,
     ...(state.history.length
-      ? state.history.map((entry) => `- v${entry.version} · ${stageText(t, entry.stage)}${entry.note ? `: ${escapeMarkdown(entry.note)}` : ''}`)
+      ? state.history.map((entry) => `- v${entry.version} · ${topicCardStageLabel(t, entry.stage)}${entry.note ? `: ${escapeMarkdown(entry.note)}` : ''}`)
       : ['—']),
   ];
   if (state.pending) {

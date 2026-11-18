@@ -104,7 +104,7 @@ describe('Topic Finder topic card flow', () => {
 
   it('shows a proposal after an answer and advances only when the learner confirms', { timeout: 40_000 }, async () => {
     render(<Harness />);
-    expect(await screen.findByText('開始對話後，這裡會整理你的題目。')).toBeInTheDocument();
+    expect(await screen.findByText('還沒有確認的內容；採用上面的草稿後，會出現在這裡。')).toBeInTheDocument();
 
     // The backend proposes a draft after the answer; the card still shows stage 0.
     cardResponse = () => json({ stage: 0, version: 0, card: empty, pending: {
@@ -114,12 +114,14 @@ describe('Topic Finder topic card flow', () => {
     fireEvent.click(screen.getByLabelText('發送訊息'));
 
     await waitFor(() => expect(calls('/api/v1/stream')).toHaveLength(1), { timeout: 10_000 });
-    expect(await screen.findByRole('note', {}, { timeout: 10_000 })).toHaveTextContent('加入痛點');
-    expect(screen.getByText('痛點', { selector: 'li span' }).closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(await screen.findByRole('note', {}, { timeout: 10_000 })).toHaveTextContent('系統和 Gemini 差不多');
+    // The draft does not move the learner: they are still at the starting point.
+    expect(screen.getByText('起點')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '我確認這一關過了' }));
+    fireEvent.click(screen.getByRole('button', { name: '對，就這樣，進入下一關' }));
 
-    await waitFor(() => expect(screen.getByText('1. 時間').closest('li')).toHaveAttribute('aria-current', 'step'));
+    await waitFor(() => expect(screen.getByText('第 1 關／共 5 關')).toBeInTheDocument());
+    expect(screen.getByText('這個問題，過兩年技術進步後還存在嗎？')).toBeInTheDocument();
     expect(screen.getByText('版本 v1')).toBeInTheDocument();
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(JSON.parse(String(calls('/confirm')[0][1]?.body))).toEqual({ version: 0 });

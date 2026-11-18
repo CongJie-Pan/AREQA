@@ -575,11 +575,11 @@ button.areqa-topic-finder-badge {
 .areqa-topic-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   padding: 16px;
   color: var(--foreground);
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .areqa-topic-card-header {
@@ -597,7 +597,7 @@ button.areqa-topic-finder-badge {
   font-size: 12px;
 }
 
-.areqa-topic-card-close {
+.areqa-topic-card-icon-button {
   display: inline-flex;
   padding: 4px;
   border: 0;
@@ -607,118 +607,187 @@ button.areqa-topic-finder-badge {
   cursor: pointer;
 
   &:hover { background: var(--areqa-account-hover); color: var(--foreground); }
+  &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
 }
 
-.areqa-topic-card-section {
-  h3 {
-    margin: 0 0 4px;
-    color: var(--muted-foreground);
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  p { margin: 0; overflow-wrap: anywhere; }
-
-  ul {
-    margin: 0;
-    padding-left: 18px;
-    overflow-wrap: anywhere;
-  }
-}
-
-.areqa-topic-card-steps {
+/* The current step: one question, the only emphasised text in the panel. */
+.areqa-topic-card-step {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+}
+
+.areqa-topic-card-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.areqa-topic-card-step-label {
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.areqa-topic-card-dots {
+  display: flex;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 
   li {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--muted-foreground);
+    width: 18px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
   }
 
-  li[data-status='done'] { color: var(--foreground); }
-  li[data-status='current'] { color: var(--foreground); font-weight: 600; }
+  li[data-status='done'] { background: var(--muted-foreground); }
+  li[data-status='current'] { background: var(--foreground); }
+}
+
+.areqa-topic-card-step-caption {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
+.areqa-topic-card-question {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.areqa-topic-card-why,
+.areqa-topic-card-fold {
+  summary {
+    color: var(--muted-foreground);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  summary:hover { color: var(--foreground); }
+
+  p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 13px; }
+}
+
+.areqa-topic-card-fold {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+
+  summary { font-weight: 600; }
+  > dl, > ul, > p { margin-top: 8px; }
+}
+
+/* The AI's draft and the action sit together. */
+.areqa-topic-card-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.areqa-topic-card-draft {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+}
+
+.areqa-topic-card-draft-title {
+  margin: 0 0 6px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
+.areqa-topic-card-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+
+  dt { color: var(--muted-foreground); font-size: 12px; font-weight: 600; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  dd p { margin: 0; }
+}
+
+.areqa-topic-card-list {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  overflow-wrap: anywhere;
+
+  li + li { margin-top: 2px; }
 }
 
 .areqa-topic-card-measures li,
 .areqa-topic-card-discarded li {
-  display: flex;
-  flex-direction: column;
-
-  small, span:not(:first-child) { color: var(--muted-foreground); }
+  small, span:not(:first-child) { display: block; color: var(--muted-foreground); font-size: 12.5px; }
 }
 
 .areqa-topic-card-missing { color: var(--foreground); }
 
-.areqa-topic-card-candidates li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-}
+.areqa-topic-card-candidates li span:first-child { margin-right: 6px; }
 
 .areqa-topic-card-explore {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 8px;
+  padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: transparent;
   color: var(--muted-foreground);
   font: inherit;
   font-size: 12px;
+  vertical-align: middle;
   cursor: pointer;
 
   &:hover { color: var(--foreground); background: var(--areqa-account-hover); }
   &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
 }
 
-.areqa-topic-card-pending {
+.areqa-topic-card-buttons {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  color: var(--muted-foreground);
-  font-size: 12.5px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
-  span { color: var(--foreground); }
+.areqa-topic-card-confirm,
+.areqa-topic-card-secondary {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+}
+
+.areqa-topic-card-confirm {
+  flex: 1 1 auto;
+  border: 1px solid var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
+
+  &:disabled { opacity: 0.6; cursor: wait; }
+}
+
+.areqa-topic-card-secondary {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+
+  &:hover { background: var(--areqa-account-hover); }
 }
 
 .areqa-topic-card-muted {
   margin: 0;
   color: var(--muted-foreground);
-}
-
-.areqa-topic-card-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
-}
-
-.areqa-topic-card-confirm {
-  min-height: 36px;
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--foreground);
-  color: var(--background);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-
-  &:disabled { opacity: 0.6; cursor: wait; }
-  &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
 }
 
 .areqa-topic-card-hint {
