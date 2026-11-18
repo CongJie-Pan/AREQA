@@ -7,7 +7,10 @@ vi.mock('@/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error
 const { sendOnboardingEvent } = vi.hoisted(() => ({ sendOnboardingEvent: vi.fn() }));
 vi.mock('@/services/onboardingTelemetry', () => ({ sendOnboardingEvent }));
 
-import { ONBOARDING_VERSION, hasSeenFeatureTour, hasSeenOnboarding, useOnboardingStore } from '@/store/onboarding';
+import {
+  ONBOARDING_VERSION, TOPIC_FINDER_STEPS, hasSeenFeatureTour, hasSeenOnboarding, hasSeenTopicFinderTour,
+  recordOnboardingOutcome, useOnboardingStore,
+} from '@/store/onboarding';
 
 const user = (metadata: Record<string, unknown> = {}) => ({ id: 'u1', user_metadata: metadata }) as unknown as User;
 
@@ -132,5 +135,48 @@ describe('onboarding store', () => {
       { event: 'step_viewed', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 11 },
       { event: 'finished', mode: 'full', step: 'ask', stepIndex: 1, stepCount: 11, outcome: 'skipped' },
     ]);
+  });
+
+  describe('Topic Finder tour', () => {
+    it('runs its own steps and leaves the ask step on a real answer', () => {
+      const store = useOnboardingStore.getState();
+      store.start('topicFinder');
+      expect(useOnboardingStore.getState()).toMatchObject({ active: true, mode: 'topicFinder', steps: TOPIC_FINDER_STEPS, step: 0 });
+
+      store.next();
+      expect(useOnboardingStore.getState().steps[1]).toBe('tfAsk');
+      // A "Next" click is not an answer: only a real reply moves past tfAsk (the step shows no Next button).
+      store.notify('answer_completed');
+      expect(useOnboardingStore.getState().step).toBe(2);
+    });
+
+    it('hides while the first Topic Finder answer streams, then shows the card step', () => {
+      const store = useOnboardingStore.getState();
+      store.start('topicFinder');
+      store.next();
+      store.notify('question_sent');
+      expect(useOnboardingStore.getState()).toMatchObject({ step: 1, waitingForAnswer: true });
+      store.notify('answer_completed');
+      expect(useOnboardingStore.getState()).toMatchObject({ step: 2, waitingForAnswer: false });
+      expect(useOnboardingStore.getState().steps[2]).toBe('tfCard');
+    });
+
+    it('is recorded separately from the other tours and only once', () => {
+      expect(hasSeenTopicFinderTour(user())).toBe(false);
+      expect(hasSeenTopicFinderTour(user({ areqa_onboarding: { version: ONBOARDING_VERSION } }))).toBe(false);
+
+      recordOnboardingOutcome('topicFinder', 'skipped', user());
+
+      expect(window.localStorage.getItem(`areqa:topic-finder-tour:v${ONBOARDING_VERSION}:u1`)).toContain('skipped');
+      expect(updateUser).toHaveBeenCalledWith({ data: { areqa_topic_finder_tour: expect.objectContaining({ status: 'skipped' }) } });
+      expect(hasSeenTopicFinderTour(user())).toBe(true);
+      expect(hasSeenOnboarding(user())).toBe(false);
+      expect(hasSeenTopicFinderTour(user({ areqa_topic_finder_tour: { version: ONBOARDING_VERSION } }))).toBe(true);
+    });
+
+    it('reports fixed codes with the topicFinder mode', () => {
+      useOnboardingStore.getState().start('topicFinder');
+      expect(sendOnboardingEvent).toHaveBeenCalledWith(expect.objectContaining({ event: 'started', mode: 'topicFinder', step: 'tfIntro', stepCount: 4 }));
+    });
   });
 });

@@ -49,3 +49,19 @@ def test_onboarding_event_accepts_notes_and_branch_walkthrough_steps(client, ste
         "event": "step_viewed", "mode": "full", "step": step, "step_index": 4, "step_count": 11,
     })
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("step", ["tfIntro", "tfAsk", "tfCard", "tfFinish"])
+def test_onboarding_event_accepts_topic_finder_tour_codes(client, caplog, step):
+    with caplog.at_level(logging.INFO):
+        response = client.post("/api/v1/onboarding/event", json={
+            "event": "step_viewed", "mode": "topicFinder", "step": step, "step_index": 1, "step_count": 4,
+        })
+    assert response.status_code == 200
+    assert f"mode=topicFinder step={step}" in caplog.text
+
+
+def test_onboarding_event_rejects_unknown_topic_finder_codes(client):
+    assert client.post("/api/v1/onboarding/event", json={
+        "event": "started", "mode": "topicFinder", "step": "tfSecret",
+    }).status_code in (400, 422)

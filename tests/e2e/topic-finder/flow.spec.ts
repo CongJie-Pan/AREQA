@@ -169,3 +169,35 @@ test('@smoke on a phone the topic card opens as a drawer without horizontal scro
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('@smoke the first visit to Topic Finder walks through a short tour, once', async ({ page }) => {
+  await page.route('**/api/chat', (route) => route.fulfill({
+    contentType: 'text/event-stream',
+    body: `data: ${JSON.stringify({ choices: [{ delta: { content: '先說說你最在乎的是哪個部分？' } }] })}\n\ndata: [DONE]\n\n`,
+  }));
+  await page.route('**/api/title', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: [DONE]\n\n' }));
+  await page.route('**/api/research-coach/*/card', (route) => route.fulfill({ json: { stage: 0, version: 0, card: empty, pending: null, history: [] } }));
+  await page.goto('/');
+  // The first-run tour of the whole app is a separate tour; dismiss it.
+  await page.getByRole('button', { name: '略過引導' }).click();
+
+  await page.getByRole('button', { name: '選題：找出適合你的研究題目' }).first().click();
+  await expect(page.getByText('歡迎來到選題')).toBeVisible();
+  await page.getByRole('button', { name: '開始（約 30 秒）' }).click();
+
+  await expect(page.getByText('先說說你的痛點')).toBeVisible();
+  await page.getByRole('button', { name: '我好奇 AI 的回答方式會不會讓學生想得更少' }).click();
+  await expect(page.getByText('先說說你最在乎的是哪個部分？', { exact: true })).toBeVisible();
+
+  await expect(page.getByText('這是你的題目卡')).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: /^下一步/ }).click();
+  await expect(page.getByText('準備好了')).toBeVisible();
+  await page.getByRole('button', { name: /^完成/ }).click();
+  await expect(page.getByText('準備好了')).toHaveCount(0);
+
+  await page.reload();
+  await page.getByRole('button', { name: '略過引導' }).click({ timeout: 5_000 }).catch(() => undefined);
+  await page.getByRole('button', { name: '一般對話' }).click();
+  await page.getByRole('button', { name: '選題：找出適合你的研究題目' }).first().click();
+  await expect(page.getByText('歡迎來到選題')).toHaveCount(0);
+});

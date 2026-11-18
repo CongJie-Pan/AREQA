@@ -5,6 +5,8 @@
  * - `full`: first-run, learn-by-doing tour for new accounts.
  * - `features`: a short tour for existing learners covering only the features
  *   they have not used yet.
+ * - `topicFinder`: shown the first time a learner opens the Topic Finder (選題)
+ *   workspace; it waits for their first real answer before showing the topic card.
  *
  * Some steps wait for a real action (a sent question, a saved note, opening
  * the notes panel, creating or opening a branch) instead of a "Next" click.
@@ -27,8 +29,9 @@ export type OnboardingStepId =
   | 'welcome' | 'featuresIntro' | 'ask'
   | 'addNote' | 'notesEntry' | 'notesFilters' | 'noteActions'
   | 'replyMore' | 'branchSidebar' | 'branchInside'
-  | 'composerPlus' | 'finish';
-export type OnboardingMode = 'full' | 'features';
+  | 'composerPlus' | 'finish'
+  | 'tfIntro' | 'tfAsk' | 'tfCard' | 'tfFinish';
+export type OnboardingMode = 'full' | 'features' | 'topicFinder';
 export type OnboardingEvent =
   | 'question_sent' | 'answer_completed' | 'note_added' | 'notes_opened' | 'branch_created' | 'branch_opened';
 export type OnboardingOutcome = 'completed' | 'skipped';
@@ -46,6 +49,13 @@ const FEATURE_STEPS: Record<FeatureStepId, readonly OnboardingStepId[]> = {
 export const ONBOARDING_STEPS: readonly OnboardingStepId[] = [
   'welcome', 'ask', ...FEATURE_STEPS.addNote, ...FEATURE_STEPS.replyMore, ...FEATURE_STEPS.composerPlus, 'finish',
 ];
+
+/** Topic Finder tour: what it is, start with a pain point, then the topic card. */
+export const TOPIC_FINDER_STEPS: readonly OnboardingStepId[] = ['tfIntro', 'tfAsk', 'tfCard', 'tfFinish'];
+
+/** Steps that wait for a real question and its answer instead of a "Next" click. */
+const ASK_STEPS: ReadonlySet<OnboardingStepId> = new Set(['ask', 'tfAsk']);
+export const isAskStep = (step: OnboardingStepId | undefined): boolean => Boolean(step && ASK_STEPS.has(step));
 
 /** Real actions that complete a step and move the tour on. */
 const ADVANCES_ON: Partial<Record<OnboardingStepId, OnboardingEvent>> = {
@@ -72,7 +82,12 @@ function nextStepIndex(steps: readonly OnboardingStepId[], from: number, seen: r
   return Math.min(index, steps.length - 1);
 }
 
-const RECORD_KEYS: Record<OnboardingMode, string> = { full: 'areqa_onboarding', features: 'areqa_feature_tour' };
+const RECORD_KEYS: Record<OnboardingMode, string> = {
+  full: 'areqa_onboarding', features: 'areqa_feature_tour', topicFinder: 'areqa_topic_finder_tour',
+};
+const STORAGE_NAMES: Record<OnboardingMode, string> = {
+  full: 'onboarding', features: 'feature-tour', topicFinder: 'topic-finder-tour',
+};
 
 interface OnboardingState {
   active: boolean;
@@ -94,7 +109,7 @@ interface OnboardingState {
 }
 
 function storageKey(mode: OnboardingMode, userId: string): string {
-  return `areqa:${mode === 'full' ? 'onboarding' : 'feature-tour'}:v${ONBOARDING_VERSION}:${userId}`;
+  return `areqa:${STORAGE_NAMES[mode]}:v${ONBOARDING_VERSION}:${userId}`;
 }
 
 function hasRecord(user: User, mode: OnboardingMode): boolean {
@@ -115,6 +130,11 @@ export function hasSeenOnboarding(user: User): boolean {
 /** Whether this account already answered the "features you may not know" offer. */
 export function hasSeenFeatureTour(user: User): boolean {
   return hasRecord(user, 'features');
+}
+
+/** Whether this account already completed or skipped the Topic Finder tour. */
+export function hasSeenTopicFinderTour(user: User): boolean {
+  return hasRecord(user, 'topicFinder');
 }
 
 /** Store a tour outcome locally and on the account (fail-soft). */
@@ -154,7 +174,9 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   start: (mode = 'full', featureSteps = []) => {
     const steps: readonly OnboardingStepId[] = mode === 'full'
       ? ONBOARDING_STEPS
-      : ['featuresIntro', ...featureSteps.flatMap((id) => FEATURE_STEPS[id]), 'finish'];
+      : mode === 'topicFinder'
+        ? TOPIC_FINDER_STEPS
+        : ['featuresIntro', ...featureSteps.flatMap((id) => FEATURE_STEPS[id]), 'finish'];
     set({
       active: true, mode, steps, step: 0, featureCount: featureSteps.length,
       waitingForAnswer: false, seen: [], branchId: null,
@@ -171,11 +193,11 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
     const { active, steps, step, seen } = get();
     if (!active) return;
     const current = steps[step];
-    if (current === 'ask' && event === 'question_sent') {
+    if (isAskStep(current) && event === 'question_sent') {
       set({ waitingForAnswer: true });
       return;
     }
-    if (current === 'ask' && event === 'answer_completed') {
+    if (isAskStep(current) && event === 'answer_completed') {
       set({ waitingForAnswer: false, step: step + 1 });
       report('step_viewed', get());
       return;

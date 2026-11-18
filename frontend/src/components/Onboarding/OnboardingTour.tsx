@@ -11,6 +11,9 @@
  * - create a branch, spot it in the sidebar, open it and learn what the
  *   branch marker means;
  * - then the composer's "+" menu. Every step can skip the whole tour.
+ *
+ * The Topic Finder (選題) tour uses the same engine: what the workspace is for,
+ * a real first message about the learner's pain point, then the topic card.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Tour, type TourStepProps } from 'antd';
@@ -19,7 +22,7 @@ import { useUserPreferences, type TranslationKey } from '@/contexts/UserPreferen
 import { useAuthStore } from '@/store/auth';
 import { useChatStore } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
-import { useOnboardingStore, type OnboardingStepId } from '@/store/onboarding';
+import { isAskStep, useOnboardingStore, type OnboardingStepId } from '@/store/onboarding';
 
 const useStyles = createStyles(({ css }) => ({
   body: css`
@@ -64,6 +67,9 @@ const TARGETS: Partial<Record<OnboardingStepId, string>> = {
   replyMore: 'reply-more',
   branchInside: 'branch-boundary',
   composerPlus: 'composer-plus',
+  tfAsk: 'composer',
+  // Desktop: the topic card pane; phone: the "選題" badge that opens the drawer.
+  tfCard: 'topic-card',
 };
 
 /** Steps shown on top of the notes page; leaving them returns to the chat. */
@@ -76,6 +82,9 @@ const NOTE_ACTION_KEYS: TranslationKey[] = [
   'onboardingNoteActionTag', 'onboardingNoteActionEdit', 'onboardingNoteActionPin',
   'onboardingNoteActionSource', 'onboardingNoteActionDelete',
 ];
+const TOPIC_INTRO_KEYS: TranslationKey[] = ['topicTourIntroPoint1', 'topicTourIntroPoint2', 'topicTourIntroPoint3'];
+const TOPIC_EXAMPLE_KEYS: TranslationKey[] = ['topicTourExample1', 'topicTourExample2'];
+const TOPIC_CARD_KEYS: TranslationKey[] = ['topicTourCardPoint1', 'topicTourCardPoint2', 'topicTourCardPoint3'];
 const BRANCH_INSIDE_KEYS: TranslationKey[] = [
   'onboardingBranchInsideAbove', 'onboardingBranchInsideBelow', 'onboardingBranchInsideReturn',
 ];
@@ -216,9 +225,9 @@ export function OnboardingTour({
     if (active && stepId === 'branchSidebar' && branchId && activeConversationId === branchId) notify('branch_opened');
   }, [active, activeConversationId, branchId, notify, stepId]);
 
-  // The "ask" step advances on real activity: a stream starts, then finishes.
+  // Ask steps advance on real activity: a stream starts, then finishes.
   useEffect(() => {
-    if (!active || stepId !== 'ask') {
+    if (!active || !isAskStep(stepId)) {
       wasStreaming.current = isStreaming;
       return;
     }
@@ -327,6 +336,52 @@ export function OnboardingTour({
       title: t('onboardingPlusTitle'),
       description: t('onboardingPlusBody'),
       actions: actions(<Button autoInsertSpace={false} type="primary" size="small" onClick={next}>{t('onboardingNext')}</Button>),
+    },
+    tfIntro: {
+      title: t('topicTourIntroTitle'),
+      description: (
+        <div className={styles.body}>
+          <p className={styles.lead}>{t('topicTourIntroBody')}</p>
+          {pointList(TOPIC_INTRO_KEYS)}
+        </div>
+      ),
+      actions: actions(primaryButton('topicTourStart', next)),
+    },
+    tfAsk: {
+      title: t('topicTourAskTitle'),
+      description: (
+        <div className={styles.body}>
+          <span>{t('topicTourAskBody')}</span>
+          <div className={styles.examples}>
+            {TOPIC_EXAMPLE_KEYS.map((key) => (
+              <Button autoInsertSpace={false} key={key} size="small" onClick={() => onAskExample(t(key))}>{t(key)}</Button>
+            ))}
+          </div>
+        </div>
+      ),
+      actions: actions(null),
+    },
+    tfCard: {
+      // Beside the full-height card pane on desktop; under the badge on a phone.
+      placement: typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches ? 'bottom' : 'left',
+      title: t('topicTourCardTitle'),
+      description: (
+        <div className={styles.body}>
+          <span>{t('topicTourCardBody')}</span>
+          {pointList(TOPIC_CARD_KEYS)}
+        </div>
+      ),
+      actions: actions(primaryButton('onboardingNext', next)),
+    },
+    tfFinish: {
+      title: t('topicTourFinishTitle'),
+      description: t('topicTourFinishBody'),
+      actions: (
+        <div className={styles.actions}>
+          <span />
+          <Button autoInsertSpace={false} type="primary" size="small" onClick={() => finish('completed', user)}>{t('onboardingDone')}</Button>
+        </div>
+      ),
     },
     finish: {
       title: t('onboardingFinishTitle'),

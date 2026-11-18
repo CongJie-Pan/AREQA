@@ -45,12 +45,13 @@ class OnboardingEventRequest(BaseModel):
     """Guided-tour progress; every field is a fixed code, never learner text."""
 
     event: Literal["started", "step_viewed", "finished"]
-    mode: Literal["full", "features"]
+    mode: Literal["full", "features", "topicFinder"]
     step: Literal[
         "welcome", "featuresIntro", "ask",
         "addNote", "notesEntry", "notesFilters", "noteActions",
         "replyMore", "branchSidebar", "branchInside",
         "composerPlus", "finish",
+        "tfIntro", "tfAsk", "tfCard", "tfFinish",
     ]
     outcome: Optional[Literal["completed", "skipped"]] = None
     step_index: int = 0

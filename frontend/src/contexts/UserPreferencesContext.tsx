@@ -152,6 +152,23 @@ export type TranslationKey =
   | 'topicCardExploreMessage'
   | 'topicCardBranchTitle'
   | 'topicCardBranchFailed'
+  | 'topicTourIntroTitle'
+  | 'topicTourStart'
+  | 'topicTourIntroBody'
+  | 'topicTourIntroPoint1'
+  | 'topicTourIntroPoint2'
+  | 'topicTourIntroPoint3'
+  | 'topicTourAskTitle'
+  | 'topicTourAskBody'
+  | 'topicTourExample1'
+  | 'topicTourExample2'
+  | 'topicTourCardTitle'
+  | 'topicTourCardBody'
+  | 'topicTourCardPoint1'
+  | 'topicTourCardPoint2'
+  | 'topicTourCardPoint3'
+  | 'topicTourFinishTitle'
+  | 'topicTourFinishBody'
   | 'textSelectionCopy'
   | 'textSelectionAskQuote'
   | 'textSelectionExplain'
@@ -549,6 +566,23 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardExploreMessage: "我想在這條分支深入探索這個候選題目：「{topic}」",
     topicCardBranchTitle: "候選",
     topicCardBranchFailed: "目前無法建立分支，請等這一輪回答完成後再試。",
+    topicTourIntroTitle: "歡迎來到選題",
+    topicTourStart: "開始（約 30 秒）",
+    topicTourIntroBody: "AREQA 會陪你從自己的痛點出發，一關一關收斂出適合你、而且現在做得到的研究題目。",
+    topicTourIntroPoint1: "先用一句話寫下你卡住或好奇的問題。",
+    topicTourIntroPoint2: "再用五道篩子檢驗：時間、最簡方案、核心、可測、現實。",
+    topicTourIntroPoint3: "AI 只負責提出反例，是否過關由你決定。",
+    topicTourAskTitle: "先說說你的痛點",
+    topicTourAskBody: "在輸入框寫下「我卡在／我好奇＿＿」，或點下面的例子試試。回答完成後，我再帶你看題目卡。",
+    topicTourExample1: "我做的教學系統和 ChatGPT 差不多，不知道研究價值在哪",
+    topicTourExample2: "我好奇 AI 的回答方式會不會讓學生想得更少",
+    topicTourCardTitle: "這是你的題目卡",
+    topicTourCardBody: "AI 每輪都會整理建議，放在虛線框裡；你按「我確認這一關過了」，才會正式寫入並進入下一關。",
+    topicTourCardPoint1: "被淘汰的題目會留在淘汰清單，並記下是哪道篩子刷掉的。",
+    topicTourCardPoint2: "候選題目可以「開分支探索」，不會影響主線。",
+    topicTourCardPoint3: "題目卡可以匯出 Markdown；手機上點右上角的「選題」標籤開啟。",
+    topicTourFinishTitle: "準備好了",
+    topicTourFinishBody: "隨時可以用側欄或首頁頂部的切換鈕回到一般對話；選題對話會分開保存。",
     textSelectionCopy: '複製',
     textSelectionAskQuote: '問AREQA(引用)',
     textSelectionExplain: '幫我解釋',
@@ -920,6 +954,23 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardExploreMessage: "我想在这条分支深入探索这个候选题目：「{topic}」",
     topicCardBranchTitle: "候选",
     topicCardBranchFailed: "目前无法建立分支，请等这一轮回答完成后再试。",
+    topicTourIntroTitle: "欢迎来到选题",
+    topicTourStart: "开始（约 30 秒）",
+    topicTourIntroBody: "AREQA 会陪你从自己的痛点出发，一关一关收敛出适合你、而且现在做得到的研究题目。",
+    topicTourIntroPoint1: "先用一句话写下你卡住或好奇的问题。",
+    topicTourIntroPoint2: "再用五道筛子检验：时间、最简方案、核心、可测、现实。",
+    topicTourIntroPoint3: "AI 只负责提出反例，是否过关由你决定。",
+    topicTourAskTitle: "先说说你的痛点",
+    topicTourAskBody: "在输入框写下「我卡在／我好奇＿＿」，或点下面的例子试试。回答完成后，我再带你看题目卡。",
+    topicTourExample1: "我做的教学系统和 ChatGPT 差不多，不知道研究价值在哪",
+    topicTourExample2: "我好奇 AI 的回答方式会不会让学生想得更少",
+    topicTourCardTitle: "这是你的题目卡",
+    topicTourCardBody: "AI 每轮都会整理建议，放在虚线框里；你按「我确认这一关过了」，才会正式写入并进入下一关。",
+    topicTourCardPoint1: "被淘汰的题目会留在淘汰清单，并记下是哪道筛子刷掉的。",
+    topicTourCardPoint2: "候选题目可以「开分支探索」，不会影响主线。",
+    topicTourCardPoint3: "题目卡可以导出 Markdown；手机上点右上角的「选题」标签打开。",
+    topicTourFinishTitle: "准备好了",
+    topicTourFinishBody: "随时可以用侧栏或首页顶部的切换按钮回到一般对话；选题对话会分开保存。",
     textSelectionCopy: '复制',
     textSelectionAskQuote: '问AREQA(引用)',
     textSelectionExplain: '帮我解释',
@@ -1291,6 +1342,23 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardExploreMessage: "In this branch I want to explore this candidate topic in depth: \"{topic}\"",
     topicCardBranchTitle: "Candidate",
     topicCardBranchFailed: "Cannot branch right now. Try again after this answer finishes.",
+    topicTourIntroTitle: "Welcome to Topic Finder",
+    topicTourStart: "Start (about 30 seconds)",
+    topicTourIntroBody: "AREQA helps you go from your own pain point to a research topic that fits you and that you can actually do now, one step at a time.",
+    topicTourIntroPoint1: "Start with one sentence about what you are stuck on or curious about.",
+    topicTourIntroPoint2: "Then test it with five filters: time, simplest fix, core, measurable, reality.",
+    topicTourIntroPoint3: "The AI only raises counterexamples; you decide whether a step passes.",
+    topicTourAskTitle: "Start with your pain point",
+    topicTourAskBody: "Write \"I am stuck on / curious about ___\" in the box, or try an example below. After the answer, I will show you the topic card.",
+    topicTourExample1: "My tutoring system feels no different from ChatGPT, and I am not sure what is worth researching",
+    topicTourExample2: "I wonder whether the way AI answers makes students think less",
+    topicTourCardTitle: "This is your topic card",
+    topicTourCardBody: "Each turn, the AI drafts suggestions in a dashed box. They are adopted, and you move to the next step, only when you press \"I confirm this step is passed\".",
+    topicTourCardPoint1: "Discarded topics stay in the discarded list, with the filter that dropped them.",
+    topicTourCardPoint2: "Explore a candidate in its own branch without changing the main card.",
+    topicTourCardPoint3: "Export the card as Markdown; on a phone, tap the Topic Finder badge to open it.",
+    topicTourFinishTitle: "You are ready",
+    topicTourFinishBody: "Switch back to ordinary chat any time from the sidebar or the switch at the top of the home screen; Topic Finder chats are kept separately.",
     textSelectionCopy: 'Copy',
     textSelectionAskQuote: 'Ask AREQA (quote)',
     textSelectionExplain: 'Explain',

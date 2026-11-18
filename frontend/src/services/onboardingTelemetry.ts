@@ -9,7 +9,7 @@ import { logger } from '@/utils/logger';
 
 export interface OnboardingTelemetryEvent {
   event: 'started' | 'step_viewed' | 'finished';
-  mode: 'full' | 'features';
+  mode: 'full' | 'features' | 'topicFinder';
   step: string;
   stepIndex: number;
   stepCount: number;

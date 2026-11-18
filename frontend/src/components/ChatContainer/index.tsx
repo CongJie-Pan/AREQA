@@ -50,7 +50,7 @@ import { SharePanel } from './SharePanel';
 import { useSharedConversationView } from './useSharedConversationView';
 import { SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
 import { OnboardingTour } from '@/components/Onboarding/OnboardingTour';
-import { hasSeenFeatureTour, hasSeenOnboarding, recordOnboardingOutcome, useOnboardingStore } from '@/store/onboarding';
+import { hasSeenFeatureTour, hasSeenOnboarding, hasSeenTopicFinderTour, recordOnboardingOutcome, useOnboardingStore } from '@/store/onboarding';
 import { detectUnusedFeatureSteps } from '@/services/onboardingFeatures';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
@@ -505,6 +505,16 @@ export function ChatContainer({ className }: ChatContainerProps) {
   // learners who never took it are offered a short tour of only the features
   // they have not used. Outcomes live on the account, so nothing repeats.
   const onboardingCheckedFor = useRef<string | null>(null);
+  // First visit to Topic Finder: a short tour of how to use it (once per account).
+  const workspace = useConversationStore((state) => state.workspace);
+  const topicTourCheckedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (workspace !== 'research_coach' || !isChatReady || !user || sharedView || isLiveTutorOpen) return;
+    if (topicTourCheckedFor.current === user.id || useOnboardingStore.getState().active) return;
+    topicTourCheckedFor.current = user.id;
+    if (!hasSeenTopicFinderTour(user)) useOnboardingStore.getState().start('topicFinder');
+  }, [isChatReady, isLiveTutorOpen, sharedView, user, workspace]);
+
   const featureOfferTimer = useRef<number | null>(null);
   // Cancel a pending offer only on unmount: re-runs caused by a growing
   // conversation list must not drop an offer that was already scheduled.
@@ -940,6 +950,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                       {isTopicFinder && (user ? (
                         <button
                           type="button"
+                          data-tour="topic-card"
                           className="areqa-topic-finder-badge"
                           title={t(isMobile || !isTopicCardPaneOpen ? 'topicCardOpen' : 'topicCardClose')}
                           aria-expanded={isMobile ? isTopicCardDrawerOpen : isTopicCardPaneOpen}
@@ -1129,7 +1140,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
               </div>
 
               {showTopicCardPane && !sharedView && (
-                <aside className="areqa-topic-card-pane">
+                <aside className="areqa-topic-card-pane" data-tour="topic-card">
                   <TopicCardPanel
                     topicCard={topicCard}
                     onClose={() => setIsTopicCardPaneOpen(false)}
