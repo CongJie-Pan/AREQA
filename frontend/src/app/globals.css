@@ -519,6 +519,7 @@ html[lang='en'] body {
 }
 
 .areqa-workspace-switch-segmented .areqa-workspace-switch-option {
+  white-space: nowrap;
   min-height: 34px;
   padding: 0 16px;
   border-radius: 999px;

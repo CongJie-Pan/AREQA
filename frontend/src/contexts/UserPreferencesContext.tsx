@@ -1350,7 +1350,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicTourIntroPoint3: "The AI only raises counterexamples; you decide whether a step passes.",
     topicTourAskTitle: "Start with your pain point",
     topicTourAskBody: "Write \"I am stuck on / curious about ___\" in the box, or try an example below. After the answer, I will show you the topic card.",
-    topicTourExample1: "My tutoring system feels no different from ChatGPT, and I am not sure what is worth researching",
+    topicTourExample1: "My tutor app feels just like ChatGPT. What is worth researching?",
     topicTourExample2: "I wonder whether the way AI answers makes students think less",
     topicTourCardTitle: "This is your topic card",
     topicTourCardBody: "Each turn, the AI drafts suggestions in a dashed box. They are adopted, and you move to the next step, only when you press \"I confirm this step is passed\".",

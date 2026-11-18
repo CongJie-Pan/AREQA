@@ -201,3 +201,50 @@ test('@smoke the first visit to Topic Finder walks through a short tour, once', 
   await page.getByRole('button', { name: '選題：找出適合你的研究題目' }).first().click();
   await expect(page.getByText('歡迎來到選題')).toHaveCount(0);
 });
+
+test('@smoke English labels fit: one-line switch and wrapped tour examples', async ({ page }) => {
+  // The harness pins zh-TW; keep English for this check only.
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    localStorage.setItem('areqa:interface-language', 'en');
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === 'areqa:interface-language') return;
+      return original.call(this, key, value);
+    };
+  });
+  for (const width of [918, 390]) {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto('/');
+    // Each width starts from Chat with the Topic Finder tour not yet seen.
+    await page.evaluate(() => Object.keys(localStorage)
+      .filter((key) => key.startsWith('areqa:topic-finder-tour') || key === 'areqa:workspace')
+      .forEach((key) => localStorage.removeItem(key)));
+    await page.reload();
+    // The app-wide first-run tour shows only once; skip it if it is there.
+    const skipAppTour = page.getByRole('button', { name: 'Skip tour' });
+    await skipAppTour.waitFor({ timeout: 3_000 }).then(() => skipAppTour.click()).catch(() => undefined);
+    const option = page.getByRole('button', { name: 'Topic Finder', exact: true });
+    expect((await option.boundingBox())!.height).toBeLessThan(40);
+    await option.click();
+    await page.getByRole('button', { name: 'Start (about 30 seconds)' }).click();
+    await expect(page.getByText('Start with your pain point')).toBeVisible();
+    const fits = await page.evaluate(() => {
+      const popup = document.querySelector('.ant-tour') as HTMLElement;
+      const box = popup.getBoundingClientRect();
+      return [...popup.querySelectorAll('.ant-btn')].every((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+      });
+    });
+    expect(fits).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  }
+});
+
+test('@smoke the Topic Finder tour still appears after the app tour is dismissed', async ({ page }) => {
+  // A new account that lands in Topic Finder sees the app tour first.
+  await page.addInitScript(() => localStorage.setItem('areqa:workspace', 'research_coach'));
+  await page.goto('/');
+  await page.getByRole('button', { name: '略過引導' }).click();
+  await expect(page.getByText('歡迎來到選題')).toBeVisible();
+});

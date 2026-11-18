@@ -508,12 +508,17 @@ export function ChatContainer({ className }: ChatContainerProps) {
   // First visit to Topic Finder: a short tour of how to use it (once per account).
   const workspace = useConversationStore((state) => state.workspace);
   const topicTourCheckedFor = useRef<string | null>(null);
+  // Re-check when another tour ends: it may have been open when the learner entered Topic Finder.
+  const isAnyTourActive = useOnboardingStore((state) => state.active);
   useEffect(() => {
     if (workspace !== 'research_coach' || !isChatReady || !user || sharedView || isLiveTutorOpen) return;
-    if (topicTourCheckedFor.current === user.id || useOnboardingStore.getState().active) return;
+    if (topicTourCheckedFor.current === user.id || isAnyTourActive) return;
+    // The app's first-run tour (accounts with no conversations yet) goes first; starting
+    // both would let it replace this one. This effect re-runs when that tour ends.
+    if (conversations.length === 0 && !hasSeenOnboarding(user)) return;
     topicTourCheckedFor.current = user.id;
     if (!hasSeenTopicFinderTour(user)) useOnboardingStore.getState().start('topicFinder');
-  }, [isChatReady, isLiveTutorOpen, sharedView, user, workspace]);
+  }, [conversations.length, isAnyTourActive, isChatReady, isLiveTutorOpen, sharedView, user, workspace]);
 
   const featureOfferTimer = useRef<number | null>(null);
   // Cancel a pending offer only on unmount: re-runs caused by a growing

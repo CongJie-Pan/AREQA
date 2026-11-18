@@ -47,6 +47,17 @@ const useStyles = createStyles(({ css }) => ({
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+
+    /* Example questions can be long (English especially): wrap inside the popover. */
+    .ant-btn {
+      max-width: 100%;
+      height: auto;
+      min-height: 24px;
+      padding-block: 2px;
+      white-space: normal;
+      text-align: start;
+      overflow-wrap: anywhere;
+    }
   `,
   actions: css`
     display: flex;
