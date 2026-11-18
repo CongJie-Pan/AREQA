@@ -35,13 +35,18 @@ const useStyles = createStyles(({ css }) => ({
     margin: 0;
     font-weight: 600;
   `,
+  // Tailwind's preflight removes list markers; restore bullets and numbers here.
   points: css`
     margin: 0;
     padding-left: 18px;
+    list-style: disc outside;
 
     li + li {
       margin-top: 4px;
     }
+  `,
+  numbered: css`
+    list-style-type: decimal;
   `,
   examples: css`
     display: flex;
@@ -93,10 +98,10 @@ const NOTE_ACTION_KEYS: TranslationKey[] = [
   'onboardingNoteActionTag', 'onboardingNoteActionEdit', 'onboardingNoteActionPin',
   'onboardingNoteActionSource', 'onboardingNoteActionDelete',
 ];
-// The five questions, worded exactly as the topic card shows them.
+// The five stages, worded exactly as the topic card shows them.
 const TOPIC_INTRO_KEYS: TranslationKey[] = ['topicStageTitle1', 'topicStageTitle2', 'topicStageTitle3', 'topicStageTitle4', 'topicStageTitle5'];
 const TOPIC_EXAMPLE_KEYS: TranslationKey[] = ['topicTourExample1', 'topicTourExample2'];
-const TOPIC_CARD_KEYS: TranslationKey[] = ['topicTourCardPoint1', 'topicTourCardPoint2', 'topicTourCardPoint3'];
+const TOPIC_CARD_KEYS: TranslationKey[] = ['topicTourCardPoint1', 'topicTourCardPoint2', 'topicTourCardPoint3', 'topicTourCardPoint4'];
 const BRANCH_INSIDE_KEYS: TranslationKey[] = [
   'onboardingBranchInsideAbove', 'onboardingBranchInsideBelow', 'onboardingBranchInsideReturn',
 ];
@@ -201,7 +206,7 @@ export interface OnboardingTourProps {
 export function OnboardingTour({
   onAskExample, notesOpen, onOpenNotes, onCloseNotes, onOpenSidebar, onOpenConversation,
 }: OnboardingTourProps) {
-  const { styles } = useStyles();
+  const { styles, cx } = useStyles();
   const { t } = useUserPreferences();
   const user = useAuthStore((state) => state.user);
   const {
@@ -354,7 +359,7 @@ export function OnboardingTour({
       description: (
         <div className={styles.body}>
           <p className={styles.lead}>{t('topicTourIntroBody')}</p>
-          <ol className={styles.points}>
+          <ol className={cx(styles.points, styles.numbered)}>
             {TOPIC_INTRO_KEYS.map((key) => <li key={key}>{t(key)}</li>)}
           </ol>
           <span>{t('topicTourIntroPoint3')}</span>

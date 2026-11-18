@@ -203,6 +203,10 @@ test('@smoke the first visit to Topic Finder walks through a short tour, once', 
 
   await page.getByRole('button', { name: '選題：找出適合你的研究題目' }).first().click();
   await expect(page.getByText('歡迎來到選題')).toBeVisible();
+  // The five stages render as a numbered list (Tailwind's preflight would otherwise hide the markers).
+  const stageList = page.locator('.ant-tour ol').first();
+  await expect(stageList.locator('li')).toHaveCount(5);
+  expect(await stageList.evaluate((element) => getComputedStyle(element).listStyleType)).toBe('decimal');
   await page.getByRole('button', { name: '開始（約 30 秒）' }).click();
 
   await expect(page.getByText('先說說你的痛點')).toBeVisible();
@@ -210,6 +214,10 @@ test('@smoke the first visit to Topic Finder walks through a short tour, once', 
   await expect(page.getByText('先說說你最在乎的是哪個部分？', { exact: true })).toBeVisible();
 
   await expect(page.getByText('這是你的題目卡')).toBeVisible({ timeout: 15_000 });
+  const cardPoints = page.locator('.ant-tour ul').first();
+  await expect(cardPoints.locator('li')).toHaveCount(4);
+  expect(await cardPoints.evaluate((element) => getComputedStyle(element).listStyleType)).toBe('disc');
+  await expect(cardPoints).toContainText('AI 提議');
   await page.getByRole('button', { name: /^下一步/ }).click();
   await expect(page.getByText('準備好了')).toBeVisible();
   await page.getByRole('button', { name: /^完成/ }).click();
