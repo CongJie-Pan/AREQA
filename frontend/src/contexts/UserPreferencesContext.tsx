@@ -147,6 +147,11 @@ export type TranslationKey =
   | 'topicCardOpen'
   | 'topicCardClose'
   | 'topicCardHistory'
+  | 'topicCardExport'
+  | 'topicCardExplore'
+  | 'topicCardExploreMessage'
+  | 'topicCardBranchTitle'
+  | 'topicCardBranchFailed'
   | 'textSelectionCopy'
   | 'textSelectionAskQuote'
   | 'textSelectionExplain'
@@ -539,6 +544,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardOpen: "開啟題目卡",
     topicCardClose: "收合題目卡",
     topicCardHistory: "版本紀錄",
+    topicCardExport: "匯出 Markdown",
+    topicCardExplore: "開分支探索",
+    topicCardExploreMessage: "我想在這條分支深入探索這個候選題目：「{topic}」",
+    topicCardBranchTitle: "候選",
+    topicCardBranchFailed: "目前無法建立分支，請等這一輪回答完成後再試。",
     textSelectionCopy: '複製',
     textSelectionAskQuote: '問AREQA(引用)',
     textSelectionExplain: '幫我解釋',
@@ -905,6 +915,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardOpen: "打开题目卡",
     topicCardClose: "收起题目卡",
     topicCardHistory: "版本记录",
+    topicCardExport: "导出 Markdown",
+    topicCardExplore: "开分支探索",
+    topicCardExploreMessage: "我想在这条分支深入探索这个候选题目：「{topic}」",
+    topicCardBranchTitle: "候选",
+    topicCardBranchFailed: "目前无法建立分支，请等这一轮回答完成后再试。",
     textSelectionCopy: '复制',
     textSelectionAskQuote: '问AREQA(引用)',
     textSelectionExplain: '帮我解释',
@@ -1271,6 +1286,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardOpen: "Open topic card",
     topicCardClose: "Collapse topic card",
     topicCardHistory: "History",
+    topicCardExport: "Export Markdown",
+    topicCardExplore: "Explore in a branch",
+    topicCardExploreMessage: "In this branch I want to explore this candidate topic in depth: \"{topic}\"",
+    topicCardBranchTitle: "Candidate",
+    topicCardBranchFailed: "Cannot branch right now. Try again after this answer finishes.",
     textSelectionCopy: 'Copy',
     textSelectionAskQuote: 'Ask AREQA (quote)',
     textSelectionExplain: 'Explain',

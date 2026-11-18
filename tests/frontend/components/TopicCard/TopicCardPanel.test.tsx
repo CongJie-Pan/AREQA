@@ -12,12 +12,12 @@ const state = (overrides: Partial<TopicCardState> = {}): TopicCardState => ({
   stage: 0, version: 0, card: empty, pending: null, history: [], ...overrides,
 });
 
-function renderPanel(overrides: Partial<UseTopicCardResult> = {}, onClose?: () => void) {
+function renderPanel(overrides: Partial<UseTopicCardResult> = {}, onClose?: () => void, onExploreCandidate?: (candidate: string) => void) {
   const topicCard: UseTopicCardResult = {
     state: state(), failure: null, isConfirming: false, confirm: vi.fn().mockResolvedValue('advanced'), reload: vi.fn(),
     ...overrides,
   };
-  render(<UserPreferencesProvider><App><TopicCardPanel topicCard={topicCard} onClose={onClose} /></App></UserPreferencesProvider>);
+  render(<UserPreferencesProvider><App><TopicCardPanel topicCard={topicCard} onClose={onClose} onExploreCandidate={onExploreCandidate} /></App></UserPreferencesProvider>);
   return topicCard;
 }
 
@@ -83,5 +83,36 @@ describe('TopicCardPanel', () => {
     renderPanel({}, onClose);
     fireEvent.click(screen.getByRole('button', { name: '收合題目卡' }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('offers branch exploration per candidate only when branching is available', () => {
+    const onExplore = vi.fn();
+    const withCandidates = { state: state({ card: { ...empty, candidates: ['候選 A', '候選 B'] } }) };
+    renderPanel(withCandidates, undefined, onExplore);
+    fireEvent.click(screen.getByRole('button', { name: '開分支探索：候選 B' }));
+    expect(onExplore).toHaveBeenCalledWith('候選 B');
+
+    renderPanel(withCandidates);
+    expect(screen.getAllByRole('button', { name: /開分支探索/ })).toHaveLength(2);
+  });
+
+  it('downloads the card as Markdown', async () => {
+    const createObjectURL = vi.fn(() => 'blob:card');
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    renderPanel({ state: state({ version: 3, card: { ...empty, pain_point: '痛點文字' } }) });
+
+    fireEvent.click(screen.getByRole('button', { name: '匯出 Markdown' }));
+
+    expect(click).toHaveBeenCalled();
+    const blob = (createObjectURL.mock.calls[0] as unknown as [Blob])[0];
+    const text = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blob);
+    });
+    expect(text).toContain('痛點文字');
+    click.mockRestore();
   });
 });

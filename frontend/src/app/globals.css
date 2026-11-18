@@ -650,6 +650,30 @@ button.areqa-topic-finder-badge {
 
 .areqa-topic-card-missing { color: var(--foreground); }
 
+.areqa-topic-card-candidates li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.areqa-topic-card-explore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover { color: var(--foreground); background: var(--areqa-account-hover); }
+  &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
+}
+
 .areqa-topic-card-pending {
   display: flex;
   flex-direction: column;

@@ -11,11 +11,12 @@
 
 import React, { useState } from 'react';
 import { App } from 'antd';
-import { Check, Circle, CircleDot, Telescope, X } from 'lucide-react';
+import { Check, Circle, CircleDot, Download, GitBranch, Telescope, X } from 'lucide-react';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import type { TranslationKey } from '@/contexts/UserPreferencesContext';
 import type { UseTopicCardResult } from '@/hooks/useTopicCard';
 import { TOPIC_CARD_COMPLETED_STAGE, visibleCard } from '@/services/topicCard';
+import { downloadTopicCardMarkdown } from '@/utils/topicCardMarkdown';
 
 type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string;
 
@@ -40,9 +41,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export interface TopicCardPanelProps {
   topicCard: UseTopicCardResult;
   onClose?: () => void;
+  /** Diverge: open a branch to explore one candidate; the main card is unaffected. */
+  onExploreCandidate?: (candidate: string) => void;
 }
 
-export function TopicCardPanel({ topicCard, onClose }: TopicCardPanelProps) {
+export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: TopicCardPanelProps) {
   const { t } = useUserPreferences();
   const { message } = App.useApp();
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,6 +70,17 @@ export function TopicCardPanel({ topicCard, onClose }: TopicCardPanelProps) {
         <Telescope size={16} aria-hidden="true" />
         <h2>{t('topicCardTitle')}</h2>
         {state && <span className="areqa-topic-card-version">{t('topicCardVersion', { n: state.version })}</span>}
+        {state && (
+          <button
+            type="button"
+            className="areqa-topic-card-close"
+            onClick={() => downloadTopicCardMarkdown(state, t)}
+            aria-label={t('topicCardExport')}
+            title={t('topicCardExport')}
+          >
+            <Download size={16} />
+          </button>
+        )}
         {onClose && (
           <button type="button" className="areqa-topic-card-close" onClick={onClose} aria-label={t('topicCardClose')}>
             <X size={16} />
@@ -111,7 +125,24 @@ export function TopicCardPanel({ topicCard, onClose }: TopicCardPanelProps) {
           {card.mother_question && <Section title={t('topicCardMotherQuestion')}><p>{card.mother_question}</p></Section>}
           {card.candidates.length > 0 && (
             <Section title={t('topicCardCandidates')}>
-              <ul>{card.candidates.map((item) => <li key={item}>{item}</li>)}</ul>
+              <ul className="areqa-topic-card-candidates">
+                {card.candidates.map((item) => (
+                  <li key={item}>
+                    <span>{item}</span>
+                    {onExploreCandidate && (
+                      <button
+                        type="button"
+                        className="areqa-topic-card-explore"
+                        onClick={() => onExploreCandidate(item)}
+                        aria-label={`${t('topicCardExplore')}：${item}`}
+                      >
+                        <GitBranch size={12} aria-hidden="true" />
+                        {t('topicCardExplore')}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </Section>
           )}
           {card.operationalization.length > 0 && (

@@ -24,6 +24,7 @@ import { ChatInput } from '@/components/ChatInput';
 import { HomeWorkspaceSwitch } from '@/components/WorkspaceSwitch';
 import { TopicCardPanel, topicCardStageLabel } from '@/components/TopicCard';
 import { useTopicCard } from '@/hooks/useTopicCard';
+import { TopicBranchUnavailableError, exploreCandidateInBranch } from '@/services/topicFinderBranch';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
 import { MailboxPanel } from '@/components/MailboxPanel';
@@ -655,6 +656,24 @@ export function ChatContainer({ className }: ChatContainerProps) {
     }
   }, [activeConversation, activeConversationId, antMessageApi, t, user]);
 
+  // Topic Finder divergence: explore one candidate in its own branch; the main card stays as it is.
+  const handleExploreCandidate = useCallback(async (candidate: string) => {
+    if (!activeConversationId || !user || branchPending.current) return;
+    branchPending.current = true;
+    try {
+      await exploreCandidateInBranch({
+        sourceConversationId: activeConversationId,
+        title: `${t('topicCardBranchTitle')} · ${candidate}`,
+        firstMessage: t('topicCardExploreMessage', { topic: candidate }),
+      });
+    } catch (error) {
+      if (error instanceof TopicBranchUnavailableError) antMessageApi.info(t('topicCardBranchFailed'));
+      else antMessageApi.error(t('topicCardBranchFailed'));
+    } finally {
+      branchPending.current = false;
+    }
+  }, [activeConversationId, antMessageApi, t, user]);
+
   // Handle regenerate message
   const handleRegenerate = useCallback(async (messageId: string) => {
     try {
@@ -857,6 +876,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
       {/* Main Content */}
       <div className={cx('areqa-chat-main', styles.main)}>
+        {/* Workspace choice sits at the top of the empty home only; the main column (not the
+            vertically centred content) anchors it so it stays near the top edge. */}
+        {shouldShowEmptyChat && !gumPanelType && !sharedView && !isLiveTutorOpen && <HomeWorkspaceSwitch />}
         <LongConversationReminder
           userId={historyUserId}
           conversationId={activeConversationId}
@@ -912,8 +934,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
               showTopicCardPane && !sharedView && styles.topicCardWorkspace,
             )}>
               <div className={cx('areqa-chat-response-pane', styles.responsePane, useAvatarSplitLayout && styles.responsePaneSplit)}>
-                {/* Workspace choice lives at the top of the empty home only. */}
-                {shouldShowEmptyChat && !gumPanelType && !sharedView && !isLiveTutorOpen && <HomeWorkspaceSwitch />}
                 <div className={cx('areqa-chat-floating-actions', styles.floatingActions)}>
                   {!gumPanelType && !isEmpty && !sharedView && (
                     <>
@@ -1032,6 +1052,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     styles.messageArea,
                     isLiveTutorOpen && styles.messageAreaLiveTutor,
                     hideLiveTutorMessages && !isGeneratingImage && styles.messageAreaLiveTutorEmpty,
+                    isTopicFinder && !isEmpty && !sharedView && styles.messageAreaTopicFinder,
                   )}
                 >
                   {sharedView ? (
@@ -1109,7 +1130,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
               {showTopicCardPane && !sharedView && (
                 <aside className="areqa-topic-card-pane">
-                  <TopicCardPanel topicCard={topicCard} onClose={() => setIsTopicCardPaneOpen(false)} />
+                  <TopicCardPanel
+                    topicCard={topicCard}
+                    onClose={() => setIsTopicCardPaneOpen(false)}
+                    onExploreCandidate={conversationBranchesEnabled ? handleExploreCandidate : undefined}
+                  />
                 </aside>
               )}
 
@@ -1150,7 +1175,14 @@ export function ChatContainer({ className }: ChatContainerProps) {
         destroyOnHidden
         styles={{ body: { padding: 0 } }}
       >
-        <TopicCardPanel topicCard={topicCard} onClose={() => setIsTopicCardDrawerOpen(false)} />
+        <TopicCardPanel
+          topicCard={topicCard}
+          onClose={() => setIsTopicCardDrawerOpen(false)}
+          onExploreCandidate={conversationBranchesEnabled ? (candidate) => {
+            setIsTopicCardDrawerOpen(false);
+            void handleExploreCandidate(candidate);
+          } : undefined}
+        />
       </Drawer>
 
       {/* Text Selection Toolbar */}

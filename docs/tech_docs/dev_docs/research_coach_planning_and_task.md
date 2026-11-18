@@ -1,6 +1,6 @@
 # Topic Finder（選題）開發計畫與任務清單
 
-- 狀態：規劃完成，尚未實作。每個階段的測試關卡都通過，才能進入下一階段（見第 6 節）
+- 狀態：三個階段皆已實作，關卡全部通過（2026-11-18）。待作者依實機測試劇本驗收：`docs/tech_docs/dev_docs/research_coach_manual_test_script.md`
 - 建立日期：2026-11-18
 - 來源：
   - Heptabase 白板 `docs/paper/paper_review/Adaptive AI Learning with Human - Extracted`
@@ -417,7 +417,7 @@ primary key (user_id, conversation_id)
 |---|---|---|---|---|---|---|---|
 | 第一階段 | 2026-11-18 | 見 git log `feat(topic-finder): phase 1` | 通過 | 通過 | 通過（無新增失敗；既有失敗見下方） | — | 三項通過（見 6.8） |
 | 第二階段 | 2026-11-18 | 見 git log `feat(topic-finder): phase 2` | 通過 | 通過 | 通過（無新增失敗；既有失敗經作者同意先不處理） | — | 見 6.9 |
-| 第三階段 |  |  |  |  |  |  |  |
+| 第三階段 | 2026-11-18 | 見 git log `feat(topic-finder): phase 3` | 通過 | 通過 | 通過（無新增失敗） | 通過（Topic Finder 6/6） | 見 6.10 |
 
 ### 6.8 第一階段關卡細節（2026-11-18）
 
@@ -461,6 +461,36 @@ primary key (user_id, conversation_id)
   - `api/researchCoach/routes.test.ts`（4）、`services/topicCard.test.ts`（4）、`hooks/useTopicCard.test.tsx`（5）、`components/TopicCard/TopicCardPanel.test.tsx`（6）。
   - `integration/topicFinderCard.test.tsx`（2）：回答後出現建議、確認後才推進；題目卡 API 失敗時對話仍可繼續。
 - 完整套件：後端 13 failed + 4 errors、前端 42 failed，與 master 逐項相同，沒有新增失敗；`npm run check:report:strict` 通過。
+
+### 6.10 第三階段關卡細節（2026-11-18）
+
+**本功能測試**
+
+- 前端：
+  - `utils/topicCardMarkdown.test.ts`（3）：各區塊、跳脫、空卡。
+  - `components/TopicCard/TopicCardPanel.test.tsx`（新增 2）：分支探索按鈕、Markdown 下載。
+  - `integration/topicFinderDivergence.test.tsx`（2）：兩個候選各開一條分支，分支繼承 `research_coach` 並只出現在選題空間；主線對話與題目卡不受影響；匯出內容包含淘汰清單與版本紀錄。
+- 冒煙測試：`tests/e2e/topic-finder/flow.spec.ts`，執行指令 `npm run test:e2e:topic-finder --prefix frontend`，6/6 通過，涵蓋：
+  - 切換與頂部切換鈕的位置。
+  - 第一則訊息、標籤與加號選單。
+  - 題目卡確認後重新整理仍在。
+  - Chat 空間隔離。
+  - 分支與匯出。
+  - 390px 手機抽屜，無水平捲動。
+
+**冒煙測試抓到並已修正的問題**
+
+- 空白首頁的切換鈕原本掛在垂直置中的回應區上，實際位置在 y≈180px。改掛在主欄後，距頂部 16px。
+- 選題對話在桌機上，第一則訊息被右上角的標籤列遮住。已讓訊息區從標籤列下方開始。
+
+**回歸測試**
+
+- 完整套件：後端 13 failed + 4 errors、前端 42 failed，與 master 逐項相同，沒有新增失敗；`npm run check:report:strict` 通過。
+- 既有的 `@smoke`（例如 `tests/e2e/conversation-branches`）在 master 上就已失敗，原因是首次登入的引導導覽擋住畫面，屬於既有失敗。Topic Finder 的冒煙測試會主動略過引導導覽。
+
+**交付**
+
+- 實機測試劇本：`docs/tech_docs/dev_docs/research_coach_manual_test_script.md`。
 
 ## 7. 其他品質要求
 

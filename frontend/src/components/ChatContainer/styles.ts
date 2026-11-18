@@ -228,6 +228,13 @@ export const useStyles = createStyles(({ css, token }) => ({
     overflow: hidden;
   `,
 
+  // Topic Finder: keep the first message clear of the wider floating badge row on desktop.
+  messageAreaTopicFinder: css`
+    @media (min-width: 769px) {
+      padding-top: 56px;
+    }
+  `,
+
   // Topic Finder: chat beside the topic card pane on desktop.
   topicCardWorkspace: css`
     flex-direction: row;
