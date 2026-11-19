@@ -53,6 +53,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Shared conversation not found.' }, { status: 404 });
   }
 
-  logger.info('share.read_loaded', { tokenLength: token.length });
-  return NextResponse.json(data);
+  // Older databases have no access level; every link there is view-only.
+  const { data: accessLevel, error: accessError } = await supabase.rpc('get_conversation_share_access', {
+    p_share_token: token,
+  });
+  if (accessError) {
+    logger.warn('share.read_access_level_unavailable', { tokenLength: token.length, code: accessError.code });
+  }
+  const resolvedAccess = accessLevel === 'edit' ? 'edit' : 'view';
+
+  logger.info('share.read_loaded', { tokenLength: token.length, accessLevel: resolvedAccess });
+  return NextResponse.json({ ...data, accessLevel: resolvedAccess });
 }

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { User } from '@supabase/supabase-js';
-import { Globe, Link2, X } from 'lucide-react';
+import { Globe, Link2, UsersRound, X } from 'lucide-react';
 import { createStyles } from 'antd-style';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
@@ -112,12 +112,80 @@ const useStyles = createStyles(({ css, token }) => ({
     color: color-mix(in srgb, var(--foreground) 60%, transparent);
     font-size: 13px;
   `,
+  accessOptions: css`
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 0 12px;
+  `,
+  accessOption: css`
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--areqa-subtle-border);
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: color-mix(in srgb, var(--foreground) 5%, transparent);
+    }
+
+    &[aria-checked='true'] {
+      border-color: color-mix(in srgb, var(--foreground) 55%, transparent);
+      background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    }
+
+    &:disabled {
+      cursor: progress;
+      opacity: 0.6;
+    }
+  `,
+  notice: css`
+    margin: 4px 0 0;
+    color: color-mix(in srgb, var(--foreground) 60%, transparent);
+    font-size: 12px;
+  `,
+  removeMember: css`
+    flex: none;
+    padding: 4px 10px;
+    border: 1px solid var(--areqa-subtle-border);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:hover {
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    }
+  `,
   footer: css`
     display: flex;
+    gap: 8px;
     justify-content: flex-end;
     margin-top: 12px;
     padding: 14px 0 4px;
     border-top: 1px solid var(--areqa-subtle-border);
+  `,
+  secondary: css`
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 14px;
+    border: 1px solid var(--areqa-subtle-border);
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
   `,
   copy: css`
     display: inline-flex;
@@ -145,20 +213,57 @@ function displayName(user: User): string {
   return String(meta.username || meta.full_name || meta.name || user.email || '');
 }
 
+export type ShareAccessLevel = 'view' | 'edit';
+
+export interface ShareMember {
+  userId: string;
+  name?: string | null;
+}
+
 /**
- * Share dialog body: who can open the link and a Copy link action.
+ * Share dialog body: link access, who has access, and a Copy link action.
  *
- * Sharing is link-based (no invitations yet): copying creates or refreshes the
- * link and moves its snapshot to "now", so only messages up to this moment are
- * visible through it.
+ * Copying creates or refreshes the link with the chosen access. A view-only
+ * link moves its snapshot to "now"; a participate link lets signed-in people
+ * join the whole conversation. Switching back to view-only removes every
+ * participant's access immediately.
  */
 export function SharePanel({
   user, isCopying, onCopyLink, onClose,
-}: { user: User; isCopying: boolean; onCopyLink: () => void; onClose: () => void }) {
+  accessLevel = 'view', onAccessLevelChange, members = [], onRemoveMember, onOpenCollab,
+}: {
+  user: User;
+  isCopying: boolean;
+  onCopyLink: () => void;
+  onClose: () => void;
+  accessLevel?: ShareAccessLevel;
+  onAccessLevelChange?: (level: ShareAccessLevel) => void;
+  members?: ShareMember[];
+  onRemoveMember?: (userId: string) => void;
+  onOpenCollab?: () => void;
+}) {
   const { styles, cx } = useStyles();
   const { t } = useUserPreferences();
   const name = displayName(user);
   const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+  const isEdit = accessLevel === 'edit';
+
+  const accessOption = (level: ShareAccessLevel, icon: React.ReactNode, title: string, hint: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={accessLevel === level}
+      className={styles.accessOption}
+      disabled={isCopying}
+      onClick={() => onAccessLevelChange?.(level)}
+    >
+      <span className={styles.rowIcon} aria-hidden="true">{icon}</span>
+      <span className={styles.rowText}>
+        <span className={styles.rowTitle}>{title}</span>
+        <span className={styles.rowMeta}>{hint}</span>
+      </span>
+    </button>
+  );
 
   return (
     <div className={styles.panel} role="dialog" aria-label={t('shareDialogTitle')}>
@@ -168,16 +273,28 @@ export function SharePanel({
           <X size={18} aria-hidden="true" />
         </button>
       </div>
-      <p className={styles.subtitle}>{t('shareSnapshotNotice')}</p>
+      <p className={styles.subtitle}>{isEdit ? t('collabMemoryNotice') : t('shareSnapshotNotice')}</p>
+
+      {onAccessLevelChange && (
+        <>
+          <p className={styles.sectionLabel}>{t('shareAccessLabel')}</p>
+          <div className={styles.accessOptions} role="radiogroup" aria-label={t('shareAccessLabel')}>
+            {accessOption('view', <Globe size={17} />, t('shareAccessView'), t('shareAccessViewHint'))}
+            {accessOption('edit', <UsersRound size={17} />, t('shareAccessEdit'), t('shareAccessEditHint'))}
+          </div>
+        </>
+      )}
 
       <p className={styles.sectionLabel}>{t('shareWhoHasAccess')}</p>
-      <div className={styles.row}>
-        <span className={styles.rowIcon} aria-hidden="true"><Globe size={17} /></span>
-        <span className={styles.rowText}>
-          <span className={styles.rowTitle}>{t('shareAnyoneWithLink')}</span>
-          <span className={styles.rowMeta}>{t('shareAnyoneWithLinkHint')}</span>
-        </span>
-      </div>
+      {!onAccessLevelChange && (
+        <div className={styles.row}>
+          <span className={styles.rowIcon} aria-hidden="true"><Globe size={17} /></span>
+          <span className={styles.rowText}>
+            <span className={styles.rowTitle}>{t('shareAnyoneWithLink')}</span>
+            <span className={styles.rowMeta}>{t('shareAnyoneWithLinkHint')}</span>
+          </span>
+        </div>
+      )}
       <div className={styles.row}>
         <span className={cx(styles.rowIcon, styles.avatar)} aria-hidden="true">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -192,8 +309,32 @@ export function SharePanel({
         </span>
         <span className={styles.role}>{t('shareOwnerRole')}</span>
       </div>
+      {isEdit && members.map((member) => {
+        const memberName = member.name?.trim() || t('shareMemberUnnamed');
+        return (
+          <div className={styles.row} key={member.userId} data-testid="share-member">
+            <span className={cx(styles.rowIcon, styles.avatar)} aria-hidden="true">
+              {memberName[0]?.toUpperCase() ?? '?'}
+            </span>
+            <span className={styles.rowText}>
+              <span className={styles.rowTitle}>{memberName}</span>
+              <span className={styles.rowMeta}>{t('shareEditorRole')}</span>
+            </span>
+            {onRemoveMember && (
+              <button type="button" className={styles.removeMember} onClick={() => onRemoveMember(member.userId)}>
+                {t('shareMemberRemove')}
+              </button>
+            )}
+          </div>
+        );
+      })}
 
       <div className={styles.footer}>
+        {isEdit && onOpenCollab && (
+          <button type="button" className={styles.secondary} onClick={onOpenCollab}>
+            {t('shareOpenCollab')}
+          </button>
+        )}
         <button type="button" className={styles.copy} disabled={isCopying} onClick={onCopyLink}>
           <Link2 size={16} aria-hidden="true" />
           {t('shareCopyLink')}

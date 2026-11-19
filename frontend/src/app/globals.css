@@ -1798,6 +1798,15 @@ html[data-interface-theme='light'] .areqa-message-empty-logo-stage::after {
   font-style: normal;
 }
 
+/* Collaborative conversation: who asked each question. */
+.areqa-collab-author {
+  width: min(var(--areqa-chat-column-width), calc(100% - 32px));
+  margin: 12px auto -4px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 12px;
+  text-align: right;
+}
+
 /* Read-only shared conversation: owner notice in place of the composer. */
 .areqa-shared-owner-bar {
   display: flex;

@@ -1,0 +1,147 @@
+.page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--background);
+  color: var(--foreground);
+  overflow: hidden;
+}
+
+.chat {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--areqa-subtle-border);
+  background: var(--background);
+}
+
+.headerInner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(800px, 100%);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 12px 16px;
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.brand {
+  margin-bottom: 4px;
+  color: #d8a25c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.header h1 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--foreground);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memoryNotice {
+  margin: 2px 0 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 12px;
+}
+
+.headerAction {
+  flex: none;
+  padding: 6px 10px;
+  border: 1px solid var(--areqa-subtle-border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.messages {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.state {
+  margin: auto;
+  padding: 24px 16px;
+  max-width: 420px;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  text-align: center;
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(var(--areqa-chat-column-width, 800px), calc(100% - 32px));
+  box-sizing: border-box;
+  margin: 8px auto max(env(safe-area-inset-bottom), 16px);
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--areqa-subtle-border);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 200px;
+  padding: 6px 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.send {
+  flex: none;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--foreground);
+  color: var(--background);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status {
+  width: min(var(--areqa-chat-column-width, 800px), calc(100% - 32px));
+  margin: 0 auto;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 13px;
+}
+
+.error {
+  color: #c2410c;
+}

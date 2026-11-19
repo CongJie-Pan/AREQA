@@ -414,6 +414,36 @@ export type TranslationKey =
   | 'shareUnavailable'
   | 'shareLinkCreated'
   | 'shareLinkFailed'
+  | 'shareAccessLabel'
+  | 'shareAccessView'
+  | 'shareAccessViewHint'
+  | 'shareAccessEdit'
+  | 'shareAccessEditHint'
+  | 'shareMembers'
+  | 'shareMemberUnnamed'
+  | 'shareEditorRole'
+  | 'shareMemberRemove'
+  | 'shareMemberRemoveFailed'
+  | 'shareOpenCollab'
+  | 'collabMemoryNotice'
+  | 'collabJoinNotice'
+  | 'collabJoin'
+  | 'collabJoinFailed'
+  | 'collabLoginToJoin'
+  | 'collabTitleFallback'
+  | 'collabLoading'
+  | 'collabNoAccess'
+  | 'collabLoginRequired'
+  | 'collabPlaceholder'
+  | 'collabSend'
+  | 'collabSendFailed'
+  | 'collabReplySaveFailed'
+  | 'collabRateLimited'
+  | 'collabRefresh'
+  | 'collabGenerating'
+  | 'collabLeave'
+  | 'collabBack'
+  | 'shareAccessUpdated'
   | 'historySyncPending'
   | 'exportConversation'
   | 'exportPdfLoading'
@@ -858,6 +888,36 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareUnavailable: "這個分享連結無法開啟，或已停止分享。",
     shareLinkCreated: '分享連結已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
+    shareAccessLabel: '連結權限',
+    shareAccessView: '僅檢視',
+    shareAccessViewHint: '任何人都能唯讀檢視到目前為止的訊息',
+    shareAccessEdit: '可參與',
+    shareAccessEditHint: '已登入的人可以加入，看到完整對話並向 AI 提問',
+    shareMembers: '參與者',
+    shareMemberUnnamed: '參與者',
+    shareEditorRole: '可參與',
+    shareMemberRemove: '移除',
+    shareMemberRemoveFailed: '無法移除參與者，請稍後再試。',
+    shareOpenCollab: '開啟共同對話',
+    collabMemoryNotice: '共同對話不會使用任何人的個人學習記憶。',
+    collabJoinNotice: '這段對話開放參與，加入後就能一起向 AI 提問。',
+    collabJoin: '加入共同對話',
+    collabJoinFailed: '無法加入這段對話，連結可能已改為僅檢視。',
+    collabLoginToJoin: '登入後再開啟這個連結，就能加入這段對話。',
+    collabTitleFallback: '共同對話',
+    collabLoading: '載入中…',
+    collabNoAccess: '你目前無法存取這段對話。擁有者可能已移除你，或把連結改為僅檢視。',
+    collabLoginRequired: '請先登入才能開啟共同對話。',
+    collabPlaceholder: '和大家一起向 AI 提問…',
+    collabSend: '送出',
+    collabSendFailed: '訊息送出失敗，請稍後再試。',
+    collabReplySaveFailed: 'AI 回覆未能儲存，其他人可能看不到。',
+    collabRateLimited: '這段共同對話的回覆太頻繁，請稍候再試。',
+    collabRefresh: '重新整理',
+    collabGenerating: 'AI 正在回覆…',
+    collabLeave: '離開對話',
+    collabBack: '回到 AREQA',
+    shareAccessUpdated: '已更新連結權限',
     historySyncPending: '部分訊息尚未備份至雲端。請保留此瀏覽器資料，連線恢復後將自動重試。',
     exportConversation: '匯出對話',
     exportPdfLoading: '正在產生 PDF，請稍候...',
@@ -1276,6 +1336,36 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareUnavailable: "这个分享链接无法打开，或已停止分享。",
     shareLinkCreated: '分享链接已建立：',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
+    shareAccessLabel: '链接权限',
+    shareAccessView: '仅查看',
+    shareAccessViewHint: '任何人都能只读查看到目前为止的消息',
+    shareAccessEdit: '可参与',
+    shareAccessEditHint: '已登录的人可以加入，看到完整对话并向 AI 提问',
+    shareMembers: '参与者',
+    shareMemberUnnamed: '参与者',
+    shareEditorRole: '可参与',
+    shareMemberRemove: '移除',
+    shareMemberRemoveFailed: '无法移除参与者，请稍后再试。',
+    shareOpenCollab: '打开共同对话',
+    collabMemoryNotice: '共同对话不会使用任何人的个人学习记忆。',
+    collabJoinNotice: '这段对话开放参与，加入后就能一起向 AI 提问。',
+    collabJoin: '加入共同对话',
+    collabJoinFailed: '无法加入这段对话，链接可能已改为仅查看。',
+    collabLoginToJoin: '登录后再打开这个链接，就能加入这段对话。',
+    collabTitleFallback: '共同对话',
+    collabLoading: '加载中…',
+    collabNoAccess: '你目前无法访问这段对话。所有者可能已移除你，或把链接改为仅查看。',
+    collabLoginRequired: '请先登录才能打开共同对话。',
+    collabPlaceholder: '和大家一起向 AI 提问…',
+    collabSend: '发送',
+    collabSendFailed: '消息发送失败，请稍后再试。',
+    collabReplySaveFailed: 'AI 回复未能保存，其他人可能看不到。',
+    collabRateLimited: '这段共同对话的回复太频繁，请稍候再试。',
+    collabRefresh: '刷新',
+    collabGenerating: 'AI 正在回复…',
+    collabLeave: '离开对话',
+    collabBack: '回到 AREQA',
+    shareAccessUpdated: '已更新链接权限',
     historySyncPending: '部分消息尚未备份到云端。请保留此浏览器数据，连接恢复后将自动重试。',
     exportConversation: '汇出对话',
     exportPdfLoading: '正在生成 PDF，请稍候...',
@@ -1694,6 +1784,36 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     shareUnavailable: "This share link is unavailable or no longer shared.",
     shareLinkCreated: 'Share link created: ',
     shareLinkFailed: 'Failed to create share link. Please try again later.',
+    shareAccessLabel: 'Link access',
+    shareAccessView: 'View only',
+    shareAccessViewHint: 'Anyone can view messages up until now',
+    shareAccessEdit: 'Can participate',
+    shareAccessEditHint: 'Signed-in people can join, see the whole chat and ask the AI',
+    shareMembers: 'Participants',
+    shareMemberUnnamed: 'Participant',
+    shareEditorRole: 'Participant',
+    shareMemberRemove: 'Remove',
+    shareMemberRemoveFailed: 'Could not remove the participant. Please try again.',
+    shareOpenCollab: 'Open shared chat',
+    collabMemoryNotice: 'Shared chats never use anyone\'s personal learning memory.',
+    collabJoinNotice: 'This chat is open to participants. Join to ask the AI together.',
+    collabJoin: 'Join shared chat',
+    collabJoinFailed: 'Could not join. The link may be view-only now.',
+    collabLoginToJoin: 'Sign in and open this link again to join the chat.',
+    collabTitleFallback: 'Shared chat',
+    collabLoading: 'Loading…',
+    collabNoAccess: 'You cannot open this chat. The owner may have removed you or made the link view-only.',
+    collabLoginRequired: 'Sign in to open shared chats.',
+    collabPlaceholder: 'Ask the AI together…',
+    collabSend: 'Send',
+    collabSendFailed: 'Could not send. Please try again.',
+    collabReplySaveFailed: 'The AI reply was not saved; others may not see it.',
+    collabRateLimited: 'Too many replies in this shared chat. Please wait a moment.',
+    collabRefresh: 'Refresh',
+    collabGenerating: 'The AI is replying…',
+    collabLeave: 'Leave chat',
+    collabBack: 'Back to AREQA',
+    shareAccessUpdated: 'Link access updated',
     historySyncPending: 'Some messages are not backed up yet. Keep this browser data; sync will retry automatically.',
     exportConversation: 'Export conversation',
     exportPdfLoading: 'Creating PDF...',

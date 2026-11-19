@@ -23,6 +23,9 @@ from services.attachments.branch_context import load_inherited_upload, remember_
 from services.attachments.document_store import (
     extract_documents, load_documents, material_from_documents, remember_documents,
 )
+from services.conversation.collaboration import (
+    bearer_token, collaborative_turn_limiter, load_collaboration_context, merge_collaborative_history,
+)
 from services.conversation.research_coach import (
     RESEARCH_COACH_KIND, normalize_conversation_kind, resolve_prompt_profile,
 )
@@ -164,6 +167,9 @@ async def stream_endpoint(
         len(uploads), safe_request_id, chat_req.search_mode, chat_req.use_web_search, chat_req.use_rag,
     )
 
+    if current_user_id:
+        await _apply_collaboration_context(request, chat_req, safe_request_id)
+
     if uploads and chat_req.attachment_progress:
         return StreamingResponse(
             _stream_with_attachment_progress(
@@ -176,6 +182,38 @@ async def stream_endpoint(
 
 
 _STREAM_HEADERS = {"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+
+
+async def _apply_collaboration_context(request: Request, chat_req: ChatRequest, safe_request_id: str) -> None:
+    """Switch collaborative conversations to server-side history without personal memory.
+
+    Membership is checked by Supabase with the caller's own JWT. If that lookup
+    fails, the turn still runs on the client's history but with memory off,
+    because it may belong to a shared conversation.
+    """
+    context = await load_collaboration_context(
+        chat_req.conversation_id, bearer_token(request.headers.get("authorization")),
+    )
+    if context.state == "personal":
+        return
+    chat_req.isolated_context = True
+    if context.state == "unknown":
+        logger.warning(
+            "stream.collaboration_fallback conversation_id=%s request_id=%s reason=lookup_failed memory=disabled",
+            chat_req.conversation_id, safe_request_id,
+        )
+        return
+    if not collaborative_turn_limiter.allow(chat_req.conversation_id):
+        logger.warning(
+            "stream.collaboration_rate_limited conversation_id=%s request_id=%s",
+            chat_req.conversation_id, safe_request_id,
+        )
+        raise HTTPException(status_code=429, detail="Too many replies in this shared conversation. Please wait a moment.")
+    chat_req.messages = merge_collaborative_history(context.messages, chat_req.messages)
+    logger.info(
+        "stream.collaboration_applied conversation_id=%s request_id=%s role=%s message_count=%d memory=disabled",
+        chat_req.conversation_id, safe_request_id, context.role, len(chat_req.messages),
+    )
 
 
 async def _stream_with_attachment_progress(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id):

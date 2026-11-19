@@ -37,7 +37,11 @@ async function getSharedConversation(token: string): Promise<SharedConversation 
   });
 
   if (error || !data) return null;
-  return data as SharedConversation;
+  // Databases without collaborative sharing only have view-only links.
+  const { data: accessLevel } = await supabase.rpc('get_conversation_share_access', {
+    p_share_token: token,
+  });
+  return { ...(data as SharedConversation), accessLevel: accessLevel === 'edit' ? 'edit' : 'view' };
 }
 
 export default async function SharePage({ params }: SharePageProps) {

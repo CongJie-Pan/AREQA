@@ -40,4 +40,36 @@ describe('SharePanel', () => {
     render(<UserPreferencesProvider><SharePanel user={user} isCopying onCopyLink={vi.fn()} onClose={vi.fn()} /></UserPreferencesProvider>);
     expect(screen.getByRole('button', { name: '複製連結' })).toBeDisabled();
   });
+
+  it('offers view-only and participate access', () => {
+    const onAccessLevelChange = vi.fn();
+    render(<UserPreferencesProvider><SharePanel
+      user={user} isCopying={false} onCopyLink={vi.fn()} onClose={vi.fn()}
+      accessLevel="view" onAccessLevelChange={onAccessLevelChange}
+    /></UserPreferencesProvider>);
+
+    expect(screen.getByRole('radio', { name: /僅檢視/ })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('radio', { name: /可參與/ }));
+    expect(onAccessLevelChange).toHaveBeenCalledWith('edit');
+    expect(screen.queryByRole('button', { name: '開啟共同對話' })).not.toBeInTheDocument();
+  });
+
+  it('lists participants with display names and lets the owner remove them', () => {
+    const onRemoveMember = vi.fn();
+    const onOpenCollab = vi.fn();
+    render(<UserPreferencesProvider><SharePanel
+      user={user} isCopying={false} onCopyLink={vi.fn()} onClose={vi.fn()}
+      accessLevel="edit" onAccessLevelChange={vi.fn()}
+      members={[{ userId: 'm1', name: 'Mei' }, { userId: 'm2', name: null }]}
+      onRemoveMember={onRemoveMember} onOpenCollab={onOpenCollab}
+    /></UserPreferencesProvider>);
+
+    expect(screen.getByText('共同對話不會使用任何人的個人學習記憶。')).toBeInTheDocument();
+    expect(screen.getAllByTestId('share-member')).toHaveLength(2);
+    expect(screen.getByText('Mei')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: '移除' })[0]);
+    expect(onRemoveMember).toHaveBeenCalledWith('m1');
+    fireEvent.click(screen.getByRole('button', { name: '開啟共同對話' }));
+    expect(onOpenCollab).toHaveBeenCalledTimes(1);
+  });
 });

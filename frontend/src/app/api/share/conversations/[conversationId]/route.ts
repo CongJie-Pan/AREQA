@@ -15,6 +15,8 @@ interface ConversationShareRow {
 }
 
 interface ShareConversationPayload {
+  /** 'edit' lets signed-in visitors join; anything else is a view-only link. */
+  accessLevel?: unknown;
   conversation?: {
     id?: unknown;
     title?: unknown;
@@ -189,6 +191,15 @@ async function logShareDebug(
   }
 }
 
+/** Edit links need the collaborative migration; never silently downgrade them. */
+function collaborationUnavailable(shareDebugId: string, conversationId: string): NextResponse {
+  logger.warn('share.create_access_level_column_missing', { shareDebugId, conversationId });
+  return NextResponse.json(
+    { error: 'Collaborative sharing is not available yet.' },
+    { status: 503 },
+  );
+}
+
 export async function POST(request: NextRequest, context: RouteContext) {
   const shareDebugId = randomBytes(6).toString('hex');
   const { conversationId } = await context.params;
@@ -256,6 +267,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }, authHeader);
 
   const payload = await request.json().catch(() => null) as ShareConversationPayload | null;
+  const accessLevel: 'view' | 'edit' = payload?.accessLevel === 'edit' ? 'edit' : 'view';
   await logShareDebug('share.create.payload_received', {
     shareDebugId,
     conversationId,
@@ -438,20 +450,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }, authHeader);
     // Re-sharing moves the snapshot cutoff to now: newer messages become visible.
     const sharedAt = new Date().toISOString();
-    const reuse = (withSnapshot: boolean) => supabase
+    const reuse = (withSnapshot: boolean, withAccess: boolean) => supabase
       .from('conversation_shares')
       .update({
         is_public: true,
         revoked_at: null,
         updated_at: sharedAt,
         ...(withSnapshot ? { shared_until: sharedAt } : {}),
+        ...(withAccess ? { access_level: accessLevel } : {}),
       })
       .eq('conversation_id', conversationId)
       .eq('owner_user_id', user.id);
-    let { error: updateError } = await reuse(true);
+    let withSnapshot = true;
+    let withAccess = true;
+    let { error: updateError } = await reuse(withSnapshot, withAccess);
+    if (updateError && isMissingColumnError(updateError, 'access_level')) {
+      if (accessLevel === 'edit') return collaborationUnavailable(shareDebugId, conversationId);
+      withAccess = false;
+      ({ error: updateError } = await reuse(withSnapshot, withAccess));
+    }
     if (updateError && isMissingColumnError(updateError, 'shared_until')) {
       logger.warn('share.create_snapshot_column_missing', { shareDebugId, conversationId });
-      ({ error: updateError } = await reuse(false));
+      withSnapshot = false;
+      ({ error: updateError } = await reuse(withSnapshot, withAccess));
     }
 
     if (updateError) {
@@ -468,12 +489,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Unable to create share link.' }, { status: 500 });
     }
 
-    logger.info('share.create_reused', { shareDebugId, conversationId });
+    logger.info('share.create_reused', { shareDebugId, conversationId, accessLevel });
     await logShareDebug('share.create.reused', {
       shareDebugId,
       conversationId,
     }, authHeader);
-    return NextResponse.json({ token: existingShare.share_token });
+    return NextResponse.json({ token: existingShare.share_token, accessLevel });
   }
 
   await logShareDebug('share.create.insert_started', {
@@ -481,7 +502,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     conversationId,
   }, authHeader);
   const token = createShareToken();
-  const insertShare = (withSnapshot: boolean) => supabase
+  const insertShare = (withSnapshot: boolean, withAccess: boolean) => supabase
     .from('conversation_shares')
     .insert({
       conversation_id: conversation.id,
@@ -489,13 +510,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
       share_token: token,
       is_public: true,
       ...(withSnapshot ? { shared_until: new Date().toISOString() } : {}),
+      ...(withAccess ? { access_level: accessLevel } : {}),
     })
     .select('share_token')
     .single<ConversationShareRow>();
-  let { data: insertedShare, error: insertError } = await insertShare(true);
+  let insertWithSnapshot = true;
+  let insertWithAccess = true;
+  let { data: insertedShare, error: insertError } = await insertShare(insertWithSnapshot, insertWithAccess);
+  if (insertError && isMissingColumnError(insertError, 'access_level')) {
+    if (accessLevel === 'edit') return collaborationUnavailable(shareDebugId, conversationId);
+    insertWithAccess = false;
+    ({ data: insertedShare, error: insertError } = await insertShare(insertWithSnapshot, insertWithAccess));
+  }
   if (insertError && isMissingColumnError(insertError, 'shared_until')) {
     logger.warn('share.create_snapshot_column_missing', { shareDebugId, conversationId });
-    ({ data: insertedShare, error: insertError } = await insertShare(false));
+    insertWithSnapshot = false;
+    ({ data: insertedShare, error: insertError } = await insertShare(insertWithSnapshot, insertWithAccess));
   }
 
   if (insertError || !insertedShare?.share_token) {
@@ -514,10 +544,48 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Unable to create share link.' }, { status: 500 });
   }
 
-  logger.info('share.create_created', { shareDebugId, conversationId });
+  logger.info('share.create_created', { shareDebugId, conversationId, accessLevel });
   await logShareDebug('share.create.created', {
     shareDebugId,
     conversationId,
   }, authHeader);
-  return NextResponse.json({ token: insertedShare.share_token });
+  return NextResponse.json({ token: insertedShare.share_token, accessLevel });
+}
+
+/**
+ * Current link access for the owner's share panel.
+ *
+ * Runs with the owner's JWT, so the owner-only RLS policy decides; anyone else
+ * simply sees "no link yet".
+ */
+export async function GET(request: NextRequest, context: RouteContext) {
+  const { conversationId } = await context.params;
+  if (!UUID_PATTERN.test(conversationId)) {
+    return NextResponse.json({ error: 'Invalid conversation id.' }, { status: 400 });
+  }
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+
+  const config = getSupabaseConfig();
+  if (config instanceof NextResponse) return config;
+  const supabase = createClient(config.url, config.anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false },
+  });
+
+  const { data, error } = await supabase
+    .from('conversation_shares')
+    .select('access_level')
+    .eq('conversation_id', conversationId)
+    .is('revoked_at', null)
+    .maybeSingle<{ access_level?: string }>();
+  if (error) {
+    // Older databases without the column behave as view-only links.
+    logger.warn('share.access_lookup_failed', { conversationId, code: error.code });
+    return NextResponse.json({ hasLink: false, accessLevel: 'view' });
+  }
+  return NextResponse.json({
+    hasLink: Boolean(data),
+    accessLevel: data?.access_level === 'edit' ? 'edit' : 'view',
+  });
 }

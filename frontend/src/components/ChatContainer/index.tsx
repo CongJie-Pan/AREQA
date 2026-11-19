@@ -46,9 +46,10 @@ import { useStyles } from './styles';
 import { useSidebarResize } from './useSidebarResize';
 import { useSidebarState } from './useSidebarState';
 import { LongConversationReminder } from './LongConversationReminder';
-import { SharePanel } from './SharePanel';
+import { SharePanel, type ShareAccessLevel } from './SharePanel';
+import { useShareAccess } from './useShareAccess';
 import { useSharedConversationView } from './useSharedConversationView';
-import { SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
+import { SharedJoinBar, SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
 import { OnboardingTour } from '@/components/Onboarding/OnboardingTour';
 import { hasSeenFeatureTour, hasSeenOnboarding, hasSeenTopicFinderTour, recordOnboardingOutcome, useOnboardingStore } from '@/store/onboarding';
 import { detectUnusedFeatureSteps } from '@/services/onboardingFeatures';
@@ -760,9 +761,16 @@ export function ChatContainer({ className }: ChatContainerProps) {
     setIsSharePanelOpen(true);
   }, [activeConversation, antMessageApi, messages.length, t, user]);
 
+  const shareAccess = useShareAccess(activeConversation?.id ?? null, isSharePanelOpen);
+  const { markApplied: markShareAccessApplied } = shareAccess;
+
   // Copying creates or refreshes the link and moves its snapshot to "now".
-  const handleShareConversation = useCallback(async () => {
-    if (!user || !activeConversation || messages.length === 0) return;
+  // `copy: false` only applies a new access level to an existing link.
+  const handleShareConversation = useCallback(async (
+    accessLevel: ShareAccessLevel = 'view',
+    copy = true,
+  ): Promise<boolean> => {
+    if (!user || !activeConversation || messages.length === 0) return false;
 
     setIsSharing(true);
     try {
@@ -772,6 +780,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          accessLevel,
           conversation: activeConversation,
           messages,
         }),
@@ -780,6 +789,11 @@ export function ChatContainer({ className }: ChatContainerProps) {
       const payload = await response.json().catch(() => null) as { token?: string; error?: string } | null;
       if (!response.ok || !payload?.token) {
         throw new Error(payload?.error || `Share API did not return a token (${response.status})`);
+      }
+      markShareAccessApplied(accessLevel);
+      if (!copy) {
+        antMessageApi.success(t('shareAccessUpdated'));
+        return true;
       }
 
       const shareUrl = `${window.location.origin}/share/${payload.token}`;
@@ -800,14 +814,33 @@ export function ChatContainer({ className }: ChatContainerProps) {
           duration: 12,
         });
       }
+      return true;
     } catch (error) {
       console.error('Failed to share conversation:', error);
       const reason = error instanceof Error ? error.message : '';
       antMessageApi.error(reason ? `${t('shareLinkFailed')} ${reason}` : t('shareLinkFailed'));
+      return false;
     } finally {
       setIsSharing(false);
     }
-  }, [activeConversation, antMessageApi, messages, t, user]);
+  }, [activeConversation, antMessageApi, markShareAccessApplied, messages, t, user]);
+
+  const handleShareAccessChange = useCallback((level: ShareAccessLevel) => {
+    const previous = shareAccess.accessLevel;
+    if (level === previous) return;
+    shareAccess.setAccessLevel(level);
+    // An existing link changes right away; a new one takes the choice on Copy link.
+    if (!shareAccess.hasLink) return;
+    void handleShareConversation(level, false).then((applied) => {
+      if (!applied) shareAccess.setAccessLevel(previous);
+    });
+  }, [handleShareConversation, shareAccess]);
+
+  const handleRemoveShareMember = useCallback((memberId: string) => {
+    void shareAccess.removeMember(memberId).then((removed) => {
+      if (!removed) antMessageApi.error(t('shareMemberRemoveFailed'));
+    });
+  }, [antMessageApi, shareAccess, t]);
 
   return (
     <div className={cx('areqa-chat-shell', styles.container, className)}>
@@ -984,8 +1017,15 @@ export function ChatContainer({ className }: ChatContainerProps) {
                           <SharePanel
                             user={user}
                             isCopying={isSharing}
-                            onCopyLink={() => { void handleShareConversation(); }}
+                            onCopyLink={() => { void handleShareConversation(shareAccess.accessLevel); }}
                             onClose={() => setIsSharePanelOpen(false)}
+                            accessLevel={shareAccess.accessLevel}
+                            onAccessLevelChange={handleShareAccessChange}
+                            members={shareAccess.members}
+                            onRemoveMember={handleRemoveShareMember}
+                            onOpenCollab={activeConversation && shareAccess.hasLink ? () => {
+                              window.open(`/collab/${activeConversation.id}`, '_blank', 'noopener,noreferrer');
+                            } : undefined}
                           />
                         ) : null}
                       >
@@ -1107,8 +1147,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   <LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />
                 )}
 
-                {/* A shared copy is read-only: no composer; the owner gets a way back. */}
-                {sharedView ? (sharedView.isOwner && (
+                {/* A shared copy is read-only: no composer; the owner gets a way back
+                    and visitors of an edit link can join the live conversation. */}
+                {sharedView ? (sharedView.isOwner ? (
                   <SharedOwnerBar
                     onOpenOriginal={sharedView.conversationId ? () => {
                       const originalId = sharedView.conversationId!;
@@ -1116,6 +1157,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
                       void switchConversation(originalId);
                     } : undefined}
                   />
+                ) : sharedView.conversation.accessLevel === 'edit' && (
+                  <SharedJoinBar token={sharedView.token} />
                 )) : (
                 <div className={cx('areqa-chat-input-area', styles.inputArea)}>
                   <ChatInput
