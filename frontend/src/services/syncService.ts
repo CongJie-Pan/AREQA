@@ -7,6 +7,15 @@ import { normalizeAttachmentMetadata } from '@/utils/attachments';
 import { persistentAnswerBlocks } from '@/utils/answerBlocks';
 import { TOPIC_FINDER_KIND, isTopicFinderConversation, normalizeConversationKind } from '@/utils/conversationKind';
 import type { MessageFeedback, MessageFeedbackDetails, MessageFeedbackReason } from '@/database/schema';
+import {
+  CollaborationAccessError,
+  deleteOwnCollaborativeMessage,
+  fetchCollaborativeMessageRows,
+  isMemberConversation,
+  leaveCollaborativeConversation,
+  syncCollaborativeConversationList,
+  upsertCollaborativeMessage,
+} from '@/services/collaborationSync';
 
 type MessageSearchResult = NonNullable<Message['searchResults']>[number];
 type MessageSource = NonNullable<Message['sources']>[number];
@@ -555,6 +564,17 @@ export const syncService = {
       }
 
       try {
+        // Shared conversations live outside the caller's own rows; a failure
+        // here must not block the personal history from hydrating.
+        if (await syncCollaborativeConversationList(userId)) dataChanged = true;
+      } catch (collabError) {
+        logger.warn('sync_collaborative_list_failed', {
+          component: 'syncService',
+          reason: errorMessage(collabError),
+        });
+      }
+
+      try {
         // Notes are secondary metadata. A notes pull failure should not prevent
         // conversations and messages from hydrating on a fresh device.
         const cloudNotes = await fetchCloudRows<CloudNoteRow>('notes', userId);
@@ -608,11 +628,24 @@ export const syncService = {
     const authoritative = options.authoritative ?? true;
 
     try {
-      const cloudMsgs = await fetchCloudRows<CloudMessageRow>(
-        'messages',
-        userId,
-        (query) => query.eq('conversation_id', conversationId),
-      );
+      const localConversation = await db.conversations.get(conversationId);
+      let cloudMsgs: CloudMessageRow[];
+      if (isMemberConversation(localConversation)) {
+        try {
+          cloudMsgs = await fetchCollaborativeMessageRows(conversationId, userId);
+        } catch (error) {
+          if (!(error instanceof CollaborationAccessError)) throw error;
+          // Removed, or the link went back to view-only: drop the local copy.
+          logger.info('sync_collaborative_access_ended', { component: 'syncService', conversationId });
+          return syncCollaborativeConversationList(userId);
+        }
+      } else {
+        cloudMsgs = await fetchCloudRows<CloudMessageRow>(
+          'messages',
+          userId,
+          (query) => query.eq('conversation_id', conversationId),
+        );
+      }
       const msgCountByConv: Record<string, number> = {
         [conversationId]: cloudMsgs.length,
       };
@@ -656,6 +689,8 @@ export const syncService = {
   async pushConversation(conv: Conversation): Promise<boolean> {
     const userId = getCurrentUserId();
     if (!userId || userId === 'default_user') return false;
+    // A participant copy belongs to the owner's row; there is nothing of ours to push.
+    if (isMemberConversation(conv)) return true;
 
     try {
       const payload: Record<string, unknown> = {
@@ -703,6 +738,21 @@ export const syncService = {
           messageId: msg.id,
           conversationId: msg.conversationId,
         });
+        return;
+      }
+
+      if (isMemberConversation(await db.conversations.get(msg.conversationId))) {
+        try {
+          await upsertCollaborativeMessage(msg);
+        } catch (error) {
+          if (!(error instanceof CollaborationAccessError)) throw error;
+          // Access ended; retrying cannot succeed, so let the queue entry go.
+          logger.warn('sync_collaborative_message_rejected', {
+            component: 'syncService',
+            messageId: msg.id,
+            conversationId: msg.conversationId,
+          });
+        }
         return;
       }
 
@@ -824,6 +874,12 @@ export const syncService = {
     const userId = getCurrentUserId();
     if (!userId || userId === 'default_user') return;
 
+    const feedbackMessage = await db.messages.get(messageId);
+    if (feedbackMessage && isMemberConversation(await db.conversations.get(feedbackMessage.conversationId))) {
+      // Feedback rows belong to the owner; a participant's rating stays local.
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('messages')
@@ -864,15 +920,25 @@ export const syncService = {
     if (!userId || userId === 'default_user') return false;
 
     try {
-      const { error } = await supabase
-        .from('messages')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', userId);
+      const tombstoneConversationId = (await db.messageDeletions.get(id))?.conversationId ?? null;
+      const conversation = tombstoneConversationId ? await db.conversations.get(tombstoneConversationId) : undefined;
+      if (tombstoneConversationId && isMemberConversation(conversation)) {
+        try {
+          await deleteOwnCollaborativeMessage(tombstoneConversationId, id);
+        } catch (error) {
+          if (!(error instanceof CollaborationAccessError)) throw error;
+        }
+      } else {
+        const { error } = await supabase
+          .from('messages')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', userId);
 
-      if (error) {
-        handleAuthError(error);
-        throw error;
+        if (error) {
+          handleAuthError(error);
+          throw error;
+        }
       }
 
       await db.messageDeletions
@@ -934,9 +1000,15 @@ export const syncService = {
   /**
    * Deletes a conversation from Supabase
    */
-  async deleteConversation(id: string) {
+  async deleteConversation(id: string, conversation?: Pick<Conversation, 'collaboration'>) {
     const userId = getCurrentUserId();
     if (!userId || userId === 'default_user') return;
+
+    if (isMemberConversation(conversation)) {
+      // A participant never deletes the owner's conversation; removing it leaves.
+      await leaveCollaborativeConversation(id, userId);
+      return;
+    }
 
     try {
       await supabase.from('conversations').delete().eq('id', id);

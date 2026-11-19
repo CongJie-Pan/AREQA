@@ -8,10 +8,8 @@
  * shared copy looks exactly like the original chat instead of drifting from a
  * separate renderer.
  */
-import React, { useMemo, useState } from 'react';
-import { Info, UsersRound } from 'lucide-react';
-import { authenticatedFetch } from '@/services/authenticatedFetch';
-import { logger } from '@/utils/logger';
+import React, { useMemo } from 'react';
+import { Info } from 'lucide-react';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import type { CitationSource } from '@/components/Citations';
 import type { AnswerBlock } from '@/database/schema';
@@ -29,9 +27,6 @@ export interface SharedMessage {
   answerBlocks?: unknown;
   attachments?: unknown;
   stoppedByUser?: boolean | null;
-  /** Collaborative conversations only: who wrote the message. */
-  authorUserId?: string | null;
-  authorName?: string | null;
   createdAt: string;
 }
 
@@ -42,7 +37,7 @@ export interface SharedConversation {
   updatedAt: string;
   /** Snapshot cutoff; null for shares created before snapshots existed. */
   sharedAt?: string | null;
-  /** 'edit' links let signed-in visitors join the live conversation. */
+  /** 'edit' links let signed-in visitors join the conversation. */
   accessLevel?: 'view' | 'edit';
   messages: SharedMessage[];
 }
@@ -73,20 +68,9 @@ export function toSharedDisplayMessages(conversation: SharedConversation): Displ
     });
 }
 
-export function SharedMessages({
-  conversation, className, authorLabel,
-}: {
-  conversation: SharedConversation;
-  className?: string;
-  /** Collaborative view: label shown above each user message (who asked). */
-  authorLabel?: (message: SharedMessage) => string | null;
-}) {
+export function SharedMessages({ conversation, className }: { conversation: SharedConversation; className?: string }) {
   const { styles, cx } = useStyles();
   const messages = useMemo(() => toSharedDisplayMessages(conversation), [conversation]);
-  const sourceById = useMemo(
-    () => new Map(conversation.messages.map((message) => [message.id, message])),
-    [conversation],
-  );
 
   return (
     <div className={cx('areqa-message-list-viewport', styles.viewport, className)}>
@@ -94,23 +78,17 @@ export function SharedMessages({
         className={cx('areqa-message-list', 'areqa-message-list-non-empty', styles.container, styles.nonEmpty)}
         data-testid="shared-messages"
       >
-        {messages.map((message, index) => {
-          const source = sourceById.get(message.id);
-          const label = authorLabel && message.role === 'user' && source ? authorLabel(source) : null;
-          return (
-            <React.Fragment key={message.id}>
-              {label && <div className="areqa-collab-author" data-testid="collab-author">{label}</div>}
-              <MessageItem
-                message={message}
-                isLast={index === messages.length - 1}
-                readOnly
-                className={cx(
-                  message.role === 'assistant' && index > 0 && messages[index - 1].role === 'user' && 'assistant-after-user',
-                )}
-              />
-            </React.Fragment>
-          );
-        })}
+        {messages.map((message, index) => (
+          <MessageItem
+            key={message.id}
+            message={message}
+            isLast={index === messages.length - 1}
+            readOnly
+            className={cx(
+              message.role === 'assistant' && index > 0 && messages[index - 1].role === 'user' && 'assistant-after-user',
+            )}
+          />
+        ))}
       </div>
     </div>
   );
@@ -131,53 +109,6 @@ export function SharedOwnerBar({ onOpenOriginal }: { onOpenOriginal?: () => void
           {t('shareOpenOriginal')}
         </button>
       )}
-    </div>
-  );
-}
-
-/**
- * Bottom bar for signed-in visitors of an edit link: joining adds them as a
- * participant and opens the collaborative page for the whole conversation.
- */
-export function SharedJoinBar({ token }: { token: string }) {
-  const { t } = useUserPreferences();
-  const [isJoining, setIsJoining] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  const join = async () => {
-    setIsJoining(true);
-    setFailed(false);
-    try {
-      const response = await authenticatedFetch('/api/collab/join', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
-      const payload = await response.json().catch(() => null) as { conversationId?: string } | null;
-      if (!response.ok || !payload?.conversationId) throw new Error(`join_failed_${response.status}`);
-      logger.info('collab_join_succeeded', { component: 'SharedJoinBar' });
-      window.location.assign(`/collab/${payload.conversationId}`);
-    } catch {
-      logger.warn('collab_join_failed', { component: 'SharedJoinBar' });
-      setFailed(true);
-      setIsJoining(false);
-    }
-  };
-
-  return (
-    <div className="areqa-shared-owner-bar" role="note">
-      <UsersRound size={16} aria-hidden="true" />
-      <span className="areqa-shared-owner-bar-text">
-        {failed ? t('collabJoinFailed') : t('collabJoinNotice')}
-      </span>
-      <button
-        type="button"
-        className="areqa-shared-owner-bar-action"
-        disabled={isJoining}
-        onClick={() => { void join(); }}
-      >
-        {t('collabJoin')}
-      </button>
     </div>
   );
 }

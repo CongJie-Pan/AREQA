@@ -7,15 +7,34 @@ use to ask the AI together.
 
 - The share panel offers **View only** (unchanged read-only snapshot) or
   **Can participate**.
-- A signed-in visitor of a participate link sees **Join shared chat** on the
-  share page. Joining adds them to `conversation_members` and opens
-  `/collab/<conversationId>`.
+- A signed-in visitor who opens a participate link joins automatically and the
+  conversation opens in the normal chat, like one of their own: it appears in
+  the sidebar and uses the usual composer. If joining fails, the read-only copy
+  is shown instead.
 - Signed-out visitors see the snapshot and are asked to sign in first.
-- On `/collab/<id>` the owner and participants see the whole conversation, who
-  asked each question, and can ask the AI. Other people's messages appear
-  within about 5 seconds (polling). Realtime sync is phase 4.
+- While a shared conversation is open (owner or participant), it refreshes
+  about every 5 seconds when no answer is streaming. Realtime sync is phase 4.
 - The owner can remove participants in the share panel. Switching the link
-  back to view-only removes every participant's access immediately.
+  back to view-only removes every participant's access immediately; their
+  local copy disappears on the next sync.
+- A participant deleting the conversation from the sidebar leaves it.
+
+## Local-first sync
+
+A participant's copy is a local conversation with
+`collaboration: { role: 'editor', ownerUserId }`. `syncService` routes it
+through `frontend/src/services/collaborationSync.ts` instead of the owner-only
+tables:
+
+| Local action | Participant copy |
+| --- | --- |
+| Pull messages | `get_collaborative_conversation`, merged by the existing reconciliation |
+| Push message (repeated while streaming) | `append_collaborative_message` upsert; only the author may update |
+| Push conversation | skipped (the row belongs to the owner) |
+| Delete message (edit/regenerate) | `delete_own_collaborative_message`; others' messages stay |
+| Feedback | local only |
+| Delete conversation | leave (`conversation_members` row) |
+| Full pull | `list_my_collaborative_conversations` adds, refreshes and drops copies |
 
 ## Boundaries
 
@@ -33,18 +52,18 @@ input and forward to the database functions. Only display names leave
 
 ## Rollout
 
-1. Apply the migration in Supabase.
+1. Apply both migrations in Supabase
+   (`20261119000000_collaborative_conversations.sql`, then
+   `20261119010000_collaborative_conversations_in_app.sql`).
 2. Deploy the backend and frontend together. Before the migration is applied,
    participate links return 503 and every existing path works as before.
 
 ## Known limits (later phases)
 
 - No generation lock yet: two people asking at once both get replies (phase 3).
-- The asker's browser stores the AI reply; if it closes mid-reply, the reply
-  is lost for the others.
-- The owner's normal chat view shows participant questions without author
-  labels until the next sync; `/collab/<id>` shows authors.
-- Collaborative pages do not support attachments, voice, or Topic Finder mode.
-- Every signed-in chat turn now makes one extra Supabase RPC
-  (`collaboration.lookup_resolved ... elapsed_ms=` in logs) so a cache may be
-  worth adding if that shows up in latency traces.
+- Messages do not show who asked them yet (phase 5).
+- Editing or regenerating a turn someone else wrote cannot remove their
+  stored messages, so the others still see the original.
+- Every signed-in chat turn makes one extra Supabase RPC
+  (`collaboration.lookup_resolved ... elapsed_ms=` in logs); add a cache if
+  that shows up in latency traces.

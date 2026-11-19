@@ -99,7 +99,8 @@ describe('conversationRepo - sync intergration', () => {
     await conversationRepo.delete(conv.id);
     
     expect(syncService.deleteConversation).toHaveBeenCalledOnce();
-    expect(syncService.deleteConversation).toHaveBeenCalledWith(conv.id);
+    // The stored conversation is passed along so a participant copy can leave instead.
+    expect(syncService.deleteConversation).toHaveBeenCalledWith(conv.id, expect.objectContaining({ id: conv.id }));
     
     const inDb = await db.conversations.get(conv.id);
     expect(inDb).toBeUndefined();

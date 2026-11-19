@@ -25,6 +25,17 @@ export interface Conversation {
   branchOrigin?: { conversationId: string; messageId: string; title: string; copiedMessageId: string };
   /** Workspace, fixed at creation. Missing means `chat` (rows created before Topic Finder). */
   kind?: ConversationKind;
+  /**
+   * Set while the conversation is shared with participants. `editor` marks a
+   * local copy of someone else's conversation: it syncs through the
+   * collaboration functions, never through the owner-only tables.
+   */
+  collaboration?: ConversationCollaboration;
+}
+
+export interface ConversationCollaboration {
+  role: 'owner' | 'editor';
+  ownerUserId: string;
 }
 
 /** Workspace a conversation belongs to: ordinary chat or Topic Finder (選題). */

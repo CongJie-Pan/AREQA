@@ -48,8 +48,10 @@ import { useSidebarState } from './useSidebarState';
 import { LongConversationReminder } from './LongConversationReminder';
 import { SharePanel, type ShareAccessLevel } from './SharePanel';
 import { useShareAccess } from './useShareAccess';
+import { useCollaborativeRefresh } from './useCollaborativeRefresh';
+import { isMemberConversation, markOwnerCollaboration } from '@/services/collaborationSync';
 import { useSharedConversationView } from './useSharedConversationView';
-import { SharedJoinBar, SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
+import { SharedMessages, SharedOwnerBar } from '@/components/SharedConversation';
 import { OnboardingTour } from '@/components/Onboarding/OnboardingTour';
 import { hasSeenFeatureTour, hasSeenOnboarding, hasSeenTopicFinderTour, recordOnboardingOutcome, useOnboardingStore } from '@/store/onboarding';
 import { detectUnusedFeatureSteps } from '@/services/onboardingFeatures';
@@ -144,8 +146,26 @@ export function ChatContainer({ className }: ChatContainerProps) {
   const handleShareUnavailable = useCallback(() => {
     antMessageApi.warning(t('shareUnavailable'));
   }, [antMessageApi, t]);
-  // `/?share=<token>` shows a shared conversation read-only inside this workspace.
-  const { sharedView, exitSharedView } = useSharedConversationView(user, isAuthReady, handleShareUnavailable);
+  // Joining a participate link opens the conversation like one of the user's own.
+  const handleJoinedCollaboration = useCallback((conversationId: string) => {
+    if (!historyUserId) return;
+    void (async () => {
+      await useConversationStore.getState().loadConversations(historyUserId);
+      await switchConversation(conversationId);
+    })().catch((error) => {
+      logger.warn('collab_open_after_join_failed', {
+        component: 'ChatContainer',
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+    });
+  }, [historyUserId]);
+  const handleCollaborationAccessEnded = useCallback(() => {
+    antMessageApi.warning(t('collabNoAccess'));
+  }, [antMessageApi, t]);
+  // `/?share=<token>` shows a view-only share read-only inside this workspace.
+  const { sharedView, exitSharedView } = useSharedConversationView(
+    user, isAuthReady, handleShareUnavailable, handleJoinedCollaboration,
+  );
   const previousHistoryUserIdRef = useRef(historyUserId);
   const failedMessageSyncCount = useLiveQuery(
     () => user
@@ -763,6 +783,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
 
   const shareAccess = useShareAccess(activeConversation?.id ?? null, isSharePanelOpen);
   const { markApplied: markShareAccessApplied } = shareAccess;
+  useCollaborativeRefresh(activeConversation, historyUserId, handleCollaborationAccessEnded);
 
   // Copying creates or refreshes the link and moves its snapshot to "now".
   // `copy: false` only applies a new access level to an existing link.
@@ -791,6 +812,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
         throw new Error(payload?.error || `Share API did not return a token (${response.status})`);
       }
       markShareAccessApplied(accessLevel);
+      // The owner's open chat refreshes itself while participants can write.
+      const collaboration = await markOwnerCollaboration(activeConversation.id, user.id, accessLevel === 'edit');
+      useConversationStore.getState().updateConversation(activeConversation.id, { collaboration });
       if (!copy) {
         antMessageApi.success(t('shareAccessUpdated'));
         return true;
@@ -1006,6 +1030,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
                           <span>{t('workspaceTopicFinder')}</span>
                         </span>
                       ))}
+                      {/* Participants cannot re-share someone else's conversation. */}
+                      {!isMemberConversation(activeConversation) && (
                       <Popover
                         open={isSharePanelOpen}
                         onOpenChange={handleSharePanelOpenChange}
@@ -1023,9 +1049,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
                             onAccessLevelChange={handleShareAccessChange}
                             members={shareAccess.members}
                             onRemoveMember={handleRemoveShareMember}
-                            onOpenCollab={activeConversation && shareAccess.hasLink ? () => {
-                              window.open(`/collab/${activeConversation.id}`, '_blank', 'noopener,noreferrer');
-                            } : undefined}
                           />
                         ) : null}
                       >
@@ -1039,6 +1062,7 @@ export function ChatContainer({ className }: ChatContainerProps) {
                           <span>{t('shareConversation')}</span>
                         </button>
                       </Popover>
+                      )}
                       <Dropdown
                         menu={{
                           className: styles.exportMenu,
@@ -1147,9 +1171,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   <LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />
                 )}
 
-                {/* A shared copy is read-only: no composer; the owner gets a way back
-                    and visitors of an edit link can join the live conversation. */}
-                {sharedView ? (sharedView.isOwner ? (
+                {/* A shared copy is read-only: no composer; the owner gets a way back.
+                    Participate links never land here: joining opens the conversation itself. */}
+                {sharedView ? (sharedView.isOwner && (
                   <SharedOwnerBar
                     onOpenOriginal={sharedView.conversationId ? () => {
                       const originalId = sharedView.conversationId!;
@@ -1157,8 +1181,6 @@ export function ChatContainer({ className }: ChatContainerProps) {
                       void switchConversation(originalId);
                     } : undefined}
                   />
-                ) : sharedView.conversation.accessLevel === 'edit' && (
-                  <SharedJoinBar token={sharedView.token} />
                 )) : (
                 <div className={cx('areqa-chat-input-area', styles.inputArea)}>
                   <ChatInput

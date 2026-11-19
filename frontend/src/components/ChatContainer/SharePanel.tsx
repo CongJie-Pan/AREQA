@@ -168,24 +168,10 @@ const useStyles = createStyles(({ css, token }) => ({
   `,
   footer: css`
     display: flex;
-    gap: 8px;
     justify-content: flex-end;
     margin-top: 12px;
     padding: 14px 0 4px;
     border-top: 1px solid var(--areqa-subtle-border);
-  `,
-  secondary: css`
-    display: inline-flex;
-    align-items: center;
-    padding: 7px 14px;
-    border: 1px solid var(--areqa-subtle-border);
-    border-radius: 9px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
   `,
   copy: css`
     display: inline-flex;
@@ -230,7 +216,7 @@ export interface ShareMember {
  */
 export function SharePanel({
   user, isCopying, onCopyLink, onClose,
-  accessLevel = 'view', onAccessLevelChange, members = [], onRemoveMember, onOpenCollab,
+  accessLevel = 'view', onAccessLevelChange, members = [], onRemoveMember,
 }: {
   user: User;
   isCopying: boolean;
@@ -240,7 +226,6 @@ export function SharePanel({
   onAccessLevelChange?: (level: ShareAccessLevel) => void;
   members?: ShareMember[];
   onRemoveMember?: (userId: string) => void;
-  onOpenCollab?: () => void;
 }) {
   const { styles, cx } = useStyles();
   const { t } = useUserPreferences();
@@ -330,11 +315,6 @@ export function SharePanel({
       })}
 
       <div className={styles.footer}>
-        {isEdit && onOpenCollab && (
-          <button type="button" className={styles.secondary} onClick={onOpenCollab}>
-            {t('shareOpenCollab')}
-          </button>
-        )}
         <button type="button" className={styles.copy} disabled={isCopying} onClick={onCopyLink}>
           <Link2 size={16} aria-hidden="true" />
           {t('shareCopyLink')}

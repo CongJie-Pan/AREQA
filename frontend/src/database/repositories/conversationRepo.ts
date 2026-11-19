@@ -266,12 +266,14 @@ export const conversationRepo = {
    * @param id - The conversation ID to delete
    */
   async delete(id: string): Promise<void> {
+    // Read first: a participant copy must leave instead of deleting the owner's rows.
+    const conversation = await db.conversations.get(id);
     await db.transaction('rw', [db.conversations, db.messages, db.conversationSyncQueue], async () => {
       await db.messages.where('conversationId').equals(id).delete();
       await db.conversationSyncQueue.delete(id);
       await db.conversations.delete(id);
     });
-    syncService.deleteConversation(id);
+    syncService.deleteConversation(id, conversation);
   },
 
   /**

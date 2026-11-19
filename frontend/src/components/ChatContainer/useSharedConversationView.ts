@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { SharedConversation } from '@/components/SharedConversation';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
+import { joinCollaborativeShare } from '@/services/collaborationSync';
 import { logger } from '@/utils/logger';
 
 const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,80}$/;
@@ -24,16 +25,19 @@ function removeShareParam(): void {
 }
 
 /**
- * Open a shared conversation (`/?share=<token>`) read-only inside the
- * signed-in workspace.
+ * Open a shared conversation (`/?share=<token>`) inside the signed-in workspace.
  *
- * Signed-out visitors go back to the public `/share/<token>` page. Ownership is
- * resolved by the server with the viewer's own session.
+ * View-only links render read-only. Participate links join the visitor and hand
+ * the conversation id to `onJoined`, so it opens like one of their own chats;
+ * if joining fails the read-only copy is shown instead. Signed-out visitors go
+ * back to the public `/share/<token>` page. Ownership is resolved by the server
+ * with the viewer's own session.
  */
 export function useSharedConversationView(
   user: User | null,
   isAuthReady: boolean,
   onUnavailable: () => void,
+  onJoined?: (conversationId: string) => void,
 ): { sharedView: SharedViewState | null; exitSharedView: () => void } {
   const [sharedView, setSharedView] = useState<SharedViewState | null>(null);
   const userId = user?.id ?? null;
@@ -65,6 +69,17 @@ export function useSharedConversationView(
         ? await viewerResponse.json() as { isOwner?: boolean; conversationId?: string }
         : { isOwner: false };
       if (!active) return;
+      if (conversation.accessLevel === 'edit' && !viewer.isOwner && onJoined) {
+        const joinedId = await joinCollaborativeShare(token, userId, conversation.title);
+        if (!active) return;
+        if (joinedId) {
+          logger.info('share_view_joined_collaboration', { component: 'ChatContainer' });
+          removeShareParam();
+          onJoined(joinedId);
+          return;
+        }
+        logger.warn('share_view_join_fallback_read_only', { component: 'ChatContainer' });
+      }
       logger.info('share_view_opened', { component: 'ChatContainer', isOwner: Boolean(viewer.isOwner) });
       setSharedView({
         token,
@@ -78,7 +93,7 @@ export function useSharedConversationView(
       onUnavailable();
     });
     return () => { active = false; };
-  }, [isAuthReady, onUnavailable, userId]);
+  }, [isAuthReady, onJoined, onUnavailable, userId]);
 
   const exitSharedView = useCallback(() => {
     setSharedView(null);
