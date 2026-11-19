@@ -65,6 +65,19 @@ describe('SharedConversationView', () => {
     authState.user = { id: 'viewer' };
     renderView('L-GIo3nG6ceEijhdinSsm3A3');
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/?share=L-GIo3nG6ceEijhdinSsm3A3'));
+    // No snapshot flashes before the redirect.
+    expect(screen.getByTestId('shared-conversation-resolving')).toBeInTheDocument();
+    expect(screen.queryByTestId('shared-messages')).not.toBeInTheDocument();
+  });
+
+  it('waits for the session before showing the public copy', () => {
+    authState.isInitialized = false;
+    try {
+      renderView('L-GIo3nG6ceEijhdinSsm3A3');
+      expect(screen.queryByTestId('shared-messages')).not.toBeInTheDocument();
+    } finally {
+      authState.isInitialized = true;
+    }
   });
 });
 

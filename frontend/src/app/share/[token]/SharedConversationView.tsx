@@ -29,6 +29,13 @@ export function SharedConversationView({ conversation, token }: { conversation: 
     if (token && isAuthReady && user) window.location.replace(`/?share=${encodeURIComponent(token)}`);
   }, [isAuthReady, token, user]);
 
+  // Until the session is known (and while a signed-in visitor is redirected),
+  // show only the page background: rendering the snapshot first made the page
+  // visibly jump between the public copy and the workspace.
+  if (token && (!isAuthReady || user)) {
+    return <main className={styles.page} aria-busy="true" data-testid="shared-conversation-resolving" />;
+  }
+
   return (
     <main className={styles.page}>
       <section className={styles.chat}>

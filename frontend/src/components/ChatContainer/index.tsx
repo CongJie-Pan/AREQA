@@ -5,7 +5,7 @@
  * Main container that assembles the complete chat interface
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2, Telescope } from 'lucide-react';
 import { App, Button, Drawer, Dropdown, Popover, Space, Tooltip } from 'antd';
@@ -147,25 +147,32 @@ export function ChatContainer({ className }: ChatContainerProps) {
     antMessageApi.warning(t('shareUnavailable'));
   }, [antMessageApi, t]);
   // Joining a participate link opens the conversation like one of the user's own.
-  const handleJoinedCollaboration = useCallback((conversationId: string) => {
+  const handleJoinedCollaboration = useCallback(async (conversationId: string) => {
     if (!historyUserId) return;
-    void (async () => {
+    try {
       await useConversationStore.getState().loadConversations(historyUserId);
       await switchConversation(conversationId);
-    })().catch((error) => {
+    } catch (error) {
       logger.warn('collab_open_after_join_failed', {
         component: 'ChatContainer',
         reason: error instanceof Error ? error.name : 'unknown',
       });
-    });
+    }
   }, [historyUserId]);
   const handleCollaborationAccessEnded = useCallback(() => {
     antMessageApi.warning(t('collabNoAccess'));
   }, [antMessageApi, t]);
   // `/?share=<token>` shows a view-only share read-only inside this workspace.
-  const { sharedView, exitSharedView } = useSharedConversationView(
+  const { sharedView, exitSharedView, isOpeningShare } = useSharedConversationView(
     user, isAuthReady, handleShareUnavailable, handleJoinedCollaboration,
   );
+  // Reuse the conversation-switch handoff so opening a share link shows a quiet
+  // transcript instead of the new-chat screen while it resolves.
+  useLayoutEffect(() => {
+    if (!isOpeningShare) return undefined;
+    useConversationStore.getState().setMessageHandoffLoading(true);
+    return () => useConversationStore.getState().setMessageHandoffLoading(false);
+  }, [isOpeningShare]);
   const previousHistoryUserIdRef = useRef(historyUserId);
   const failedMessageSyncCount = useLiveQuery(
     () => user

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { SharedConversation } from '@/components/SharedConversation';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
@@ -15,6 +15,12 @@ export interface SharedViewState {
   isOwner: boolean;
   /** Original conversation id; only returned to the owner. */
   conversationId?: string;
+}
+
+const subscribeToNothing = () => () => {};
+
+function hasShareParam(): boolean {
+  return SHARE_TOKEN_PATTERN.test(new URL(window.location.href).searchParams.get(SHARE_PARAM) ?? '');
 }
 
 function removeShareParam(): void {
@@ -37,9 +43,14 @@ export function useSharedConversationView(
   user: User | null,
   isAuthReady: boolean,
   onUnavailable: () => void,
-  onJoined?: (conversationId: string) => void,
-): { sharedView: SharedViewState | null; exitSharedView: () => void } {
+  onJoined?: (conversationId: string) => Promise<void> | void,
+): { sharedView: SharedViewState | null; exitSharedView: () => void; isOpeningShare: boolean } {
   const [sharedView, setSharedView] = useState<SharedViewState | null>(null);
+  const [isSettled, setIsSettled] = useState(false);
+  // Read from the URL on the client's first render (false on the server), so
+  // the workspace never flashes the new-chat screen while a share resolves.
+  const shareParamPresent = useSyncExternalStore(subscribeToNothing, hasShareParam, () => false);
+  const isOpeningShare = shareParamPresent && !sharedView && !isSettled;
   const userId = user?.id ?? null;
 
   useEffect(() => {
@@ -61,6 +72,7 @@ export function useSharedConversationView(
       if (!conversationResponse.ok) {
         logger.warn('share_view_unavailable', { component: 'ChatContainer', status: conversationResponse.status });
         removeShareParam();
+        setIsSettled(true);
         onUnavailable();
         return;
       }
@@ -74,8 +86,10 @@ export function useSharedConversationView(
         if (!active) return;
         if (joinedId) {
           logger.info('share_view_joined_collaboration', { component: 'ChatContainer' });
+          // Keep the param until the switch finished so the quiet state holds.
+          await onJoined(joinedId);
           removeShareParam();
-          onJoined(joinedId);
+          if (active) setIsSettled(true);
           return;
         }
         logger.warn('share_view_join_fallback_read_only', { component: 'ChatContainer' });
@@ -90,6 +104,7 @@ export function useSharedConversationView(
     })().catch(() => {
       if (!active) return;
       removeShareParam();
+      setIsSettled(true);
       onUnavailable();
     });
     return () => { active = false; };
@@ -100,5 +115,5 @@ export function useSharedConversationView(
     removeShareParam();
   }, []);
 
-  return { sharedView, exitSharedView };
+  return { sharedView, exitSharedView, isOpeningShare };
 }

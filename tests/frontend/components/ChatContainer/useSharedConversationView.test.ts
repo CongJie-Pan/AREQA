@@ -99,4 +99,27 @@ describe('useSharedConversationView', () => {
     await waitFor(() => expect(result.current.sharedView?.isOwner).toBe(true));
     expect(joinCollaborativeShare).not.toHaveBeenCalled();
   });
+
+  it('reports the share as opening until it is shown', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(json({ isOwner: false }));
+    const { result } = renderHook(() => useSharedConversationView(viewer, true, vi.fn()));
+
+    expect(result.current.isOpeningShare).toBe(true);
+    await waitFor(() => expect(result.current.sharedView).not.toBeNull());
+    expect(result.current.isOpeningShare).toBe(false);
+  });
+
+  it('stays opening until the joined conversation has been switched to', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ ...shared, accessLevel: 'edit' })));
+    vi.mocked(authenticatedFetch).mockResolvedValue(json({ isOwner: false }));
+    vi.mocked(joinCollaborativeShare).mockResolvedValue('c1');
+    let finishSwitch: () => void = () => {};
+    const onJoined = vi.fn(() => new Promise<void>((resolve) => { finishSwitch = resolve; }));
+    const { result } = renderHook(() => useSharedConversationView(viewer, true, vi.fn(), onJoined));
+
+    await waitFor(() => expect(onJoined).toHaveBeenCalled());
+    expect(result.current.isOpeningShare).toBe(true);
+    await act(async () => { finishSwitch(); });
+    expect(result.current.isOpeningShare).toBe(false);
+  });
 });
