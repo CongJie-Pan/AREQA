@@ -154,6 +154,32 @@ describe('syncService - pullFromCloud', () => {
     await db.notes.clear();
   });
 
+  it('takes back rows another account in this browser holds under the same id', async () => {
+    // e.g. the owner opens their chat after testing a participant copy in the same browser.
+    const later = new Date('2030-01-01T00:00:00Z');
+    await db.conversations.put({
+      id: 'conv_shared', userId: 'member-1', title: 'Copy', createdAt: later, updatedAt: later,
+      messageCount: 1, lastMessagePreview: '', collaboration: { role: 'editor', ownerUserId: 'user_123' },
+    });
+    await db.messages.put({
+      id: 'msg_shared', userId: 'member-1', conversationId: 'conv_shared', role: 'user', content: 'q',
+      createdAt: later, updatedAt: later,
+    } as Message);
+    mockSupabaseResponse = { data: [{
+      id: 'conv_shared', user_id: 'user_123', title: 'Original',
+      created_at: '2026-11-19T00:00:00Z', updated_at: '2026-11-19T00:00:00Z',
+    }], error: null };
+    mockSupabaseMsgResponse = { data: [{
+      id: 'msg_shared', user_id: 'user_123', conversation_id: 'conv_shared', role: 'user', content: 'q',
+      created_at: '2026-11-19T00:00:00Z', updated_at: '2026-11-19T00:00:00Z',
+    }], error: null };
+
+    await syncService.pullFromCloud();
+
+    expect(await db.conversations.get('conv_shared')).toEqual(expect.objectContaining({ userId: 'user_123', title: 'Original' }));
+    expect((await db.messages.get('msg_shared'))?.userId).toBe('user_123');
+  });
+
   it('should not reload if cloud returns empty array', async () => {
     mockSupabaseResponse = { data: [], error: null };
     mockSupabaseMsgResponse = { data: [], error: null };

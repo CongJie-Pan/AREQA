@@ -91,6 +91,27 @@ describe('collaborative conversations in the normal chat', () => {
     expect(await db.messages.get('ended-msg')).toBeUndefined();
   });
 
+  it('takes over the owner copy another account left in this browser', async () => {
+    await db.conversations.put(conversation({ userId: 'owner-1', collaboration: undefined, title: 'Owner copy' }));
+    rpc.mockResolvedValue({ data: [sharedSummary('editor')], error: null });
+
+    await syncCollaborativeConversationList('member-1');
+    expect(await db.conversations.get(SHARED_ID)).toEqual(expect.objectContaining({
+      userId: 'member-1', collaboration: { role: 'editor', ownerUserId: 'owner-1' },
+    }));
+  });
+
+  it('leaves the other account copy alone while it has unsynced changes', async () => {
+    await db.conversations.put(conversation({ userId: 'owner-1', collaboration: undefined }));
+    await db.messageSyncQueue.put({
+      id: 'pending-1', userId: 'owner-1', conversationId: SHARED_ID, queuedAt: now, updatedAt: now, retryCount: 0, lastError: null,
+    });
+    rpc.mockResolvedValue({ data: [sharedSummary('editor')], error: null });
+
+    await syncCollaborativeConversationList('member-1');
+    expect((await db.conversations.get(SHARED_ID))?.userId).toBe('owner-1');
+  });
+
   it('keeps local state when the collaboration functions are unavailable', async () => {
     await db.conversations.put(conversation());
     rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202' } });

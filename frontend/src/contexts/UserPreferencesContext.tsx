@@ -429,6 +429,8 @@ export type TranslationKey =
   | 'collabNoAccess'
   | 'collabBack'
   | 'shareAccessUpdated'
+  | 'shareReadOnlyViewerNotice'
+  | 'collabJoinFailed'
   | 'historySyncPending'
   | 'exportConversation'
   | 'exportPdfLoading'
@@ -888,6 +890,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     collabNoAccess: '你目前無法存取這段對話。擁有者可能已移除你，或把連結改為僅檢視。',
     collabBack: '回到 AREQA',
     shareAccessUpdated: '已更新連結權限',
+    shareReadOnlyViewerNotice: '這是唯讀的分享對話，無法在這裡提問。',
+    collabJoinFailed: '無法加入這段共同對話，目前以唯讀方式顯示。',
     historySyncPending: '部分訊息尚未備份至雲端。請保留此瀏覽器資料，連線恢復後將自動重試。',
     exportConversation: '匯出對話',
     exportPdfLoading: '正在產生 PDF，請稍候...',
@@ -1321,6 +1325,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     collabNoAccess: '你目前无法访问这段对话。所有者可能已移除你，或把链接改为仅查看。',
     collabBack: '回到 AREQA',
     shareAccessUpdated: '已更新链接权限',
+    shareReadOnlyViewerNotice: '这是只读的分享对话，无法在这里提问。',
+    collabJoinFailed: '无法加入这段共同对话，目前以只读方式显示。',
     historySyncPending: '部分消息尚未备份到云端。请保留此浏览器数据，连接恢复后将自动重试。',
     exportConversation: '汇出对话',
     exportPdfLoading: '正在生成 PDF，请稍候...',
@@ -1754,6 +1760,8 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     collabNoAccess: 'You cannot open this chat. The owner may have removed you or made the link view-only.',
     collabBack: 'Back to AREQA',
     shareAccessUpdated: 'Link access updated',
+    shareReadOnlyViewerNotice: 'This shared chat is read-only; you cannot ask here.',
+    collabJoinFailed: 'Could not join this shared chat, so it is shown read-only.',
     historySyncPending: 'Some messages are not backed up yet. Keep this browser data; sync will retry automatically.',
     exportConversation: 'Export conversation',
     exportPdfLoading: 'Creating PDF...',

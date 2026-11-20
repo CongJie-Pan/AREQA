@@ -255,8 +255,11 @@ async function mergeCloudConversations(
   const convsToUpsert = [];
   for (const c of cloudConvs) {
     const cloudDate = new Date(c.updated_at);
-    const localConv = localConvMap.get(c.id);
-    if (localConv && pendingConversationIds.has(c.id)) continue;
+    const storedConv = localConvMap.get(c.id);
+    if (storedConv && pendingConversationIds.has(c.id)) continue;
+    // Accounts share one browser database keyed by id: a row another account
+    // holds (e.g. its participant copy) is not ours to compare, so take it back.
+    const localConv = storedConv?.userId === c.user_id ? storedConv : undefined;
     if (!localConv || localConv.updatedAt.getTime() < cloudDate.getTime()) {
       convsToUpsert.push({
         id: c.id,
@@ -332,7 +335,9 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
     const cloudFeedbackUpdatedAt = m.feedback_updated_at
       ? new Date(m.feedback_updated_at)
       : null;
-    const localMsg = localMsgMap.get(m.id);
+    // A row held by another account in this browser is replaced by our cloud copy.
+    const storedMsg = localMsgMap.get(m.id);
+    const localMsg = storedMsg?.userId === m.user_id ? storedMsg : undefined;
     const cloudIsNewer = !localMsg || localMessageUpdatedAt(localMsg).getTime() < cloudUpdatedAt.getTime();
     const cloudCitations = cloudIsNewer
       ? normalizeJsonArray<string>(m.citations, localMsg?.citations)

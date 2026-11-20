@@ -44,12 +44,14 @@ export function useSharedConversationView(
   isAuthReady: boolean,
   onUnavailable: () => void,
   onJoined?: (conversationId: string) => Promise<void> | void,
+  /** Server-known `?share=` presence, so the first paint already matches. */
+  initialOpening = false,
 ): { sharedView: SharedViewState | null; exitSharedView: () => void; isOpeningShare: boolean } {
   const [sharedView, setSharedView] = useState<SharedViewState | null>(null);
   const [isSettled, setIsSettled] = useState(false);
   // Read from the URL on the client's first render (false on the server), so
   // the workspace never flashes the new-chat screen while a share resolves.
-  const shareParamPresent = useSyncExternalStore(subscribeToNothing, hasShareParam, () => false);
+  const shareParamPresent = useSyncExternalStore(subscribeToNothing, hasShareParam, () => initialOpening);
   const isOpeningShare = shareParamPresent && !sharedView && !isSettled;
   const userId = user?.id ?? null;
 

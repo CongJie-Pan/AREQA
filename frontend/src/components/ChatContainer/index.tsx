@@ -5,7 +5,7 @@
  * Main container that assembles the complete chat interface
  */
 
-import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2, Telescope } from 'lucide-react';
 import { App, Button, Drawer, Dropdown, Popover, Space, Tooltip } from 'antd';
@@ -102,6 +102,8 @@ function getErrorMessage(error: unknown): { message: string; isRetryable: boolea
 export interface ChatContainerProps {
   /** Class name for styling */
   className?: string;
+  /** The page was opened with a valid `?share=` token (known on the server). */
+  openingShare?: boolean;
 }
 import { SidePanelType } from '@/types/panel';
 
@@ -114,7 +116,7 @@ const RESPONSE_PANE_MIN_WIDTH = 420;
 /**
  * ChatContainer is the main component that assembles the chat interface
  */
-export function ChatContainer({ className }: ChatContainerProps) {
+export function ChatContainer({ className, openingShare = false }: ChatContainerProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi, notification } = App.useApp();
   const { t, language } = useUserPreferences();
@@ -164,15 +166,8 @@ export function ChatContainer({ className }: ChatContainerProps) {
   }, [antMessageApi, t]);
   // `/?share=<token>` shows a view-only share read-only inside this workspace.
   const { sharedView, exitSharedView, isOpeningShare } = useSharedConversationView(
-    user, isAuthReady, handleShareUnavailable, handleJoinedCollaboration,
+    user, isAuthReady, handleShareUnavailable, handleJoinedCollaboration, openingShare,
   );
-  // Reuse the conversation-switch handoff so opening a share link shows a quiet
-  // transcript instead of the new-chat screen while it resolves.
-  useLayoutEffect(() => {
-    if (!isOpeningShare) return undefined;
-    useConversationStore.getState().setMessageHandoffLoading(true);
-    return () => useConversationStore.getState().setMessageHandoffLoading(false);
-  }, [isOpeningShare]);
   const previousHistoryUserIdRef = useRef(historyUserId);
   const failedMessageSyncCount = useLiveQuery(
     () => user
@@ -237,7 +232,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
   ));
   const isGeneratingImage = Boolean(activeImageRequest);
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
-  const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading && !isGeneratingImage;
+  // While a share link resolves the screen stays quiet instead of showing a new chat.
+  // (A store flag is not enough: account initialization resets conversation state.)
+  const shouldShowEmptyChat = isEmpty && !isMessageHandoffLoading && !isGeneratingImage && !isOpeningShare;
   const landingPromptSent = useRef(false);
   const branchPending = useRef(false);
   const branchOrigin = activeConversation?.branchOrigin;
@@ -1142,7 +1139,9 @@ export function ChatContainer({ className }: ChatContainerProps) {
                     isTopicFinder && !isEmpty && !sharedView && styles.messageAreaTopicFinder,
                   )}
                 >
-                  {sharedView ? (
+                  {isOpeningShare ? (
+                    <div aria-busy="true" className="areqa-message-list" data-testid="share-opening" />
+                  ) : sharedView ? (
                     <SharedMessages conversation={sharedView.conversation} />
                   ) : activeImageRequest && !activeImageRequest.assistantMessageId ? (
                     <ImageGenerationLoading caption={language === 'en' ? 'Preparing image…' : language === 'zh-CN' ? '正在准备图片…' : '正在準備圖片…'} />
@@ -1178,15 +1177,20 @@ export function ChatContainer({ className }: ChatContainerProps) {
                   <LiveTutorPanel activeConversationId={activeConversationId} hasMessages={!isEmpty} />
                 )}
 
-                {/* A shared copy is read-only: no composer; the owner gets a way back.
-                    Participate links never land here: joining opens the conversation itself. */}
-                {sharedView ? (sharedView.isOwner && (
+                {/* A shared copy is read-only: no composer, and a notice says so. The
+                    owner gets a way back; a participate link only lands here when
+                    joining failed, which the notice explains. */}
+                {isOpeningShare ? null : sharedView ? (sharedView.isOwner ? (
                   <SharedOwnerBar
                     onOpenOriginal={sharedView.conversationId ? () => {
                       const originalId = sharedView.conversationId!;
                       exitSharedView();
                       void switchConversation(originalId);
                     } : undefined}
+                  />
+                ) : (
+                  <SharedOwnerBar
+                    notice={t(sharedView.conversation.accessLevel === 'edit' ? 'collabJoinFailed' : 'shareReadOnlyViewerNotice')}
                   />
                 )) : (
                 <div className={cx('areqa-chat-input-area', styles.inputArea)}>

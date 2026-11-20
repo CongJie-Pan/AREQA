@@ -95,15 +95,15 @@ export function SharedMessages({ conversation, className }: { conversation: Shar
 }
 
 /**
- * Bottom bar shown to the owner instead of the composer, as in Claude's shared
- * copies: the page is read-only and the original chat is one click away.
+ * Bottom bar shown instead of the composer on a read-only shared copy. The
+ * owner gets the original chat one click away; other viewers get `notice`.
  */
-export function SharedOwnerBar({ onOpenOriginal }: { onOpenOriginal?: () => void }) {
+export function SharedOwnerBar({ onOpenOriginal, notice }: { onOpenOriginal?: () => void; notice?: string }) {
   const { t } = useUserPreferences();
   return (
     <div className="areqa-shared-owner-bar" role="note">
       <Info size={16} aria-hidden="true" />
-      <span className="areqa-shared-owner-bar-text">{t('shareReadOnlyOwnerNotice')}</span>
+      <span className="areqa-shared-owner-bar-text">{notice ?? t('shareReadOnlyOwnerNotice')}</span>
       {onOpenOriginal && (
         <button type="button" className="areqa-shared-owner-bar-action" onClick={onOpenOriginal}>
           {t('shareOpenOriginal')}

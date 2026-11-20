@@ -150,9 +150,14 @@ export async function syncCollaborativeConversationList(
 
     const foreign = await db.conversations.get(item.id);
     if (foreign && foreign.userId !== userId) {
-      // Same browser holds the owner's copy under another account; never overwrite it.
-      logger.warn('collab_local_copy_conflict', { component: 'collaborationSync', conversationId: item.id });
-      continue;
+      // Another account in this browser (often the owner) holds this id. The
+      // cloud is the source of truth, so take the row over unless that account
+      // still has unsynced changes here; its next sync takes it back.
+      if (await hasPendingSync(item.id, foreign.userId)) {
+        logger.warn('collab_local_copy_conflict', { component: 'collaborationSync', conversationId: item.id });
+        continue;
+      }
+      logger.info('collab_local_copy_taken_over', { component: 'collaborationSync', conversationId: item.id });
     }
     const title = item.title || (options.fallbackTitle?.id === item.id ? options.fallbackTitle.title : '');
     const updatedAt = new Date(item.updatedAt);
@@ -185,6 +190,13 @@ export async function syncCollaborativeConversationList(
   }
 
   return changed;
+}
+
+async function hasPendingSync(conversationId: string, userId: string): Promise<boolean> {
+  if (await db.conversationSyncQueue.get(conversationId)) return true;
+  const pendingMessages = await db.messageSyncQueue.where('conversationId').equals(conversationId)
+    .filter((row) => row.userId === userId).count();
+  return pendingMessages > 0;
 }
 
 async function removeLocalCopy(conversationId: string, userId: string): Promise<void> {
