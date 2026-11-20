@@ -49,24 +49,28 @@ def _extract(path: str, byte_budget: int) -> str:
         page_count = document.page_count
         if document.needs_pass or not page_count:
             return ""
-        sample_count = min(page_count, 120)
-        page_budget = max(0, byte_budget // sample_count - 32)
-        truncated = sample_count < page_count
-        excerpts = []
-        for sample in range(sample_count):
-            index = sample * (page_count - 1) // max(1, sample_count - 1)
+    sample_count = min(page_count, 120)
+    page_budget = max(0, byte_budget // sample_count - 32)
+    truncated = sample_count < page_count
+    excerpts = []
+    for sample in range(sample_count):
+        index = sample * (page_count - 1) // max(1, sample_count - 1)
+        # MuPDF keeps substitute fonts for non-embedded font objects alive until the
+        # document closes; slide exports can carry thousands of them, so reopening
+        # per page keeps the worker within its address-space limit.
+        with pymupdf.open(path, filetype="pdf") as document:
             text = document[index].get_text().strip().encode("utf-8")
-            if text:
-                truncated |= len(text) > page_budget
-                excerpt = text[:page_budget].decode("utf-8", errors="ignore")
-                excerpts.append(f"[PDF page {index + 1}]\n{excerpt}")
-        if not excerpts:
-            return ""
-        if truncated:
-            excerpts.insert(0, "[PDF text excerpts only. Treat omitted text as unavailable. Figures may be provided separately.]")
-        else:
-            excerpts.insert(0, "[Extracted PDF text. Figures may be provided separately.]")
-        return "\n\n".join(excerpts)
+        if text:
+            truncated |= len(text) > page_budget
+            excerpt = text[:page_budget].decode("utf-8", errors="ignore")
+            excerpts.append(f"[PDF page {index + 1}]\n{excerpt}")
+    if not excerpts:
+        return ""
+    if truncated:
+        excerpts.insert(0, "[PDF text excerpts only. Treat omitted text as unavailable. Figures may be provided separately.]")
+    else:
+        excerpts.insert(0, "[Extracted PDF text. Figures may be provided separately.]")
+    return "\n\n".join(excerpts)
 
 
 if __name__ == "__main__":

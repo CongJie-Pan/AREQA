@@ -244,3 +244,36 @@ async def test_rejects_an_eleventh_attachment():
         await process_attachments(uploads)
     assert error.value.status_code == 422
     assert error.value.detail["code"] == "ATTACHMENT_COUNT_EXCEEDED"
+
+
+def test_large_pdf_text_worker_releases_document_between_pages(monkeypatch, tmp_path):
+    """Non-embedded font substitutes accumulate per open document (2026-11-20 regression)."""
+    import pymupdf
+    from services.attachments import pdf_text
+
+    with pymupdf.open() as document:
+        for index in range(5):
+            document.new_page().insert_text((72, 72), f"Slide {index + 1}")
+        pdf_bytes = document.tobytes()
+
+    real_get_text = pymupdf.Page.get_text
+    pages_read_per_document: dict[int, int] = {}
+    seen_documents = []  # Hold references so id() values stay unique.
+
+    def tracking_get_text(page, *args, **kwargs):
+        seen_documents.append(page.parent)
+        key = id(page.parent)
+        pages_read_per_document[key] = pages_read_per_document.get(key, 0) + 1
+        return real_get_text(page, *args, **kwargs)
+
+    monkeypatch.setattr(pymupdf.Page, "get_text", tracking_get_text)
+    path = tmp_path / "slides.pdf"
+    path.write_bytes(pdf_bytes)
+    text = pdf_text._extract(str(path), 96_000)
+
+    # Each page must be read from a freshly opened document so font substitutes are freed.
+    assert sum(pages_read_per_document.values()) == 5
+    assert max(pages_read_per_document.values()) == 1
+    assert text.startswith("[Extracted PDF text.")
+    for index in range(5):
+        assert f"[PDF page {index + 1}]\nSlide {index + 1}" in text

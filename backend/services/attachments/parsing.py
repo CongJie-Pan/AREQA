@@ -233,7 +233,7 @@ async def process_attachments(
                 except (asyncio.TimeoutError, OSError, ValueError):
                     raise _attachment_error(
                         "ATTACHMENT_INVALID_CONTENT",
-                        "無法擷取這份大型 PDF 的文字。請提供含可選取文字的 PDF，或分批上傳相關頁面。",
+                        "無法處理這份大型 PDF 的文字內容。請確認 PDF 含可選取文字，或分批上傳相關頁面。",
                     ) from None
                 content_part = PdfTextPart(
                     type="text", text=_decode_text(plain_text.encode("utf-8"), filename),
