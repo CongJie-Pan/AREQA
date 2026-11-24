@@ -24,6 +24,7 @@ import { ImageGenerationLoading } from '@/components/MessageList/ImageGeneration
 import { ChatInput } from '@/components/ChatInput';
 import { HomeWorkspaceSwitch } from '@/components/WorkspaceSwitch';
 import { TopicCardPanel, topicCardStageLabel } from '@/components/TopicCard';
+import { TopicStageNudge } from '@/components/TopicCard/StageNudge';
 import { useTopicCard } from '@/hooks/useTopicCard';
 import { TopicBranchUnavailableError, exploreCandidateInBranch } from '@/services/topicFinderBranch';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
@@ -1200,6 +1201,14 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
                   />
                 )) : (
                 <div className={cx('areqa-chat-input-area', styles.inputArea)}>
+                  {isTopicFinder && (
+                    <TopicStageNudge
+                      topicCard={topicCard}
+                      isStreaming={isStreaming}
+                      disabled={!isChatReady || isGeneratingImage}
+                      onSend={handleSend}
+                    />
+                  )}
                   <ChatInput
                     key={activeConversationId ?? 'new'}
                     onSend={handleSend}

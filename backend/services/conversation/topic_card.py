@@ -213,6 +213,15 @@ class FocusGap(BaseModel):
     term: str = ""
 
 
+class StageEntry(BaseModel):
+    """The learner just entered ``stage``; the next coach turn opens it (then this is cleared)."""
+
+    model_config = ConfigDict(extra="forbid")
+    stage: int = Field(ge=FIRST_STAGE, le=COMPLETED_STAGE)
+    source: Literal["api", "chat"] = "api"
+    created_at: float
+
+
 class TopicCardState(BaseModel):
     """Card plus workflow state, as returned to the learner's client."""
 
@@ -226,12 +235,20 @@ class TopicCardState(BaseModel):
     review: RevisionReview | None = None
     # Focus gaps the learner set aside in this conversation; they stay visible on the card.
     skipped_focus: list[str] = Field(default_factory=list, max_length=MAX_SKIPPED_FOCUS)
+    stage_entered: StageEntry | None = None
+    # The stage at which the coach already asked whether to move on (asked once per stage).
+    offered_next: int | None = Field(default=None, ge=FIRST_STAGE, le=COMPLETED_STAGE)
 
 
 class TopicCardView(TopicCardState):
-    """API response: the stored state plus the derived focus gap for this turn."""
+    """API response: the stored state plus derived steering for this turn.
+
+    ``next_stage`` is set when the adopted card covers the current stage, so the
+    client can offer a one-tap "move on" that the learner sends as a message.
+    """
 
     focus: FocusGap | None = None
+    next_stage: int | None = None
 
 
 def _clean_list(values: list[str], limit: int) -> list[str]:
@@ -472,8 +489,31 @@ def current_focus(state: TopicCardState) -> FocusGap | None:
     return next((gap for gap in diagnose_gaps(state.stage, card) if gap.id not in skipped), None)
 
 
+def ready_for_next(state: TopicCardState) -> int | None:
+    """The next stage when the adopted card covers the current one; ``None`` otherwise.
+
+    Rules mirror what each stage asks for, using only learner-adopted content.
+    """
+
+    card, stage = state.card, state.stage
+    if stage == FIRST_STAGE:
+        ready = bool(card.pain_point) and any(item not in card.ai_candidates for item in card.candidates)
+    elif stage == 2:
+        ready = bool(card.candidates) and (
+            any(item.filter == 2 for item in card.discarded) or any(entry.stage == 2 for entry in state.history))
+    elif stage == MOTHER_QUESTION_STAGE:
+        ready = bool(card.mother_question)
+    elif stage == OPERATIONALIZATION_STAGE:
+        ready = bool(card.operationalization) and all(item.measure for item in card.operationalization)
+    elif stage == FEASIBILITY_STAGE:
+        ready = {item.key for item in card.feasibility} == set(FEASIBILITY_KEYS)
+    else:
+        ready = False
+    return stage + 1 if ready else None
+
+
 def card_view(state: TopicCardState) -> TopicCardView:
-    return TopicCardView(**dict(state), focus=current_focus(state))
+    return TopicCardView(**dict(state), focus=current_focus(state), next_stage=ready_for_next(state))
 
 
 def skip_focus(state: TopicCardState, gap_id: str) -> TopicCardState:
@@ -510,6 +550,32 @@ def _focus_instruction(gap: FocusGap) -> str:
     }[gap.kind]
 
 
+# What each stage is for, where to look on the card, and what to think about.
+# Fixed text keeps stage openings consistent instead of improvised per turn.
+STAGE_GUIDE = {
+    1: ("觀察痛點、先發散", "「你卡住的問題」和「候選題目」", "先用一句話寫出卡住的地方，再想出幾個想解決的問題"),
+    2: ("有沒有很簡單的解法", "「候選題目」", "替候選題目想最偷懶的解法：現成工具、論文或成果能不能直接解決？由他自己去查"),
+    3: ("你真正想知道的是什麼", "「你真正想知道的（母問題）」", "拿掉工具和案例，自己寫出真正想知道的問題"),
+    4: ("幫候選題目找看得見的證據", "「看得見的證據」那一欄的關鍵詞，有 ⚠️ 的就是還沒想好證據的",
+        "從母問題挑出關鍵詞，替每個詞想要用什麼證據看出來，以及什麼結果會證明自己原本的想法錯了"),
+    5: ("做得到嗎", "「可行性檢查」的五項", "一次一項想時間、資料與場域、指導教授與方法、有沒有人做過、研究倫理"),
+    6: ("整理最終題目", "整張題目卡", "整理研究問題的最終說法和下一步"),
+}
+
+
+def _stage_intro_instruction(stage: int) -> str:
+    goal, where, think = STAGE_GUIDE[stage]
+    return (f"【進入新階段（給你的內部指示，不要寫進回覆）】學習者剛進到{stage_label(stage)}「{goal}」。"
+            f"這一輪先用一到兩句白話說明：這個階段要{think}；題目卡上可以看{where}。然後再問這一階段的第一個問題。")
+
+
+def _next_stage_instruction(next_stage: int) -> str:
+    goal = STAGE_GUIDE[next_stage][0]
+    target = "把五個階段收尾、整理最終題目" if next_stage >= COMPLETED_STAGE else f"進到第 {next_stage} 階段「{goal}」"
+    return (f"【可以前進（給你的內部指示，不要寫進回覆）】題目卡上這一階段需要的內容都已採用。"
+            f"回覆最後的問題改成：要不要{target}？用一句話說明那一步要做什麼。不要說已經切換，切換由學習者決定。")
+
+
 def _review_instruction(review: RevisionReview) -> str:
     changed = "、".join(_REVIEW_FIELD_NAMES[field] for field in review.changed)
     stages = "、".join(str(stage) for stage in review.stages)
@@ -537,8 +603,14 @@ def render_card_prompt(state: TopicCardState | None) -> str:
          "若學習者提到已淘汰的題目，提醒當初是在第幾階段淘汰的。對學習者說「第幾階段」，不要說「關」「篩子」或內部名稱。"),
     ]
     focus = current_focus(state)
+    entered = state.stage_entered is not None and state.stage_entered.stage == state.stage
+    if entered:
+        lines.append(_stage_intro_instruction(state.stage))
+    next_stage = ready_for_next(state)
     if state.review is not None:
         lines.append(_review_instruction(state.review))
+    elif not entered and next_stage is not None and state.offered_next != state.stage:
+        lines.append(_next_stage_instruction(next_stage))
     elif focus is not None:
         lines.append(
             f"【本輪缺口（給你的內部指示，不要寫進回覆）】{_focus_instruction(focus)}。只針對這一個缺口問一題，並連結到學習者最新說的話。"
@@ -652,6 +724,8 @@ _SUGGESTIONS_KEY = "_suggestions"
 # Workflow state shares the card JSON column (like suggestions), so no schema change is needed.
 _REVIEW_KEY = "_review"
 _SKIPPED_FOCUS_KEY = "_skipped_focus"
+_STAGE_ENTERED_KEY = "_stage_entered"
+_OFFERED_NEXT_KEY = "_offered_next"
 
 
 EventType = Literal["proposed", "adopted", "rejected", "stage_set", "focus_skipped", "review_set", "review_cleared",
@@ -745,10 +819,12 @@ class TopicCardStore:
         suggestions = card.pop(_SUGGESTIONS_KEY, None) or {}
         review = card.pop(_REVIEW_KEY, None)
         skipped = card.pop(_SKIPPED_FOCUS_KEY, None) or []
+        entered = card.pop(_STAGE_ENTERED_KEY, None)
+        offered = card.pop(_OFFERED_NEXT_KEY, None)
         return TopicCardState(
             stage=row[0], version=row[1], card=card, suggestions=suggestions,
             pending=_decode(row[3], None), history=_decode(row[4], []),
-            review=review, skipped_focus=skipped,
+            review=review, skipped_focus=skipped, stage_entered=entered, offered_next=offered,
         )
 
     @staticmethod
@@ -760,6 +836,10 @@ class TopicCardStore:
             stored_card[_REVIEW_KEY] = state.review.model_dump()
         if state.skipped_focus:
             stored_card[_SKIPPED_FOCUS_KEY] = state.skipped_focus
+        if state.stage_entered is not None:
+            stored_card[_STAGE_ENTERED_KEY] = state.stage_entered.model_dump()
+        if state.offered_next is not None:
+            stored_card[_OFFERED_NEXT_KEY] = state.offered_next
         return stored_card
 
     async def _write(self, connection, engine, params, state: TopicCardState) -> None:
@@ -885,7 +965,7 @@ class TopicCardStore:
         return await self._run("adopt", work)
 
     async def _update(self, operation: str, user_id: str, conversation_id: str, change, *,
-                      event: EventType, source: EventSource, focus_kind: str | None = None) -> TopicCardState | None:
+                      event: EventType | None, source: EventSource, focus_kind: str | None = None) -> TopicCardState | None:
         """Apply ``change`` to the owner's locked row and log ``event``; an unchanged result is not rewritten."""
 
         if not self._valid_scope(user_id, conversation_id):
@@ -900,7 +980,8 @@ class TopicCardStore:
                 state = change(current)
                 if state is not current:
                     await self._write(connection, engine, params, state)
-                    await self._log(connection, engine, params, event, state, source=source, focus_kind=focus_kind)
+                    if event is not None:
+                        await self._log(connection, engine, params, event, state, source=source, focus_kind=focus_kind)
                 return state
 
         return await self._run(operation, work)
@@ -949,6 +1030,26 @@ class TopicCardStore:
 
         await self._update("clear_review", user_id, conversation_id, change, event="review_cleared", source="background")
         return cleared
+
+    async def finish_turn(self, user_id: str, conversation_id: str, *, asked_before: float) -> None:
+        """After a coach turn: clear a stage opening that turn made and remember a move-on offer.
+
+        Only an opening that existed when the turn started counts as made; one
+        set while the answer streamed waits for the next turn.
+        """
+
+        def change(state: TopicCardState) -> TopicCardState:
+            updates: dict[str, Any] = {}
+            entry = state.stage_entered
+            opened = entry is not None and entry.created_at <= asked_before
+            if opened:
+                updates["stage_entered"] = None
+            elif (entry is None and state.review is None and ready_for_next(state) is not None
+                  and state.offered_next != state.stage):
+                updates["offered_next"] = state.stage
+            return state.model_copy(update=updates) if updates else state
+
+        await self._update("finish_turn", user_id, conversation_id, change, event=None, source="background")
 
     async def log_event(self, user_id: str, conversation_id: str, event: EventType, *,
                         source: EventSource, stage: int, version: int) -> None:
@@ -1008,7 +1109,9 @@ class TopicCardStore:
                 current = await self._select(connection, params, lock=engine.dialect.name == "postgresql") or TopicCardState()
                 if current.stage == stage:
                     return current
-                state = current.model_copy(update={"stage": stage})
+                state = current.model_copy(update={
+                    "stage": stage, "stage_entered": StageEntry(stage=stage, source=source, created_at=time.time()),
+                })
                 await self._write(connection, engine, params, state)
                 await self._log(connection, engine, params, "stage_set", state, source=source)
                 return state
@@ -1040,11 +1143,13 @@ async def refresh_pending_card(*, client: Any, model: str, user_id: str, convers
         if state is None:
             logger.info("topic_card.extraction_skipped reason=conversation_unavailable conversation_id=%s", conversation_id)
             return
+        asked_before = time.time() if turn_started_at is None else turn_started_at
         if state.review is not None:
-            asked_before = time.time() if turn_started_at is None else turn_started_at
             if await store.clear_review(user_id, conversation_id, asked_before=asked_before):
                 logger.info("topic_card.review_asked conversation_id=%s version=%s stages=%s",
                             conversation_id, state.review.version, ",".join(map(str, state.review.stages)))
+        if state.stage_entered is not None or ready_for_next(state) is not None:
+            await store.finish_turn(user_id, conversation_id, asked_before=asked_before)
         base = state.pending.card if state.pending else state.card
         patch = await extract_card_patch(client, model, base, messages, answer, stage=state.stage)
         if patch is None:
@@ -1072,12 +1177,52 @@ def schedule_card_refresh(**kwargs: Any) -> None:
     task.add_done_callback(_background_tasks.discard)
 
 
-async def load_card_prompt(user_id: str, conversation_id: str, store: TopicCardStore | None = None) -> str:
-    """Prompt block for this turn; empty when storage is unavailable or the scope is not the user's."""
+_STAGE_NUMBERS = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5}
+_MOVE = r"(?:進到|进到|進入|进入|進|进|到|去|前往|切換到|切换到|跳到|回到|開始|开始|move\s+to|go\s+to|go\s+back\s+to)"
+_STAGE_REQUEST_PATTERNS = (
+    re.compile(_MOVE + r"\s*第?\s*([1-5一二三四五])\s*(?:個|个)?\s*(?:階段|阶段)"),
+    re.compile(_MOVE + r"\s*第?\s*(?:階段|阶段)\s*([1-5一二三四五])"),
+    re.compile(_MOVE + r"\s*stage\s*([1-5])", re.IGNORECASE),
+)
+_NEXT_STAGE_PATTERN = re.compile(_MOVE + r"\s*(?:下一(?:個|个)?\s*(?:階段|阶段)|the\s+next\s+stage)", re.IGNORECASE)
+_FINISH_PATTERN = re.compile(r"整理最終題目|整理最终题目|wrap up the five stages", re.IGNORECASE)
+
+
+def requested_stage(message: str, current: int) -> int | None:
+    """The stage the learner explicitly asks to move to in chat, or ``None``.
+
+    Only a movement verb plus a stage counts ("我們到第五階段好了", "進下一階段");
+    asking about a stage ("第 4 階段要做什麼？") does not switch anything.
+    """
+
+    text_ = (message or "")[:500]
+    for pattern in _STAGE_REQUEST_PATTERNS:
+        match = pattern.search(text_)
+        if match:
+            target = _STAGE_NUMBERS[match.group(1)]
+            return target if target != current else None
+    if _NEXT_STAGE_PATTERN.search(text_) and current < COMPLETED_STAGE:
+        return current + 1
+    if _FINISH_PATTERN.search(text_) and current == FINAL_STAGE:
+        return COMPLETED_STAGE
+    return None
+
+
+async def load_card_prompt(user_id: str, conversation_id: str, store: TopicCardStore | None = None,
+                           *, last_user_msg: str = "") -> str:
+    """Prompt block for this turn; empty when storage is unavailable or the scope is not the user's.
+
+    A stage the learner explicitly requests in ``last_user_msg`` is applied first
+    (source ``chat``), so this turn already opens the new stage.
+    """
 
     store = store or topic_card_store
     try:
         state = await store.load(user_id, conversation_id)
+        target = requested_stage(last_user_msg, state.stage) if state is not None else None
+        if target is not None:
+            state = await store.set_stage(user_id, conversation_id, target, source="chat") or state
+            logger.info("topic_card.stage_requested_in_chat conversation_id=%s stage=%s", conversation_id, target)
         if state is not None:
             focus = current_focus(state)
             logger.info("topic_card.prompt_steer conversation_id=%s stage=%s steer=%s focus_kind=%s",

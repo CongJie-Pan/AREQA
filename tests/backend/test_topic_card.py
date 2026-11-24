@@ -360,7 +360,7 @@ async def test_coach_context_includes_card_prompt_and_chat_does_not():
     with patch("services.conversation.context.load_card_prompt", loader):
         coach, chat = await build("research_coach"), await build("general")
     assert "選題題目卡" not in chat
-    loader.assert_awaited_once_with("u", "c")
+    loader.assert_awaited_once_with("u", "c", last_user_msg="hi")
     # The coach block and card come last, after every general style rule, and the
     # per-turn depth overlay that produced report-length answers is not applied.
     assert coach.rstrip().endswith("【選題題目卡（測試）】")
@@ -953,3 +953,112 @@ async def test_api_returns_the_owner_event_timeline(api, monkeypatch):
     monkeypatch.setattr(settings, "enable_topic_card_event_log_api", True)
     current["user"] = other
     assert (await client.get(f"/api/v1/research-coach/{conversation}/card/log")).status_code == 404
+
+
+# --- C: stage guidance in the conversation ----------------------------------------------------
+
+
+@pytest.mark.parametrize(("message", "current", "expected"), [
+    ("我們到第五階段好了", 4, 5),
+    ("好 目前我們到第階段4了 之後呢 ?", 3, 4),
+    ("好，進下一階段", 2, 3),
+    ("我想回到第 2 階段看看", 4, 2),
+    ("Let's move to stage 3", 2, 3),
+    ("好，五個階段都談完了，幫我整理最終題目", 5, 6),
+    ("第 4 階段要做什麼？", 3, None),  # asking is not moving
+    ("我想先進行第 3 階段的討論", 2, None),  # 進行 is not a move
+    ("我們到第 3 階段", 3, None),  # already there
+    ("整理最終題目", 2, None),  # only after stage 5
+    ("", 1, None),
+])
+def test_requested_stage_needs_an_explicit_move(message, current, expected):
+    assert topic_card.requested_stage(message, current) == expected
+
+
+@pytest.mark.parametrize(("stage", "card", "history", "expected"), [
+    (1, TopicCard(pain_point="p", candidates=["A"], ai_candidates=["A"]), [], None),
+    (1, TopicCard(pain_point="p", candidates=["A", "我的題目"], ai_candidates=["A"]), [], 2),
+    (2, TopicCard(candidates=["A"]), [], None),
+    (2, TopicCard(candidates=["A"]), [topic_card.HistoryEntry(version=1, stage=2, confirmed_at=1)], 3),
+    (3, TopicCard(mother_question="m"), [], 4),
+    (4, TopicCard(operationalization=[OperationalTerm(term="甲", measure="m"), OperationalTerm(term="乙")]), [], None),
+    (4, TopicCard(operationalization=[OperationalTerm(term="甲", measure="m")]), [], 5),
+    (5, TopicCard(feasibility=[FeasibilityItem(key=key) for key in topic_card.FEASIBILITY_KEYS]), [], 6),
+    (COMPLETED_STAGE, TopicCard(), [], None),
+])
+def test_ready_for_next_uses_only_adopted_content(stage, card, history, expected):
+    assert topic_card.ready_for_next(TopicCardState(stage=stage, card=card, history=history)) == expected
+
+
+def test_prompt_opens_a_new_stage_with_its_goal_and_where_to_look():
+    state = TopicCardState(stage=4, stage_entered=topic_card.StageEntry(stage=4, created_at=1))
+    prompt = render_card_prompt(state)
+    assert "【進入新階段（給你的內部指示，不要寫進回覆）】" in prompt
+    assert "「看得見的證據」那一欄的關鍵詞" in prompt and "然後再問這一階段的第一個問題" in prompt
+    # An opening is not also a move-on offer.
+    assert "【可以前進" not in prompt
+
+
+def test_prompt_offers_the_next_stage_once():
+    state = TopicCardState(stage=3, card=TopicCard(mother_question="m"))
+    assert "【可以前進（給你的內部指示，不要寫進回覆）】" in render_card_prompt(state)
+    assert "要不要進到第 4 階段「幫候選題目找看得見的證據」" in render_card_prompt(state)
+    assert "【可以前進" not in render_card_prompt(state.model_copy(update={"offered_next": 3}))
+    # A pending check-back takes the turn instead.
+    reviewed = state.model_copy(update={"review": topic_card.RevisionReview(
+        version=2, changed=["mother_question"], stages=[2], created_at=1)})
+    assert "【可以前進" not in render_card_prompt(reviewed)
+
+
+@pytest.mark.asyncio
+async def test_finish_turn_clears_the_opening_then_remembers_the_offer(storage):
+    store, owner, _other, conversation = storage
+    state = await store.set_stage(owner, conversation, 3)
+    entered_at = state.stage_entered.created_at
+
+    await store.finish_turn(owner, conversation, asked_before=entered_at - 1)  # set while streaming
+    assert (await store.load(owner, conversation)).stage_entered is not None
+    await store.finish_turn(owner, conversation, asked_before=entered_at + 1)
+    assert (await store.load(owner, conversation)).stage_entered is None
+
+    await store.propose(owner, conversation, _patch(mother_question="母問題"))
+    await store.adopt(owner, conversation, 0)
+    await store.finish_turn(owner, conversation, asked_before=time_now())
+    loaded = await store.load(owner, conversation)
+    assert loaded.offered_next == 3 and loaded.card.mother_question == "母問題"
+
+
+@pytest.mark.asyncio
+async def test_chat_request_switches_stage_before_the_answer(storage, caplog):
+    store, owner, _other, conversation = storage
+    with caplog.at_level(logging.INFO):
+        prompt = await load_card_prompt(owner, conversation, store, last_user_msg=f"{PRIVATE}，我們到第五階段好了")
+
+    assert "目前階段：第 5 階段／共 5 階段" in prompt and "【進入新階段" in prompt
+    events = await store.events(owner, conversation)
+    assert [(item["event"], item["source"], item["stage"]) for item in events] == [("stage_set", "chat", 5)]
+    assert "topic_card.stage_requested_in_chat" in caplog.text and PRIVATE not in caplog.text
+
+    # Asking about a stage changes nothing.
+    await load_card_prompt(owner, conversation, store, last_user_msg="第 2 階段要做什麼？")
+    assert (await store.load(owner, conversation)).stage == 5
+
+
+@pytest.mark.asyncio
+async def test_refresh_finishes_the_turn_after_an_opening(storage):
+    store, owner, _other, conversation = storage
+    state = await store.set_stage(owner, conversation, 2)
+    await refresh_pending_card(client=_client(json.dumps({"change_note": ""})), model="m", user_id=owner,
+                               conversation_id=conversation, messages=[], answer="a",
+                               turn_started_at=state.stage_entered.created_at + 1, store=store)
+    assert (await store.load(owner, conversation)).stage_entered is None
+
+
+@pytest.mark.asyncio
+async def test_api_card_reports_the_next_stage_when_ready(api):
+    client, _current, owner, _other, conversation, store = api
+    await store.set_stage(owner, conversation, 3)
+    assert (await client.get(f"/api/v1/research-coach/{conversation}/card")).json()["next_stage"] is None
+    await store.propose(owner, conversation, _patch(mother_question="母問題"))
+    await store.adopt(owner, conversation, 0)
+    assert (await client.get(f"/api/v1/research-coach/{conversation}/card")).json()["next_stage"] == 4

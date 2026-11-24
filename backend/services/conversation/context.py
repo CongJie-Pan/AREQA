@@ -290,7 +290,7 @@ class ConversationContextService:
         if topic_finder:
             # The learner-confirmed stage decides which questions the coach may ask.
             system_prompt += render_prompt_profile(tutor_profile)
-            system_prompt += await load_card_prompt(user_id, conversation_id)
+            system_prompt += await load_card_prompt(user_id, conversation_id, last_user_msg=last_user_msg)
 
         new_messages.insert(0, {"role": "system", "content": system_prompt})
         return ConversationContext(new_messages, "unknown", retrieved_memory)

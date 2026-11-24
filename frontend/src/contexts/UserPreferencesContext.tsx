@@ -163,6 +163,10 @@ export type TranslationKey =
   | 'topicCardProgress'
   | 'topicCardOperationalization'
   | 'topicCardMeasureMissing'
+  | 'topicStageMoveButton'
+  | 'topicStageMoveMessage'
+  | 'topicStageFinishButton'
+  | 'topicStageFinishMessage'
   | 'topicCardFocusLabel'
   | 'topicCardFocusSkip'
   | 'topicCardFocusSkipHint'
@@ -647,6 +651,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardProgress: "進度",
     topicCardOperationalization: "怎麼證明（每個關鍵詞用什麼證據看）",
     topicCardMeasureMissing: "還沒想好用什麼證據",
+    topicStageMoveButton: "前往第 {n} 階段：{title}",
+    topicStageMoveMessage: "好，我們進到第 {n} 階段：{title}",
+    topicStageFinishButton: "五個階段都談完了：整理最終題目",
+    topicStageFinishMessage: "好，五個階段都談完了，幫我整理最終題目",
     topicCardFocusLabel: "這輪先看：",
     topicCardFocusSkip: "換一個",
     topicCardFocusSkipHint: "這不是你現在的重點？先放著，教練會改問別的。卡片上仍會保留提醒。",
@@ -1097,6 +1105,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardProgress: "进度",
     topicCardOperationalization: "怎么证明（每个关键词用什么证据看）",
     topicCardMeasureMissing: "还没想好用什么证据",
+    topicStageMoveButton: "前往第 {n} 阶段：{title}",
+    topicStageMoveMessage: "好，我们进到第 {n} 阶段：{title}",
+    topicStageFinishButton: "五个阶段都谈完了：整理最终题目",
+    topicStageFinishMessage: "好，五个阶段都谈完了，帮我整理最终题目",
     topicCardFocusLabel: "这轮先看：",
     topicCardFocusSkip: "换一个",
     topicCardFocusSkipHint: "这不是你现在的重点？先放着，教练会改问别的。卡片上仍会保留提醒。",
@@ -1547,6 +1559,10 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardProgress: "Progress",
     topicCardOperationalization: "How you will show it (evidence for each key term)",
     topicCardMeasureMissing: "No evidence chosen yet",
+    topicStageMoveButton: "Go to stage {n}: {title}",
+    topicStageMoveMessage: "OK, let's move to stage {n}: {title}",
+    topicStageFinishButton: "All five stages covered: wrap up your topic",
+    topicStageFinishMessage: "OK, let's wrap up the five stages",
     topicCardFocusLabel: "Next up: ",
     topicCardFocusSkip: "Something else",
     topicCardFocusSkipHint: "Not your focus right now? Set it aside and the coach will ask about something else. The card keeps the reminder.",

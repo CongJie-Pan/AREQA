@@ -204,6 +204,31 @@ test('@smoke the draft asks one question and 不需要 clears it without a new v
   await expect(card.getByText('回覆策略與反思')).toHaveCount(0);
 });
 
+test('@smoke the chat nudge moves to the next stage as a learner message', async ({ page }) => {
+  const { streamRequests } = await mockBackend(page);
+  const card = { ...empty, mother_question: '學生願不願意接受 AI 先分流？' };
+  let state: Record<string, unknown> = { stage: 3, version: 2, card, pending: null, history: [], next_stage: null };
+  await page.route('**/api/research-coach/*/card', (route) => route.fulfill({ json: state }));
+
+  await page.goto('/');
+  await startTopicFinder(page);
+  await send(page, '我的母問題是：學生願不願意接受 AI 先分流？');
+  await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
+
+  // The learner adopted the mother question; the card now covers stage 3.
+  state = { ...state, next_stage: 4 };
+  const nudge = page.getByRole('button', { name: '前往第 4 階段：幫候選題目找「看得見的證據」' });
+  await expect(nudge).toBeVisible({ timeout: 15_000 });
+  // The backend applies the explicit request before answering.
+  state = { ...state, stage: 4, next_stage: null };
+  await nudge.click();
+
+  await expect(page.getByText('回覆第2輪', { exact: true })).toBeVisible();
+  expect(streamRequests[1].messages.at(-1)?.content).toBe('好，我們進到第 4 階段：幫候選題目找「看得見的證據」');
+  await expect(page.locator('.areqa-topic-finder-badge')).toContainText('第 4 階段', { timeout: 15_000 });
+  await expect(page.getByRole('button', { name: /前往第/ })).toHaveCount(0);
+});
+
 test('@smoke Chat stays separate and ordinary chat still works', async ({ page }) => {
   const { streamRequests } = await mockBackend(page);
   await page.goto('/');
