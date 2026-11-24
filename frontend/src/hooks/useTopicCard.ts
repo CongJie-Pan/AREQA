@@ -1,8 +1,7 @@
 'use client';
 
 /**
- * Load the Topic Finder card for one conversation, adopt or decline drafts, pick stages,
- * and set the coach's focus gap aside.
+ * Load the Topic Finder card for one conversation, adopt or decline drafts, and pick stages.
  *
  * The backend refreshes the pending draft in the background after each answer,
  * so the card is re-read a few seconds after streaming ends. Failures leave the
@@ -17,7 +16,6 @@ import {
   fetchTopicCard,
   rejectTopicCardDraft,
   setTopicCardStage,
-  skipTopicCardFocus,
   type TopicCardFailure,
   type TopicCardState,
 } from '@/services/topicCard';
@@ -31,12 +29,11 @@ export type RejectOutcome = 'rejected' | 'stale' | 'failed';
 export interface UseTopicCardResult {
   state: TopicCardState | null;
   failure: TopicCardFailure | null;
-  /** True while adopting or declining a draft, switching stage, or setting a focus aside. */
+  /** True while adopting or declining a draft or switching stage. */
   isSaving: boolean;
   adopt: () => Promise<AdoptOutcome>;
   reject: () => Promise<RejectOutcome>;
   goToStage: (stage: number) => Promise<boolean>;
-  skipFocus: (gapId: string) => Promise<boolean>;
   reload: () => void;
 }
 
@@ -130,21 +127,5 @@ export function useTopicCard(conversationId: string | null, enabled: boolean): U
     }
   }, [conversationId, isSaving, state]);
 
-  const skipFocus = useCallback(async (gapId: string): Promise<boolean> => {
-    if (!conversationId || !state || isSaving) return false;
-    setIsSaving(true);
-    try {
-      const next = await skipTopicCardFocus(conversationId, gapId);
-      requestRef.current += 1;
-      setState(next);
-      setFailure(null);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      setIsSaving(false);
-    }
-  }, [conversationId, isSaving, state]);
-
-  return { state, failure, isSaving, adopt, reject, goToStage, skipFocus, reload: load };
+  return { state, failure, isSaving, adopt, reject, goToStage, reload: load };
 }

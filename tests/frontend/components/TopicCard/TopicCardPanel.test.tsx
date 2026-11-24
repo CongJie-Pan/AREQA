@@ -23,13 +23,14 @@ function renderPanel(overrides: Partial<UseTopicCardResult> = {}, onClose?: () =
   const topicCard: UseTopicCardResult = {
     state: state(), failure: null, isSaving: false,
     adopt: vi.fn().mockResolvedValue('adopted'), reject: vi.fn().mockResolvedValue('rejected'),
-    goToStage: vi.fn().mockResolvedValue(true),
-    skipFocus: vi.fn().mockResolvedValue(true), reload: vi.fn(),
+    goToStage: vi.fn().mockResolvedValue(true), reload: vi.fn(),
     ...overrides,
   };
   render(<UserPreferencesProvider><App><TopicCardPanel topicCard={topicCard} onClose={onClose} onExploreCandidate={onExploreCandidate} /></App></UserPreferencesProvider>);
   return topicCard;
 }
+
+const otherRecords = () => screen.getByText('其他紀錄').closest('details')!;
 
 describe('TopicCardPanel', () => {
   beforeEach(() => {
@@ -37,13 +38,17 @@ describe('TopicCardPanel', () => {
     window.localStorage.setItem('areqa:interface-language', 'zh-TW');
   });
 
-  it('shows the stage, its one-line goal and subtitle, without the old question block', () => {
+  it('names the stage in one line and leaves explanations to the conversation', () => {
     renderPanel({ state: state({ stage: 2 }) });
 
-    expect(screen.getByText('第 2 階段')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '有沒有很簡單的解法？' })).toBeInTheDocument();
-    expect(screen.getByText(/一個現成工具、現有論文或研究成果/)).toBeInTheDocument();
-    expect(screen.queryByText(/這一關要回答|為什麼要問這個|關／共/)).not.toBeInTheDocument();
+    const line = document.querySelector('.areqa-topic-card-stage-line')!;
+    expect(line).toHaveTextContent('第 2 階段 · 有沒有很簡單的解法？');
+    // The subtitle is only a tooltip now; no hint text, focus line, or next-stage button on the card.
+    expect(line).toHaveAttribute('title', expect.stringContaining('一個現成工具、現有論文或研究成果'));
+    expect(screen.queryByText(/一個現成工具、現有論文或研究成果/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/要不要採用、何時換階段都由你決定/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /下一階段/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/這輪先看/)).not.toBeInTheDocument();
   });
 
   it('lets the learner jump to any stage from the stepper', async () => {
@@ -57,31 +62,32 @@ describe('TopicCardPanel', () => {
     expect(topicCard.goToStage).toHaveBeenCalledTimes(1);
   });
 
-  it('moves to the next stage without a draft, and keeps that action quieter when a draft is shown', async () => {
-    const topicCard = renderPanel({ state: state({ stage: 3 }) });
-    fireEvent.click(screen.getByRole('button', { name: '下一階段 →' }));
-    await waitFor(() => expect(topicCard.goToStage).toHaveBeenCalledWith(4));
-    expect(screen.queryByRole('button', { name: '需要' })).not.toBeInTheDocument();
+  it('heads the card with the mother question, falling back to the pain point', () => {
+    renderPanel({ state: state({ stage: 3, card: fullCard }) });
+    expect(document.querySelector('.areqa-topic-card-headline')).toHaveTextContent('AI 的答覆如何影響思辨');
+    expect(document.querySelector('.areqa-topic-card-subline')).toHaveTextContent('系統和 Gemini 差不多');
+
+    renderPanel({ state: state({ stage: 1, card: { ...empty, pain_point: '只寫了痛點' } }) });
+    expect(screen.getByText('只寫了痛點')).toHaveClass('areqa-topic-card-headline');
+
+    renderPanel({ state: state() });
+    expect(screen.getByText('還沒有內容。在對話裡說說你卡在哪裡，AI 整理好後會請你確認。')).toBeInTheDocument();
   });
 
-  it('opens fields at their stage, but keeps fields that already have content', () => {
-    renderPanel({ state: state({ stage: 1, card: { ...fullCard, operationalization: [] } }) });
-    expect(screen.getByText('系統和 Gemini 差不多')).toBeInTheDocument();
-    // Jumped back from stage 3: the mother question stays visible.
-    expect(screen.getByText('AI 的答覆如何影響思辨')).toBeInTheDocument();
-    expect(screen.queryByText(/怎麼證明（/)).not.toBeInTheDocument();
-    expect(screen.queryByText('可行性檢查')).not.toBeInTheDocument();
-  });
+  it('keeps only the current stage field open and folds the rest into one line', () => {
+    renderPanel({ state: state({ stage: 4, version: 4, card: fullCard, history: [{ version: 4, stage: 4, note: '加入關鍵詞', confirmed_at: 1 }] }) });
 
-  it('shows measures from stage 4 and marks terms without evidence with ⚠️', () => {
-    renderPanel({ state: state({ stage: 4, version: 4, card: fullCard }) });
+    const field = screen.getByRole('region', { name: '看得見的證據' });
+    expect(field).toHaveTextContent('⚠️ 還沒想好用什麼證據');
+    expect(field).toHaveTextContent('追問次數');
+    expect(field).not.toHaveTextContent('回覆策略與反思深度');
 
-    expect(screen.getByText('怎麼證明（每個關鍵詞用什麼證據看）')).toBeInTheDocument();
-    expect(screen.getByText('⚠️ 還沒想好用什麼證據')).toBeInTheDocument();
-    expect(screen.getByText('追問次數')).toBeInTheDocument();
-    expect(screen.getByText('淘汰的題目 (1)')).toBeInTheDocument();
-    expect(screen.getByText('第 2 階段淘汰 · 現成工具已解決 · 之後可以再回來')).toBeInTheDocument();
-    expect(screen.getByText('我的反問 (1)')).toBeInTheDocument();
+    const more = otherRecords();
+    expect(more).not.toHaveAttribute('open');
+    expect(more.querySelector('summary')).toHaveTextContent('其他紀錄候選題目 · 淘汰 1 · 反問 1 · 版本 1');
+    expect(within(more).getByText('第 2 階段淘汰 · 現成工具已解決 · 之後可以再回來')).toBeInTheDocument();
+    expect(within(more).getByText('一直被問會煩')).toBeInTheDocument();
+    expect(within(more).getByText('v4 · 第 4 階段：加入關鍵詞')).toBeInTheDocument();
     expect(screen.getByText('版本 v4')).toBeInTheDocument();
   });
 
@@ -90,52 +96,42 @@ describe('TopicCardPanel', () => {
       { key: 'data', status: 'blocked', note: '韓文資料讀不懂' }, { key: 'time', status: 'ok', note: '' },
     ] } }) });
 
-    expect(screen.getByText('可行性檢查')).toBeInTheDocument();
-    const rows = document.querySelectorAll('.areqa-topic-card-feasibility li');
+    const field = screen.getByRole('region', { name: '可行性檢查' });
+    const rows = field.querySelectorAll('.areqa-topic-card-feasibility li');
     expect([...rows].map((row) => row.getAttribute('data-status'))).toEqual(['ok', 'blocked', 'missing', 'missing', 'missing']);
-    expect(screen.getByText('研究倫理')).toBeInTheDocument();
-    expect(screen.getByText('韓文資料讀不懂')).toBeInTheDocument();
-    expect(screen.getAllByText('⚠️ 還沒討論')).toHaveLength(3);
-    expect(screen.getByText('❌ 有困難')).toBeInTheDocument();
+    expect(within(field).getByText('研究倫理')).toBeInTheDocument();
+    expect(within(field).getByText('韓文資料讀不懂')).toBeInTheDocument();
+    expect(within(field).getAllByText('⚠️ 還沒討論')).toHaveLength(3);
+    expect(within(field).getByText('❌ 有困難')).toBeInTheDocument();
   });
 
-  it('shows AI search hints at stage 1 and copies a keyword', async () => {
+  it('shows copyable search keywords only in stages 1 and 2', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
-    renderPanel({ state: state({ suggestions: { keywords: ['韓國 避險外交'], gaps: ['國內因素的作用是否被低估？'], related: ['日韓關係'] } }) });
+    const suggestions = { keywords: ['韓國 避險外交'], gaps: ['國內因素的作用是否被低估？'], related: ['日韓關係'] };
+    renderPanel({ state: state({ stage: 2, suggestions }) });
 
-    expect(screen.getByText('AI 建議（參考用，請自己查證）')).toBeInTheDocument();
-    expect(screen.getByText('國內因素的作用是否被低估？')).toBeInTheDocument();
-    expect(screen.getByText('日韓關係')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '複製關鍵字：韓國 避險外交' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('韓國 避險外交'));
-  });
-
-  it('keeps only keywords at stage 2 and hides hints from stage 3', () => {
-    const suggestions = { keywords: ['hedging South Korea'], gaps: ['缺口？'], related: ['相關'] };
-    renderPanel({ state: state({ stage: 2, suggestions }) });
-    expect(screen.getByText('hedging South Korea')).toBeInTheDocument();
-    expect(screen.queryByText('缺口？')).not.toBeInTheDocument();
+    // Possible gaps and related topics are no longer shown on the card.
+    expect(screen.queryByText('國內因素的作用是否被低估？')).not.toBeInTheDocument();
+    expect(screen.queryByText('日韓關係')).not.toBeInTheDocument();
 
     renderPanel({ state: state({ stage: 3, suggestions }) });
-    expect(screen.getAllByText('hedging South Korea')).toHaveLength(1);
+    expect(screen.getAllByText('韓國 避險外交')).toHaveLength(1);
   });
 
-  it('asks about candidate drafts as one question with both answers inside the box', async () => {
+  it('asks about a candidate draft listing only the new candidates', async () => {
     const topicCard = renderPanel({ state: state({
-      card: { ...empty, pain_point: '已確認的痛點' },
-      pending: { card: { ...empty, pain_point: '已確認的痛點', candidates: ['候選 A', '候選 B'] }, notes: ['加入候選'] },
+      card: { ...empty, pain_point: '已確認的痛點', candidates: ['舊候選'] },
+      pending: { card: { ...empty, pain_point: '已確認的痛點', candidates: ['舊候選', '候選 A'], ai_candidates: ['候選 A'] }, notes: ['加入候選'] },
     }) });
 
-    const draft = screen.getByRole('group', { name: 'AI 幫你整理了以下候選題目，要列入下方「目前的題目」的候選清單嗎？' });
-    expect(draft).toHaveTextContent('候選 A');
+    const draft = screen.getByRole('group', { name: 'AI 幫你整理了以下候選題目，要加入題目卡的候選清單嗎？' });
+    expect(within(draft).getByText('候選 A')).toBeInTheDocument();
+    expect(within(draft).getByText('AI 提議')).toBeInTheDocument();
+    expect(draft).not.toHaveTextContent('舊候選');
     expect(draft).not.toHaveTextContent('已確認的痛點');
-    expect(within(draft).getByRole('button', { name: '需要' })).toBeInTheDocument();
-    expect(within(draft).getByRole('button', { name: '不需要' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '我再想想' })).not.toBeInTheDocument();
-    // Moving on is not an answer to the draft, so it stays outside the box.
-    expect(within(draft).queryByRole('button', { name: '下一階段 →' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '下一階段 →' })).toHaveClass('areqa-topic-card-next');
 
     fireEvent.click(within(draft).getByRole('button', { name: '需要' }));
     await waitFor(() => expect(topicCard.adopt).toHaveBeenCalledTimes(1));
@@ -143,9 +139,37 @@ describe('TopicCardPanel', () => {
     expect(topicCard.goToStage).not.toHaveBeenCalled();
   });
 
-  it('uses the general question when the draft changes more than candidates', () => {
-    renderPanel({ state: state({ pending: { card: { ...empty, pain_point: '草稿痛點', candidates: ['A'] }, notes: [] } }) });
-    expect(screen.getByRole('group', { name: 'AI 幫你整理了以下內容，要更新到下方「目前的題目」嗎？' })).toHaveTextContent('草稿痛點');
+  it('lists only changed measures, removed candidates, and newly dropped topics', () => {
+    renderPanel({ state: state({
+      stage: 4,
+      card: { ...fullCard },
+      pending: { card: {
+        ...fullCard,
+        candidates: [],
+        operationalization: [...fullCard.operationalization, { term: '信任', measure: '' }],
+        discarded: [...fullCard.discarded, { topic: '回覆策略與反思深度', filter: 4, reason: '太大', can_return: false }],
+      }, notes: [] },
+    }) });
+
+    const draft = screen.getByRole('group', { name: 'AI 幫你整理了以下內容，要更新到題目卡嗎？' });
+    const lines = [...draft.querySelectorAll('.areqa-topic-card-draft-lines li')].map((line) => line.textContent);
+    // The dropped candidate shows once, as a set-aside topic, not also as a removal.
+    expect(lines).toEqual(['看得見的證據信任 ⚠️ 還沒想好用什麼證據', '淘汰的題目回覆策略與反思深度（太大）']);
+    expect(draft).not.toHaveTextContent('認知投入');
+  });
+
+  it('marks a candidate the draft would remove', () => {
+    renderPanel({ state: state({
+      card: { ...empty, candidates: ['A', 'B'] },
+      pending: { card: { ...empty, candidates: ['A'] }, notes: [] },
+    }) });
+    const line = document.querySelector('.areqa-topic-card-draft-lines li[data-change="remove"]');
+    expect(line).toHaveTextContent('從候選題目移除B');
+  });
+
+  it('falls back to the draft notes when nothing visible changes', () => {
+    renderPanel({ state: state({ pending: { card: { ...empty }, notes: ['整理了反問'] } }) });
+    expect(screen.getByRole('group', { name: /要更新到題目卡/ })).toHaveTextContent('整理了反問');
   });
 
   it('declines the draft with 不需要 and leaves the adopted card alone', async () => {
@@ -169,14 +193,13 @@ describe('TopicCardPanel', () => {
     renderPanel({ state: state({
       pending: { card: { ...empty, pain_point: '痛點', operationalization: [{ term: '聯盟形成動機', measure: '制衡與扈從' }] }, notes: [] },
     }) });
-    expect(screen.queryByText('聯盟形成動機')).not.toBeInTheDocument();
+    expect(screen.queryByText(/聯盟形成動機/)).not.toBeInTheDocument();
   });
 
   it('disables the actions while saving', () => {
     renderPanel({ isSaving: true, state: state({ pending: { card: { ...empty, pain_point: '草稿' }, notes: [] } }) });
     expect(screen.getByRole('button', { name: '需要' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '不需要' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '下一階段 →' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '切換到第 2 階段：有沒有很簡單的解法？' })).toBeDisabled();
   });
 
@@ -189,7 +212,7 @@ describe('TopicCardPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('題目卡已有更新');
 
     renderPanel({ goToStage: vi.fn().mockResolvedValue(false) });
-    fireEvent.click(screen.getAllByRole('button', { name: '下一階段 →' }).at(-1)!);
+    fireEvent.click(screen.getAllByRole('button', { name: '切換到第 3 階段：你真正想知道的是什麼？' }).at(-1)!);
     expect(await screen.findByText('切換階段失敗，請稍後再試。')).toBeInTheDocument();
   });
 
@@ -197,9 +220,11 @@ describe('TopicCardPanel', () => {
     renderPanel({ state: null, failure: 'not_synced' });
     expect(screen.getByRole('status')).toHaveTextContent('對話同步完成後即可使用題目卡');
 
-    renderPanel({ state: state({ stage: 6, version: 6 }) });
+    renderPanel({ state: state({ stage: 6, version: 6, card: fullCard }) });
     expect(screen.getByText('你已走完五個階段')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '下一階段 →' })).not.toBeInTheDocument();
+    // Done: no stage field; everything stays reachable under other records.
+    expect(screen.queryByRole('region', { name: '候選題目' })).not.toBeInTheDocument();
+    expect(otherRecords().querySelector('summary')).toHaveTextContent('候選題目 · 看得見的證據');
     // The stepper still lets the learner revisit any stage.
     expect(screen.getByRole('button', { name: '切換到第 3 階段：你真正想知道的是什麼？' })).toBeEnabled();
   });
@@ -207,7 +232,7 @@ describe('TopicCardPanel', () => {
   it('tags candidates the AI proposed, in the draft and on the card', () => {
     renderPanel({ state: state({
       card: { ...empty, candidates: ['AI 列的題目', '我自己的題目'], ai_candidates: ['AI 列的題目'] },
-      pending: { card: { ...empty, candidates: ['AI 新題目'], ai_candidates: ['AI 新題目'] }, notes: [] },
+      pending: { card: { ...empty, candidates: ['AI 列的題目', '我自己的題目', 'AI 新題目'], ai_candidates: ['AI 列的題目', 'AI 新題目'] }, notes: [] },
     }) });
     const tags = screen.getAllByText('AI 提議');
     expect(tags).toHaveLength(2);
@@ -242,42 +267,5 @@ describe('TopicCardPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '收合題目卡' }));
     expect(onClose).toHaveBeenCalled();
-  });
-  it('shows the coach focus quietly and lets the learner set it aside', async () => {
-    const focus = { id: 'measure:3fa2b1c09d8e', kind: 'measure' as const, term: '反思深度' };
-    const topicCard = renderPanel({ state: state({ stage: 4, card: fullCard, focus }) });
-
-    expect(screen.getByText('這輪先看：「反思深度」要用什麼證據看出來')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '換一個' }));
-    await waitFor(() => expect(topicCard.skipFocus).toHaveBeenCalledWith(focus.id));
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-  });
-
-  it('names feasibility focus items with their label, not the internal key', () => {
-    renderPanel({ state: state({ stage: 5, focus: { id: 'feasibility_unsure:ethics', kind: 'feasibility_unsure', term: 'ethics' } }) });
-    expect(screen.getByText('這輪先看：可行性：研究倫理還缺什麼才能確定')).toBeInTheDocument();
-    expect(screen.queryByText(/ethics/)).not.toBeInTheDocument();
-  });
-
-  it('reports a failed set-aside without losing the card', async () => {
-    const focus = { id: 'mother_question', kind: 'mother_question' as const, term: '' };
-    renderPanel({ state: state({ stage: 3, focus }), skipFocus: vi.fn().mockResolvedValue(false) });
-    fireEvent.click(screen.getByRole('button', { name: '換一個' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('暫時無法更換，請稍後再試。');
-    expect(screen.getByText('這輪先看：拿掉工具和案例，你真正想知道什麼')).toBeInTheDocument();
-  });
-
-  it('shows the pending check-back instead of the focus after a revision', () => {
-    const focus = { id: 'mother_question', kind: 'mother_question' as const, term: '' };
-    renderPanel({ state: state({
-      stage: 3, focus, review: { version: 3, changed: ['mother_question'], stages: [2, 4], created_at: 1 },
-    }) });
-    expect(screen.getByText('你剛改了題目，教練下一輪會先陪你回頭看第 2、4 階段還成不成立。')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '換一個' })).not.toBeInTheDocument();
-  });
-
-  it('shows no focus line for older backends or when the topic is done', () => {
-    renderPanel({ state: state({ stage: 6, focus: { id: 'candidates', kind: 'candidates', term: '' } }) });
-    expect(screen.queryByText(/這輪先看/)).not.toBeInTheDocument();
   });
 });

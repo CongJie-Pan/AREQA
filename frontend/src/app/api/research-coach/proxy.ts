@@ -9,13 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/utils';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Mirrors the backend's focus id format; ids never carry card text. */
-const FOCUS_ID_PATTERN = /^[a-z_]{1,40}(:[a-z0-9_]{1,40})?$/;
 
 /** Browser-facing action → FastAPI path segment. */
-const UPSTREAM_PATH = {
-  card: 'card', log: 'card/log', confirm: 'confirm', reject: 'reject', stage: 'stage', focus: 'focus/skip',
-} as const;
+const UPSTREAM_PATH = { card: 'card', log: 'card/log', confirm: 'confirm', reject: 'reject', stage: 'stage' } as const;
 /** Read-only actions forward a GET with no body. */
 const READ_ACTIONS = new Set<keyof typeof UPSTREAM_PATH>(['card', 'log']);
 
@@ -38,10 +34,6 @@ export async function proxyTopicCard(
         const version = payload?.version;
         if (!Number.isInteger(version) || Number(version) < 0) throw new Error('Invalid version');
         body = JSON.stringify({ version });
-      } else if (action === 'focus') {
-        const gapId = payload?.gap_id;
-        if (typeof gapId !== 'string' || !FOCUS_ID_PATTERN.test(gapId)) throw new Error('Invalid focus');
-        body = JSON.stringify({ gap_id: gapId });
       } else {
         const stage = payload?.stage;
         if (!Number.isInteger(stage) || Number(stage) < 1 || Number(stage) > 6) throw new Error('Invalid stage');

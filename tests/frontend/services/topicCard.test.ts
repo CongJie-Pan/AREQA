@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import {
-  TopicCardError, adoptTopicCardDraft, fetchTopicCard, rejectTopicCardDraft, setTopicCardStage, skipTopicCardFocus,
-  visibleCard,
+  TopicCardError, adoptTopicCardDraft, fetchTopicCard, rejectTopicCardDraft, setTopicCardStage, visibleCard,
 } from '@/services/topicCard';
-import { logger } from '@/utils/logger';
 
 vi.mock('@/services/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 vi.mock('@/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -59,22 +57,6 @@ describe('topic card service', () => {
     const [url, init] = vi.mocked(authenticatedFetch).mock.calls[0];
     expect(url).toBe('/api/research-coach/c/stage');
     expect(JSON.parse(String(init?.body))).toEqual({ stage: 4 });
-  });
-
-  it('sets a focus gap aside and logs only its kind', async () => {
-    const focus = { id: 'measure:3fa2b1c09d8e', kind: 'measure', term: 'private term' };
-    vi.mocked(authenticatedFetch).mockResolvedValue(new Response(JSON.stringify({
-      stage: 4, version: 2, card: empty, pending: null, history: [], skipped_focus: [focus.id], focus: null,
-    })));
-    const state = await skipTopicCardFocus('c', focus.id);
-    expect(state.skipped_focus).toEqual([focus.id]);
-    const [url, init] = vi.mocked(authenticatedFetch).mock.calls[0];
-    expect(url).toBe('/api/research-coach/c/focus');
-    expect(JSON.parse(String(init?.body))).toEqual({ gap_id: focus.id });
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith('topic_card_focus_skipped', { conversationId: 'c', stage: 4, kind: 'measure' });
-
-    vi.mocked(authenticatedFetch).mockResolvedValueOnce(new Response('{}', { status: 404 }));
-    await expect(skipTopicCardFocus('c', focus.id)).rejects.toMatchObject({ reason: 'not_synced' });
   });
 
   it('shows the pending draft when one exists', () => {

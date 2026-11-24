@@ -472,7 +472,7 @@ async def test_api_reports_unavailable_storage(api):
 
 
 @pytest.mark.parametrize(("stage", "opened"), [
-    (1, {"keywords", "gaps", "related"}),
+    (1, {"keywords"}),
     (2, {"keywords"}),
     (3, {"mother_question"}),
     (4, {"mother_question", "operationalization"}),
@@ -726,28 +726,29 @@ async def test_completion_passes_turn_start_for_review_clearing():
 
 
 @pytest.mark.asyncio
-async def test_api_returns_focus_and_sets_it_aside(api, caplog):
-    client, current, owner, other, conversation, store = api
+async def test_api_returns_focus_and_the_learner_sets_it_aside_in_chat(api, caplog):
+    client, _current, owner, _other, conversation, store = api
     await store.set_stage(owner, conversation, 4)
     await store.propose(owner, conversation, _patch(operationalization=[OperationalTerm(term=PRIVATE),
                                                                          OperationalTerm(term="乙")]))
-
-    card = (await client.get(f"/api/v1/research-coach/{conversation}/card")).json()
-    focus = card["focus"]
+    focus = (await client.get(f"/api/v1/research-coach/{conversation}/card")).json()["focus"]
     assert focus["kind"] == "measure" and focus["term"] == PRIVATE
 
+    # The learner says "這個先放著"; extraction flags it and the coach moves to the next gap.
     with caplog.at_level(logging.INFO):
-        skipped = await client.post(f"/api/v1/research-coach/{conversation}/focus/skip", json={"gap_id": focus["id"]})
-    assert skipped.status_code == 200
-    assert skipped.json()["focus"]["term"] == "乙" and skipped.json()["skipped_focus"] == [focus["id"]]
-    assert "topic_card.focus_skipped" in caplog.text and "focus_kind=measure" in caplog.text
+        await refresh_pending_card(client=_client(json.dumps({"focus_set_aside": True, "change_note": ""})), model="m",
+                                   user_id=owner, conversation_id=conversation,
+                                   messages=[{"role": "user", "content": "這個先放著"}], answer="好", store=store)
+    card = (await client.get(f"/api/v1/research-coach/{conversation}/card")).json()
+    assert card["focus"]["term"] == "乙" and card["skipped_focus"] == [focus["id"]]
+    assert "topic_card.focus_set_aside" in caplog.text and "focus_kind=measure" in caplog.text
     assert PRIVATE not in caplog.text
+    events = await store.events(owner, conversation)
+    assert (events[-1]["event"], events[-1]["source"], events[-1]["focus_kind"]) == ("focus_skipped", "background", "measure")
 
-    bad = await client.post(f"/api/v1/research-coach/{conversation}/focus/skip", json={"gap_id": "<script>"})
-    assert bad.status_code == 422
-    current["user"] = other
+    # The old skip endpoint is gone; setting aside happens in the conversation.
     assert (await client.post(f"/api/v1/research-coach/{conversation}/focus/skip",
-                              json={"gap_id": focus["id"]})).status_code == 404
+                              json={"gap_id": focus["id"]})).status_code in (404, 405)
 
 
 @pytest.mark.asyncio

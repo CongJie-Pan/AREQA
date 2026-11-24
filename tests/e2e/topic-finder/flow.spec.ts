@@ -119,7 +119,7 @@ test('@smoke the topic card adopts drafts, jumps between stages, and survives a 
   await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
 
   const card = page.getByRole('region', { name: '題目卡' });
-  await expect(card.getByRole('group', { name: /目前的題目/ })).toContainText('系統和 Gemini 差不多', { timeout: 15_000 });
+  await expect(card.getByRole('group', { name: /要更新到題目卡|加入題目卡/ })).toContainText('系統和 Gemini 差不多', { timeout: 15_000 });
   await expect(card.getByText('版本 v0')).toBeVisible();
 
   await card.getByRole('button', { name: '需要', exact: true }).click();
@@ -128,11 +128,12 @@ test('@smoke the topic card adopts drafts, jumps between stages, and survives a 
 
   // Jump straight to stage 4, then back to stage 2.
   await card.getByRole('button', { name: '切換到第 4 階段：幫候選題目找「看得見的證據」' }).click();
-  await expect(card.getByRole('heading', { name: '幫候選題目找「看得見的證據」' })).toBeVisible();
+  const stageLine = card.locator('.areqa-topic-card-stage-line');
+  await expect(stageLine).toHaveText('第 4 階段 · 幫候選題目找「看得見的證據」');
   await expect(page.locator('.areqa-topic-finder-badge')).toContainText('第 4 階段');
   await card.getByRole('button', { name: '切換到第 2 階段：有沒有很簡單的解法？' }).click();
-  await expect(card.getByRole('heading', { name: '有沒有很簡單的解法？' })).toBeVisible();
-  await card.getByRole('button', { name: '下一階段 →' }).click();
+  await expect(stageLine).toHaveText('第 2 階段 · 有沒有很簡單的解法？');
+  await card.getByRole('button', { name: '切換到第 3 階段：你真正想知道的是什麼？' }).click();
   await expect(card.locator('.areqa-topic-card-step-label')).toHaveText('第 3 階段');
 
   await page.reload();
@@ -141,48 +142,39 @@ test('@smoke the topic card adopts drafts, jumps between stages, and survives a 
   await expect(page.getByRole('region', { name: '題目卡' }).getByText('系統和 Gemini 差不多')).toBeVisible();
 });
 
-test('@smoke the coach focus can be set aside and a revision shows the check-back', async ({ page }) => {
+test('@smoke the slim card shows the topic, the stage field, a one-line draft, and folds the rest', async ({ page }) => {
   await mockBackend(page);
-  const measures = [{ term: '篩選能力', measure: '' }, { term: '使用頻率', measure: '' }];
-  const card = { ...empty, mother_question: '工具代勞會不會削弱篩選能力', operationalization: measures };
-  const revised = { ...card, mother_question: '人還會發展自己的篩選能力嗎' };
-  const focuses = [
-    { id: 'measure:aaaaaaaaaaaa', kind: 'measure', term: '篩選能力' },
-    { id: 'measure:bbbbbbbbbbbb', kind: 'measure', term: '使用頻率' },
-  ];
-  const skipped: string[] = [];
-  let state: Record<string, unknown> = {
-    stage: 4, version: 2, card, pending: { card: revised, notes: ['母問題往上抽一層'] }, history: [], focus: focuses[0],
+  const card = {
+    ...empty,
+    pain_point: '大學生在期中期末期間難以預約到校內或大安區的心理諮商資源，且現行預約機制缺乏分流，導致輕度需求與高風險個案擠在同一排隊池中。',
+    mother_question: '分流結果由誰負責，學生才會願意信任 AI 先分流？',
+    candidates: ['校園心理諮商與社區醫療體系之跨體制轉銜'],
+    operationalization: [{ term: '急迫程度', measure: '使用簡式健康量表 (BSRS-5) 分數' }],
+    feasibility: [{ key: 'time', status: 'unsure', note: '只有 6 週' }],
+    discarded: [{ topic: '單純做一個 AI 分流 App', filter: 2, reason: '已有現成解法', can_return: false }],
+    objections: ['AI 會順著使用者的思緒'],
   };
-  // Routes registered later take precedence over the generic fake backend.
+  const pending = { card: { ...card, operationalization: [...card.operationalization, { term: '信任', measure: '' }] }, notes: ['加入信任'] };
+  const state = { stage: 4, version: 7, card, pending, history: [{ version: 7, stage: 4, note: '加入 BSRS-5', confirmed_at: 1 }] };
   await page.route('**/api/research-coach/*/card', (route) => route.fulfill({ json: state }));
-  await page.route('**/api/research-coach/*/focus', (route) => {
-    skipped.push(route.request().postDataJSON().gap_id);
-    state = { ...state, skipped_focus: [...skipped], focus: focuses.find((focus) => !skipped.includes(focus.id)) ?? null };
-    return route.fulfill({ json: state });
-  });
-  await page.route('**/api/research-coach/*/confirm', (route) => {
-    state = {
-      ...state, version: 3, card: revised, pending: null, focus: null,
-      review: { version: 3, changed: ['mother_question'], stages: [2, 5], created_at: 1 },
-    };
-    return route.fulfill({ json: { adopted: true, state } });
-  });
 
   await page.goto('/');
   await startTopicFinder(page);
-  await send(page, '我想把問題往上抽一層');
+  await send(page, '關鍵詞要再加上信任');
   await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
 
   const region = page.getByRole('region', { name: '題目卡' });
-  await expect(region.getByText('這輪先看：「篩選能力」要用什麼證據看出來')).toBeVisible({ timeout: 15_000 });
-  await region.getByRole('button', { name: '換一個' }).click();
-  await expect(region.getByText('這輪先看：「使用頻率」要用什麼證據看出來')).toBeVisible();
-  expect(skipped).toEqual(['measure:aaaaaaaaaaaa']);
+  await expect(region.locator('.areqa-topic-card-headline')).toHaveText(card.mother_question, { timeout: 15_000 });
+  await expect(region.getByRole('region', { name: '看得見的證據' })).toContainText('急迫程度');
+  const draft = region.getByRole('group', { name: /要更新到題目卡/ });
+  await expect(draft.locator('li')).toHaveCount(1);
+  await expect(draft).toContainText('信任');
+  await expect(draft).not.toContainText('急迫程度');
 
-  await region.getByRole('button', { name: '需要', exact: true }).click();
-  await expect(region.getByText('你剛改了題目，教練下一輪會先陪你回頭看第 2、5 階段還成不成立。')).toBeVisible();
-  await expect(region.getByRole('button', { name: '換一個' })).toHaveCount(0);
+  const more = region.locator('details.areqa-topic-card-more');
+  await expect(more.locator('summary')).toContainText('候選題目 · 可行性檢查 · 淘汰 1 · 反問 1 · 版本 1');
+  await expect(more).not.toHaveAttribute('open', '');
+  await expect(region.getByText(/這輪先看|要不要採用、何時換階段/)).toHaveCount(0);
 });
 
 test('@smoke the draft asks one question and 不需要 clears it without a new version', async ({ page }) => {
@@ -193,7 +185,7 @@ test('@smoke the draft asks one question and 不需要 clears it without a new v
   await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
 
   const card = page.getByRole('region', { name: '題目卡' });
-  const draft = card.getByRole('group', { name: 'AI 幫你整理了以下內容，要更新到下方「目前的題目」嗎？' });
+  const draft = card.getByRole('group', { name: 'AI 幫你整理了以下內容，要更新到題目卡嗎？' });
   await expect(draft).toContainText('回覆策略與反思', { timeout: 15_000 });
   await expect(draft.getByRole('button', { name: '需要', exact: true })).toBeVisible();
   await expect(card.getByRole('button', { name: '我再想想' })).toHaveCount(0);

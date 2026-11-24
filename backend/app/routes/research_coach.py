@@ -1,4 +1,4 @@
-"""Topic Finder (選題) topic-card API: read the card, adopt or decline the AI draft, pick a stage, and set a focus gap aside."""
+"""Topic Finder (選題) topic-card API: read the card and its event log, adopt or decline the AI draft, and pick a stage."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from config import settings
 from services.conversation.topic_card import (
     COMPLETED_STAGE,
     FIRST_STAGE,
-    FOCUS_ID_PATTERN,
     TopicCardUnavailable,
     TopicCardView,
     card_view,
@@ -39,11 +38,6 @@ class SetStageRequest(BaseModel):
 
     stage: int = Field(ge=FIRST_STAGE, le=COMPLETED_STAGE)
 
-
-class SkipFocusRequest(BaseModel):
-    """The focus gap id the learner set aside (ids never carry card text)."""
-
-    gap_id: str = Field(pattern=FOCUS_ID_PATTERN.pattern, max_length=81)
 
 
 @router.get("/api/v1/research-coach/{conversation_id}/card")
@@ -115,23 +109,6 @@ async def set_topic_stage(
         raise HTTPException(status_code=404, detail="Conversation not found")
     logger.info("topic_card.stage_set conversation_id=%s stage=%s version=%s",
                 conversation_id, state.stage, state.version)
-    return card_view(state)
-
-
-@router.post("/api/v1/research-coach/{conversation_id}/focus/skip")
-async def skip_topic_focus(
-    conversation_id: str, payload: SkipFocusRequest, current_user_id: str = Depends(get_current_user),
-) -> TopicCardView:
-    """Learner sets the current focus gap aside; the coach then moves to the next gap or the stage goal."""
-
-    try:
-        state = await topic_card_store.skip_focus(current_user_id, conversation_id, payload.gap_id)
-    except TopicCardUnavailable:
-        raise HTTPException(status_code=503, detail="Topic card unavailable") from None
-    if state is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    logger.info("topic_card.focus_skipped conversation_id=%s stage=%s focus_kind=%s skipped=%s",
-                conversation_id, state.stage, payload.gap_id.split(":", 1)[0], len(state.skipped_focus))
     return card_view(state)
 
 

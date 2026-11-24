@@ -116,7 +116,6 @@ export type TranslationKey =
   | 'topicFinderEmptyMethodPrompt'
   | 'topicFinderPlaceholder'
   | 'topicCardTitle'
-  | 'topicCardNextStage'
   | 'topicCardGoToStage'
   | 'topicCardAdopted'
   | 'topicCardStageFailed'
@@ -131,12 +130,9 @@ export type TranslationKey =
   | 'topicStageSub3'
   | 'topicStageSub4'
   | 'topicStageSub5'
-  | 'topicCardSuggestions'
   | 'topicCardKeywords'
   | 'topicCardKeywordCopy'
   | 'topicCardKeywordCopied'
-  | 'topicCardGaps'
-  | 'topicCardRelated'
   | 'topicCardFeasibility'
   | 'topicFeasTime'
   | 'topicFeasData'
@@ -156,37 +152,26 @@ export type TranslationKey =
   | 'topicCardDraftYes'
   | 'topicCardDraftNo'
   | 'topicCardRejected'
-  | 'topicCardCurrentTopic'
   | 'topicCardPainPoint'
   | 'topicCardMotherQuestion'
   | 'topicCardCandidates'
   | 'topicCardProgress'
   | 'topicCardOperationalization'
   | 'topicCardMeasureMissing'
+  | 'topicCardMoreRecords'
+  | 'topicCardCountDiscarded'
+  | 'topicCardCountObjections'
+  | 'topicCardCountVersions'
+  | 'topicCardDraftRemoved'
   | 'topicStageMoveButton'
   | 'topicStageMoveMessage'
   | 'topicStageFinishButton'
   | 'topicStageFinishMessage'
-  | 'topicCardFocusLabel'
-  | 'topicCardFocusSkip'
-  | 'topicCardFocusSkipHint'
-  | 'topicCardFocusSkipFailed'
-  | 'topicCardReviewNote'
-  | 'topicCardStageSeparator'
-  | 'topicFocusPainPoint'
-  | 'topicFocusCandidates'
-  | 'topicFocusOwnCandidate'
-  | 'topicFocusMotherQuestion'
-  | 'topicFocusOperationalization'
-  | 'topicFocusMeasure'
-  | 'topicFocusFeasibilityMissing'
-  | 'topicFocusFeasibilityUnsure'
   | 'topicCardDiscarded'
   | 'topicCardDiscardedBy'
   | 'topicCardCanReturn'
   | 'topicCardObjections'
   | 'topicCardPending'
-  | 'topicCardConfirmHint'
   | 'topicCardDone'
   | 'topicCardEmpty'
   | 'topicCardUnavailable'
@@ -597,11 +582,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardTitle: "題目卡",
     topicFinderEmptyMethodPrompt: "從你的痛點出發，我會陪你一個階段一個階段找題目，也可以跳著走。",
     topicCardStageFilter: "第 {n} 階段",
-    topicCardNextStage: "下一階段 →",
     topicCardGoToStage: "切換到第 {n} 階段：{title}",
     topicCardAdopted: "已採用，存成新版本。",
     topicCardStageFailed: "切換階段失敗，請稍後再試。",
-    topicCardConfirmHint: "要不要採用、何時換階段都由你決定；AI 只負責整理和提出疑問。",
     topicCardDone: "你已走完五個階段",
     topicCardDoneSub: "可以匯出題目卡，或點上方的數字回到任何一個階段。",
     topicCardDiscardedBy: "第 {n} 階段淘汰",
@@ -617,12 +600,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicStageSub3: "拿掉工具和案例，把具體題目往上抽一層，寫出你的「母問題」。",
     topicStageSub4: "題目裡的每一個關鍵詞，必須要能具體解釋，而且，有沒有可能找到證據證明「自己原本的想法其實是錯的」？",
     topicStageSub5: "以你現在的時間、資源、場域和指導教授，做得到嗎？有人做過了嗎？合乎研究倫理嗎？",
-    topicCardSuggestions: "AI 建議（參考用，請自己查證）",
     topicCardKeywords: "可以搜尋的關鍵字",
     topicCardKeywordCopy: "複製關鍵字：{keyword}",
     topicCardKeywordCopied: "已複製，可以貼到 Google Scholar 搜尋。",
-    topicCardGaps: "可能的研究缺口",
-    topicCardRelated: "相關議題",
     topicCardFeasibility: "可行性檢查",
     topicFeasTime: "時間",
     topicFeasData: "資料與場域",
@@ -639,41 +619,31 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicTourIntroPoint3: "AI 只負責整理和提出疑問，要不要採用、何時換階段由你決定。",
     topicTourCardBody: "上方的 1～5 可以直接切換階段，不用照順序。AI 會把對話整理成草稿；你覺得對，就按「採用這份整理」，想往下走再按「下一階段 →」。",
     topicCardStageDone: "完成",
-    topicCardDraftQuestion: "AI 幫你整理了以下內容，要更新到下方「目前的題目」嗎？",
-    topicCardDraftCandidatesQuestion: "AI 幫你整理了以下候選題目，要列入下方「目前的題目」的候選清單嗎？",
+    topicCardDraftQuestion: "AI 幫你整理了以下內容，要更新到題目卡嗎？",
+    topicCardDraftCandidatesQuestion: "AI 幫你整理了以下候選題目，要加入題目卡的候選清單嗎？",
     topicCardDraftYes: "需要",
     topicCardDraftNo: "不需要",
     topicCardRejected: "已略過，題目卡沒有變動。",
-    topicCardCurrentTopic: "目前的題目",
     topicCardPainPoint: "你卡住的問題",
     topicCardMotherQuestion: "你真正想知道的（母問題）",
     topicCardCandidates: "候選題目",
     topicCardProgress: "進度",
-    topicCardOperationalization: "怎麼證明（每個關鍵詞用什麼證據看）",
+    topicCardOperationalization: "看得見的證據",
     topicCardMeasureMissing: "還沒想好用什麼證據",
+    topicCardMoreRecords: "其他紀錄",
+    topicCardCountDiscarded: "淘汰 {n}",
+    topicCardCountObjections: "反問 {n}",
+    topicCardCountVersions: "版本 {n}",
+    topicCardDraftRemoved: "從{field}移除",
     topicStageMoveButton: "前往第 {n} 階段：{title}",
     topicStageMoveMessage: "好，我們進到第 {n} 階段：{title}",
     topicStageFinishButton: "五個階段都談完了：整理最終題目",
     topicStageFinishMessage: "好，五個階段都談完了，幫我整理最終題目",
-    topicCardFocusLabel: "這輪先看：",
-    topicCardFocusSkip: "換一個",
-    topicCardFocusSkipHint: "這不是你現在的重點？先放著，教練會改問別的。卡片上仍會保留提醒。",
-    topicCardFocusSkipFailed: "暫時無法更換，請稍後再試。",
-    topicCardStageSeparator: "、",
-    topicCardReviewNote: "你剛改了題目，教練下一輪會先陪你回頭看第 {stages} 階段還成不成立。",
-    topicFocusPainPoint: "用一句話寫下你卡住的問題",
-    topicFocusCandidates: "從痛點想出幾個想解決的問題",
-    topicFocusOwnCandidate: "用自己的話寫一個候選題目",
-    topicFocusMotherQuestion: "拿掉工具和案例，你真正想知道什麼",
-    topicFocusOperationalization: "題目裡哪些關鍵詞需要拿證據說明",
-    topicFocusMeasure: "「{term}」要用什麼證據看出來",
-    topicFocusFeasibilityMissing: "可行性：{term}",
-    topicFocusFeasibilityUnsure: "可行性：{term}還缺什麼才能確定",
     topicCardDiscarded: "淘汰的題目",
     topicCardCanReturn: "之後可以再回來",
     topicCardObjections: "我的反問",
     topicCardPending: "AI 整理的草稿（尚未採用）",
-    topicCardEmpty: "還沒有確認的內容；採用上面的草稿後，會出現在這裡。",
+    topicCardEmpty: "還沒有內容。在對話裡說說你卡在哪裡，AI 整理好後會請你確認。",
     topicCardUnavailable: "題目卡暫時無法載入，對話不受影響。",
     topicCardNotSynced: "對話同步完成後即可使用題目卡。",
     topicCardVersion: "版本 v{n}",
@@ -1051,11 +1021,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardTitle: "题目卡",
     topicFinderEmptyMethodPrompt: "从你的痛点出发，我会陪你一个阶段一个阶段找题目，也可以跳着走。",
     topicCardStageFilter: "第 {n} 阶段",
-    topicCardNextStage: "下一阶段 →",
     topicCardGoToStage: "切换到第 {n} 阶段：{title}",
     topicCardAdopted: "已采用，存成新版本。",
     topicCardStageFailed: "切换阶段失败，请稍后再试。",
-    topicCardConfirmHint: "要不要采用、何时换阶段都由你决定；AI 只负责整理和提出疑问。",
     topicCardDone: "你已走完五个阶段",
     topicCardDoneSub: "可以导出题目卡，或点上方的数字回到任何一个阶段。",
     topicCardDiscardedBy: "第 {n} 阶段淘汰",
@@ -1071,12 +1039,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicStageSub3: "拿掉工具和案例，把具体题目往上抽一层，写出你的「母问题」。",
     topicStageSub4: "题目里的每一个关键词，必须要能具体解释，而且，有没有可能找到证据证明「自己原本的想法其实是错的」？",
     topicStageSub5: "以你现在的时间、资源、场域和指导教授，做得到吗？有人做过了吗？合乎研究伦理吗？",
-    topicCardSuggestions: "AI 建议（参考用，请自己查证）",
     topicCardKeywords: "可以搜索的关键词",
     topicCardKeywordCopy: "复制关键词：{keyword}",
     topicCardKeywordCopied: "已复制，可以粘贴到 Google Scholar 搜索。",
-    topicCardGaps: "可能的研究缺口",
-    topicCardRelated: "相关议题",
     topicCardFeasibility: "可行性检查",
     topicFeasTime: "时间",
     topicFeasData: "资料与场域",
@@ -1093,41 +1058,31 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicTourIntroPoint3: "AI 只负责整理和提出疑问，要不要采用、何时换阶段由你决定。",
     topicTourCardBody: "上方的 1～5 可以直接切换阶段，不用照顺序。AI 会把对话整理成草稿；你觉得对，就按「采用这份整理」，想往下走再按「下一阶段 →」。",
     topicCardStageDone: "完成",
-    topicCardDraftQuestion: "AI 帮你整理了以下内容，要更新到下方「目前的题目」吗？",
-    topicCardDraftCandidatesQuestion: "AI 帮你整理了以下候选题目，要列入下方「目前的题目」的候选清单吗？",
+    topicCardDraftQuestion: "AI 帮你整理了以下内容，要更新到题目卡吗？",
+    topicCardDraftCandidatesQuestion: "AI 帮你整理了以下候选题目，要加入题目卡的候选清单吗？",
     topicCardDraftYes: "需要",
     topicCardDraftNo: "不需要",
     topicCardRejected: "已略过，题目卡没有变动。",
-    topicCardCurrentTopic: "目前的题目",
     topicCardPainPoint: "你卡住的问题",
     topicCardMotherQuestion: "你真正想知道的（母问题）",
     topicCardCandidates: "候选题目",
     topicCardProgress: "进度",
-    topicCardOperationalization: "怎么证明（每个关键词用什么证据看）",
+    topicCardOperationalization: "看得见的证据",
     topicCardMeasureMissing: "还没想好用什么证据",
+    topicCardMoreRecords: "其他记录",
+    topicCardCountDiscarded: "淘汰 {n}",
+    topicCardCountObjections: "反问 {n}",
+    topicCardCountVersions: "版本 {n}",
+    topicCardDraftRemoved: "从{field}移除",
     topicStageMoveButton: "前往第 {n} 阶段：{title}",
     topicStageMoveMessage: "好，我们进到第 {n} 阶段：{title}",
     topicStageFinishButton: "五个阶段都谈完了：整理最终题目",
     topicStageFinishMessage: "好，五个阶段都谈完了，帮我整理最终题目",
-    topicCardFocusLabel: "这轮先看：",
-    topicCardFocusSkip: "换一个",
-    topicCardFocusSkipHint: "这不是你现在的重点？先放着，教练会改问别的。卡片上仍会保留提醒。",
-    topicCardFocusSkipFailed: "暂时无法更换，请稍后再试。",
-    topicCardStageSeparator: "、",
-    topicCardReviewNote: "你刚改了题目，教练下一轮会先陪你回头看第 {stages} 阶段还成不成立。",
-    topicFocusPainPoint: "用一句话写下你卡住的问题",
-    topicFocusCandidates: "从痛点想出几个想解决的问题",
-    topicFocusOwnCandidate: "用自己的话写一个候选题目",
-    topicFocusMotherQuestion: "拿掉工具和案例，你真正想知道什么",
-    topicFocusOperationalization: "题目里哪些关键词需要拿证据说明",
-    topicFocusMeasure: "「{term}」要用什么证据看出来",
-    topicFocusFeasibilityMissing: "可行性：{term}",
-    topicFocusFeasibilityUnsure: "可行性：{term}还缺什么才能确定",
     topicCardDiscarded: "淘汰的题目",
     topicCardCanReturn: "之后可以再回来",
     topicCardObjections: "我的反问",
     topicCardPending: "AI 整理的草稿（尚未采用）",
-    topicCardEmpty: "还没有确认的内容；采用上面的草稿后，会出现在这里。",
+    topicCardEmpty: "还没有内容。在对话里说说你卡在哪里，AI 整理好后会请你确认。",
     topicCardUnavailable: "题目卡暂时无法加载，对话不受影响。",
     topicCardNotSynced: "对话同步完成后即可使用题目卡。",
     topicCardVersion: "版本 v{n}",
@@ -1505,11 +1460,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardTitle: "Topic card",
     topicFinderEmptyMethodPrompt: "Start from your pain point. I'll work through it with you stage by stage, and you can jump around.",
     topicCardStageFilter: "Stage {n}",
-    topicCardNextStage: "Next stage →",
     topicCardGoToStage: "Go to stage {n}: {title}",
     topicCardAdopted: "Saved as a new version.",
     topicCardStageFailed: "Could not switch stage. Please try again.",
-    topicCardConfirmHint: "You decide what to keep and when to move on; the AI only summarises and raises questions.",
     topicCardDone: "You have been through all five stages",
     topicCardDoneSub: "Export the card, or tap a number above to revisit any stage.",
     topicCardDiscardedBy: "dropped at stage {n}",
@@ -1525,12 +1478,9 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicStageSub3: "Remove the tool and the example, step up one level, and write your core question.",
     topicStageSub4: "Every key term in your topic must be explainable in concrete terms. And could you find evidence that your original idea was actually wrong?",
     topicStageSub5: "Can you do it with your time, resources, setting, and advisor? Has someone already done it? Is it ethical?",
-    topicCardSuggestions: "AI suggestions (for reference; check them yourself)",
     topicCardKeywords: "Keywords to search",
     topicCardKeywordCopy: "Copy keyword: {keyword}",
     topicCardKeywordCopied: "Copied. Paste it into Google Scholar.",
-    topicCardGaps: "Possible research gaps",
-    topicCardRelated: "Related issues",
     topicCardFeasibility: "Feasibility check",
     topicFeasTime: "Time",
     topicFeasData: "Data and setting",
@@ -1547,41 +1497,31 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicTourIntroPoint3: "The AI only summarises and raises questions; you decide what to keep and when to move on.",
     topicTourCardBody: "Tap 1-5 at the top to switch stages in any order. The AI turns the conversation into a draft; if it is right, press \"Use this summary\", and press \"Next stage →\" when you want to move on.",
     topicCardStageDone: "Done",
-    topicCardDraftQuestion: "The AI summarised the following. Add it to \"Your topic so far\" below?",
-    topicCardDraftCandidatesQuestion: "The AI summarised these candidate topics. Add them to the candidate list in \"Your topic so far\" below?",
+    topicCardDraftQuestion: "The AI summarised the following. Update your topic card?",
+    topicCardDraftCandidatesQuestion: "The AI summarised these candidate topics. Add them to your topic card?",
     topicCardDraftYes: "Yes",
     topicCardDraftNo: "No",
     topicCardRejected: "Skipped. Your topic card is unchanged.",
-    topicCardCurrentTopic: "Your topic so far",
     topicCardPainPoint: "What you are stuck on",
     topicCardMotherQuestion: "What you really want to know",
     topicCardCandidates: "Candidate topics",
     topicCardProgress: "Progress",
-    topicCardOperationalization: "How you will show it (evidence for each key term)",
+    topicCardOperationalization: "Visible evidence",
     topicCardMeasureMissing: "No evidence chosen yet",
+    topicCardMoreRecords: "Other records",
+    topicCardCountDiscarded: "{n} set aside",
+    topicCardCountObjections: "{n} objections",
+    topicCardCountVersions: "{n} versions",
+    topicCardDraftRemoved: "Removed from {field}",
     topicStageMoveButton: "Go to stage {n}: {title}",
     topicStageMoveMessage: "OK, let's move to stage {n}: {title}",
     topicStageFinishButton: "All five stages covered: wrap up your topic",
     topicStageFinishMessage: "OK, let's wrap up the five stages",
-    topicCardFocusLabel: "Next up: ",
-    topicCardFocusSkip: "Something else",
-    topicCardFocusSkipHint: "Not your focus right now? Set it aside and the coach will ask about something else. The card keeps the reminder.",
-    topicCardFocusSkipFailed: "Could not switch. Please try again.",
-    topicCardStageSeparator: ", ",
-    topicCardReviewNote: "You just changed your topic. Next, the coach will check with you whether your earlier work in stage {stages} still holds.",
-    topicFocusPainPoint: "write what you are stuck on in one sentence",
-    topicFocusCandidates: "turn your pain point into a few problems worth solving",
-    topicFocusOwnCandidate: "put one candidate topic in your own words",
-    topicFocusMotherQuestion: "without the tool and the example, what do you really want to know",
-    topicFocusOperationalization: "which key terms in your topic need evidence",
-    topicFocusMeasure: "what evidence will show \"{term}\"",
-    topicFocusFeasibilityMissing: "feasibility: {term}",
-    topicFocusFeasibilityUnsure: "feasibility: what is still missing for {term}",
     topicCardDiscarded: "Set-aside topics",
     topicCardCanReturn: "may return later",
     topicCardObjections: "My objections",
     topicCardPending: "AI draft (not adopted yet)",
-    topicCardEmpty: "Nothing confirmed yet. Adopt the draft above to fill this in.",
+    topicCardEmpty: "Nothing here yet. Tell the AI where you are stuck; it will ask you to confirm what it drafts.",
     topicCardUnavailable: "The topic card is unavailable right now; the chat still works.",
     topicCardNotSynced: "The topic card becomes available once this chat has synced.",
     topicCardVersion: "Version v{n}",

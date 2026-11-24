@@ -623,7 +623,7 @@ button.areqa-topic-finder-badge {
   &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
 }
 
-/* The current stage: a clickable 1-5 stepper, then the stage goal (the only emphasised text) and subtitle. */
+/* The current stage: a clickable 1-5 stepper, then one line naming the stage. */
 .areqa-topic-card-step {
   display: flex;
   flex-direction: column;
@@ -658,27 +658,92 @@ button.areqa-topic-finder-badge {
   button[data-status='current'] { border-color: var(--foreground); background: var(--foreground); color: var(--background); }
 }
 
-.areqa-topic-card-step-label {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.areqa-topic-card-question {
-  margin: 0;
-  font-size: 15.5px;
-  font-weight: 600;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.areqa-topic-card-subtitle {
+.areqa-topic-card-stage-line {
   margin: 0;
   color: var(--muted-foreground);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+
+.areqa-topic-card-step-label { color: var(--foreground); font-weight: 600; }
+
+.areqa-topic-card-question { color: var(--foreground); }
+
+/* The topic in one glance: mother question (or pain point) as the headline. */
+.areqa-topic-card-topic {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.areqa-topic-card-label {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.areqa-topic-card-headline {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* Long learner text stays readable without pushing the stage field off screen. */
+.areqa-topic-card-subline,
+.areqa-topic-card-measures li span:not(:first-child),
+.areqa-topic-card-feasibility small {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.areqa-topic-card-subline {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.areqa-topic-card-topic .areqa-topic-card-chips { margin-top: 6px; }
+
+.areqa-topic-card-stage-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Draft lines: only what would change. */
+.areqa-topic-card-draft-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+
+  li { display: flex; flex-direction: column; }
+  li::before { content: none; }
+  small { color: var(--muted-foreground); font-size: 12px; }
+  li[data-change='add'] > span::before { content: '＋ '; color: var(--muted-foreground); }
+  li[data-change='remove'] > span { color: var(--muted-foreground); text-decoration: line-through; }
+}
+
+.areqa-topic-card-more summary small {
+  margin-left: 6px;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+.areqa-topic-card-group { margin-top: 12px; }
+
+.areqa-topic-card-history li { color: var(--muted-foreground); font-size: 12.5px; }
 
 /* Topic Finder: one-tap move to the next stage, sent as a learner message. */
 .areqa-topic-stage-nudge {
@@ -709,59 +774,7 @@ button.areqa-topic-finder-badge {
   button:disabled { opacity: 0.6; cursor: default; }
 }
 
-/* What the coach looks at next: quiet, so it reads as a hint rather than a grade. */
-.areqa-topic-card-steer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  margin: 2px 0 0;
-  color: var(--muted-foreground);
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
-}
 
-.areqa-topic-card-steer > svg { flex-shrink: 0; }
-
-.areqa-topic-card-steer > span { min-width: 0; }
-
-.areqa-topic-card-steer-skip {
-  min-height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.areqa-topic-card-steer-skip:hover:not(:disabled),
-.areqa-topic-card-steer-skip:focus-visible {
-  color: var(--foreground);
-  border-color: var(--muted-foreground);
-}
-
-.areqa-topic-card-steer-skip:disabled { cursor: default; opacity: 0.6; }
-
-/* AI search hints: reference only, visually quieter than the learner's own card. */
-.areqa-topic-card-suggestions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-
-  .areqa-topic-card-draft-title { margin: 0; }
-}
-
-.areqa-topic-card-suggestion-label {
-  margin: 0 0 4px;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  font-weight: 600;
-}
 
 .areqa-topic-card-chips {
   display: flex;
@@ -825,24 +838,11 @@ button.areqa-topic-finder-badge {
   > dl, > ul, > p { margin-top: 8px; }
 }
 
-/* The AI's draft and the action sit together. */
-.areqa-topic-card-action {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .areqa-topic-card-draft {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--muted);
-}
-
-.areqa-topic-card-draft-title {
-  margin: 0 0 6px;
-  color: var(--muted-foreground);
-  font-size: 12.5px;
 }
 
 /* The draft is asked as one question; its answers sit inside the same box. */
@@ -858,17 +858,6 @@ button.areqa-topic-finder-badge {
 
 .areqa-topic-card-draft .areqa-topic-card-confirm,
 .areqa-topic-card-draft .areqa-topic-card-secondary { flex: 1 1 0; }
-
-.areqa-topic-card-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-
-  dt { color: var(--muted-foreground); font-size: 12px; font-weight: 600; }
-  dd { margin: 0; overflow-wrap: anywhere; }
-  dd p { margin: 0; }
-}
 
 .areqa-topic-card-list {
   margin: 0;
@@ -955,33 +944,9 @@ button.areqa-topic-finder-badge {
   &:hover { background: var(--areqa-account-hover); }
 }
 
-/* With a draft on screen, moving on is the quieter choice. */
-.areqa-topic-card-next {
-  flex-basis: 100%;
-  min-height: 32px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted-foreground);
-  font: inherit;
-  font-size: 13px;
-  text-align: right;
-  cursor: pointer;
-
-  &:hover:not(:disabled) { color: var(--foreground); text-decoration: underline; }
-  &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
-  &:disabled { cursor: wait; }
-}
-
 .areqa-topic-card-muted {
   margin: 0;
   color: var(--muted-foreground);
-}
-
-.areqa-topic-card-hint {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
 }
 
 .areqa-topic-card-notice {

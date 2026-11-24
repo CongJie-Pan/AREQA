@@ -12,7 +12,7 @@ function renderNudge(state: Partial<TopicCardState> | null, props: { isStreaming
   const onSend = vi.fn().mockResolvedValue(undefined);
   const topicCard = {
     state: state && { stage: 3, version: 1, card: empty, pending: null, history: [], ...state },
-    failure: null, isSaving: false, adopt: vi.fn(), reject: vi.fn(), goToStage: vi.fn(), skipFocus: vi.fn(), reload: vi.fn(),
+    failure: null, isSaving: false, adopt: vi.fn(), reject: vi.fn(), goToStage: vi.fn(), reload: vi.fn(),
   } as UseTopicCardResult;
   const view = render(
     <UserPreferencesProvider>

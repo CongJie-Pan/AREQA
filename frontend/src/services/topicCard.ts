@@ -4,8 +4,7 @@
  * The card lives server-side; the browser reads it, adopts or declines drafts,
  * and picks stages through the Next.js proxy. The AI can only propose a pending
  * draft, which is adopted or declined only for the version the learner is looking at. Only the
- * learner moves between stages, in any order, and only the learner sets a
- * focus gap aside.
+ * learner moves between stages, in any order.
  */
 
 import { authenticatedFetch } from '@/services/authenticatedFetch';
@@ -160,22 +159,6 @@ export async function setTopicCardStage(conversationId: string, stage: number): 
   }
   const state = (await response.json()) as TopicCardState;
   logger.info('topic_card_stage_set', { conversationId, stage: state.stage, version: state.version });
-  return state;
-}
-
-/** Set the current focus gap aside for this conversation; the coach moves on to the next one. */
-export async function skipTopicCardFocus(conversationId: string, gapId: string): Promise<TopicCardState> {
-  const response = await authenticatedFetch(`/api/research-coach/${encodeURIComponent(conversationId)}/focus`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ gap_id: gapId }),
-  });
-  if (!response.ok) {
-    logger.info('topic_card_focus_skip_failed', { conversationId, status: response.status });
-    throw new TopicCardError(failureFor(response.status));
-  }
-  const state = (await response.json()) as TopicCardState;
-  logger.info('topic_card_focus_skipped', { conversationId, stage: state.stage, kind: gapId.split(':')[0] });
   return state;
 }
 

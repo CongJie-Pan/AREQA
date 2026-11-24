@@ -51,7 +51,7 @@ send the learner back to check what it affects.
 - Card-gap focus: otherwise the turn's single question targets one gap found on
   the card by rules (a missing measure, an unsure feasibility item, only
   AI-proposed candidates, ...). The diagnosis is never shown as a score, and the
-  learner can set the gap aside on the card or in conversation.
+  learner can set the gap aside by saying so in the conversation.
 
 Answer shape (V4, after the 2026-11-24 classroom-style test run): coach turns
 had grown into multi-section reports with statistics, invented cases, praise

@@ -13,7 +13,8 @@ learner decisions, so they update directly without adoption or a version.
 Two rule-based steers shape the next coach turn without extra model calls: a
 revision review after the learner adopts a change that touches stages they
 already worked on, and a single card gap to focus on otherwise. The learner can
-set a focus gap aside, and the coach never shows the diagnosis as a score.
+set a focus gap aside by saying so in the conversation, and the coach never
+shows the diagnosis as a score.
 
 Card text is learner content: it is stored and injected into the coach prompt
 as data, and never written to stdout logs. Every card write also appends an
@@ -143,6 +144,8 @@ class CardPatch(BaseModel):
     gaps: list[str] | None = Field(default=None, max_length=5)
     related: list[str] | None = Field(default=None, max_length=5)
     change_note: str = Field(default="", max_length=200)
+    # The learner said to leave the coach's current focus for now ("先放著"); the backend sets it aside.
+    focus_set_aside: bool = False
 
     def has_card_change(self) -> bool:
         return not (
@@ -312,11 +315,11 @@ _OPTIONAL_FIELDS = ("pain_point", "mother_question", "candidates", "operationali
 def allowed_patch_fields(stage: int) -> set[str]:
     """Keys the AI may propose at this stage (pain point and candidates are always open)."""
 
-    fields = {"pain_point", "candidates", "ai_candidates", "discarded_add", "objections_add"}
+    fields = {"pain_point", "candidates", "ai_candidates", "discarded_add", "objections_add", "focus_set_aside"}
+    # Only search keywords are shown on the card (stages 1-2); gaps and related
+    # topics are no longer requested, though old stored values still load.
     if stage <= 2:
         fields.add("keywords")
-    if stage == FIRST_STAGE:
-        fields.update({"gaps", "related"})
     if stage >= MOTHER_QUESTION_STAGE:
         fields.add("mother_question")
     if stage >= OPERATIONALIZATION_STAGE:
@@ -655,11 +658,11 @@ proposes changes. Keys (all optional except change_note):
 - objections_add: array of strings; only objections or doubts the LEARNER raised in their own words, never the tutor's.
 - keywords: array of up to 6 short search keywords (in the learner's language, plus English where useful) that the
   learner could type into Google Scholar or a library search for the current topic. Hints, not decisions.
-- gaps: array of up to 3 possible research gaps worth checking, each phrased as a question to verify, never as a fact.
-- related: array of up to 4 related issues or neighbouring topics the learner might also consider.
+- focus_set_aside: true only when, in the latest turn, the learner explicitly says to leave the point the tutor
+  just asked about for later (for example "這個先放著", "之後再想", "我想先談別的"). Otherwise omit it.
 - change_note: one short phrase under 30 characters naming what changed this turn (for example "加入母問題"), in the
   learner's language; no sentence chains.
-Card fields (everything except keywords, gaps, related) record only what the learner said or explicitly agreed to;
+Card fields (everything except keywords and focus_set_aside) record only what the learner said or explicitly agreed to;
 never invent topics, measures, papers, or decisions. Examples:
 - Tutor proposes key terms "人員避險行為" and "轉銜斷層"; learner replies "好，那這個要怎麼看？" -> no operationalization
   (asking a question is not agreement).
@@ -672,7 +675,7 @@ never invent topics, measures, papers, or decisions. Examples:
 Feasibility status defaults to "unsure"; use "ok" or "blocked" only when the learner clearly says so.
 discarded_add: use the candidate's exact text from card.candidates; never add a reworded copy of a topic that is
 already in card.discarded, and add each dropped topic once. Theories, concepts, or examples the tutor explained are NOT the
-learner's decisions: do not copy them into those fields. keywords, gaps, and related are your own suggestions; never
+learner's decisions: do not copy them into those fields. keywords are your own suggestions; never
 name specific papers or authors in them. If the learner only asked for information (for example "explain alliance
 theory"), return no card fields.
 Only use the keys listed in allowed_keys; the others belong to other stages.
@@ -1155,6 +1158,11 @@ async def refresh_pending_card(*, client: Any, model: str, user_id: str, convers
         if patch is None:
             await store.log_event(user_id, conversation_id, "extraction_failed", source="background",
                                   stage=state.stage, version=state.version)
+        focus = current_focus(state)
+        if patch is not None and patch.focus_set_aside and focus is not None:
+            # Set aside in conversation: the coach moves to the next gap; the card keeps its ⚠️.
+            await store.skip_focus(user_id, conversation_id, focus.id, source="background")
+            logger.info("topic_card.focus_set_aside conversation_id=%s focus_kind=%s", conversation_id, focus.kind)
         if patch is None or patch.is_empty():
             logger.info("topic_card.extraction_empty conversation_id=%s", conversation_id)
             return

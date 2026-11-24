@@ -10,7 +10,6 @@ import { GET as getLog } from '@/app/api/research-coach/[conversationId]/log/rou
 import { POST as confirm } from '@/app/api/research-coach/[conversationId]/confirm/route';
 import { POST as reject } from '@/app/api/research-coach/[conversationId]/reject/route';
 import { POST as setStage } from '@/app/api/research-coach/[conversationId]/stage/route';
-import { POST as skipFocus } from '@/app/api/research-coach/[conversationId]/focus/route';
 
 const ID = '8f0c2c55-1d3e-4c11-9a77-1b0e4c2f9a10';
 const context = (conversationId = ID) => ({ params: Promise.resolve({ conversationId }) });
@@ -86,20 +85,6 @@ describe('topic card proxy routes', () => {
     expect(String(url)).toContain(`/api/v1/research-coach/${ID}/stage`);
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ stage: 4 });
-  });
-
-  it('forwards only a well-formed focus id to the skip endpoint', async () => {
-    for (const gap_id of ['', 'Measure:abc', '<script>', 'measure:../x', 42, `measure:${'a'.repeat(41)}`]) {
-      expect((await skipFocus(request({ gap_id }) as never, context())).status).toBe(400);
-    }
-    expect((await skipFocus(request({ gap_id: 'measure' }, false) as never, context())).status).toBe(401);
-    expect(fetch).not.toHaveBeenCalled();
-
-    await skipFocus(request({ gap_id: 'measure:3fa2b1c09d8e', term: 'private' }) as never, context());
-    const [url, init] = vi.mocked(fetch).mock.calls[0];
-    expect(String(url)).toContain(`/api/v1/research-coach/${ID}/focus/skip`);
-    expect(init?.method).toBe('POST');
-    expect(JSON.parse(String(init?.body))).toEqual({ gap_id: 'measure:3fa2b1c09d8e' });
   });
 
   it('returns generic errors for upstream failures', async () => {
