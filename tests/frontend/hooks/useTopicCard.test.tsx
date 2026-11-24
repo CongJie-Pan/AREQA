@@ -3,13 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TOPIC_CARD_REFRESH_DELAYS_MS, useTopicCard } from '@/hooks/useTopicCard';
 import { useChatStore } from '@/store/chat';
 import {
-  TopicCardError, adoptTopicCardDraft, fetchTopicCard, setTopicCardStage, skipTopicCardFocus, type TopicCardState,
+  TopicCardError, adoptTopicCardDraft, fetchTopicCard, rejectTopicCardDraft, setTopicCardStage, skipTopicCardFocus,
+  type TopicCardState,
 } from '@/services/topicCard';
 
 vi.mock('@/services/topicCard', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/services/topicCard')>(),
   fetchTopicCard: vi.fn(),
   adoptTopicCardDraft: vi.fn(),
+  rejectTopicCardDraft: vi.fn(),
   setTopicCardStage: vi.fn(),
   skipTopicCardFocus: vi.fn(),
 }));
@@ -124,5 +126,23 @@ describe('useTopicCard', () => {
     await act(async () => { ok = await result.current.skipFocus('candidates'); });
     expect(ok).toBe(false);
     expect(result.current.state?.skipped_focus).toEqual([focus.id]);
+  });
+  it('declines the draft for the version the learner saw and keeps it when that fails', async () => {
+    const pending = { card: { ...empty, candidates: ['A'] }, notes: [] };
+    vi.mocked(fetchTopicCard).mockResolvedValue(state({ version: 2, pending }));
+    const { result } = renderHook(() => useTopicCard('conv-1', true));
+    await waitFor(() => expect(result.current.state?.pending).not.toBeNull());
+
+    vi.mocked(rejectTopicCardDraft).mockRejectedValueOnce(new TopicCardError('unavailable'));
+    let outcome = '';
+    await act(async () => { outcome = await result.current.reject(); });
+    expect(outcome).toBe('failed');
+    expect(result.current.state?.pending).toEqual(pending);
+
+    vi.mocked(rejectTopicCardDraft).mockResolvedValueOnce({ state: state({ version: 2 }), rejected: true });
+    await act(async () => { outcome = await result.current.reject(); });
+    expect(rejectTopicCardDraft).toHaveBeenLastCalledWith('conv-1', 2);
+    expect(outcome).toBe('rejected');
+    expect(result.current.state).toMatchObject({ version: 2, pending: null });
   });
 });

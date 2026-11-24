@@ -816,6 +816,20 @@ button.areqa-topic-finder-badge {
   font-size: 12.5px;
 }
 
+/* The draft is asked as one question; its answers sit inside the same box. */
+.areqa-topic-card-draft-question {
+  margin: 0 0 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.areqa-topic-card-draft .areqa-topic-card-buttons { margin-top: 10px; }
+
+.areqa-topic-card-draft .areqa-topic-card-confirm,
+.areqa-topic-card-draft .areqa-topic-card-secondary { flex: 1 1 0; }
+
 .areqa-topic-card-fields {
   display: flex;
   flex-direction: column;

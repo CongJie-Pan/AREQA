@@ -13,7 +13,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const FOCUS_ID_PATTERN = /^[a-z_]{1,40}(:[a-z0-9_]{1,40})?$/;
 
 /** Browser-facing action → FastAPI path segment. */
-const UPSTREAM_PATH = { card: 'card', confirm: 'confirm', stage: 'stage', focus: 'focus/skip' } as const;
+const UPSTREAM_PATH = { card: 'card', confirm: 'confirm', reject: 'reject', stage: 'stage', focus: 'focus/skip' } as const;
 
 export async function proxyTopicCard(
   request: NextRequest,
@@ -29,7 +29,7 @@ export async function proxyTopicCard(
     if (Number(request.headers.get('content-length')) > 1_000) return NextResponse.json({ error: 'Request too large' }, { status: 413 });
     try {
       const payload = (await request.json()) as Record<string, unknown> | null;
-      if (action === 'confirm') {
+      if (action === 'confirm' || action === 'reject') {
         const version = payload?.version;
         if (!Number.isInteger(version) || Number(version) < 0) throw new Error('Invalid version');
         body = JSON.stringify({ version });

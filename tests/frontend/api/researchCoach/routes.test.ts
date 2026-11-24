@@ -7,6 +7,7 @@ vi.mock('next/server', () => ({
 
 import { GET as getCard } from '@/app/api/research-coach/[conversationId]/card/route';
 import { POST as confirm } from '@/app/api/research-coach/[conversationId]/confirm/route';
+import { POST as reject } from '@/app/api/research-coach/[conversationId]/reject/route';
 import { POST as setStage } from '@/app/api/research-coach/[conversationId]/stage/route';
 import { POST as skipFocus } from '@/app/api/research-coach/[conversationId]/focus/route';
 
@@ -50,6 +51,17 @@ describe('topic card proxy routes', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0];
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ version: 2 });
+  });
+
+  it('forwards only a validated version on reject', async () => {
+    expect((await reject(request({ version: -1 }) as never, context())).status).toBe(400);
+    expect((await reject(request({ version: 0 }, false) as never, context())).status).toBe(401);
+    expect(fetch).not.toHaveBeenCalled();
+
+    await reject(request({ version: 3, card: { candidates: ['private'] } }) as never, context());
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain(`/api/v1/research-coach/${ID}/reject`);
+    expect(JSON.parse(String(init?.body))).toEqual({ version: 3 });
   });
 
   it('forwards only a validated stage between 1 and 6', async () => {

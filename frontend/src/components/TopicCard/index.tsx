@@ -5,7 +5,8 @@
  *
  * The learner picks one of five stages (in any order) from the stepper; the
  * panel shows that stage's one-line goal and subtitle, AI search hints for the
- * early stages, then the AI's draft with the actions right under it. What is
+ * early stages, then the AI's draft as one yes/no question with its two
+ * answers inside the same box. What is
  * already adopted, set-aside topics, objections, and history fold away below.
  * A field opens at the stage that asks about it, or once it has content, so a
  * learner at stage 1 never sees measurement jargon but jumping back keeps work.
@@ -88,8 +89,7 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
   const { t } = useUserPreferences();
   const { message } = App.useApp();
   const [notice, setNotice] = useState<string | null>(null);
-  const [showReviseHint, setShowReviseHint] = useState(false);
-  const { state, failure, isSaving, adopt, goToStage, skipFocus } = topicCard;
+  const { state, failure, isSaving, adopt, reject, goToStage, skipFocus } = topicCard;
   const stage = normalizeTopicStage(state?.stage ?? 1);
   const isDone = stage >= TOPIC_CARD_COMPLETED_STAGE;
 
@@ -97,8 +97,17 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
     const outcome = await adopt();
     if (outcome === 'adopted') {
       setNotice(null);
-      setShowReviseHint(false);
       message.success(t('topicCardAdopted'));
+    } else {
+      setNotice(t(outcome === 'stale' ? 'topicCardStale' : 'topicCardConfirmFailed'));
+    }
+  };
+
+  const handleReject = async () => {
+    const outcome = await reject();
+    if (outcome === 'rejected') {
+      setNotice(null);
+      message.info(t('topicCardRejected'));
     } else {
       setNotice(t(outcome === 'stale' ? 'topicCardStale' : 'topicCardConfirmFailed'));
     }
@@ -108,7 +117,6 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
     if (target === stage) return;
     const moved = await goToStage(target);
     setNotice(moved ? null : t('topicCardStageFailed'));
-    if (moved) setShowReviseHint(false);
   };
 
   const handleSkipFocus = async (gapId: string) => {
@@ -216,7 +224,9 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
     ? visibleFields(stage, state.card).filter((field) => hasValue(state.pending!.card, field)
       && JSON.stringify(state.pending!.card[field] ?? []) !== JSON.stringify(state.card[field] ?? []))
     : [];
-  const hasDraft = Boolean(state?.pending && (draftFields.length > 0 || state.pending.notes.length > 0));
+  // A draft that only adds candidates gets the narrower question.
+  const draftQuestion = draftFields.length > 0 && draftFields.every((field) => field === 'candidates')
+    ? 'topicCardDraftCandidatesQuestion' : 'topicCardDraftQuestion';
 
   const suggestions = state?.suggestions;
   const keywords = stage <= 2 ? suggestions?.keywords ?? [] : [];
@@ -341,31 +351,36 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
           )}
 
           <section className="areqa-topic-card-action">
-            {hasDraft && state.pending ? (
-              <div className="areqa-topic-card-draft" role="note">
-                <p className="areqa-topic-card-draft-title">{t('topicCardDraftTitle')}</p>
+            {state.pending && (
+              <div className="areqa-topic-card-draft" role="group" aria-label={t(draftQuestion)}>
+                <p className="areqa-topic-card-draft-question">{t(draftQuestion)}</p>
                 {draftFields.length > 0
                   ? fieldsBlock(state.pending.card, draftFields, false)
-                  : <ul className="areqa-topic-card-list">{state.pending.notes.map((note) => <li key={note}>{note}</li>)}</ul>}
-              </div>
-            ) : null}
-            <div className="areqa-topic-card-buttons">
-              {state.pending && (
-                <>
+                  : state.pending.notes.length > 0 && (
+                    <ul className="areqa-topic-card-list">{state.pending.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+                  )}
+                <div className="areqa-topic-card-buttons">
                   <button
                     type="button"
                     className="areqa-topic-card-confirm"
                     onClick={() => { void handleAdopt(); }}
                     disabled={isSaving}
                   >
-                    {t('topicCardAccept')}
+                    {t('topicCardDraftYes')}
                   </button>
-                  <button type="button" className="areqa-topic-card-secondary" onClick={() => setShowReviseHint(true)}>
-                    {t('topicCardRevise')}
+                  <button
+                    type="button"
+                    className="areqa-topic-card-secondary"
+                    onClick={() => { void handleReject(); }}
+                    disabled={isSaving}
+                  >
+                    {t('topicCardDraftNo')}
                   </button>
-                </>
-              )}
-              {!isDone && (
+                </div>
+              </div>
+            )}
+            {!isDone && (
+              <div className="areqa-topic-card-buttons">
                 <button
                   type="button"
                   className={state.pending ? 'areqa-topic-card-next' : 'areqa-topic-card-confirm'}
@@ -374,9 +389,9 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
                 >
                   {t('topicCardNextStage')}
                 </button>
-              )}
-            </div>
-            <p className="areqa-topic-card-hint">{showReviseHint ? t('topicCardReviseHint') : t('topicCardConfirmHint')}</p>
+              </div>
+            )}
+            <p className="areqa-topic-card-hint">{t('topicCardConfirmHint')}</p>
             {notice && <p className="areqa-topic-card-notice" role="alert">{notice}</p>}
           </section>
 

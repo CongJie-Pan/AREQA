@@ -757,3 +757,41 @@ async def test_api_adopt_returns_review_and_logs_stages(api, caplog):
     assert body["adopted"] is True and body["state"]["review"]["stages"] == [4]
     assert body["state"]["review"]["changed"] == ["mother_question"]
     assert "review_stages=4" in caplog.text and PRIVATE not in caplog.text
+
+
+# --- Declining a draft ---------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_store_rejects_only_the_draft_the_learner_saw(storage):
+    store, owner, other, conversation = storage
+    await store.propose(owner, conversation, _patch(pain_point="確認過的痛點"))
+    await store.adopt(owner, conversation, 0)
+    await store.propose(owner, conversation, _patch(candidates=["AI 提的候選"], ai_candidates=["AI 提的候選"]))
+
+    assert await store.reject(other, conversation, 1) is None
+    stale, rejected = await store.reject(owner, conversation, 0)
+    assert not rejected and stale.pending is not None
+
+    state, rejected = await store.reject(owner, conversation, 1)
+    assert rejected and state.pending is None
+    assert (state.version, state.card.pain_point, state.card.candidates) == (1, "確認過的痛點", [])
+    again, rejected_again = await store.reject(owner, conversation, 1)
+    assert not rejected_again and again.version == 1
+    assert (await store.load(owner, conversation)).pending is None
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_draft_without_a_version_and_logs_safely(api, caplog):
+    client, current, owner, other, conversation, store = api
+    await store.propose(owner, conversation, _patch(pain_point=PRIVATE))
+
+    with caplog.at_level(logging.INFO):
+        response = await client.post(f"/api/v1/research-coach/{conversation}/reject", json={"version": 0})
+    body = response.json()
+    assert body["rejected"] is True and body["state"]["pending"] is None and body["state"]["version"] == 0
+    assert "topic_card.draft_rejected" in caplog.text and PRIVATE not in caplog.text
+
+    assert (await client.post(f"/api/v1/research-coach/{conversation}/reject", json={"version": -1})).status_code == 422
+    current["user"] = other
+    assert (await client.post(f"/api/v1/research-coach/{conversation}/reject", json={"version": 0})).status_code == 404

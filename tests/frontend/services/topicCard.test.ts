@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import {
-  TopicCardError, adoptTopicCardDraft, fetchTopicCard, setTopicCardStage, skipTopicCardFocus, visibleCard,
+  TopicCardError, adoptTopicCardDraft, fetchTopicCard, rejectTopicCardDraft, setTopicCardStage, skipTopicCardFocus,
+  visibleCard,
 } from '@/services/topicCard';
 import { logger } from '@/utils/logger';
 
@@ -37,6 +38,18 @@ describe('topic card service', () => {
     expect(url).toBe('/api/research-coach/c/confirm');
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ version: 1 });
+  });
+
+  it('declines the draft with the seen version', async () => {
+    vi.mocked(authenticatedFetch).mockResolvedValue(new Response(JSON.stringify({ rejected: true, state: { stage: 1, version: 1, card: empty, pending: null, history: [] } })));
+    const result = await rejectTopicCardDraft('c', 1);
+    expect(result.rejected).toBe(true);
+    const [url, init] = vi.mocked(authenticatedFetch).mock.calls[0];
+    expect(url).toBe('/api/research-coach/c/reject');
+    expect(JSON.parse(String(init?.body))).toEqual({ version: 1 });
+
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce(new Response('{}', { status: 503 }));
+    await expect(rejectTopicCardDraft('c', 1)).rejects.toMatchObject({ reason: 'unavailable' });
   });
 
   it('sets the stage the learner picked', async () => {

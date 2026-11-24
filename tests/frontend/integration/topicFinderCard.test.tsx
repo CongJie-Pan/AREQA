@@ -41,6 +41,7 @@ const empty = { pain_point: '', mother_question: '', candidates: [], operational
 let cardResponse: () => Response;
 let confirmResponse: () => Response;
 let focusResponse: () => Response;
+let rejectResponse: () => Response;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status });
@@ -93,9 +94,11 @@ describe('Topic Finder topic card flow', () => {
       history: [{ version: 1, stage: 1, note: '加入痛點', confirmed_at: 1 }],
     } });
     focusResponse = () => json({ error: 'Topic card unavailable' }, 503);
+    rejectResponse = () => json({ error: 'Topic card unavailable' }, 503);
     vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => {
       const target = String(url);
       if (target.includes('/focus')) return focusResponse();
+      if (target.includes('/reject')) return rejectResponse();
       if (target.includes('/api/v1/stream')) return sse('先說說你的痛點？');
       if (target.includes('/card')) return cardResponse();
       if (target.includes('/confirm')) return confirmResponse();
@@ -118,15 +121,15 @@ describe('Topic Finder topic card flow', () => {
     fireEvent.click(screen.getByLabelText('發送訊息'));
 
     await waitFor(() => expect(calls('/api/v1/stream')).toHaveLength(1), { timeout: 10_000 });
-    expect(await screen.findByRole('note', {}, { timeout: 10_000 })).toHaveTextContent('系統和 Gemini 差不多');
+    expect(await screen.findByRole('group', { name: /要更新到下方「目前的題目」嗎/ }, { timeout: 10_000 })).toHaveTextContent('系統和 Gemini 差不多');
     // The draft does not move the learner: they are still at stage 1.
     expect(screen.getByText('第 1 階段')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '採用這份整理' }));
+    fireEvent.click(screen.getByRole('button', { name: '需要' }));
 
     await waitFor(() => expect(screen.getByText('版本 v1')).toBeInTheDocument());
     expect(screen.getByText('第 1 階段')).toBeInTheDocument();
-    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /目前的題目/ })).not.toBeInTheDocument();
     expect(JSON.parse(String(calls('/confirm')[0][1]?.body))).toEqual({ version: 0 });
     expect(calls('/stage')).toHaveLength(0);
 
@@ -158,10 +161,29 @@ describe('Topic Finder topic card flow', () => {
     } });
     fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '我想把問題往上抽一層' } });
     fireEvent.click(screen.getByLabelText('發送訊息'));
-    fireEvent.click(await screen.findByRole('button', { name: '採用這份整理' }, { timeout: 10_000 }));
+    fireEvent.click(await screen.findByRole('button', { name: '需要' }, { timeout: 10_000 }));
 
     expect(await screen.findByText('你剛改了題目，教練下一輪會先陪你回頭看第 4 階段還成不成立。')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '換一個' })).not.toBeInTheDocument();
+  });
+
+  it('declines a candidate draft with 不需要 and keeps the card unchanged', { timeout: 40_000 }, async () => {
+    const confirmed = { ...empty, pain_point: '預約很難排' };
+    cardResponse = () => json({ stage: 1, version: 1, card: confirmed, pending: {
+      card: { ...confirmed, candidates: ['校內外諮商預約整合'], ai_candidates: ['校內外諮商預約整合'] }, notes: ['加入候選'],
+    }, history: [] });
+    rejectResponse = () => json({ rejected: true, state: { stage: 1, version: 1, card: confirmed, pending: null, history: [] } });
+    render(<Harness />);
+
+    const draft = await screen.findByRole('group', { name: 'AI 幫你整理了以下候選題目，要列入下方「目前的題目」的候選清單嗎？' });
+    expect(draft).toHaveTextContent('校內外諮商預約整合');
+    fireEvent.click(screen.getByRole('button', { name: '不需要' }));
+
+    await waitFor(() => expect(screen.queryByText('校內外諮商預約整合')).not.toBeInTheDocument());
+    expect(JSON.parse(String(calls('/reject')[0][1]?.body))).toEqual({ version: 1 });
+    expect(calls('/confirm')).toHaveLength(0);
+    expect(screen.getByText('版本 v1')).toBeInTheDocument();
+    expect(screen.getByText('預約很難排')).toBeInTheDocument();
   });
 
   it('keeps the chat working when the topic card API fails', { timeout: 40_000 }, async () => {

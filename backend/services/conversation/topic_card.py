@@ -811,6 +811,27 @@ class TopicCardStore:
 
         return await self._run(operation, work)
 
+    async def reject(self, user_id: str, conversation_id: str,
+                     expected_version: int) -> tuple[TopicCardState, bool] | None:
+        """Learner declined the draft they saw: drop it without adding a version.
+
+        Returns:
+            ``(state, rejected)``; ``rejected`` is False for a stale version or no
+            draft. ``None`` when the conversation is not the user's.
+        """
+
+        rejected = False
+
+        def change(state: TopicCardState) -> TopicCardState:
+            nonlocal rejected
+            if state.version != expected_version or state.pending is None:
+                return state
+            rejected = True
+            return state.model_copy(update={"pending": None})
+
+        state = await self._update("reject", user_id, conversation_id, change)
+        return None if state is None else (state, rejected)
+
     async def skip_focus(self, user_id: str, conversation_id: str, gap_id: str) -> TopicCardState | None:
         """Learner set a focus gap aside; ``None`` for an unowned conversation or a malformed id."""
 

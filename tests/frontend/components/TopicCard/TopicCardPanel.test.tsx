@@ -1,6 +1,6 @@
 import React from 'react';
 import { App } from 'antd';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TopicCardPanel } from '@/components/TopicCard';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
@@ -22,7 +22,8 @@ const fullCard = {
 function renderPanel(overrides: Partial<UseTopicCardResult> = {}, onClose?: () => void, onExploreCandidate?: (candidate: string) => void) {
   const topicCard: UseTopicCardResult = {
     state: state(), failure: null, isSaving: false,
-    adopt: vi.fn().mockResolvedValue('adopted'), goToStage: vi.fn().mockResolvedValue(true),
+    adopt: vi.fn().mockResolvedValue('adopted'), reject: vi.fn().mockResolvedValue('rejected'),
+    goToStage: vi.fn().mockResolvedValue(true),
     skipFocus: vi.fn().mockResolvedValue(true), reload: vi.fn(),
     ...overrides,
   };
@@ -60,7 +61,7 @@ describe('TopicCardPanel', () => {
     const topicCard = renderPanel({ state: state({ stage: 3 }) });
     fireEvent.click(screen.getByRole('button', { name: '下一階段 →' }));
     await waitFor(() => expect(topicCard.goToStage).toHaveBeenCalledWith(4));
-    expect(screen.queryByRole('button', { name: '採用這份整理' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '需要' })).not.toBeInTheDocument();
   });
 
   it('opens fields at their stage, but keeps fields that already have content', () => {
@@ -120,22 +121,48 @@ describe('TopicCardPanel', () => {
     expect(screen.getAllByText('hedging South Korea')).toHaveLength(1);
   });
 
-  it('puts the AI draft right above the actions and shows only what changed', async () => {
+  it('asks about candidate drafts as one question with both answers inside the box', async () => {
     const topicCard = renderPanel({ state: state({
       card: { ...empty, pain_point: '已確認的痛點' },
       pending: { card: { ...empty, pain_point: '已確認的痛點', candidates: ['候選 A', '候選 B'] }, notes: ['加入候選'] },
     }) });
 
-    const draft = screen.getByRole('note');
-    expect(draft).toHaveTextContent('AI 根據剛才的對話，幫你整理成：');
+    const draft = screen.getByRole('group', { name: 'AI 幫你整理了以下候選題目，要列入下方「目前的題目」的候選清單嗎？' });
     expect(draft).toHaveTextContent('候選 A');
     expect(draft).not.toHaveTextContent('已確認的痛點');
-    expect(screen.getByRole('button', { name: '我再想想' })).toBeInTheDocument();
+    expect(within(draft).getByRole('button', { name: '需要' })).toBeInTheDocument();
+    expect(within(draft).getByRole('button', { name: '不需要' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '我再想想' })).not.toBeInTheDocument();
+    // Moving on is not an answer to the draft, so it stays outside the box.
+    expect(within(draft).queryByRole('button', { name: '下一階段 →' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '下一階段 →' })).toHaveClass('areqa-topic-card-next');
 
-    fireEvent.click(screen.getByRole('button', { name: '採用這份整理' }));
+    fireEvent.click(within(draft).getByRole('button', { name: '需要' }));
     await waitFor(() => expect(topicCard.adopt).toHaveBeenCalledTimes(1));
+    expect(topicCard.reject).not.toHaveBeenCalled();
     expect(topicCard.goToStage).not.toHaveBeenCalled();
+  });
+
+  it('uses the general question when the draft changes more than candidates', () => {
+    renderPanel({ state: state({ pending: { card: { ...empty, pain_point: '草稿痛點', candidates: ['A'] }, notes: [] } }) });
+    expect(screen.getByRole('group', { name: 'AI 幫你整理了以下內容，要更新到下方「目前的題目」嗎？' })).toHaveTextContent('草稿痛點');
+  });
+
+  it('declines the draft with 不需要 and leaves the adopted card alone', async () => {
+    const topicCard = renderPanel({ state: state({ pending: { card: { ...empty, candidates: ['候選 A'] }, notes: [] } }) });
+    fireEvent.click(screen.getByRole('button', { name: '不需要' }));
+    await waitFor(() => expect(topicCard.reject).toHaveBeenCalledTimes(1));
+    expect(topicCard.adopt).not.toHaveBeenCalled();
+  });
+
+  it('reports a stale or failed decline', async () => {
+    renderPanel({
+      reject: vi.fn().mockResolvedValue('failed'),
+      state: state({ pending: { card: { ...empty, candidates: ['候選 A'] }, notes: [] } }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: '不需要' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText('候選 A')).toBeInTheDocument();
   });
 
   it('hides draft fields from later stages even if they arrive', () => {
@@ -145,15 +172,10 @@ describe('TopicCardPanel', () => {
     expect(screen.queryByText('聯盟形成動機')).not.toBeInTheDocument();
   });
 
-  it('explains how to revise a draft', () => {
-    renderPanel({ state: state({ pending: { card: { ...empty, pain_point: '草稿' }, notes: [] } }) });
-    fireEvent.click(screen.getByRole('button', { name: '我再想想' }));
-    expect(screen.getByText('直接在對話裡告訴 AI 要改哪裡，它會更新這份草稿。')).toBeInTheDocument();
-  });
-
   it('disables the actions while saving', () => {
     renderPanel({ isSaving: true, state: state({ pending: { card: { ...empty, pain_point: '草稿' }, notes: [] } }) });
-    expect(screen.getByRole('button', { name: '採用這份整理' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '需要' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '不需要' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '下一階段 →' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '切換到第 2 階段：有沒有很簡單的解法？' })).toBeDisabled();
   });
@@ -163,7 +185,7 @@ describe('TopicCardPanel', () => {
       adopt: vi.fn().mockResolvedValue('stale'),
       state: state({ pending: { card: { ...empty, pain_point: '草稿' }, notes: [] } }),
     });
-    fireEvent.click(screen.getByRole('button', { name: '採用這份整理' }));
+    fireEvent.click(screen.getByRole('button', { name: '需要' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('題目卡已有更新');
 
     renderPanel({ goToStage: vi.fn().mockResolvedValue(false) });

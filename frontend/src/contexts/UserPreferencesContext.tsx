@@ -151,10 +151,11 @@ export type TranslationKey =
   | 'topicFeasMissing'
   | 'topicCardStageFilter'
   | 'topicCardStageDone'
-  | 'topicCardDraftTitle'
-  | 'topicCardAccept'
-  | 'topicCardRevise'
-  | 'topicCardReviseHint'
+  | 'topicCardDraftQuestion'
+  | 'topicCardDraftCandidatesQuestion'
+  | 'topicCardDraftYes'
+  | 'topicCardDraftNo'
+  | 'topicCardRejected'
   | 'topicCardCurrentTopic'
   | 'topicCardPainPoint'
   | 'topicCardMotherQuestion'
@@ -592,7 +593,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardTitle: "題目卡",
     topicFinderEmptyMethodPrompt: "從你的痛點出發，我會陪你一個階段一個階段找題目，也可以跳著走。",
     topicCardStageFilter: "第 {n} 階段",
-    topicCardAccept: "採用這份整理",
     topicCardNextStage: "下一階段 →",
     topicCardGoToStage: "切換到第 {n} 階段：{title}",
     topicCardAdopted: "已採用，存成新版本。",
@@ -635,9 +635,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicTourIntroPoint3: "AI 只負責整理和提出疑問，要不要採用、何時換階段由你決定。",
     topicTourCardBody: "上方的 1～5 可以直接切換階段，不用照順序。AI 會把對話整理成草稿；你覺得對，就按「採用這份整理」，想往下走再按「下一階段 →」。",
     topicCardStageDone: "完成",
-    topicCardDraftTitle: "AI 根據剛才的對話，幫你整理成：",
-    topicCardRevise: "我再想想",
-    topicCardReviseHint: "直接在對話裡告訴 AI 要改哪裡，它會更新這份草稿。",
+    topicCardDraftQuestion: "AI 幫你整理了以下內容，要更新到下方「目前的題目」嗎？",
+    topicCardDraftCandidatesQuestion: "AI 幫你整理了以下候選題目，要列入下方「目前的題目」的候選清單嗎？",
+    topicCardDraftYes: "需要",
+    topicCardDraftNo: "不需要",
+    topicCardRejected: "已略過，題目卡沒有變動。",
     topicCardCurrentTopic: "目前的題目",
     topicCardPainPoint: "你卡住的問題",
     topicCardMotherQuestion: "你真正想知道的（母問題）",
@@ -1041,7 +1043,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardTitle: "题目卡",
     topicFinderEmptyMethodPrompt: "从你的痛点出发，我会陪你一个阶段一个阶段找题目，也可以跳着走。",
     topicCardStageFilter: "第 {n} 阶段",
-    topicCardAccept: "采用这份整理",
     topicCardNextStage: "下一阶段 →",
     topicCardGoToStage: "切换到第 {n} 阶段：{title}",
     topicCardAdopted: "已采用，存成新版本。",
@@ -1084,9 +1085,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicTourIntroPoint3: "AI 只负责整理和提出疑问，要不要采用、何时换阶段由你决定。",
     topicTourCardBody: "上方的 1～5 可以直接切换阶段，不用照顺序。AI 会把对话整理成草稿；你觉得对，就按「采用这份整理」，想往下走再按「下一阶段 →」。",
     topicCardStageDone: "完成",
-    topicCardDraftTitle: "AI 根据刚才的对话，帮你整理成：",
-    topicCardRevise: "我再想想",
-    topicCardReviseHint: "直接在对话里告诉 AI 要改哪里，它会更新这份草稿。",
+    topicCardDraftQuestion: "AI 帮你整理了以下内容，要更新到下方「目前的题目」吗？",
+    topicCardDraftCandidatesQuestion: "AI 帮你整理了以下候选题目，要列入下方「目前的题目」的候选清单吗？",
+    topicCardDraftYes: "需要",
+    topicCardDraftNo: "不需要",
+    topicCardRejected: "已略过，题目卡没有变动。",
     topicCardCurrentTopic: "目前的题目",
     topicCardPainPoint: "你卡住的问题",
     topicCardMotherQuestion: "你真正想知道的（母问题）",
@@ -1490,7 +1493,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardTitle: "Topic card",
     topicFinderEmptyMethodPrompt: "Start from your pain point. I'll work through it with you stage by stage, and you can jump around.",
     topicCardStageFilter: "Stage {n}",
-    topicCardAccept: "Use this summary",
     topicCardNextStage: "Next stage →",
     topicCardGoToStage: "Go to stage {n}: {title}",
     topicCardAdopted: "Saved as a new version.",
@@ -1533,9 +1535,11 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicTourIntroPoint3: "The AI only summarises and raises questions; you decide what to keep and when to move on.",
     topicTourCardBody: "Tap 1-5 at the top to switch stages in any order. The AI turns the conversation into a draft; if it is right, press \"Use this summary\", and press \"Next stage →\" when you want to move on.",
     topicCardStageDone: "Done",
-    topicCardDraftTitle: "From the conversation so far, the AI drafted:",
-    topicCardRevise: "Not yet",
-    topicCardReviseHint: "Tell the AI in the chat what to change; it will update this draft.",
+    topicCardDraftQuestion: "The AI summarised the following. Add it to \"Your topic so far\" below?",
+    topicCardDraftCandidatesQuestion: "The AI summarised these candidate topics. Add them to the candidate list in \"Your topic so far\" below?",
+    topicCardDraftYes: "Yes",
+    topicCardDraftNo: "No",
+    topicCardRejected: "Skipped. Your topic card is unchanged.",
     topicCardCurrentTopic: "Your topic so far",
     topicCardPainPoint: "What you are stuck on",
     topicCardMotherQuestion: "What you really want to know",

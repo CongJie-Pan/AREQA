@@ -1,9 +1,9 @@
 /**
  * Topic Finder (選題) topic card client.
  *
- * The card lives server-side; the browser reads it, adopts drafts, and picks
- * stages through the Next.js proxy. The AI can only propose a pending draft,
- * which is adopted only for the version the learner is looking at. Only the
+ * The card lives server-side; the browser reads it, adopts or declines drafts,
+ * and picks stages through the Next.js proxy. The AI can only propose a pending
+ * draft, which is adopted or declined only for the version the learner is looking at. Only the
  * learner moves between stages, in any order, and only the learner sets a
  * focus gap aside.
  */
@@ -117,6 +117,27 @@ export async function adoptTopicCardDraft(
   const result = (await response.json()) as { state: TopicCardState; adopted: boolean };
   logger.info('topic_card_adopted', {
     conversationId, adopted: result.adopted, stage: result.state.stage, version: result.state.version,
+  });
+  return result;
+}
+
+/** Decline the AI draft for the version the learner saw; the adopted card and version stay unchanged. */
+export async function rejectTopicCardDraft(
+  conversationId: string,
+  version: number,
+): Promise<{ state: TopicCardState; rejected: boolean }> {
+  const response = await authenticatedFetch(`/api/research-coach/${encodeURIComponent(conversationId)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version }),
+  });
+  if (!response.ok) {
+    logger.info('topic_card_reject_failed', { conversationId, status: response.status });
+    throw new TopicCardError(failureFor(response.status));
+  }
+  const result = (await response.json()) as { state: TopicCardState; rejected: boolean };
+  logger.info('topic_card_rejected', {
+    conversationId, rejected: result.rejected, stage: result.state.stage, version: result.state.version,
   });
   return result;
 }

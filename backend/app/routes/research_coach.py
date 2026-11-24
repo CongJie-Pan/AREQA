@@ -1,4 +1,4 @@
-"""Topic Finder (選題) topic-card API: read the card, adopt the AI draft, pick a stage, and set a focus gap aside."""
+"""Topic Finder (選題) topic-card API: read the card, adopt or decline the AI draft, pick a stage, and set a focus gap aside."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class AdoptDraftRequest(BaseModel):
-    """The card version the learner saw when adopting; stale versions are not adopted."""
+    """The card version the learner saw when adopting or declining; stale versions change nothing."""
 
     version: int = Field(ge=0, le=10_000)
 
@@ -75,6 +75,29 @@ async def adopt_topic_draft(
     logger.info("topic_card.draft_adopted conversation_id=%s adopted=%s stage=%s version=%s review_stages=%s",
                 conversation_id, adopted, state.stage, state.version, review_stages)
     return AdoptDraftResponse(state=card_view(state), adopted=adopted)
+
+
+class RejectDraftResponse(BaseModel):
+    state: TopicCardView
+    rejected: bool
+
+
+@router.post("/api/v1/research-coach/{conversation_id}/reject")
+async def reject_topic_draft(
+    conversation_id: str, payload: AdoptDraftRequest, current_user_id: str = Depends(get_current_user),
+) -> RejectDraftResponse:
+    """Learner declines the AI draft they are looking at; the adopted card and version stay as they were."""
+
+    try:
+        result = await topic_card_store.reject(current_user_id, conversation_id, payload.version)
+    except TopicCardUnavailable:
+        raise HTTPException(status_code=503, detail="Topic card unavailable") from None
+    if result is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    state, rejected = result
+    logger.info("topic_card.draft_rejected conversation_id=%s rejected=%s stage=%s version=%s",
+                conversation_id, rejected, state.stage, state.version)
+    return RejectDraftResponse(state=card_view(state), rejected=rejected)
 
 
 @router.post("/api/v1/research-coach/{conversation_id}/stage")

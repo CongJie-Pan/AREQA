@@ -50,6 +50,16 @@ async function mockBackend(page: Page) {
     cards.set(id, next);
     return route.fulfill({ json: { adopted: true, state: next } });
   });
+  // Declining drops the draft; the adopted card and version stay.
+  await page.route('**/api/research-coach/*/reject', (route) => {
+    const id = route.request().url().split('/research-coach/')[1].split('/')[0];
+    const current = cards.get(id) ?? { stage: 1, version: 0, card: empty, pending: null, history: [] };
+    const { version } = route.request().postDataJSON();
+    if (version !== current.version || !current.pending) return route.fulfill({ json: { rejected: false, state: current } });
+    const next: Card = { ...current, pending: null };
+    cards.set(id, next);
+    return route.fulfill({ json: { rejected: true, state: next } });
+  });
   // The learner picks any stage.
   await page.route('**/api/research-coach/*/stage', (route) => {
     const id = route.request().url().split('/research-coach/')[1].split('/')[0];
@@ -109,10 +119,10 @@ test('@smoke the topic card adopts drafts, jumps between stages, and survives a 
   await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
 
   const card = page.getByRole('region', { name: '題目卡' });
-  await expect(card.getByRole('note')).toContainText('系統和 Gemini 差不多', { timeout: 15_000 });
+  await expect(card.getByRole('group', { name: /目前的題目/ })).toContainText('系統和 Gemini 差不多', { timeout: 15_000 });
   await expect(card.getByText('版本 v0')).toBeVisible();
 
-  await card.getByRole('button', { name: '採用這份整理' }).click();
+  await card.getByRole('button', { name: '需要', exact: true }).click();
   await expect(card.getByText('版本 v1')).toBeVisible();
   await expect(card.locator('.areqa-topic-card-step-label')).toHaveText('第 1 階段');
 
@@ -170,9 +180,28 @@ test('@smoke the coach focus can be set aside and a revision shows the check-bac
   await expect(region.getByText('這輪先看：「使用頻率」要用什麼證據看出來')).toBeVisible();
   expect(skipped).toEqual(['measure:aaaaaaaaaaaa']);
 
-  await region.getByRole('button', { name: '採用這份整理' }).click();
+  await region.getByRole('button', { name: '需要', exact: true }).click();
   await expect(region.getByText('你剛改了題目，教練下一輪會先陪你回頭看第 2、5 階段還成不成立。')).toBeVisible();
   await expect(region.getByRole('button', { name: '換一個' })).toHaveCount(0);
+});
+
+test('@smoke the draft asks one question and 不需要 clears it without a new version', async ({ page }) => {
+  await mockBackend(page);
+  await page.goto('/');
+  await startTopicFinder(page);
+  await send(page, '我做的系統和 Gemini 差不多');
+  await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
+
+  const card = page.getByRole('region', { name: '題目卡' });
+  const draft = card.getByRole('group', { name: 'AI 幫你整理了以下內容，要更新到下方「目前的題目」嗎？' });
+  await expect(draft).toContainText('回覆策略與反思', { timeout: 15_000 });
+  await expect(draft.getByRole('button', { name: '需要', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: '我再想想' })).toHaveCount(0);
+
+  await draft.getByRole('button', { name: '不需要', exact: true }).click();
+  await expect(draft).toHaveCount(0);
+  await expect(card.getByText('版本 v0')).toBeVisible();
+  await expect(card.getByText('回覆策略與反思')).toHaveCount(0);
 });
 
 test('@smoke Chat stays separate and ordinary chat still works', async ({ page }) => {
@@ -206,7 +235,7 @@ test('@smoke a candidate branch stays in Topic Finder and the card exports as Ma
   expect((await download).suggestedFilename()).toBe('areqa-topic-card-v0.md');
 
   // Candidates become explorable once the learner adopts the draft.
-  await card.getByRole('button', { name: '採用這份整理' }).click();
+  await card.getByRole('button', { name: '需要', exact: true }).click();
   await card.getByRole('button', { name: '開分支探索：提問與講解的平衡' }).click();
   await expect(page.getByText('回覆第2輪', { exact: true })).toBeVisible();
   expect(streamRequests[1]).toMatchObject({ conversation_kind: 'research_coach', isolated_context: true });
@@ -228,7 +257,8 @@ test('@smoke on a phone the topic card opens as a drawer without horizontal scro
   await page.locator('.areqa-topic-finder-badge').click();
   const card = page.getByRole('region', { name: '題目卡' });
   await expect(card).toBeVisible();
-  await expect(card.getByRole('button', { name: '採用這份整理' })).toBeVisible();
+  await expect(card.getByRole('button', { name: '需要', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: '不需要', exact: true })).toBeVisible();
   await expect(card.getByRole('button', { name: '切換到第 5 階段：做得到嗎？' })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);

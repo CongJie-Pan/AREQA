@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Load the Topic Finder card for one conversation, adopt drafts, pick stages,
+ * Load the Topic Finder card for one conversation, adopt or decline drafts, pick stages,
  * and set the coach's focus gap aside.
  *
  * The backend refreshes the pending draft in the background after each answer,
@@ -15,6 +15,7 @@ import {
   TopicCardError,
   adoptTopicCardDraft,
   fetchTopicCard,
+  rejectTopicCardDraft,
   setTopicCardStage,
   skipTopicCardFocus,
   type TopicCardFailure,
@@ -25,13 +26,15 @@ import {
 export const TOPIC_CARD_REFRESH_DELAYS_MS = [3_000, 9_000];
 
 export type AdoptOutcome = 'adopted' | 'stale' | 'failed';
+export type RejectOutcome = 'rejected' | 'stale' | 'failed';
 
 export interface UseTopicCardResult {
   state: TopicCardState | null;
   failure: TopicCardFailure | null;
-  /** True while adopting a draft or switching stage. */
+  /** True while adopting or declining a draft, switching stage, or setting a focus aside. */
   isSaving: boolean;
   adopt: () => Promise<AdoptOutcome>;
+  reject: () => Promise<RejectOutcome>;
   goToStage: (stage: number) => Promise<boolean>;
   skipFocus: (gapId: string) => Promise<boolean>;
   reload: () => void;
@@ -94,6 +97,23 @@ export function useTopicCard(conversationId: string | null, enabled: boolean): U
     }
   }, [conversationId, isSaving, state]);
 
+  const reject = useCallback(async (): Promise<RejectOutcome> => {
+    if (!conversationId || !state || isSaving) return 'failed';
+    setIsSaving(true);
+    try {
+      const result = await rejectTopicCardDraft(conversationId, state.version);
+      requestRef.current += 1;
+      setState(result.state);
+      setFailure(null);
+      return result.rejected ? 'rejected' : 'stale';
+    } catch {
+      // Keep the draft on screen; the learner can retry.
+      return 'failed';
+    } finally {
+      setIsSaving(false);
+    }
+  }, [conversationId, isSaving, state]);
+
   const goToStage = useCallback(async (stage: number): Promise<boolean> => {
     if (!conversationId || !state || isSaving) return false;
     setIsSaving(true);
@@ -126,5 +146,5 @@ export function useTopicCard(conversationId: string | null, enabled: boolean): U
     }
   }, [conversationId, isSaving, state]);
 
-  return { state, failure, isSaving, adopt, goToStage, skipFocus, reload: load };
+  return { state, failure, isSaving, adopt, reject, goToStage, skipFocus, reload: load };
 }
