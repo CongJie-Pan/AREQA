@@ -55,3 +55,9 @@
   min-height: 0;
   /* Message layout itself comes from the chat's MessageList/MessageItem styles. */
 }
+
+/* The chat list reserves top space on phones for the app's floating sidebar
+   button. This page has an in-flow header instead, so that space was a blank gap. */
+.messages :global(.areqa-message-list-non-empty) {
+  padding-top: 0;
+}
