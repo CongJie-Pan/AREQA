@@ -11,6 +11,7 @@ import {
   CollaborationAccessError,
   deleteOwnCollaborativeMessage,
   fetchCollaborativeMessageRows,
+  isCollaborativeConversation,
   isMemberConversation,
   leaveCollaborativeConversation,
   syncCollaborativeConversationList,
@@ -59,6 +60,10 @@ type CloudMessageRow = {
   feedback_updated_at?: string | null;
   stopped_by_user?: boolean | null;
   request_modes?: unknown;
+  /** Present only on collaborative history rows. */
+  author_user_id?: string | null;
+  author_name?: string | null;
+  author_avatar_url?: string | null;
   created_at: string;
   updated_at?: string | null;
 };
@@ -398,6 +403,8 @@ async function mergeCloudMessages(userId: string, cloudMsgs: CloudMessageRow[]):
         answerBlocks: cloudAnswerBlocks,
         suggestions: cloudSuggestions,
         reasoning: cloudReasoning,
+        // Owner-table rows carry no author display data; keep what the shared history gave.
+        ...(localMsg?.author ? { author: localMsg.author } : {}),
         createdAt: new Date(m.created_at),
         updatedAt: cloudIsNewer ? cloudUpdatedAt : localMsg?.updatedAt,
       } as Message);
@@ -435,6 +442,9 @@ function messageFromCloudRow(m: CloudMessageRow): Message {
     answerBlocks: normalizeJsonArray<AnswerBlock>(m.answer_blocks),
     suggestions: normalizeJsonArray<string>(m.suggestions),
     reasoning: normalizeReasoning(m.reasoning),
+    ...(typeof m.author_user_id === 'string' && m.author_user_id ? {
+      author: { userId: m.author_user_id, name: m.author_name ?? null, avatarUrl: m.author_avatar_url ?? null },
+    } : {}),
     createdAt: new Date(m.created_at),
     updatedAt: cloudUpdatedAt,
   };
@@ -644,6 +654,14 @@ export const syncService = {
           logger.info('sync_collaborative_access_ended', { component: 'syncService', conversationId });
           return syncCollaborativeConversationList(userId);
         }
+      } else if (isCollaborativeConversation(localConversation)) {
+        // The owner reads the shared history too, so questions carry their askers.
+        cloudMsgs = await fetchCollaborativeMessageRows(conversationId, userId).catch((error: unknown) => {
+          logger.warn('sync_collaborative_owner_history_fallback', {
+            component: 'syncService', conversationId, reason: errorMessage(error),
+          });
+          return fetchCloudRows<CloudMessageRow>('messages', userId, (query) => query.eq('conversation_id', conversationId));
+        });
       } else {
         cloudMsgs = await fetchCloudRows<CloudMessageRow>(
           'messages',

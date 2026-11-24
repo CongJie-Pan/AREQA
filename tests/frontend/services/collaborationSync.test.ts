@@ -177,6 +177,25 @@ describe('collaborative conversations in the normal chat', () => {
     expect(rpc).toHaveBeenCalledWith('get_collaborative_conversation', { p_conversation_id: SHARED_ID });
   });
 
+  it('stores who asked each message, for the owner as well', async () => {
+    await db.conversations.put(conversation({ collaboration: { role: 'owner', ownerUserId: 'member-1' } }));
+    rpc.mockResolvedValue({
+      data: {
+        id: SHARED_ID,
+        messages: [{
+          id: 'm1', role: 'user', content: 'q', authorUserId: 'mei', authorName: 'Mei',
+          authorAvatarUrl: 'https://example.com/mei.png', createdAt: '2026-11-19T09:00:00Z',
+        }],
+      },
+      error: null,
+    });
+
+    await syncService.pullConversationMessages(SHARED_ID, 'member-1');
+    expect((await db.messages.get('m1'))?.author).toEqual({
+      userId: 'mei', name: 'Mei', avatarUrl: 'https://example.com/mei.png',
+    });
+  });
+
   it('removes the local copy when access ended', async () => {
     await db.conversations.put(conversation());
     rpc.mockImplementation(async (name: string) => (name === 'get_collaborative_conversation'

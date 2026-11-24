@@ -18,6 +18,9 @@ use to ask the AI together.
   back to view-only removes every participant's access immediately; their
   local copy disappears on the next sync.
 - A participant deleting the conversation from the sidebar leaves it.
+- In shared conversations each question shows the asker's avatar on the
+  bubble's top-right corner; hovering it shows their name. Messages sent from
+  this device that have not synced back yet are shown as the viewer's own.
 
 ## Local-first sync
 
@@ -35,6 +38,10 @@ tables:
 | Feedback | local only |
 | Delete conversation | leave (`conversation_members` row) |
 | Full pull | `list_my_collaborative_conversations` adds, refreshes and drops copies |
+
+While a conversation is shared, the owner also reads it through
+`get_collaborative_conversation` (falling back to the owner table on error), so
+both sides get each message's author (`message.author`, local only).
 
 ## Boundaries
 
@@ -54,14 +61,14 @@ input and forward to the database functions. Only display names leave
 
 1. Apply both migrations in Supabase
    (`20261119000000_collaborative_conversations.sql`, then
-   `20261119010000_collaborative_conversations_in_app.sql`).
+   `20261119010000_collaborative_conversations_in_app.sql`, then
+   `20261124000000_collaborative_message_authors.sql`).
 2. Deploy the backend and frontend together. Before the migration is applied,
    participate links return 503 and every existing path works as before.
 
 ## Known limits (later phases)
 
 - No generation lock yet: two people asking at once both get replies (phase 3).
-- Messages do not show who asked them yet (phase 5).
 - Editing or regenerating a turn someone else wrote cannot remove their
   stored messages, so the others still see the original.
 - Every signed-in chat turn makes one extra Supabase RPC

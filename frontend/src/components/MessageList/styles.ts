@@ -432,6 +432,13 @@ export const useStyles = createStyles(({ css, token }) => ({
     max-width: 100%;
   `,
 
+  /** Room for the asker's avatar on the top-right corner (collaborative chats). */
+  userBubbleWithAuthor: css`
+    position: relative;
+    margin-top: 10px;
+    margin-right: 10px;
+  `,
+
   userBubble: css`
     background: var(--areqa-user-bubble-background);
     color: var(--areqa-user-bubble-color);

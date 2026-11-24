@@ -45,6 +45,9 @@ interface CollaborativeMessagePayload {
   attachments?: unknown;
   requestModes?: unknown;
   stoppedByUser?: boolean | null;
+  authorUserId?: string | null;
+  authorName?: string | null;
+  authorAvatarUrl?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 }
@@ -64,6 +67,9 @@ export interface CollaborativeCloudRow {
   suggestions?: unknown;
   request_modes?: unknown;
   stopped_by_user?: boolean | null;
+  author_user_id?: string | null;
+  author_name?: string | null;
+  author_avatar_url?: string | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -242,6 +248,9 @@ export async function fetchCollaborativeMessageRows(
     suggestions: message.suggestions,
     request_modes: message.requestModes,
     stopped_by_user: message.stoppedByUser ?? null,
+    author_user_id: message.authorUserId ?? null,
+    author_name: message.authorName ?? null,
+    author_avatar_url: message.authorAvatarUrl ?? null,
     created_at: message.createdAt,
     updated_at: message.updatedAt ?? message.createdAt,
   }));

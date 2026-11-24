@@ -12,6 +12,9 @@ import { ArrowDown } from 'lucide-react';
 import { BranchIcon } from '@/components/ConversationBranch/BranchIcon';
 import { useChatStore, chatSelectors } from '@/store/chat';
 import { useConversationStore } from '@/store/conversation';
+import { useAuthStore } from '@/store/auth';
+import type { User } from '@supabase/supabase-js';
+import type { Message } from '@/database/schema';
 import { useNotesStore } from '@/store/notes';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { MessageItem } from './MessageItem';
@@ -208,6 +211,25 @@ function RotatingTypewriterLine({
 /**
  * MessageList displays all messages in the current conversation
  */
+/**
+ * Who asked a question in a collaborative conversation. Messages without a
+ * synced author were just sent from this device, so they are the viewer's own.
+ */
+export function collaborativeAuthor(
+  message: Pick<Message, 'author'>,
+  viewer: User | null,
+  unnamed: string,
+  selfSuffix: string,
+): { name: string; avatarUrl: string | null; label: string } {
+  const isSelf = !message.author || message.author.userId === viewer?.id;
+  const meta = (isSelf ? viewer?.user_metadata : undefined) ?? {};
+  const viewerName = String(meta.username || meta.full_name || meta.name || '').trim();
+  const name = (message.author?.name?.trim() || (isSelf ? viewerName : '')) || unnamed;
+  const avatarUrl = message.author?.avatarUrl
+    || (isSelf ? String(meta.avatar_url || meta.picture || '') || null : null);
+  return { name, avatarUrl, label: isSelf ? `${name} ${selfSuffix}` : name };
+}
+
 export function MessageList({
   className,
   liveVoice = false,
@@ -245,6 +267,10 @@ export function MessageList({
   const activeConversationId = useConversationStore((state) => state.activeConversationId);
   const isMessageHandoffLoading = useConversationStore((state) => state.isMessageHandoffLoading);
   const workspace = useConversationStore((state) => state.workspace);
+  const isCollaborative = useConversationStore((state) => Boolean(
+    state.conversations?.find((conversation) => conversation.id === state.activeConversationId)?.collaboration,
+  ));
+  const currentUser = useAuthStore((state) => state.user);
   const savedMessageIds = React.useMemo(
     () => new Set(savedNotes.map((note) => note.messageId).filter(Boolean)),
     [savedNotes],
@@ -477,10 +503,17 @@ export function MessageList({
             index > 0 &&
             messages[index - 1].role === 'user';
 
+          const author = isCollaborative && message.role === 'user'
+            ? collaborativeAuthor(message, currentUser, t('shareMemberUnnamed'), t('shareYou'))
+            : null;
+
           return (
             <React.Fragment key={message.id}>
               <MessageItem
                 message={message}
+                authorName={author?.name}
+                authorAvatarUrl={author?.avatarUrl}
+                authorLabel={author?.label}
                 isStreaming={Boolean(message.isStreaming || (isCurrentStreaming && isStreaming))}
                 isLast={isLast}
                 className={cx(

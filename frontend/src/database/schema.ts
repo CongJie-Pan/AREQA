@@ -156,6 +156,13 @@ export interface ImageBlock {
  * Message entity
  * Represents a single message in a conversation
  */
+/** Display identity of a message's author in a collaborative conversation. */
+export interface MessageAuthor {
+  userId: string;
+  name?: string | null;
+  avatarUrl?: string | null;
+}
+
 export interface Message {
   /** UUID v4 - Primary key */
   id: string;
@@ -221,6 +228,11 @@ export interface Message {
   createdAt: Date;
   /** Last local/cloud content or metadata edit timestamp. */
   updatedAt?: Date;
+  /**
+   * Collaborative conversations only: who wrote the message. Filled from the
+   * shared history on pull and never pushed (the database records the author).
+   */
+  author?: MessageAuthor;
 }
 
 /**

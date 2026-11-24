@@ -36,6 +36,7 @@ import type {
   RequestMode,
 } from '@/database/schema';
 import { useStyles } from './styles';
+import { AuthorAvatar } from './AuthorAvatar';
 import { ReplyTimestamp } from './ReplyTimestamp';
 import { ImageGenerationLoading } from './ImageGenerationLoading';
 import { normalizeDisplayMathBlocks, normalizeLooseStrongMarkers, rehypeMathSource } from '@/utils/markdownMath';
@@ -681,6 +682,14 @@ export interface MessageItemProps {
   onSelectSuggestion?: (question: string) => void;
   /** Optional class name for custom styling */
   className?: string;
+  /**
+   * Collaborative conversations: who asked this question. Primitive props keep
+   * the memoized item from re-rendering on every list render.
+   */
+  authorName?: string;
+  authorAvatarUrl?: string | null;
+  /** Tooltip / accessible label for the asker's avatar. */
+  authorLabel?: string;
 }
 
 function editingTextareaRows(content: string): number {
@@ -1982,11 +1991,17 @@ export const MessageItem = memo(function MessageItem({
   isLast = false,
   onSelectSuggestion,
   className,
+  authorName,
+  authorAvatarUrl,
+  authorLabel,
 }: MessageItemProps) {
   const { styles, cx } = useStyles();
   const { message: antMessageApi } = App.useApp();
   const { language, t } = useUserPreferences();
   const isUser = message.role === 'user';
+  const authorBadge = isUser && authorName
+    ? <AuthorAvatar label={authorLabel ?? authorName} name={authorName} avatarUrl={authorAvatarUrl} />
+    : null;
   const hasLiveStreamed = useHasLiveStreamed(isStreaming && !thinking?.isThinking);
   const reveal = useStreamingReveal(message.content, isStreaming && !thinking?.isThinking, isUser || Boolean(message.voicePlayback));
   const isDisplayingStream = isStreaming || reveal.isRevealing;
@@ -2611,7 +2626,8 @@ export const MessageItem = memo(function MessageItem({
                       
                       {/* 2. Main Query: Inside bubble */}
                       {remainingText && (
-                        <div className={cx(styles.bubble, styles.userBubble, Boolean(message.requestModes?.length) && styles.userBubbleWithModes)}>
+                        <div className={cx(styles.bubble, styles.userBubble, Boolean(message.requestModes?.length) && styles.userBubbleWithModes, Boolean(authorBadge) && styles.userBubbleWithAuthor)}>
+                          {authorBadge}
                           <RequestModeTokens modes={message.requestModes} />
                           <div className={cx(styles.content, 'areqa-user-bubble-content')}>
                             <ReactMarkdown
@@ -2631,7 +2647,8 @@ export const MessageItem = memo(function MessageItem({
 
                 // Default: render everything inside bubble
                 return (
-                  <div className={cx(styles.bubble, styles.userBubble, Boolean(message.requestModes?.length) && styles.userBubbleWithModes)}>
+                  <div className={cx(styles.bubble, styles.userBubble, Boolean(message.requestModes?.length) && styles.userBubbleWithModes, Boolean(authorBadge) && styles.userBubbleWithAuthor)}>
+                    {authorBadge}
                     <RequestModeTokens modes={message.requestModes} />
                     {displayContent && <div className={cx(styles.content, 'areqa-user-bubble-content')}>
                       <ReactMarkdown
