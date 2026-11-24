@@ -3,6 +3,7 @@
 import React from 'react';
 import { Tooltip } from 'antd';
 import { createStyles } from 'antd-style';
+import { safeAvatarUrl } from '@/utils/avatarUrl';
 
 const useStyles = createStyles(({ css }) => ({
   avatar: css`
@@ -36,17 +37,6 @@ const useStyles = createStyles(({ css }) => ({
     }
   `,
 }));
-
-/** Only web images; anything else falls back to the initial. */
-function safeAvatarUrl(url?: string | null): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Asker's avatar on a user bubble in a collaborative conversation; hovering or

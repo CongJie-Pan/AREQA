@@ -5,6 +5,7 @@ import type { User } from '@supabase/supabase-js';
 import { Globe, Link2, UsersRound, X } from 'lucide-react';
 import { createStyles } from 'antd-style';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { safeAvatarUrl } from '@/utils/avatarUrl';
 
 const useStyles = createStyles(({ css, token }) => ({
   panel: css`
@@ -204,6 +205,7 @@ export type ShareAccessLevel = 'view' | 'edit';
 export interface ShareMember {
   userId: string;
   name?: string | null;
+  avatarUrl?: string | null;
 }
 
 /**
@@ -296,10 +298,12 @@ export function SharePanel({
       </div>
       {isEdit && members.map((member) => {
         const memberName = member.name?.trim() || t('shareMemberUnnamed');
+        const memberAvatar = safeAvatarUrl(member.avatarUrl);
         return (
           <div className={styles.row} key={member.userId} data-testid="share-member">
             <span className={cx(styles.rowIcon, styles.avatar)} aria-hidden="true">
-              {memberName[0]?.toUpperCase() ?? '?'}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {memberAvatar ? <img src={memberAvatar} alt="" referrerPolicy="no-referrer" /> : memberName[0]?.toUpperCase() ?? '?'}
             </span>
             <span className={styles.rowText}>
               <span className={styles.rowTitle}>{memberName}</span>

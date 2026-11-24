@@ -68,4 +68,20 @@ describe('SharePanel', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '移除' })[0]);
     expect(onRemoveMember).toHaveBeenCalledWith('m1');
   });
+
+  it('shows participant avatars and falls back to initials for unsafe ones', () => {
+    render(<UserPreferencesProvider><SharePanel
+      user={user} isCopying={false} onCopyLink={vi.fn()} onClose={vi.fn()}
+      accessLevel="edit" onAccessLevelChange={vi.fn()}
+      members={[
+        { userId: 'm1', name: 'Mei', avatarUrl: 'https://example.com/mei.png' },
+        { userId: 'm2', name: 'Lin', avatarUrl: 'javascript:alert(1)' },
+      ]}
+    /></UserPreferencesProvider>);
+
+    const [mei, lin] = screen.getAllByTestId('share-member');
+    expect(mei.querySelector('img')).toHaveAttribute('src', 'https://example.com/mei.png');
+    expect(lin.querySelector('img')).toBeNull();
+    expect(lin).toHaveTextContent('L');
+  });
 });
