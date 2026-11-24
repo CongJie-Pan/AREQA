@@ -123,12 +123,12 @@ describe('Topic Finder topic card flow', () => {
     await waitFor(() => expect(calls('/api/v1/stream')).toHaveLength(1), { timeout: 10_000 });
     expect(await screen.findByRole('group', { name: /要更新到題目卡嗎/ }, { timeout: 10_000 })).toHaveTextContent('系統和 Gemini 差不多');
     // The draft does not move the learner: they are still at stage 1.
-    expect(screen.getByText('第 1 階段')).toBeInTheDocument();
+    expect(document.querySelector('.areqa-topic-card-step-label')).toHaveTextContent('第 1 階段');
 
     fireEvent.click(screen.getByRole('button', { name: '需要' }));
 
     await waitFor(() => expect(screen.getByText('版本 v1')).toBeInTheDocument());
-    expect(screen.getByText('第 1 階段')).toBeInTheDocument();
+    expect(document.querySelector('.areqa-topic-card-step-label')).toHaveTextContent('第 1 階段');
     expect(screen.queryByRole('group', { name: /要更新到題目卡|加入題目卡/ })).not.toBeInTheDocument();
     expect(JSON.parse(String(calls('/confirm')[0][1]?.body))).toEqual({ version: 0 });
     expect(calls('/stage')).toHaveLength(0);
@@ -192,7 +192,7 @@ describe('Topic Finder topic card flow', () => {
     const payload = JSON.parse(String(calls('/api/v1/stream')[0][1]?.body));
     expect(payload.messages.at(-1).content).toBe('好，我們進到第 4 階段：幫候選題目找「看得見的證據」');
     expect(payload.conversation_kind).toBe('research_coach');
-    await waitFor(() => expect(screen.getByText('第 4 階段')).toBeInTheDocument(), { timeout: 10_000 });
+    await waitFor(() => expect(document.querySelector('.areqa-topic-card-step-label')).toHaveTextContent('第 4 階段'), { timeout: 10_000 });
     expect(screen.queryByRole('button', { name: /前往第/ })).not.toBeInTheDocument();
     expect(calls('/stage')).toHaveLength(0);
   });

@@ -388,18 +388,20 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
           {otherSummary.length > 0 && (
             <details className="areqa-topic-card-fold areqa-topic-card-more">
               <summary>
-                {t('topicCardMoreRecords')}
+                <span className="areqa-topic-card-more-title">{t('topicCardMoreRecords')}</span>
                 <small>{otherSummary.join(' · ')}</small>
               </summary>
               {otherFields.map((field) => (
                 <div key={field} className="areqa-topic-card-group">
-                  <p className="areqa-topic-card-label">{fieldLabel[field]}</p>
+                  <p className="areqa-topic-card-group-label">{fieldLabel[field]}</p>
                   {renderList(state.card, field, false)}
                 </div>
               ))}
               {state.card.discarded.length > 0 && (
                 <div className="areqa-topic-card-group">
-                  <p className="areqa-topic-card-label">{t('topicCardDiscarded')}</p>
+                  <p className="areqa-topic-card-group-label">
+                    {t('topicCardDiscarded')}<span>{state.card.discarded.length}</span>
+                  </p>
                   <ul className="areqa-topic-card-list areqa-topic-card-discarded">
                     {state.card.discarded.map((item) => (
                       <li key={item.topic}>
@@ -418,18 +420,29 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
               )}
               {state.card.objections.length > 0 && (
                 <div className="areqa-topic-card-group">
-                  <p className="areqa-topic-card-label">{t('topicCardObjections')}</p>
+                  <p className="areqa-topic-card-group-label">
+                    {t('topicCardObjections')}<span>{state.card.objections.length}</span>
+                  </p>
                   <ul className="areqa-topic-card-list">{state.card.objections.map((item) => <li key={item}>{item}</li>)}</ul>
                 </div>
               )}
               {state.history.length > 0 && (
                 <div className="areqa-topic-card-group">
-                  <p className="areqa-topic-card-label">{t('topicCardHistory')}</p>
-                  <ul className="areqa-topic-card-list areqa-topic-card-history">
-                    {state.history.map((entry) => (
-                      <li key={entry.version}>v{entry.version} · {topicCardStageLabel(t, entry.stage)}{entry.note ? `：${entry.note}` : ''}</li>
+                  <p className="areqa-topic-card-group-label">
+                    {t('topicCardHistory')}<span>{state.history.length}</span>
+                  </p>
+                  {/* Newest first: the latest change is what the learner usually looks for. */}
+                  <ol className="areqa-topic-card-history">
+                    {[...state.history].reverse().map((entry) => (
+                      <li key={entry.version}>
+                        <span className="areqa-topic-card-history-version">v{entry.version}</span>
+                        <span className="areqa-topic-card-history-note">
+                          {entry.note || '—'}
+                          <small>{topicCardStageLabel(t, entry.stage)}</small>
+                        </span>
+                      </li>
                     ))}
-                  </ul>
+                  </ol>
                 </div>
               )}
             </details>

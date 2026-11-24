@@ -86,7 +86,10 @@ describe('TopicCardPanel', () => {
     expect(more.querySelector('summary')).toHaveTextContent('其他紀錄候選題目 · 淘汰 1 · 反問 1 · 版本 1');
     expect(within(more).getByText('第 2 階段淘汰 · 現成工具已解決 · 之後可以再回來')).toBeInTheDocument();
     expect(within(more).getByText('一直被問會煩')).toBeInTheDocument();
-    expect(within(more).getByText('v4 · 第 4 階段：加入關鍵詞')).toBeInTheDocument();
+    const groupLabels = [...more.querySelectorAll('.areqa-topic-card-group-label')].map((label) => label.textContent);
+    expect(groupLabels).toEqual(['候選題目', '淘汰的題目1', '我的反問1', '版本紀錄1']);
+    const history = more.querySelector('.areqa-topic-card-history li')!;
+    expect(history).toHaveTextContent('v4加入關鍵詞第 4 階段');
     expect(screen.getByText('版本 v4')).toBeInTheDocument();
   });
 
@@ -266,5 +269,21 @@ describe('TopicCardPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '收合題目卡' }));
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('TopicCardPanel other records', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem('areqa:interface-language', 'zh-TW');
+  });
+
+  it('lists versions newest first with the stage under each note', () => {
+    renderPanel({ state: state({ stage: 3, card: { ...empty, candidates: ['A'] }, history: [
+      { version: 1, stage: 1, note: '加入痛點', confirmed_at: 1 },
+      { version: 2, stage: 2, note: '', confirmed_at: 2 },
+    ] }) });
+    const rows = [...document.querySelectorAll('.areqa-topic-card-history li')].map((row) => row.textContent);
+    expect(rows).toEqual(['v2—第 2 階段', 'v1加入痛點第 1 階段']);
   });
 });
