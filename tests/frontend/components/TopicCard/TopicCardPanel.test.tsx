@@ -51,7 +51,7 @@ describe('TopicCardPanel', () => {
     const current = screen.getByRole('button', { name: '切換到第 1 階段：觀察痛點，先發散' });
     expect(current).toHaveAttribute('aria-current', 'step');
 
-    fireEvent.click(screen.getByRole('button', { name: '切換到第 4 階段：怎麼證明？' }));
+    fireEvent.click(screen.getByRole('button', { name: '切換到第 4 階段：幫候選題目找「看得見的證據」' }));
     await waitFor(() => expect(topicCard.goToStage).toHaveBeenCalledWith(4));
     fireEvent.click(current);
     expect(topicCard.goToStage).toHaveBeenCalledTimes(1);

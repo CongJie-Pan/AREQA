@@ -127,8 +127,8 @@ test('@smoke the topic card adopts drafts, jumps between stages, and survives a 
   await expect(card.locator('.areqa-topic-card-step-label')).toHaveText('第 1 階段');
 
   // Jump straight to stage 4, then back to stage 2.
-  await card.getByRole('button', { name: '切換到第 4 階段：怎麼證明？' }).click();
-  await expect(card.getByRole('heading', { name: '怎麼證明？' })).toBeVisible();
+  await card.getByRole('button', { name: '切換到第 4 階段：幫候選題目找「看得見的證據」' }).click();
+  await expect(card.getByRole('heading', { name: '幫候選題目找「看得見的證據」' })).toBeVisible();
   await expect(page.locator('.areqa-topic-finder-badge')).toContainText('第 4 階段');
   await card.getByRole('button', { name: '切換到第 2 階段：有沒有很簡單的解法？' }).click();
   await expect(card.getByRole('heading', { name: '有沒有很簡單的解法？' })).toBeVisible();
