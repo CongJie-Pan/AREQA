@@ -86,12 +86,20 @@ export const formatAnswerBlocksForMarkdown = (message: DisplayMessage): string =
     .join('')}`;
 };
 
-export const exportToMarkdown = (messages: DisplayMessage[]) => {
+export interface ChatExportOptions {
+  /** Collaborative conversations: who asked a question (defaults to "您"). */
+  userLabel?: (message: DisplayMessage) => string;
+}
+
+const speakerName = (msg: DisplayMessage, options: ChatExportOptions): string => (
+  msg.role === 'user' ? `👤 ${options.userLabel?.(msg) || '您'}` : '🤖 AREQA'
+);
+
+export const exportToMarkdown = (messages: DisplayMessage[], options: ChatExportOptions = {}) => {
   let content = '# AREQA 對話紀錄\n\n';
   
   messages.forEach(msg => {
-    const roleName = msg.role === 'user' ? '👤 您' : '🤖 AREQA';
-    content += `### ${roleName}\n`;
+    content += `### ${speakerName(msg, options)}\n`;
     
     if (msg.reasoning && msg.reasoning.content) {
       content += `> **🤔 思考過程：**\n> \n> ${msg.reasoning.content.split('\n').join('\n> ')}\n\n`;
@@ -107,7 +115,7 @@ export const exportToMarkdown = (messages: DisplayMessage[]) => {
   saveAs(blob, `areqa-chat-${new Date().toISOString().slice(0, 10)}.md`);
 };
 
-export const exportToDocx = async (messages: DisplayMessage[]) => {
+export const exportToDocx = async (messages: DisplayMessage[], options: ChatExportOptions = {}) => {
   const children: Paragraph[] = [
     new Paragraph({
       children: [
@@ -118,7 +126,7 @@ export const exportToDocx = async (messages: DisplayMessage[]) => {
   ];
 
   messages.forEach(msg => {
-    const roleName = msg.role === 'user' ? '👤 您' : '🤖 AREQA';
+    const roleName = speakerName(msg, options);
     
     // Add Role Header
     children.push(
@@ -205,6 +213,18 @@ export const exportToPdf = async () => {
   title.style.marginBottom = '20px';
   title.style.color = '#000';
   clonedElement.insertBefore(title, clonedElement.firstChild);
+
+  // Shared chats: an avatar alone does not say who asked, so print the name.
+  clonedElement.querySelectorAll<HTMLElement>('[data-testid="message-author-avatar"]').forEach((avatar) => {
+    const bubble = avatar.parentElement;
+    const label = document.createElement('div');
+    label.textContent = `👤 ${avatar.getAttribute('aria-label') ?? ''}`;
+    label.style.textAlign = 'right';
+    label.style.fontSize = '12px';
+    label.style.color = '#555';
+    bubble?.parentElement?.insertBefore(label, bubble);
+    avatar.remove();
+  });
 
   const opt = {
     margin:       10,

@@ -2,19 +2,29 @@ import { useEffect } from 'react';
 import { db } from '@/database/db';
 import type { Conversation } from '@/database/schema';
 import { isStreamActive, loadMessages } from '@/services/chat';
-import { COLLABORATIVE_REFRESH_INTERVAL_MS } from '@/services/collaborationSync';
+import {
+  COLLABORATIVE_LIST_REFRESH_INTERVAL_MS,
+  COLLABORATIVE_REFRESH_INTERVAL_MS,
+  syncCollaborativeConversationList,
+} from '@/services/collaborationSync';
 import { syncService } from '@/services/syncService';
 import { useChatStore } from '@/store/chat/store';
 import { useConversationStore } from '@/store/conversation';
 import { logger } from '@/utils/logger';
 
 /**
- * Keep an open collaborative conversation current for owner and participants.
+ * Keep collaborative conversations current for owner and participants.
  *
- * Polls while the tab is visible and no answer is streaming, and reloads the
- * message list only when the stored conversation changed. When a
- * participant's access ends, the local copy is gone after the pull; the chat
- * closes it and `onAccessEnded` explains why.
+ * Two loops run while the tab is visible:
+ * - The shared-conversation list is re-synced every 20 s and whenever the tab
+ *   regains focus. Without it, an owner whose first participant joins after
+ *   the page loaded never learns the chat is shared (the flag below is only
+ *   set by a full sync), so it never refreshes until a page reload.
+ * - The open collaborative conversation is polled every 5 s (and on focus),
+ *   reloading the message list only when the stored conversation changed.
+ *
+ * When a participant's access ends, the local copy is gone after the pull;
+ * the chat closes it and `onAccessEnded` explains why.
  */
 export function useCollaborativeRefresh(
   conversation: Pick<Conversation, 'id' | 'collaboration'> | null | undefined,
@@ -61,9 +71,50 @@ export function useCollaborativeRefresh(
     };
 
     const timer = window.setInterval(() => { void tick(); }, COLLABORATIVE_REFRESH_INTERVAL_MS);
+    const onReturn = () => { void tick(); };
+    window.addEventListener('focus', onReturn);
+    document.addEventListener('visibilitychange', onReturn);
     return () => {
       active = false;
       window.clearInterval(timer);
+      window.removeEventListener('focus', onReturn);
+      document.removeEventListener('visibilitychange', onReturn);
     };
   }, [conversationId, onAccessEnded, userId]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    let running = false;
+    let active = true;
+
+    const syncList = async () => {
+      if (running || document.visibilityState !== 'visible') return;
+      running = true;
+      try {
+        if (await syncCollaborativeConversationList(userId) && active) {
+          // Updates sidebar entries and the open chat's shared flag, which starts the poll above.
+          await useConversationStore.getState().loadConversations(userId);
+          logger.info('collab_list_refresh_applied', { component: 'ChatContainer' });
+        }
+      } catch (error) {
+        logger.warn('collab_list_refresh_failed', {
+          component: 'ChatContainer',
+          reason: error instanceof Error ? error.name : 'unknown',
+        });
+      } finally {
+        running = false;
+      }
+    };
+
+    const timer = window.setInterval(() => { void syncList(); }, COLLABORATIVE_LIST_REFRESH_INTERVAL_MS);
+    const onReturn = () => { void syncList(); };
+    window.addEventListener('focus', onReturn);
+    document.addEventListener('visibilitychange', onReturn);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onReturn);
+      document.removeEventListener('visibilitychange', onReturn);
+    };
+  }, [userId]);
 }

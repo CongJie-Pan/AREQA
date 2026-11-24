@@ -5,7 +5,7 @@
  * Main container that assembles the complete chat interface
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { PanelLeftOpen, PanelLeftClose, X, AlertCircle, Download, FileText, FileType, FileCode, Share2, Telescope } from 'lucide-react';
 import { App, Button, Drawer, Dropdown, Popover, Space, Tooltip } from 'antd';
@@ -18,7 +18,8 @@ import { requestSourceMessageFocus } from '@/utils/messageFocus';
 import { generateUUID } from '@/utils/id';
 import { switchConversation, sendMessage, initializeChatService, cancelCurrentStream, regenerateMessage, editUserMessage, editAssistantMessage, deleteLatestConversationTurn } from '@/services/chat';
 import { ConversationList } from '@/components/ConversationList';
-import { MessageList } from '@/components/MessageList';
+import { MessageList, collaborativeAuthor } from '@/components/MessageList';
+import type { DisplayMessage } from '@/store/chat/types';
 import { ImageGenerationLoading } from '@/components/MessageList/ImageGenerationLoading';
 import { ChatInput } from '@/components/ChatInput';
 import { HomeWorkspaceSwitch } from '@/components/WorkspaceSwitch';
@@ -864,6 +865,11 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
     });
   }, [handleShareConversation, shareAccess]);
 
+  // Shared chats name each asker in downloads instead of calling everyone "您".
+  const exportOptions = useMemo(() => (activeConversation?.collaboration ? {
+    userLabel: (message: DisplayMessage) => collaborativeAuthor(message, user, t('shareMemberUnnamed'), t('shareYou')).label,
+  } : {}), [activeConversation?.collaboration, t, user]);
+
   const handleRemoveShareMember = useCallback((memberId: string) => {
     void shareAccess.removeMember(memberId).then((removed) => {
       if (!removed) antMessageApi.error(t('shareMemberRemoveFailed'));
@@ -1093,14 +1099,14 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
                           onClick: async (info) => {
                             try {
                               if (info.key === 'md') {
-                                exportToMarkdown(messages);
+                                exportToMarkdown(messages, exportOptions);
                               } else if (info.key === 'pdf') {
                                 const hide = antMessageApi.loading(t('exportPdfLoading'), 0);
                                 await exportToPdf();
                                 hide();
                               } else if (info.key === 'docx') {
                                 const hide = antMessageApi.loading(t('exportDocxLoading'), 0);
-                                await exportToDocx(messages);
+                                await exportToDocx(messages, exportOptions);
                                 hide();
                               }
                               antMessageApi.success(t('exportSuccess'));

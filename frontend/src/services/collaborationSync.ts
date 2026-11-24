@@ -22,6 +22,8 @@ import { logger } from '@/utils/logger';
 
 /** Open collaborative conversations refresh at this interval (no realtime yet). */
 export const COLLABORATIVE_REFRESH_INTERVAL_MS = 5000;
+/** Picks up newly shared or ended conversations without a page reload. */
+export const COLLABORATIVE_LIST_REFRESH_INTERVAL_MS = 20000;
 
 interface CollaborativeSummary {
   id: string;
