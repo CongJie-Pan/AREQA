@@ -10,6 +10,11 @@ may jump between stages; the AI never moves it.
 AI search suggestions (keywords, possible gaps, related topics) are hints, not
 learner decisions, so they update directly without adoption or a version.
 
+Two rule-based steers shape the next coach turn without extra model calls: a
+revision review after the learner adopts a change that touches stages they
+already worked on, and a single card gap to focus on otherwise. The learner can
+set a focus gap aside, and the coach never shows the diagnosis as a score.
+
 Card text is learner content: it is stored and injected into the coach prompt
 as data, and never logged. Storage and extraction fail soft; the conversation
 continues with the last confirmed card.
@@ -18,7 +23,9 @@ continues with the last confirmed card.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import re
 import logging
 import time
 from typing import Annotated, Any, Literal
@@ -167,6 +174,39 @@ class HistoryEntry(BaseModel):
     confirmed_at: int
 
 
+ReviewField = Literal["pain_point", "candidates", "mother_question", "operationalization"]
+
+
+class RevisionReview(BaseModel):
+    """An adopted change that may affect stages the learner had already worked on.
+
+    The next coach turn asks the learner to check those stages once; the turn
+    that asked clears it (see ``refresh_pending_card``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+    changed: list[ReviewField] = Field(min_length=1, max_length=4)
+    stages: list[Annotated[int, Field(ge=FIRST_STAGE, le=FINAL_STAGE)]] = Field(min_length=1, max_length=5)
+    created_at: float
+
+
+FocusKind = Literal["pain_point", "candidates", "own_candidate", "mother_question", "operationalization",
+                    "measure", "feasibility_missing", "feasibility_unsure"]
+FOCUS_ID_PATTERN = re.compile(r"^[a-z_]{1,40}(:[a-z0-9_]{1,40})?$")
+MAX_SKIPPED_FOCUS = 20
+
+
+class FocusGap(BaseModel):
+    """One rule-detected gap on the card. ``id`` is stable and carries no learner text."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    kind: FocusKind
+    # The learner's term (measure) or a feasibility key; empty for card-level gaps.
+    term: str = ""
+
+
 class TopicCardState(BaseModel):
     """Card plus workflow state, as returned to the learner's client."""
 
@@ -177,6 +217,15 @@ class TopicCardState(BaseModel):
     pending: PendingDraft | None = None
     suggestions: Suggestions = Field(default_factory=Suggestions)
     history: list[HistoryEntry] = Field(default_factory=list)
+    review: RevisionReview | None = None
+    # Focus gaps the learner set aside in this conversation; they stay visible on the card.
+    skipped_focus: list[str] = Field(default_factory=list, max_length=MAX_SKIPPED_FOCUS)
+
+
+class TopicCardView(TopicCardState):
+    """API response: the stored state plus the derived focus gap for this turn."""
+
+    focus: FocusGap | None = None
 
 
 def _clean_list(values: list[str], limit: int) -> list[str]:
@@ -285,9 +334,52 @@ def with_pending(state: TopicCardState, patch: CardPatch) -> TopicCardState:
     return state.model_copy(update=updates) if updates else state
 
 
+# Which earlier conclusions a revised field can invalidate. Pain point and
+# candidates are checked at stage 2 (simplest solution); the mother question
+# frames the evidence (4) and feasibility (5); measures shape data needs (5).
+_REVIEW_IMPACT: dict[str, tuple[int, ...]] = {
+    "pain_point": (2, 3, 4, 5),
+    "candidates": (2, 5),
+    "mother_question": (2, 4, 5),
+    "operationalization": (5,),
+}
+
+
+def worked_stages(state: TopicCardState) -> set[int]:
+    """Stages with recorded work: an adopted version there, or the stage's own card field."""
+
+    stages = {entry.stage for entry in state.history if FIRST_STAGE <= entry.stage <= FINAL_STAGE}
+    card = state.card
+    if any(item.filter == 2 for item in card.discarded):
+        stages.add(2)
+    if card.mother_question:
+        stages.add(MOTHER_QUESTION_STAGE)
+    if card.operationalization:
+        stages.add(OPERATIONALIZATION_STAGE)
+    if card.feasibility:
+        stages.add(FEASIBILITY_STAGE)
+    return stages
+
+
+def revision_review(before: TopicCardState, after: TopicCard, version: int,
+                    *, now: float | None = None) -> RevisionReview | None:
+    """Review only revisions (not first fills) that touch other stages already worked on."""
+
+    changed = [field for field in _REVIEW_IMPACT
+               if getattr(before.card, field) and getattr(before.card, field) != getattr(after, field)]
+    worked = worked_stages(before) - {before.stage}
+    stages = sorted({stage for field in changed for stage in _REVIEW_IMPACT[field]} & worked)
+    if not stages:
+        return None
+    return RevisionReview(version=version, changed=changed, stages=stages,
+                          created_at=time.time() if now is None else now)
+
+
 def adopt_draft(state: TopicCardState, *, now: int | None = None) -> TopicCardState:
     """Learner adopted the AI draft: merge it and add a version. The stage does not change.
 
+    Adds a revision review when the change touches stages already worked on; an
+    earlier review that has not been asked yet stays when this change needs none.
     Without a pending draft the state is returned unchanged.
     """
 
@@ -295,14 +387,72 @@ def adopt_draft(state: TopicCardState, *, now: int | None = None) -> TopicCardSt
         return state
     notes = "；".join(_clean_note(note) for note in state.pending.notes)
     version = state.version + 1
+    review = revision_review(state, state.pending.card, version, now=now)
     return state.model_copy(update={
         "version": version,
         "card": state.pending.card,
         "pending": None,
+        "review": review or state.review,
         "history": [*state.history, HistoryEntry(
             version=version, stage=state.stage, note=notes[:600], confirmed_at=int(now or time.time()),
         )][-30:],
     })
+
+
+def _focus_id(kind: str, term: str = "") -> str:
+    """Stable gap id; learner terms are hashed so ids and logs never carry card text."""
+
+    if not term:
+        return kind
+    if term in FEASIBILITY_KEYS:
+        return f"{kind}:{term}"
+    return f"{kind}:{hashlib.sha256(term.encode('utf-8')).hexdigest()[:12]}"
+
+
+def diagnose_gaps(stage: int, card: TopicCard) -> list[FocusGap]:
+    """Rule-detected gaps for the current stage, most basic first. No model call."""
+
+    gaps: list[tuple[str, str]] = []
+    if stage == FIRST_STAGE:
+        if not card.pain_point:
+            gaps.append(("pain_point", ""))
+        if not card.candidates:
+            gaps.append(("candidates", ""))
+        elif all(item in card.ai_candidates for item in card.candidates):
+            gaps.append(("own_candidate", ""))
+    elif stage == 2 and not card.candidates:
+        gaps.append(("candidates", ""))
+    elif stage == MOTHER_QUESTION_STAGE and not card.mother_question:
+        gaps.append(("mother_question", ""))
+    elif stage == OPERATIONALIZATION_STAGE:
+        if not card.operationalization:
+            gaps.append(("operationalization", ""))
+        gaps.extend(("measure", item.term) for item in card.operationalization if not item.measure)
+    elif stage == FEASIBILITY_STAGE:
+        status = {item.key: item.status for item in card.feasibility}
+        gaps.extend(("feasibility_missing", key) for key in FEASIBILITY_KEYS if key not in status)
+        gaps.extend(("feasibility_unsure", key) for key in FEASIBILITY_KEYS if status.get(key) == "unsure")
+    return [FocusGap(id=_focus_id(kind, term), kind=kind, term=term) for kind, term in gaps]
+
+
+def current_focus(state: TopicCardState) -> FocusGap | None:
+    """First gap the learner has not set aside, on the card the coach is looking at."""
+
+    card = state.pending.card if state.pending else state.card
+    skipped = set(state.skipped_focus)
+    return next((gap for gap in diagnose_gaps(state.stage, card) if gap.id not in skipped), None)
+
+
+def card_view(state: TopicCardState) -> TopicCardView:
+    return TopicCardView(**dict(state), focus=current_focus(state))
+
+
+def skip_focus(state: TopicCardState, gap_id: str) -> TopicCardState:
+    """Set a gap aside for this conversation; repeats are harmless and the list stays bounded."""
+
+    if gap_id in state.skipped_focus:
+        return state
+    return state.model_copy(update={"skipped_focus": [*state.skipped_focus, gap_id][-MAX_SKIPPED_FOCUS:]})
 
 
 def stage_label(stage: int) -> str:
@@ -311,11 +461,40 @@ def stage_label(stage: int) -> str:
     return f"第 {max(stage, FIRST_STAGE)} 階段／共 5 階段"
 
 
+FEASIBILITY_NAMES = {"time": "時間", "data": "資料與場域", "advisor": "指導教授與方法", "prior_work": "有沒有人做過",
+                     "ethics": "研究倫理"}
+_REVIEW_FIELD_NAMES = {"pain_point": "痛點", "candidates": "候選題目", "mother_question": "母問題",
+                       "operationalization": "關鍵詞與證據"}
+
+
+def _focus_instruction(gap: FocusGap) -> str:
+    name = FEASIBILITY_NAMES.get(gap.term, gap.term)
+    return {
+        "pain_point": "學習者還沒寫下痛點：請他用一句話寫出「我卡在／我好奇＿＿」",
+        "candidates": "題目卡上還沒有候選題目：陪他從痛點發散出幾個想解決的問題",
+        "own_candidate": "目前的候選題目都是 AI 提議的：請學習者挑一題用自己的話重寫，或提出自己的題目",
+        "mother_question": "還沒有母問題：請他拿掉工具和案例，自己寫出真正想知道的問題",
+        "operationalization": "還沒列出關鍵詞：請他從題目裡挑出需要拿證據說明的關鍵詞",
+        "measure": f"關鍵詞「{name}」還沒說要用什麼證據看出來：具體問這個詞",
+        "feasibility_missing": f"可行性的「{name}」還沒談：問這一項",
+        "feasibility_unsure": f"可行性的「{name}」學習者還不確定：問他還缺什麼才能確定",
+    }[gap.kind]
+
+
+def _review_instruction(review: RevisionReview) -> str:
+    changed = "、".join(_REVIEW_FIELD_NAMES[field] for field in review.changed)
+    stages = "、".join(str(stage) for stage in review.stages)
+    return (f"【回頭檢查】學習者剛採用 Version {review.version}，改了{changed}。本輪先只問一題：這個改動會不會影響"
+            f"第 {stages} 階段先前的結論？點出那些階段在題目卡上記錄的內容，請學習者自己判斷，不要替他判斷。"
+            "若學習者說沒有影響，就接受並回到本輪焦點，不要追問。")
+
+
 def render_card_prompt(state: TopicCardState | None) -> str:
     """Bounded prompt block with the current stage focus and the card as data.
 
-    Returns an empty string when the card could not be loaded, so the coach
-    skill's own stage inference applies.
+    A pending revision review takes the turn's single question; otherwise the
+    first card gap the learner has not set aside does. Returns an empty string
+    when the card could not be loaded, so the coach skill's own stage inference applies.
     """
 
     if state is None:
@@ -328,6 +507,14 @@ def render_card_prompt(state: TopicCardState | None) -> str:
         ("專注在本輪焦點。若學習者自己談到別的階段，跟著他談，並提醒一句可以在題目卡上切換階段；不要把他硬拉回來。"
          "若學習者提到已淘汰的題目，提醒當初是在第幾階段淘汰的。對學習者說「第幾階段」，不要說「關」「篩子」或內部名稱。"),
     ]
+    focus = current_focus(state)
+    if state.review is not None:
+        lines.append(_review_instruction(state.review))
+    elif focus is not None:
+        lines.append(
+            f"【本輪缺口】{_focus_instruction(focus)}。只針對這一個缺口問一題，並連結到學習者最新說的話。"
+            "若學習者在問資訊，先回答再問；若他說先放著或想談別的，就跟著他，不要再拉回這個缺口。"
+            "不要對學習者說「缺口」，也不要打分數。")
     if card.pain_point:
         lines.append(f"痛點：{card.pain_point}")
     if card.mother_question:
@@ -340,10 +527,8 @@ def render_card_prompt(state: TopicCardState | None) -> str:
             f"{item.term}→{item.measure or '❗尚未填'}" for item in card.operationalization))
     if card.feasibility:
         status = {"ok": "可以", "unsure": "還不確定", "blocked": "有困難"}
-        names = {"time": "時間", "data": "資料與場域", "advisor": "指導教授與方法", "prior_work": "有沒有人做過",
-                 "ethics": "研究倫理"}
         lines.append("可行性：" + "；".join(
-            f"{names[item.key]}→{status[item.status]}{('（' + item.note + '）') if item.note else ''}"
+            f"{FEASIBILITY_NAMES[item.key]}→{status[item.status]}{('（' + item.note + '）') if item.note else ''}"
             for item in card.feasibility))
     if card.discarded:
         lines.append("已淘汰：" + "；".join(
@@ -423,6 +608,9 @@ def _decode(value: Any, default: Any) -> Any:
 
 # Suggestions ride inside the ``card`` jsonb so no extra column (or migration) is needed.
 _SUGGESTIONS_KEY = "_suggestions"
+# Workflow state shares the card JSON column (like suggestions), so no schema change is needed.
+_REVIEW_KEY = "_review"
+_SKIPPED_FOCUS_KEY = "_skipped_focus"
 
 
 class TopicCardUnavailable(RuntimeError):
@@ -508,15 +696,22 @@ class TopicCardStore:
             return None
         card = dict(_decode(row[2], {}))
         suggestions = card.pop(_SUGGESTIONS_KEY, None) or {}
+        review = card.pop(_REVIEW_KEY, None)
+        skipped = card.pop(_SKIPPED_FOCUS_KEY, None) or []
         return TopicCardState(
             stage=row[0], version=row[1], card=card, suggestions=suggestions,
             pending=_decode(row[3], None), history=_decode(row[4], []),
+            review=review, skipped_focus=skipped,
         )
 
     async def _write(self, connection, engine, params, state: TopicCardState) -> None:
         stored_card = state.card.model_dump()
         if not state.suggestions.is_empty():
             stored_card[_SUGGESTIONS_KEY] = state.suggestions.model_dump()
+        if state.review is not None:
+            stored_card[_REVIEW_KEY] = state.review.model_dump()
+        if state.skipped_focus:
+            stored_card[_SKIPPED_FOCUS_KEY] = state.skipped_focus
         values = {
             **params, "stage": state.stage, "version": state.version,
             "card": json.dumps(stored_card, ensure_ascii=False),
@@ -597,6 +792,47 @@ class TopicCardStore:
 
         return await self._run("adopt", work)
 
+    async def _update(self, operation: str, user_id: str, conversation_id: str, change) -> TopicCardState | None:
+        """Apply ``change`` to the owner's locked row; an unchanged result is not rewritten."""
+
+        if not self._valid_scope(user_id, conversation_id):
+            return None
+        params = {"user_id": str(user_id), "conversation_id": str(conversation_id)}
+
+        async def work(engine):
+            async with engine.begin() as connection:
+                if not await self._owned(connection, params):
+                    return None
+                current = await self._select(connection, params, lock=engine.dialect.name == "postgresql") or TopicCardState()
+                state = change(current)
+                if state is not current:
+                    await self._write(connection, engine, params, state)
+                return state
+
+        return await self._run(operation, work)
+
+    async def skip_focus(self, user_id: str, conversation_id: str, gap_id: str) -> TopicCardState | None:
+        """Learner set a focus gap aside; ``None`` for an unowned conversation or a malformed id."""
+
+        if not FOCUS_ID_PATTERN.fullmatch(gap_id):
+            return None
+        return await self._update("skip_focus", user_id, conversation_id, lambda state: skip_focus(state, gap_id))
+
+    async def clear_review(self, user_id: str, conversation_id: str, *, asked_before: float) -> bool:
+        """Clear a review that existed when the asking turn started; later reviews wait for the next turn."""
+
+        cleared = False
+
+        def change(state: TopicCardState) -> TopicCardState:
+            nonlocal cleared
+            if state.review is None or state.review.created_at > asked_before:
+                return state
+            cleared = True
+            return state.model_copy(update={"review": None})
+
+        await self._update("clear_review", user_id, conversation_id, change)
+        return cleared
+
     async def set_stage(self, user_id: str, conversation_id: str, stage: int) -> TopicCardState | None:
         """Move to the stage the learner picked (1-6); the target is absolute, so repeats are harmless."""
 
@@ -625,8 +861,15 @@ _background_tasks: set[asyncio.Task] = set()
 
 async def refresh_pending_card(*, client: Any, model: str, user_id: str, conversation_id: str,
                                messages: list[dict[str, Any]], answer: str,
+                               turn_started_at: float | None = None,
                                store: TopicCardStore | None = None) -> None:
-    """Extract this turn's proposal and store it as the pending draft (fail soft)."""
+    """Extract this turn's proposal and store it as the pending draft (fail soft).
+
+    Args:
+        turn_started_at: Wall-clock start of the answered turn. A revision review
+            created before it was in that turn's prompt, so it is cleared; one
+            adopted while the answer streamed waits for the next turn.
+    """
 
     store = store or topic_card_store
     started = time.monotonic()
@@ -635,6 +878,11 @@ async def refresh_pending_card(*, client: Any, model: str, user_id: str, convers
         if state is None:
             logger.info("topic_card.extraction_skipped reason=conversation_unavailable conversation_id=%s", conversation_id)
             return
+        if state.review is not None:
+            asked_before = time.time() if turn_started_at is None else turn_started_at
+            if await store.clear_review(user_id, conversation_id, asked_before=asked_before):
+                logger.info("topic_card.review_asked conversation_id=%s version=%s stages=%s",
+                            conversation_id, state.review.version, ",".join(map(str, state.review.stages)))
         base = state.pending.card if state.pending else state.card
         patch = await extract_card_patch(client, model, base, messages, answer, stage=state.stage)
         if patch is None or patch.is_empty():
@@ -664,7 +912,13 @@ async def load_card_prompt(user_id: str, conversation_id: str, store: TopicCardS
 
     store = store or topic_card_store
     try:
-        return render_card_prompt(await store.load(user_id, conversation_id))
+        state = await store.load(user_id, conversation_id)
+        if state is not None:
+            focus = current_focus(state)
+            logger.info("topic_card.prompt_steer conversation_id=%s stage=%s steer=%s focus_kind=%s",
+                        conversation_id, state.stage, "review" if state.review else "focus" if focus else "stage",
+                        focus.kind if focus else "-")
+        return render_card_prompt(state)
     except TopicCardUnavailable:
         return ""
     except (ValidationError, ValueError) as error:

@@ -40,6 +40,7 @@ vi.mock('@/hooks/useTopicCard', async (importOriginal) => {
 const empty = { pain_point: '', mother_question: '', candidates: [], operationalization: [], discarded: [], objections: [] };
 let cardResponse: () => Response;
 let confirmResponse: () => Response;
+let focusResponse: () => Response;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status });
@@ -91,8 +92,10 @@ describe('Topic Finder topic card flow', () => {
       stage: 1, version: 1, card: { ...empty, pain_point: '系統和 Gemini 差不多' }, pending: null,
       history: [{ version: 1, stage: 1, note: '加入痛點', confirmed_at: 1 }],
     } });
+    focusResponse = () => json({ error: 'Topic card unavailable' }, 503);
     vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => {
       const target = String(url);
+      if (target.includes('/focus')) return focusResponse();
       if (target.includes('/api/v1/stream')) return sse('先說說你的痛點？');
       if (target.includes('/card')) return cardResponse();
       if (target.includes('/confirm')) return confirmResponse();
@@ -130,6 +133,35 @@ describe('Topic Finder topic card flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一階段 →' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: '有沒有很簡單的解法？' })).toBeInTheDocument());
     expect(JSON.parse(String(calls('/stage')[0][1]?.body))).toEqual({ stage: 2 });
+  });
+
+  it('lets the learner set the coach focus aside, then shows the check-back after a revision', { timeout: 40_000 }, async () => {
+    const measures = [{ term: '篩選能力', measure: '' }, { term: '使用頻率', measure: '' }];
+    const card = { ...empty, mother_question: '工具代勞會不會削弱篩選能力', operationalization: measures };
+    const first = { id: 'measure:aaaaaaaaaaaa', kind: 'measure', term: '篩選能力' };
+    const second = { id: 'measure:bbbbbbbbbbbb', kind: 'measure', term: '使用頻率' };
+    cardResponse = () => json({ stage: 4, version: 2, card, pending: null, history: [], focus: first });
+    focusResponse = () => json({ stage: 4, version: 2, card, pending: null, history: [], skipped_focus: [first.id], focus: second });
+    render(<Harness />);
+
+    expect(await screen.findByText('這輪先看：「篩選能力」要用什麼證據看出來')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '換一個' }));
+    expect(await screen.findByText('這輪先看：「使用頻率」要用什麼證據看出來')).toBeInTheDocument();
+    expect(JSON.parse(String(calls('/focus')[0][1]?.body))).toEqual({ gap_id: first.id });
+
+    // The learner revises the mother question; the coach will check stage 4 next turn.
+    const revised = { ...card, mother_question: '人還會發展自己的篩選能力嗎' };
+    cardResponse = () => json({ stage: 3, version: 2, card, pending: { card: revised, notes: ['母問題往上抽一層'] }, history: [] });
+    confirmResponse = () => json({ adopted: true, state: {
+      stage: 3, version: 3, card: revised, pending: null, history: [],
+      review: { version: 3, changed: ['mother_question'], stages: [4], created_at: 1 }, focus: null,
+    } });
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '我想把問題往上抽一層' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
+    fireEvent.click(await screen.findByRole('button', { name: '採用這份整理' }, { timeout: 10_000 }));
+
+    expect(await screen.findByText('你剛改了題目，教練下一輪會先陪你回頭看第 4 階段還成不成立。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '換一個' })).not.toBeInTheDocument();
   });
 
   it('keeps the chat working when the topic card API fails', { timeout: 40_000 }, async () => {

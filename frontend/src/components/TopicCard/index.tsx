@@ -9,16 +9,18 @@
  * already adopted, set-aside topics, objections, and history fold away below.
  * A field opens at the stage that asks about it, or once it has content, so a
  * learner at stage 1 never sees measurement jargon but jumping back keeps work.
+ * Under the stage goal, a quiet line says what the coach looks at next: a
+ * check-back after a revision, or one card gap the learner can set aside.
  */
 
 import React, { useState } from 'react';
 import { App } from 'antd';
-import { Download, GitBranch, Telescope, X } from 'lucide-react';
+import { Download, GitBranch, Search, Telescope, Undo2, X } from 'lucide-react';
 import { type TranslationKey, useUserPreferences } from '@/contexts/UserPreferencesContext';
 import type { UseTopicCardResult } from '@/hooks/useTopicCard';
 import {
   TOPIC_CARD_COMPLETED_STAGE, TOPIC_FEASIBILITY_KEYS, type TopicCardContent, type TopicFeasibilityItem,
-  type TopicFeasibilityKey,
+  type TopicFeasibilityKey, type TopicFocusGap, type TopicFocusKind,
 } from '@/services/topicCard';
 import { downloadTopicCardMarkdown } from '@/utils/topicCardMarkdown';
 import {
@@ -48,6 +50,23 @@ export const FEASIBILITY_STATUS: Record<TopicFeasibilityItem['status'], { icon: 
   blocked: { icon: '❌', key: 'topicFeasBlocked' },
 };
 
+const FOCUS_LABEL_KEYS: Record<TopicFocusKind, TranslationKey> = {
+  pain_point: 'topicFocusPainPoint',
+  candidates: 'topicFocusCandidates',
+  own_candidate: 'topicFocusOwnCandidate',
+  mother_question: 'topicFocusMotherQuestion',
+  operationalization: 'topicFocusOperationalization',
+  measure: 'topicFocusMeasure',
+  feasibility_missing: 'topicFocusFeasibilityMissing',
+  feasibility_unsure: 'topicFocusFeasibilityUnsure',
+};
+
+export function topicFocusLabel(t: (key: TranslationKey, vars?: Record<string, string | number>) => string,
+  focus: TopicFocusGap): string {
+  const feasibilityKey = FEASIBILITY_LABEL_KEYS[focus.term as TopicFeasibilityKey];
+  return t(FOCUS_LABEL_KEYS[focus.kind], { term: feasibilityKey ? t(feasibilityKey) : focus.term });
+}
+
 function hasValue(card: TopicCardContent, field: FieldKey): boolean {
   const value = card[field];
   return Array.isArray(value) ? value.length > 0 : Boolean(value);
@@ -70,7 +89,7 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
   const { message } = App.useApp();
   const [notice, setNotice] = useState<string | null>(null);
   const [showReviseHint, setShowReviseHint] = useState(false);
-  const { state, failure, isSaving, adopt, goToStage } = topicCard;
+  const { state, failure, isSaving, adopt, goToStage, skipFocus } = topicCard;
   const stage = normalizeTopicStage(state?.stage ?? 1);
   const isDone = stage >= TOPIC_CARD_COMPLETED_STAGE;
 
@@ -90,6 +109,11 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
     const moved = await goToStage(target);
     setNotice(moved ? null : t('topicCardStageFailed'));
     if (moved) setShowReviseHint(false);
+  };
+
+  const handleSkipFocus = async (gapId: string) => {
+    const skipped = await skipFocus(gapId);
+    setNotice(skipped ? null : t('topicCardFocusSkipFailed'));
   };
 
   const copyKeyword = (keyword: string) => {
@@ -257,6 +281,27 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
             <p className="areqa-topic-card-step-label">{topicCardStageLabel(t, stage)}</p>
             <h3 className="areqa-topic-card-question">{topicStageTitle(t, stage)}</h3>
             <p className="areqa-topic-card-subtitle">{topicStageSubtitle(t, stage)}</p>
+            {/* A pending check-back takes the coach's next question, so the focus line waits for it. */}
+            {state.review ? (
+              <p className="areqa-topic-card-steer" role="note">
+                <Undo2 size={13} aria-hidden="true" />
+                <span>{t('topicCardReviewNote', { stages: state.review.stages.join(t('topicCardStageSeparator')) })}</span>
+              </p>
+            ) : state.focus && !isDone ? (
+              <p className="areqa-topic-card-steer" role="note">
+                <Search size={13} aria-hidden="true" />
+                <span>{t('topicCardFocusLabel')}{topicFocusLabel(t, state.focus)}</span>
+                <button
+                  type="button"
+                  className="areqa-topic-card-steer-skip"
+                  onClick={() => { void handleSkipFocus(state.focus!.id); }}
+                  disabled={isSaving}
+                  title={t('topicCardFocusSkipHint')}
+                >
+                  {t('topicCardFocusSkip')}
+                </button>
+              </p>
+            ) : null}
           </section>
 
           {showSuggestions && (

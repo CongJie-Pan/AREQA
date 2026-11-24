@@ -531,6 +531,24 @@ primary key (user_id, conversation_id)
 - **AI 提議標記**：`TopicCard.ai_candidates` 記錄由 AI 提出、使用者尚未改寫的候選；候選清單變動時自動過濾。題目卡、AI prompt 和 Markdown 匯出都會標示。
 - 測試：後端、前端元件、Markdown 和整合測試都已更新並通過；`check:report:strict` 通過；e2e 9/9 通過。真實模型抽查：使用者自己想的題目沒有被標記，AI 提議、使用者只說「列進去」的兩題被標成 AI 提議。
 
+### 6.13 推理與修改的循環：回頭檢查與題目卡缺口焦點（2026-11-24）
+
+參考 Favero et al.〈Thinking Is Not Writing〉（MAIKE，2026）。這篇研究的證據是探索性的：65 人，文章分數沒有明顯差異。但「討論之後真的去修改」的次數和進步正相關。所以只借兩個機制，不借多組產生器、裁判挑題、每輪三個候選回覆這套多次呼叫 LLM 的流程，也不借只會發問的模式（理由同 6.12）。
+
+- **回頭檢查**（對應論文的 Module E）：採用時，`revision_review` 比對採用前後的卡片。只有「修改」才會觸發（第一次填入不算），而且修改要碰到其他已經做過的階段才會觸發：
+  - 已經做過的階段：該階段有採用過的版本，或該階段的欄位已經有內容。
+  - 每個欄位會影響的階段：痛點 → 2–5；候選 → 2、5；母問題 → 2、4、5；操作化 → 5。
+  - 下一輪 prompt 會出現 `【回頭檢查】`，教練只問一題，由學習者判斷；學習者說沒影響就接受，不追問。
+  - 那一輪回答完之後，`refresh_pending_card` 會用該輪的開始時間清掉回頭檢查。如果是在回答串流途中才採用的，會留到下一輪。
+- **題目卡缺口焦點**（對應論文的 Module A–C 精簡版）：`diagnose_gaps` 用規則找出目前階段的缺口，不呼叫模型。例如：痛點未填、候選全是 AI 提議、母問題未填、關鍵詞沒有量測方式、可行性未談或還不確定。
+  - 第一個沒被放下的缺口會成為 `【本輪缺口】`；如果有待處理的回頭檢查，就讓回頭檢查先問。
+  - 題目卡顯示「這輪先看：…」，旁邊有「換一個」按鈕，呼叫 `POST /api/v1/research-coach/{id}/focus/skip`。
+  - 被放下的缺口在這段對話裡不會再成為焦點，但題目卡上的 ⚠️ 仍然保留。
+  - 缺口 id 會把學習者的詞雜湊，日誌只記缺口種類。
+- **儲存**：`review` 和 `skipped_focus` 和建議一樣存在 card JSON 的保留鍵（`_review`、`_skipped_focus`），不需要 migration。API 回應多一個推導出來的 `focus` 欄位。
+- **過程指標**（只記事件，不記內容）：`topic_card.draft_adopted review_stages=`、`topic_card.review_asked`、`topic_card.focus_skipped focus_kind=`、`topic_card.prompt_steer steer=review|focus|stage`。
+- 選題教練 skill 升到 `RESEARCH_TOPIC_COACH_SKILL_V3`，新增「回頭檢查」和「題目卡缺口焦點」兩條規則。
+
 ## 7. 其他品質要求
 
 - 前端改動要先跑相關的 Vitest 檔案，再跑全部套件。

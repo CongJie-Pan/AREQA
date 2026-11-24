@@ -2,13 +2,16 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TOPIC_CARD_REFRESH_DELAYS_MS, useTopicCard } from '@/hooks/useTopicCard';
 import { useChatStore } from '@/store/chat';
-import { TopicCardError, adoptTopicCardDraft, fetchTopicCard, setTopicCardStage, type TopicCardState } from '@/services/topicCard';
+import {
+  TopicCardError, adoptTopicCardDraft, fetchTopicCard, setTopicCardStage, skipTopicCardFocus, type TopicCardState,
+} from '@/services/topicCard';
 
 vi.mock('@/services/topicCard', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/services/topicCard')>(),
   fetchTopicCard: vi.fn(),
   adoptTopicCardDraft: vi.fn(),
   setTopicCardStage: vi.fn(),
+  skipTopicCardFocus: vi.fn(),
 }));
 
 const empty = { pain_point: '', mother_question: '', candidates: [], operationalization: [], discarded: [], objections: [] };
@@ -103,5 +106,23 @@ describe('useTopicCard', () => {
     await act(async () => { moved = await result.current.goToStage(2); });
     expect(moved).toBe(false);
     expect(result.current.state?.stage).toBe(4);
+  });
+  it('sets the focus gap aside and keeps the card when that fails', async () => {
+    const focus = { id: 'mother_question', kind: 'mother_question' as const, term: '' };
+    vi.mocked(fetchTopicCard).mockResolvedValue(state({ stage: 3, focus }));
+    vi.mocked(skipTopicCardFocus).mockResolvedValueOnce(state({ stage: 3, focus: null, skipped_focus: [focus.id] }));
+    const { result } = renderHook(() => useTopicCard('conv-1', true));
+    await waitFor(() => expect(result.current.state?.focus?.id).toBe(focus.id));
+
+    let ok = false;
+    await act(async () => { ok = await result.current.skipFocus(focus.id); });
+    expect(ok).toBe(true);
+    expect(skipTopicCardFocus).toHaveBeenCalledWith('conv-1', focus.id);
+    expect(result.current.state?.focus).toBeNull();
+
+    vi.mocked(skipTopicCardFocus).mockRejectedValueOnce(new TopicCardError('unavailable'));
+    await act(async () => { ok = await result.current.skipFocus('candidates'); });
+    expect(ok).toBe(false);
+    expect(result.current.state?.skipped_focus).toEqual([focus.id]);
   });
 });

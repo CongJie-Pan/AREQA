@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from config import settings
 
@@ -84,9 +85,12 @@ async def complete_answer(service, *, user_id, conversation_id, last_user_msg, m
         from services.conversation.topic_card import schedule_card_refresh
 
         # Proposes a pending card draft; only the learner's confirmation adopts it.
+        # Wall-clock turn start: a revision review older than this was in this turn's prompt.
+        elapsed_ms = getattr(trace, "elapsed_ms", None)
         schedule_card_refresh(
             client=service.client, model=settings.model_policy_classifier, user_id=user_id,
             conversation_id=conversation_id, messages=messages, answer=answer_content_accumulator,
+            turn_started_at=time.time() - (elapsed_ms() / 1000 if callable(elapsed_ms) else 0),
         )
 
     if last_user_msg and service.client and not isolated_context:

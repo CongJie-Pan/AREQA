@@ -680,6 +680,41 @@ button.areqa-topic-finder-badge {
   overflow-wrap: anywhere;
 }
 
+/* What the coach looks at next: quiet, so it reads as a hint rather than a grade. */
+.areqa-topic-card-steer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.areqa-topic-card-steer > svg { flex-shrink: 0; }
+
+.areqa-topic-card-steer > span { min-width: 0; }
+
+.areqa-topic-card-steer-skip {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.areqa-topic-card-steer-skip:hover:not(:disabled),
+.areqa-topic-card-steer-skip:focus-visible {
+  color: var(--foreground);
+  border-color: var(--muted-foreground);
+}
+
+.areqa-topic-card-steer-skip:disabled { cursor: default; opacity: 0.6; }
+
 /* AI search hints: reference only, visually quieter than the learner's own card. */
 .areqa-topic-card-suggestions {
   display: flex;

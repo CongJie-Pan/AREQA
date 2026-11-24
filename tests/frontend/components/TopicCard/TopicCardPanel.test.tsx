@@ -22,7 +22,8 @@ const fullCard = {
 function renderPanel(overrides: Partial<UseTopicCardResult> = {}, onClose?: () => void, onExploreCandidate?: (candidate: string) => void) {
   const topicCard: UseTopicCardResult = {
     state: state(), failure: null, isSaving: false,
-    adopt: vi.fn().mockResolvedValue('adopted'), goToStage: vi.fn().mockResolvedValue(true), reload: vi.fn(),
+    adopt: vi.fn().mockResolvedValue('adopted'), goToStage: vi.fn().mockResolvedValue(true),
+    skipFocus: vi.fn().mockResolvedValue(true), reload: vi.fn(),
     ...overrides,
   };
   render(<UserPreferencesProvider><App><TopicCardPanel topicCard={topicCard} onClose={onClose} onExploreCandidate={onExploreCandidate} /></App></UserPreferencesProvider>);
@@ -219,5 +220,42 @@ describe('TopicCardPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '收合題目卡' }));
     expect(onClose).toHaveBeenCalled();
+  });
+  it('shows the coach focus quietly and lets the learner set it aside', async () => {
+    const focus = { id: 'measure:3fa2b1c09d8e', kind: 'measure' as const, term: '反思深度' };
+    const topicCard = renderPanel({ state: state({ stage: 4, card: fullCard, focus }) });
+
+    expect(screen.getByText('這輪先看：「反思深度」要用什麼證據看出來')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '換一個' }));
+    await waitFor(() => expect(topicCard.skipFocus).toHaveBeenCalledWith(focus.id));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('names feasibility focus items with their label, not the internal key', () => {
+    renderPanel({ state: state({ stage: 5, focus: { id: 'feasibility_unsure:ethics', kind: 'feasibility_unsure', term: 'ethics' } }) });
+    expect(screen.getByText('這輪先看：可行性：研究倫理還缺什麼才能確定')).toBeInTheDocument();
+    expect(screen.queryByText(/ethics/)).not.toBeInTheDocument();
+  });
+
+  it('reports a failed set-aside without losing the card', async () => {
+    const focus = { id: 'mother_question', kind: 'mother_question' as const, term: '' };
+    renderPanel({ state: state({ stage: 3, focus }), skipFocus: vi.fn().mockResolvedValue(false) });
+    fireEvent.click(screen.getByRole('button', { name: '換一個' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('暫時無法更換，請稍後再試。');
+    expect(screen.getByText('這輪先看：拿掉工具和案例，你真正想知道什麼')).toBeInTheDocument();
+  });
+
+  it('shows the pending check-back instead of the focus after a revision', () => {
+    const focus = { id: 'mother_question', kind: 'mother_question' as const, term: '' };
+    renderPanel({ state: state({
+      stage: 3, focus, review: { version: 3, changed: ['mother_question'], stages: [2, 4], created_at: 1 },
+    }) });
+    expect(screen.getByText('你剛改了題目，教練下一輪會先陪你回頭看第 2、4 階段還成不成立。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '換一個' })).not.toBeInTheDocument();
+  });
+
+  it('shows no focus line for older backends or when the topic is done', () => {
+    renderPanel({ state: state({ stage: 6, focus: { id: 'candidates', kind: 'candidates', term: '' } }) });
+    expect(screen.queryByText(/這輪先看/)).not.toBeInTheDocument();
   });
 });

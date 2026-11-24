@@ -9,11 +9,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/utils';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Mirrors the backend's focus id format; ids never carry card text. */
+const FOCUS_ID_PATTERN = /^[a-z_]{1,40}(:[a-z0-9_]{1,40})?$/;
+
+/** Browser-facing action → FastAPI path segment. */
+const UPSTREAM_PATH = { card: 'card', confirm: 'confirm', stage: 'stage', focus: 'focus/skip' } as const;
 
 export async function proxyTopicCard(
   request: NextRequest,
   conversationId: string,
-  action: 'card' | 'confirm' | 'stage',
+  action: keyof typeof UPSTREAM_PATH,
 ): Promise<NextResponse> {
   const authorization = request.headers.get('authorization');
   if (!authorization?.startsWith('Bearer ')) return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
@@ -28,6 +33,10 @@ export async function proxyTopicCard(
         const version = payload?.version;
         if (!Number.isInteger(version) || Number(version) < 0) throw new Error('Invalid version');
         body = JSON.stringify({ version });
+      } else if (action === 'focus') {
+        const gapId = payload?.gap_id;
+        if (typeof gapId !== 'string' || !FOCUS_ID_PATTERN.test(gapId)) throw new Error('Invalid focus');
+        body = JSON.stringify({ gap_id: gapId });
       } else {
         const stage = payload?.stage;
         if (!Number.isInteger(stage) || Number(stage) < 1 || Number(stage) > 6) throw new Error('Invalid stage');
@@ -40,7 +49,7 @@ export async function proxyTopicCard(
 
   try {
     const upstream = await fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'}/api/v1/research-coach/${conversationId}/${action}`,
+      `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'}/api/v1/research-coach/${conversationId}/${UPSTREAM_PATH[action]}`,
       {
         method: action === 'card' ? 'GET' : 'POST',
         headers: { Authorization: authorization, ...(body ? { 'Content-Type': 'application/json' } : {}) },

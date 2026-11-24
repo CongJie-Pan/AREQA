@@ -162,6 +162,20 @@ export type TranslationKey =
   | 'topicCardProgress'
   | 'topicCardOperationalization'
   | 'topicCardMeasureMissing'
+  | 'topicCardFocusLabel'
+  | 'topicCardFocusSkip'
+  | 'topicCardFocusSkipHint'
+  | 'topicCardFocusSkipFailed'
+  | 'topicCardReviewNote'
+  | 'topicCardStageSeparator'
+  | 'topicFocusPainPoint'
+  | 'topicFocusCandidates'
+  | 'topicFocusOwnCandidate'
+  | 'topicFocusMotherQuestion'
+  | 'topicFocusOperationalization'
+  | 'topicFocusMeasure'
+  | 'topicFocusFeasibilityMissing'
+  | 'topicFocusFeasibilityUnsure'
   | 'topicCardDiscarded'
   | 'topicCardDiscardedBy'
   | 'topicCardCanReturn'
@@ -631,6 +645,20 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardProgress: "進度",
     topicCardOperationalization: "怎麼證明（每個關鍵詞用什麼證據看）",
     topicCardMeasureMissing: "還沒想好用什麼證據",
+    topicCardFocusLabel: "這輪先看：",
+    topicCardFocusSkip: "換一個",
+    topicCardFocusSkipHint: "這不是你現在的重點？先放著，教練會改問別的。卡片上仍會保留提醒。",
+    topicCardFocusSkipFailed: "暫時無法更換，請稍後再試。",
+    topicCardStageSeparator: "、",
+    topicCardReviewNote: "你剛改了題目，教練下一輪會先陪你回頭看第 {stages} 階段還成不成立。",
+    topicFocusPainPoint: "用一句話寫下你卡住的問題",
+    topicFocusCandidates: "從痛點想出幾個想解決的問題",
+    topicFocusOwnCandidate: "用自己的話寫一個候選題目",
+    topicFocusMotherQuestion: "拿掉工具和案例，你真正想知道什麼",
+    topicFocusOperationalization: "題目裡哪些關鍵詞需要拿證據說明",
+    topicFocusMeasure: "「{term}」要用什麼證據看出來",
+    topicFocusFeasibilityMissing: "可行性：{term}",
+    topicFocusFeasibilityUnsure: "可行性：{term}還缺什麼才能確定",
     topicCardDiscarded: "淘汰的題目",
     topicCardCanReturn: "之後可以再回來",
     topicCardObjections: "我的反問",
@@ -1066,6 +1094,20 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardProgress: "进度",
     topicCardOperationalization: "怎么证明（每个关键词用什么证据看）",
     topicCardMeasureMissing: "还没想好用什么证据",
+    topicCardFocusLabel: "这轮先看：",
+    topicCardFocusSkip: "换一个",
+    topicCardFocusSkipHint: "这不是你现在的重点？先放着，教练会改问别的。卡片上仍会保留提醒。",
+    topicCardFocusSkipFailed: "暂时无法更换，请稍后再试。",
+    topicCardStageSeparator: "、",
+    topicCardReviewNote: "你刚改了题目，教练下一轮会先陪你回头看第 {stages} 阶段还成不成立。",
+    topicFocusPainPoint: "用一句话写下你卡住的问题",
+    topicFocusCandidates: "从痛点想出几个想解决的问题",
+    topicFocusOwnCandidate: "用自己的话写一个候选题目",
+    topicFocusMotherQuestion: "拿掉工具和案例，你真正想知道什么",
+    topicFocusOperationalization: "题目里哪些关键词需要拿证据说明",
+    topicFocusMeasure: "「{term}」要用什么证据看出来",
+    topicFocusFeasibilityMissing: "可行性：{term}",
+    topicFocusFeasibilityUnsure: "可行性：{term}还缺什么才能确定",
     topicCardDiscarded: "淘汰的题目",
     topicCardCanReturn: "之后可以再回来",
     topicCardObjections: "我的反问",
@@ -1501,6 +1543,20 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardProgress: "Progress",
     topicCardOperationalization: "How you will show it (evidence for each key term)",
     topicCardMeasureMissing: "No evidence chosen yet",
+    topicCardFocusLabel: "Next up: ",
+    topicCardFocusSkip: "Something else",
+    topicCardFocusSkipHint: "Not your focus right now? Set it aside and the coach will ask about something else. The card keeps the reminder.",
+    topicCardFocusSkipFailed: "Could not switch. Please try again.",
+    topicCardStageSeparator: ", ",
+    topicCardReviewNote: "You just changed your topic. Next, the coach will check with you whether your earlier work in stage {stages} still holds.",
+    topicFocusPainPoint: "write what you are stuck on in one sentence",
+    topicFocusCandidates: "turn your pain point into a few problems worth solving",
+    topicFocusOwnCandidate: "put one candidate topic in your own words",
+    topicFocusMotherQuestion: "without the tool and the example, what do you really want to know",
+    topicFocusOperationalization: "which key terms in your topic need evidence",
+    topicFocusMeasure: "what evidence will show \"{term}\"",
+    topicFocusFeasibilityMissing: "feasibility: {term}",
+    topicFocusFeasibilityUnsure: "feasibility: what is still missing for {term}",
     topicCardDiscarded: "Set-aside topics",
     topicCardCanReturn: "may return later",
     topicCardObjections: "My objections",

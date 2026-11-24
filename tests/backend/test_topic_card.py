@@ -507,3 +507,253 @@ def test_notes_do_not_double_punctuation():
     state = with_pending(state, CardPatch(candidates=["b"], change_note="擴充影響因素；"))
     assert state.pending.notes == ["確立了研究的核心問題", "擴充影響因素"]
     assert "。；" not in adopt_draft(state).history[-1].note
+
+
+# --- Reasoning–revision loop: revision review and card-gap focus ---------------------------
+
+
+def _worked_state(stage=3, **card):
+    """A card where stage 2 has an adopted version and stage 4 has measures."""
+
+    base = {"pain_point": "讀論文很慢", "candidates": ["AI 摘要與判斷重點"], "mother_question": "工具代勞會不會削弱篩選能力",
+            "operationalization": [OperationalTerm(term="篩選能力", measure="")]}
+    return TopicCardState(stage=stage, version=2, card=TopicCard(**{**base, **card}),
+                          history=[topic_card.HistoryEntry(version=1, stage=2, note="", confirmed_at=1)])
+
+
+def test_revision_review_targets_worked_stages_touched_by_the_change():
+    before = _worked_state()
+    after = before.card.model_copy(update={"mother_question": "人還會發展自己的篩選能力嗎"})
+
+    review = topic_card.revision_review(before, after, 3, now=10.0)
+
+    assert review.changed == ["mother_question"]
+    # Stage 3 is where the change happened; stage 5 has no work yet.
+    assert review.stages == [2, 4] and review.version == 3 and review.created_at == 10.0
+
+
+@pytest.mark.parametrize("change", [
+    {},  # nothing changed
+    {"objections": ["我自己的反問"]},  # objections never trigger a review
+])
+def test_revision_review_ignores_changes_outside_reviewed_fields(change):
+    before = _worked_state()
+    assert topic_card.revision_review(before, before.card.model_copy(update=change), 3) is None
+
+
+def test_revision_review_skips_first_fills_and_unworked_stages():
+    # First mother question is a fill, not a revision.
+    before = _worked_state(mother_question="")
+    assert topic_card.revision_review(before, before.card.model_copy(update={"mother_question": "新"}), 3) is None
+    # Early divergence: changing candidates with no later work asks nothing.
+    early = TopicCardState(card=TopicCard(candidates=["A"]))
+    assert topic_card.revision_review(early, TopicCard(candidates=["A", "B"]), 1) is None
+
+
+def test_adopt_sets_review_and_keeps_an_unasked_one():
+    state = _worked_state()
+    state = with_pending(state, _patch(mother_question="改過的母問題"))
+    adopted = adopt_draft(state, now=100)
+    assert adopted.review.stages == [2, 4] and adopted.review.version == 3
+
+    # A later adopt that needs no review keeps the one not asked yet.
+    again = adopt_draft(with_pending(adopted, _patch(objections_add=["反問"])), now=200)
+    assert again.review == adopted.review and again.version == 4
+
+
+@pytest.mark.parametrize(("stage", "card", "kinds"), [
+    (1, TopicCard(), ["pain_point", "candidates"]),
+    (1, TopicCard(pain_point="p", candidates=["A"], ai_candidates=["A"]), ["own_candidate"]),
+    (1, TopicCard(pain_point="p", candidates=["A", "B"], ai_candidates=["A"]), []),
+    (2, TopicCard(), ["candidates"]),
+    (3, TopicCard(), ["mother_question"]),
+    (4, TopicCard(), ["operationalization"]),
+    (4, TopicCard(operationalization=[OperationalTerm(term="甲", measure="m"), OperationalTerm(term="乙")]), ["measure"]),
+    (5, TopicCard(feasibility=[FeasibilityItem(key=key, status="ok") for key in ("time", "data", "advisor", "prior_work")]
+                  + [FeasibilityItem(key="ethics", status="unsure")]), ["feasibility_unsure"]),
+    (COMPLETED_STAGE, TopicCard(), []),
+])
+def test_diagnose_gaps_by_stage(stage, card, kinds):
+    assert [gap.kind for gap in topic_card.diagnose_gaps(stage, card)] == kinds
+
+
+def test_feasibility_gaps_list_missing_items_before_unsure_ones():
+    card = TopicCard(feasibility=[FeasibilityItem(key="time", status="unsure")])
+    gaps = topic_card.diagnose_gaps(5, card)
+    assert [gap.id for gap in gaps] == [
+        "feasibility_missing:data", "feasibility_missing:advisor", "feasibility_missing:prior_work",
+        "feasibility_missing:ethics", "feasibility_unsure:time"]
+
+
+def test_focus_ids_never_carry_learner_text():
+    card = TopicCard(operationalization=[OperationalTerm(term=PRIVATE)])
+    [gap] = topic_card.diagnose_gaps(4, card)
+    assert gap.term == PRIVATE and PRIVATE not in gap.id
+    assert topic_card.FOCUS_ID_PATTERN.fullmatch(gap.id)
+    assert gap.id == topic_card.diagnose_gaps(4, card)[0].id  # stable across calls
+
+
+def test_current_focus_skips_set_aside_gaps_and_uses_the_draft():
+    state = TopicCardState(stage=4, card=TopicCard(operationalization=[OperationalTerm(term="甲"), OperationalTerm(term="乙")]))
+    first = topic_card.current_focus(state)
+    assert first.term == "甲"
+
+    skipped = topic_card.skip_focus(state, first.id)
+    assert topic_card.current_focus(skipped).term == "乙"
+    assert topic_card.skip_focus(skipped, first.id) is skipped  # repeat is harmless
+
+    drafted = with_pending(state, _patch(operationalization=[OperationalTerm(term="甲", measure="問卷")]))
+    assert topic_card.current_focus(drafted) is None
+
+
+def test_skipped_focus_list_stays_bounded():
+    state = TopicCardState()
+    for index in range(topic_card.MAX_SKIPPED_FOCUS + 5):
+        state = topic_card.skip_focus(state, f"measure:{index}")
+    assert len(state.skipped_focus) == topic_card.MAX_SKIPPED_FOCUS
+    assert state.skipped_focus[-1] == f"measure:{topic_card.MAX_SKIPPED_FOCUS + 4}"
+
+
+def test_prompt_shows_focus_gap_as_one_question():
+    state = TopicCardState(stage=4, card=TopicCard(operationalization=[OperationalTerm(term="篩選能力")]))
+    prompt = render_card_prompt(state)
+    assert "【本輪缺口】" in prompt and "「篩選能力」" in prompt and "只針對這一個缺口問一題" in prompt
+    assert "【回頭檢查】" not in prompt
+
+
+def test_prompt_review_takes_the_turn_before_the_focus_gap():
+    state = adopt_draft(with_pending(_worked_state(), _patch(mother_question="改過的母問題")), now=1)
+    prompt = render_card_prompt(state)
+    assert "【回頭檢查】學習者剛採用 Version 3，改了母問題" in prompt
+    assert "第 2、4 階段" in prompt and "【本輪缺口】" not in prompt
+
+
+def test_prompt_has_no_focus_when_every_gap_is_set_aside():
+    state = TopicCardState(stage=3)
+    state = topic_card.skip_focus(state, topic_card.current_focus(state).id)
+    prompt = render_card_prompt(state)
+    assert "【本輪缺口】" not in prompt and topic_card.STAGE_FOCUS[3] in prompt
+
+
+@pytest.mark.asyncio
+async def test_store_persists_review_and_skipped_focus_outside_card_fields(storage):
+    store, owner, other, conversation = storage
+    await store.set_stage(owner, conversation, 3)
+    focus_id = topic_card.current_focus(await store.load(owner, conversation)).id
+
+    assert await store.skip_focus(other, conversation, focus_id) is None
+    assert await store.skip_focus(owner, conversation, "bad id!") is None
+    state = await store.skip_focus(owner, conversation, focus_id)
+    assert state.skipped_focus == [focus_id]
+
+    loaded = await store.load(owner, conversation)
+    assert loaded.skipped_focus == [focus_id] and loaded.card == TopicCard()
+    assert topic_card.current_focus(loaded) is None
+
+
+@pytest.mark.asyncio
+async def test_store_clears_only_reviews_older_than_the_asking_turn(storage):
+    store, owner, _other, conversation = storage
+    await store.set_stage(owner, conversation, 4)
+    await store.propose(owner, conversation, _patch(mother_question="母問題 A",
+                                                    operationalization=[OperationalTerm(term="甲", measure="m")]))
+    await store.adopt(owner, conversation, 0)
+    await store.set_stage(owner, conversation, 3)
+    await store.propose(owner, conversation, _patch(mother_question="母問題 B"))
+    state, _ = await store.adopt(owner, conversation, 1)
+    assert state.review.stages == [4]
+    created = state.review.created_at
+
+    # Adopted while the answer streamed: the turn started earlier, so the review waits.
+    assert await store.clear_review(owner, conversation, asked_before=created - 5) is False
+    assert (await store.load(owner, conversation)).review is not None
+    assert await store.clear_review(owner, conversation, asked_before=created + 5) is True
+    assert (await store.load(owner, conversation)).review is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_clears_the_review_its_turn_asked(storage, caplog):
+    store, owner, _other, conversation = storage
+    await store.set_stage(owner, conversation, 4)
+    await store.propose(owner, conversation, _patch(mother_question=PRIVATE,
+                                                    operationalization=[OperationalTerm(term="甲", measure="m")]))
+    await store.adopt(owner, conversation, 0)
+    await store.set_stage(owner, conversation, 3)
+    await store.propose(owner, conversation, _patch(mother_question="母問題 B"))
+    state, _ = await store.adopt(owner, conversation, 1)
+    client = _client(json.dumps({"change_note": ""}))
+
+    await refresh_pending_card(client=client, model="m", user_id=owner, conversation_id=conversation, messages=[],
+                               answer="a", turn_started_at=state.review.created_at - 1, store=store)
+    assert (await store.load(owner, conversation)).review is not None
+
+    with caplog.at_level(logging.INFO):
+        await refresh_pending_card(client=client, model="m", user_id=owner, conversation_id=conversation, messages=[],
+                                   answer="a", turn_started_at=state.review.created_at + 1, store=store)
+    assert (await store.load(owner, conversation)).review is None
+    assert "topic_card.review_asked" in caplog.text and "stages=4" in caplog.text
+    assert PRIVATE not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_card_prompt_logs_steer_without_card_text(storage, caplog):
+    store, owner, _other, conversation = storage
+    await store.set_stage(owner, conversation, 4)
+    await store.propose(owner, conversation, _patch(operationalization=[OperationalTerm(term=PRIVATE)]))
+
+    with caplog.at_level(logging.INFO):
+        prompt = await load_card_prompt(owner, conversation, store)
+    assert f"「{PRIVATE}」" in prompt
+    assert "steer=focus focus_kind=measure" in caplog.text and PRIVATE not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_completion_passes_turn_start_for_review_clearing():
+    import time as time_module
+
+    before = time_module.time()
+    scheduled, _events = await _complete(topic_finder=True)
+    assert before - 1 <= scheduled.call_args.kwargs["turn_started_at"] <= time_module.time()
+
+
+@pytest.mark.asyncio
+async def test_api_returns_focus_and_sets_it_aside(api, caplog):
+    client, current, owner, other, conversation, store = api
+    await store.set_stage(owner, conversation, 4)
+    await store.propose(owner, conversation, _patch(operationalization=[OperationalTerm(term=PRIVATE),
+                                                                         OperationalTerm(term="乙")]))
+
+    card = (await client.get(f"/api/v1/research-coach/{conversation}/card")).json()
+    focus = card["focus"]
+    assert focus["kind"] == "measure" and focus["term"] == PRIVATE
+
+    with caplog.at_level(logging.INFO):
+        skipped = await client.post(f"/api/v1/research-coach/{conversation}/focus/skip", json={"gap_id": focus["id"]})
+    assert skipped.status_code == 200
+    assert skipped.json()["focus"]["term"] == "乙" and skipped.json()["skipped_focus"] == [focus["id"]]
+    assert "topic_card.focus_skipped" in caplog.text and "focus_kind=measure" in caplog.text
+    assert PRIVATE not in caplog.text
+
+    bad = await client.post(f"/api/v1/research-coach/{conversation}/focus/skip", json={"gap_id": "<script>"})
+    assert bad.status_code == 422
+    current["user"] = other
+    assert (await client.post(f"/api/v1/research-coach/{conversation}/focus/skip",
+                              json={"gap_id": focus["id"]})).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_api_adopt_returns_review_and_logs_stages(api, caplog):
+    client, _current, owner, _other, conversation, store = api
+    await store.set_stage(owner, conversation, 4)
+    await store.propose(owner, conversation, _patch(mother_question=PRIVATE,
+                                                    operationalization=[OperationalTerm(term="甲", measure="m")]))
+    await client.post(f"/api/v1/research-coach/{conversation}/confirm", json={"version": 0})
+    await client.post(f"/api/v1/research-coach/{conversation}/stage", json={"stage": 3})
+    await store.propose(owner, conversation, _patch(mother_question="母問題 B"))
+
+    with caplog.at_level(logging.INFO):
+        response = await client.post(f"/api/v1/research-coach/{conversation}/confirm", json={"version": 1})
+    body = response.json()
+    assert body["adopted"] is True and body["state"]["review"]["stages"] == [4]
+    assert body["state"]["review"]["changed"] == ["mother_question"]
+    assert "review_stages=4" in caplog.text and PRIVATE not in caplog.text

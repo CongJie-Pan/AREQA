@@ -131,6 +131,50 @@ test('@smoke the topic card adopts drafts, jumps between stages, and survives a 
   await expect(page.getByRole('region', { name: '題目卡' }).getByText('系統和 Gemini 差不多')).toBeVisible();
 });
 
+test('@smoke the coach focus can be set aside and a revision shows the check-back', async ({ page }) => {
+  await mockBackend(page);
+  const measures = [{ term: '篩選能力', measure: '' }, { term: '使用頻率', measure: '' }];
+  const card = { ...empty, mother_question: '工具代勞會不會削弱篩選能力', operationalization: measures };
+  const revised = { ...card, mother_question: '人還會發展自己的篩選能力嗎' };
+  const focuses = [
+    { id: 'measure:aaaaaaaaaaaa', kind: 'measure', term: '篩選能力' },
+    { id: 'measure:bbbbbbbbbbbb', kind: 'measure', term: '使用頻率' },
+  ];
+  const skipped: string[] = [];
+  let state: Record<string, unknown> = {
+    stage: 4, version: 2, card, pending: { card: revised, notes: ['母問題往上抽一層'] }, history: [], focus: focuses[0],
+  };
+  // Routes registered later take precedence over the generic fake backend.
+  await page.route('**/api/research-coach/*/card', (route) => route.fulfill({ json: state }));
+  await page.route('**/api/research-coach/*/focus', (route) => {
+    skipped.push(route.request().postDataJSON().gap_id);
+    state = { ...state, skipped_focus: [...skipped], focus: focuses.find((focus) => !skipped.includes(focus.id)) ?? null };
+    return route.fulfill({ json: state });
+  });
+  await page.route('**/api/research-coach/*/confirm', (route) => {
+    state = {
+      ...state, version: 3, card: revised, pending: null, focus: null,
+      review: { version: 3, changed: ['mother_question'], stages: [2, 5], created_at: 1 },
+    };
+    return route.fulfill({ json: { adopted: true, state } });
+  });
+
+  await page.goto('/');
+  await startTopicFinder(page);
+  await send(page, '我想把問題往上抽一層');
+  await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
+
+  const region = page.getByRole('region', { name: '題目卡' });
+  await expect(region.getByText('這輪先看：「篩選能力」要用什麼證據看出來')).toBeVisible({ timeout: 15_000 });
+  await region.getByRole('button', { name: '換一個' }).click();
+  await expect(region.getByText('這輪先看：「使用頻率」要用什麼證據看出來')).toBeVisible();
+  expect(skipped).toEqual(['measure:aaaaaaaaaaaa']);
+
+  await region.getByRole('button', { name: '採用這份整理' }).click();
+  await expect(region.getByText('你剛改了題目，教練下一輪會先陪你回頭看第 2、5 階段還成不成立。')).toBeVisible();
+  await expect(region.getByRole('button', { name: '換一個' })).toHaveCount(0);
+});
+
 test('@smoke Chat stays separate and ordinary chat still works', async ({ page }) => {
   const { streamRequests } = await mockBackend(page);
   await page.goto('/');

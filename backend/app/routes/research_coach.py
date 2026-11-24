@@ -1,4 +1,4 @@
-"""Topic Finder (選題) topic-card API: read the card, adopt the AI draft, and pick a stage."""
+"""Topic Finder (選題) topic-card API: read the card, adopt the AI draft, pick a stage, and set a focus gap aside."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ from auth import get_current_user
 from services.conversation.topic_card import (
     COMPLETED_STAGE,
     FIRST_STAGE,
-    TopicCardState,
+    FOCUS_ID_PATTERN,
     TopicCardUnavailable,
+    TopicCardView,
+    card_view,
     topic_card_store,
 )
 
@@ -27,7 +29,7 @@ class AdoptDraftRequest(BaseModel):
 
 
 class AdoptDraftResponse(BaseModel):
-    state: TopicCardState
+    state: TopicCardView
     adopted: bool
 
 
@@ -37,8 +39,14 @@ class SetStageRequest(BaseModel):
     stage: int = Field(ge=FIRST_STAGE, le=COMPLETED_STAGE)
 
 
+class SkipFocusRequest(BaseModel):
+    """The focus gap id the learner set aside (ids never carry card text)."""
+
+    gap_id: str = Field(pattern=FOCUS_ID_PATTERN.pattern, max_length=81)
+
+
 @router.get("/api/v1/research-coach/{conversation_id}/card")
-async def get_topic_card(conversation_id: str, current_user_id: str = Depends(get_current_user)) -> TopicCardState:
+async def get_topic_card(conversation_id: str, current_user_id: str = Depends(get_current_user)) -> TopicCardView:
     """Return the owner's topic card; 404 when the conversation is not theirs (or not synced yet)."""
 
     try:
@@ -47,7 +55,7 @@ async def get_topic_card(conversation_id: str, current_user_id: str = Depends(ge
         raise HTTPException(status_code=503, detail="Topic card unavailable") from None
     if state is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return state
+    return card_view(state)
 
 
 @router.post("/api/v1/research-coach/{conversation_id}/confirm")
@@ -63,15 +71,16 @@ async def adopt_topic_draft(
     if result is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     state, adopted = result
-    logger.info("topic_card.draft_adopted conversation_id=%s adopted=%s stage=%s version=%s",
-                conversation_id, adopted, state.stage, state.version)
-    return AdoptDraftResponse(state=state, adopted=adopted)
+    review_stages = ",".join(map(str, state.review.stages)) if adopted and state.review else "-"
+    logger.info("topic_card.draft_adopted conversation_id=%s adopted=%s stage=%s version=%s review_stages=%s",
+                conversation_id, adopted, state.stage, state.version, review_stages)
+    return AdoptDraftResponse(state=card_view(state), adopted=adopted)
 
 
 @router.post("/api/v1/research-coach/{conversation_id}/stage")
 async def set_topic_stage(
     conversation_id: str, payload: SetStageRequest, current_user_id: str = Depends(get_current_user),
-) -> TopicCardState:
+) -> TopicCardView:
     """Learner picks a stage (forward or back); the AI never moves it."""
 
     try:
@@ -82,4 +91,21 @@ async def set_topic_stage(
         raise HTTPException(status_code=404, detail="Conversation not found")
     logger.info("topic_card.stage_set conversation_id=%s stage=%s version=%s",
                 conversation_id, state.stage, state.version)
-    return state
+    return card_view(state)
+
+
+@router.post("/api/v1/research-coach/{conversation_id}/focus/skip")
+async def skip_topic_focus(
+    conversation_id: str, payload: SkipFocusRequest, current_user_id: str = Depends(get_current_user),
+) -> TopicCardView:
+    """Learner sets the current focus gap aside; the coach then moves to the next gap or the stage goal."""
+
+    try:
+        state = await topic_card_store.skip_focus(current_user_id, conversation_id, payload.gap_id)
+    except TopicCardUnavailable:
+        raise HTTPException(status_code=503, detail="Topic card unavailable") from None
+    if state is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    logger.info("topic_card.focus_skipped conversation_id=%s stage=%s focus_kind=%s skipped=%s",
+                conversation_id, state.stage, payload.gap_id.split(":", 1)[0], len(state.skipped_focus))
+    return card_view(state)

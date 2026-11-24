@@ -117,13 +117,16 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
     prompt_skills.load_prompt_skill.cache_clear()
     try:
         prompt = research_coach.render_prompt_profile("research_coach")
-        assert "RESEARCH_TOPIC_COACH_SKILL_V2" in prompt
+        assert "RESEARCH_TOPIC_COACH_SKILL_V3" in prompt
         assert "never declare that a candidate has passed a stage" in prompt
         assert "may jump forward or back" in prompt
         assert "Do not claim you have searched" in prompt
         assert "Could this problem be solved by new technology or by events within a few years?" in prompt
         assert "Stage 5 (feasibility)" in prompt and "research ethics" in prompt
         assert "Do not generate images" in prompt
+        # V3 reasoning–revision loop: both steers keep the learner in charge.
+        assert "【回頭檢查】" in prompt and "if they say it has no effect, accept it" in prompt
+        assert "【本輪缺口】" in prompt and "Never present the gap as a score" in prompt
         assert "Runtime prompt payload" not in prompt
     finally:
         prompt_skills.load_prompt_skill.cache_clear()
@@ -235,7 +238,7 @@ async def test_context_includes_coach_skill_only_for_topic_finder():
         prompt_skills.load_prompt_skill.cache_clear()
 
     assert "Workspace：Topic Finder" in coach_prompt
-    assert "RESEARCH_TOPIC_COACH_SKILL_V2" in coach_prompt
+    assert "RESEARCH_TOPIC_COACH_SKILL_V3" in coach_prompt
     assert "本回合正式回答必須使用繁體中文" in coach_prompt
     assert "Topic Finder" not in chat_prompt
     assert "Tutor Profile：English Tutor" not in coach_prompt
