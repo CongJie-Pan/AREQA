@@ -134,7 +134,7 @@ describe('Topic Finder topic card flow', () => {
     expect(calls('/stage')).toHaveLength(0);
 
     fireEvent.click(screen.getByRole('button', { name: '切換到第 2 階段：有沒有很簡單的解法？' }));
-    await waitFor(() => expect(document.querySelector('.areqa-topic-card-stage-line')).toHaveTextContent('第 2 階段 · 有沒有很簡單的解法？'));
+    await waitFor(() => expect(screen.getByRole('heading', { name: '有沒有很簡單的解法？' })).toBeInTheDocument());
     expect(JSON.parse(String(calls('/stage')[0][1]?.body))).toEqual({ stage: 2 });
   });
 

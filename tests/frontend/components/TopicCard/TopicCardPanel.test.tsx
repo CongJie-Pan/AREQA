@@ -38,14 +38,13 @@ describe('TopicCardPanel', () => {
     window.localStorage.setItem('areqa:interface-language', 'zh-TW');
   });
 
-  it('names the stage in one line and leaves explanations to the conversation', () => {
+  it('shows the stage, its goal and subtitle, and leaves steering to the conversation', () => {
     renderPanel({ state: state({ stage: 2 }) });
 
-    const line = document.querySelector('.areqa-topic-card-stage-line')!;
-    expect(line).toHaveTextContent('第 2 階段 · 有沒有很簡單的解法？');
-    // The subtitle is only a tooltip now; no hint text, focus line, or next-stage button on the card.
-    expect(line).toHaveAttribute('title', expect.stringContaining('一個現成工具、現有論文或研究成果'));
-    expect(screen.queryByText(/一個現成工具、現有論文或研究成果/)).not.toBeInTheDocument();
+    expect(screen.getByText('第 2 階段')).toHaveClass('areqa-topic-card-step-label');
+    expect(screen.getByRole('heading', { name: '有沒有很簡單的解法？' })).toBeInTheDocument();
+    expect(screen.getByText(/一個現成工具、現有論文或研究成果/)).toHaveClass('areqa-topic-card-subtitle');
+    // No hint text, focus line, or next-stage button on the card.
     expect(screen.queryByText(/要不要採用、何時換階段都由你決定/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /下一階段/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/這輪先看/)).not.toBeInTheDocument();

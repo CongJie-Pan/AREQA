@@ -4,8 +4,8 @@
  * Topic Finder (選題) topic card panel.
  *
  * The conversation does the thinking; the card only keeps what the learner has
- * decided. So the panel shows, top to bottom: the stage stepper with one line
- * naming the stage, the topic headline (mother question, else pain point), the
+ * decided. So the panel shows, top to bottom: the stage stepper with the stage
+ * label, goal and subtitle, the topic headline (mother question, else pain point), the
  * one field the current stage works on, and the AI draft as a yes/no question
  * listing only what would change. Everything else folds into one "other
  * records" line. Stage explanations, focus hints and "move on" prompts live in
@@ -310,11 +310,9 @@ export function TopicCardPanel({ topicCard, onClose, onExploreCandidate }: Topic
                 );
               })}
             </ol>
-            <p className="areqa-topic-card-stage-line" title={topicStageSubtitle(t, stage)}>
-              <span className="areqa-topic-card-step-label">{topicCardStageLabel(t, stage)}</span>
-              <span aria-hidden="true"> · </span>
-              <span className="areqa-topic-card-question">{topicStageTitle(t, stage)}</span>
-            </p>
+            <p className="areqa-topic-card-step-label">{topicCardStageLabel(t, stage)}</p>
+            <h3 className="areqa-topic-card-question">{topicStageTitle(t, stage)}</h3>
+            <p className="areqa-topic-card-subtitle">{topicStageSubtitle(t, stage)}</p>
           </section>
 
           <section className="areqa-topic-card-topic">

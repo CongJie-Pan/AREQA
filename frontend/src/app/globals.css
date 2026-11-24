@@ -623,7 +623,7 @@ button.areqa-topic-finder-badge {
   &:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
 }
 
-/* The current stage: a clickable 1-5 stepper, then one line naming the stage. */
+/* The current stage: a clickable 1-5 stepper, then the stage goal (emphasised) and subtitle. */
 .areqa-topic-card-step {
   display: flex;
   flex-direction: column;
@@ -658,16 +658,27 @@ button.areqa-topic-finder-badge {
   button[data-status='current'] { border-color: var(--foreground); background: var(--foreground); color: var(--background); }
 }
 
-.areqa-topic-card-stage-line {
+.areqa-topic-card-step-label {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.areqa-topic-card-question {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.areqa-topic-card-subtitle {
   margin: 0;
   color: var(--muted-foreground);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
-
-.areqa-topic-card-step-label { color: var(--foreground); font-weight: 600; }
-
-.areqa-topic-card-question { color: var(--foreground); }
 
 /* The topic in one glance: mother question (or pain point) as the headline. */
 .areqa-topic-card-topic {
