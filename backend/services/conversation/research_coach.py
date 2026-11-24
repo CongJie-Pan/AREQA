@@ -21,7 +21,7 @@ ConversationKind = Literal["chat", "research_coach"]
 PromptProfileId = Literal["general", "english", "research_coach"]
 
 RESEARCH_COACH_KIND: ConversationKind = "research_coach"
-RESEARCH_COACH_SKILL_ID = "RESEARCH_TOPIC_COACH_SKILL_V4"
+RESEARCH_COACH_SKILL_ID = "RESEARCH_TOPIC_COACH_SKILL_V5"
 RESEARCH_COACH_SKILL_PATH = "backend/prompts/skills/research_topic_coach_skill.md"
 # Answer token cap for coach turns (not applied when the learner forces thinking).
 TOPIC_FINDER_MAX_TOKENS = 1200

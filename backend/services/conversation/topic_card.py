@@ -542,7 +542,8 @@ _REVIEW_FIELD_NAMES = {"pain_point": "痛點", "candidates": "候選題目", "mo
 def _focus_instruction(gap: FocusGap) -> str:
     name = FEASIBILITY_NAMES.get(gap.term, gap.term)
     return {
-        "pain_point": "學習者還沒寫下痛點：請他用一句話寫出「我卡在／我好奇＿＿」",
+        "pain_point": ("題目卡上還沒有痛點：若學習者最新的話已經說了卡住或好奇的事，直接用他的用語整理成一句「我卡在／我好奇…」請他確認或修改；"
+                       "只有他完全還沒說時，才請他自己寫"),
         "candidates": "題目卡上還沒有候選題目：陪他從痛點發散出幾個想解決的問題",
         "own_candidate": "目前的候選題目都是 AI 提議的：請學習者挑一題用自己的話重寫，或提出自己的題目",
         "mother_question": "還沒有母問題：請他拿掉工具和案例，自己寫出真正想知道的問題",

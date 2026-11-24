@@ -117,7 +117,7 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
     prompt_skills.load_prompt_skill.cache_clear()
     try:
         prompt = research_coach.render_prompt_profile("research_coach")
-        assert "RESEARCH_TOPIC_COACH_SKILL_V4" in prompt
+        assert "RESEARCH_TOPIC_COACH_SKILL_V5" in prompt
         assert "never declare that a candidate has passed a stage" in prompt
         assert "may jump forward or back" in prompt
         assert "Do not claim you have searched" in prompt
@@ -129,7 +129,12 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
         assert "【本輪缺口】" in prompt and "Never present the gap as a score" in prompt
         # V4 answer shape after the 2026-11-24 test run.
         assert "最後且優先的回答規則" in prompt
-        assert "reply in 3 to 6 plain sentences" in prompt and "No headings" in prompt
+        assert "No headings" in prompt
+        # V5: explain before asking; the 250-character cap left answers empty.
+        assert "explain first, then ask" in prompt and "250 Chinese characters" not in prompt
+        assert "must build on what you just explained" in prompt
+        assert "do not ask them to restate it in a template" in prompt
+        assert "Plain terms" in prompt
         assert "No praise openings" in prompt and "do not invent cases" in prompt
         assert "Never copy those labels" in prompt
         assert "never say that you moved the learner to another stage" in prompt
@@ -254,7 +259,7 @@ async def test_context_includes_coach_skill_only_for_topic_finder():
         prompt_skills.load_prompt_skill.cache_clear()
 
     assert "Workspace：Topic Finder" in coach_prompt
-    assert "RESEARCH_TOPIC_COACH_SKILL_V4" in coach_prompt
+    assert "RESEARCH_TOPIC_COACH_SKILL_V5" in coach_prompt
     assert "本回合正式回答必須使用繁體中文" in coach_prompt
     assert "Topic Finder" not in chat_prompt
     assert "Tutor Profile：English Tutor" not in coach_prompt

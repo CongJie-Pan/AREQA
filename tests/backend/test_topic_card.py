@@ -629,6 +629,12 @@ def test_prompt_shows_focus_gap_as_one_question():
     assert "【回頭檢查】" not in prompt
 
 
+def test_pain_point_gap_drafts_the_sentence_instead_of_asking_again():
+    prompt = render_card_prompt(TopicCardState(stage=1))
+    assert "直接用他的用語整理成一句「我卡在／我好奇…」請他確認或修改" in prompt
+    assert "只有他完全還沒說時，才請他自己寫" in prompt
+
+
 def test_prompt_review_takes_the_turn_before_the_focus_gap():
     state = adopt_draft(with_pending(_worked_state(), _patch(mother_question="改過的母問題")), now=1)
     prompt = render_card_prompt(state)
