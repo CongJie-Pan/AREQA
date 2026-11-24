@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
+from config import settings
 from services.conversation.topic_card import (
     COMPLETED_STAGE,
     FIRST_STAGE,
@@ -132,3 +133,22 @@ async def skip_topic_focus(
     logger.info("topic_card.focus_skipped conversation_id=%s stage=%s focus_kind=%s skipped=%s",
                 conversation_id, state.stage, payload.gap_id.split(":", 1)[0], len(state.skipped_focus))
     return card_view(state)
+
+
+@router.get("/api/v1/research-coach/{conversation_id}/card/log")
+async def get_topic_card_log(
+    conversation_id: str, limit: int = Query(default=200, ge=1, le=500),
+    current_user_id: str = Depends(get_current_user),
+) -> list[dict]:
+    """Owner-only debug timeline of card events (full snapshots), oldest first."""
+
+    if not settings.enable_topic_card_event_log_api:
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        events = await topic_card_store.events(current_user_id, conversation_id, limit)
+    except TopicCardUnavailable:
+        raise HTTPException(status_code=503, detail="Topic card unavailable") from None
+    if events is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    logger.info("topic_card.log_read conversation_id=%s events=%s", conversation_id, len(events))
+    return events

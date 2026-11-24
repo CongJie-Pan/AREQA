@@ -16,7 +16,10 @@ already worked on, and a single card gap to focus on otherwise. The learner can
 set a focus gap aside, and the coach never shows the diagnosis as a score.
 
 Card text is learner content: it is stored and injected into the coach prompt
-as data, and never logged. Storage and extraction fail soft; the conversation
+as data, and never written to stdout logs. Every card write also appends an
+event with a full snapshot to ``research_topic_card_events`` (same transaction,
+best-effort), so a conversation's card history can be traced later.
+Storage and extraction fail soft; the conversation
 continues with the last confirmed card.
 """
 
@@ -49,10 +52,13 @@ STAGE_FOCUS = {
         "簡單解法就夠了，這題就不值得研究。順便問一句：「這個問題會不會過幾年就被新技術或局勢自己解決？」"
         "引導學習者自己到外面找：給可直接複製的搜尋關鍵字或提示詞、建議去哪裡找（例如 Google Scholar、Connected Papers、政府公報、智庫報告），"
         "或請他自己打開輸入框旁的「網路搜尋」再問。你不要自己宣稱已經查過或某個解法存在。"),
-    3: "第 3 階段（母問題）：拿掉工具和案例，學習者真正想知道的是什麼？請他把具體題目往上抽一層，自己寫出母問題。",
-    4: "第 4 階段（怎麼證明）：題目裡每個關鍵詞，要用什麼證據看出來？結果有沒有可能證明自己錯了？無法量化時，改看它造成的行為變化。",
+    3: ("第 3 階段（母問題）：拿掉工具和案例，學習者真正想知道的是什麼？請他把具體題目往上抽一層，自己寫出母問題。"
+        "學習者寫出的母問題就是之後的基準；不要改推你自己提的方向。"),
+    4: ("第 4 階段（找看得見的證據）：以題目卡上學習者的母問題為準，請他自己挑出關鍵詞；每個關鍵詞要用什麼證據看出來？"
+        "結果有沒有可能證明自己原本的想法是錯的？無法量化時，改看它造成的行為變化。不要替他挑關鍵詞或寫好量測方式。"),
     5: ("第 5 階段（做得到嗎）：用反問陪學習者一起評估五件事——時間、資料與場域、指導教授與方法、有沒有人做過、"
-        "研究倫理（受試者、知情同意、是否需要送倫理審查、資料能否合法使用）；一次問一項，由他回答，不要替他判斷可不可行。"),
+        "研究倫理（受試者、知情同意、是否需要送倫理審查、資料能否合法使用）；一次問一項，由他回答，不要替他判斷可不可行。"
+        "倫理是否需要送審不要下結論，請他向學校的研究倫理審查單位確認。"),
     6: "學習者已完成五個階段。可以協助整理研究問題的最終表述與下一步，但不要宣告研究一定可行。",
 }
 
@@ -246,15 +252,22 @@ def _merge_feasibility(current: list[FeasibilityItem], update: list[FeasibilityI
     return [by_key[key] for key in FEASIBILITY_KEYS if key in by_key]
 
 
+def _topic_key(topic: str) -> str:
+    """Compare topics ignoring spacing and punctuation, so a re-sent drop is recorded once."""
+
+    return re.sub(r"[\s\W_]+", "", topic).lower()
+
+
 def apply_patch(card: TopicCard, patch: CardPatch) -> TopicCard:
     """Return a new card with the patch applied; lists stay bounded (newest kept)."""
 
     discarded = [*card.discarded]
-    known = {item.topic for item in discarded}
+    known = {_topic_key(item.topic) for item in discarded}
     for item in patch.discarded_add:
-        if item.topic not in known:
+        key = _topic_key(item.topic)
+        if key and key not in known:
             discarded.append(item)
-            known.add(item.topic)
+            known.add(key)
     candidates = _clean_list(patch.candidates, 8) if patch.candidates is not None else card.candidates
     ai_source = _clean_list(patch.ai_candidates, 8) if patch.ai_candidates is not None else card.ai_candidates
     return TopicCard(
@@ -375,6 +388,22 @@ def revision_review(before: TopicCardState, after: TopicCard, version: int,
                           created_at=time.time() if now is None else now)
 
 
+MAX_VERSION_NOTES = 2
+MAX_VERSION_NOTE_CHARS = 80
+
+
+def _version_notes(notes: list[str]) -> list[str]:
+    """One draft collects a note per coach turn; a version keeps the latest distinct ones, short."""
+
+    distinct: list[str] = []
+    for note in (_clean_note(item) for item in notes):
+        if note and note not in distinct:
+            distinct.append(note)
+    kept = distinct[-MAX_VERSION_NOTES:]
+    joined = "；".join(kept)
+    return kept if len(joined) <= MAX_VERSION_NOTE_CHARS else [joined[:MAX_VERSION_NOTE_CHARS - 1] + "…"]
+
+
 def adopt_draft(state: TopicCardState, *, now: int | None = None) -> TopicCardState:
     """Learner adopted the AI draft: merge it and add a version. The stage does not change.
 
@@ -385,7 +414,7 @@ def adopt_draft(state: TopicCardState, *, now: int | None = None) -> TopicCardSt
 
     if state.pending is None:
         return state
-    notes = "；".join(_clean_note(note) for note in state.pending.notes)
+    notes = "；".join(_version_notes(state.pending.notes))
     version = state.version + 1
     review = revision_review(state, state.pending.card, version, now=now)
     return state.model_copy(update={
@@ -484,9 +513,9 @@ def _focus_instruction(gap: FocusGap) -> str:
 def _review_instruction(review: RevisionReview) -> str:
     changed = "、".join(_REVIEW_FIELD_NAMES[field] for field in review.changed)
     stages = "、".join(str(stage) for stage in review.stages)
-    return (f"【回頭檢查】學習者剛採用 Version {review.version}，改了{changed}。本輪先只問一題：這個改動會不會影響"
-            f"第 {stages} 階段先前的結論？點出那些階段在題目卡上記錄的內容，請學習者自己判斷，不要替他判斷。"
-            "若學習者說沒有影響，就接受並回到本輪焦點，不要追問。")
+    return (f"【回頭檢查（給你的內部指示，不要寫進回覆）】學習者剛採用題目卡第 {review.version} 版，改了{changed}。"
+            f"這一輪回覆的第一個問題必須是：這個改動會不會影響第 {stages} 階段先前的結論？用自己的話點出那些階段在題目卡上記錄的內容，"
+            "請學習者自己判斷，不要替他判斷。若學習者說沒有影響，就接受並回到本輪焦點，不要追問。")
 
 
 def render_card_prompt(state: TopicCardState | None) -> str:
@@ -512,7 +541,7 @@ def render_card_prompt(state: TopicCardState | None) -> str:
         lines.append(_review_instruction(state.review))
     elif focus is not None:
         lines.append(
-            f"【本輪缺口】{_focus_instruction(focus)}。只針對這一個缺口問一題，並連結到學習者最新說的話。"
+            f"【本輪缺口（給你的內部指示，不要寫進回覆）】{_focus_instruction(focus)}。只針對這一個缺口問一題，並連結到學習者最新說的話。"
             "若學習者在問資訊，先回答再問；若他說先放著或想談別的，就跟著他，不要再拉回這個缺口。"
             "不要對學習者說「缺口」，也不要打分數。")
     if card.pain_point:
@@ -556,9 +585,21 @@ proposes changes. Keys (all optional except change_note):
   learner could type into Google Scholar or a library search for the current topic. Hints, not decisions.
 - gaps: array of up to 3 possible research gaps worth checking, each phrased as a question to verify, never as a fact.
 - related: array of up to 4 related issues or neighbouring topics the learner might also consider.
-- change_note: string under 60 characters summarising what changed in the learner's decisions, in the learner's language.
+- change_note: one short phrase under 30 characters naming what changed this turn (for example "加入母問題"), in the
+  learner's language; no sentence chains.
 Card fields (everything except keywords, gaps, related) record only what the learner said or explicitly agreed to;
-never invent topics, measures, papers, or decisions. Theories, concepts, or examples the tutor explained are NOT the
+never invent topics, measures, papers, or decisions. Examples:
+- Tutor proposes key terms "人員避險行為" and "轉銜斷層"; learner replies "好，那這個要怎麼看？" -> no operationalization
+  (asking a question is not agreement).
+- Tutor estimates "1-2 週可收 100 份"; learner only said "我只有 6 週" -> feasibility time with status "unsure" and note
+  "只有 6 週" (the learner's words), not "ok" with the tutor's estimate.
+- Tutor says ethics review is probably unnecessary -> ethics stays "unsure" unless the learner states their own decision.
+- Tutor raises a doubt -> it is NOT an objection; objections_add only holds doubts the learner raised.
+- Learner writes their own mother question -> mother_question is exactly the learner's wording, even if the tutor
+  proposed a different direction.
+Feasibility status defaults to "unsure"; use "ok" or "blocked" only when the learner clearly says so.
+discarded_add: use the candidate's exact text from card.candidates; never add a reworded copy of a topic that is
+already in card.discarded, and add each dropped topic once. Theories, concepts, or examples the tutor explained are NOT the
 learner's decisions: do not copy them into those fields. keywords, gaps, and related are your own suggestions; never
 name specific papers or authors in them. If the learner only asked for information (for example "explain alliance
 theory"), return no card fields.
@@ -611,6 +652,12 @@ _SUGGESTIONS_KEY = "_suggestions"
 # Workflow state shares the card JSON column (like suggestions), so no schema change is needed.
 _REVIEW_KEY = "_review"
 _SKIPPED_FOCUS_KEY = "_skipped_focus"
+
+
+EventType = Literal["proposed", "adopted", "rejected", "stage_set", "focus_skipped", "review_set", "review_cleared",
+                   "extraction_failed"]
+EventSource = Literal["api", "background", "chat"]
+MAX_EVENTS_PER_CONVERSATION = 500
 
 
 class TopicCardUnavailable(RuntimeError):
@@ -704,7 +751,8 @@ class TopicCardStore:
             review=review, skipped_focus=skipped,
         )
 
-    async def _write(self, connection, engine, params, state: TopicCardState) -> None:
+    @staticmethod
+    def _stored_card(state: TopicCardState) -> dict[str, Any]:
         stored_card = state.card.model_dump()
         if not state.suggestions.is_empty():
             stored_card[_SUGGESTIONS_KEY] = state.suggestions.model_dump()
@@ -712,9 +760,12 @@ class TopicCardStore:
             stored_card[_REVIEW_KEY] = state.review.model_dump()
         if state.skipped_focus:
             stored_card[_SKIPPED_FOCUS_KEY] = state.skipped_focus
+        return stored_card
+
+    async def _write(self, connection, engine, params, state: TopicCardState) -> None:
         values = {
             **params, "stage": state.stage, "version": state.version,
-            "card": json.dumps(stored_card, ensure_ascii=False),
+            "card": json.dumps(self._stored_card(state), ensure_ascii=False),
             "pending": state.pending.model_dump_json() if state.pending else None,
             "history": json.dumps([entry.model_dump() for entry in state.history], ensure_ascii=False),
             "updated": int(time.time()),
@@ -728,6 +779,43 @@ class TopicCardStore:
               stage = excluded.stage, version = excluded.version, card = excluded.card,
               pending = excluded.pending, history = excluded.history, updated_at = excluded.updated_at
         """), values)
+
+    async def _log(self, connection, engine, params, event: EventType, state: TopicCardState | None, *,
+                   source: EventSource, stage: int | None = None, version: int | None = None,
+                   focus_kind: str | None = None) -> None:
+        """Append one event with a full state snapshot, inside the caller's transaction.
+
+        A savepoint keeps a failed log insert from rolling back the card write:
+        the card stays correct and only that event is missing.
+        """
+
+        snapshot = None if state is None else json.dumps({
+            "stage": state.stage, "version": state.version, "card": self._stored_card(state),
+            "pending": state.pending.model_dump() if state.pending else None,
+            "history": [entry.model_dump() for entry in state.history],
+        }, ensure_ascii=False)
+        values = {
+            **params, "event": event, "source": source,
+            "stage": state.stage if state is not None else stage, "version": state.version if state is not None else version,
+            "focus_kind": focus_kind, "state": snapshot, "created": int(time.time() * 1000), "keep": MAX_EVENTS_PER_CONVERSATION,
+        }
+        try:
+            async with connection.begin_nested():
+                await connection.execute(text(f"""
+                    INSERT INTO research_topic_card_events
+                      (user_id, conversation_id, event, source, stage, version, focus_kind, state, created_at)
+                    VALUES (:user_id, :conversation_id, :event, :source, :stage, :version, :focus_kind,
+                            {self._json(engine, "state")}, :created)
+                """), values)
+                await connection.execute(text("""
+                    DELETE FROM research_topic_card_events
+                    WHERE user_id = :user_id AND conversation_id = :conversation_id AND id NOT IN (
+                      SELECT id FROM research_topic_card_events
+                      WHERE user_id = :user_id AND conversation_id = :conversation_id
+                      ORDER BY id DESC LIMIT :keep)
+                """), values)
+        except Exception as error:
+            logger.warning("topic_card.event_log_failed event=%s error_type=%s", event, type(error).__name__)
 
     async def load(self, user_id: str, conversation_id: str) -> TopicCardState | None:
         """Return the owner's card (a fresh one if none yet), or ``None`` if the conversation is not theirs.
@@ -762,6 +850,7 @@ class TopicCardStore:
                 current = await self._select(connection, params, lock=engine.dialect.name == "postgresql")
                 state = with_pending(current or TopicCardState(), patch)
                 await self._write(connection, engine, params, state)
+                await self._log(connection, engine, params, "proposed", state, source="background")
                 return state
 
         return await self._run("propose", work)
@@ -788,12 +877,16 @@ class TopicCardStore:
                     return current, False
                 state = adopt_draft(current)
                 await self._write(connection, engine, params, state)
+                await self._log(connection, engine, params, "adopted", state, source="api")
+                if state.review is not None and state.review != current.review:
+                    await self._log(connection, engine, params, "review_set", state, source="api")
                 return state, True
 
         return await self._run("adopt", work)
 
-    async def _update(self, operation: str, user_id: str, conversation_id: str, change) -> TopicCardState | None:
-        """Apply ``change`` to the owner's locked row; an unchanged result is not rewritten."""
+    async def _update(self, operation: str, user_id: str, conversation_id: str, change, *,
+                      event: EventType, source: EventSource, focus_kind: str | None = None) -> TopicCardState | None:
+        """Apply ``change`` to the owner's locked row and log ``event``; an unchanged result is not rewritten."""
 
         if not self._valid_scope(user_id, conversation_id):
             return None
@@ -807,6 +900,7 @@ class TopicCardStore:
                 state = change(current)
                 if state is not current:
                     await self._write(connection, engine, params, state)
+                    await self._log(connection, engine, params, event, state, source=source, focus_kind=focus_kind)
                 return state
 
         return await self._run(operation, work)
@@ -829,15 +923,17 @@ class TopicCardStore:
             rejected = True
             return state.model_copy(update={"pending": None})
 
-        state = await self._update("reject", user_id, conversation_id, change)
+        state = await self._update("reject", user_id, conversation_id, change, event="rejected", source="api")
         return None if state is None else (state, rejected)
 
-    async def skip_focus(self, user_id: str, conversation_id: str, gap_id: str) -> TopicCardState | None:
+    async def skip_focus(self, user_id: str, conversation_id: str, gap_id: str,
+                         *, source: EventSource = "api") -> TopicCardState | None:
         """Learner set a focus gap aside; ``None`` for an unowned conversation or a malformed id."""
 
         if not FOCUS_ID_PATTERN.fullmatch(gap_id):
             return None
-        return await self._update("skip_focus", user_id, conversation_id, lambda state: skip_focus(state, gap_id))
+        return await self._update("skip_focus", user_id, conversation_id, lambda state: skip_focus(state, gap_id),
+                                  event="focus_skipped", source=source, focus_kind=gap_id.split(":", 1)[0])
 
     async def clear_review(self, user_id: str, conversation_id: str, *, asked_before: float) -> bool:
         """Clear a review that existed when the asking turn started; later reviews wait for the next turn."""
@@ -851,10 +947,54 @@ class TopicCardStore:
             cleared = True
             return state.model_copy(update={"review": None})
 
-        await self._update("clear_review", user_id, conversation_id, change)
+        await self._update("clear_review", user_id, conversation_id, change, event="review_cleared", source="background")
         return cleared
 
-    async def set_stage(self, user_id: str, conversation_id: str, stage: int) -> TopicCardState | None:
+    async def log_event(self, user_id: str, conversation_id: str, event: EventType, *,
+                        source: EventSource, stage: int, version: int) -> None:
+        """Log an event that changes no card state (for example a failed extraction); never raises."""
+
+        if not self._valid_scope(user_id, conversation_id):
+            return
+        params = {"user_id": str(user_id), "conversation_id": str(conversation_id)}
+
+        async def work(engine):
+            async with engine.begin() as connection:
+                if await self._owned(connection, params):
+                    await self._log(connection, engine, params, event, None, source=source, stage=stage, version=version)
+
+        try:
+            await self._run("log_event", work)
+        except TopicCardUnavailable:
+            return
+
+    async def events(self, user_id: str, conversation_id: str, limit: int = 200) -> list[dict[str, Any]] | None:
+        """The owner's event timeline, oldest first (the newest ``limit`` events); ``None`` if not theirs."""
+
+        if not self._valid_scope(user_id, conversation_id):
+            return None
+        params = {"user_id": str(user_id), "conversation_id": str(conversation_id),
+                  "limit": max(1, min(limit, MAX_EVENTS_PER_CONVERSATION))}
+
+        async def work(engine):
+            async with engine.begin() as connection:
+                if not await self._owned(connection, params):
+                    return None
+                rows = (await connection.execute(text("""
+                    SELECT id, event, source, stage, version, focus_kind, state, created_at
+                    FROM research_topic_card_events
+                    WHERE user_id = :user_id AND conversation_id = :conversation_id
+                    ORDER BY id DESC LIMIT :limit
+                """), params)).all()
+            return [{
+                "id": row[0], "event": row[1], "source": row[2], "stage": row[3], "version": row[4],
+                "focus_kind": row[5], "state": _decode(row[6], None), "created_at": row[7],
+            } for row in reversed(rows)]
+
+        return await self._run("events", work)
+
+    async def set_stage(self, user_id: str, conversation_id: str, stage: int,
+                        *, source: EventSource = "api") -> TopicCardState | None:
         """Move to the stage the learner picked (1-6); the target is absolute, so repeats are harmless."""
 
         if not self._valid_scope(user_id, conversation_id) or not FIRST_STAGE <= stage <= COMPLETED_STAGE:
@@ -870,6 +1010,7 @@ class TopicCardStore:
                     return current
                 state = current.model_copy(update={"stage": stage})
                 await self._write(connection, engine, params, state)
+                await self._log(connection, engine, params, "stage_set", state, source=source)
                 return state
 
         return await self._run("set_stage", work)
@@ -906,6 +1047,9 @@ async def refresh_pending_card(*, client: Any, model: str, user_id: str, convers
                             conversation_id, state.review.version, ",".join(map(str, state.review.stages)))
         base = state.pending.card if state.pending else state.card
         patch = await extract_card_patch(client, model, base, messages, answer, stage=state.stage)
+        if patch is None:
+            await store.log_event(user_id, conversation_id, "extraction_failed", source="background",
+                                  stage=state.stage, version=state.version)
         if patch is None or patch.is_empty():
             logger.info("topic_card.extraction_empty conversation_id=%s", conversation_id)
             return

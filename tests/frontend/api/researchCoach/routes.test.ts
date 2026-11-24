@@ -6,6 +6,7 @@ vi.mock('next/server', () => ({
 }));
 
 import { GET as getCard } from '@/app/api/research-coach/[conversationId]/card/route';
+import { GET as getLog } from '@/app/api/research-coach/[conversationId]/log/route';
 import { POST as confirm } from '@/app/api/research-coach/[conversationId]/confirm/route';
 import { POST as reject } from '@/app/api/research-coach/[conversationId]/reject/route';
 import { POST as setStage } from '@/app/api/research-coach/[conversationId]/stage/route';
@@ -40,6 +41,17 @@ describe('topic card proxy routes', () => {
     expect(String(url)).toContain(`/api/v1/research-coach/${ID}/card`);
     expect(init?.method).toBe('GET');
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer user-token');
+  });
+
+  it('forwards the event timeline read as a GET with the user token only', async () => {
+    expect((await getLog(request(undefined, false) as never, context())).status).toBe(401);
+    expect((await getLog(request() as never, context('not-a-uuid'))).status).toBe(400);
+
+    await getLog(request() as never, context());
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain(`/api/v1/research-coach/${ID}/card/log`);
+    expect(init?.method).toBe('GET');
+    expect(init?.body).toBeUndefined();
   });
 
   it('forwards only a validated version on confirm', async () => {

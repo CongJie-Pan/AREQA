@@ -33,6 +33,9 @@ async def storage(tmp_path):
             user_id TEXT, conversation_id TEXT, stage INTEGER, version INTEGER,
             card TEXT, pending TEXT, history TEXT, updated_at INTEGER,
             PRIMARY KEY (user_id, conversation_id))"""))
+        await connection.execute(text("""CREATE TABLE research_topic_card_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, conversation_id TEXT, event TEXT, source TEXT,
+            stage INTEGER, version INTEGER, focus_kind TEXT, state TEXT, created_at INTEGER)"""))
         await connection.execute(text("INSERT INTO conversations VALUES (:id, :user)"), {"id": conversation, "user": owner})
     yield TopicCardStore(engine), owner, other, conversation
     await engine.dispose()
@@ -356,9 +359,13 @@ async def test_coach_context_includes_card_prompt_and_chat_does_not():
     loader = AsyncMock(return_value="\n【選題題目卡（測試）】")
     with patch("services.conversation.context.load_card_prompt", loader):
         coach, chat = await build("research_coach"), await build("general")
-    assert "【選題題目卡（測試）】" in coach
     assert "選題題目卡" not in chat
     loader.assert_awaited_once_with("u", "c")
+    # The coach block and card come last, after every general style rule, and the
+    # per-turn depth overlay that produced report-length answers is not applied.
+    assert coach.rstrip().endswith("【選題題目卡（測試）】")
+    assert coach.index("Topic Finder／選題（最後且優先的回答規則）") > coach.index("【記憶使用規則】")
+    assert "【本回合回答策略】" not in coach and "【本回合回答策略】" in chat
 
 
 async def _complete(topic_finder):
@@ -617,14 +624,16 @@ def test_skipped_focus_list_stays_bounded():
 def test_prompt_shows_focus_gap_as_one_question():
     state = TopicCardState(stage=4, card=TopicCard(operationalization=[OperationalTerm(term="篩選能力")]))
     prompt = render_card_prompt(state)
-    assert "【本輪缺口】" in prompt and "「篩選能力」" in prompt and "只針對這一個缺口問一題" in prompt
+    assert "【本輪缺口（給你的內部指示，不要寫進回覆）】" in prompt
+    assert "「篩選能力」" in prompt and "只針對這一個缺口問一題" in prompt
     assert "【回頭檢查】" not in prompt
 
 
 def test_prompt_review_takes_the_turn_before_the_focus_gap():
     state = adopt_draft(with_pending(_worked_state(), _patch(mother_question="改過的母問題")), now=1)
     prompt = render_card_prompt(state)
-    assert "【回頭檢查】學習者剛採用 Version 3，改了母問題" in prompt
+    assert "【回頭檢查（給你的內部指示，不要寫進回覆）】學習者剛採用題目卡第 3 版，改了母問題" in prompt
+    assert "這一輪回覆的第一個問題必須是" in prompt
     assert "第 2、4 階段" in prompt and "【本輪缺口】" not in prompt
 
 
@@ -795,3 +804,152 @@ async def test_api_rejects_draft_without_a_version_and_logs_safely(api, caplog):
     assert (await client.post(f"/api/v1/research-coach/{conversation}/reject", json={"version": -1})).status_code == 422
     current["user"] = other
     assert (await client.post(f"/api/v1/research-coach/{conversation}/reject", json={"version": 0})).status_code == 404
+
+
+# --- A: tidier card records ------------------------------------------------------------------
+
+
+def test_version_note_keeps_the_latest_distinct_short_notes():
+    state = TopicCardState(pending=topic_card.PendingDraft(card=TopicCard(pain_point="p"), notes=[
+        "確認研究方向為體制轉銜", "確認研究方向為體制轉銜。", "定義關鍵詞測量方式", "加入 BSRS-5"]))
+    adopted = adopt_draft(state, now=1)
+    assert adopted.history[-1].note == "定義關鍵詞測量方式；加入 BSRS-5"
+
+    long = TopicCardState(pending=topic_card.PendingDraft(card=TopicCard(pain_point="p"), notes=["甲" * 70, "乙" * 70]))
+    note = adopt_draft(long, now=1).history[-1].note
+    assert len(note) == topic_card.MAX_VERSION_NOTE_CHARS and note.endswith("…")
+
+
+def test_discarded_topics_are_recorded_once_despite_spacing_or_punctuation():
+    card = TopicCard(discarded=[DiscardedTopic(topic="單純做一個 AI 分流 App", filter=2, reason="已有現成解法")])
+    patch_ = CardPatch(discarded_add=[
+        DiscardedTopic(topic="單純做一個AI分流App。", filter=2, reason="重複"),
+        DiscardedTopic(topic="校園轉銜", filter=2, reason="新"),
+        DiscardedTopic(topic="校園 轉銜", filter=2, reason="同一批重複"),
+    ])
+    assert [item.topic for item in apply_patch(card, patch_).discarded] == ["單純做一個 AI 分流 App", "校園轉銜"]
+
+
+def test_extraction_rules_keep_tutor_material_off_the_card():
+    rules = topic_card.EXTRACTION_RULES
+    assert "asking a question is not agreement" in rules
+    assert 'Feasibility status defaults to "unsure"' in rules
+    assert "never add a reworded copy" in rules
+
+
+@pytest.mark.parametrize(("stage", "phrase"), [
+    (3, "學習者寫出的母問題就是之後的基準"),
+    (4, "不要替他挑關鍵詞或寫好量測方式"),
+    (5, "請他向學校的研究倫理審查單位確認"),
+])
+def test_stage_focus_keeps_the_learner_in_charge(stage, phrase):
+    assert phrase in topic_card.STAGE_FOCUS[stage]
+
+
+# --- B: card event log ------------------------------------------------------------------------
+
+
+async def _events(store, owner, conversation):
+    return [(item["event"], item["source"], item["stage"], item["version"]) for item in await store.events(owner, conversation)]
+
+
+@pytest.mark.asyncio
+async def test_every_card_write_appends_an_event_with_a_snapshot(storage):
+    store, owner, _other, conversation = storage
+    await store.set_stage(owner, conversation, 4)
+    await store.propose(owner, conversation, _patch(mother_question="母問題 A",
+                                                    operationalization=[OperationalTerm(term="甲", measure="m")]))
+    await store.adopt(owner, conversation, 0)
+    await store.set_stage(owner, conversation, 3, source="chat")
+    await store.propose(owner, conversation, _patch(mother_question="母問題 B"))
+    await store.adopt(owner, conversation, 1)
+    await store.clear_review(owner, conversation, asked_before=time_now() + 5)
+    await store.propose(owner, conversation, _patch(candidates=["C"]))
+    await store.reject(owner, conversation, 2)
+    await store.set_stage(owner, conversation, 4)
+    await store.skip_focus(owner, conversation, "measure:abc123")
+
+    events = await _events(store, owner, conversation)
+    assert events[:9] == [
+        ("stage_set", "api", 4, 0), ("proposed", "background", 4, 0), ("adopted", "api", 4, 1),
+        ("stage_set", "chat", 3, 1), ("proposed", "background", 3, 1), ("adopted", "api", 3, 2),
+        ("review_set", "api", 3, 2), ("review_cleared", "background", 3, 2), ("proposed", "background", 3, 2),
+    ]
+    assert events[9:] == [("rejected", "api", 3, 2), ("stage_set", "api", 4, 2), ("focus_skipped", "api", 4, 2)]
+    assert (await store.events(owner, conversation))[-1]["focus_kind"] == "measure"
+    snapshots = await store.events(owner, conversation)
+    assert snapshots[2]["state"]["card"]["mother_question"] == "母問題 A"
+    assert snapshots[6]["state"]["card"]["_review"]["stages"] == [4]
+    assert snapshots[9]["state"]["pending"] is None
+
+
+def time_now():
+    import time
+
+    return time.time()
+
+
+@pytest.mark.asyncio
+async def test_no_op_writes_log_nothing_and_other_users_see_nothing(storage):
+    store, owner, other, conversation = storage
+    await store.set_stage(owner, conversation, 1)  # already stage 1
+    assert (await store.adopt(owner, conversation, 0))[1] is False
+    assert (await store.reject(owner, conversation, 0))[1] is False
+    assert await store.events(owner, conversation) == []
+
+    assert await store.set_stage(other, conversation, 3) is None
+    assert await store.events(other, conversation) is None
+    assert await store.events(owner, conversation) == []
+
+
+@pytest.mark.asyncio
+async def test_event_log_failure_never_breaks_the_card_write(storage, caplog):
+    store, owner, _other, conversation = storage
+    async with store._engine.begin() as connection:
+        await connection.execute(text("DROP TABLE research_topic_card_events"))
+
+    with caplog.at_level(logging.WARNING):
+        state = await store.set_stage(owner, conversation, 3)
+    assert state.stage == 3 and (await store.load(owner, conversation)).stage == 3
+    assert "topic_card.event_log_failed event=stage_set" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_log_keeps_the_newest_events_per_conversation(storage, monkeypatch):
+    store, owner, _other, conversation = storage
+    monkeypatch.setattr(topic_card, "MAX_EVENTS_PER_CONVERSATION", 3)
+    for stage in (2, 3, 4, 5, 2):
+        await store.set_stage(owner, conversation, stage)
+    assert [item[2] for item in await _events(store, owner, conversation)] == [4, 5, 2]
+
+
+@pytest.mark.asyncio
+async def test_failed_extraction_is_logged_without_card_text(storage, caplog):
+    store, owner, _other, conversation = storage
+    with caplog.at_level(logging.INFO):
+        await refresh_pending_card(client=_client(error=RuntimeError()), model="m", user_id=owner,
+                                   conversation_id=conversation, messages=[{"role": "user", "content": PRIVATE}],
+                                   answer="a", store=store)
+    events = await store.events(owner, conversation)
+    assert [(item["event"], item["state"]) for item in events] == [("extraction_failed", None)]
+    assert PRIVATE not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_api_returns_the_owner_event_timeline(api, monkeypatch):
+    client, current, owner, other, conversation, store = api
+    await store.propose(owner, conversation, _patch(pain_point=PRIVATE))
+    await client.post(f"/api/v1/research-coach/{conversation}/confirm", json={"version": 0})
+
+    timeline = (await client.get(f"/api/v1/research-coach/{conversation}/card/log")).json()
+    assert [item["event"] for item in timeline] == ["proposed", "adopted"]
+    assert timeline[1]["state"]["card"]["pain_point"] == PRIVATE and timeline[1]["version"] == 1
+    assert (await client.get(f"/api/v1/research-coach/{conversation}/card/log?limit=0")).status_code == 422
+
+    from config import settings
+
+    monkeypatch.setattr(settings, "enable_topic_card_event_log_api", False)
+    assert (await client.get(f"/api/v1/research-coach/{conversation}/card/log")).status_code == 404
+    monkeypatch.setattr(settings, "enable_topic_card_event_log_api", True)
+    current["user"] = other
+    assert (await client.get(f"/api/v1/research-coach/{conversation}/card/log")).status_code == 404

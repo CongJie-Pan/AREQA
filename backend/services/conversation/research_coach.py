@@ -21,8 +21,10 @@ ConversationKind = Literal["chat", "research_coach"]
 PromptProfileId = Literal["general", "english", "research_coach"]
 
 RESEARCH_COACH_KIND: ConversationKind = "research_coach"
-RESEARCH_COACH_SKILL_ID = "RESEARCH_TOPIC_COACH_SKILL_V3"
+RESEARCH_COACH_SKILL_ID = "RESEARCH_TOPIC_COACH_SKILL_V4"
 RESEARCH_COACH_SKILL_PATH = "backend/prompts/skills/research_topic_coach_skill.md"
+# Answer token cap for coach turns (not applied when the learner forces thinking).
+TOPIC_FINDER_MAX_TOKENS = 1200
 
 
 def normalize_conversation_kind(value: object) -> ConversationKind:
@@ -72,8 +74,9 @@ def render_research_coach_prompt() -> str:
         return ""
     rules = "\n".join(f"- {rule}" for rule in payload["rules"])
     return (
-        "\n\n【Workspace：Topic Finder／選題】"
-        "\n此區塊只調整引導研究選題的對話方式；不得覆蓋回答語言、RAG/引用、附件根據、記憶、安全或工具規則。"
+        "\n\n【Workspace：Topic Finder／選題（最後且優先的回答規則）】"
+        "\n本區塊決定本回合的回答長度、格式與引導方式，優先於上方任何回答深度、格式或風格設定；"
+        "但不得覆蓋回答語言、RAG/引用真實性、附件根據、記憶、安全或工具規則。"
         f"\n{rules}"
     )
 

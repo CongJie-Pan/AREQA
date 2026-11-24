@@ -121,28 +121,38 @@ describe('useTopicCard', () => {
     expect(ok).toBe(true);
     expect(skipTopicCardFocus).toHaveBeenCalledWith('conv-1', focus.id);
     expect(result.current.state?.focus).toBeNull();
+    await waitFor(() => expect(result.current.isSaving).toBe(false));
 
     vi.mocked(skipTopicCardFocus).mockRejectedValueOnce(new TopicCardError('unavailable'));
     await act(async () => { ok = await result.current.skipFocus('candidates'); });
     expect(ok).toBe(false);
     expect(result.current.state?.skipped_focus).toEqual([focus.id]);
   });
-  it('declines the draft for the version the learner saw and keeps it when that fails', async () => {
+  it('declines the draft for the version the learner saw', async () => {
     const pending = { card: { ...empty, candidates: ['A'] }, notes: [] };
     vi.mocked(fetchTopicCard).mockResolvedValue(state({ version: 2, pending }));
+    vi.mocked(rejectTopicCardDraft).mockResolvedValue({ state: state({ version: 2 }), rejected: true });
     const { result } = renderHook(() => useTopicCard('conv-1', true));
-    await waitFor(() => expect(result.current.state?.pending).not.toBeNull());
+    await waitFor(() => expect(result.current.state?.pending).toEqual(pending));
 
-    vi.mocked(rejectTopicCardDraft).mockRejectedValueOnce(new TopicCardError('unavailable'));
+    let outcome = '';
+    await act(async () => { outcome = await result.current.reject(); });
+    expect(rejectTopicCardDraft).toHaveBeenCalledWith('conv-1', 2);
+    expect(outcome).toBe('rejected');
+    expect(result.current.state).toMatchObject({ version: 2, pending: null });
+  });
+
+  it('keeps the draft on screen when declining fails', async () => {
+    const pending = { card: { ...empty, candidates: ['A'] }, notes: [] };
+    vi.mocked(fetchTopicCard).mockResolvedValue(state({ version: 2, pending }));
+    vi.mocked(rejectTopicCardDraft).mockRejectedValue(new TopicCardError('unavailable'));
+    const { result } = renderHook(() => useTopicCard('conv-1', true));
+    await waitFor(() => expect(result.current.state?.pending).toEqual(pending));
+
     let outcome = '';
     await act(async () => { outcome = await result.current.reject(); });
     expect(outcome).toBe('failed');
     expect(result.current.state?.pending).toEqual(pending);
-
-    vi.mocked(rejectTopicCardDraft).mockResolvedValueOnce({ state: state({ version: 2 }), rejected: true });
-    await act(async () => { outcome = await result.current.reject(); });
-    expect(rejectTopicCardDraft).toHaveBeenLastCalledWith('conv-1', 2);
-    expect(outcome).toBe('rejected');
-    expect(result.current.state).toMatchObject({ version: 2, pending: null });
+    expect(result.current.isSaving).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import logging
 import time
 
 from config import settings
-from services.conversation.research_coach import is_research_coach
+from services.conversation.research_coach import TOPIC_FINDER_MAX_TOKENS, is_research_coach
 from services.memory_diagnostics import log_memory_snapshot
 from services.query_policy.models import (
     AttachmentTask,
@@ -193,6 +193,10 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
 
     if force_think:
         effective_max_tokens = 3200
+    elif is_topic_finder:
+        # Coach turns are a few sentences; the cap stops report-length answers
+        # while leaving room for a direct answer to an information request.
+        effective_max_tokens = min(effective_max_tokens, TOPIC_FINDER_MAX_TOKENS)
     if response_mode == "voice":
         effective_max_tokens = min(effective_max_tokens, 420)
         logger.info(

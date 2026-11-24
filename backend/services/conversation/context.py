@@ -159,10 +159,10 @@ class ConversationContextService:
             system_prompt += "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
 
         system_prompt += _answer_language_instruction(interface_language, last_user_msg)
-        system_prompt += render_prompt_profile(tutor_profile)
-        if is_research_coach(tutor_profile):
-            # The learner-confirmed stage decides which filter the coach may ask about.
-            system_prompt += await load_card_prompt(user_id, conversation_id)
+        topic_finder = is_research_coach(tutor_profile)
+        # Topic Finder's coach block goes last (below) so later style overlays cannot outweigh it.
+        if not topic_finder:
+            system_prompt += render_prompt_profile(tutor_profile)
         system_prompt += _example_instruction(interface_language, last_user_msg)
         system_prompt += (
             "\n【工具使用規則】依使用者的需求選擇回答、澄清或已授權的工具。"
@@ -177,12 +177,15 @@ class ConversationContextService:
             "不得聲稱使用者已理解、掌握或熟悉某個概念。使用者提及成績、焦慮、困難或偏好時，"
             "只能就當前需求提供協助，不得將其改寫成你對使用者能力、情緒、人格或學習進度的判定。"
         )
-        system_prompt += self._response_policy_instruction(
-            response_policy or default_response_policy(),
-            RESPONSE_POLICY_OVERLAYS,
-            LEARNING_TECHNIQUE_OVERLAYS,
-            EVIDENCE_MODE_OVERLAYS,
-        )
+        if not topic_finder:
+            # Topic Finder pins its own short coaching shape; a per-turn DEEP_DIVE
+            # overlay here is what turned coach replies into long reports.
+            system_prompt += self._response_policy_instruction(
+                response_policy or default_response_policy(),
+                RESPONSE_POLICY_OVERLAYS,
+                LEARNING_TECHNIQUE_OVERLAYS,
+                EVIDENCE_MODE_OVERLAYS,
+            )
         if settings.enable_parts_prompt_context and parts_context is not None:
             system_prompt += format_parts_context(parts_context)
         system_prompt += self._visual_slot_instruction(
@@ -283,6 +286,11 @@ class ConversationContextService:
             system_prompt += "\n【重要指令】你的思考過程請務必簡明扼要（盡量控制在 500 字以內），不要把時間浪費在複述上下文，請把所有詳細的分析與長篇論述都放在 </think> 之後的正式回答中！"
         if any(keyword in last_user_msg for keyword in ["錯", "真的嗎", "不對", "誤會", "理解錯", "確認一下"]):
             system_prompt += "\n\n【自我糾錯機制】：使用者正在質疑你的前次回答。請重新檢視最新資料；若先前回答缺乏支持，請承認錯誤並提供正確事實，不得為先前錯誤編造解釋。"
+
+        if topic_finder:
+            # The learner-confirmed stage decides which questions the coach may ask.
+            system_prompt += render_prompt_profile(tutor_profile)
+            system_prompt += await load_card_prompt(user_id, conversation_id)
 
         new_messages.insert(0, {"role": "system", "content": system_prompt})
         return ConversationContext(new_messages, "unknown", retrieved_memory)

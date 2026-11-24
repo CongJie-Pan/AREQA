@@ -117,7 +117,7 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
     prompt_skills.load_prompt_skill.cache_clear()
     try:
         prompt = research_coach.render_prompt_profile("research_coach")
-        assert "RESEARCH_TOPIC_COACH_SKILL_V3" in prompt
+        assert "RESEARCH_TOPIC_COACH_SKILL_V4" in prompt
         assert "never declare that a candidate has passed a stage" in prompt
         assert "may jump forward or back" in prompt
         assert "Do not claim you have searched" in prompt
@@ -127,6 +127,13 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
         # V3 reasoning–revision loop: both steers keep the learner in charge.
         assert "【回頭檢查】" in prompt and "if they say it has no effect, accept it" in prompt
         assert "【本輪缺口】" in prompt and "Never present the gap as a score" in prompt
+        # V4 answer shape after the 2026-11-24 test run.
+        assert "最後且優先的回答規則" in prompt
+        assert "reply in 3 to 6 plain sentences" in prompt and "No headings" in prompt
+        assert "No praise openings" in prompt and "do not invent cases" in prompt
+        assert "Never copy those labels" in prompt
+        assert "never say that you moved the learner to another stage" in prompt
+        assert "Format: keep turns short" not in prompt
         assert "Runtime prompt payload" not in prompt
     finally:
         prompt_skills.load_prompt_skill.cache_clear()
@@ -201,6 +208,15 @@ async def test_topic_finder_turn_has_no_image_slots_and_no_forced_paper_walkthro
 
 
 @pytest.mark.asyncio
+async def test_topic_finder_caps_the_answer_token_budget(monkeypatch):
+    _service, (_messages, coach_tokens, _slots, _blocks) = await _prepare("research_coach", monkeypatch)
+    _service, (_messages, chat_tokens, _slots, _blocks) = await _prepare("general", monkeypatch)
+
+    assert coach_tokens == research_coach.TOPIC_FINDER_MAX_TOKENS
+    assert chat_tokens == 2048
+
+
+@pytest.mark.asyncio
 async def test_chat_turn_keeps_paper_walkthrough_and_image_slots(monkeypatch):
     service, (_messages, _tokens, max_image_slots, _blocks) = await _prepare("general", monkeypatch)
 
@@ -238,7 +254,7 @@ async def test_context_includes_coach_skill_only_for_topic_finder():
         prompt_skills.load_prompt_skill.cache_clear()
 
     assert "Workspace：Topic Finder" in coach_prompt
-    assert "RESEARCH_TOPIC_COACH_SKILL_V3" in coach_prompt
+    assert "RESEARCH_TOPIC_COACH_SKILL_V4" in coach_prompt
     assert "本回合正式回答必須使用繁體中文" in coach_prompt
     assert "Topic Finder" not in chat_prompt
     assert "Tutor Profile：English Tutor" not in coach_prompt

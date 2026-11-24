@@ -169,6 +169,8 @@ class Settings(BaseSettings):
     # flag name while debugging share failures.
     enable_share_link_debug_logs: bool = True
     enable_conversation_history_debug_logs: bool = True
+    # Owner-only topic-card event timeline API (GET /research-coach/{id}/card/log) for debugging.
+    enable_topic_card_event_log_api: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 

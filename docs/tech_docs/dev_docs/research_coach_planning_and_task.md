@@ -549,6 +549,34 @@ primary key (user_id, conversation_id)
 - **過程指標**（只記事件，不記內容）：`topic_card.draft_adopted review_stages=`、`topic_card.review_asked`、`topic_card.focus_skipped focus_kind=`、`topic_card.prompt_steer steer=review|focus|stage`。
 - 選題教練 skill 升到 `RESEARCH_TOPIC_COACH_SKILL_V3`，新增「回頭檢查」和「題目卡缺口焦點」兩條規則。
 
+### 6.14 實測後的修正：教練守規矩與題目卡狀態 log（2026-11-24）
+
+依 `temp/conversation_test_script.md` 實測：12 輪中 0 輪完全符合。教練回成長篇報告、開頭先稱讚、編造案例和數據、替使用者下結論，還把【回頭檢查】標籤直接寫進回覆；題目卡也記到 AI 的話。
+
+**根本原因**：選題教練規則雖然放在 system prompt 中段，但後面還有每輪的「本回合回答策略」，選題話題常被判成 `DEEP_DIVE`，覆蓋了教練規則。
+
+**A：教練守規矩**
+- `context.py`：Topic Finder 不套用每輪的回答策略；教練規則和題目卡資料改放在 system prompt 最後，並註明「最後且優先的回答規則」。
+- `answer_preparation.py`：選題回答的 token 上限為 `TOPIC_FINDER_MAX_TOKENS`（1200）；使用者強制思考時不套用。
+- Skill 升到 `RESEARCH_TOPIC_COACH_SKILL_V4`，新增：
+  - 回答 3–6 句、不用標題、結尾只問一題、不給 A/B 選單。
+  - 開頭不稱讚；不編造案例和數據（開網路搜尋時也一樣）。
+  - 重複送出時指回上一輪的內容。
+  - 以使用者的用語為準；不替使用者下結論（含倫理）。
+  - 內部標籤不寫進回覆；不宣稱已替使用者切換階段。
+- `STAGE_FOCUS` 第 3、4 階段以使用者的母問題為準，第 5 階段倫理問題請他向學校的研究倫理審查單位確認。內部提示改標為「給你的內部指示，不要寫進回覆」。
+- 抽取規則加上反例：使用者發問不等於同意；可行性預設「還不確定」；AI 的疑慮不算反問。
+- 淘汰的題目忽略空白和標點後去重。
+- 版本說明只留最近兩則不重複的說明，最多 80 字。
+
+**B：題目卡狀態 log**
+- Migration `20261125000000_research_topic_card_events.sql`，只能往後加，每筆存完整快照。
+  - 事件：`proposed`、`adopted`、`rejected`、`stage_set`、`focus_skipped`、`review_set`、`review_cleared`、`extraction_failed`。
+  - 來源：`api`（使用者按按鈕）、`background`（回答後的背景程序）、`chat`（在對話裡要求）。
+- 和題目卡在同一個交易裡寫入，並用 savepoint 包住：log 寫入失敗只會少一筆，不會影響題目卡。
+- 每段對話保留最新 500 筆；刪除對話或使用者時一起刪除；終端機日誌不記快照。
+- 讀取：`GET /api/v1/research-coach/{id}/card/log?limit=200`（只限本人；`ENABLE_TOPIC_CARD_EVENT_LOG_API` 可關閉），前端 proxy 為 `/api/research-coach/{id}/log`。
+
 ## 7. 其他品質要求
 
 - 前端改動要先跑相關的 Vitest 檔案，再跑全部套件。

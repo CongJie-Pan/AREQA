@@ -13,7 +13,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const FOCUS_ID_PATTERN = /^[a-z_]{1,40}(:[a-z0-9_]{1,40})?$/;
 
 /** Browser-facing action → FastAPI path segment. */
-const UPSTREAM_PATH = { card: 'card', confirm: 'confirm', reject: 'reject', stage: 'stage', focus: 'focus/skip' } as const;
+const UPSTREAM_PATH = {
+  card: 'card', log: 'card/log', confirm: 'confirm', reject: 'reject', stage: 'stage', focus: 'focus/skip',
+} as const;
+/** Read-only actions forward a GET with no body. */
+const READ_ACTIONS = new Set<keyof typeof UPSTREAM_PATH>(['card', 'log']);
 
 export async function proxyTopicCard(
   request: NextRequest,
@@ -25,7 +29,8 @@ export async function proxyTopicCard(
   if (!UUID_PATTERN.test(conversationId)) return NextResponse.json({ error: 'Invalid conversation' }, { status: 400 });
 
   let body: string | undefined;
-  if (action !== 'card') {
+  const isRead = READ_ACTIONS.has(action);
+  if (!isRead) {
     if (Number(request.headers.get('content-length')) > 1_000) return NextResponse.json({ error: 'Request too large' }, { status: 413 });
     try {
       const payload = (await request.json()) as Record<string, unknown> | null;
@@ -51,7 +56,7 @@ export async function proxyTopicCard(
     const upstream = await fetch(
       `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'}/api/v1/research-coach/${conversationId}/${UPSTREAM_PATH[action]}`,
       {
-        method: action === 'card' ? 'GET' : 'POST',
+        method: isRead ? 'GET' : 'POST',
         headers: { Authorization: authorization, ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body,
         cache: 'no-store',
