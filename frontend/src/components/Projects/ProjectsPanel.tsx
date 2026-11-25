@@ -5,7 +5,7 @@
  * page (composer, its conversations, instructions and memory).
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { App, Dropdown, Input, Modal } from 'antd';
 import { ArrowUpDown, BookText, Brain, ChevronDown, FolderClosed, Pin, PinOff, Search } from 'lucide-react';
 import type { Conversation, Project } from '@/database/schema';
@@ -41,6 +41,10 @@ export function ProjectNameModal({ open, initialName = '', title, onClose, onSub
   const { message } = App.useApp();
   const [name, setName] = useState(initialName);
   const [saving, setSaving] = useState(false);
+  // Reset as soon as the dialog opens, not after its animation, so early typing is kept.
+  useEffect(() => {
+    if (open) setName(initialName);
+  }, [initialName, open]);
   const submit = async () => {
     if (!name.trim()) {
       message.warning(t('projectNameRequired'));
@@ -58,8 +62,7 @@ export function ProjectNameModal({ open, initialName = '', title, onClose, onSub
   };
   return (
     <Modal open={open} title={title} onCancel={onClose} onOk={() => { void submit(); }} okText={t('save')}
-      confirmLoading={saving} okButtonProps={{ disabled: !name.trim() }} destroyOnHidden
-      afterOpenChange={(visible) => { if (visible) setName(initialName); }}>
+      confirmLoading={saving} okButtonProps={{ disabled: !name.trim() }} destroyOnHidden>
       <Input autoFocus maxLength={MAX_PROJECT_NAME_CHARS} value={name} placeholder={t('projectNamePlaceholder')}
         aria-label={t('projectNamePlaceholder')}
         onChange={(event) => setName(event.target.value)} onPressEnter={() => { void submit(); }} />
